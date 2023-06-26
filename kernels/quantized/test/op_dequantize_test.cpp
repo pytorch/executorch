@@ -1,0 +1,86 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+
+#include <executorch/core/kernel_types/kernel_types.h>
+#include <executorch/core/kernel_types/testing/TensorFactory.h>
+#include <executorch/core/kernel_types/testing/TensorUtil.h>
+#include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
+#include <executorch/kernels/quantized/NativeFunctions.h> // Declares the operator
+#include <executorch/test/utils/DeathTest.h>
+
+#include <gtest/gtest.h>
+#include <limits>
+
+using namespace ::testing;
+using exec_aten::ArrayRef;
+using exec_aten::Scalar;
+using exec_aten::ScalarType;
+using exec_aten::Tensor;
+using torch::executor::native::dequantize_per_tensor_out;
+using torch::executor::native::dequantize_per_tensor_tensor_args_out;
+using torch::executor::testing::TensorFactory;
+
+/// A generic smoke test that works for any dtype that supports ones() and
+/// zeros().
+template <ScalarType DTYPE>
+void test_dtype() {
+  TensorFactory<DTYPE> tf;
+
+  Tensor input = tf.full({3, 5}, 100);
+  double scale = 0.5;
+  int64_t zero_point = 30;
+  int64_t quant_min = 0;
+  int64_t quant_max = 255;
+
+  TensorFactory<ScalarType::Float> tfo;
+  Tensor out = tfo.zeros({3, 5});
+  // (100 - 30) * 0.5
+  Tensor expected = tfo.full({3, 5}, 35);
+  dequantize_per_tensor_out(
+      input, scale, zero_point, quant_min, quant_max, DTYPE, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST(OpDequantizeOutTest, AllDtypesSupported) {
+  test_dtype<ScalarType::Byte>();
+}
+
+TEST(OpDequantizeOutTest, NonWholeNumbers) {
+  TensorFactory<ScalarType::Byte> tf;
+
+  Tensor input = tf.full({3, 5}, 100);
+  double scale = 0.45;
+  int64_t zero_point = 30;
+  int64_t quant_min = 0;
+  int64_t quant_max = 255;
+
+  TensorFactory<ScalarType::Float> tfo;
+  Tensor out = tfo.zeros({3, 5});
+  // (100 - 30) * 0.5
+  Tensor expected = tfo.full({3, 5}, 31.5);
+  dequantize_per_tensor_out(
+      input, scale, zero_point, quant_min, quant_max, ScalarType::Byte, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST(OpDequantizeOutTest, TensorArgOverload) {
+  TensorFactory<ScalarType::Byte> tf_byte;
+  TensorFactory<ScalarType::Double> tf_double;
+  TensorFactory<ScalarType::Long> tf_long;
+
+  Tensor input = tf_byte.full({3, 5}, 100);
+  Tensor scale = tf_double.make({1}, {0.45});
+  Tensor zero_point = tf_long.make({1}, {30});
+  int64_t quant_min = 0;
+  int64_t quant_max = 255;
+
+  TensorFactory<ScalarType::Float> tfo;
+  Tensor out = tfo.zeros({3, 5});
+  // (100 - 30) * 0.5
+  Tensor expected = tfo.full({3, 5}, 31.5);
+  dequantize_per_tensor_tensor_args_out(
+      input, scale, zero_point, quant_min, quant_max, ScalarType::Byte, out);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}

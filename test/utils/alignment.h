@@ -1,0 +1,40 @@
+#pragma once
+
+#include <cinttypes>
+
+#include <gmock/gmock.h> // For MATCHER_P
+
+namespace torch {
+namespace executor {
+namespace testing {
+
+/**
+ * Returns true if the address of `ptr` is a whole multiple of `alignment`.
+ */
+inline bool is_aligned(const void* ptr, size_t alignment) {
+  auto addr = reinterpret_cast<uintptr_t>(ptr);
+  return addr % alignment == 0;
+}
+
+/**
+ * Lets gtest users write `EXPECT_THAT(ptr, IsAlignedTo(alignment))` or
+ * `EXPECT_THAT(ptr, Not(IsAlignedTo(alignment)))`.
+ *
+ * See also `EXPECT_POINTER_IS_ALIGNED_TO()`.
+ */
+MATCHER_P(IsAlignedTo, other, "") {
+  return is_aligned(arg, other);
+}
+
+/*
+ * Helpers for checking the alignment of a pointer.
+ */
+
+#define EXPECT_ALIGNED(ptr, alignment) \
+  EXPECT_THAT((ptr), torch::executor::testing::IsAlignedTo((alignment)))
+#define ASSERT_ALIGNED(ptr, alignment) \
+  ASSERT_THAT((ptr), torch::executor::testing::IsAlignedTo((alignment)))
+
+} // namespace testing
+} // namespace executor
+} // namespace torch

@@ -1,0 +1,68 @@
+#!/usr/bin/env fbpython
+# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+
+import unittest
+
+import torch
+from executorch import exir
+from executorch.exir import EdgeCompileConfig
+from executorch.exir.dialects._ops import ops
+from executorch.exir.graph_module import get_exir_meta
+from executorch.exir.verification.arg_validator import EdgeOpArgValidator
+
+
+class TestArgValidator(unittest.TestCase):
+    """Test for EdgeOpArgValidator"""
+
+    def setUp(self) -> None:
+        super().setUp()
+
+    def test_edge_dialect_passes(self) -> None:
+        class TestModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x + x
+
+        m = TestModel()
+        inputs = (torch.randn(1, 3, 100, 100).to(dtype=torch.int),)
+        egm = (
+            exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True))
+            .to_edge(EdgeCompileConfig(_use_edge_ops=True, _check_ir_validity=False))
+            .graph_module
+        )
+        validator = EdgeOpArgValidator(egm)
+        validator.run(*inputs)
+        self.assertEqual(len(validator.violating_ops), 0)
+
+    def test_edge_dialect_fails(self) -> None:
+        # torch.bfloat16 is not supported by edge::aten::_log_softmax
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.m = torch.nn.LogSoftmax(dim=1)
+
+            def forward(self, x):
+                return self.m(x)
+
+        inputs = (torch.randn(1, 3, 100, 100).to(dtype=torch.bfloat16),)
+        egm = (
+            exir.capture(M(), inputs, exir.CaptureConfig(pt2_mode=True))
+            .to_edge(EdgeCompileConfig(_use_edge_ops=True, _check_ir_validity=False))
+            .graph_module
+        )
+        validator = EdgeOpArgValidator(egm)
+        validator.run(*inputs)
+        self.assertEqual(len(validator.violating_ops), 1)
+        self.assertEqual(
+            validator.violating_ops[0][0].name(),
+            ops.edge.aten._log_softmax.default.name(),
+        )
+        self.assertDictEqual(
+            validator.violating_ops[0][1],
+            {
+                "self": torch.bfloat16,
+                "__ret_0": torch.bfloat16,
+            },
+        )

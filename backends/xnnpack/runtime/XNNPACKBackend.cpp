@@ -1,0 +1,125 @@
+#include <executorch/backends/backend.h>
+#include <executorch/backends/xnnpack/runtime/XNNCompiler.h>
+#include <executorch/core/Error.h>
+#include <executorch/core/values/Evalue.h>
+#include <executorch/profiler/profiler.h>
+#include <executorch/util/memory_utils.h>
+#include <memory>
+
+namespace torch {
+namespace executor {
+
+class XnnpackBackend final : public PyTorchBackendInterface {
+ public:
+  ~XnnpackBackend() = default;
+
+  bool is_available() const override {
+    return xnn_status_success == xnn_initialize(/*allocator=*/nullptr);
+  }
+
+  Result<DelegateHandle*> init(
+      FreeableBuffer* processed,
+      ArrayRef<CompileSpec> compile_specs,
+      MemoryAllocator* runtime_allocator) const override {
+    auto executor = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
+        runtime_allocator, xnnpack::delegate::XNNExecutor);
+
+    // Executor has been allocated but not constructed, ensure that runtime_ is
+    // nullptr by constructing it in place here. NOTE: Since we use placement
+    // new and since this type is not trivially destructible, we must call the
+    // destructor manually in destroy().
+    new (executor) xnnpack::delegate::XNNExecutor;
+
+    Error err = xnnpack::delegate::XNNCompiler::compileModel(
+        processed->data(), processed->size(), executor, runtime_allocator);
+    if (err != Error::Ok) {
+      ET_LOG(Error, "XNNCompiler::compleModel failed: 0x%x", (unsigned int)err);
+    }
+
+    // TODO(T144120904): Remove this MMAP block once all users switch to
+    // MmapDataLoader.
+#if defined(ET_MMAP_SUPPORTED)
+    torch::executor::util::mark_memory_as_unused(
+        const_cast<void*>(processed->data()), processed->size());
+#endif
+    processed->Free();
+
+    return executor;
+  }
+
+  Error execute(DelegateHandle* handle, EValue** args) const override {
+    auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
+
+    std::vector<Tensor*> input_pointers;
+    std::vector<Tensor*> output_pointers;
+
+    ET_CHECK_OR_RETURN_ERROR(
+        executor->get_args_size() ==
+            executor->getNumInputs() + executor->getNumOutputs(),
+        Internal,
+        "External id and expected delegate args mismatch");
+
+    for (int i = 0; i < executor->get_args_size(); i++) {
+      int index = executor->get_arg_index(i);
+      if (i < executor->getNumInputs()) {
+        input_pointers.push_back(&args[index]->toTensor());
+      } else {
+        output_pointers.push_back(&args[index]->toTensor());
+      }
+    }
+
+    if (executor->needsResizeOutput()) {
+      Error err =
+          executor->resizeOutput(input_pointers.at(0), output_pointers.at(0));
+      if (err != Error::Ok) {
+        return err;
+      }
+    }
+
+    Error err = executor->set_inputs(input_pointers, output_pointers);
+
+    if (err != Error::Ok) {
+      return err;
+    }
+
+    err = executor->forward();
+
+    for (int i = executor->getNumInputs();
+         i < executor->getNumInputs() + executor->getNumOutputs();
+         i++) {
+      if (args[i]->isTensor()) {
+        exec_aten::Tensor output_tensor = args[i]->toTensor();
+        if (output_tensor.scalar_type() == ScalarType::Long) {
+          // Output datatype is int64. However, XNNPACK doesn't support
+          // int64. This means that the data was put into this tensor
+          // by XNNPACK as int32 and needs to be copied to int64 form
+          int64_t* data_64 = output_tensor.mutable_data_ptr<int64_t>();
+          const int32_t* data_32 = output_tensor.const_data_ptr<int32_t>();
+          for (int j = output_tensor.numel() - 1; j >= 0; j--) {
+            data_64[j] = data_32[j];
+          }
+        }
+      }
+    }
+
+    return err;
+  }
+
+  void destroy(DelegateHandle* handle) const override {
+    if (handle != nullptr) {
+      auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
+      // XNNExecutor is not trivially destructible. Since this was constructed
+      // manually in init(), we must destroy it manually here.
+      executor->~XNNExecutor();
+    }
+  }
+};
+
+namespace {
+auto cls = XnnpackBackend();
+Backend backend{"XnnpackBackend", &cls};
+static auto success_with_compiler = register_backend(backend);
+} // namespace
+
+} // namespace executor
+} // namespace torch

@@ -1,0 +1,7 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This yaml file contains operators that have optimized kernels available.
+
+- op: relu.out
+  dispatch:
+    CPU: torch::my_custom_kernel::my_relu_out

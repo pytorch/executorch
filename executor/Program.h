@@ -1,0 +1,318 @@
+#pragma once
+
+#include <cinttypes>
+#include <cstdint>
+
+#include <executorch/compiler/Compiler.h>
+#include <executorch/core/DataLoader.h>
+#include <executorch/core/Error.h>
+#include <executorch/core/FreeableBuffer.h>
+#include <executorch/core/Result.h>
+
+// Forward declare flatbuffer types. This is a public header and must not
+// include the generated flatbuffer header.
+namespace executorch {
+struct Program;
+} // namespace executorch
+
+namespace torch {
+namespace executor {
+
+namespace testing {
+// Provides test access to private Program methods.
+class ProgramTestFriend;
+} // namespace testing
+
+/**
+ * A deserialized Executorch program binary.
+ */
+class Program final {
+ public:
+  /**
+   * Types of validation that the Program can do before parsing the data.
+   */
+  enum class Verification : uint8_t {
+    /**
+     * Do minimal verification of the data, ensuring that the header appears
+     * correct.
+     *
+     * Has minimal runtime overhead.
+     */
+    Minimal,
+    /**
+     * Do full verification of the data, ensuring that internal pointers are
+     * self-consistent and that the data has not been truncated or obviously
+     * corrupted. May not catch all types of corruption, but should guard
+     * against illegal memory operations during parsing.
+     *
+     * Will have higher runtime overhead, scaling with the complexity of the
+     * proram data.
+     */
+    InternalConsistency,
+  };
+
+  /**
+   * Index into the program's ExecutionPlan list that corresponds with the
+   * forward function of the captured program.
+   */
+  constexpr static size_t kForwardMethodIndex = 0;
+
+  /**
+   * Loads a Program from the provided loader. The Program will hold a pointer
+   * to the loader, which must outlive the returned Program instance.
+   *
+   * @param[in] loader The source to load program data from. The Program will
+   *     hold a pointer to this loader, which must outlive the returned Program
+   *     instance.
+   * @param[in] verification The type of verification to do before returning
+   *     success.
+   */
+  __ET_NODISCARD static Result<Program> Load(
+      DataLoader* loader,
+      Verification verification = Verification::Minimal);
+
+  /**
+   * DEPRECATED: Use Program::Load().
+   *
+   * Construct the executor::Program from serilaized content. Callers must check
+   * is_valid() afterwards to see if the Program was deserialized correctly. If
+   * the Program is not valid, any calls to its methods will cause an ET_CHECK
+   * failure and panic.
+   *
+   * TODO(T144120904): Remove this once all clients have migrated to use Load.
+   *
+   * @param[in] serialized_content the ptr of serialized content the Program is
+   * contructed from
+   */
+  __ET_DEPRECATED explicit Program(const void* serialized_content);
+
+  // Movable, to be compatible with Result.
+  Program(Program&&) noexcept = default;
+  ~Program() = default;
+
+  /**
+   * DEPRECATED: Use Program::Load(), which will return an error if the
+   * Program is invalid.
+   *
+   * Returns true if the Program was deserialized successfully.
+   *
+   * TODO(T144120904): Remove this once all clients have migrated to use Load.
+   */
+  __ET_DEPRECATED __ET_NODISCARD bool is_valid() const {
+    return internal_program_ != nullptr;
+  }
+
+  /**
+   * Get the constant buffer inside Program with index buffer_idx
+   * @param[in] buffer_idx the index of the buffer in the constant_buffer
+   * @return The buffer with corresponding index
+   */
+  const void* get_constant_buffer_data(size_t buffer_idx) const;
+
+  /**
+   * Returns the number of methods in the program.
+   */
+  size_t num_methods() const;
+
+  /**
+   * Returns the name of the method at particular index.
+   *
+   * @param[in] method_idx The index of the method name to retrieve. Must be
+   * less than the value returned by `num_methods()`.
+   *
+   * @returns The name of the requested method. The pointer is owned by the
+   * Program, and has the same lifetime as the Program.
+   */
+  Result<const char*> get_method_name(size_t method_idx) const;
+
+  /**
+   * Get the size of constant buffer
+   * @return The size of whole constant buffer
+   */
+  size_t constant_buffer_size() const;
+
+  /**
+   * DEPRECATED: use get_non_const_buffer_size(size_t, const char*)
+   *
+   * Get the size of the buffer with index buffer_idx. Note that this function
+   * does not return the correct value for index 0 which denotes constant
+   * memory. Only index >= 1 should be used to retrieve the size of
+   * non-constant pools.
+   * @param[in] buffer_idx the index of the buffer in the non_const_buffer list
+   * @param[in] execution_plan_idx The index of the entry point to use for this
+   * plan. Defaults to using the `forward()` method.
+   * @return The size of the non_constant buffer corresponding to buffer_idx.
+   */
+  int64_t get_non_const_buffer_size(
+      size_t buffer_idx,
+      size_t execution_plan_idx = kForwardMethodIndex) const;
+
+  /**
+   * Get the size of the buffer with index buffer_idx. Note that this function
+   * does not return the correct value for index 0 which denotes constant
+   * memory. Only index >= 1 should be used to retrieve the size of
+   * non-constant pools.
+   * @param[in] buffer_idx the index of the buffer in the non_const_buffer list
+   * @param[in] method_name The name of the method to retrieve buffer
+   * information from.
+   * @return The size of the non_constant buffer corresponding to buffer_idx, or
+   * Error if it cannot be retrieved.
+   */
+  Result<int64_t> get_non_const_buffer_size(
+      size_t buffer_idx,
+      const char* method_name) const;
+
+  /**
+   * DEPRECATED: use num_non_const_buffers(const char*)
+   *
+   * Get the number of non_constant buffers.
+   * @param[in] execution_plan_idx The index of the entry point to use for this
+   * plan. Defaults to using the `forward()` method.
+   * @return The number of non_constant buffers.
+   */
+  __ET_DEPRECATED size_t
+  num_non_const_buffers(size_t execution_plan_idx = kForwardMethodIndex) const;
+
+  /**
+   * Get the number of non_constant buffers.
+   * @param[in] method_name The name of the method to get the buffer amounts
+   * for.
+   * @return The number of non_constant buffers, or Error if it cannot be
+   * retrieved.
+   */
+  Result<size_t> num_non_const_buffers(const char* method_name) const;
+
+  /**
+   * DEPRECATED: use get_output_flattening_encoding(const char*)
+   *
+   * Get the pytree encoding string for the output. Deprecated as
+   * this functionality will eventually move out of the core program into a
+   * higher level structure, but that does not exist at this time.
+   * @param[in] execution_plan_idx The index of the entry point to use for this
+   * plan. Defaults to using the `forward()` method.
+   *
+   * @return The pytree encoding string for the output
+   */
+  __ET_DEPRECATED const char* get_output_flattening_encoding(
+      size_t execution_plan_idx = kForwardMethodIndex) const;
+
+  /**
+   * DEPRECATED: Get the pytree encoding string for the output. Deprecated as
+   * this functionality will eventually move out of the core program into a
+   * higher level structure, but that does not exist at this time.
+   * @param[in] method_name The name of the method to get the encoding for.
+   *
+   * @return The pytree encoding string for the output
+   */
+  __ET_DEPRECATED Result<const char*> get_output_flattening_encoding(
+      const char* method_name) const;
+
+  /**
+   * Describes the presence of an executorch program header.
+   */
+  enum HeaderStatus {
+    /**
+     * An executorch program header is present, and its version is compatible
+     * with this version of the runtime.
+     */
+    CompatibleVersion,
+
+    /**
+     * An executorch program header is present, but its version is not
+     * compatible with this version of the runtime.
+     */
+    IncompatibleVersion,
+
+    /**
+     * An executorch program header is not present.
+     */
+    NotPresent,
+
+    /**
+     * The data provided was too short to find the program header.
+     */
+    ShortData,
+  };
+
+  /**
+   * The minimum number of bytes necessary for calls to `check_header`.
+   */
+  static constexpr size_t kMinHeadBytes = 64;
+
+  /**
+   * Looks for an executorch program header in the provided data.
+   *
+   * @param[in] data The data from the beginning of a file that might contain
+   *     an executorch program.
+   * @param[in] size The size of `data` in bytes. Must be >= `kMinHeadBytes`.
+   *
+   * @returns A value describing the presence of a header in the data.
+   */
+  static HeaderStatus check_header(const void* data, size_t size);
+
+ private:
+  // Let some classes call these private methods.
+  friend class BackendDelegate;
+  friend class ExecutionPlan;
+  friend class Executor;
+  friend class testing::ProgramTestFriend;
+
+  const executorch::Program* get_internal_program() const {
+    return internal_program_;
+  }
+
+  // Used by ExecutionPlan to look up entries in the delegate data table.
+  Error get_backend_delegate_data(
+      size_t index,
+      const void** out_data,
+      size_t* out_size) const;
+
+  /**
+   * Loads a segment by index.
+   *
+   * @param[in] index The sement index to load. This should be an index into
+   *     the Program.segments list.
+   *
+   * @returns The data as a FreeableBuffer, if the index is valid.
+   * @retval Error::NotFound The program does not contain any segments or the
+   *     index is out of range.
+   * @returns Other errors depending on the implementation of
+   *     DataLoader: The Program.segment table is inconsistent, or the
+   *     data cannot be accessed.
+   */
+  __ET_NODISCARD Result<FreeableBuffer> LoadSegment(size_t index) const;
+
+ private:
+  Program(
+      DataLoader* loader,
+      size_t segment_base_offset,
+      FreeableBuffer&& program_data,
+      const executorch::Program* internal_program)
+      : program_data_(std::move(program_data)),
+        // Don't need the loader if there are no segments.
+        loader_(segment_base_offset > 0 ? loader : nullptr),
+        internal_program_(internal_program),
+        segment_base_offset_(segment_base_offset) {}
+
+  // Not copyable or assignable.
+  Program(const Program& rhs) = delete;
+  Program& operator=(Program&& rhs) noexcept = delete;
+  Program& operator=(const Program& rhs) = delete;
+
+  /// The serialized program data. Tensors will point directly into this buffer.
+  FreeableBuffer program_data_;
+
+  /// Used to load segment data. Null if there are no segments.
+  DataLoader* loader_;
+
+  /// The flatbuffer representation of the program. Must not be exposed to
+  /// users.
+  const executorch::Program* internal_program_;
+
+  /// The offset to the first segment, in bytes. If zero, no segments should
+  /// be present in internal_program_.
+  size_t segment_base_offset_;
+};
+
+} // namespace executor
+} // namespace torch

@@ -1,0 +1,3 @@
+# pyre-strict
+
+EXECUTORCH_SCHEMA_VERSION = 0

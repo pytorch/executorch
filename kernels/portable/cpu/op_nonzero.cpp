@@ -1,0 +1,110 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+
+#include <cmath>
+#include <cstring>
+
+#include <executorch/core/Assert.h>
+#include <executorch/kernels/kernel_includes.h>
+
+namespace torch {
+namespace executor {
+namespace native {
+
+using Tensor = exec_aten::Tensor;
+using ScalarType = exec_aten::ScalarType;
+using SizesType = exec_aten::SizesType;
+
+namespace {
+
+void increment_index(size_t* index, const ArrayRef<SizesType> sizes) {
+  for (ssize_t i = sizes.size() - 1; i >= 0; --i) {
+    index[i]++;
+    if (index[i] == sizes[i]) {
+      index[i] = 0;
+    } else {
+      return;
+    }
+  }
+}
+
+void check_preconditions(const Tensor& input, const Tensor& output) {
+  (void)input;
+
+  ET_CHECK_MSG(
+      output.scalar_type() == ScalarType::Long,
+      "Expected out to be a Long tensor but received %hdd",
+      output.scalar_type());
+  ET_CHECK_MSG(
+      output.dim() == 2,
+      "Expected out to be a 2d tensor received %zd",
+      ssize_t(output.dim()));
+}
+
+/**
+ * Two pass algorithm where we first count the number of non zeros, then resize
+ * out to the appropriate size, and then loop again and properly write into out
+ */
+template <typename CTYPE>
+void nonzero(const Tensor& input, Tensor& output) {
+  const CTYPE* in_data = input.data_ptr<CTYPE>();
+  size_t lim = input.numel();
+  int32_t num_nonzero = 0;
+
+  // Count number of non zeros
+  for (size_t i = 0; i < lim; ++i) {
+    if (in_data[i] != 0) {
+      num_nonzero++;
+    }
+  }
+
+  // resize out
+  SizesType out_shape[2] = {
+      static_cast<SizesType>(num_nonzero), static_cast<SizesType>(input.dim())};
+  resize(output, ArrayRef<exec_aten::SizesType>(out_shape, 2));
+
+  size_t index[kTensorDimensionLimit];
+  memset(index, 0, sizeof(index));
+
+  int64_t* out_data = output.data_ptr<int64_t>();
+  size_t out_idx = 0;
+
+  // Loop again and this time write the proper indices into out
+  for (size_t i = 0; i < lim; i++) {
+    if (in_data[i] != 0) {
+      for (size_t j = 0; j < input.dim(); j++) {
+        out_data[out_idx++] = index[j];
+      }
+    }
+    increment_index(index, input.sizes());
+  }
+}
+
+} // namespace
+
+/**
+ * Determines the non zero indices of input.
+ * Out is a 2-D tensor where every row is a non zero index of the input.
+ */
+Tensor& nonzero_out(RuntimeContext& context, const Tensor& input, Tensor& out) {
+  (void)context;
+  check_preconditions(input, out);
+
+// helper for generating the cases for different data types
+#define NONZERO(ctype, dtype)   \
+  case ScalarType::dtype:       \
+    nonzero<ctype>(input, out); \
+    break;
+
+  switch (input.scalar_type()) {
+    ET_FORALL_REAL_TYPES(NONZERO)
+    default:
+      ET_CHECK_MSG(false, "Unhandled dtype %hhd", input.scalar_type());
+  }
+#undef NONZERO
+
+  return out;
+}
+
+} // namespace native
+} // namespace executor
+} // namespace torch

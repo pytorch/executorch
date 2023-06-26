@@ -1,0 +1,289 @@
+import typing
+from typing import Dict, List, Type
+
+# pyre-ignore
+import executorch.exir.bindings as bindings  # @manual=//executorch/exir:bindings
+import torch
+import torch.fx
+from executorch.bundled_program.config import (
+    BundledConfig,
+    ConfigExecutionPlanTest,
+    ConfigValue,
+)
+from executorch.bundled_program.schema import (
+    BundledBool,
+    BundledDouble,
+    BundledExecutionPlanTest,
+    BundledInt,
+    BundledIOSet,
+    BundledProgram,
+    BundledTensor,
+    BundledValue,
+)
+from executorch.bundled_program.version import BUNDLED_PROGRAM_SCHEMA_VERSION
+from executorch.exir.schema import (
+    Bool,
+    Double,
+    ExecutionPlan,
+    Int,
+    KernelTypes,
+    Program,
+    Tensor,
+)
+from executorch.exir.serialize import serialize_to_flatbuffer
+from executorch.exir.tensor import get_scalar_type, scalar_type_enum, TensorSpec
+
+# pyre-ignore
+supported_program_type_table: Dict[Type[KernelTypes], ConfigValue] = {
+    Tensor: torch.Tensor,
+    Int: int,
+    Double: float,
+    Bool: bool,
+}
+
+
+def emit_bundled_tensor(spec: TensorSpec, bundled_values: List[BundledValue]) -> None:
+    # QuantizedSchema in tensor has deprecated and may not be used anymore.
+    # So here we don't emit it.
+
+    if spec.allocated_memory == 0:
+        tensor_data: bytes = b""
+    else:
+        # pyre-ignore
+        tensor_data: bytes = bindings.copy_buffer(
+            typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
+            typing.cast(torch.UntypedStorage, spec.storage).nbytes(),
+        )
+
+    bundled_values.append(
+        BundledValue(
+            val=BundledTensor(
+                scalar_type=scalar_type_enum(spec.dtype),
+                sizes=spec.shape,
+                data=tensor_data,
+                dim_order=list(spec.dim_order),
+            ),
+        )
+    )
+
+
+def emit_prim(val: ConfigValue, bundled_values: List[BundledValue]):
+    if type(val) == int:
+        bundled_values.append(BundledValue(val=BundledInt(int_val=val)))
+    elif type(val) == bool:
+        bundled_values.append(BundledValue(val=BundledBool(bool_val=val)))
+    elif type(val) == float:
+        bundled_values.append(BundledValue(val=BundledDouble(double_val=val)))
+    else:
+        assert 0, "Unsupported primitive type received."
+
+
+def get_program_input(program: Program, plan_idx: int, input_idx: int) -> KernelTypes:
+    return (
+        program.execution_plan[plan_idx]
+        .values[program.execution_plan[plan_idx].inputs[input_idx]]
+        .val
+    )
+
+
+def get_program_output(program: Program, plan_idx: int, output_idx: int) -> KernelTypes:
+    return (
+        program.execution_plan[plan_idx]
+        .values[program.execution_plan[plan_idx].outputs[output_idx]]
+        .val
+    )
+
+
+def get_input_dtype(program: Program, plan_idx: int, input_idx: int) -> torch.dtype:
+    # pyre-fixme[16]: now assert all input and outputs is in tenor type. Support multuple datatypes in the future.
+    return get_scalar_type(get_program_input(program, plan_idx, input_idx).scalar_type)
+
+
+def get_input_type(program: Program, plan_idx: int, input_idx: int) -> type:
+    type_lookup = {Int: int, Bool: bool, Double: float}
+    # pyre-fixme[6]: Incompatible parameter type [6]: In call `dict.__getitem__`, for 1st positional only parameter
+    # expected `Type[Union[Bool, Double, Int]]` but got `Type[Union[Bool, Double, Int, Tensor, BoolList, DoubleList,
+    # IntList, Null, OptionalTensorList, String, TensorList]]`.
+    return type_lookup[type(get_program_input(program, plan_idx, input_idx))]
+
+
+def get_output_dtype(program: Program, plan_idx: int, output_idx: int) -> torch.dtype:
+    return get_scalar_type(
+        # pyre-ignore[16]: now assert all outputs is in tensor type.
+        get_program_output(program, plan_idx, output_idx).scalar_type
+    )
+
+
+def assert_valid_bundle(
+    program: Program,
+    bundled_config: BundledConfig,
+) -> None:
+    """Check if the program and BundledConfig matches each other.
+
+    Other checks not related to correspondence are done in config.py
+
+    Args:
+        program: The program to be bundled.
+        bundled_config: The config to be bundled.
+
+    """
+
+    # Check the number of execution plan tests
+    assert len(bundled_config.execution_plan_tests) == len(
+        program.execution_plan
+    ), "The length of execution_plan_tests in config should match the length of execution_plan in program, but get {} and {}.".format(
+        len(bundled_config.execution_plan_tests), len(program.execution_plan)
+    )
+
+    # Check if the inputs' type meet Program's requirement
+    for plan_id in range(len(program.execution_plan)):
+        plan_test: ConfigExecutionPlanTest = bundled_config.execution_plan_tests[
+            plan_id
+        ]
+
+        plan: ExecutionPlan = program.execution_plan[plan_id]
+
+        # Check if the type of Program's input is supported
+        for index in range(len(plan.inputs)):
+            assert (
+                type(get_program_input(program, plan_id, index))
+                in supported_program_type_table
+            ), "The type of program's input isn't supported."
+
+        # Check if the type of Program's output is supported
+        for index in range(len(plan.outputs)):
+            assert (
+                type(get_program_output(program, plan_id, index)) == Tensor
+            ), "Only supports program with output in Tensor type."
+
+        # Check if the I/O sets of each execution plan test match program's requirement.
+        for i in range(len(plan_test.test_sets)):
+            cur_plan_test_inputs = plan_test.test_sets[i].inputs
+            cur_plan_test_expected_outputs = plan_test.test_sets[i].expected_outputs
+
+            assert len(plan.inputs) == len(
+                cur_plan_test_inputs
+            ), "The number of input in each bundled set and Program shall equal, but get {} and {}".format(
+                len(plan.inputs),
+                len(cur_plan_test_inputs),
+            )
+
+            # Check if bundled input in the current exeution plan test share same type as input in Program
+            for j in range(len(cur_plan_test_inputs)):
+                assert (
+                    type(cur_plan_test_inputs[j])
+                    == supported_program_type_table[
+                        type(get_program_input(program, plan_id, j))
+                    ]
+                ), "The type {}-th input in {}-th test set of {}-th execution plan does not meet Program's requirement: expected {} but get {}".format(
+                    j,
+                    i,
+                    plan_id,
+                    supported_program_type_table[
+                        type(get_program_input(program, plan_id, j))
+                    ],
+                    type(cur_plan_test_inputs[j]),
+                )
+
+                # type of tensor input should match execution plan
+                if type(cur_plan_test_inputs[j]) == torch.Tensor:
+                    # pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`
+                    # has no attribute `dtype`.
+                    assert cur_plan_test_inputs[j].dtype == get_input_dtype(
+                        program, plan_id, j
+                    ), "The input tensor {} dtype shall be {}, but now is {}".format(
+                        cur_plan_test_inputs[j],
+                        get_input_dtype(program, plan_id, j),
+                        cur_plan_test_inputs[j].dtype,
+                    )
+                elif type(cur_plan_test_inputs[j]) in (
+                    int,
+                    bool,
+                    float,
+                ):
+                    assert type(cur_plan_test_inputs[j]) == get_input_type(
+                        program, plan_id, j
+                    ), "The input primitive dtype shall be {}, but now is {}".format(
+                        get_input_type(program, plan_id, j),
+                        type(cur_plan_test_inputs[j]),
+                    )
+
+            # Check if bundled expected output in the current exeution plan test share same type as output in Program
+            for j in range(len(cur_plan_test_expected_outputs)):
+                # pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`
+                # has no attribute `dtype`.
+                assert cur_plan_test_expected_outputs[j].dtype == get_output_dtype(
+                    program, plan_id, j
+                ), "The label tensor {} dtype shall be {}, but now is {}".format(
+                    cur_plan_test_expected_outputs[j],
+                    get_output_dtype(program, plan_id, j),
+                    cur_plan_test_expected_outputs[j].dtype,
+                )
+
+
+def create_bundled_program(
+    program: Program,
+    bundled_config: BundledConfig,
+) -> BundledProgram:
+    """Create BundledProgram by bundling the given program and bundled_config together.
+
+    Args:
+        program: The program to be bundled.
+        bundled_config: The config to be bundled.
+    """
+
+    assert_valid_bundle(program, bundled_config)
+
+    execution_plan_tests: List[BundledExecutionPlanTest] = []
+
+    # Emit data and metadata of bundled tensor
+    for plan_id in range(len(program.execution_plan)):
+        plan_test: ConfigExecutionPlanTest = bundled_config.execution_plan_tests[
+            plan_id
+        ]
+        test_sets: List[BundledIOSet] = []
+
+        # emit I/O sets for each execution plan test
+        for i in range(len(plan_test.test_sets)):
+            inputs: List[BundledValue] = []
+            expected_outputs: List[BundledValue] = []
+
+            cur_plan_test_inputs = plan_test.test_sets[i].inputs
+            cur_plan_test_expected_outputs = plan_test.test_sets[i].expected_outputs
+
+            for input_val in cur_plan_test_inputs:
+                if type(input_val) == torch.Tensor:
+                    emit_bundled_tensor(
+                        TensorSpec.from_tensor(input_val, const=True),
+                        inputs,
+                    )
+                else:
+                    emit_prim(
+                        input_val,
+                        inputs,
+                    )
+            for expected_output_tensor in cur_plan_test_expected_outputs:
+                assert (
+                    type(expected_output_tensor) == torch.Tensor
+                ), "Only tensor outputs are currently supported."
+                emit_bundled_tensor(
+                    TensorSpec.from_tensor(expected_output_tensor, const=True),
+                    expected_outputs,
+                )
+            test_sets.append(
+                BundledIOSet(inputs=inputs, expected_outputs=expected_outputs)
+            )
+
+        # emit meta data of each execution plan test, and emit the whole execution plan test
+        execution_plan_tests.append(
+            BundledExecutionPlanTest(test_sets=test_sets, metadata=plan_test.metadata)
+        )
+
+    program_bytes: bytes = serialize_to_flatbuffer(program)
+
+    return BundledProgram(
+        version=BUNDLED_PROGRAM_SCHEMA_VERSION,
+        attachments=bundled_config.attachments,
+        execution_plan_tests=execution_plan_tests,
+        program=program_bytes,
+    )

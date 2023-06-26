@@ -1,0 +1,504 @@
+import unittest
+from random import randint
+from typing import Tuple
+
+import torch
+import torch.nn.functional as F
+from executorch import exir
+from executorch.backends.backend_api import to_backend, validation_disabled
+
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+    XnnpackDynamicallyQuantizedPartitioner2,
+    XnnpackFloatingPointPartitioner,
+    XnnpackQuantizedPartitioner2,
+)
+from executorch.backends.xnnpack.utils.configs import (
+    get_xnnpack_edge_compile_config,
+    get_xnnpack_executorch_backend_config,
+)
+from executorch.backends.xnnpack.utils.utils import capture_graph_for_xnnpack
+
+# import the xnnpack backend implementation
+from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
+
+from executorch.bundled_program.config import BundledConfig
+from executorch.bundled_program.core import create_bundled_program
+from executorch.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
+from executorch.exir import CaptureConfig, edge_dialect_to_executorch
+from executorch.exir.graph_module import attach_export_graph_metadata, get_exir_meta
+
+from executorch.exir.passes.spec_prop_pass import SpecPropPass
+from executorch.exir.serialize import serialize_to_flatbuffer
+
+# pyre-ignore[21]: Could not find module `executorch.pybindings.portable`.
+from executorch.pybindings.portable import _load_for_executorch_from_buffer  # @manual
+from executorch.pytree import tree_flatten
+
+from torch.ao.quantization import (  # @manual
+    default_per_channel_symmetric_qnnpack_qconfig,
+    PlaceholderObserver,
+    QConfig,
+    QConfigMapping,
+)
+from torch.ao.quantization._pt2e.quantizer import QNNPackQuantizer
+from torch.ao.quantization._pt2e.quantizer.qnnpack_quantizer import (
+    get_symmetric_quantization_config,
+)
+from torch.ao.quantization._quantize_pt2e import convert_pt2e, prepare_pt2e_quantizer
+from torch.ao.quantization.backend_config.executorch import (
+    get_executorch_backend_config,
+)
+
+from torch.ao.quantization.observer import (
+    per_channel_weight_observer_range_neg_127_to_127,
+    #    default_weight_observer,
+    weight_observer_range_neg_127_to_127,
+)
+from torch.ao.quantization.qconfig_mapping import (
+    _get_default_qconfig_mapping_with_default_qconfig,
+    _get_symmetric_qnnpack_qconfig_mapping,
+)
+
+from torch.ao.quantization.quantize_fx import (
+    _convert_to_reference_decomposed_fx,
+    prepare_fx,
+)
+
+from torch.testing import FileCheck
+
+
+def randomize_bn(num_features: int, dimensionality: int = 2) -> torch.nn.Module:
+    if dimensionality == 1:
+        bn = torch.nn.BatchNorm1d(num_features)
+        input_size = (1, num_features, 5)
+    elif dimensionality == 2:
+        bn = torch.nn.BatchNorm2d(num_features)
+        input_size = (1, num_features, 5, 5)
+    else:
+        raise AssertionError(
+            f"Only dimensionality 1 or 2 supported in randomize_bn, got {dimensionality}"
+        )
+
+    bn.weight = torch.nn.Parameter(torch.randn(num_features))
+    bn.bias = torch.nn.Parameter(torch.randn(num_features))
+
+    for _ in range(5):
+        bn(torch.randn(size=input_size))
+
+    return bn
+
+
+def save_bundled_program(representative_inputs, program, ref_output, output_path):
+    niter = 1
+
+    print("generating bundled program inputs / outputs")
+    inputs_list = [list(representative_inputs) for _ in range(niter)]
+    expected_outputs_list = [
+        [[ref_output] for x in inputs_list],
+    ]
+    bundled_config = BundledConfig([inputs_list], expected_outputs_list)
+
+    print("creating bundled program...")
+    bundled_program = create_bundled_program(program, bundled_config)
+
+    print("serializing bundled program...")
+    bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
+        bundled_program
+    )
+    output_path_with_postfix = f"{output_path}_bundled.ff"
+    print(f"saving bundled program to {output_path}...")
+
+    with open(output_path_with_postfix, "wb") as file:
+        file.write(bundled_program_buffer)
+
+
+class TestXNNPACK(unittest.TestCase):
+    def assert_outputs_equal(self, model_output, ref_output):
+        """
+        Helper testing function that asserts that the model output and the reference output
+        are equal with some tolerance. Due to numerical differences between eager mode and
+        the XNNPack's backend, we relax the detal such that absolute tolerance is 1e-3. and
+        relative tolerance is 1e-3.
+        """
+
+        # Compare the result from executor and eager mode direclty
+        if isinstance(ref_output, tuple) or isinstance(ref_output, list):
+            # Multiple outputs executor always returns tuple, even if there is one output
+            self.assertTrue(len(ref_output) == len(model_output))
+            for i in range(len(ref_output)):
+                self.assertTrue(
+                    torch.allclose(
+                        model_output[i], ref_output[i], atol=1e-03, rtol=1e-03
+                    )
+                )
+        else:
+            # If one output, eager returns tensor while executor tuple of size 1
+            self.assertTrue(
+                torch.allclose(model_output[0], ref_output, atol=1e-03, rtol=1e-03)
+            )
+
+    def lower_module_and_test_output(
+        self,
+        module: torch.nn.Module,
+        sample_inputs: Tuple[torch.Tensor],
+        use_partitioner: bool = False,
+        quantized: bool = False,
+        quantized_dynamic: bool = False,
+        # TODO: remove this after we migrate to use long term flow
+        quantizer_api_test: bool = False,
+        dump_ff: bool = False,  # for debugging, dump the generated flatbuffer file
+    ) -> torch.fx.GraphModule:
+        """
+        Helper testing function that takes a torch.nn.Module and lowers it to XNNPACK with
+        the given sample inputs. It then runs the lowered module and compares its
+        outputs with the outputs of the eager module.
+        """
+
+        class WrappedModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.one_module = module
+
+            def forward(self, *args):
+                return self.one_module(*args)
+
+        if quantizer_api_test:
+            edge_module = module
+        else:
+            edge_module = capture_graph_for_xnnpack(WrappedModule(), sample_inputs)
+
+        partitioner = None
+        if quantized:
+            if quantized_dynamic:
+                partitioner = XnnpackDynamicallyQuantizedPartitioner2
+            else:
+                partitioner = XnnpackQuantizedPartitioner2
+        else:
+            partitioner = XnnpackFloatingPointPartitioner
+
+        if use_partitioner:
+            with validation_disabled():
+                delegated_module = to_backend(edge_module, partitioner)
+
+            program = edge_dialect_to_executorch(
+                delegated_module,
+                get_xnnpack_executorch_backend_config([SpecPropPass()]),
+            ).program
+        else:
+            delegated_module = to_backend("XnnpackBackend", edge_module, [])
+
+            graph_module = capture_graph_for_xnnpack(delegated_module, sample_inputs)
+            program = edge_dialect_to_executorch(
+                graph_module,
+                get_xnnpack_executorch_backend_config(),
+            ).program
+
+        # print("Graph Module with delegate:")
+        # delegated_module.print_readable()
+
+        # Assert the backend name is xnnpack
+        self.assertEqual(
+            program.execution_plan[0].delegates[0].id,
+            XnnpackBackend.__name__,
+        )
+        buffer = serialize_to_flatbuffer(program)
+
+        ref_output = delegated_module(*sample_inputs)
+        if dump_ff:
+            filename = f"/tmp/xnnpack_test_{randint(1, 99999)}.ff"
+            print(f"Writing flatbuffer to {filename} ...")
+
+            save_bundled_program(
+                representative_inputs=sample_inputs,
+                program=program,
+                ref_output=ref_output,
+                output_path=filename,
+            )
+
+        # Test the model with executor
+        # pyre-ignore
+        executorch_module = _load_for_executorch_from_buffer(buffer)
+        inputs_flattened, _ = tree_flatten(sample_inputs)
+
+        model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
+
+        self.assert_outputs_equal(model_output, ref_output)
+
+        return delegated_module
+
+    def lower_and_test_with_partitioner(
+        self,
+        graph_module,
+        example_inputs,
+        quantized: bool = False,
+        quantized_dynamic: bool = False,
+    ):
+        self.lower_module_and_test_output(
+            graph_module,
+            example_inputs,
+            use_partitioner=True,
+            quantized=quantized,
+            quantized_dynamic=quantized_dynamic,
+        )
+        self.lower_module_and_test_output(
+            graph_module,
+            example_inputs,
+            use_partitioner=False,
+            quantized=quantized,
+            quantized_dynamic=quantized_dynamic,
+        )
+
+    def quantize_and_test_model(
+        self,
+        module,
+        example_inputs,
+        per_channel_quant=False,
+    ):
+        if per_channel_quant:
+            qconfig = default_per_channel_symmetric_qnnpack_qconfig
+            qconfig_mapping = _get_default_qconfig_mapping_with_default_qconfig(
+                False, "qnnpack", qconfig
+            )
+        else:
+            qconfig_mapping = _get_symmetric_qnnpack_qconfig_mapping()
+        module.eval()
+        prepared = prepare_fx(
+            module,
+            qconfig_mapping,
+            example_inputs,
+            backend_config=get_executorch_backend_config(),
+        )
+        converted = _convert_to_reference_decomposed_fx(
+            prepared,
+            backend_config=get_executorch_backend_config(),
+        )
+
+        # Let's assert quant flow did something (not care what, but anything) for this module.
+        # This is to ensure we are not just passing through an unquantized model.
+        FileCheck().check("torch.ops.quantized_decomposed").run(converted.code)
+
+        self.lower_module_and_test_output(
+            module=converted,
+            sample_inputs=example_inputs,
+            use_partitioner=True,
+            quantized=True,
+        )
+
+    # TODO: replace quantize_and_test_model with this after
+    # QNNPACKQuantizer is more mature
+    def quantize_and_test_model_with_quantizer(
+        self,
+        module,
+        example_inputs,
+    ):
+        module.eval()
+        # program capture
+        capture_config = CaptureConfig(pt2_mode=True, enable_functionalization=True)
+        captured_program = exir.capture(module, example_inputs, config=capture_config)
+        m = captured_program.graph_module
+        exir_meta = get_exir_meta(m)
+
+        quantizer = QNNPackQuantizer()
+        quantization_config = get_symmetric_quantization_config()
+        quantizer.set_global(quantization_config)
+        prepared = prepare_pt2e_quantizer(m, quantizer)
+        converted = convert_pt2e(prepared)
+        attach_export_graph_metadata(converted, exir_meta)
+        captured_program.graph_module = converted
+        edge_module = captured_program.to_edge(
+            get_xnnpack_edge_compile_config()
+        ).graph_module
+        delegated_module = self.lower_module_and_test_output(
+            module=edge_module,
+            sample_inputs=example_inputs,
+            use_partitioner=True,
+            quantized=True,
+            quantizer_api_test=True,
+        )
+        supported_ops = {
+            "torch.ops.aten.addmm.default",
+            "torch.ops.aten.convolution.default",
+            "torch.ops.aten.relu.default",
+            "torch.ops.aten.add.Tensor",
+        }
+        for op in supported_ops:
+            FileCheck().check_count(op, 0, exactly=True).run(delegated_module.code)
+
+    def _test_xnnpack_dqlinear(
+        self,
+        weight_qconfig,
+        use_bias: bool,
+        dump_ff: bool = False,
+    ):
+        assert weight_qconfig in [
+            weight_observer_range_neg_127_to_127,
+            per_channel_weight_observer_range_neg_127_to_127,
+        ]
+        in_size = 2
+        input_size = 4
+        output_size = 5
+        linear = torch.nn.Linear(input_size, output_size, bias=use_bias)
+        linear.weight = torch.nn.Parameter(torch.rand(output_size, input_size))
+        if use_bias:
+            linear.bias = torch.nn.Parameter(torch.rand(output_size))
+        example_inputs = (torch.rand(3, in_size, input_size, dtype=torch.float),)
+        act_affine_quant_obs = PlaceholderObserver.with_args(
+            dtype=torch.qint8,
+            qscheme=torch.per_tensor_affine,
+            quant_min=-128,
+            quant_max=127,
+            eps=2**-12,
+            is_dynamic=True,
+        )
+        qconfig_mapping = QConfigMapping().set_object_type(
+            F.linear,
+            QConfig(
+                activation=act_affine_quant_obs,
+                weight=weight_qconfig,
+            ),
+        )
+
+        prepared_linear = prepare_fx(
+            linear,
+            qconfig_mapping,
+            example_inputs,
+            backend_config=get_executorch_backend_config(),
+        )
+
+        converted_linear = _convert_to_reference_decomposed_fx(
+            prepared_linear,
+        )
+
+        captured_dqlinear = capture_graph_for_xnnpack(converted_linear, example_inputs)
+
+        captured_dqlinear.graph.print_tabular()
+
+        lowered_module = to_backend("XnnpackBackend", captured_dqlinear, [])
+
+        class CompositeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered_module = lowered_module
+
+            def forward(self, x):
+                return self.lowered_module(x)
+
+        composite_model = CompositeModule()
+        composite_model(*example_inputs)
+
+        graph_module = capture_graph_for_xnnpack(composite_model, example_inputs)
+        program = edge_dialect_to_executorch(
+            graph_module,
+            get_xnnpack_executorch_backend_config(),
+        ).program
+
+        self.assertEqual(
+            program.execution_plan[0].delegates[0].id,
+            XnnpackBackend.__name__,
+        )
+
+        ref_output = captured_dqlinear(*example_inputs)
+        ref_output = composite_model(*example_inputs)
+        print("ref_output:", ref_output)
+
+        if dump_ff:
+            mm_str = "addmm" if use_bias else "mm"
+            filename = f"/tmp/dqlinear_{mm_str}"
+            if weight_qconfig == weight_observer_range_neg_127_to_127:
+                filename = f"{filename}_per_tensor"
+            else:
+                filename = f"{filename}_per_channel"
+            print(f"Writing flatbuffer to {filename} ...")
+
+            save_bundled_program(
+                representative_inputs=example_inputs,
+                program=program,
+                ref_output=ref_output,
+                output_path=filename,
+            )
+
+        buffer = serialize_to_flatbuffer(program)
+        # pyre-ignore
+        executorch_module = _load_for_executorch_from_buffer(buffer)
+        inputs_flattened, _ = tree_flatten(example_inputs)
+
+        model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
+        ref_output = composite_model(*example_inputs)
+        print("ref_output (composite):", ref_output)
+
+        print("Model_output:", model_output[0])
+
+        # Compare the result from executor and eager mode direclty
+        self.assertTrue(
+            torch.allclose(model_output[0], ref_output[0], atol=1e-03, rtol=1e-03)
+        )
+
+    def _get_dqlinear_graph_module(self, weight_qconfig, linear, example_inputs):
+        act_affine_quant_obs = PlaceholderObserver.with_args(
+            dtype=torch.qint8,
+            qscheme=torch.per_tensor_affine,
+            quant_min=-128,
+            quant_max=127,
+            eps=2**-12,
+            is_dynamic=True,
+        )
+        qconfig_mapping = QConfigMapping().set_object_type(
+            F.linear,
+            QConfig(
+                activation=act_affine_quant_obs,
+                weight=weight_qconfig,
+            ),
+        )
+
+        prepared_linear = prepare_fx(
+            linear,
+            qconfig_mapping,
+            example_inputs,
+            backend_config=get_executorch_backend_config(),
+        )
+
+        converted_dqlinear: torch.fx.GraphModule = _convert_to_reference_decomposed_fx(
+            prepared_linear, backend_config=get_executorch_backend_config()
+        )
+
+        return converted_dqlinear
+
+    def _test_xnnpack_dqlinear_with_partitioner(self, weight_qconfig, use_bias=True):
+        in_size = 1
+        input_size = 4
+        output_size = 5
+        linear = torch.nn.Linear(input_size, output_size, bias=use_bias)
+        linear.weight = torch.nn.Parameter(torch.rand(output_size, input_size))
+        if use_bias:
+            linear.bias = torch.nn.Parameter(torch.rand(output_size))
+        example_inputs = (torch.rand(in_size, input_size, dtype=torch.float),)
+        converted_dqlinear = self._get_dqlinear_graph_module(
+            weight_qconfig, linear, example_inputs
+        )
+
+        self.lower_and_test_with_partitioner(
+            graph_module=converted_dqlinear,
+            example_inputs=example_inputs,
+            quantized=True,
+            quantized_dynamic=True,
+        )
+
+    def _test_xnnpack_custom_dqlinear_with_partitioner_only(
+        self, LinearModule, example_inputs
+    ):
+        linear = LinearModule()
+        weight_qconfig = weight_observer_range_neg_127_to_127
+        converted_dqlinear = self._get_dqlinear_graph_module(
+            weight_qconfig, linear, example_inputs
+        )
+
+        # Only run test with partitioner
+        self.lower_module_and_test_output(
+            module=converted_dqlinear,
+            sample_inputs=example_inputs,
+            use_partitioner=True,
+            quantized=True,
+            quantized_dynamic=True,
+        )

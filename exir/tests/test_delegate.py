@@ -1,0 +1,332 @@
+# pyre-strict
+
+import unittest
+
+import executorch.exir as exir
+import executorch.exir.tests.models as models
+
+import torch
+from executorch.exir import CaptureConfig
+from executorch.exir.delegate import (
+    create_submodule_from_nodes,
+    executorch_call_delegate,  # noqa
+    generate_in_spec_out_spec,
+    LoweredBackendModule,
+)
+from executorch.exir.graph_module import get_exir_meta
+from executorch.exir.schema import (
+    BackendDelegate,
+    BackendDelegateDataReference,
+    DataLocation,
+    DelegateCall,
+)
+from executorch.exir.tests.common import register_additional_test_aten_ops
+from torch.testing import FileCheck
+
+
+class TestDelegate(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        register_additional_test_aten_ops()
+
+    def test_call_delegate(self) -> None:
+        def g(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            return x + y
+
+        inputs = (torch.ones(1, 3), torch.ones(1, 3))
+        edge_ir_m = exir.capture(g, inputs, CaptureConfig(pt2_mode=True)).to_edge()
+        lowered_module: LoweredBackendModule = LoweredBackendModule(
+            edge_ir_m, "BackendWithCompilerDemo", b"moo", []
+        )
+
+        def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            return torch.ops.executorch_call_delegate(lowered_module, x, y)
+
+        orig_res = f(*inputs)
+        gm = exir.capture(
+            f,
+            inputs,
+            exir.CaptureConfig(
+                pt2_mode=True, enable_functionalization=True, enable_dynamic_shape=True
+            ),
+        )
+        FileCheck().check("lowered_module_0").check(
+            "torch.ops.executorch_call_delegate"
+        ).run(gm.graph_module.code)
+        self.assertTrue(torch.allclose(orig_res, gm(*inputs)))
+
+    def test_to_backend(self) -> None:
+        """Check if we have patched a lowered module correctly (for delegation)"""
+
+        m = models.CompositeDelegateModule()
+
+        exec_prog = (
+            exir.capture(m, m.get_random_inputs(), exir.CaptureConfig(pt2_mode=True))
+            .to_edge()
+            .to_executorch()
+        )
+        graph_module = exec_prog.dump_graph_module()
+        program = exec_prog.program
+
+        # Check that there exists a call_delegate, representing the call to the
+        # delegated function
+        FileCheck().check("lowered_module_0").check(
+            "torch.ops.executorch_call_delegate"
+        ).run(graph_module.code)
+
+        # Check that there does not exist an add node (from the non-delegated
+        # BasicModuleAdd.forward function)
+        self.assertTrue(
+            torch.ops.aten.add not in {node.target for node in graph_module.graph.nodes}
+        )
+
+        for node in graph_module.graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target == torch.ops.executorch_call_delegate
+            ):
+                # Check that the first argument is the lowered backend module
+                # (which we got from a getattr)
+                self.assertEqual(node.args[0].op, "get_attr")
+                self.assertIs(
+                    getattr(graph_module, node.args[0].target), m.lowered_module
+                )
+
+        # Check the BackendDelegate object itself
+        delegate: BackendDelegate = program.execution_plan[0].delegates[0]
+        self.assertEqual(delegate.id, "backend_demo")
+        processed: BackendDelegateDataReference = delegate.processed
+        self.assertEqual(processed.location, DataLocation.INLINE)
+        self.assertLess(processed.index, len(program.backend_delegate_data))
+        self.assertEqual(
+            program.backend_delegate_data[processed.index].data, b"basic_module_add"
+        )
+
+        # Check the delegate instruction
+        self.assertTrue(
+            isinstance(
+                program.execution_plan[0].chains[0].instructions[0].instr_args,
+                DelegateCall,
+            )
+        )
+
+    def test_cannot_assign_attr(self) -> None:
+        deleg = LoweredBackendModule(None, "", b"", [])  # pyre-ignore
+        with self.assertRaises(AttributeError):
+            deleg.backend_id = "123"  # pyre-ignore
+
+    def test_create_submodule_single_return(self) -> None:
+        """
+        Original graph:
+            add_tensor = add(x, y)
+            mul_tensor = mul(add_tensor, y)
+            sub_tensor = sub(mul_tensor, y)
+            div_tensor = div(sub_tensor, y)
+            return [div_tensor]
+
+        Partitioned graph:
+            add_tensor = add(x, y)
+            mul_tensor = mul(add_tensor, y)
+            return [mul_tensor]  # Output is pytree.flatten-ed
+
+        Final graph:
+            partitioned_res = partitioned_graph(x, y)
+            getitem_0 = partitioned_res[0]
+            sub_tensor = sub(getitem_0, y)
+            div_tensor = div(sub_tensor, y)
+            return [div_tensor]
+        """
+        inputs = (torch.randn(1, 3), torch.randn(1, 3))
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                x = x + y
+                x = x * y
+                x = x - y
+                x = x / y
+                return x
+
+        orig_res = Model()(*inputs)
+        prog = exir.capture(Model(), inputs, CaptureConfig(pt2_mode=True)).to_edge()
+        gm = prog.graph_module
+
+        node_list = []
+        for node in gm.graph.nodes:
+            if node.op == "call_function" and node.target in {
+                torch.ops.aten.add.Tensor,
+                torch.ops.aten.mul.Tensor,
+            }:
+                node_list.append(node)
+
+        sub_gm, node = create_submodule_from_nodes(gm, node_list, "tag")
+        sub_gm.recompile()
+        gm.recompile()
+
+        for node in sub_gm.graph.nodes:
+            if node.op == "output":
+                self.assertEqual(len(node.args), 1)
+                self.assertTrue(isinstance(node.args[0], list))
+                self.assertEqual(len(node.args[0]), 1)
+
+        new_res = prog(*inputs)
+        self.assertTrue(torch.allclose(new_res, orig_res))
+
+    def test_create_submodule_multiple_return(self) -> None:
+        """
+        Original graph:
+            add_tensor = add(x, y)
+            mul_tensor = mul(add_tensor, y)
+            sub_tensor = sub(add_tensor, mul_tensor)
+            div_tensor = div(sub_tensor, mul_tensor)
+            return [div_tensor]
+
+        Partitioned graph:
+            add_tensor = add(x, y)
+            mul_tensor = mul(add_tensor, y)
+            return [add_tensor, mul_tensor]
+
+        Final graph:
+            partitioned_res = partitioned_graph(x, y)
+            getitem_0 = partitioned_res[0]
+            getitem_1 = partitioned_res[1]
+            sub_tensor = sub(getitem_0, getitem_1)
+            div_tensor = div(sub_tensor, getitem_1)
+            return [div_tensor]
+        """
+        inputs = (torch.randn(1, 3), torch.randn(1, 3))
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                x = x + y
+                y = x * y
+                x = x - y
+                x = x / y
+                return x
+
+        orig_res = Model()(*inputs)
+        prog = exir.capture(Model(), inputs, CaptureConfig(pt2_mode=True)).to_edge()
+        gm = prog.graph_module
+
+        node_list = []
+        for node in gm.graph.nodes:
+            if node.op == "call_function" and node.target in {
+                torch.ops.aten.add.Tensor,
+                torch.ops.aten.mul.Tensor,
+            }:
+                node_list.append(node)
+
+        sub_gm, node = create_submodule_from_nodes(gm, node_list, "tag")
+        sub_gm.recompile()
+        gm.recompile()
+
+        for node in sub_gm.graph.nodes:
+            if node.op == "output":
+                self.assertEqual(len(node.args), 1)
+                self.assertTrue(isinstance(node.args[0], list))
+                self.assertEqual(len(node.args[0]), 2)
+
+        new_res = prog(*inputs)
+        self.assertTrue(torch.allclose(new_res, orig_res))
+
+    def test_create_submodule_list_return(self) -> None:
+        """
+        Original graph:
+            split_tensor = split(x, 5)
+            getitem_0 = split_tensor[0]
+            sub_tensor = sub(getitem_0, y)
+            div_tensor = div(sub_tensor, y)
+            return [div_tensor]
+
+        Partitioned graph:
+            split_tensor = split(x, 5)
+            getitem_0 = split_tensor[0]
+            getitem_1 = split_tensor[1]
+            return [getitem_0, getitem_1]  # List output is "opened"
+
+        Final graph:
+            partitioned_res = partitioned_graph(x, y)
+            getitem_0 = partitioned_res[0]
+            sub_tensor = sub(getitem_0, y)
+            div_tensor = div(sub_tensor, y)
+            return [div_tensor]
+        """
+        inputs = (torch.randn(10), torch.randn(5))
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                x = torch.split(x, 5)
+                x = x[0] - y
+                x = x / y
+                return x
+
+        orig_res = Model()(*inputs)
+        prog = exir.capture(Model(), inputs, CaptureConfig(pt2_mode=True)).to_edge()
+        gm = prog.graph_module
+
+        node_list = []
+        for node in gm.graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target == torch.ops.aten.split_copy.Tensor
+            ):
+                node_list.append(node)
+
+        sub_gm, node = create_submodule_from_nodes(gm, node_list, "tag")
+
+        for node in sub_gm.graph.nodes:
+            if node.op == "output":
+                self.assertEqual(len(node.args), 1)
+                self.assertTrue(isinstance(node.args[0], list))
+                self.assertEqual(len(node.args[0]), 2)
+
+        new_res = prog(*inputs)
+        self.assertTrue(torch.allclose(new_res, orig_res))
+
+    def test_generate_in_out_spec_for_fused_submodules(self) -> None:
+        inputs = (torch.randn(1, 3), torch.randn(1, 3))
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                x = x + y
+                x = x * y
+                x = x - y
+                x = x / y
+                return x
+
+        gm = (
+            exir.capture(Model(), inputs, CaptureConfig(pt2_mode=True))
+            .to_edge()
+            .graph_module
+        )
+
+        node_list = []
+        for node in gm.graph.nodes:
+            if node.op == "call_function" and node.target in {
+                torch.ops.aten.add.Tensor,
+                torch.ops.aten.mul.Tensor,
+            }:
+                node_list.append(node)
+        sub_gm, node = create_submodule_from_nodes(gm, node_list, "tag")
+        sub_gm.recompile()
+        gm.recompile()
+        generate_in_spec_out_spec(sub_gm)
+        self.assertEqual(
+            "".join(str(get_exir_meta(sub_gm).in_spec).split()),
+            "TreeSpec(tuple,None,[*,*])",
+        )
+        self.assertEqual(
+            "".join(str(get_exir_meta(sub_gm).out_spec).split()),
+            "TreeSpec(tuple,None,[*])",
+        )

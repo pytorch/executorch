@@ -1,0 +1,111 @@
+# pyre-strict
+
+import unittest
+
+import torch
+import torchvision
+from executorch import exir
+from executorch.exir import CaptureConfig, EdgeCompileConfig
+from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
+from executorch.exir.passes.spec_prop_pass import SpecPropPass
+from executorch.exir.tracer import ExirDynamoConfig
+from torch.ao.ns.fx.utils import compute_sqnr
+from torch.ao.quantization import get_default_qconfig, QConfigMapping  # @manual
+from torch.ao.quantization._quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.backend_config._qnnpack_pt2e import (
+    get_qnnpack_pt2e_backend_config,
+)
+from torch.ao.quantization.quantize_fx import convert_to_reference_fx, prepare_fx
+from torch.testing import FileCheck
+from torch.testing._internal.common_quantization import skipIfNoQNNPACK
+from torch.testing._internal.common_quantized import override_quantized_engine
+
+# load executorch out variant ops
+torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
+
+
+class TestQuantization(unittest.TestCase):
+    """prepare_pt2e and convert_pt2e are OSS APIs, the rest are all meta-only
+
+    APIs for now, but we plan to open source them in the future
+    """
+
+    @skipIfNoQNNPACK
+    def test_resnet(self) -> None:
+        import copy
+
+        with override_quantized_engine("qnnpack"):
+            torch.backends.quantized.engine = "qnnpack"
+            example_inputs = (torch.randn(1, 3, 224, 224),)
+            m = torchvision.models.resnet18().eval()  # pyre-ignore[16]
+            m_copy = copy.deepcopy(m)
+            # program capture
+            dynamo_config = ExirDynamoConfig(
+                capture_scalar_outputs=True,
+                guard_nn_modules=True,
+                dynamic_shapes=False,
+                specialize_int=True,
+                verbose=True,
+            )
+            capture_config = CaptureConfig(pt2_mode=True, _dynamo_config=dynamo_config)
+            exported_program = exir.capture(m, example_inputs, config=capture_config)
+            # TODO: probably need to support exported_program.to_aten()
+            m = exported_program.to_edge(
+                exir.EdgeCompileConfig(_check_ir_validity=False)
+            ).graph_module
+
+            backend_config = get_qnnpack_pt2e_backend_config()
+            qconfig = get_default_qconfig("qnnpack")
+            qconfig_mapping = QConfigMapping().set_global(qconfig)
+            m = prepare_pt2e(m, qconfig_mapping, example_inputs, backend_config)
+            self.assertEqual(
+                id(m.activation_post_process_3), id(m.activation_post_process_2)
+            )
+            after_prepare_result = m(*example_inputs)[0]
+            m = convert_pt2e(m)
+            after_quant_result = m(*example_inputs)[0]
+            # TODO: conv, conv_relu, linear delegation
+            # quantized ops to implement: add_relu
+            compile_config = EdgeCompileConfig(
+                passes=[QuantFusionPass(), SpecPropPass()],
+                _check_ir_validity=False,
+            )
+            m = exir.capture(m, example_inputs, config=capture_config).to_edge(
+                config=compile_config
+            )
+            FileCheck().check(
+                "torch.ops.quantized_decomposed.quantize_per_tensor"
+            ).check("torch.ops.quantized_decomposed.add_relu.default").check(
+                "torch.ops.quantized_decomposed.dequantize_per_tensor"
+            ).run(
+                m.code
+            )
+            # after_quant_fusion_result = m(*example_inputs)[0]
+
+            # TODO: implement torch.ops.quantized_decomposed.add_relu.out
+            # m = m.to_executorch().dump_graph_module()
+            # after_to_executorch = m(*example_inputs)[0]
+            # test the result before and after to_executorch matches
+            # TODO: debug why this is a mismatch
+            # self.assertTrue(torch.equal(after_quant_fusion_result, after_to_executorch))
+            # self.assertEqual(compute_sqnr(after_quant_fusion_result, after_to_executorch), torch.tensor(float("inf")))
+
+            # comparing with existing fx graph mode quantization reference flow
+            m_fx = prepare_fx(m_copy, qconfig_mapping, example_inputs)
+            after_prepare_result_fx = m_fx(*example_inputs)
+            m_fx = convert_to_reference_fx(m_fx)  # , backend_config=backend_config)
+            after_quant_result_fx = m_fx(*example_inputs)
+
+            # the result matches exactly after prepare
+            self.assertTrue(
+                torch.allclose(after_prepare_result, after_prepare_result_fx, atol=1e-6)
+            )
+
+            # there are slight differences after convert due to different implementations
+            # of quant/dequant
+            self.assertTrue(
+                torch.max(after_quant_result - after_quant_result_fx) < 1e-1
+            )
+            self.assertTrue(
+                compute_sqnr(after_quant_result, after_quant_result_fx) > 35
+            )

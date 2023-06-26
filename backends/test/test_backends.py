@@ -1,0 +1,1366 @@
+import unittest
+from typing import Dict, List
+
+import executorch.exir as exir
+
+import torch
+from executorch.backends.backend_api import (
+    LoweredBackendModule,
+    to_backend,
+    to_backend_multiple,
+)
+from executorch.backends.compile_spec_schema import CompileSpec
+from executorch.backends.partitioner import DelegationSpec, Partitioner
+
+# import the backend implementation
+from executorch.backends.test.backend_with_compiler_demo import BackendWithCompilerDemo
+from executorch.backends.test.hta_partitioner_demo import (
+    HTAPartitionerMultiplePatternsDemo,
+    HTAPartitionerOnePatternDemo,
+)
+from executorch.backends.test.op_partitioner_demo import (
+    AddAttributePartitionerDemo,
+    AddMulPartitionerDemo,
+)
+from executorch.backends.test.qnn_backend_demo import QnnBackend
+from executorch.exir import (
+    edge_dialect_to_executorch,
+    edge_dialect_to_executorch_multiple,
+)
+
+from executorch.exir.delegate import executorch_call_delegate, get_lowered_submodules
+from executorch.exir.graph_module import ExportGraphModule, get_control_flow_submodules
+from executorch.exir.print_program import print_program
+from executorch.exir.schema import (
+    BackendDelegate,
+    BackendDelegateDataReference,
+    DataLocation,
+    DelegateCall,
+    Program,
+)
+
+# pyre-ignore[21]: Could not find module `executorch.pybindings.portable`.
+from executorch.pybindings.portable import _load_for_executorch_from_buffer  # @manual
+from executorch.pytree import tree_flatten
+
+from functorch.experimental import control_flow
+from torch.ao.quantization import get_default_qconfig_mapping  # @manual
+from torch.ao.quantization.backend_config.executorch import (
+    get_executorch_backend_config,
+)
+from torch.ao.quantization.quantize_fx import (
+    _convert_to_reference_decomposed_fx,
+    prepare_fx,
+)
+from torch.testing import FileCheck
+
+
+torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
+
+
+def vary_segments(test_method):
+    """A decorator that calls the test method with `extract_segments` set to
+    True and False.
+
+    Decorated test methods must expect a boolean parameter named
+    `extract_segments`, and they should pass that value to to_executorch() like:
+
+        m.to_executorch(
+            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments)
+        )
+
+    This will cause the delegate data blobs to be extracted from the program and
+    serialized as separate, freeable program segments. Backends should detect no
+    difference at runtime.
+    """
+
+    def wrapper(self):
+        for extract_segments in [False, True]:
+            # subTest will create a different top-level test entry for each
+            # value, whose full names have a suffix like
+            # "(extract_segments=True)".
+            with self.subTest(extract_segments=extract_segments):
+                test_method(self, extract_segments=extract_segments)
+
+    return wrapper
+
+
+class TestBackends(unittest.TestCase):
+    def check_delegate_input(
+        self, delegate: LoweredBackendModule, input_len: int
+    ) -> None:
+        counter = 0
+        for node in delegate._original_module.graph.nodes:
+            if node.op == "placeholder":
+                counter += 1
+        self.assertEqual(counter, input_len)
+
+    def check_backend_delegate(
+        self,
+        program: Program,
+        delegate: BackendDelegate,
+        expected_id: str,
+        expected_processed: bytes,
+    ) -> None:
+        self.assertEqual(delegate.id, expected_id)
+        processed: BackendDelegateDataReference = delegate.processed
+        self.assertEqual(processed.location, DataLocation.INLINE)
+        self.assertLess(processed.index, len(program.backend_delegate_data))
+        self.assertEqual(
+            program.backend_delegate_data[processed.index].data, expected_processed
+        )
+
+    def test_simple(self):
+        class SinModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        sin_module = SinModule()
+        model_inputs = (torch.ones(1),)
+        expected_res = sin_module(*model_inputs)
+        edgeir_m = exir.capture(
+            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
+
+        lowered_sin_module = to_backend("BackendWithCompilerDemo", edgeir_m, [])
+        new_res = lowered_sin_module(*model_inputs)
+
+        self.assertTrue(torch.allclose(new_res, expected_res))
+
+        # TODO(tkaruturi): emitting single LoweredBackendModule
+        # program = exir.capture(graph_module).to_edge().to_exectorch().program
+
+    @vary_segments
+    def test_backend_with_compiler(self, extract_segments: bool):
+        class SinModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            # TODO(chenlai): add a test with a diffrent method name when
+            # it's resolved in compiler side.
+            def forward(self, x):
+                return torch.sin(x)
+
+        sin_module = SinModule()
+        model_inputs = (torch.ones(1),)
+        edgeir_m = exir.capture(
+            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
+        max_value = model_inputs[0].shape[0]
+        compile_specs = [CompileSpec("max_value", bytes([max_value]))]
+        lowered_sin_module = to_backend(
+            "BackendWithCompilerDemo", edgeir_m, compile_specs
+        )
+
+        class CompositeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered_linear_sin = lowered_sin_module
+
+            def forward(self, x):
+                return self.lowered_linear_sin(x)
+
+        composite_model = CompositeModule()
+        model_inputs = (torch.ones(1),)
+
+        composite_model(*model_inputs)
+
+        exec_prog = (
+            exir.capture(
+                composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
+            )
+            .to_edge()
+            .to_executorch(
+                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments)
+            )
+        )
+        graph_module = exec_prog.dump_graph_module()
+
+        # Check that there is not an aten.sin node.
+        self.assertTrue(
+            torch.ops.aten.sin not in {node.target for node in graph_module.graph.nodes}
+        )
+
+        # Check that there exists a call_delegate, representing the call to the
+        # delegated function
+        FileCheck().check("torch.ops.executorch_call_delegate").run(graph_module.code)
+        lowered_submodules = get_lowered_submodules(graph_module)
+        self.assertEqual(len(lowered_submodules), 1)
+
+        for node in graph_module.graph.nodes:
+            if node.op == "call_function" and node.target == executorch_call_delegate:
+                # Check that first arg is lowered_module_{unique_id}
+                self.assertEqual(node.args[0].target, "lowered_module_0")
+
+        program = exec_prog.program
+
+        # Check the program can be printed
+        print_program(program)
+
+        # Check the backend delegate
+        self.check_backend_delegate(
+            program=program,
+            delegate=program.execution_plan[0].delegates[0],
+            expected_id=BackendWithCompilerDemo.__name__,
+            expected_processed=b"1#op:demo::sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
+        )
+
+        # Check the delegate instruction
+        self.assertTrue(
+            isinstance(
+                program.execution_plan[0].chains[0].instructions[0].instr_args,
+                DelegateCall,
+            )
+        )
+        buff = exec_prog.buffer
+
+        # pyre-ignore[16]: Module `executorch.pybindings` has no attribute `portable`.
+        executorch_module = _load_for_executorch_from_buffer(buff)
+        model_inputs = torch.ones(1)
+        model_outputs = executorch_module.forward([model_inputs])
+        self.assertEqual(
+            model_inputs,
+            torch.ones(1),
+        )
+        expected_output = 0.8333 * torch.ones(1)
+
+        self.assertTrue(
+            torch.allclose(model_outputs[0], expected_output, atol=1e-03, rtol=1e-03)
+        )
+
+    @vary_segments
+    def test_lowered_add_mul(self, extract_segments: bool):
+        class AddMulModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, a, x, b):
+                y = torch.mm(a, x)
+                z = torch.add(y, b)
+                return z
+
+        add_mul_module = AddMulModule()
+        model_inputs = (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
+        edge_graph_module = exir.capture(
+            add_mul_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
+        max_value = model_inputs[0].shape[0]
+        compile_specs = [CompileSpec("max_value", bytes([max_value]))]
+        lowered_add_mul = to_backend(
+            "BackendWithCompilerDemo", edge_graph_module, compile_specs
+        )
+
+        class CompositeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered_add_mul = lowered_add_mul
+
+            def forward(self, a, x, b):
+                return self.lowered_add_mul(a, x, b)
+
+        composite_model = CompositeModule()
+
+        composite_model(*model_inputs)
+
+        exec_prog = (
+            exir.capture(
+                composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
+            )
+            .to_edge()
+            .to_executorch(
+                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments)
+            )
+        )
+        buff = exec_prog.buffer
+
+        # pyre-ignore[16]: Module `executorch.pybindings` has no attribute `portable`.
+        executorch_module = _load_for_executorch_from_buffer(buff)
+        inputs_flattened, _ = tree_flatten(model_inputs)
+        model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
+        ref_output = add_mul_module(*model_inputs)
+
+        self.assertTrue(
+            torch.allclose(model_output[0], ref_output, atol=1e-03, rtol=1e-03)
+        )
+
+    def run_model_in_unsupported_backend(self, extract_segments: bool):
+        class SinModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        sin_module = SinModule()
+        # the backend only  accepts shape <= 4
+        model_inputs = (torch.ones(6),)
+        edgeir_m = exir.capture(
+            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
+        max_value = model_inputs[0].shape[0]
+        compile_specs = [CompileSpec("max_value", bytes([max_value]))]
+        lowered_sin_module = to_backend(
+            "BackendWithCompilerDemo", edgeir_m, compile_specs
+        )
+
+        class CompositeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered_linear_sin = lowered_sin_module
+
+            def forward(self, x):
+                return self.lowered_linear_sin(x)
+
+        composite_model = CompositeModule()
+        model_inputs = (torch.ones(1),)
+
+        composite_model(*model_inputs)
+
+        exec_prog = (
+            exir.capture(
+                composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
+            )
+            .to_edge()
+            .to_executorch(
+                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            )
+        )
+
+        buff = exec_prog.buffer
+
+        # This line should raise an exception like
+        # RuntimeError: failed with error 0x12
+        # pyre-ignore[16]: Module `executorch.pybindings` has no attribute `portable`.
+        _load_for_executorch_from_buffer(buff)
+
+    @vary_segments
+    def test_backend_with_compiler_out_of_range(self, extract_segments: bool):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "initializing executor for method forward failed with error 0x:12",
+        ):
+            self.run_model_in_unsupported_backend(extract_segments=extract_segments)
+
+    @vary_segments
+    def test_backend_with_compiler_delegate_and_operator(self, extract_segments: bool):
+        # Test includes both delegates and operator
+        # import the backend implementation
+        from executorch.backends.test.backend_with_compiler_demo import (
+            BackendWithCompilerDemo,
+        )
+
+        class SinModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            # TODO(chenlai): add a test with a diffrent method name when
+            # it's resolved in compiler side.
+            def forward(self, x):
+                return [torch.sin(x)]
+
+        sin_module = SinModule()
+        model_inputs = (torch.ones(1),)
+        edgeir_m = exir.capture(
+            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
+        max_value = model_inputs[0].shape[0]
+        compile_specs = [CompileSpec("max_value", bytes([max_value]))]
+        lowered_sin_module = to_backend(
+            "BackendWithCompilerDemo", edgeir_m, compile_specs
+        )
+
+        class CompositeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered_linear_sin = lowered_sin_module
+
+            def forward(self, x):
+                a = self.lowered_linear_sin(x)[0]
+                b = self.lowered_linear_sin(x)[0]
+                return torch.add(a, b)
+
+        composite_model = CompositeModule()
+        model_inputs = (torch.ones(1),)
+
+        composite_model(*model_inputs)
+
+        exec_prog = (
+            exir.capture(
+                composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
+            )
+            .to_edge()
+            .to_executorch(
+                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            )
+        )
+        graph_module = exec_prog.dump_graph_module()
+        program = exec_prog.program
+        buff = exec_prog.buffer
+
+        # Check that there is not an aten.sin node.
+        self.assertTrue(
+            torch.ops.aten.sin not in {node.target for node in graph_module.graph.nodes}
+        )
+
+        # Check that there exists a call_delegate op, representing the call to the
+        # delegated function
+        FileCheck().check("torch.ops.executorch_call_delegate").run(graph_module.code)
+
+        for node in graph_module.graph.nodes:
+            if node.op == "call_function" and node.target == executorch_call_delegate:
+                # Check that first arg is lowered_module_{unique_id}
+                self.assertEqual(node.args[0].target, "lowered_module_0")
+
+        # Check the backend delegate
+        self.check_backend_delegate(
+            program=program,
+            delegate=program.execution_plan[0].delegates[0],
+            expected_id=BackendWithCompilerDemo.__name__,
+            expected_processed=b"1#op:demo::sin.default, numel:1, dtype:torch.float32<debug_handle>1#",
+        )
+
+        # Check the delegate instruction
+        self.assertTrue(
+            isinstance(
+                program.execution_plan[0].chains[0].instructions[0].instr_args,
+                DelegateCall,
+            )
+        )
+
+        # pyre-ignore[16]: Module `executorch.pybindings` has no attribute `portable`.
+        executorch_module = _load_for_executorch_from_buffer(buff)
+        model_inputs = torch.ones(1)
+
+        model_outputs = executorch_module.forward([model_inputs])
+
+        self.assertEqual(
+            model_inputs,
+            torch.ones(1),
+        )
+        expected_output = 1.666667 * torch.ones(1)
+
+        self.assertTrue(
+            torch.allclose(model_outputs[0], expected_output, atol=1e-03, rtol=1e-03)
+        )
+
+    def test_backend_with_compiler_backend_runtime_exception(self):
+        class SinModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            # TODO(chenlai): add a test with a diffrent method name when
+            # it's resolved in compiler side.
+            def forward(self, x):
+                return torch.sin(x) + torch.cos(x)
+
+        sin_module = SinModule()
+        model_inputs = (torch.ones(1),)
+        edgeir_m = exir.capture(
+            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
+        error_msg = r"call_function cos.default is not supported in backend BackendWithCompilerDemo"
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            error_msg,
+        ):
+            _ = to_backend("BackendWithCompilerDemo", edgeir_m, [])
+
+    def test_backend_with_compiler_backend_not_found_exception(self):
+        class SinModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            # TODO(chenlai): add a test with a diffrent method name when
+            # it's resolved in compiler side.
+            def forward(self, x):
+                return torch.sin(x) + torch.cos(x)
+
+        sin_module = SinModule()
+        model_inputs = (torch.ones(1),)
+        edgeir_m = exir.capture(
+            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
+        error_msg = r"Backend FakeBackendWithCompilerDemo was not found."
+
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            error_msg,
+        ):
+            _ = to_backend("FakeBackendWithCompilerDemo", edgeir_m, [])
+
+    @vary_segments
+    def test_backend_with_compiler_delegate_and_operator_with_two_modules(
+        self, extract_segments: bool
+    ):
+        # the submodule runs in a specific backend. In this example, `BackendWithCompilerDemo` backend
+        class LowerableSubModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        # sin_module is an nn.Module
+        to_be_lowered = LowerableSubModel()
+        example_input = (torch.ones(1),)
+        to_be_lowered_exir_submodule = (
+            exir.capture(
+                to_be_lowered, example_input, exir.CaptureConfig(pt2_mode=True)
+            )
+            .to_edge()
+            .graph_module
+        )
+
+        max_value = example_input[0].shape[0]
+        compile_specs = [CompileSpec("max_value", bytes([max_value]))]
+        lowered_module = to_backend(
+            "BackendWithCompilerDemo", to_be_lowered_exir_submodule, compile_specs
+        )
+
+        class NonLowerableSubModel(torch.nn.Module):
+            def __init__(self, bias):
+                super().__init__()
+                self.bias = bias
+
+            def forward(self, a, b):
+                return torch.add(torch.add(a, b), self.bias)
+
+        # the composite modules, including lower part and non-lowerpart
+        class CompositeModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.non_lowerable = NonLowerableSubModel(torch.ones(1) * 0.3)
+                self.lowerable = lowered_module
+
+            def forward(self, x):
+                a = self.lowerable(x)[0]
+                b = self.lowerable(a)[0]
+                ret = self.non_lowerable(a, b)
+                return a, b, ret
+
+        composite_model = CompositeModel()
+
+        # Prepare the model input
+        model_inputs = (torch.ones(1),)
+
+        # Verify the input works with eager module
+        composite_model(*model_inputs)
+
+        exec_prog = (
+            exir.capture(
+                composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
+            )
+            .to_edge()
+            .to_executorch(
+                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            )
+        )
+        flatbuffer = exec_prog.buffer
+
+        # pyre-ignore[16]: Module `executorch.pybindings` has no attribute `portable`.
+        executorch_module = _load_for_executorch_from_buffer(flatbuffer)
+        model_outputs = executorch_module.forward([*model_inputs])
+
+        expected_outputs = [
+            0.8333 * torch.ones(1),
+            0.7369 * torch.ones(1),
+            1.8702 * torch.ones(1),
+        ]
+
+        for index, expected_output in enumerate(expected_outputs):
+            self.assertTrue(
+                torch.allclose(
+                    model_outputs[index], expected_output, atol=1e-03, rtol=1e-03
+                )
+            )
+
+    @vary_segments
+    def test_partition_delegate_graph_with_multiple_patterns(
+        self, extract_segments: bool
+    ):
+        class CompositeModel(torch.nn.Module):
+            def __init__(self, _weight):
+                super().__init__()
+                self.weight = _weight
+                self.lstm = torch.nn.LSTM(
+                    input_size=32,
+                    hidden_size=32,
+                    num_layers=1,
+                )
+                self.conv = torch.nn.Conv1d(1, 1, 1, stride=2)
+
+            def forward(self, x_raw, h, c):
+                output, (hn, cn) = self.lstm(x_raw, (h, c))
+                k = self.conv(output)
+                x = output
+                y = cn
+                a = torch.sub(x, y)
+                b = torch.sub(x, a)
+                c = torch.sub(x, b)
+                d = torch.add(x, self.weight)
+                e = torch.mul(c, d)
+                return e, hn, k
+
+        # Prepare input and trace it
+        input_x = torch.ones([1, 32])
+        input_h = torch.ones([1, 32])
+        input_c = torch.ones([1, 32])
+        inputs = (input_x, input_h, input_c)
+
+        composite_m = CompositeModel(3)
+        orig_res = composite_m(*inputs)
+
+        traced = (
+            exir.capture(composite_m, inputs, exir.CaptureConfig(pt2_mode=True))
+            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            .graph_module
+        )
+
+        program_without_delegates = (
+            exir.capture(
+                composite_m,
+                (input_x, input_h, input_c),
+                exir.CaptureConfig(pt2_mode=True),
+            )
+            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            .to_executorch(
+                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            )
+        )
+        # after this step, part of the graph will be lowered to backend, depending on
+        # HTAPartitionerDemo's rule.
+        program_with_delegates = edge_dialect_to_executorch(
+            to_backend(traced, HTAPartitionerMultiplePatternsDemo),
+            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+        )
+
+        new_res = program_with_delegates.dump_graph_module()(*inputs)
+        for t1, t2 in zip(new_res, orig_res):
+            self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
+
+        # Check the backend delegate
+        self.check_backend_delegate(
+            program=program_with_delegates.program,
+            delegate=program_with_delegates.program.execution_plan[0].delegates[0],
+            expected_id=QnnBackend.__name__,
+            expected_processed=b"imqnncompiled",
+        )
+
+        # Check add not in the program with delegates
+        self.assertEqual(
+            0,
+            len(
+                [
+                    op
+                    for op in program_with_delegates.program.execution_plan[0].operators
+                    if op.name == "aten::sub"
+                ]
+            ),
+        )
+
+        # Check convolution not in the program with delegates
+        self.assertEqual(
+            0,
+            len(
+                [
+                    op
+                    for op in program_with_delegates.program.execution_plan[0].operators
+                    if op.name == "aten::convolution"
+                ]
+            ),
+        )
+
+        # Check convolution in the program without delegates
+        self.assertEqual(
+            1,
+            len(
+                [
+                    op
+                    for op in program_without_delegates.program.execution_plan[
+                        0
+                    ].operators
+                    if op.name == "aten::convolution"
+                ]
+            ),
+        )
+
+    @vary_segments
+    def test_partition_delegate_graph_with_one_patterns(self, extract_segments: bool):
+        class CompositeModel(torch.nn.Module):
+            def __init__(self, _weight):
+                super().__init__()
+                self.weight = _weight
+                self.lstm = torch.nn.LSTM(
+                    input_size=32,
+                    hidden_size=32,
+                    num_layers=1,
+                )
+                self.conv = torch.nn.Conv1d(1, 1, 1, stride=2)
+
+            def forward(self, x_raw, h, c):
+                output, (hn, cn) = self.lstm(x_raw, (h, c))
+                k = self.conv(output)
+                x = output
+                y = cn
+                a = torch.sub(x, y)
+                b = torch.sub(x, a)
+                c = torch.sub(x, b)
+                d = torch.add(x, self.weight)
+                e = torch.mul(c, d)
+                return e, hn, k
+
+        # Prepare input and trace it
+        input_x = torch.ones([1, 32])
+        input_h = torch.ones([1, 32])
+        input_c = torch.ones([1, 32])
+        inputs = (input_x, input_h, input_c)
+
+        composite_m = CompositeModel(3)
+        orig_res = composite_m(*inputs)
+
+        traced = (
+            exir.capture(composite_m, inputs, exir.CaptureConfig(pt2_mode=True))
+            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            .graph_module
+        )
+
+        program_without_delegates = (
+            exir.capture(
+                composite_m,
+                (input_x, input_h, input_c),
+                exir.CaptureConfig(pt2_mode=True),
+            )
+            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            .to_executorch(
+                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            )
+        )
+        # after this step, part of the graph will be lowered to backend, depending on
+        # HTAPartitionerDemo's rule.
+        traced_with_delegate = to_backend(traced, HTAPartitionerOnePatternDemo)
+
+        new_res = traced_with_delegate(*inputs)
+        for t1, t2 in zip(new_res, orig_res):
+            self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
+
+        program_with_delegates = edge_dialect_to_executorch(
+            traced_with_delegate,
+            exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+        )
+
+        # TODO(T143084047): Currently not retraceable
+        # Retracing is not needed, but keeping this here to make sure the result
+        # of to_backend is retraceable
+        # graph_module_with_delegate = exir.capture(
+        #     traced_with_delegate,
+        #     (input_x, input_h, input_c),
+        #     exir.CaptureConfig(pt2_mode=True),
+        # ).to_edge()
+
+        # program_with_delegates = graph_module_with_delegate.to_executorch(
+        #     config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+        # )
+
+        new_res = program_with_delegates.dump_graph_module()(*inputs)
+        for t1, t2 in zip(new_res, orig_res):
+            self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
+
+        # Check the backend delegate
+        self.check_backend_delegate(
+            program=program_with_delegates.program,
+            delegate=program_with_delegates.program.execution_plan[0].delegates[0],
+            expected_id=QnnBackend.__name__,
+            expected_processed=b"imqnncompiled",
+        )
+
+        # Check add is in the program with delegates
+        self.assertEqual(
+            1,
+            len(
+                [
+                    op
+                    for op in program_with_delegates.program.execution_plan[0].operators
+                    if op.name == "aten::sub"
+                ]
+            ),
+        )
+
+        # Check convolution not in the program with delegates
+        self.assertEqual(
+            0,
+            len(
+                [
+                    op
+                    for op in program_with_delegates.program.execution_plan[0].operators
+                    if op.name == "aten::convolution"
+                ]
+            ),
+        )
+
+        # Check convolution in the program without delegates
+        self.assertEqual(
+            1,
+            len(
+                [
+                    op
+                    for op in program_without_delegates.program.execution_plan[
+                        0
+                    ].operators
+                    if op.name == "aten::convolution"
+                ]
+            ),
+        )
+
+    @vary_segments
+    def test_add_mul_partitioner(self, extract_segments: bool):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, a, x, b):
+                y = torch.mm(a, x)
+                z = y + b
+                a = z - a
+                y = torch.mm(a, x)
+                z = y + b
+                return z
+
+        m = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+        orig_res = m(*inputs)
+
+        gm = (
+            exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True))
+            .to_edge()
+            .graph_module
+        )
+        executorch_prog = edge_dialect_to_executorch(
+            to_backend(gm, AddMulPartitionerDemo),
+            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+        )
+
+        new_res = executorch_prog.dump_graph_module()(*inputs)
+        self.assertTrue(torch.allclose(new_res[0], orig_res))
+
+        counter = 0
+        for node in executorch_prog.dump_graph_module().graph.nodes:
+            if node.op == "get_attr":
+                self.assertEqual(node.target, f"lowered_module_{counter}")
+                counter += 1
+        # There should be 2 delegated modules
+        self.assertEqual(counter, 2)
+
+        # pyre-ignore[16]: Module `executorch.pybindings` has no attribute `portable`.
+        executorch_module = _load_for_executorch_from_buffer(executorch_prog.buffer)
+        inputs_flattened, _ = tree_flatten(inputs)
+        model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
+        ref_output = m(*inputs)
+
+        self.assertTrue(
+            torch.allclose(model_output[0], ref_output, atol=1e-03, rtol=1e-03)
+        )
+
+    @vary_segments
+    def test_partitioner_with_attributes(self, extract_segments: bool):
+        """
+        Check that if we tag the getattr nodes, the attributes will be added to
+        the lowered submodule rather than being passed into the delegate as
+        inputs.
+        """
+
+        class AddOne(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.one = torch.ones(1, 3)
+
+            def forward(self, x):
+                return x + self.one
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.add_one = AddOne()
+
+            def forward(self, x, y):
+                x = self.add_one(x) * y
+                return self.add_one(x)
+
+        inputs = (torch.randn(1, 3), torch.randn(1, 3))
+        orig_res = Model()(*inputs)
+        gm = (
+            exir.capture(Model(), inputs, exir.CaptureConfig(pt2_mode=True))
+            .to_edge()
+            .graph_module
+        )
+        executorch_prog = edge_dialect_to_executorch(
+            to_backend(gm, AddAttributePartitionerDemo),
+            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+        )
+
+        # Check the delegated submodules
+        lowered_submodules = get_lowered_submodules(executorch_prog.dump_graph_module())
+        self.assertEqual(len(lowered_submodules), 2)
+        for _, lowered_submodule, _ in lowered_submodules:
+            # Attributes should be stored in the lowered module
+            self.check_delegate_input(lowered_submodule, 1)
+
+        executorch_prog.buffer
+
+        new_res = executorch_prog.dump_graph_module()(*inputs)
+        self.assertTrue(torch.allclose(orig_res, new_res[0]))
+
+    def test_bad_partitioner(self):
+        """
+        Checks that we throw an error if user provided partitioner modifies the
+        graph module
+        """
+        inputs = (torch.randn(1, 3), torch.randn(1, 3))
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                x = x + y
+                x = x * y
+                x = x - y
+                x = x / y
+                x = x * y
+                x = x + y
+                return x
+
+        class BadPartitioner(Partitioner):
+            partition_tags = {"tag1": DelegationSpec("BackendWithCompilerDemo", [])}
+
+            def partition(self, edge_graph_module):
+                # Partitioner should not modify the given graph module
+                for node in edge_graph_module.graph.nodes:
+                    if (
+                        node.op == "call_function"
+                        and node.target == torch.ops.aten.add.Tensor
+                    ):
+                        node.target = torch.ops.aten.mul.Tensor
+                return edge_graph_module
+
+        gm = (
+            exir.capture(Model(), inputs, exir.CaptureConfig(pt2_mode=True))
+            .to_edge()
+            .graph_module
+        )
+        with self.assertRaises(AssertionError):
+            _ = to_backend(gm, BadPartitioner)
+
+    def test_quantized_with_delegate(self) -> None:
+        torch.ops.load_library(
+            "//executorch/kernels/quantized:custom_ops_generated_lib"
+        )
+        qconfig_mapping = get_default_qconfig_mapping("qnnpack")
+        in_size = 2
+        input_size = 3
+        output_size = 4
+        linear = torch.nn.Linear(input_size, output_size).eval()
+        example_inputs = (torch.ones(in_size, input_size),)
+        prepared_linear = prepare_fx(
+            linear,
+            qconfig_mapping,
+            example_inputs,
+            backend_config=get_executorch_backend_config(),
+        )
+        converted_linear: torch.nn.Module = _convert_to_reference_decomposed_fx(
+            prepared_linear,
+        )
+
+        # fails to trace here
+        converted_linear_gm = exir.capture(
+            converted_linear,
+            example_inputs,
+            exir.CaptureConfig(
+                pt2_mode=True,
+                enable_functionalization=False,
+            ),
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+        FileCheck().check_count("quantize_per_tensor.default", 3).check("addmm").run(
+            converted_linear_gm.code
+        )
+
+    def test_partition_with_control_flow(self) -> None:
+        def true_fn(x, y):
+            x = x - y
+            x = x + y
+            x = x - y
+            return x
+
+        def false_fn(x, y):
+            x = x - y
+            x = torch.mm(x, y)
+            x = x - y
+            return x
+
+        def f(x, y):
+            x = x + y
+            x = control_flow.cond(x[0][0] == 1, true_fn, false_fn, [x, y])
+            x = x - y
+            return x
+
+        inputs = (torch.ones(2, 2), torch.ones(2, 2))
+        orig_res = f(*inputs)
+        orig = (
+            exir.capture(
+                f,
+                inputs,
+                exir.CaptureConfig(pt2_mode=True),
+            )
+            .to_edge()
+            .graph_module
+        )
+
+        partitioned = to_backend(orig, AddMulPartitionerDemo)
+
+        new_res = partitioned(*inputs)
+        self.assertTrue(torch.allclose(orig_res, new_res[0]))
+
+        toplevel_lowered = get_lowered_submodules(partitioned)
+        self.assertEqual(len(toplevel_lowered), 1)
+        FileCheck().check("torch.ops.aten.add.Tensor").run(
+            toplevel_lowered[0][1].original_module.code
+        )
+
+        # Toplevel module only has the cond submodules
+        partitioned_submodules = get_control_flow_submodules(partitioned)
+        self.assertEqual(len(partitioned_submodules), 2)
+
+        true_gm = partitioned_submodules[0][1]
+        true_lowered = get_lowered_submodules(true_gm)
+        self.assertEqual(len(true_lowered), 1)
+        FileCheck().check("torch.ops.aten.add.Tensor").run(
+            true_lowered[0][1].original_module.code
+        )
+
+        false_gm = partitioned_submodules[1][1]
+        false_lowered = get_lowered_submodules(false_gm)
+        self.assertEqual(len(true_lowered), 1)
+        FileCheck().check("torch.ops.aten.mm.default").run(
+            false_lowered[0][1].original_module.code
+        )
+
+    def test_partition_with_map(self) -> None:
+        def map_fn(x, y):
+            x = x - y
+            x = x + y
+            return x
+
+        def f(xs, y):
+            y = torch.mm(y, y)
+            return control_flow.map(map_fn, xs, y)
+
+        inputs = (torch.ones(2, 2), torch.ones(2, 2))
+        orig_res = f(*inputs)
+        orig = (
+            exir.capture(
+                f,
+                inputs,
+                exir.CaptureConfig(pt2_mode=True),
+            )
+            .to_edge()
+            .graph_module
+        )
+        partitioned = to_backend(orig, AddMulPartitionerDemo)
+
+        toplevel_lowered = get_lowered_submodules(partitioned)
+        self.assertEqual(len(toplevel_lowered), 1)
+        FileCheck().check("torch.ops.aten.mm.default").run(
+            toplevel_lowered[0][1].original_module.code
+        )
+
+        # Toplevel module only has the map submodule
+        partitioned_submodules = get_control_flow_submodules(partitioned)
+        self.assertEqual(len(partitioned_submodules), 1)
+
+        map_fn_gm = partitioned_submodules[0][1]
+        map_fn_lowered = get_lowered_submodules(map_fn_gm)
+        self.assertEqual(len(map_fn_lowered), 1)
+        FileCheck().check("torch.ops.aten.add.Tensor").run(
+            map_fn_lowered[0][1].original_module.code
+        )
+
+        new_res = partitioned(*inputs)
+
+        self.assertTrue(torch.allclose(orig_res, new_res[0]))
+
+    def test_partition_with_nested_control_flow(self) -> None:
+        """
+        Partitions the add and mul ops, including the ones inside the submodules
+        """
+
+        def true_nested(y):
+            y = y + y
+            y = torch.mm(y, y)
+            return y
+
+        def false_nested(y):
+            return torch.mm(y, y)
+
+        def true_fn(x, pred2):
+            z = control_flow.cond(pred2, true_nested, false_nested, [x])
+            return x + z
+
+        def false_fn(x, _):
+            return x.cos()
+
+        def map_fn(x, pred1, pred2, y):
+            x = x.cos()
+            y = control_flow.cond(pred1, true_fn, false_fn, [y, pred2])
+            x = x + y
+            return x.sin()
+
+        def f(xs, pred1, pred2, y):
+            y = torch.mm(y, y)
+            return control_flow.map(map_fn, xs, pred1, pred2, y)
+
+        inputs = (
+            torch.ones(2, 2),
+            torch.tensor([False]),
+            torch.Tensor([False]),
+            torch.ones(2, 2),
+        )
+
+        orig_res = f(*inputs)
+        orig = (
+            exir.capture(
+                f,
+                inputs,
+                exir.CaptureConfig(pt2_mode=True),
+            )
+            .to_edge()
+            .graph_module
+        )
+
+        partitioned = to_backend(orig, AddMulPartitionerDemo)
+
+        new_res = partitioned(*inputs)
+        self.assertTrue(torch.allclose(orig_res, new_res[0]))
+
+        toplevel_lowered = get_lowered_submodules(partitioned)
+        self.assertEqual(len(toplevel_lowered), 1)
+        FileCheck().check("torch.ops.aten.mm.default").run(
+            toplevel_lowered[0][1].original_module.code
+        )
+
+        # Toplevel module only has the map submodule
+        partitioned_submodules = get_control_flow_submodules(partitioned)
+        self.assertEqual(len(partitioned_submodules), 1)
+
+        # Map module has the cond submodules
+        map_submodules = get_control_flow_submodules(partitioned_submodules[0][1])
+        self.assertEqual(len(map_submodules), 2)
+
+        # True module
+        true_module = map_submodules[0][1]
+        true_lowered = get_lowered_submodules(true_module)
+        self.assertEqual(len(true_lowered), 1)
+        FileCheck().check("torch.ops.aten.add.Tensor").run(
+            true_lowered[0][1].original_module.code
+        )
+
+        # False module
+        false_lowered = get_lowered_submodules(map_submodules[1][1])
+        self.assertEqual(len(false_lowered), 0)
+
+        # True module has the nested cond submodules
+        true_submodules = get_control_flow_submodules(true_module)
+        self.assertEqual(len(true_submodules), 2)
+
+        # Nested True module
+        true_true_lowered = get_lowered_submodules(true_submodules[0][1])
+        self.assertEqual(len(true_true_lowered), 1)
+        FileCheck().check("torch.ops.aten.add.Tensor").check(
+            "torch.ops.aten.mm.default"
+        ).run(true_true_lowered[0][1].original_module.code)
+
+        # Nested False module
+        true_false_lowered = get_lowered_submodules(true_submodules[1][1])
+        self.assertEqual(len(true_false_lowered), 1)
+        FileCheck().check("torch.ops.aten.mm.default").run(
+            true_false_lowered[0][1].original_module.code
+        )
+
+    def test_list_input(self):
+        def f(x: List[torch.Tensor]):
+            y = x[0] + x[1]
+            return y
+
+        inputs = ([torch.randn(2, 2), torch.randn(2, 2)],)
+        edge_prog = exir.capture(f, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
+        lowered_gm = to_backend(BackendWithCompilerDemo.__name__, edge_prog, [])
+
+        class ComposedM(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered = lowered_gm
+
+            def forward(self, x: List[torch.Tensor]):
+                return self.lowered(x)
+
+        gm = exir.capture(
+            ComposedM(), inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
+        gm(*inputs)
+
+    def test_dict_input(self):
+        def f(x: Dict[str, torch.Tensor]):
+            y = x["a"] + x["b"]
+            return y
+
+        inputs = ({"a": torch.randn(2, 2), "b": torch.randn(2, 2)},)
+        edge_prog = exir.capture(f, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
+        lowered_gm = to_backend(BackendWithCompilerDemo.__name__, edge_prog, [])
+
+        class ComposedM(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered = lowered_gm
+
+            def forward(self, x: List[torch.Tensor]):
+                return self.lowered(x)
+
+        gm = exir.capture(
+            ComposedM(), inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
+        gm(*inputs)
+
+    def test_lower_multiple(self) -> None:
+        class MultipleMethodModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                return x + y * y
+
+            def method1(self, x: torch.Tensor) -> torch.Tensor:
+                return x + x - x
+
+            def method2(
+                self, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor
+            ) -> torch.Tensor:
+                return x + y - z
+
+        module = MultipleMethodModule()
+        method_name_to_args = {
+            "forward": (torch.rand(2, 2), torch.rand(2, 2)),
+            "method1": (torch.rand(2, 2),),
+            "method2": (torch.rand(2, 2), torch.rand(2, 2), torch.rand(2, 2)),
+        }
+
+        multi_method_prog = exir.capture_multiple(
+            module, method_name_to_args, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
+
+        lowered_multi_method_prog = to_backend_multiple(
+            multi_method_prog, AddMulPartitionerDemo
+        )
+
+        for method_name, args in method_name_to_args.items():
+            exported_prog = lowered_multi_method_prog.find_method(method_name)
+            self.assertIsNotNone(exported_prog)
+            exported_gm = exported_prog.graph_module
+            self.assertIsInstance(exported_gm, ExportGraphModule)
+
+            eager_method = getattr(module, method_name)
+            eager_results = eager_method(*args)
+            exported_results = exported_gm(*args)
+            self.assertTrue(torch.allclose(eager_results, exported_results[0]))
+
+            add_nodes = [
+                node
+                for node in exported_gm.graph.nodes
+                if node.op == "call_function"
+                and node.target == torch.ops.aten.add.Tensor
+            ]
+            self.assertEqual(len(add_nodes), 0)
+
+            lowered_submods = get_lowered_submodules(exported_gm)
+            self.assertEqual(len(lowered_submods), 1)
+
+        _ = edge_dialect_to_executorch_multiple(lowered_multi_method_prog)
+
+    def test_lower_multiple_selective(self) -> None:
+        class MultipleMethodModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                return x + y * y
+
+            def method1(self, x: torch.Tensor) -> torch.Tensor:
+                return x + x - x
+
+            def method2(
+                self, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor
+            ) -> torch.Tensor:
+                return x + y - z
+
+        module = MultipleMethodModule()
+        method_name_to_args = {
+            "forward": (torch.rand(2, 2), torch.rand(2, 2)),
+            "method1": (torch.rand(2, 2),),
+            "method2": (torch.rand(2, 2), torch.rand(2, 2), torch.rand(2, 2)),
+        }
+
+        multi_method_prog = exir.capture_multiple(
+            module, method_name_to_args, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
+
+        method_name_to_partitioners = {
+            "forward": AddMulPartitionerDemo,
+            "method1": AddMulPartitionerDemo,
+        }
+        lowered_multi_method_prog = to_backend_multiple(
+            multi_method_prog, method_name_to_partitioners
+        )
+
+        for method_name, args in method_name_to_args.items():
+            if method_name == "method2":
+                break
+
+            exported_prog = lowered_multi_method_prog.find_method(method_name)
+            self.assertIsNotNone(exported_prog)
+            exported_gm = exported_prog.graph_module
+            self.assertIsInstance(exported_gm, ExportGraphModule)
+
+            eager_method = getattr(module, method_name)
+            eager_results = eager_method(*args)
+            exported_results = exported_gm(*args)
+            self.assertTrue(torch.allclose(eager_results, exported_results[0]))
+
+            add_nodes = [
+                node
+                for node in exported_gm.graph.nodes
+                if node.op == "call_function"
+                and node.target == torch.ops.aten.add.Tensor
+            ]
+            self.assertEqual(len(add_nodes), 0)
+
+            lowered_submods = get_lowered_submodules(exported_gm)
+            self.assertEqual(len(lowered_submods), 1)
+
+        # Check that method2 had nothing lowered
+        method2_prog = lowered_multi_method_prog.find_method("method2")
+        self.assertIsNotNone(method2_prog)
+        method2_gm = method2_prog.graph_module
+        self.assertIsInstance(method2_gm, ExportGraphModule)
+        add_nodes = [
+            node
+            for node in method2_gm.graph.nodes
+            if node.op == "call_function" and node.target == torch.ops.aten.add.Tensor
+        ]
+        self.assertEqual(len(add_nodes), 1)
+
+        lowered_submods = get_lowered_submodules(method2_gm)
+        self.assertEqual(len(lowered_submods), 0)
+
+        # Check we can export to executorch properly
+        _ = edge_dialect_to_executorch_multiple(lowered_multi_method_prog)

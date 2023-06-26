@@ -1,0 +1,40 @@
+// (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+
+#include <executorch/core/Assert.h>
+#include <executorch/kernels/kernel_includes.h>
+#include <executorch/kernels/portable/cpu/util/functional_util.h>
+
+namespace torch {
+namespace executor {
+namespace native {
+
+using exec_aten::Tensor;
+
+Tensor& abs_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+  (void)ctx;
+
+  // Resize for dynamic shape
+  auto error = resize_tensor(out, in.sizes());
+  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_CHECK_SAME_SHAPE_AND_DTYPE2(in, out);
+
+  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "abs", CTYPE, [&] {
+    apply_unary_map_fn(
+        [](const CTYPE val_in) {
+          if (val_in < 0) {
+            return static_cast<CTYPE>(-val_in);
+          } else {
+            return static_cast<CTYPE>(val_in);
+          }
+        },
+        in.const_data_ptr<CTYPE>(),
+        out.mutable_data_ptr<CTYPE>(),
+        in.numel());
+  });
+
+  return out;
+}
+
+} // namespace native
+} // namespace executor
+} // namespace torch

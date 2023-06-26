@@ -1,0 +1,180 @@
+# pyre-strict
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Union
+
+import executorch.pytree as ex_pytree
+import torch
+import torch.fx
+from executorch.exir.emit._emitter import _EmitterState, _ProgramState, _TopLevelEmitter
+from executorch.exir.error import ExportError, ExportErrorType
+from executorch.exir.graph_module import ExportGraphModule
+from executorch.exir.schema import (
+    Bool,
+    Chain,
+    ContainerMetadata,
+    Double,
+    EValue,
+    ExecutionPlan,
+    Int,
+    Program,
+    String,
+)
+from executorch.exir.tensor import layout_enum, scalar_type_enum
+from executorch.exir.version import EXECUTORCH_SCHEMA_VERSION
+
+
+def _emit_prim_getters(prim_getters: Dict[str, Any]) -> List[ExecutionPlan]:
+    """
+    Given a mapping of function names to return values, emit simple execution
+    plans that just return these constant values.
+
+    Precondition: All the values are primitives (bool, float, int, str, enum)
+    or structures (list, dict) of them.
+    """
+    plans = []
+    # flatten any structures
+    for method, vals in prim_getters.items():
+        flattened_output, spec = ex_pytree.tree_flatten(vals)
+        spec = spec.to_str()
+        chain = Chain(
+            inputs=[],
+            outputs=[],
+            instructions=[],
+            stacktrace=None,
+        )
+
+        # switch on type of prim
+        values = []
+        for val in flattened_output:
+            if isinstance(val, float):
+                values.append(EValue(Double(val)))
+
+            elif isinstance(val, bool):
+                values.append(EValue(Bool(val)))
+
+            elif isinstance(val, int):
+                values.append(EValue(Int(val)))
+
+            elif isinstance(val, str):
+                values.append(EValue(String(val)))
+
+            elif isinstance(val, torch.dtype):
+                values.append(EValue(Int(scalar_type_enum(val))))
+
+            elif isinstance(val, torch.layout):
+                values.append(EValue(Int(layout_enum(val))))
+
+            else:
+                raise ExportError(
+                    ExportErrorType.NOT_SUPPORTED,
+                    f"Error emitting {method} which returns a value of type {type(val)}. which is not a supported primitive",
+                )
+
+        # add to plans
+        plans.append(
+            ExecutionPlan(
+                name=method,
+                values=values,
+                inputs=[],
+                outputs=list(range(0, len(values))),
+                chains=[chain],
+                operators=[],
+                delegates=[],
+                non_const_buffer_sizes=[0, 0],
+                container_meta_type=ContainerMetadata("", spec),
+            )
+        )
+    return plans
+
+
+@dataclass
+class EmitterOutput:
+    """
+    The outputs of program emission. Contains the executorch program object as well as
+    a mapping of instruction ids to debug handles.
+    """
+
+    # The Executorch program
+    program: Program
+
+    # This dictionary maps the instruction ids to their corresponding
+    # debug handles or list of debug handles in the case of delegate calls.
+    debug_handle_map: Dict[int, Union[int, List[int]]]
+
+
+def emit_program(
+    methods: Union[torch.fx.GraphModule, Dict[str, ExportGraphModule]],
+    emit_stacktrace: bool = False,
+    prim_getters: Optional[Dict[str, Any]] = None,
+) -> EmitterOutput:
+    """
+    Given a graph module, it returns the graph module’s program in the format
+    of the Python version of the flatbuffer Program schema.
+
+    Args:
+        graph_module: Either the graph module that we want to emit into the flatbuffer
+           format, must be ExportGraphModule type or a dictionary of method names to ExportGraphModules
+        emit_stacktrace: Flag to enable emission of a stacktrace for each
+           instruction for debugging purposes
+
+    Return:
+        The program in a Python class which mimics the flatbuffer schema
+    """
+
+    if isinstance(methods, torch.fx.GraphModule):
+        methods = {"forward": methods}
+
+    # validation
+    bad_methods = []
+    for name, graph_module in methods.items():
+        if not isinstance(graph_module, ExportGraphModule):
+            bad_methods.append(name)
+    if len(bad_methods) != 0:
+        raise ExportError(
+            ExportErrorType.INVALID_INPUT_TYPE,
+            f"Did not receive ExportGraphModule for the following methods {str(bad_methods)}",
+        )
+
+    plans = []
+    debug_handle_map = {}
+    program_state = _ProgramState()
+
+    # emit each entry point in order according to name.
+    for name, exported_program in sorted(methods.items()):
+        # create empty state
+        emitter_state = _EmitterState(
+            values=[],
+            operators=[],
+            delegates=[],
+            num_values=0,
+            operator_cache={},
+            delegate_cache={},
+            emit_stacktrace=emit_stacktrace,
+        )
+
+        emitter = _TopLevelEmitter(name, exported_program, program_state, emitter_state)
+
+        emitter.run()
+        plans.append(emitter.plan())
+
+        # update list length for future constant deduplication checks
+        emitter.program_state.cached_spec_list_length = len(
+            program_state.allocated_specs
+        )
+        debug_handle_map[name] = emitter.debug_handle_map
+
+    # emit any primitive getters
+    if prim_getters is not None:
+        plans.extend(_emit_prim_getters(prim_getters))
+
+    return EmitterOutput(
+        debug_handle_map=debug_handle_map,
+        program=Program(
+            version=EXECUTORCH_SCHEMA_VERSION,
+            execution_plan=plans,
+            constant_buffer=program_state.constant_buffer,
+            backend_delegate_data=program_state.backend_delegate_data,
+            # Segments may be added at serialization time.
+            segments=[],
+        ),
+    )
