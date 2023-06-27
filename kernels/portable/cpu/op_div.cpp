@@ -11,96 +11,58 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using Tensor = exec_aten::Tensor;
-using ScalarType = exec_aten::ScalarType;
-
 namespace {
 
-template <typename CTYPE_A, typename CTYPE_B, typename CTYPE_OUT>
-void div_tensors_impl(const Tensor& a, const Tensor& b, Tensor& out) {
-  apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-      [](const CTYPE_A val_a, const CTYPE_B val_b) {
-        // Perform math in double for all types to maximize precision
-        double dividend = static_cast<double>(val_a);
-        double divisor = static_cast<double>(val_b);
-        double value = dividend / divisor;
+ScalarType get_compute_type(ScalarType a_type, ScalarType b_type) {
+  ET_CHECK(
+      !isComplexType(a_type) && !isQIntType(a_type) && !isBitsType(a_type));
+  ET_CHECK(
+      !isComplexType(b_type) && !isQIntType(b_type) && !isBitsType(b_type));
 
-        return static_cast<CTYPE_OUT>(value);
-      },
-      a,
-      b,
-      out);
-}
-
-template <typename CTYPE_A, typename CTYPE_B>
-void div_tensors_switch_out(const Tensor& a, const Tensor& b, Tensor& out) {
-#define DIV_TENSORS_SWITCH_OUT_CASE(ctype, dtype)         \
-  case ScalarType::dtype:                                 \
-    div_tensors_impl<CTYPE_A, CTYPE_B, ctype>(a, b, out); \
-    break;
-
-  switch (out.scalar_type()) {
-    ET_FORALL_FLOAT_TYPES(DIV_TENSORS_SWITCH_OUT_CASE)
-    default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd for out", out.scalar_type());
+  if (isFloatingType(a_type) && isFloatingType(b_type)) {
+    return promoteTypes(a_type, b_type);
+  } else if (isFloatingType(a_type)) {
+    return a_type;
+  } else if (isFloatingType(b_type)) {
+    return b_type;
   }
-
-#undef DIV_TENSORS_SWITCH_OUT_CASE
-}
-
-template <typename CTYPE_A>
-void div_tensors_switch_b(const Tensor& a, const Tensor& b, Tensor& out) {
-#define DIV_TENSORS_SWITCH_B_CASE(ctype, dtype)        \
-  case ScalarType::dtype:                              \
-    div_tensors_switch_out<CTYPE_A, ctype>(a, b, out); \
-    break;
-
-  switch (b.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND(Bool, DIV_TENSORS_SWITCH_B_CASE)
-    default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd for b", b.scalar_type());
-  }
-
-#undef DIV_TENSORS_SWITCH_B_CASE
-}
-
-void div_tensors_switch_a(const Tensor& a, const Tensor& b, Tensor& out) {
-#define DIV_TENSORS_SWITCH_A_CASE(ctype, dtype) \
-  case ScalarType::dtype:                       \
-    div_tensors_switch_b<ctype>(a, b, out);     \
-    break;
-
-  switch (a.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND(Bool, DIV_TENSORS_SWITCH_A_CASE)
-    default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd for a", a.scalar_type());
-  }
-
-#undef DIV_TENSORS_SWITCH_A_CASE
-}
-
-void check_input_dtypes(const Tensor& a, const Tensor& b, Tensor& out) {
-  ET_CHECK_MSG(
-      isFloatingType(out.scalar_type()),
-      "output must be a floating point type.");
+  return ScalarType::Float;
 }
 
 } // namespace
 
-Tensor& div_out(
-    RuntimeContext& context,
-    const Tensor& a,
-    const Tensor& b,
-    Tensor& out) {
-  (void)context;
+Tensor&
+div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
+  (void)ctx;
 
-  // Determine output size and resize for dynamic shapes
   resize_to_broadcast_target_size(a, b, out);
 
-  // Check arguments
-  check_input_dtypes(a, b, out);
+  ScalarType a_type = a.scalar_type();
+  ScalarType b_type = b.scalar_type();
+  ScalarType common_type = get_compute_type(a_type, b_type);
+  ScalarType out_type = out.scalar_type();
 
-  div_tensors_switch_a(a, b, out);
+  ET_CHECK(canCast(common_type, out_type));
+
+  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div", CTYPE_A, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div", CTYPE_B, [&]() {
+      ET_SWITCH_FLOAT_TYPES(common_type, ctx, "div", CTYPE_IN, [&]() {
+        ET_SWITCH_FLOAT_TYPES(out_type, ctx, "div", CTYPE_OUT, [&]() {
+          apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
+              [](const CTYPE_A val_a, const CTYPE_B val_b) {
+                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+                CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+                CTYPE_IN value = a_casted / b_casted;
+
+                return static_cast<CTYPE_OUT>(value);
+              },
+              a,
+              b,
+              out);
+        });
+      });
+    });
+  });
 
   return out;
 }
