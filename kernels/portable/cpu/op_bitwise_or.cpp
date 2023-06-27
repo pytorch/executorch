@@ -50,7 +50,7 @@ Tensor& bitwise_or_Tensor_out(
           Bool, common_type, ctx, "bitwise_or", CTYPE_IN, [&]() {
             ET_SWITCH_INT_TYPES_AND(
                 Bool, out_type, ctx, "bitwise_or", CTYPE_OUT, [&]() {
-                  apply_binary_elementwise_fn(
+                  apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
                       [](const CTYPE_A val_a, const CTYPE_B val_b) {
                         CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
                         CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
@@ -59,11 +59,8 @@ Tensor& bitwise_or_Tensor_out(
                         return static_cast<CTYPE_OUT>(value);
                       },
                       a,
-                      a.const_data_ptr<CTYPE_A>(),
                       b,
-                      b.const_data_ptr<CTYPE_B>(),
-                      out,
-                      out.mutable_data_ptr<CTYPE_OUT>());
+                      out);
                 });
           });
     });

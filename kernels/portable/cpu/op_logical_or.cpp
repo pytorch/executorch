@@ -34,7 +34,7 @@ Tensor& logical_or_out(
     ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "logical_or", CTYPE_B, [&]() {
       ET_SWITCH_REAL_TYPES_AND(
           Bool, out_type, ctx, "logical_or", CTYPE_OUT, [&]() {
-            apply_binary_elementwise_fn(
+            apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
                 [](const CTYPE_A val_a, const CTYPE_B val_b) {
                   bool a_casted = static_cast<bool>(val_a);
                   bool b_casted = static_cast<bool>(val_b);
@@ -43,11 +43,8 @@ Tensor& logical_or_out(
                   return static_cast<CTYPE_OUT>(value);
                 },
                 a,
-                a.const_data_ptr<CTYPE_A>(),
                 b,
-                b.const_data_ptr<CTYPE_B>(),
-                out,
-                out.mutable_data_ptr<CTYPE_OUT>());
+                out);
           });
     });
   });

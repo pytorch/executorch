@@ -18,7 +18,7 @@ namespace {
 
 template <typename CTYPE_A, typename CTYPE_B, typename CTYPE_OUT>
 void div_tensors_impl(const Tensor& a, const Tensor& b, Tensor& out) {
-  apply_binary_elementwise_fn(
+  apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
       [](const CTYPE_A val_a, const CTYPE_B val_b) {
         // Perform math in double for all types to maximize precision
         double dividend = static_cast<double>(val_a);
@@ -28,11 +28,8 @@ void div_tensors_impl(const Tensor& a, const Tensor& b, Tensor& out) {
         return static_cast<CTYPE_OUT>(value);
       },
       a,
-      a.data_ptr<CTYPE_A>(),
       b,
-      b.data_ptr<CTYPE_B>(),
-      out,
-      out.data_ptr<CTYPE_OUT>());
+      out);
 }
 
 template <typename CTYPE_A, typename CTYPE_B>

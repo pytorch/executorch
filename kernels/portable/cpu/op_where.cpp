@@ -16,7 +16,7 @@ void where_tensors_impl(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  apply_ternary_elementwise_fn(
+  apply_ternary_elementwise_fn<CTYPE_A, CTYPE_B, bool, CTYPE_OUT>(
       [](const CTYPE_A val_a, const CTYPE_B val_b, const bool val_c) {
         CTYPE_OUT a_casted = static_cast<CTYPE_OUT>(val_a);
         CTYPE_OUT b_casted = static_cast<CTYPE_OUT>(val_b);
@@ -24,13 +24,9 @@ void where_tensors_impl(
         return val_c ? a_casted : b_casted;
       },
       a,
-      a.data_ptr<CTYPE_A>(),
       b,
-      b.data_ptr<CTYPE_B>(),
       condition,
-      condition.data_ptr<bool>(),
-      out,
-      out.data_ptr<CTYPE_OUT>());
+      out);
 }
 
 template <typename CTYPE_A, typename CTYPE_B>

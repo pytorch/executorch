@@ -25,7 +25,7 @@ void add_tensors_impl(
   bool ok = utils::extract_scalar(alpha, &alpha_val);
   ET_CHECK_MSG(ok, "Invalid alpha value: wrong type or out of range");
 
-  apply_binary_elementwise_fn(
+  apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
       [alpha_val](const CTYPE_A val_a, const CTYPE_B val_b) {
         CTYPE_OUT a_casted = static_cast<CTYPE_OUT>(val_a);
 
@@ -38,11 +38,8 @@ void add_tensors_impl(
         return a_casted + static_cast<CTYPE_OUT>(alpha_val * b_casted);
       },
       a,
-      a.data_ptr<CTYPE_A>(),
       b,
-      b.data_ptr<CTYPE_B>(),
-      out,
-      out.data_ptr<CTYPE_OUT>());
+      out);
 }
 
 template <typename CTYPE_A, typename CTYPE_B>

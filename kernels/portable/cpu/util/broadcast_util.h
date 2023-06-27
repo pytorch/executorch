@@ -201,5 +201,101 @@ size_t linearize_access_indexes(
     const Tensor& broadcast_to,
     const Tensor& broadcast_from);
 
+//
+// Mapping with broadcasting
+//
+
+/**
+ * Useful for binary elementwise operators. For each element of the inputs,
+ * perform a computation and write to the corresponding element of the output.
+ * Tensor broadcasting is applied wherever it is required.
+ */
+template <typename CTYPE_A, typename CTYPE_B, typename CTYPE_OUT, typename Op>
+inline void apply_binary_elementwise_fn(
+    const Op& compute_fun,
+    const Tensor& a,
+    const Tensor& b,
+    const Tensor& out) {
+  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
+  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
+  const bool any_is_broadcasted = (a_is_broadcasted || b_is_broadcasted);
+
+  const CTYPE_A* const data_a = a.const_data_ptr<CTYPE_A>();
+  const CTYPE_B* const data_b = b.const_data_ptr<CTYPE_B>();
+  CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
+
+  for (size_t i = 0; i < out.numel(); ++i) {
+    size_t a_linear_index = i;
+    size_t b_linear_index = i;
+
+    if (any_is_broadcasted) {
+      size_t out_indexes[kTensorDimensionLimit];
+      delinearize_index(i, out, out_indexes, kTensorDimensionLimit);
+
+      if (a_is_broadcasted) {
+        a_linear_index = linearize_access_indexes(out_indexes, out, a);
+      }
+      if (b_is_broadcasted) {
+        b_linear_index = linearize_access_indexes(out_indexes, out, b);
+      }
+    }
+
+    data_out[i] = compute_fun(data_a[a_linear_index], data_b[b_linear_index]);
+  }
+}
+
+/**
+ * Useful for ternary elementwise operators. For each element of the inputs,
+ * perform a computation and write to the corresponding element of the output.
+ * Tensor broadcasting is applied wherever it is required.
+ */
+template <
+    typename CTYPE_A,
+    typename CTYPE_B,
+    typename CTYPE_C,
+    typename CTYPE_OUT,
+    typename Op>
+inline void apply_ternary_elementwise_fn(
+    const Op& compute_fun,
+    const Tensor& a,
+    const Tensor& b,
+    const Tensor& c,
+    const Tensor& out) {
+  const bool a_is_broadcasted = !out.sizes().equals(a.sizes());
+  const bool b_is_broadcasted = !out.sizes().equals(b.sizes());
+  const bool c_is_broadcasted = !out.sizes().equals(c.sizes());
+  const bool any_is_broadcasted =
+      (a_is_broadcasted || b_is_broadcasted || c_is_broadcasted);
+
+  const CTYPE_A* const data_a = a.const_data_ptr<CTYPE_A>();
+  const CTYPE_B* const data_b = b.const_data_ptr<CTYPE_B>();
+  const CTYPE_C* const data_c = c.const_data_ptr<CTYPE_C>();
+  CTYPE_OUT* const data_out = out.mutable_data_ptr<CTYPE_OUT>();
+
+  for (size_t i = 0; i < out.numel(); ++i) {
+    size_t a_linear_index = i;
+    size_t b_linear_index = i;
+    size_t c_linear_index = i;
+
+    if (any_is_broadcasted) {
+      size_t out_indexes[kTensorDimensionLimit];
+      delinearize_index(i, out, out_indexes, kTensorDimensionLimit);
+
+      if (a_is_broadcasted) {
+        a_linear_index = linearize_access_indexes(out_indexes, out, a);
+      }
+      if (b_is_broadcasted) {
+        b_linear_index = linearize_access_indexes(out_indexes, out, b);
+      }
+      if (c_is_broadcasted) {
+        c_linear_index = linearize_access_indexes(out_indexes, out, c);
+      }
+    }
+
+    data_out[i] = compute_fun(
+        data_a[a_linear_index], data_b[b_linear_index], data_c[c_linear_index]);
+  }
+}
+
 } // namespace executor
 } // namespace torch
