@@ -16,7 +16,7 @@ from executorch.exir import (
     EdgeDialectProgram,
     ExportGraphSignature,
     get_exir_meta,
-    MultiMethodExportedProgram,
+    MultiMethodExirExportedProgram,
     pytree,
 )
 
@@ -252,16 +252,16 @@ def _(
 
 
 def to_backend_multiple(
-    multi_method_program: MultiMethodExportedProgram,
+    multi_method_program: MultiMethodExirExportedProgram,
     partitioner: Union[Dict[str, Type[TPartitioner]], Type[TPartitioner]],
-) -> MultiMethodExportedProgram:
+) -> MultiMethodExirExportedProgram:
     """
     Returns a semantically-equivalent program to the one given as input (represented
     as a graph module in Edge dialect), but with portions of each method in the
     program targeted for delegation as determined by the partitioner.
 
     Args:
-        MultiMethodExportedProgram: A multiple method exported program in Edge dialect.
+        MultiMethodExirExportedProgram: A multiple method exported program in Edge dialect.
 
         partitioner: The partitioner can either be a Partitioner subclass, or a
             dictionary mapping method names to Partitioner subclass. If it is a
@@ -277,7 +277,7 @@ def to_backend_multiple(
             delegated to backend specififed in delegation spec.
 
     Returns:
-        MultiMethodExportedProgram: The input program, with some portions
+        MultiMethodExirExportedProgram: The input program, with some portions
         targeted for delegation in each method of the program.
     """
     if not (isinstance(partitioner, dict) or issubclass(partitioner, Partitioner)):
@@ -317,4 +317,4 @@ def to_backend_multiple(
     method_name_to_delegated_program = pytree.tree_map(
         gm_to_program, method_name_to_delegated_gm
     )
-    return MultiMethodExportedProgram(method_name_to_delegated_program)
+    return MultiMethodExirExportedProgram(method_name_to_delegated_program)

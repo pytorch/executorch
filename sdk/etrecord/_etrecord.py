@@ -10,9 +10,9 @@ import torch
 from executorch.exir import (
     EdgeDialectProgram,
     ExecutorchProgram,
-    ExportedProgram,
+    ExirExportedProgram,
     MultiMethodExecutorchProgram,
-    MultiMethodExportedProgram,
+    MultiMethodExirExportedProgram,
 )
 
 
@@ -33,20 +33,20 @@ class ETRecord:
 def get_export_module_handler(
     etrecord_zip: ZipFile,
     export_module: Union[
-        EdgeDialectProgram, MultiMethodExportedProgram, ExportedProgram
+        EdgeDialectProgram, MultiMethodExirExportedProgram, ExirExportedProgram
     ],
 ):
     export_module_handlers = {
         EdgeDialectProgram: lambda module_name, export_module: etrecord_zip.writestr(
             module_name, pickle.dumps(export_module.graph_module)
         ),
-        MultiMethodExportedProgram: lambda module_name, export_module: [
+        MultiMethodExirExportedProgram: lambda module_name, export_module: [
             etrecord_zip.writestr(
                 module_name + "/" + method_name, pickle.dumps(graph_module)
             )
             for method_name, graph_module in export_module.methods().items()
         ],
-        ExportedProgram: lambda module_name, export_module: etrecord_zip.writestr(
+        ExirExportedProgram: lambda module_name, export_module: etrecord_zip.writestr(
             module_name, pickle.dumps(export_module.graph_module)
         ),
     }
@@ -87,7 +87,10 @@ def generate_etrecord(
     program: Optional[Union[ExecutorchProgram, MultiMethodExecutorchProgram]] = None,
     export_modules: Optional[
         Dict[
-            str, Union[EdgeDialectProgram, MultiMethodExportedProgram, ExportedProgram]
+            str,
+            Union[
+                EdgeDialectProgram, MultiMethodExirExportedProgram, ExirExportedProgram
+            ],
         ]
     ] = None,
 ) -> None:

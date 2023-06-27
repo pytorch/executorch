@@ -47,7 +47,7 @@ from torch import _guards
 from torch._dispatch.python import enable_python_dispatcher
 from torch._dynamo.eval_frame import Constraint
 from torch._export import CallSpec, export, ExportGraphSignature
-from torch._export.exported_program import ExportedProgram as TorchExportedProgram
+from torch._export.exported_program import ExportedProgram
 from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 from torch.fx._compatibility import compatibility
 from torch.fx.experimental.proxy_tensor import make_fx
@@ -198,10 +198,10 @@ def _to_edge2(expo_prog, config: EdgeCompileConfig) -> "EdgeDialectProgram":
 
 
 @compatibility(is_backward_compatible=False)
-class ExportedProgram(TorchExportedProgram):
-    def transform(self, *passes: PassType) -> "ExportedProgram":
+class ExirExportedProgram(ExportedProgram):
+    def transform(self, *passes: PassType) -> "ExirExportedProgram":
         ep = super().transform(*passes)
-        transformed_ep = ExportedProgram(
+        transformed_ep = ExirExportedProgram(
             ep.graph_module,
             ep.graph_module.graph,
             ep.graph_signature,
@@ -296,7 +296,7 @@ class ExecutorchProgram:
 class MultiMethodExecutorchProgram:
     def __init__(
         self,
-        executorch_dialect_program: "MultiMethodExportedProgram",
+        executorch_dialect_program: "MultiMethodExirExportedProgram",
         emit_stacktrace: bool,
         extract_segments: bool,
         segment_alignment: int,
@@ -344,7 +344,7 @@ class MultiMethodExecutorchProgram:
     def dump_graph_module(self) -> torch.fx.GraphModule:
         return self.get_multi_method_graph_module().module
 
-    def get_multi_method_graph_module(self) -> "MultiMethodExportedProgram":
+    def get_multi_method_graph_module(self) -> "MultiMethodExirExportedProgram":
         return self._executorch_dialect_ir_program
 
 
@@ -372,7 +372,7 @@ def edge_gm_deserializer(pickled_states: bytes) -> "EdgeDialectProgram":
 
 # TODO(ycao): Move Edge Dialect structures to an independent file.
 @compatibility(is_backward_compatible=False)
-class EdgeDialectProgram(TorchExportedProgram):
+class EdgeDialectProgram(ExportedProgram):
     @property
     def meta(self):
         return self.module.meta
@@ -462,7 +462,7 @@ def capture(
     args: Tuple[Value, ...],
     config: Optional[CaptureConfig] = None,
     constraints: Optional[List[Constraint]] = None,
-) -> ExportedProgram:
+) -> ExirExportedProgram:
     if not isinstance(args, tuple):
         raise ExportError(
             ExportErrorType.INVALID_INPUT_TYPE,
@@ -613,7 +613,7 @@ def capture(
     module._apply(torch.Tensor.contiguous)
     meta = get_exir_meta(module)
     meta.mutation = mutation  # pyre-ignore
-    ep = ExportedProgram(
+    ep = ExirExportedProgram(
         module,
         module.graph,
         ExportGraphSignature([], [], [], [], {}, {}, {}, None),
@@ -630,32 +630,32 @@ def capture(
     return ep
 
 
-# MultiMethodExportedProgram represents an exported program that contains
+# MultiMethodExirExportedProgram represents an exported program that contains
 # multiple methods, all as valid entry points to the program.
 #
-# Internally, each method is represented as a separate ExportedProgram.
+# Internally, each method is represented as a separate ExirExportedProgram.
 # Methods (ExportGraphModule's) do not share anything with each other to
 # ensure that each is self-contained. This is important because transformation
 # passes can be local and do not need to concern themselves about other methods
-# that exists on the same MultiMethodExportedProgram.
+# that exists on the same MultiMethodExirExportedProgram.
 @compatibility(is_backward_compatible=False)
-class MultiMethodExportedProgram:
+class MultiMethodExirExportedProgram:
     def __init__(
         self,
-        progs: Dict[str, ExportedProgram],
+        progs: Dict[str, ExirExportedProgram],
         getters: Optional[Dict[str, Any]] = None,
     ):
         # TODO(ycao): Support merging use case where user started by creating
-        # an empty MultiMethodExportedProgram and then start adding more
+        # an empty MultiMethodExirExportedProgram and then start adding more
         # graph modules to it.
         assert (
             len(progs) > 0
-        ), "Expected at least 1 graph module in MultiMethodExportedProgram"
+        ), "Expected at least 1 graph module in MultiMethodExirExportedProgram"
         self._method_to_program = progs
         self._method_to_prim_getter = getters
 
     # Get the default method, which is either the only method contained
-    # in this MultiMethodExportedProgram or the method named `forward`.
+    # in this MultiMethodExirExportedProgram or the method named `forward`.
     def _get_default_program(self):
         if len(self._method_to_program) == 1:
             return next(iter(self._method_to_program.values()))
@@ -672,24 +672,24 @@ class MultiMethodExportedProgram:
         # TODO(ycao): Implement.
         raise NotImplementedError()
 
-    def find_method(self, name: str) -> Optional[ExportedProgram]:
+    def find_method(self, name: str) -> Optional[ExirExportedProgram]:
         return self._method_to_program.get(name)
 
-    def merge(self, other: "MultiMethodExportedProgram"):
+    def merge(self, other: "MultiMethodExirExportedProgram"):
         for method_name, program in other.methods().items():
             assert (
                 method_name not in self._method_to_program
             ), f"There already is a method named {method_name} in this program"
             self._method_to_program[method_name] = program
 
-    def transform(self, *passes: PassType) -> "MultiMethodExportedProgram":
+    def transform(self, *passes: PassType) -> "MultiMethodExirExportedProgram":
         method_name_to_transformed_program = {
             method_name: prog.transform(*passes)
             for method_name, prog in self._method_to_program.items()
         }
-        return MultiMethodExportedProgram(method_name_to_transformed_program)
+        return MultiMethodExirExportedProgram(method_name_to_transformed_program)
 
-    def methods(self) -> Dict[str, ExportedProgram]:
+    def methods(self) -> Dict[str, ExirExportedProgram]:
         return self._method_to_program
 
     def prim_getters(self) -> Optional[Dict[str, Any]]:
@@ -700,10 +700,10 @@ class MultiMethodExportedProgram:
 
         assert (
             prog is not None
-        ), """MultiMethodExportedProgram can not be called directly unless "
+        ), """MultiMethodExirExportedProgram can not be called directly unless "
         "it only contains a single method or it contains a `forward` method. "
         "Please look up one of its methods first via "
-        "`MultiMethodExportedProgram.find_method(method_name)`."""
+        "`MultiMethodExirExportedProgram.find_method(method_name)`."""
 
         return prog(*args, **kwargs)
 
@@ -762,17 +762,19 @@ class MultiMethodExportedProgram:
     # TODO(ycao): Change this to a composable function.
     def to_edge(
         self, config: Optional[EdgeCompileConfig] = None
-    ) -> "MultiMethodExportedProgram":
+    ) -> "MultiMethodExirExportedProgram":
         if config is None:
             config = EdgeCompileConfig()
         method_name_to_edge_prog = {
             method_name: _to_edge2(prog, config=config)
             for method_name, prog in self.methods().items()
         }
-        # TODO(yidi): consider removing EdgeDialectProgram to remove this pyre-ignore
-        # pyre-ignore[6]: Incompatible parameter type [6]: In call `MultiMethodExportedProgram.__init__`,
-        # for 1st positional argument, expected `Dict[str, ExportedProgram]` but got `Dict[str, EdgeDialectProgram]`.
-        return MultiMethodExportedProgram(method_name_to_edge_prog, self.prim_getters())
+        return MultiMethodExirExportedProgram(
+            # TODO(yidi): removing EdgeDialectProgram to remove this pyre-ignore
+            # pyre-ignore[6]
+            method_name_to_edge_prog,
+            self.prim_getters(),
+        )
 
     # TODO(ycao): Change this to a composable function.
     def to_executorch(
@@ -802,10 +804,10 @@ def capture_multiple(
 ):
     """
     capture_multiple traces either an nn.Module or just a callable with PyTorch
-    operations inside and produce a single MultiMethodExportedProgram that
+    operations inside and produce a single MultiMethodExirExportedProgram that
     can potentially have multiple entry points. When multiple entry points
     are traced, each of them is stored separately in the resulting
-    MultiMethodExportedProgram without sharing state.
+    MultiMethodExirExportedProgram without sharing state.
 
     Args:
         m: the `nn.Module` or callable to trace.
@@ -834,7 +836,7 @@ def capture_multiple(
         When `m` is a non-Module callable, `constraints` is a list of input shape constraints.
 
     Returns:
-        A MultiMethodExportedProgram.
+        A MultiMethodExirExportedProgram.
 
         if `m` is an nn.Module, returned program would have multiple
         captured methods, each corresponding to one entry in args dictionary.
@@ -908,7 +910,7 @@ def capture_multiple(
             compile_spec.callable, compile_spec.args, config, compile_spec.constraints
         )
 
-    return MultiMethodExportedProgram(method_name_to_prog, prim_getter_cache)
+    return MultiMethodExirExportedProgram(method_name_to_prog, prim_getter_cache)
 
 
 def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]:
@@ -974,7 +976,7 @@ def edge_dialect_to_executorch(
 
 
 def edge_dialect_to_executorch_multiple(
-    edge_dialect_program: MultiMethodExportedProgram,
+    edge_dialect_program: MultiMethodExirExportedProgram,
     config: Optional[ExecutorchBackendConfig] = None,
 ) -> MultiMethodExecutorchProgram:
     config = config or ExecutorchBackendConfig()

@@ -15,7 +15,6 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
 
 class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
-    # pyre-ignore
     def serialize(
         self, exported_program: exir.ExportedProgram
     ) -> Tuple[schema.ExportedProgram, bytes]:

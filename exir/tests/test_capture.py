@@ -217,7 +217,7 @@ class TestCapture(unittest.TestCase):
 
     def test_capture_multiple_program_property_access_success_forward(self) -> None:
         """
-        A MultiMethodExportedProgram should allow property access even if
+        A MultiMethodExirExportedProgram should allow property access even if
         it contains multiple methods as long as one of the method is named
         `forward`
         """
@@ -253,7 +253,7 @@ class TestCapture(unittest.TestCase):
 
     def test_capture_multiple_program_property_access_success_non_forward(self) -> None:
         """
-        A MultiMethodExportedProgram should allow property access if it only
+        A MultiMethodExirExportedProgram should allow property access if it only
         contains a single method even if the method isn't named `forward`
         """
 
@@ -284,7 +284,7 @@ class TestCapture(unittest.TestCase):
 
     def test_capture_multiple_program_property_access_failure(self) -> None:
         """
-        A MultiMethodExportedProgram should NOT allow property access when
+        A MultiMethodExirExportedProgram should NOT allow property access when
         there are multiple methods captured and none of them is named `forward`
         """
 
