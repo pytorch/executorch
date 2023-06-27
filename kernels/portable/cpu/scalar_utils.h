@@ -176,11 +176,15 @@ template <
     typename BOOL_T,
     std::enable_if_t<std::is_same_v<BOOL_T, bool>, bool> = true>
 bool extract_scalar(Scalar scalar, BOOL_T* out_val) {
-  if (!scalar.isBoolean()) {
-    return false;
+  if (scalar.isIntegral(false)) {
+    *out_val = static_cast<bool>(scalar.to<int64_t>());
+    return true;
   }
-  *out_val = scalar.to<bool>();
-  return true;
+  if (scalar.isBoolean()) {
+    *out_val = scalar.to<bool>();
+    return true;
+  }
+  return false;
 }
 
 } // namespace utils
