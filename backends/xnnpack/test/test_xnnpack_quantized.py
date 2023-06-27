@@ -118,6 +118,51 @@ class TestXNNPACKQuantized(TestXNNPACK):
         example_inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
         self.quantize_and_test_model(Sub(), example_inputs)
 
+    def test_xnnpack_qmul(self):
+        class Mul(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                return x * y
+
+        example_inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1))
+        self.quantize_and_test_model(Mul(), example_inputs)
+
+    def test_xnnpack_qmul2(self):
+        class Mul(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return x * x
+
+        example_inputs = (torch.randn(1, 1, 4, 4),)
+        self.quantize_and_test_model(Mul(), example_inputs)
+
+    def test_xnnpack_qmul_functional(self):
+        class Mul(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                return torch.mul(x, y) * torch.functional.torch.mul(x, y)
+
+        example_inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
+        self.quantize_and_test_model(Mul(), example_inputs)
+
+    def test_xnnpack_qmul_relu(self):
+        class Mul(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                z = x * y
+                return torch.nn.functional.relu(z)
+
+        example_inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
+        self.quantize_and_test_model(Mul(), example_inputs)
+
     def test_xnnpack_qmean(self):
         class Mean(torch.nn.Module):
             def __init__(self):
