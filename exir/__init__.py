@@ -6,6 +6,7 @@ from collections import namedtuple
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
+import sympy
 import torch
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.emit import emit_program, EmitterOutput
@@ -13,7 +14,6 @@ from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.graph_module import (
     attach_export_graph_metadata,
     EXIR_METADATA,
-    ExportGraphModule,
     get_exir_meta,
     make_export_graph_module,
     reduce_graph_module,
@@ -48,6 +48,10 @@ from torch._dispatch.python import enable_python_dispatcher
 from torch._dynamo.eval_frame import Constraint
 from torch._export import CallSpec, export, ExportGraphSignature
 from torch._export.exported_program import ExportedProgram
+from torch._export.passes.add_runtime_assertions_for_constraints_pass import (
+    InputDim,
+    RangeConstraint,
+)
 from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 from torch.fx._compatibility import compatibility
 from torch.fx.experimental.proxy_tensor import make_fx
@@ -118,44 +122,7 @@ class ExecutorchBackendConfig:
 
 
 # TODO(ycao): set up "__all__" to limit symbol exposure
-def _to_edge(
-    gm: ExportGraphModule, config: Optional[EdgeCompileConfig] = None
-) -> ExportGraphModule:
-    # TODO(qihan): Need to add a field in meta field to indicate EdgeDialect
-    config = config or EdgeCompileConfig()
-
-    if config._check_ir_validity:
-        try:
-            EXIRATenDialectVerifier()(gm)
-        except ExportError:
-            logging.info(
-                "If you'd like to disable IR validation checking, please set _check_ir_validity in EdgeCompileConfig, "
-                "like *.to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))."
-            )
-            raise
-    mutation = get_exir_meta(gm).mutation
-    num_mutated = len(mutation) if mutation is not None else 0
-    output_node = next(iter(reversed(gm.graph.nodes)))
-    assert output_node.op == "output"
-    output_node.args = (output_node.args[0][num_mutated:],)
-    gm.graph.eliminate_dead_code()
-
-    res = aten_to_edge_passes(gm)
-    assert res is not None
-
-    if config._use_edge_ops:
-        res = PassManager([OpReplacePass()])(res.graph_module)
-
-    res = PassManager(config.passes)(res.graph_module)
-    assert res is not None
-    ret = res.graph_module
-    if config._check_ir_validity:
-        EXIREdgeDialectVerifier(check_edge_ops=config._use_edge_ops)(ret)
-    return ret
-
-
-# TODO(yidi): remove _to_edge
-def _to_edge2(expo_prog, config: EdgeCompileConfig) -> "EdgeDialectProgram":
+def _to_edge(expo_prog, config: EdgeCompileConfig) -> "ExirExportedProgram":
     meta = get_exir_meta(expo_prog.graph_module)
     if config._check_ir_validity:
         try:
@@ -173,7 +140,7 @@ def _to_edge2(expo_prog, config: EdgeCompileConfig) -> "EdgeDialectProgram":
     output_node.args = (output_node.args[0][num_mutated:],)
     expo_prog.graph_module.graph.eliminate_dead_code()
 
-    ep = EdgeDialectProgram(
+    ep = ExirExportedProgram(
         expo_prog.graph_module,
         expo_prog.graph_module.graph,
         ExportGraphSignature([], [], [], [], {}, {}, {}, None),
@@ -185,6 +152,7 @@ def _to_edge2(expo_prog, config: EdgeCompileConfig) -> "EdgeDialectProgram":
         {},
         {},
         [],
+        False,
     )
     attach_export_graph_metadata(ep.graph_module, meta)
     op_replace_pass = [OpReplacePass()] if config._use_edge_ops else []
@@ -194,11 +162,37 @@ def _to_edge2(expo_prog, config: EdgeCompileConfig) -> "EdgeDialectProgram":
         EXIREdgeDialectVerifier(check_edge_ops=config._use_edge_ops)(
             new_ep.graph_module
         )
+    new_ep.after_to_edge_passes = True
     return new_ep
 
 
 @compatibility(is_backward_compatible=False)
 class ExirExportedProgram(ExportedProgram):
+    def __init__(
+        self,
+        root: Union[torch.nn.Module, Dict[str, Any]],
+        graph: torch.fx.Graph,
+        graph_signature: ExportGraphSignature,
+        call_spec: CallSpec,
+        state_dict: Dict[str, Union[torch.Tensor, torch.nn.Parameter]],
+        range_constraints: Dict[sympy.Symbol, RangeConstraint],
+        equality_constraints: List[Tuple[InputDim, InputDim]],
+        after_to_edge_passes: bool,
+    ):
+        super().__init__(
+            root,
+            graph,
+            graph_signature,
+            call_spec,
+            state_dict,
+            range_constraints,
+            equality_constraints,
+        )
+
+        # Add a flag to denote whehter to_edge is called on this program
+        # to detect misusage of directly calling to_executorch without to_edge
+        self.after_to_edge_passes = after_to_edge_passes
+
     def transform(self, *passes: PassType) -> "ExirExportedProgram":
         ep = super().transform(*passes)
         transformed_ep = ExirExportedProgram(
@@ -209,6 +203,7 @@ class ExirExportedProgram(ExportedProgram):
             ep.state_dict,
             ep.range_constraints,
             ep.equality_constraints,
+            self.after_to_edge_passes,
         )
 
         transformed_ep.graph_module.meta.update(ep.graph_module.meta)
@@ -218,13 +213,13 @@ class ExirExportedProgram(ExportedProgram):
     # TODO(ycao): Change this to a composable function.
     def to_edge(
         self, config: Optional[EdgeCompileConfig] = None
-    ) -> "EdgeDialectProgram":
+    ) -> "ExirExportedProgram":
         config = config or EdgeCompileConfig()
         assert isinstance(
             self.graph_module, torch.fx.GraphModule
         ), f"type is instead: {type(self.graph_module).__name__}"
 
-        return _to_edge2(self, config)
+        return _to_edge(self, config)
 
     def dump(self) -> None:
         print(self.graph_module.graph)
@@ -238,6 +233,60 @@ class ExirExportedProgram(ExportedProgram):
         # TODO ServerDialectGraphModule
         # return graph_module now.
         return res.graph_module
+
+    @property
+    def meta(self):
+        return self.graph_module.meta
+
+    @property
+    def in_spec(self):
+        meta = get_exir_meta(self.graph_module)
+        return meta.in_spec
+
+    @property
+    def out_spec(self):
+        meta = get_exir_meta(self.graph_module)
+        return meta.out_spec
+
+    @property
+    def graph(self):
+        return self.graph_module.graph
+
+    @property
+    def code(self):
+        return self.graph_module.code
+
+    def to_executorch(
+        self,
+        config: Optional[ExecutorchBackendConfig] = None,
+    ) -> "ExecutorchProgram":
+        if not self.after_to_edge_passes:
+            raise RuntimeError("Must run to_edge before to_exeecutorch.")
+        return edge_dialect_program_to_executorch(self, config)
+
+    def __reduce__(
+        self,
+    ) -> Tuple[Callable[..., "ExirExportedProgram"], Tuple[bytes]]:
+        _, (pickled_states,) = self.graph_module.__reduce__()
+        return (edge_gm_deserializer, (pickled_states,))
+
+    def __deepcopy__(self, memo: Optional[Dict[int, Any]] = None) -> "ExportedProgram":
+        gm = self.graph_module.__deepcopy__(memo)
+        new_ep = ExirExportedProgram(
+            gm,
+            gm.graph,
+            copy.deepcopy(self.graph_signature),
+            copy.deepcopy(self.call_spec),
+            copy.deepcopy(self.state_dict),
+            copy.deepcopy(self.range_constraints),
+            copy.deepcopy(self.equality_constraints),
+            self.after_to_edge_passes,
+        )
+        attach_export_graph_metadata(
+            new_ep.graph_module, get_exir_meta(self.graph_module)
+        )
+        new_ep.graph_module.meta.update(self.graph_module.meta)
+        return new_ep
 
 
 @compatibility(is_backward_compatible=False)
@@ -348,13 +397,13 @@ class MultiMethodExecutorchProgram:
         return self._executorch_dialect_ir_program
 
 
-def edge_gm_deserializer(pickled_states: bytes) -> "EdgeDialectProgram":
+def edge_gm_deserializer(pickled_states: bytes) -> "ExirExportedProgram":
     loaded_gm = reduce_graph_module(pickled_states)
     # restore node.meta["val"], which is deleted before pickling
     annotated_gm = aten_to_edge_passes(loaded_gm).graph_module
     meta = get_exir_meta(annotated_gm)
 
-    ep = EdgeDialectProgram(
+    ep = ExirExportedProgram(
         annotated_gm.module,
         annotated_gm.graph,
         ExportGraphSignature([], [], [], [], {}, {}, {}, None),
@@ -366,79 +415,11 @@ def edge_gm_deserializer(pickled_states: bytes) -> "EdgeDialectProgram":
         {},
         {},
         [],
+        after_to_edge_passes=True,
     )
+    attach_export_graph_metadata(ep.graph_module, meta)
+    ep.graph_module.meta.update(annotated_gm.graph_module.meta)
     return ep
-
-
-# TODO(ycao): Move Edge Dialect structures to an independent file.
-@compatibility(is_backward_compatible=False)
-class EdgeDialectProgram(ExportedProgram):
-    @property
-    def meta(self):
-        return self.module.meta
-
-    @property
-    def in_spec(self):
-        meta = get_exir_meta(self.module)
-        return meta.in_spec
-
-    @property
-    def out_spec(self):
-        meta = get_exir_meta(self.module)
-        return meta.out_spec
-
-    def __reduce__(
-        self,
-    ) -> Tuple[Callable[..., "EdgeDialectProgram"], Tuple[bytes]]:
-        _, (pickled_states,) = self.graph_module.__reduce__()
-        return (edge_gm_deserializer, (pickled_states,))
-
-    def __deepcopy__(
-        self, memo: Optional[Dict[int, Any]] = None
-    ) -> "EdgeDialectProgram":
-        gm = self.graph_module.__deepcopy__(memo)
-        attach_export_graph_metadata(gm, get_exir_meta(self.graph_module))
-        new_ep = EdgeDialectProgram(
-            gm,
-            gm.graph,
-            copy.deepcopy(self.graph_signature),
-            copy.deepcopy(self.call_spec),
-            copy.deepcopy(self.state_dict),
-            copy.deepcopy(self.range_constraints),
-            copy.deepcopy(self.equality_constraints),
-        )
-        new_ep.graph_module.meta.update(self.graph_module.meta)
-        return new_ep
-
-    def transform(self, *passes: PassType) -> "EdgeDialectProgram":
-        ep = super().transform(*passes)
-        transformed_ep = EdgeDialectProgram(
-            ep.graph_module,
-            ep.graph_module.graph,
-            ep.graph_signature,
-            ep.call_spec,
-            ep.state_dict,
-            ep.range_constraints,
-            ep.equality_constraints,
-        )
-
-        transformed_ep.graph_module.meta.update(self.graph_module.meta)
-        transformed_ep.graph_module.meta.update(ep.graph_module.meta)
-        return transformed_ep
-
-    @property
-    def graph(self):
-        return self.graph_module.graph
-
-    @property
-    def code(self):
-        return self.graph_module.code
-
-    def to_executorch(
-        self,
-        config: Optional[ExecutorchBackendConfig] = None,
-    ) -> ExecutorchProgram:
-        return edge_dialect_program_to_executorch(self, config)
 
 
 # This is to bootstrap the missing meta["val"] when 1. ph consists of scalar
@@ -625,6 +606,7 @@ def capture(
         {},
         {},
         [],
+        False,
     )
     attach_export_graph_metadata(ep.graph_module, meta)
     return ep
@@ -766,12 +748,10 @@ class MultiMethodExirExportedProgram:
         if config is None:
             config = EdgeCompileConfig()
         method_name_to_edge_prog = {
-            method_name: _to_edge2(prog, config=config)
+            method_name: prog.to_edge(config)
             for method_name, prog in self.methods().items()
         }
         return MultiMethodExirExportedProgram(
-            # TODO(yidi): removing EdgeDialectProgram to remove this pyre-ignore
-            # pyre-ignore[6]
             method_name_to_edge_prog,
             self.prim_getters(),
         )
@@ -928,7 +908,7 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
 
 
 def edge_dialect_program_to_executorch(
-    edge_dialect_program: EdgeDialectProgram,
+    edge_dialect_program: ExirExportedProgram,
     config: Optional[ExecutorchBackendConfig] = None,
 ) -> ExecutorchProgram:
     config = config or ExecutorchBackendConfig()

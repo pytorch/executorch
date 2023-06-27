@@ -22,7 +22,8 @@ from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
 )
 from executorch.backends.compile_spec_schema import CompileSpec
 from executorch.backends.partitioner import DelegationSpec, Partitioner
-from executorch.exir import CaptureConfig, EdgeDialectGraphModule, ExportGraphModule
+from executorch.exir import CaptureConfig
+from executorch.exir.graph_module import ExportGraphModule
 
 from executorch.exir.pass_base import ExportPass, map_args
 from executorch.exir.tracer import ExirDynamoConfig
@@ -198,7 +199,7 @@ class PatternWrapper:
         self.pattern = pattern
         self.inputs = inputs
 
-    def get_graph_module(self) -> EdgeDialectGraphModule:
+    def get_graph_module(self) -> ExportGraphModule:
         return (
             exir.capture(
                 self.pattern,

@@ -16,7 +16,7 @@ generate_etrecord(
     program: Optional[Union[ExecutorchProgram, MultiMethodExecutorchProgram]] = None,
     export_modules: Optional[
         Dict[
-            str, Union[EdgeDialectProgram, MultiMethodExirExportedProgram, ExirExportedProgram]
+            str, Union[MultiMethodExirExportedProgram, ExirExportedProgram]
         ]
     ] = None,
 ) -> None:

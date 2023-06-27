@@ -3,7 +3,7 @@ from typing import Dict, List, NamedTuple, TypeVar
 
 from executorch.backends.backend_details import enforcedmethod
 from executorch.backends.compile_spec_schema import CompileSpec
-from executorch.exir import ExportGraphModule
+from executorch.exir.graph_module import ExportGraphModule
 
 
 class DelegationSpec(NamedTuple):

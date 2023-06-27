@@ -8,7 +8,6 @@ from zipfile import BadZipFile, ZipFile
 import torch
 
 from executorch.exir import (
-    EdgeDialectProgram,
     ExecutorchProgram,
     ExirExportedProgram,
     MultiMethodExecutorchProgram,
@@ -32,14 +31,9 @@ class ETRecord:
 
 def get_export_module_handler(
     etrecord_zip: ZipFile,
-    export_module: Union[
-        EdgeDialectProgram, MultiMethodExirExportedProgram, ExirExportedProgram
-    ],
+    export_module: Union[MultiMethodExirExportedProgram, ExirExportedProgram],
 ):
     export_module_handlers = {
-        EdgeDialectProgram: lambda module_name, export_module: etrecord_zip.writestr(
-            module_name, pickle.dumps(export_module.graph_module)
-        ),
         MultiMethodExirExportedProgram: lambda module_name, export_module: [
             etrecord_zip.writestr(
                 module_name + "/" + method_name, pickle.dumps(graph_module)
@@ -88,9 +82,7 @@ def generate_etrecord(
     export_modules: Optional[
         Dict[
             str,
-            Union[
-                EdgeDialectProgram, MultiMethodExirExportedProgram, ExirExportedProgram
-            ],
+            Union[MultiMethodExirExportedProgram, ExirExportedProgram],
         ]
     ] = None,
 ) -> None:

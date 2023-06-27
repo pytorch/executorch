@@ -13,7 +13,7 @@ from executorch.exir import (
     attach_export_graph_metadata,
     CallSpec,
     EdgeDialectGraphModule,
-    EdgeDialectProgram,
+    ExirExportedProgram,
     ExportGraphSignature,
     get_exir_meta,
     MultiMethodExirExportedProgram,
@@ -300,7 +300,7 @@ def to_backend_multiple(
             method_name_to_delegated_gm[method_name] = to_backend(gm, partitioner)
 
     def gm_to_program(gm: ExportGraphModule):
-        ep = EdgeDialectProgram(
+        ep = ExirExportedProgram(
             gm,
             gm.graph,
             ExportGraphSignature([], [], [], [], {}, {}, {}, None),
@@ -309,6 +309,7 @@ def to_backend_multiple(
             {},
             {},
             [],
+            True,
         )
         ep.graph_module.meta.update(gm.meta)
         attach_export_graph_metadata(ep.graph_module, get_exir_meta(gm))
