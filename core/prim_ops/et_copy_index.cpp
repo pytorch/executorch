@@ -1,8 +1,11 @@
 // (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
-#include <executorch/core/Assert.h>
-#include <executorch/core/kernel_types/util/tensor_util.h>
+
 #include <executorch/core/prim_ops/et_copy_index.h>
-#include <string.h>
+
+#include <cstring>
+
+#include <executorch/core/Assert.h>
+#include <executorch/kernels/kernel_includes.h>
 
 using exec_aten::SizesType;
 using exec_aten::Tensor;

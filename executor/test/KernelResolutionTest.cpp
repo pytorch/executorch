@@ -23,11 +23,11 @@ using torch::executor::EValue;
 using torch::executor::Executor;
 using torch::executor::Kernel;
 using torch::executor::KernelKey;
+using torch::executor::KernelRuntimeContext;
 using torch::executor::kKB;
 using torch::executor::Program;
 using torch::executor::register_kernels;
 using torch::executor::Result;
-using torch::executor::RuntimeContext;
 using torch::executor::Scalar;
 using torch::executor::ScalarType;
 using torch::executor::TensorMeta;
@@ -66,8 +66,8 @@ class KernelResolutionTest : public ::testing::Test {
  */
 TEST_F(KernelResolutionTest, InitExecutionPlanSuccess) {
   // register kernel with fallback kernel key
-  Kernel kernel_1 =
-      Kernel("aten::add.out", {}, [](RuntimeContext& context, EValue** stack) {
+  Kernel kernel_1 = Kernel(
+      "aten::add.out", {}, [](KernelRuntimeContext& context, EValue** stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });
@@ -102,8 +102,8 @@ TEST_F(KernelResolutionTest, ResolveKernelKeySuccess) {
   //     TensorMeta(ScalarType::Float, contiguous)};
   KernelKey key = KernelKey(
       "v0/\x06;\x00\x01|\x06;\x00\x01|\x06;\x00\x01|\x06;\x00\x01\xff");
-  Kernel kernel_1 =
-      Kernel("aten::add.out", key, [](RuntimeContext& context, EValue** stack) {
+  Kernel kernel_1 = Kernel(
+      "aten::add.out", key, [](KernelRuntimeContext& context, EValue** stack) {
         (void)context;
         *(stack[0]) = Scalar(100);
       });

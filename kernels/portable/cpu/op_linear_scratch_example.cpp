@@ -1,6 +1,6 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 #include <executorch/core/Assert.h>
-#include <executorch/core/kernel_types/kernel_types.h>
+#include <executorch/kernels/kernel_includes.h>
 
 /**
  * @file

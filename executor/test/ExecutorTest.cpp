@@ -15,6 +15,7 @@
 #include <executorch/executor/Executor.h>
 #include <executorch/executor/HierarchicalAllocator.h>
 #include <executorch/executor/MemoryAllocator.h>
+#include <executorch/kernels/kernel_runtime_context.h>
 #include <executorch/pytree/pytree.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <executorch/util/TestMemoryConfig.h>
@@ -85,7 +86,7 @@ TEST_F(ExecutorTest, Registry) {
   }
   // x and x_out args are same evalue for out variant kernels
   kernel_values[4] = &values[3];
-  RuntimeContext context{};
+  KernelRuntimeContext context{};
   func(context, kernel_values);
   auto c_ptr = values[3].toTensor().const_data_ptr<int32_t>();
   ASSERT_EQ(c_ptr[3], 12);
@@ -141,7 +142,7 @@ TEST_F(ExecutorTest, EValueToScalar) {
   ASSERT_EQ(s.to<int64_t>(), 2);
 }
 
-void test_op(RuntimeContext& /*unused*/, EValue** /*unused*/) {}
+void test_op(KernelRuntimeContext& /*unused*/, EValue** /*unused*/) {}
 
 TEST_F(ExecutorTest, OpRegistration) {
   auto s1 = register_operators({Operator("test", test_op)});
@@ -157,7 +158,8 @@ TEST_F(ExecutorTest, OpRegistration) {
 
 TEST_F(ExecutorTest, OpRegistrationWithContext) {
   auto op = Operator(
-      "test_op_with_context", [](RuntimeContext& context, EValue** values) {
+      "test_op_with_context",
+      [](KernelRuntimeContext& context, EValue** values) {
         (void)context;
         *(values[0]) = Scalar(100);
       });
@@ -170,7 +172,7 @@ TEST_F(ExecutorTest, OpRegistrationWithContext) {
   values[0] = Scalar(0);
   EValue* kernels[1];
   kernels[0] = &values[0];
-  RuntimeContext context{};
+  KernelRuntimeContext context{};
   func(context, kernels);
 
   auto val = values[0].toScalar().to<int64_t>();

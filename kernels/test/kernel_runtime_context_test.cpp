@@ -1,4 +1,4 @@
-#include <executorch/core/kernel_types/RuntimeContext.h>
+#include <executorch/kernels/kernel_runtime_context.h>
 
 #include <gtest/gtest.h>
 

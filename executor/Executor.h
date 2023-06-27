@@ -31,8 +31,8 @@ template <typename Fn>
 class FunctionRef;
 template <typename T>
 class Span;
-class RuntimeContext;
-using OpFunction = FunctionRef<void(RuntimeContext&, EValue**)>;
+class KernelRuntimeContext;
+using OpFunction = FunctionRef<void(KernelRuntimeContext&, EValue**)>;
 /// A list of pointers into the master values table that together compose the
 /// argument list for a single instruction
 using InstructionArgs = Span<EValue*>;

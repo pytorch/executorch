@@ -1,6 +1,5 @@
 #pragma once
 
-#include <executorch/core/kernel_types/RuntimeContext.h> // @manual
 #include <executorch/core/kernel_types/TensorShapeDynamism.h> // @manual
 
 #ifdef USE_ATEN_LIB
@@ -40,7 +39,6 @@
 
 namespace exec_aten {
 
-using RuntimeContext = torch::executor::RuntimeContext;
 using TensorShapeDynamism = torch::executor::TensorShapeDynamism;
 
 #ifdef USE_ATEN_LIB

@@ -1,4 +1,3 @@
-#include <executorch/core/kernel_types/util/tensor_util.h>
 #include <executorch/executor/Executor.h>
 
 #include <cinttypes>
@@ -11,10 +10,12 @@
 #include <executorch/core/OperatorRegistry.h>
 #include <executorch/core/kernel_types/util/DimOrderUtils.h>
 #include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
+#include <executorch/core/kernel_types/util/tensor_util.h>
 #include <executorch/core/span.h>
 #include <executorch/executor/MemoryManager.h>
 #include <executorch/executor/Program.h>
 #include <executorch/executor/tensor_parser.h>
+#include <executorch/kernels/kernel_runtime_context.h>
 #include <executorch/profiler/profiler.h>
 #include <executorch/schema/schema_generated.h>
 
@@ -787,7 +788,7 @@ Error ExecutionPlan::execute_instruction() {
   switch (instruction->instr_args_type()) {
     case executorch::InstructionArguments::KernelCall: {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
-      RuntimeContext context{};
+      KernelRuntimeContext context{};
       chain.kernels_[step_state_.instr_idx](
           context, chain.argument_lists_[step_state_.instr_idx].data());
       // TODO(T135464333): inspect runtime context for error state

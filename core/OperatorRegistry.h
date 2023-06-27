@@ -17,7 +17,9 @@
 namespace torch {
 namespace executor {
 
-using OpFunction = FunctionRef<void(RuntimeContext&, EValue**)>;
+class KernelRuntimeContext; // Forward declaration
+using RuntimeContext = KernelRuntimeContext; // TODO(T147221312): Remove
+using OpFunction = FunctionRef<void(KernelRuntimeContext&, EValue**)>;
 
 /**
  * Dtype and dim order metadata for a Tensor argument to an operator.
