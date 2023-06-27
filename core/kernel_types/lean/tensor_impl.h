@@ -177,9 +177,6 @@ class TensorImpl {
   /// Sets the underlying data blob to the passed in pointer.
   void set_data(void* ptr);
 
-  /// Returns true if the tensor data pointer is not null.
-  bool initialized() const;
-
   /*
    * DEPRECATED: Use torch::executor::resize_tensor() or
    * torch::executor::resize_tensor_impl().

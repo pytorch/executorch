@@ -172,9 +172,5 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   return Error::Ok;
 }
 
-bool TensorImpl::initialized() const {
-  return data_ != nullptr;
-}
-
 } // namespace executor
 } // namespace torch

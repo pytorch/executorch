@@ -148,11 +148,6 @@ class Tensor {
     impl_->set_data(ptr);
   }
 
-  // To be removed in follow up
-  bool initialized() const {
-    return impl_->initialized();
-  }
-
  private:
   TensorImpl* impl_ = nullptr;
 };

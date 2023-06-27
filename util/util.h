@@ -85,7 +85,7 @@ inline exec_aten::ArrayRef<void*> PrepareInputTensors(
       continue;
     }
     const auto& t = plan.get_input(i).toTensor();
-    if (!t.initialized()) {
+    if (t.data_ptr() == nullptr) {
       ET_LOG(Info, "input not initialized.");
       inputs[num_allocated++] = malloc(t.nbytes());
       t.set_data(inputs[num_allocated - 1]);
