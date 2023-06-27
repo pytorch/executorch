@@ -18,510 +18,640 @@
 # by this file.
 
 - op: _log_softmax.out
-  dispatch:
-    CPU: torch::executor::log_softmax_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::log_softmax_out
 
 - op: _softmax.out
-  dispatch:
-    CPU: torch::executor::softmax_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::softmax_out
 
 - op: _to_copy.out
-  dispatch:
-    CPU: torch::executor::to_copy_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::to_copy_out
 
 - op: abs.out
-  dispatch:
-    CPU: torch::executor::abs_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::abs_out
 
 - op: acos.out
-  dispatch:
-    CPU: torch::executor::acos_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::acos_out
 
 - op: acosh.out
-  dispatch:
-    CPU: torch::executor::acosh_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::acosh_out
 
 - op: add.out
-  dispatch:
-    CPU: torch::executor::add_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::add_out
 
 - op: addmm.out
-  dispatch:
-    CPU: torch::executor::addmm_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::addmm_out
 
 - op: amax.out
-  dispatch:
-    CPU: torch::executor::amax_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::amax_out
 
 - op: amin.out
-  dispatch:
-    CPU: torch::executor::amin_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::amin_out
 
 - op: any.all_out
-  dispatch:
-    CPU: torch::executor::any_all_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::any_all_out
 
 - op: arange.out
-  dispatch:
-    CPU: torch::executor::arange_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::arange_out
 
 - op: arange.start_out
-  dispatch:
-    CPU: torch::executor::arange_start_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::arange_start_out
 
 - op: argmax.out
-  dispatch:
-    CPU: torch::executor::argmax_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::argmax_out
 
 - op: argmin.out
-  dispatch:
-    CPU: torch::executor::argmin_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::argmin_out
 
 - op: as_strided_copy.out
-  dispatch:
-    CPU: torch::executor::as_strided_copy_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::as_strided_copy_out
 
 - op: asin.out
-  dispatch:
-    CPU: torch::executor::asin_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::asin_out
 
 - op: asinh.out
-  dispatch:
-    CPU: torch::executor::asinh_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::asinh_out
 
 - op: atan.out
-  dispatch:
-    CPU: torch::executor::atan_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::atan_out
 
 - op: atanh.out
-  dispatch:
-    CPU: torch::executor::atanh_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::atanh_out
 
 - op: bitwise_and.Scalar_out
-  dispatch:
-    CPU: torch::executor::bitwise_and_Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_and_Scalar_out
 
 - op: bitwise_and.Tensor_out
-  dispatch:
-    CPU: torch::executor::bitwise_and_Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_and_Tensor_out
 
 - op: bitwise_not.out
-  dispatch:
-    CPU: torch::executor::bitwise_not_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_not_out
 
 - op: bitwise_or.Scalar_out
-  dispatch:
-    CPU: torch::executor::bitwise_or_Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_or_Scalar_out
 
 - op: bitwise_or.Tensor_out
-  dispatch:
-    CPU: torch::executor::bitwise_or_Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_or_Tensor_out
 
 - op: bitwise_xor.Scalar_out
-  dispatch:
-    CPU: torch::executor::bitwise_xor_Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_xor_Scalar_out
 
 - op: bitwise_xor.Tensor_out
-  dispatch:
-    CPU: torch::executor::bitwise_xor_Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_xor_Tensor_out
 
 - op: bmm.out
-  dispatch:
-    CPU: torch::executor::bmm_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bmm_out
 
 - op: cat.out
-  dispatch:
-    CPU: torch::executor::cat_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::cat_out
 
 - op: clamp.out
   cpp_no_default_args: ['min']
-  dispatch:
-    CPU: torch::executor::clamp_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::clamp_out
 
 - op: clone.out
-  dispatch:
-    CPU: torch::executor::clone_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::clone_out
 
 - op: constant_pad_nd.out
-  dispatch:
-    CPU: torch::executor::constant_pad_nd_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::constant_pad_nd_out
 
 - op: convolution.out
-  dispatch:
-    CPU: torch::executor::convolution_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::convolution_out
 
 - op: copy.out
-  dispatch:
-    CPU: torch::executor::copy_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::copy_out
 
 - op: cos.out
-  dispatch:
-    CPU: torch::executor::cos_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::cos_out
 
 - op: cosh.out
-  dispatch:
-    CPU: torch::executor::cosh_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::cosh_out
 
 - op: cumsum.out
-  dispatch:
-    CPU: torch::executor::cumsum_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::cumsum_out
 
 - op: detach_copy.out
-  dispatch:
-    CPU: torch::executor::detach_copy_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::detach_copy_out
 
 - op: div.out
-  dispatch:
-    CPU: torch::executor::div_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::div_out
 
 - op: embedding.out
-  dispatch:
-    CPU: torch::executor::embedding_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::embedding_out
 
 - op: eq.Scalar_out
-  dispatch:
-    CPU: torch::executor::eq_scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::eq_scalar_out
 
 - op: erf.out
-  dispatch:
-    CPU: torch::executor::erf_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::erf_out
 
 - op: exp.out
-  dispatch:
-    CPU: torch::executor::exp_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::exp_out
 
 - op: expand_copy.out
-  dispatch:
-    CPU: torch::executor::expand_copy_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::expand_copy_out
 
 - op: fill.Scalar_out
-  dispatch:
-    CPU: torch::executor::fill_scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::fill_scalar_out
 
 - op: fill.Tensor_out
-  dispatch:
-    CPU: torch::executor::fill_tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::fill_tensor_out
 
 - op: floor.out
-  dispatch:
-    CPU: torch::executor::floor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::floor_out
 
 - op: floor_divide.out
-  dispatch:
-    CPU: torch::executor::floor_divide_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::floor_divide_out
 
 - op: fmod.Tensor_out
-  dispatch:
-    CPU: torch::executor::fmod_Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::fmod_Tensor_out
 
 - op: fmod.Scalar_out
-  dispatch:
-    CPU: torch::executor::fmod_Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::fmod_Scalar_out
 
 - op: full.out
-  dispatch:
-    CPU: torch::executor::full_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::full_out
 
+# TODO: Investigate why empty dispatch is required for building:
+# buck2 build //executorch/kernels/portable:generated_lib
 - op: full_like.out
-  dispatch:
-    CPU: torch::executor::full_like_out
+  dispatch: {}
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::full_like_out
 
 - op: ge.Scalar_out
-  dispatch:
-    CPU: torch::executor::ge_scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::ge_scalar_out
 
 - op: ge.Tensor_out
-  dispatch:
-    CPU: torch::executor::ge_tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::ge_tensor_out
 
 - op: gelu.out
-  dispatch:
-    CPU: torch::executor::gelu_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::gelu_out
 
 - op: glu.out
-  dispatch:
-    CPU: torch::executor::glu_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::glu_out
 
 - op: gt.Scalar_out
-  dispatch:
-    CPU: torch::executor::gt_scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::gt_scalar_out
 
 - op: gt.Tensor_out
-  dispatch:
-    CPU: torch::executor::gt_tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::gt_tensor_out
 
 - op: hardtanh.out
-  dispatch:
-    CPU: torch::executor::hardtanh_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::hardtanh_out
 
 - op: index.Tensor_out
-  dispatch:
-    CPU: torch::executor::index_Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::index_Tensor_out
 
 - op: index_put.out
-  dispatch:
-    CPU: torch::executor::index_put_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::index_put_out
 
 - op: index_select.out
-  dispatch:
-    CPU: torch::executor::index_select_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::index_select_out
 
 - op: isinf.out
-  dispatch:
-    CPU: torch::executor::isinf_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::isinf_out
 
 - op: isnan.out
-  dispatch:
-    CPU: torch::executor::isnan_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::isnan_out
 
 - op: le.Scalar_out
-  dispatch:
-    CPU: torch::executor::le_scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::le_scalar_out
 
 - op: le.Tensor_out
-  dispatch:
-    CPU: torch::executor::le_tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::le_tensor_out
 
 - op: leaky_relu.out
-  dispatch:
-    CPU: torch::executor::leaky_relu_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::leaky_relu_out
 
 - op: lift_fresh_copy.out
-  dispatch:
-    CPU: torch::executor::lift_fresh_copy_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::lift_fresh_copy_out
 
 - op: log.out
-  dispatch:
-    CPU: torch::executor::log_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::log_out
 
 - op: logical_and.out
-  dispatch:
-    CPU: torch::executor::logical_and_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::logical_and_out
 
 - op: logical_not.out
-  dispatch:
-    CPU: torch::executor::logical_not_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::logical_not_out
 
 - op: logical_or.out
-  dispatch:
-    CPU: torch::executor::logical_or_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::logical_or_out
 
 - op: logical_xor.out
-  dispatch:
-    CPU: torch::executor::logical_xor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::logical_xor_out
 
 - op: logit.out
-  dispatch:
-    CPU: torch::executor::logit_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::logit_out
 
 - op: lt.Scalar_out
-  dispatch:
-    CPU: torch::executor::lt_scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::lt_scalar_out
 
 - op: lt.Tensor_out
-  dispatch:
-    CPU: torch::executor::lt_tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::lt_tensor_out
 
 - op: masked_fill.Scalar_out
-  dispatch:
-    CPU: torch::executor::masked_fill_scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::masked_fill_scalar_out
 
 - op: max.dim_max
-  dispatch:
-    CPU: torch::executor::max_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::max_out
 
 - op: mean.out
-  dispatch:
-    CPU: torch::executor::mean_dim_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::mean_dim_out
 
 - op: min.dim_min
-  dispatch:
-    CPU: torch::executor::min_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::min_out
 
 - op: minimum.out
-  dispatch:
-    CPU: torch::executor::minimum_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::minimum_out
 
 - op: mm.out
-  dispatch:
-    CPU: torch::executor::mm_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::mm_out
 
 - op: mul.out
-  dispatch:
-    CPU: torch::executor::mul_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::mul_out
 
 - op: native_layer_norm.out
-  dispatch:
-    CPU: torch::executor::native_layer_norm_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::native_layer_norm_out
 
 - op: ne.Scalar_out
-  dispatch:
-    CPU: torch::executor::ne_scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::ne_scalar_out
 
 - op: ne.Tensor_out
-  dispatch:
-    CPU: torch::executor::ne_tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::ne_tensor_out
 
 - op: neg.out
-  dispatch:
-    CPU: torch::executor::neg_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::neg_out
 
 - op: nonzero.out
-  dispatch:
-    CPU: torch::executor::nonzero_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::nonzero_out
 
 - op: ones.out
-  dispatch:
-    CPU: torch::executor::ones_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::ones_out
 
 - op: permute_copy.out
-  dispatch:
-    CPU: torch::executor::permute_copy_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::permute_copy_out
 
 - op: pow.Tensor_Scalar_out
-  dispatch:
-    CPU: torch::executor::pow_Tensor_Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::pow_Tensor_Scalar_out
 
 - op: pow.Tensor_Tensor_out
-  dispatch:
-    CPU: torch::executor::pow_Tensor_Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::pow_Tensor_Tensor_out
 
 - op: reciprocal.out
-  dispatch:
-    CPU: torch::executor::reciprocal_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::reciprocal_out
 
 - op: relu.out
-  dispatch:
-    CPU: torch::executor::relu_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::relu_out
 
 - op: remainder.Tensor_out
-  dispatch:
-    CPU: torch::executor::remainder_Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::remainder_Tensor_out
 
 - op: remainder.Scalar_out
-  dispatch:
-    CPU: torch::executor::remainder_Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::remainder_Scalar_out
 
 - op: repeat.out
-  dispatch:
-    CPU: torch::executor::repeat_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::repeat_out
 
 - op: round.out
-  dispatch:
-    CPU: torch::executor::round_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::round_out
 
 - op: rsqrt.out
-  dispatch:
-    CPU: torch::executor::rsqrt_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::rsqrt_out
 
 - op: rsub.Scalar_out
-  dispatch:
-    CPU: torch::executor::rsub_scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::rsub_scalar_out
 
 - op: scalar_tensor.out
-  dispatch:
-    CPU: torch::executor::scalar_tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::scalar_tensor_out
 
 - op: scatter_add.out
-  dispatch:
-    CPU: torch::executor::scatter_add_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::scatter_add_out
 
 - op: select_copy.int_out
-  dispatch:
-    CPU: torch::executor::select_copy_int_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::select_copy_int_out
 
 - op: select_scatter.out
-  dispatch:
-    CPU: torch::executor::select_scatter_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::select_scatter_out
 
 - op: sigmoid.out
-  dispatch:
-    CPU: torch::executor::sigmoid_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sigmoid_out
 
 - op: sign.out
-  dispatch:
-    CPU: torch::executor::sign_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sign_out
 
 - op: sin.out
-  dispatch:
-    CPU: torch::executor::sin_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sin_out
 
 - op: sinh.out
-  dispatch:
-    CPU: torch::executor::sinh_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sinh_out
 
 - op: slice_copy.Tensor_out
-  dispatch:
-    CPU: torch::executor::slice_copy_Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::slice_copy_Tensor_out
 
 - op: slice_scatter.out
-  dispatch:
-    CPU: torch::executor::slice_scatter_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::slice_scatter_out
 
 - op: split_copy.Tensor_out
-  dispatch:
-    CPU: torch::executor::split_copy_Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::split_copy_Tensor_out
 
 - op: sqrt.out
-  dispatch:
-    CPU: torch::executor::sqrt_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sqrt_out
 
 - op: squeeze_copy.dim_out
-  dispatch:
-    CPU: torch::executor::squeeze_copy_dim_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::squeeze_copy_dim_out
 
 - op: stack.out
-  dispatch:
-    CPU: torch::executor::stack_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::stack_out
 
 - op: sub.out
-  dispatch:
-    CPU: torch::executor::sub_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sub_out
 
 - op: sum.IntList_out
-  dispatch:
-    CPU: torch::executor::sum_dim_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sum_dim_out
 
 - op: t_copy.out
-  dispatch:
-    CPU: torch::executor::t_copy_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::t_copy_out
 
 - op: tan.out
-  dispatch:
-    CPU: torch::executor::tan_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::tan_out
 
 - op: tanh.out
-  dispatch:
-    CPU: torch::executor::tanh_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::tanh_out
 
 - op: transpose_copy.int_out
-  dispatch:
-    CPU: torch::executor::transpose_copy_int_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::transpose_copy_int_out
 
 - op: tril.out
-  dispatch:
-    CPU: torch::executor::tril_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::tril_out
 
 - op: unbind_copy.int_out
-  dispatch:
-    CPU: torch::executor::unbind_copy_int_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::unbind_copy_int_out
 
 - op: unsqueeze_copy.out
-  dispatch:
-    CPU: torch::executor::unsqueeze_copy_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::unsqueeze_copy_out
 
 - op: var.out
-  dispatch:
-    CPU: torch::executor::var_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::var_out
 
 - op: view_copy.out
-  dispatch:
-    CPU: torch::executor::view_copy_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::view_copy_out
 
 - op: where.self_out
-  dispatch:
-    CPU: torch::executor::where_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::where_out
 
 - op: zeros.out
-  dispatch:
-    CPU: torch::executor::zeros_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::zeros_out

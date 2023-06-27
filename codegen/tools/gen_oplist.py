@@ -5,6 +5,7 @@ from enum import IntEnum
 from typing import Any, Dict, List, Optional, Set
 
 import yaml
+from torchgen.executorch.parse import strip_et_fields
 
 from torchgen.gen import LineLoader, parse_native_yaml_struct
 from torchgen.selective_build.operator import SelectiveBuildOperator
@@ -139,6 +140,7 @@ def _get_et_kernel_metadata_from_ops_yaml(ops_yaml_path: str) -> Dict[str, List[
                 ops.append(("aten::" if "::" not in e.get("op") else "") + e.get("op"))
             else:
                 func_entries.append(e)
+        strip_et_fields(es)
         parsed_yaml = parse_native_yaml_struct(
             func_entries, set(), None, path=ops_yaml_path, skip_native_fns_gen=True
         )

@@ -3,33 +3,41 @@
 # This yaml file contains operators that have optimized kernels available.
 
 - op: _log_softmax.out
-  dispatch:
-    CPU: torch::executor::opt_log_softmax_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_log_softmax_out
 
 - op: bmm.out
-  dispatch:
-    CPU: torch::executor::opt_bmm_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_bmm_out
 
 - op: exp.out
-  dispatch:
-    CPU: torch::executor::opt_exp_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_exp_out
 
 - op: gelu.out
-  dispatch:
-    CPU: torch::executor::opt_gelu_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_gelu_out
 
 - op: le.Scalar_out
-  dispatch:
-    CPU: torch::executor::opt_le_scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_le_scalar_out
 
 - op: le.Tensor_out
-  dispatch:
-    CPU: torch::executor::opt_le_tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_le_tensor_out
 
 - op: native_layer_norm.out
-  dispatch:
-    CPU: torch::executor::opt_native_layer_norm_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_native_layer_norm_out
 
 - op: neg.out
-  dispatch:
-    CPU: torch::executor::opt_neg_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::opt_neg_out

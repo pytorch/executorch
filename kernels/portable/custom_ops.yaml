@@ -16,8 +16,9 @@
 # TODO(T126667800) Remove dummy_param once custom namespaces are supported in the
 # portable op library.
 - func: allclose.out(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False, bool dummy_param=False, *, Tensor(a!) out) -> Tensor(a!)
-  dispatch:
-    CPU: torch::executor::allclose_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::allclose_out
 
 # The argument dummy_param is used solely to disambiguate this op from the native
 # allclose(). Otherwise, code calling this op is identical to the native op:
@@ -26,9 +27,11 @@
 # TODO(T126667800) Remove dummy_param once custom namespaces are supported in the
 # portable op library.
 - func: allclose.Tensor(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False, bool dummy_param=False) -> Tensor
-  dispatch:
-    CPU: torch::executor::allclose_tensor
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::allclose_tensor
 
 - func: linear.scratch_example(Tensor input, Tensor weight, Tensor? bias=None, *, Tensor(a!) out, Tensor(b!) _scratch_tensor) -> Tensor(a!)
-  dispatch:
-    CPU: torch::executor::linear_scratch_example
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::linear_scratch_example
