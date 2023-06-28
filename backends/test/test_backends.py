@@ -24,8 +24,8 @@ from executorch.backends.test.op_partitioner_demo import (
 )
 from executorch.backends.test.qnn_backend_demo import QnnBackend
 from executorch.exir import (
-    edge_dialect_to_executorch,
-    edge_dialect_to_executorch_multiple,
+    export_graph_module_to_executorch,
+    multi_method_program_to_executorch,
 )
 
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_submodules
@@ -633,7 +633,7 @@ class TestBackends(unittest.TestCase):
         )
         # after this step, part of the graph will be lowered to backend, depending on
         # HTAPartitionerDemo's rule.
-        program_with_delegates = edge_dialect_to_executorch(
+        program_with_delegates = export_graph_module_to_executorch(
             to_backend(traced, HTAPartitionerMultiplePatternsDemo),
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
@@ -747,7 +747,7 @@ class TestBackends(unittest.TestCase):
         for t1, t2 in zip(new_res, orig_res):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 
-        program_with_delegates = edge_dialect_to_executorch(
+        program_with_delegates = export_graph_module_to_executorch(
             traced_with_delegate,
             exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
@@ -838,7 +838,7 @@ class TestBackends(unittest.TestCase):
             .to_edge()
             .graph_module
         )
-        executorch_prog = edge_dialect_to_executorch(
+        executorch_prog = export_graph_module_to_executorch(
             to_backend(gm, AddMulPartitionerDemo),
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
@@ -896,7 +896,7 @@ class TestBackends(unittest.TestCase):
             .to_edge()
             .graph_module
         )
-        executorch_prog = edge_dialect_to_executorch(
+        executorch_prog = export_graph_module_to_executorch(
             to_backend(gm, AddAttributePartitionerDemo),
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
@@ -1285,7 +1285,7 @@ class TestBackends(unittest.TestCase):
             lowered_submods = get_lowered_submodules(exported_gm)
             self.assertEqual(len(lowered_submods), 1)
 
-        _ = edge_dialect_to_executorch_multiple(lowered_multi_method_prog)
+        _ = multi_method_program_to_executorch(lowered_multi_method_prog)
 
     def test_lower_multiple_selective(self) -> None:
         class MultipleMethodModule(torch.nn.Module):
@@ -1363,4 +1363,4 @@ class TestBackends(unittest.TestCase):
         self.assertEqual(len(lowered_submods), 0)
 
         # Check we can export to executorch properly
-        _ = edge_dialect_to_executorch_multiple(lowered_multi_method_prog)
+        _ = multi_method_program_to_executorch(lowered_multi_method_prog)

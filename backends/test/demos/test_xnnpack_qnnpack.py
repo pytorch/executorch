@@ -91,7 +91,7 @@ class TestXnnQnnBackends(unittest.TestCase):
                 module_with_qnnpack_delegate, XnnpackFloatingPointPartitioner
             )
 
-        program_with_delegates = exir.edge_dialect_to_executorch(
+        program_with_delegates = exir.export_graph_module_to_executorch(
             module_with_xnn_and_qnn,
             exir.ExecutorchBackendConfig(passes=[SpecPropPass()]),
         )

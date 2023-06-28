@@ -523,7 +523,7 @@ class TestQnnbackends(unittest.TestCase):
             lowered_module.code
         )
 
-        program = exir.edge_dialect_to_executorch(
+        program = exir.export_graph_module_to_executorch(
             lowered_module, config=EXECUTORCH_BACKEND_CONFIG
         ).program
 

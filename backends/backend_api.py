@@ -12,8 +12,8 @@ from executorch.backends.utils import is_identical_graph
 from executorch.exir import (
     attach_export_graph_metadata,
     CallSpec,
-    EdgeDialectGraphModule,
     ExirExportedProgram,
+    ExportGraphModule,
     ExportGraphSignature,
     get_exir_meta,
     MultiMethodExirExportedProgram,
@@ -27,7 +27,7 @@ from executorch.exir.delegate import (
     LoweredBackendModule,
     patch_lowered_functions,
 )
-from executorch.exir.graph_module import ExportGraphModule, get_control_flow_submodules
+from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.pass_base import ExportPass
 
 
@@ -38,14 +38,14 @@ def to_backend(args):
 
     def to_backend(
         backend_id: str,
-        edge_graph_module: EdgeDialectGraphModule,
+        edge_graph_module: ExportGraphModule,
         compile_specs: List[CompileSpec],
     ) -> LoweredBackendModule:
 
     def to_backend(
-        graph_module: EdgeDialectGraphModule,
+        graph_module: ExportGraphModule,
         partitioner: Type[TPartitioner],
-    ) -> EdgeDialectGraphModule
+    ) -> ExportGraphModule
 
     Note: Python is dynamically-typed language and therefore cannot have proper method overloading as that requires the language to
     be able to discriminate between types at compile-time. @to_backend.register will attach the function to to_backend() base on the type of the first
@@ -57,14 +57,14 @@ def to_backend(args):
 @to_backend.register
 def _(
     backend_id: str,
-    edge_graph_module: EdgeDialectGraphModule,
+    edge_graph_module: ExportGraphModule,
     compile_specs: List[CompileSpec],
 ) -> LoweredBackendModule:
     """
     Add overloaded implementations for to_backend:
     def to_backend(
         backend_id: str,
-        edge_graph_module: EdgeDialectGraphModule,
+        edge_graph_module: ExportGraphModule,
         compile_specs: List[CompileSpec],
     ) -> LoweredBackendModule:
     Requires the passed in Module in Edge dialect to be executed in the backend identified
@@ -198,22 +198,22 @@ def _partition_and_lower(
 
 @to_backend.register
 def _(
-    edge_graph_module: EdgeDialectGraphModule,
+    edge_graph_module: ExportGraphModule,
     partitioner: Type[TPartitioner],
-) -> EdgeDialectGraphModule:
+) -> ExportGraphModule:
     """
     Add overloaded implementations for to_backend:
     def to_backend(
-        edge_graph_module: EdgeDialectGraphModule,
+        edge_graph_module: ExportGraphModule,
         partitioner: Type[TPartitioner],
-    ) -> EdgeDialectGraphModule
+    ) -> ExportGraphModule
 
     Returns a semantically-equivalent program to the one given as input (represented
     as a graph module in Edge dialect), but with portions of the program targeted for
     delegation as determined by the partitioner.
 
     Args:
-        EdgeDialectGraphModule: Program in Edge dialect.
+        ExportGraphModule: Program in Edge dialect.
 
         partitioner: An instance of the Partitioner class type, in charge with tagging
         portions of the input program for delegation. A valid partitioner must have
@@ -223,7 +223,7 @@ def _(
 
 
     Returns:
-        EdgeDialectGraphModule: The input program, with some portions targeted for delegation.
+        ExportGraphModule: The input program, with some portions targeted for delegation.
     """
     copied_graph_module = copy.deepcopy(edge_graph_module)
     # Call the partitioner on the given graph module

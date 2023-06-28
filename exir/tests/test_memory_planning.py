@@ -435,7 +435,7 @@ class TestMisc(unittest.TestCase):
         config = exir.ExecutorchBackendConfig(
             passes=[QuantFusionPass(), ConstPropPass(propogate_quant=True)],
         )
-        program = exir.edge_dialect_to_executorch(backend_module, config)
+        program = exir.export_graph_module_to_executorch(backend_module, config)
         gm = program.dump_graph_module()
         gm.print_readable()
         print_program(program.program, mark_dynamic_shape_tensor=True)

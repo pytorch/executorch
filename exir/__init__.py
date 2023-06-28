@@ -14,6 +14,7 @@ from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.graph_module import (
     attach_export_graph_metadata,
     EXIR_METADATA,
+    ExportGraphModule,
     get_exir_meta,
     make_export_graph_module,
     reduce_graph_module,
@@ -60,9 +61,6 @@ from torch.utils import _pytree as pytree
 
 
 Val = Any
-
-EdgeDialectGraphModule = torch.fx.GraphModule
-EXIR_EDGE_METADATA = "_exir_edge_metadata"
 
 
 @compatibility(is_backward_compatible=False)
@@ -260,9 +258,7 @@ class ExirExportedProgram(ExportedProgram):
         self,
         config: Optional[ExecutorchBackendConfig] = None,
     ) -> "ExecutorchProgram":
-        if not self.after_to_edge_passes:
-            raise RuntimeError("Must run to_edge before to_exeecutorch.")
-        return edge_dialect_program_to_executorch(self, config)
+        return exir_exported_program_to_executorch(self, config)
 
     def __reduce__(
         self,
@@ -293,14 +289,18 @@ class ExirExportedProgram(ExportedProgram):
 class ExecutorchProgram:
     def __init__(
         self,
-        graph_module: torch.fx.GraphModule,
+        exported_program: ExirExportedProgram,
         emit_stacktrace: bool,
         extract_segments: bool,
         segment_alignment: int,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
     ) -> None:
-        self.graph_module = graph_module
+        if not exported_program.after_to_edge_passes:
+            raise RuntimeError(
+                "Need to call prog.to_edge prior to constructing ExecutorchProgram."
+            )
+        self.exported_program = exported_program
         self._buffer: Optional[bytes] = None
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
@@ -334,6 +334,10 @@ class ExecutorchProgram:
         if self._emitter_output:
             return self._emitter_output.debug_handle_map
         return {}
+
+    @property
+    def graph_module(self) -> ExportGraphModule:
+        return self.exported_program.graph_module
 
     # TODO (zhxchen17) Change this to property.
     def dump_graph_module(self) -> torch.fx.GraphModule:
@@ -761,7 +765,7 @@ class MultiMethodExirExportedProgram:
         self,
         config: Optional[ExecutorchBackendConfig] = None,
     ) -> MultiMethodExecutorchProgram:
-        return edge_dialect_to_executorch_multiple(self, config)
+        return multi_method_program_to_executorch(self, config)
 
 
 # Check that `method` is a valid method and raise an error otherwise.
@@ -907,15 +911,17 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
     return passes
 
 
-def edge_dialect_program_to_executorch(
+def exir_exported_program_to_executorch(
     edge_dialect_program: ExirExportedProgram,
     config: Optional[ExecutorchBackendConfig] = None,
 ) -> ExecutorchProgram:
+    if not edge_dialect_program.after_to_edge_passes:
+        raise RuntimeError("Must run to_edge before to_executorch.")
     config = config or ExecutorchBackendConfig()
     new_prog = edge_dialect_program.transform(*edge_to_executorch_passes(config))
     meta = get_exir_meta(new_prog.graph_module)
     executorch_prog = ExecutorchProgram(
-        new_prog.graph_module,
+        new_prog,
         emit_stacktrace=config.emit_stacktrace,
         extract_segments=config.extract_segments,
         segment_alignment=config.segment_alignment,
@@ -932,17 +938,31 @@ def edge_dialect_program_to_executorch(
 
 
 # TODO(ycao): Remove this once all single-method programs migrated to new API
-def edge_dialect_to_executorch(
-    edge_dialect_program: EdgeDialectGraphModule,
+def export_graph_module_to_executorch(
+    edge_dialect_graph_module: ExportGraphModule,
     config: Optional[ExecutorchBackendConfig] = None,
 ) -> ExecutorchProgram:
     config = config or ExecutorchBackendConfig()
     pm = PassManager(edge_to_executorch_passes(config))
-    res = pm(edge_dialect_program)
+    res = pm(edge_dialect_graph_module)
     meta = get_exir_meta(res.graph_module)
     assert res is not None
-    executorch_prog = ExecutorchProgram(
+    ep = ExirExportedProgram(
         res.graph_module,
+        res.graph_module.graph,
+        ExportGraphSignature([], [], [], [], {}, {}, {}, None),
+        # pyre-fixme[6]: For 1st argument expected `TreeSpec` but got
+        #  `Optional[TreeSpec]`.
+        # pyre-fixme[6]: For 2nd argument expected `TreeSpec` but got
+        #  `Optional[TreeSpec]`.
+        CallSpec(meta.in_spec, meta.out_spec),
+        {},
+        {},
+        [],
+        True,
+    )
+    executorch_prog = ExecutorchProgram(
+        ep,
         emit_stacktrace=config.emit_stacktrace,
         extract_segments=config.extract_segments,
         segment_alignment=config.segment_alignment,
@@ -950,12 +970,12 @@ def edge_dialect_to_executorch(
         delegate_alignment=config.delegate_alignment,
     )
     attach_export_graph_metadata(executorch_prog.graph_module, meta)
-    executorch_prog.graph_module.meta.update(edge_dialect_program.meta)
+    executorch_prog.graph_module.meta.update(edge_dialect_graph_module.meta)
     executorch_prog.graph_module.meta.update(res.graph_module.meta)
     return executorch_prog
 
 
-def edge_dialect_to_executorch_multiple(
+def multi_method_program_to_executorch(
     edge_dialect_program: MultiMethodExirExportedProgram,
     config: Optional[ExecutorchBackendConfig] = None,
 ) -> MultiMethodExecutorchProgram:

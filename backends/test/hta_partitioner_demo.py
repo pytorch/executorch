@@ -9,7 +9,7 @@ from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
 
 from executorch.backends.partitioner import DelegationSpec, Partitioner
 from executorch.backends.test.qnn_backend_demo import QnnBackend
-from executorch.exir import EdgeDialectGraphModule
+from executorch.exir import ExportGraphModule
 from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import Partition
 
@@ -225,9 +225,7 @@ class HTAPartitionerOnePatternDemo(Partitioner):
 
         self.partition_tags = {}
 
-    def partition(
-        self, edge_graph_module: EdgeDialectGraphModule
-    ) -> EdgeDialectGraphModule:
+    def partition(self, edge_graph_module: ExportGraphModule) -> ExportGraphModule:
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, patterns=self.patterns
         )

@@ -26,7 +26,7 @@ from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-from executorch.exir import CaptureConfig, edge_dialect_to_executorch
+from executorch.exir import CaptureConfig, export_graph_module_to_executorch
 from executorch.exir.graph_module import attach_export_graph_metadata, get_exir_meta
 
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
@@ -182,7 +182,7 @@ class TestXNNPACK(unittest.TestCase):
             with validation_disabled():
                 delegated_module = to_backend(edge_module, partitioner)
 
-            program = edge_dialect_to_executorch(
+            program = export_graph_module_to_executorch(
                 delegated_module,
                 get_xnnpack_executorch_backend_config([SpecPropPass()]),
             ).program
@@ -190,7 +190,7 @@ class TestXNNPACK(unittest.TestCase):
             delegated_module = to_backend("XnnpackBackend", edge_module, [])
 
             graph_module = capture_graph_for_xnnpack(delegated_module, sample_inputs)
-            program = edge_dialect_to_executorch(
+            program = export_graph_module_to_executorch(
                 graph_module,
                 get_xnnpack_executorch_backend_config(),
             ).program
@@ -389,7 +389,7 @@ class TestXNNPACK(unittest.TestCase):
         composite_model(*example_inputs)
 
         graph_module = capture_graph_for_xnnpack(composite_model, example_inputs)
-        program = edge_dialect_to_executorch(
+        program = export_graph_module_to_executorch(
             graph_module,
             get_xnnpack_executorch_backend_config(),
         ).program

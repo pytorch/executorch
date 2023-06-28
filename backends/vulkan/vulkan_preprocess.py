@@ -9,7 +9,7 @@ from executorch.backends.backend_details import BackendDetails, CompileSpec
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     convert_to_flatbuffer,
 )
-from executorch.exir import EdgeDialectGraphModule
+from executorch.exir import ExportGraphModule
 from torch import dtype, float32, Tensor
 from torch.fx import Node
 
@@ -44,7 +44,7 @@ class VulkanBackend(BackendDetails):
     # pyre-ignore
     def preprocess(
         cls,
-        edge_ir_module: EdgeDialectGraphModule,
+        edge_ir_module: ExportGraphModule,
         module_compile_spec: List[CompileSpec],
     ) -> bytes:
         vk_nodes = []

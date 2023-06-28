@@ -169,7 +169,7 @@ class TestRPCDemos(unittest.TestCase):
             demo_backend_lowered, ExecutorBackendPartitioner
         )
 
-        prog_buffer = exir.edge_dialect_to_executorch(executor_backend_lowered)
+        prog_buffer = exir.export_graph_module_to_executorch(executor_backend_lowered)
         buffer = prog_buffer.buffer
 
         executorch_module = _load_for_executorch_from_buffer(buffer)

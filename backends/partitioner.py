@@ -66,5 +66,5 @@ class Partitioner(ABC):
 
 
 # Define Type variables to allow instantiate an instance a subclass of Partitioner
-# in to_backend(edge_graph_module: EdgeDialectGraphModule, partitioner: Type[TPartitioner])
+# in to_backend(edge_graph_module: ExportGraphModule, partitioner: Type[TPartitioner])
 TPartitioner = TypeVar("TPartitioner", bound=Partitioner)
