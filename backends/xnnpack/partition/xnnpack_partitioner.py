@@ -553,6 +553,9 @@ SUPPORTED_QUANT_MODULES = [
     torch.nn.ReLU,
     torch.nn.functional.relu,
     torch.nn.functional.relu_,
+    torch.nn.functional.leaky_relu,
+    torch.nn.functional.leaky_relu_,
+    torch.nn.LeakyReLU,
 ]
 
 # Modules which support dynamic quantization

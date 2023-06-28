@@ -178,6 +178,47 @@ class TestXNNPACKQuantized(TestXNNPACK):
         example_inputs = (torch.randn(1, 1, 1),)
         self.quantize_and_test_model(torch.nn.Hardtanh(), example_inputs)
 
+    def test_xnnpack_leaky_relu(self):
+        example_inputs = (torch.randn(1, 3, 3),)
+
+        class LeakyReLUModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.leaky_relu_out_of_place = torch.nn.LeakyReLU(negative_slope=0.2)
+
+            def forward(self, x):
+                return self.leaky_relu_out_of_place(x)
+
+        self.quantize_and_test_model(LeakyReLUModule(), example_inputs)
+
+    def test_xnnpack_leaky_relu2(self):
+        example_inputs = (torch.randn(1, 3, 3),)
+
+        class LeakyReLUModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.leaky_relu_in_place = torch.nn.LeakyReLU(
+                    negative_slope=0.08, inplace=True
+                )
+
+            def forward(self, x):
+                return self.leaky_relu_in_place(x)
+
+        self.quantize_and_test_model(LeakyReLUModule(), example_inputs)
+
+    def test_xnnpack_leaky_relu3(self):
+        example_inputs = (torch.randn(1, 3, 3),)
+
+        class LeakyReLUModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.leaky_relu_functional_default = torch.nn.functional.leaky_relu
+
+            def forward(self, x):
+                return self.leaky_relu_functional_default(x)
+
+        self.quantize_and_test_model(LeakyReLUModule(), example_inputs)
+
     def test_xnnpack_qlinear(self):
         in_size = 1
         input_size = 3
