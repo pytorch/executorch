@@ -148,7 +148,7 @@ class TestExperimental(unittest.TestCase):
         inputs = (torch.ones(3),)
         ep = exir.capture(f, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
 
-        # Pickle the ExportGraphModule
+        # Pickle the torch.fx.GraphModule
         pickled_ep = pickle.dumps(
             convert_fake_tensor_to_tensor_meta(copy.deepcopy(ep))[0]
         )

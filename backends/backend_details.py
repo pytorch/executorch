@@ -2,9 +2,9 @@ from abc import ABC, abstractmethod
 
 from typing import Callable, Dict, List
 
-from executorch.backends.compile_spec_schema import CompileSpec
+import torch
 
-from executorch.exir import ExportGraphModule
+from executorch.backends.compile_spec_schema import CompileSpec
 from torch.fx.node import Node
 
 
@@ -45,7 +45,7 @@ class BackendDetails(ABC):
     # it's a virtual method and inheritant class needs to implement the actual function
     @abstractmethod
     def preprocess(
-        edge_ir_module: ExportGraphModule,
+        edge_ir_module: torch.fx.GraphModule,
         compile_specs: List[CompileSpec],
     ) -> bytes:
         # Users should return a compiled blob - a binary that can run the desired

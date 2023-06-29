@@ -23,7 +23,6 @@ from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
 from executorch.backends.compile_spec_schema import CompileSpec
 from executorch.backends.partitioner import DelegationSpec, Partitioner
 from executorch.exir import CaptureConfig
-from executorch.exir.graph_module import ExportGraphModule
 
 from executorch.exir.pass_base import ExportPass, map_args
 from executorch.exir.tracer import ExirDynamoConfig
@@ -199,7 +198,7 @@ class PatternWrapper:
         self.pattern = pattern
         self.inputs = inputs
 
-    def get_graph_module(self) -> ExportGraphModule:
+    def get_graph_module(self) -> torch.fx.GraphModule:
         return (
             exir.capture(
                 self.pattern,
@@ -422,7 +421,7 @@ class DuplicateDequantNodePass(ExportPass):
 class ConvAddBackendDemo(BackendDetails):
     @staticmethod
     def preprocess(
-        edge_ir_module: ExportGraphModule,
+        edge_ir_module: torch.fx.GraphModule,
         compile_specs: List[CompileSpec],
     ) -> bytes:
         sub_module = copy.deepcopy(edge_ir_module)
@@ -450,7 +449,9 @@ class QuantizedConvAddOpPartitioner(Partitioner):
         self.delegation_spec = DelegationSpec(ConvAddBackendDemo.__name__, [])
         self.partition_tags: Dict[str, DelegationSpec] = {}
 
-    def partition(self, edge_graph_module: ExportGraphModule) -> ExportGraphModule:
+    def partition(
+        self, edge_graph_module: torch.fx.GraphModule
+    ) -> torch.fx.GraphModule:
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, patterns=self.patterns
         )

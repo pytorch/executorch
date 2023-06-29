@@ -26,7 +26,6 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
 from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
     convert_to_flatbuffer,
 )
-from executorch.exir import ExportGraphModule
 
 XNN_VALUE_FLAG_NON_EXTERNAL = 0
 XNN_VALUE_FLAG_EXTERNAL_INPUT = 1
@@ -143,7 +142,7 @@ def node_to_per_channel_quantized_xvalue(
 
 
 def generate_node_to_external_map(
-    edge_graph_module: ExportGraphModule,
+    edge_graph_module: torch.fx.GraphModule,
 ) -> Dict[torch.fx.Node, ExternalMeta]:
     node_to_external_map = {}
     for node in edge_graph_module.graph.nodes:
@@ -170,7 +169,7 @@ def generate_node_to_external_map(
 class XnnpackBackend(BackendDetails):
     @staticmethod
     def preprocess(
-        edge_ir_module: ExportGraphModule,
+        edge_ir_module: torch.fx.GraphModule,
         compile_specs: List[CompileSpec],
     ) -> bytes:
         edge_ir_copy = copy.deepcopy(edge_ir_module)

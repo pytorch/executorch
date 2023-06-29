@@ -5,7 +5,6 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.utils._pytree as pytree
-from executorch.exir.graph_module import ExportGraphModule
 from executorch.exir.tensor import TensorSpec
 from torch._export.serde.schema import TensorMeta
 from torch._export.serde.serialize import (
@@ -56,8 +55,8 @@ def add_assertions(graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
 
 
 def convert_fake_tensor_to_tensor_meta(
-    ep: ExportGraphModule,
-) -> Tuple[ExportGraphModule, Optional[ShapeEnv]]:
+    ep: torch.fx.GraphModule,
+) -> Tuple[torch.fx.GraphModule, Optional[ShapeEnv]]:
     """
     Replace the faketensor metadata with the tensor metadata dataclass since we
     cannot serialize faketensors
@@ -96,8 +95,8 @@ def convert_fake_tensor_to_tensor_meta(
 
 
 def convert_tensor_meta_to_fake_tensor(
-    ep: ExportGraphModule, shape_env: Optional[ShapeEnv] = None
-) -> ExportGraphModule:
+    ep: torch.fx.GraphModule, shape_env: Optional[ShapeEnv] = None
+) -> torch.fx.GraphModule:
     """
     Replace (inplace) the tensor metadata with faketensor
     """

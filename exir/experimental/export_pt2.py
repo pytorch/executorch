@@ -5,11 +5,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, List, Optional, Tuple
 
+import torch
+
 from executorch import exir
 from executorch.exir import CaptureConfig
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
-
-from executorch.exir.graph_module import ExportGraphModule
 
 from executorch.exir.tracer import Value
 
@@ -43,11 +43,11 @@ class Guard:
 class Trace:
     """
     Immutable object that abstracts the result of exir.trace
-    which is essentially a ExportGraphModule plus all the assumptions
+    which is essentially a torch.fx.GraphModule plus all the assumptions
     that are made about this tracing that are represented as Guard.
     """
 
-    graph_module: ExportGraphModule
+    graph_module: torch.fx.GraphModule
     guards: List[Guard]
     inputs: Tuple[Value]
 
@@ -76,7 +76,7 @@ class ExportSession:
         # TODO implement this
         return ""
 
-    def export(self) -> Optional[ExportGraphModule]:
+    def export(self) -> Optional[torch.fx.GraphModule]:
         """
         Exports a final GraphModule that is ready to be executed.
         This will require that all guards imposed on GraphModule are

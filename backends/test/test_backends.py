@@ -4,6 +4,7 @@ from typing import Dict, List
 import executorch.exir as exir
 
 import torch
+import torch.fx as fx
 from executorch.backends.backend_api import (
     LoweredBackendModule,
     to_backend,
@@ -29,7 +30,7 @@ from executorch.exir import (
 )
 
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_submodules
-from executorch.exir.graph_module import ExportGraphModule, get_control_flow_submodules
+from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.print_program import print_program
 from executorch.exir.schema import (
     BackendDelegate,
@@ -1267,7 +1268,7 @@ class TestBackends(unittest.TestCase):
             exported_prog = lowered_multi_method_prog.find_method(method_name)
             self.assertIsNotNone(exported_prog)
             exported_gm = exported_prog.graph_module
-            self.assertIsInstance(exported_gm, ExportGraphModule)
+            self.assertIsInstance(exported_gm, fx.GraphModule)
 
             eager_method = getattr(module, method_name)
             eager_results = eager_method(*args)
@@ -1329,7 +1330,7 @@ class TestBackends(unittest.TestCase):
             exported_prog = lowered_multi_method_prog.find_method(method_name)
             self.assertIsNotNone(exported_prog)
             exported_gm = exported_prog.graph_module
-            self.assertIsInstance(exported_gm, ExportGraphModule)
+            self.assertIsInstance(exported_gm, fx.GraphModule)
 
             eager_method = getattr(module, method_name)
             eager_results = eager_method(*args)
@@ -1351,7 +1352,7 @@ class TestBackends(unittest.TestCase):
         method2_prog = lowered_multi_method_prog.find_method("method2")
         self.assertIsNotNone(method2_prog)
         method2_gm = method2_prog.graph_module
-        self.assertIsInstance(method2_gm, ExportGraphModule)
+        self.assertIsInstance(method2_gm, fx.GraphModule)
         add_nodes = [
             node
             for node in method2_gm.graph.nodes

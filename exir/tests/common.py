@@ -5,7 +5,7 @@ from typing import Any, Callable, List
 import executorch.exir as exir
 import torch
 import torch.utils._pytree as pytree
-from executorch.exir.graph_module import ExportGraphModule, make_export_graph_module
+from executorch.exir.graph_module import make_export_graph_module
 
 from executorch.exir.schema import (
     AllocationDetails,
@@ -79,16 +79,16 @@ def get_test_program() -> Program:
 
 
 # pyre-ignore
-def get_graph_module_with_op(op: Callable, args: Any) -> ExportGraphModule:
+def get_graph_module_with_op(op: Callable, args: Any) -> torch.fx.GraphModule:
     """
-    Constructs an ExportGraphModule containing just a call to the given op.
+    Constructs an torch.fx.GraphModule containing just a call to the given op.
 
     Args:
         op: A callable op
         args: Sample arguments to this given op
 
     Returns:
-        ExportGraphModule with a graph like: inputs -> op -> output
+        torch.fx.GraphModule with a graph like: inputs -> op -> output
     """
 
     trace_args, in_spec = pytree.tree_flatten(args)

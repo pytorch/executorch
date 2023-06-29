@@ -44,7 +44,7 @@ maintained after the pass is run.
 
 An example for one-to-one mappings, if we wanted to replace an op A with another op B,
 we can run the given
-`ExportGraphModule`, and very time we see op A, return op B.
+`fx.GraphModule`, and very time we see op A, return op B.
 
 An example is:
 
@@ -132,7 +132,7 @@ class RemoveDetachPass(ExportPass):
 
 An example of utilizing local node information is, if we wanted to convert all the
 scalars within the graph to tensors, we
-can run the given `ExportGraphModule`, and for every argument that contains a scalar,
+can run the given `fx.GraphModule`, and for every argument that contains a scalar,
 we convert it to a tensor. It might look something like:
 
 ```python
@@ -433,7 +433,7 @@ We also provide a combined helper function:
 [`generate_pattern_op_partitions`](https://fburl.com/code/pquxdl24)
 
 Args:
-* `graph_module (ExportGraphModule)`: Module that we want to partition
+* `graph_module (fx.GraphModule)`: Module that we want to partition
 * `patterns (List[torch.fx.Graph])`: A list of patterns in the form of
    torch.fx.Graph. These graphs can be obtained through the `graph` field from a
    GraphModule obtained by exir.capture (recommended) or symbolic tracing (which

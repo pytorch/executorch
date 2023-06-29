@@ -9,7 +9,6 @@ from executorch.backends.compile_spec_schema import CompileSpec
 from executorch.exir.graph_module import (
     _get_submodule,
     EXIR_METADATA,
-    ExportGraphModule,
     make_export_graph_module,
 )
 from executorch.exir.tracer import Value
@@ -58,11 +57,11 @@ class LoweredBackendModule(torch.nn.Module):
     _backend_id: str
     _processed_bytes: bytes
     _compile_specs: List[CompileSpec]
-    _original_module: ExportGraphModule
+    _original_module: torch.fx.GraphModule
 
     def __init__(
         self,
-        edge_ir_m: ExportGraphModule,
+        edge_ir_m: torch.fx.GraphModule,
         backend_id: str,
         processed_bytes: bytes,
         compile_specs: List[CompileSpec],
@@ -86,7 +85,7 @@ class LoweredBackendModule(torch.nn.Module):
         return self._compile_specs
 
     @property
-    def original_module(self) -> ExportGraphModule:
+    def original_module(self) -> torch.fx.GraphModule:
         return self._original_module
 
     # Used to patch each delegated function with a call_delegate call
@@ -305,7 +304,7 @@ def _fixup_output_node(gm: torch.fx.GraphModule) -> None:
             return
 
 
-def generate_in_spec_out_spec(gm: ExportGraphModule) -> None:
+def generate_in_spec_out_spec(gm: torch.fx.GraphModule) -> None:
     output_nodes = []
     for node in gm.graph.nodes:
         if node.op == "output":
@@ -322,11 +321,11 @@ def generate_in_spec_out_spec(gm: ExportGraphModule) -> None:
 
 
 def create_submodule_from_nodes(
-    gm: ExportGraphModule,
+    gm: torch.fx.GraphModule,
     node_list: NodeList,
     tag: str,
     skip_legalize_graph: bool = False,
-) -> Tuple[ExportGraphModule, torch.fx.Node]:
+) -> Tuple[torch.fx.GraphModule, torch.fx.Node]:
     """
     Modifies the given graph module in-place to separate out the given nodes
     into a submodule. The given node_list should form a fully connected

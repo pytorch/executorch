@@ -9,7 +9,7 @@ from executorch.backends.utils import (
     remove_first_quant_and_last_dequant,
     replace_quantized_partition_with_op,
 )
-from executorch.exir import CaptureConfig, ExportGraphModule
+from executorch.exir import CaptureConfig
 
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
 from torch.ao.quantization import get_default_qconfig  # @manual
@@ -249,8 +249,8 @@ class TestPartitioners(unittest.TestCase):
                 self.test = "a"
 
             def partition(
-                self, edge_graph_module: ExportGraphModule
-            ) -> ExportGraphModule:
+                self, edge_graph_module: torch.fx.GraphModule
+            ) -> torch.fx.GraphModule:
                 return edge_graph_module
 
         graph_module = (

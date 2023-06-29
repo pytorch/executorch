@@ -7,7 +7,6 @@ import torch
 import torch.fx
 from executorch.exir.emit._emitter import _EmitterState, _ProgramState, _TopLevelEmitter
 from executorch.exir.error import ExportError, ExportErrorType
-from executorch.exir.graph_module import ExportGraphModule
 from executorch.exir.schema import (
     Bool,
     Chain,
@@ -103,7 +102,7 @@ class EmitterOutput:
 
 
 def emit_program(
-    methods: Union[torch.fx.GraphModule, Dict[str, ExportGraphModule]],
+    methods: Union[torch.fx.GraphModule, Dict[str, torch.fx.GraphModule]],
     emit_stacktrace: bool = False,
     prim_getters: Optional[Dict[str, Any]] = None,
 ) -> EmitterOutput:
@@ -113,7 +112,7 @@ def emit_program(
 
     Args:
         graph_module: Either the graph module that we want to emit into the flatbuffer
-           format, must be ExportGraphModule type or a dictionary of method names to ExportGraphModules
+           format, must be torch.fx.GraphModule type or a dictionary of method names to torch.fx.GraphModules
         emit_stacktrace: Flag to enable emission of a stacktrace for each
            instruction for debugging purposes
 
@@ -127,12 +126,12 @@ def emit_program(
     # validation
     bad_methods = []
     for name, graph_module in methods.items():
-        if not isinstance(graph_module, ExportGraphModule):
+        if not isinstance(graph_module, torch.fx.GraphModule):
             bad_methods.append(name)
     if len(bad_methods) != 0:
         raise ExportError(
             ExportErrorType.INVALID_INPUT_TYPE,
-            f"Did not receive ExportGraphModule for the following methods {str(bad_methods)}",
+            f"Did not receive torch.fx.GraphModule for the following methods {str(bad_methods)}",
         )
 
     plans = []

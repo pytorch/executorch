@@ -2,6 +2,7 @@ from typing import final, List
 
 #  pyre-ignore Undefined import [21]: Could not find a module corresponding to import `executorch.exir.bindings`
 import executorch.exir.bindings as bindings  # @manual=//executorch/exir:bindings
+
 import torch
 
 from executorch.backends.backend_details import BackendDetails, CompileSpec
@@ -16,7 +17,6 @@ from executorch.backends.qnnpack.serialization.qnnpack_graph_serialize import (
 
 from executorch.backends.transforms import get_shape
 
-from executorch.exir import ExportGraphModule
 from executorch.exir.dialects._ops import ops as exir_ops
 
 T_Mm = exir_ops.edge.aten.mm.default
@@ -28,7 +28,7 @@ T_Linear = exir_ops.edge.aten.linear.default
 class QnnpackBackend(BackendDetails):
     @staticmethod
     def preprocess(
-        edge_ir_module: ExportGraphModule,
+        edge_ir_module: torch.fx.GraphModule,
         compile_specs: List[CompileSpec],
     ) -> bytes:
 

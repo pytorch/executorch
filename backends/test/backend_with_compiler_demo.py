@@ -4,7 +4,6 @@ import torch
 
 from executorch.backends.backend_details import BackendDetails
 from executorch.backends.compile_spec_schema import CompileSpec
-from executorch.exir import ExportGraphModule
 from torch.fx.node import Node
 
 
@@ -71,7 +70,7 @@ class BackendWithCompilerDemo(BackendDetails):
 
     @staticmethod
     def preprocess(
-        edge_ir_module: ExportGraphModule,
+        edge_ir_module: torch.fx.GraphModule,
         compile_specs: List[CompileSpec],
     ) -> bytes:
         processed_bytes = ""

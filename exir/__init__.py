@@ -14,7 +14,6 @@ from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.graph_module import (
     attach_export_graph_metadata,
     EXIR_METADATA,
-    ExportGraphModule,
     get_exir_meta,
     make_export_graph_module,
     reduce_graph_module,
@@ -336,7 +335,7 @@ class ExecutorchProgram:
         return {}
 
     @property
-    def graph_module(self) -> ExportGraphModule:
+    def graph_module(self) -> torch.fx.GraphModule:
         return self.exported_program.graph_module
 
     # TODO (zhxchen17) Change this to property.
@@ -620,7 +619,7 @@ def capture(
 # multiple methods, all as valid entry points to the program.
 #
 # Internally, each method is represented as a separate ExirExportedProgram.
-# Methods (ExportGraphModule's) do not share anything with each other to
+# Methods (fx.GraphModule's) do not share anything with each other to
 # ensure that each is self-contained. This is important because transformation
 # passes can be local and do not need to concern themselves about other methods
 # that exists on the same MultiMethodExirExportedProgram.
@@ -939,7 +938,7 @@ def exir_exported_program_to_executorch(
 
 # TODO(ycao): Remove this once all single-method programs migrated to new API
 def export_graph_module_to_executorch(
-    edge_dialect_graph_module: ExportGraphModule,
+    edge_dialect_graph_module: torch.fx.GraphModule,
     config: Optional[ExecutorchBackendConfig] = None,
 ) -> ExecutorchProgram:
     config = config or ExecutorchBackendConfig()

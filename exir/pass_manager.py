@@ -57,7 +57,7 @@ class PassManager(fx.PassManager):
             - Ensure that types of operator node match the types specified in
               the node's spec field (ex. if the op returns a tuple then the
               node's spec field is a tuple)
-            - Ensure that the graph module has type ExportGraphModule
+            - Ensure that the graph module has type torch.fx.GraphModule
         """
         assert isinstance(module, fx.GraphModule)
         module.recompile()

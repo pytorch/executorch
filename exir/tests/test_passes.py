@@ -14,7 +14,6 @@ from executorch.exir import CaptureConfig, EdgeCompileConfig, memory
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.emit import emit_program
-from executorch.exir.graph_module import ExportGraphModule
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (
@@ -417,7 +416,7 @@ class TestPasses(unittest.TestCase):
                 c = torch.cat([self.a, b])
                 return (c + c) + x
 
-        def count_additions(gm: ExportGraphModule) -> int:
+        def count_additions(gm: torch.fx.GraphModule) -> int:
             return sum(
                 (node.target == torch.ops.aten.add.Tensor) for node in gm.graph.nodes
             )

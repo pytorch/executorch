@@ -14,7 +14,6 @@ import torch
 import torch.utils._pytree as pytree
 from executorch.exir.error import ExportError
 from executorch.exir.experimental.funktionalize import FunktionalizationPass
-from executorch.exir.graph_module import ExportGraphModule
 from executorch.exir.passes import DebugPass
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tracer import dynamo_trace, ExirDynamoConfig, using_dynamo
@@ -77,9 +76,9 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             .graph_module
         )
 
-        self.assertTrue(isinstance(f, ExportGraphModule))
+        self.assertTrue(isinstance(f, torch.fx.GraphModule))
         g = copy.deepcopy(f)
-        self.assertTrue(isinstance(g, ExportGraphModule))
+        self.assertTrue(isinstance(g, torch.fx.GraphModule))
 
     def test_stacktrace(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:

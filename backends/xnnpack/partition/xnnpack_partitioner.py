@@ -41,7 +41,6 @@ from executorch.backends.xnnpack.partition.support_patterns import (
     get_sub_graph,
 )
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
-from executorch.exir import ExportGraphModule
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import chain, OperatorSupportBase
@@ -329,7 +328,7 @@ class _BasePartitioner(Partitioner):
         else:
             log.info(f"Found {pl} subgraphs to be partitioned.")
 
-    def partition(self, graph_module: ExportGraphModule) -> ExportGraphModule:
+    def partition(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         class MatchTag(OperatorSupportBase):
             def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
                 return node.meta.get("match", False)
@@ -406,7 +405,7 @@ class _SingleOpDelegatePartitioner(_BasePartitioner):
         self.transforms = transforms
 
     # override
-    def partition(self, graph_module: ExportGraphModule) -> ExportGraphModule:
+    def partition(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         # TODO delete this since we are not allowed to do this
         if self.transforms is not None:
             for transform in self.transforms:  # pyre-ignore
@@ -617,10 +616,10 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         )
 
     def get_module_partitions(
-        self, graph_module: ExportGraphModule
+        self, graph_module: torch.fx.GraphModule
     ) -> List[List[torch.fx.Node]]:
         """
-        Get all partitions in the ExportGraphModule for the supported
+        Get all partitions in the torch.fx.GraphModule for the supported
         modules.
         """
         src_partition_dict = get_source_partitions(
@@ -637,9 +636,9 @@ class XnnpackFloatingPointPartitioner(Partitioner):
 
         return module_partitions
 
-    def generate_partitions(self, graph_module: ExportGraphModule) -> List[Any]:
+    def generate_partitions(self, graph_module: torch.fx.GraphModule) -> List[Any]:
         """
-        Generate a list of partitions for an ExportGraphModule.
+        Generate a list of partitions for an torch.fx.GraphModule.
         Also pass the supported ops to match.
         """
         matched_module_nodes = self.get_module_partitions(graph_module)
@@ -661,7 +660,7 @@ class XnnpackFloatingPointPartitioner(Partitioner):
                 self.partition_tags[delegation_tag] = self.delegation_spec
 
     # override
-    def partition(self, graph_module: ExportGraphModule) -> ExportGraphModule:
+    def partition(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         """
         Run the partitioner on the given graph module, then tag each partition
         with its delegation tag (and partition id)
@@ -797,7 +796,7 @@ class XnnpackDynamicallyQuantizedPartitioner2(XnnpackQuantizedPartitioner2):
         super().__init__(supported_modules, supported_ops)
 
     # override
-    def partition(self, graph_module: ExportGraphModule) -> ExportGraphModule:
+    def partition(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         """
         Run the partitioner on the given graph module, then tag each partition with its delegegation tag (and partition id)
 

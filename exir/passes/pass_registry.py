@@ -31,7 +31,7 @@ class PassRegistry:
         of the function passed in.
 
         This decorator can be used on top of functions (with type
-        PassManagerParams * ExportGraphModule -> None) or on top of PassBase
+        PassManagerParams * torch.fx.GraphModule -> None) or on top of PassBase
         subclasses instances.
         """
 

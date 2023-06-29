@@ -4,6 +4,8 @@ from contextlib import contextmanager
 from functools import singledispatch
 from typing import Dict, Generator, List, Type, Union
 
+import torch
+
 from executorch.backends.backend_details import BackendDetails
 from executorch.backends.compile_spec_schema import CompileSpec
 
@@ -13,7 +15,6 @@ from executorch.exir import (
     attach_export_graph_metadata,
     CallSpec,
     ExirExportedProgram,
-    ExportGraphModule,
     ExportGraphSignature,
     get_exir_meta,
     MultiMethodExirExportedProgram,
@@ -38,14 +39,14 @@ def to_backend(args):
 
     def to_backend(
         backend_id: str,
-        edge_graph_module: ExportGraphModule,
+        edge_graph_module: torch.fx.GraphModule,
         compile_specs: List[CompileSpec],
     ) -> LoweredBackendModule:
 
     def to_backend(
-        graph_module: ExportGraphModule,
+        graph_module: torch.fx.GraphModule,
         partitioner: Type[TPartitioner],
-    ) -> ExportGraphModule
+    ) -> torch.fx.GraphModule
 
     Note: Python is dynamically-typed language and therefore cannot have proper method overloading as that requires the language to
     be able to discriminate between types at compile-time. @to_backend.register will attach the function to to_backend() base on the type of the first
@@ -57,14 +58,14 @@ def to_backend(args):
 @to_backend.register
 def _(
     backend_id: str,
-    edge_graph_module: ExportGraphModule,
+    edge_graph_module: torch.fx.GraphModule,
     compile_specs: List[CompileSpec],
 ) -> LoweredBackendModule:
     """
     Add overloaded implementations for to_backend:
     def to_backend(
         backend_id: str,
-        edge_graph_module: ExportGraphModule,
+        edge_graph_module: torch.fx.GraphModule,
         compile_specs: List[CompileSpec],
     ) -> LoweredBackendModule:
     Requires the passed in Module in Edge dialect to be executed in the backend identified
@@ -135,8 +136,8 @@ def validation_disabled() -> Generator[None, None, None]:
 
 
 def _partition_and_lower(
-    tagged_graph_module: ExportGraphModule, partitioner_instance: Partitioner
-) -> ExportGraphModule:
+    tagged_graph_module: torch.fx.GraphModule, partitioner_instance: Partitioner
+) -> torch.fx.GraphModule:
     for tag, delegation_spec in partitioner_instance.partition_tags.items():
         # Create partition with nodes containing this tag. There should only be
         # one contained submodule per tag
@@ -198,22 +199,22 @@ def _partition_and_lower(
 
 @to_backend.register
 def _(
-    edge_graph_module: ExportGraphModule,
+    edge_graph_module: torch.fx.GraphModule,
     partitioner: Type[TPartitioner],
-) -> ExportGraphModule:
+) -> torch.fx.GraphModule:
     """
     Add overloaded implementations for to_backend:
     def to_backend(
-        edge_graph_module: ExportGraphModule,
+        edge_graph_module: torch.fx.GraphModule,
         partitioner: Type[TPartitioner],
-    ) -> ExportGraphModule
+    ) -> torch.fx.GraphModule
 
     Returns a semantically-equivalent program to the one given as input (represented
     as a graph module in Edge dialect), but with portions of the program targeted for
     delegation as determined by the partitioner.
 
     Args:
-        ExportGraphModule: Program in Edge dialect.
+        torch.fx.GraphModule: Program in Edge dialect.
 
         partitioner: An instance of the Partitioner class type, in charge with tagging
         portions of the input program for delegation. A valid partitioner must have
@@ -223,7 +224,7 @@ def _(
 
 
     Returns:
-        ExportGraphModule: The input program, with some portions targeted for delegation.
+        torch.fx.GraphModule: The input program, with some portions targeted for delegation.
     """
     copied_graph_module = copy.deepcopy(edge_graph_module)
     # Call the partitioner on the given graph module
@@ -299,7 +300,7 @@ def to_backend_multiple(
         else:
             method_name_to_delegated_gm[method_name] = to_backend(gm, partitioner)
 
-    def gm_to_program(gm: ExportGraphModule):
+    def gm_to_program(gm: torch.fx.GraphModule):
         ep = ExirExportedProgram(
             gm,
             gm.graph,

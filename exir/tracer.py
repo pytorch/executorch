@@ -35,7 +35,6 @@ from executorch.exir.common import (
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.graph_module import (
     EXIR_METADATA,
-    ExportGraphModule,
     LeafValue,
     make_export_graph_module,
 )
@@ -579,7 +578,7 @@ def flattened_dispatch_trace(
     guards: Set[Guard],
     in_spec: Optional[TreeSpec] = None,
     enable_functionalization: bool = True,
-) -> Tuple[ExportGraphModule, Value]:
+) -> Tuple[torch.fx.GraphModule, Value]:
     if not isinstance(args, tuple):
         raise TypeError(f"Expecting 'args' to be a tuple, got: {type(args)}")
 
@@ -690,7 +689,7 @@ def dynamo_trace(
 def dispatch_trace(
     f: Callable[..., Value],
     args: Tuple[Value, ...],
-) -> ExportGraphModule:
+) -> torch.fx.GraphModule:
     """
     Executes a given callable `f` with a given tuple of arguments. During
     execution, Tensor operations are recorded in a fx.GraphModule, which is then

@@ -5,11 +5,12 @@ import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_
 # pyre-ignore Undefined import [21]: Could not find a module corresponding to import `executorch.exir.bindings`
 import executorch.exir.bindings as bindings  # @manual=//executorch/exir:bindings
 
+import torch
+
 from executorch.backends.backend_details import BackendDetails, CompileSpec
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     convert_to_flatbuffer,
 )
-from executorch.exir import ExportGraphModule
 from torch import dtype, float32, Tensor
 from torch.fx import Node
 
@@ -44,7 +45,7 @@ class VulkanBackend(BackendDetails):
     # pyre-ignore
     def preprocess(
         cls,
-        edge_ir_module: ExportGraphModule,
+        edge_ir_module: torch.fx.GraphModule,
         module_compile_spec: List[CompileSpec],
     ) -> bytes:
         vk_nodes = []

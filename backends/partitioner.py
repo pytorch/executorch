@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List, NamedTuple, TypeVar
 
+import torch.fx as fx
+
 from executorch.backends.backend_details import enforcedmethod
 from executorch.backends.compile_spec_schema import CompileSpec
-from executorch.exir.graph_module import ExportGraphModule
 
 
 class DelegationSpec(NamedTuple):
@@ -35,12 +36,12 @@ class Partitioner(ABC):
 
     partition_tags: Dict[str, DelegationSpec]
 
-    def __call__(self, edge_graph_module: ExportGraphModule) -> ExportGraphModule:
+    def __call__(self, edge_graph_module: fx.GraphModule) -> fx.GraphModule:
         return self.partition(edge_graph_module)
 
     @enforcedmethod
     @abstractmethod
-    def partition(self, edge_graph_module: ExportGraphModule) -> ExportGraphModule:
+    def partition(self, edge_graph_module: fx.GraphModule) -> fx.GraphModule:
         """
         Returns the input exported program with newly created sub-Modules encapsulating
         specific portions of the input "tagged" for delegation.
@@ -66,5 +67,5 @@ class Partitioner(ABC):
 
 
 # Define Type variables to allow instantiate an instance a subclass of Partitioner
-# in to_backend(edge_graph_module: ExportGraphModule, partitioner: Type[TPartitioner])
+# in to_backend(edge_graph_module: torch.fx.GraphModule, partitioner: Type[TPartitioner])
 TPartitioner = TypeVar("TPartitioner", bound=Partitioner)

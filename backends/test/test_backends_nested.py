@@ -63,7 +63,7 @@ class M(torch.nn.Module):
 class Backend2Demo(BackendDetails):
     @staticmethod
     def preprocess(
-        edge_ir_module: exir.ExportGraphModule,
+        edge_ir_module: exir.torch.fx.GraphModule,
         compile_specs: List[CompileSpec],
     ) -> bytes:
         processed_bytes = "Backend2::"
@@ -85,8 +85,8 @@ class Backend2PartitionerDemo(Partitioner):
         self.partition_tags = {}
 
     def partition(
-        self, edge_graph_module: exir.ExportGraphModule
-    ) -> exir.ExportGraphModule:
+        self, edge_graph_module: exir.torch.fx.GraphModule
+    ) -> exir.torch.fx.GraphModule:
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, op_support=self.op_support
         )
@@ -106,7 +106,7 @@ class Backend2PartitionerDemo(Partitioner):
 class Backend1Demo(BackendDetails):
     @staticmethod
     def preprocess(
-        edge_ir_module: exir.ExportGraphModule,
+        edge_ir_module: exir.torch.fx.GraphModule,
         compile_specs: List[CompileSpec],
     ) -> bytes:
         partitioned_module = to_backend(edge_ir_module, Backend2PartitionerDemo)
@@ -153,8 +153,8 @@ class Backend1PartitionerDemo(Partitioner):
         self.partition_tags = {}
 
     def partition(
-        self, edge_graph_module: exir.ExportGraphModule
-    ) -> exir.ExportGraphModule:
+        self, edge_graph_module: exir.torch.fx.GraphModule
+    ) -> exir.torch.fx.GraphModule:
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, op_support=self.op_support
         )

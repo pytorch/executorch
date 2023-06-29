@@ -188,7 +188,7 @@ _Argument: TypeAlias = Union[
 # pyre-ignore[13]: Attribute `node` is never initialized.
 class _Emitter(torch.fx.Interpreter):
     """An abstract interpreter (https://wiki.mozilla.org/Abstract_Interpretation) used to emit the
-    given traced ExportGraphModule to the flatbuffer schema."""
+    given traced torch.fx.GraphModule to the flatbuffer schema."""
 
     node: torch.fx.Node
 

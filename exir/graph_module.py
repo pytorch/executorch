@@ -15,8 +15,6 @@ from executorch.exir.common import setting_python_recursive_limit
 from executorch.exir.error import InternalError
 from executorch.exir.graph import ExportGraph
 
-ExportGraphModule = fx.GraphModule
-
 
 LeafValue = Union[
     torch.Tensor,
@@ -40,7 +38,7 @@ _cache_ops_dict: Dict[
 _cache_fake_ops_dict: Dict[Tuple[str, str], function] = {}
 
 
-def reduce_graph_module(state_bytes: bytes) -> "ExportGraphModule":
+def reduce_graph_module(state_bytes: bytes) -> "torch.fx.GraphModule":
     """
     Function used to deserialize a graph module.
     To serialize the graph, we mapped all of the targets within nodes to their
@@ -52,7 +50,7 @@ def reduce_graph_module(state_bytes: bytes) -> "ExportGraphModule":
         body: Dictionary of properties for a graph module
 
     Returns:
-        A loaded ExportGraphModule.
+        A loaded torch.fx.GraphModule.
     """
     # pyre-ignore
     def str_to_op(str_op: str):
@@ -127,7 +125,7 @@ def reduce_graph_module(state_bytes: bytes) -> "ExportGraphModule":
 
 @dataclasses.dataclass
 class ExirMetadata:
-    """The fields in this class are what used to be extra data from ExportGraphModule."""
+    """The fields in this class are what used to be extra data from torch.fx.GraphModule."""
 
     in_spec: Optional[pytree.TreeSpec] = None
     out_spec: Optional[pytree.TreeSpec] = None
@@ -152,9 +150,9 @@ def is_exir_graph_module(gm: fx.GraphModule) -> bool:
 
 
 class ExportGraphModuleMixin:
-    def __reduce__(self) -> Tuple[Callable[..., "ExportGraphModule"], Tuple[bytes]]:
+    def __reduce__(self) -> Tuple[Callable[..., "torch.fx.GraphModule"], Tuple[bytes]]:
         """
-        Serialization of the ExportGraphModule. The FX serialization does not
+        Serialization of the torch.fx.GraphModule. The FX serialization does not
         serialize the underlying graph to preserve backwards-compatiblity and
         instead retraces the graph module when loading.  This results in loss of
         metadata that is later used for optimizations directly on the graph
@@ -272,7 +270,7 @@ def attach_export_graph_metadata(gm: fx.GraphModule, meta: ExirMetadata) -> None
 def make_export_graph_module(
     root: Union[torch.nn.Module, Dict[str, Any]],
     graph: fx.Graph,
-    class_name: str = "ExportGraphModule",
+    class_name: str = "torch.fx.GraphModule",
 ) -> fx.GraphModule:
     gm = fx.GraphModule(root, graph, class_name)
     meta = ExirMetadata(
@@ -297,8 +295,8 @@ def _get_submodule(
 
 
 def get_control_flow_submodules(
-    graph_module: ExportGraphModule,
-) -> List[Tuple[str, ExportGraphModule, torch.fx.Node]]:
+    graph_module: torch.fx.GraphModule,
+) -> List[Tuple[str, torch.fx.GraphModule, torch.fx.Node]]:
     """
     Returns a list of submodules used for control flow operations
     (torch.ops.cond/map) that are in the given toplevel graph (does not look

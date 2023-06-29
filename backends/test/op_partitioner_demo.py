@@ -8,7 +8,6 @@ from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
 from executorch.backends.compile_spec_schema import CompileSpec
 from executorch.backends.partitioner import DelegationSpec, Partitioner
 from executorch.backends.test.backend_with_compiler_demo import BackendWithCompilerDemo
-from executorch.exir import ExportGraphModule
 from executorch.exir.graph_module import get_control_flow_submodules
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
@@ -42,7 +41,9 @@ class AddMulPartitionerDemo(Partitioner):
 
         self.partition_tags = {}
 
-    def partition(self, edge_graph_module: ExportGraphModule) -> ExportGraphModule:
+    def partition(
+        self, edge_graph_module: torch.fx.GraphModule
+    ) -> torch.fx.GraphModule:
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, op_support=self.op_support
         )
@@ -70,7 +71,9 @@ class AddAttributePartitionerDemo(Partitioner):
         self.delegation_spec = DelegationSpec(BackendWithCompilerDemo.__name__, [])
         self.partition_tags = {}
 
-    def partition(self, edge_graph_module: ExportGraphModule) -> ExportGraphModule:
+    def partition(
+        self, edge_graph_module: torch.fx.GraphModule
+    ) -> torch.fx.GraphModule:
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, op_support=self.op_support
         )
