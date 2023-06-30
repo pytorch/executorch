@@ -2,10 +2,9 @@
 
 #include <executorch/core/Assert.h>
 #include <executorch/kernels/kernel_includes.h>
+#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
-#include <cmath>
-#include <type_traits>
 
 namespace torch {
 namespace executor {
@@ -59,6 +58,49 @@ div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
               a,
               b,
               out);
+        });
+      });
+    });
+  });
+
+  return out;
+}
+
+Tensor& div_scalar_out(
+    RuntimeContext& ctx,
+    const Tensor& a,
+    const Scalar& b,
+    Tensor& out) {
+  (void)ctx;
+
+  // Resize for dynamic shape
+  auto error = resize_tensor(out, a.sizes());
+  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+
+  ScalarType a_type = a.scalar_type();
+  ScalarType b_type = utils::get_scalar_dtype(b);
+  ScalarType common_type = isFloatingType(a_type) ? a_type : ScalarType::Float;
+  ScalarType out_type = out.scalar_type();
+
+  ET_CHECK(common_type == out_type);
+
+  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div", CTYPE_A, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div", CTYPE_B, [&]() {
+      ET_SWITCH_REAL_TYPES(common_type, ctx, "div", CTYPE_IN, [&]() {
+        ET_SWITCH_REAL_TYPES(out_type, ctx, "div", CTYPE_OUT, [&]() {
+          CTYPE_B b_val;
+          ET_EXTRACT_SCALAR(b, b_val);
+          CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+
+          apply_unary_map_fn(
+              [b_casted](const CTYPE_A val_a) {
+                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+                CTYPE_IN value = a_casted / b_casted;
+                return static_cast<CTYPE_OUT>(value);
+              },
+              a.const_data_ptr<CTYPE_A>(),
+              out.mutable_data_ptr<CTYPE_OUT>(),
+              out.numel());
         });
       });
     });

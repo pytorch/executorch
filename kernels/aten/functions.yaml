@@ -29,6 +29,8 @@
 
 - op: add.out
 
+- op: add.Scalar_out
+
 - op: addmm.out
 
 - op: amax.out
@@ -103,6 +105,8 @@
 - op: detach_copy.out
 
 - op: div.out
+
+- op: div.Scalar_out
 
 - op: embedding.out
 
@@ -208,6 +212,8 @@
 
 - op: mul.out
 
+- op: mul.Scalar_out
+
 - op: native_batch_norm.out
 
 - op: native_layer_norm.out
@@ -283,6 +289,8 @@
 - op: stack.out
 
 - op: sub.out
+
+- op: sub.Scalar_out
 
 - op: sum.IntList_out
 

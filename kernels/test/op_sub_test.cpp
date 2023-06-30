@@ -25,6 +25,15 @@ Tensor& sub_out(
   return torch::executor::aten::sub_outf(context, self, other, alpha, out);
 }
 
+Tensor& sub_scalar_out(
+    const Tensor& self,
+    const Scalar& other,
+    const Scalar& alpha,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::sub_outf(context, self, other, alpha, out);
+}
+
 template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
 void test_sub() {
   TensorFactory<DTYPE_A> tf_a;
@@ -487,4 +496,18 @@ TEST(OpSubOutKernelTest, DynamicShapeUnbound) {
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   Tensor ret = sub_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST(OpSubScalarOutKernelTest, SanityCheck) {
+  TensorFactory<ScalarType::Int> tf_a;
+  TensorFactory<ScalarType::Float> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor out = tf_out.zeros(sizes);
+
+  sub_scalar_out(tf_a.make(sizes, {1, 2, 4, 8}), 0.5, /*alpha=*/1.5, out);
+
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.25, 1.25, 3.25, 7.25}));
 }

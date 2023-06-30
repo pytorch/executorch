@@ -11,13 +11,18 @@
 #include <gtest/gtest.h>
 
 using namespace ::testing;
+using exec_aten::Scalar;
 using exec_aten::ScalarType;
-using exec_aten::StridesType;
 using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
 Tensor& _mul_out(const Tensor& self, const Tensor& other, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::mul_outf(context, self, other, out);
+}
+
+Tensor& _mul_scalar_out(const Tensor& self, const Scalar& other, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::mul_outf(context, self, other, out);
 }
@@ -456,4 +461,18 @@ TEST(OpMulOutKernelTest, DynamicShapeUnbound) {
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   Tensor ret = _mul_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST(OpMulScalarOutKernelTest, SanityCheck) {
+  TensorFactory<ScalarType::Bool> tf_a;
+  TensorFactory<ScalarType::Float> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor out = tf_out.zeros(sizes);
+
+  _mul_scalar_out(tf_a.make(sizes, {true, false, true, false}), 2.3, out);
+
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {2.3, 0.0, 2.3, 0.0}));
 }

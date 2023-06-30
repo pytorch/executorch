@@ -23,6 +23,11 @@ Tensor& _div_out(const Tensor& a, const Tensor& b, Tensor& out) {
   return torch::executor::aten::div_outf(context, a, b, out);
 }
 
+Tensor& _div_scalar_out(const Tensor& a, const Scalar& b, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::div_outf(context, a, b, out);
+}
+
 } // namespace
 
 //
@@ -446,4 +451,32 @@ TEST(OpDivOutKernelTest, DynamicShapeUnbound) {
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   Tensor ret = _div_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST(OpDivScalarOutKernelTest, SanityCheckIntScalar) {
+  TensorFactory<ScalarType::Int> tf_a;
+  TensorFactory<ScalarType::Float> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor out = tf_out.zeros(sizes);
+
+  _div_scalar_out(tf_a.make(sizes, {1, 2, 4, -9}), 2, out);
+
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.5, 1.0, 2.0, -4.5}));
+}
+
+TEST(OpDivScalarOutKernelTest, SanityCheckFloatScalar) {
+  TensorFactory<ScalarType::Int> tf_a;
+  TensorFactory<ScalarType::Float> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor out = tf_out.zeros(sizes);
+
+  _div_scalar_out(tf_a.make(sizes, {1, 2, 4, -9}), 2.0, out);
+
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.5, 1.0, 2.0, -4.5}));
 }

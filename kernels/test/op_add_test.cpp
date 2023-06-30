@@ -27,6 +27,15 @@ Tensor& add_out(
   return torch::executor::aten::add_outf(context, self, other, alpha, out);
 }
 
+Tensor& add_scalar_out(
+    const Tensor& self,
+    const Scalar& other,
+    const Scalar& alpha,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::add_outf(context, self, other, alpha, out);
+}
+
 template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
 void test_add() {
   TensorFactory<DTYPE_A> tf_a;
@@ -511,4 +520,17 @@ TEST(OpAddOutKernelTest, DynamicShapeUnbound) {
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   Tensor ret = add_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
+}
+
+TEST(OpAddScalarOutKernelTest, SanityCheck) {
+  TensorFactory<ScalarType::Int> tf;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor out = tf.zeros(sizes);
+
+  add_scalar_out(tf.make(sizes, {1, 2, 4, 8}), true, /*alpha=*/2, out);
+
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_EQ(out, tf.make(sizes, {3, 4, 6, 10}));
 }
