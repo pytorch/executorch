@@ -511,3 +511,16 @@ TEST(OpSubScalarOutKernelTest, SanityCheck) {
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.25, 1.25, 3.25, 7.25}));
 }
+
+TEST(OpSubScalarOutKernelTest, OptimizedSanityCheck) {
+  TensorFactory<ScalarType::Float> tf;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor out = tf.zeros(sizes);
+
+  sub_scalar_out(tf.make(sizes, {6.3, 2.1, 5.6, 8.2}), 1.9, /*alpha=*/2.8, out);
+
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {0.98, -3.22, 0.28, 2.88}));
+}

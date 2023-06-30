@@ -480,3 +480,16 @@ TEST(OpDivScalarOutKernelTest, SanityCheckFloatScalar) {
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.5, 1.0, 2.0, -4.5}));
 }
+
+TEST(OpDivScalarOutKernelTest, OptimizedSanityCheck) {
+  TensorFactory<ScalarType::Float> tf;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor out = tf.zeros(sizes);
+
+  _div_scalar_out(tf.make(sizes, {1.3, 2.1, 4.6, 8.2}), 2.0, out);
+
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {0.65, 1.05, 2.3, 4.1}));
+}

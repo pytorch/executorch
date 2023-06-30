@@ -534,3 +534,16 @@ TEST(OpAddScalarOutKernelTest, SanityCheck) {
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {3, 4, 6, 10}));
 }
+
+TEST(OpAddScalarOutKernelTest, OptimizedSanityCheck) {
+  TensorFactory<ScalarType::Float> tf;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  Tensor out = tf.zeros(sizes);
+
+  add_scalar_out(tf.make(sizes, {1.3, 2.1, 4.6, 8.2}), 1.9, /*alpha=*/2.8, out);
+
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {6.62, 7.42, 9.92, 13.52}));
+}
