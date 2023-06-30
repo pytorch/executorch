@@ -387,7 +387,7 @@ class EdgeYamlInfo:
         )
         yaml_stream.write("# Please do not update it manually.\n")
         yaml_stream.write(
-            "# If anything is not up-to-date, please rerun the binary target. Optional argument: --refresh.\n"
+            "# If anything is not up-to-date, please rerun the binary target. Optional argument: --regenerate.\n"
         )
 
         yaml_list: List[Dict[str, Any]] = []
