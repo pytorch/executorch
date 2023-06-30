@@ -72,24 +72,18 @@ TEST(OpExpOutKernelTest, AllFloatInputDoubleOutputSupport) {
 #undef TEST_ENTRY
 }
 
-TEST(OpExpOutKernelTest, UnhandledInputDtypeDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle bool dtype";
-  }
-
-  // _exp_out() doesn't handle Bool as input.
+TEST(OpExpOutKernelTest, HandleBoolInput) {
+  // _exp_out() handles Bool as input.
   TensorFactory<ScalarType::Bool> tf_bool;
   TensorFactory<ScalarType::Float> tf_float;
 
-  const std::vector<int32_t> sizes = {2, 2};
-  Tensor a = tf_bool.make(sizes, /*data=*/{false, true, false, true});
+  const std::vector<int32_t> sizes = {1, 2};
 
-  // Destination for the log
+  Tensor a = tf_bool.make(sizes, /*data=*/{true, false});
   Tensor out = tf_float.zeros(sizes);
+  Tensor res = tf_float.make(sizes, /*data=*/{2.718282, 1});
 
-  // Boolean tensor should cause an assertion and kill the
-  // test process.
-  ET_EXPECT_KERNEL_FAILURE(_exp_out(a, out));
+  EXPECT_TENSOR_CLOSE(_exp_out(a, out), res);
 }
 
 // Mismatched shape tests.

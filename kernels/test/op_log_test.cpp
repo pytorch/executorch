@@ -29,18 +29,12 @@ void test__log_out() {
 
   const std::vector<int32_t> sizes = {2, 2};
 
-  // Invalid input zero should die
   Tensor out = tf_out.zeros(sizes);
-  if (SupportedFeatures::get()->is_aten) {
-    // However, ATen can handle when input is zero
-  } else {
-    ET_EXPECT_KERNEL_FAILURE(_log_out(tf.zeros(sizes), out));
-  }
 
   // Valid input should give the expected output
-  _log_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), out);
+  _log_out(tf.make(sizes, /*data=*/{0, 1, 2, 4}), out);
   EXPECT_TENSOR_CLOSE(
-      out, tf_out.make(sizes, /*data=*/{0, 0.693147, 1.386294, 2.079441}));
+      out, tf_out.make(sizes, /*data=*/{-INFINITY, 0, 0.693147, 1.386294}));
 }
 
 TEST(OpLogOutKernelTest, AllRealInputFloatOutputSupport) {
@@ -57,24 +51,18 @@ TEST(OpLogOutKernelTest, AllRealInputDoubleOutputSupport) {
 #undef TEST_ENTRY
 }
 
-TEST(OpLogOutKernelTest, UnhandledInputDtypeDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle bool dtype";
-  }
-
-  // _log_out() doesn't handle Bool as input.
+TEST(OpLogOutKernelTest, HandleBoolInput) {
+  // _log_out() handles Bool as input.
   TensorFactory<ScalarType::Bool> tf_bool;
   TensorFactory<ScalarType::Float> tf_float;
 
-  const std::vector<int32_t> sizes = {2, 2};
-  Tensor a = tf_bool.make(sizes, /*data=*/{false, true, false, true});
+  const std::vector<int32_t> sizes = {1, 2};
 
-  // Destination for the log
+  Tensor a = tf_bool.make(sizes, /*data=*/{true, false});
   Tensor out = tf_float.zeros(sizes);
+  Tensor res = tf_float.make(sizes, /*data=*/{0, -INFINITY});
 
-  // Boolean tensor should cause an assertion and kill the
-  // test process.
-  ET_EXPECT_KERNEL_FAILURE(_log_out(a, out));
+  EXPECT_TENSOR_EQ(_log_out(a, out), res);
 }
 
 // Mismatched shape tests.
