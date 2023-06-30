@@ -73,7 +73,6 @@ def export_module_to_program(
     eager_module = module_class().eval()
     inputs = ()
     if hasattr(eager_module, "get_random_inputs"):
-        # pyre-ignore[29]: `Module` has no attribute `get_random_inputs`
         inputs = eager_module.get_random_inputs()
     capture_config = exir.CaptureConfig(pt2_mode=True)
 

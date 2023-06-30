@@ -62,7 +62,6 @@ def create_program(
     # Trace the test module and create a serialized Executorch program.
     inputs = (torch.ones(2, 2), torch.ones(2, 2))
     input_map = {}
-    # pyre-ignore
     for method in eager_module.get_methods_to_export():
         input_map[method] = inputs
 

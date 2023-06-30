@@ -478,7 +478,6 @@ def greedy(
 
     input_total_size = 0
     if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
-        # pyre-ignore
         input_total_size = bufsizes[1]
 
     # Since we now know the number of shared objects we need and the size of

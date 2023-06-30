@@ -115,7 +115,6 @@ class ExportedModule:
         # Generate inputs to use while tracing.
         trace_inputs_method = "get_upper_bound_inputs"
         get_trace_inputs = get_inputs_adapter(
-            # pyre-ignore[6]: pyre can't tell that this is a Callable.
             getattr(eager_module, trace_inputs_method)
             if hasattr(eager_module, trace_inputs_method)
             else eager_module.get_random_inputs,
@@ -161,7 +160,6 @@ class ExportedModule:
 
         # Get a function that creates random inputs appropriate for testing.
         get_random_inputs_fn = get_inputs_adapter(
-            # pyre-ignore[6]: pyre can't tell that this is a Callable.
             eager_module.get_random_inputs,
             # all exported methods must have the same signature so just pick the first one.
             methods[0],

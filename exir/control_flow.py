@@ -115,8 +115,6 @@ def _make_submodule(
         )
         output.args = tuple(output.args[0])
         gm.recompile()
-    # pyre-ignore
-    # TODO (tmanlaibaatar) Hack to make retracing work
     gm.__tracing_inputs__ = args
     return gm
 

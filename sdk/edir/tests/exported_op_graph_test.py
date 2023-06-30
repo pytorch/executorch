@@ -608,7 +608,6 @@ def generate_json_fixtures() -> None:
 def gen_graphs_from_model(model: torch.nn.Module) -> Tuple[Any, Any, Any]:
     et_aten = exir.capture(
         model,
-        # pyre-ignore
         model.get_random_inputs(),
         exir.CaptureConfig(pt2_mode=True),
     )
@@ -678,7 +677,6 @@ class ExportedFXGraphTest(unittest.TestCase):
     def test_metadata_attaching(self, model_name: str, model: torch.nn.Module) -> None:
         _, _, et_program = gen_graphs_from_model(model)
         op_graph = FXOperatorGraph.gen_operator_graph(et_program.dump_graph_module())
-        # pyre-ignore
         inference_run = model.gen_inference_run()
         op_graph.attach_metadata(inference_run)
 
@@ -713,7 +711,6 @@ class ExportedOpGraphTest(unittest.TestCase):
     def test_gen_from_emitted_program(
         self, model_name: str, model: torch.nn.Module
     ) -> None:
-        # pyre-ignore
         op_graph = generate_op_graph_file_contents(model, model.get_random_inputs())
 
         with open(get_module_path(model_name), "rb") as f:
@@ -728,9 +725,7 @@ class ExportedOpGraphTest(unittest.TestCase):
     # pyre-ignore
     @parameterized.expand(MODELS)
     def test_metadata_attaching(self, model_name: str, model: torch.nn.Module) -> None:
-        # pyre-ignore
         op_graph = generate_op_graph(model, model.get_random_inputs())
-        # pyre-ignore
         inference_run = model.gen_inference_run()
         op_graph.attach_metadata(inference_run)
 
@@ -765,9 +760,7 @@ class InferenceRunTest(unittest.TestCase):
     def test_inference_run_construction(
         self, model_name: str, model: torch.nn.Module
     ) -> None:
-        # pyre-ignore
         et_dump = model.gen_et_dump()
-        # pyre-ignore
         inference_run = model.gen_inference_run()
 
         self.assertEqual(

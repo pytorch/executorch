@@ -92,7 +92,6 @@ class TestFixtures(unittest.TestCase):
         Checks that the generated json flatbuffers match the corresponding json
         flatbuffer in the fixtures/ folder.
         """
-        # pyre-ignore
         output = export_to_file(model, model.get_random_inputs())
 
         with open(get_module_path(model_name), "rb") as f:

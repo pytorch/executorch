@@ -175,7 +175,6 @@ def maketest(
         for algo, expect_reuse in criteria:
             print(f"algo {algo}, expect_reuse {expect_reuse}")
             eager_module = module_cls().eval()
-            # pyre-ignore: Call error [29]
             inputs = eager_module.get_random_inputs()
             graph_module = (
                 exir.capture(
@@ -409,7 +408,6 @@ class TestMisc(unittest.TestCase):
 
     def test_asr_joiner(self) -> None:
         eager_model = self.quantize(ASRJoiner())
-        # pyre-ignore
         inputs = eager_model.get_random_inputs()
         edge_program = exir.capture(
             eager_model,

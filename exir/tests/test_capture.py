@@ -15,7 +15,6 @@ class TestCapture(unittest.TestCase):
     # pyre-ignore
     @parameterized.expand(models.MODELS)
     def test_module_call(self, model_name: str, model: torch.nn.Module) -> None:
-        # pyre-ignore
         inputs = model.get_random_inputs()
         expected = model(*inputs)
         # TODO(ycao): Replace it with capture_multiple
