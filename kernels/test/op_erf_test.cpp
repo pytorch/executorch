@@ -32,3 +32,16 @@ TEST(OpErfTest, SanityCheck) {
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
+
+TEST(OpErfTest, HandleBoolInput) {
+  TensorFactory<ScalarType::Bool> tf_bool;
+  TensorFactory<ScalarType::Float> tf_float;
+
+  const std::vector<int32_t> sizes = {1, 2};
+
+  Tensor a = tf_bool.make(sizes, /*data=*/{false, true});
+  Tensor out = tf_float.zeros(sizes);
+  Tensor res = tf_float.make(sizes, /*data=*/{0.000000, 0.842701});
+
+  EXPECT_TENSOR_CLOSE(_erf_out(a, out), res);
+}

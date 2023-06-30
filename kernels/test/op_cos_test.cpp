@@ -20,6 +20,19 @@ Tensor& _cos_out(const Tensor& self, Tensor& out) {
   return torch::executor::aten::cos_outf(context, self, out);
 }
 
+TEST(OpCosOutKernelTest, HandleBoolInput) {
+  TensorFactory<ScalarType::Bool> tf_bool;
+  TensorFactory<ScalarType::Float> tf_float;
+
+  const std::vector<int32_t> sizes = {1, 2};
+
+  Tensor a = tf_bool.make(sizes, /*data=*/{false, true});
+  Tensor out = tf_float.zeros(sizes);
+  Tensor res = tf_float.make(sizes, /*data=*/{1.000000, 0.540302});
+
+  EXPECT_TENSOR_CLOSE(_cos_out(a, out), res);
+}
+
 // Common testing for cos operator and all kinds of supported input types
 template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
 void test_floating_point_cos_out(

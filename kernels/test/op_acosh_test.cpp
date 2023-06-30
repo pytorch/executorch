@@ -20,6 +20,19 @@ Tensor& _acosh_out(const Tensor& self, Tensor& out) {
   return torch::executor::aten::acosh_outf(context, self, out);
 }
 
+TEST(OpAcoshOutKernelTest, HandleBoolInput) {
+  TensorFactory<ScalarType::Bool> tf_bool;
+  TensorFactory<ScalarType::Float> tf_float;
+
+  const std::vector<int32_t> sizes = {1, 2};
+
+  Tensor a = tf_bool.make(sizes, /*data=*/{false, true});
+  Tensor out = tf_float.zeros(sizes);
+  Tensor res = tf_float.make(sizes, /*data=*/{NAN, 0.000000});
+
+  EXPECT_TENSOR_CLOSE(_acosh_out(a, out), res);
+}
+
 // Common testing for acosh operator and all kinds of supported input types
 template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
 void test_floating_point_acosh_out(

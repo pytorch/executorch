@@ -32,3 +32,16 @@ TEST(OpRsqrtTest, SanityCheck) {
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
+
+TEST(OpRsqrtTest, HandleBoolInput) {
+  TensorFactory<ScalarType::Bool> tf_bool;
+  TensorFactory<ScalarType::Float> tf_float;
+
+  const std::vector<int32_t> sizes = {1, 2};
+
+  Tensor a = tf_bool.make(sizes, /*data=*/{false, true});
+  Tensor out = tf_float.zeros(sizes);
+  Tensor res = tf_float.make(sizes, /*data=*/{INFINITY, 1.0});
+
+  EXPECT_TENSOR_CLOSE(_rsqrt_out(a, out), res);
+}

@@ -20,6 +20,19 @@ Tensor& _cosh_out(const Tensor& self, Tensor& out) {
   return torch::executor::aten::cosh_outf(context, self, out);
 }
 
+TEST(OpCoshOutKernelTest, HandleBoolInput) {
+  TensorFactory<ScalarType::Bool> tf_bool;
+  TensorFactory<ScalarType::Float> tf_float;
+
+  const std::vector<int32_t> sizes = {1, 2};
+
+  Tensor a = tf_bool.make(sizes, /*data=*/{false, true});
+  Tensor out = tf_float.zeros(sizes);
+  Tensor res = tf_float.make(sizes, /*data=*/{1.000000, 1.543081});
+
+  EXPECT_TENSOR_CLOSE(_cosh_out(a, out), res);
+}
+
 // Common testing for cosh operator and all kinds of supported input types
 template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
 void test_floating_point_cosh_out(

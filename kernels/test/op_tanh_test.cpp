@@ -19,6 +19,19 @@ Tensor& _tanh_out(const Tensor& self, Tensor& out) {
   return torch::executor::aten::tanh_outf(context, self, out);
 }
 
+TEST(OpTanhOutKernelTest, HandleBoolInput) {
+  TensorFactory<ScalarType::Bool> tf_bool;
+  TensorFactory<ScalarType::Float> tf_float;
+
+  const std::vector<int32_t> sizes = {1, 2};
+
+  Tensor a = tf_bool.make(sizes, /*data=*/{false, true});
+  Tensor out = tf_float.zeros(sizes);
+  Tensor res = tf_float.make(sizes, /*data=*/{0.000000, 0.761594});
+
+  EXPECT_TENSOR_CLOSE(_tanh_out(a, out), res);
+}
+
 // Common testing for tanh operator and all kinds of supported input types
 template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
 void test_floating_point_tanh_out() {

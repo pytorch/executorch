@@ -20,6 +20,19 @@ Tensor& _tan_out(const Tensor& self, Tensor& out) {
   return torch::executor::aten::tan_outf(context, self, out);
 }
 
+TEST(OpTanOutKernelTest, HandleBoolInput) {
+  TensorFactory<ScalarType::Bool> tf_bool;
+  TensorFactory<ScalarType::Float> tf_float;
+
+  const std::vector<int32_t> sizes = {1, 2};
+
+  Tensor a = tf_bool.make(sizes, /*data=*/{false, true});
+  Tensor out = tf_float.zeros(sizes);
+  Tensor res = tf_float.make(sizes, /*data=*/{0.000000, 1.557408});
+
+  EXPECT_TENSOR_CLOSE(_tan_out(a, out), res);
+}
+
 // Common testing for tan operator and all kinds of supported input types
 template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
 void test_floating_point_tan_out(
