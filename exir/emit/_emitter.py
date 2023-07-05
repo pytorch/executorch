@@ -22,14 +22,13 @@ their instructions.
 # presence of aot autograd param lifting.
 
 # pyre-strict
+import ctypes
 import operator
 import re
 import typing
 from dataclasses import dataclass, field
 from typing import Callable, cast, Dict, List, Mapping, Optional, Tuple, Union
 
-# pyre-ignore[21]: Could not find module `executorch.exir.bindings`.
-import executorch.exir.bindings as bindings  # @manual=//executorch/exir:bindings
 import executorch.exir.memory as memory
 import executorch.pytree as ex_pytree
 import torch
@@ -397,13 +396,11 @@ class _Emitter(torch.fx.Interpreter):
                     == typing.cast(torch.UntypedStorage, other_spec.storage).nbytes()
                 ):
                     # compare data
-                    # pyre-ignore
-                    if bindings.equal_buffers(
-                        typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
-                        typing.cast(
+                    if (
+                        typing.cast(torch.UntypedStorage, spec.storage).data_ptr()
+                        == typing.cast(
                             torch.UntypedStorage, other_spec.storage
-                        ).data_ptr(),
-                        typing.cast(torch.UntypedStorage, spec.storage).nbytes(),
+                        ).data_ptr()
                     ):
                         return i + 1  # +1 because the first buffer location is reserved
             return -1
@@ -415,13 +412,15 @@ class _Emitter(torch.fx.Interpreter):
             if spec.allocated_memory == 0:
                 buffer = Buffer(storage=b"")
             else:
-                buffer = Buffer(
-                    # pyre-fixme[16]: Module executorch.exir has no attribute bindings.
-                    storage=bindings.copy_buffer(
-                        typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
-                        typing.cast(torch.UntypedStorage, spec.storage).nbytes(),
-                    )
+                array_type = (
+                    ctypes.c_char
+                    * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
                 )
+                spec_array = ctypes.cast(
+                    typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
+                    ctypes.POINTER(array_type),
+                ).contents
+                buffer = Buffer(storage=bytes(spec_array))
 
             # Update buffer_idx to point to the end of the list where we are adding the new buffer.
             buffer_idx = len(self.program_state.constant_buffer)

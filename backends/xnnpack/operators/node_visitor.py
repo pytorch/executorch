@@ -1,7 +1,5 @@
+import ctypes
 from typing import cast, Dict, Optional, Tuple
-
-# pyre-ignore Undefined import [21]: Could not find a module corresponding to import `executorch.exir.bindings`
-import executorch.exir.bindings as bindings  # @manual=//executorch/exir:bindings
 
 import torch
 from executorch.backends.transforms import get_shape
@@ -334,13 +332,13 @@ class NodeVisitor:
         if convert_to_nhwc:
             const_val = const_val.to(memory_format=torch.channels_last)
 
-        buffer = Buffer(
-            # pyre-ignore[16]: Module executorch.exir has no attribute bindings.
-            storage=bindings.copy_buffer(
-                const_val.untyped_storage().data_ptr(),
-                const_val.untyped_storage().nbytes(),
-            )
-        )
+        # pyre-ignore
+        array_type = ctypes.c_char * const_val.untyped_storage().nbytes()
+        array = ctypes.cast(
+            const_val.untyped_storage().data_ptr(),
+            ctypes.POINTER(array_type),
+        ).contents
+        buffer = Buffer(storage=bytes(array))
         xnn_graph.constant_buffer.append(buffer)
         xnn_graph.mem_buffer_sizes.append(const_val.untyped_storage().nbytes())
 

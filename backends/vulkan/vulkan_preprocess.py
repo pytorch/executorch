@@ -1,12 +1,9 @@
+import ctypes
 from typing import final, List
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
-# pyre-ignore Undefined import [21]: Could not find a module corresponding to import `executorch.exir.bindings`
-import executorch.exir.bindings as bindings  # @manual=//executorch/exir:bindings
-
 import torch
-
 from executorch.backends.backend_details import BackendDetails, CompileSpec
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     convert_to_flatbuffer,
@@ -108,13 +105,13 @@ class VulkanBackend(BackendDetails):
                 buffer_idx = len(vk_const_buffers)
 
                 const_val = getattr(node.graph.owning_module, node.target).contiguous()
-                buffer = vk_graph_schema.Buffer(
-                    # pyre-ignore[16]: Module executorch.exir has no attribute bindings.
-                    storage=bindings.copy_buffer(
-                        const_val.untyped_storage().data_ptr(),
-                        const_val.untyped_storage().nbytes(),
-                    )
-                )
+                # pyre-ignore
+                array_type = ctypes.c_char * const_val.untyped_storage().nbytes()
+                array = ctypes.cast(
+                    const_val.untyped_storage().data_ptr(),
+                    ctypes.POINTER(array_type),
+                ).contents
+                buffer = vk_graph_schema.Buffer(storage=bytes(array))
                 vk_const_buffers.append(buffer)
 
                 assign_vk_value_id(node, const_val, buffer_idx)

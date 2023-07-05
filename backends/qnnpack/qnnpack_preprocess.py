@@ -1,7 +1,5 @@
+import ctypes
 from typing import final, List
-
-#  pyre-ignore Undefined import [21]: Could not find a module corresponding to import `executorch.exir.bindings`
-import executorch.exir.bindings as bindings  # @manual=//executorch/exir:bindings
 
 import torch
 
@@ -22,6 +20,15 @@ from executorch.exir.dialects._ops import ops as exir_ops
 T_Mm = exir_ops.edge.aten.mm.default
 T_Addmm = exir_ops.edge.aten.addmm.default
 T_Linear = exir_ops.edge.aten.linear.default
+
+
+def _copy_buffer(storage: torch.UntypedStorage) -> bytes:
+    array_type = ctypes.c_char * storage.nbytes()
+    array = ctypes.cast(
+        storage.data_ptr(),
+        ctypes.POINTER(array_type),
+    ).contents
+    return bytes(array)
 
 
 @final
@@ -76,12 +83,7 @@ class QnnpackBackend(BackendDetails):
                     # bias
                     op_bias = ConstTensor(
                         shape=list(bias_tensor.shape),  # should be 1d
-                        # pyre-ignore
-                        buffer=bindings.copy_buffer(
-                            bias_tensor.untyped_storage().data_ptr(),
-                            bias_tensor.untyped_storage().nbytes(),
-                        )
-                        + padding,
+                        buffer=_copy_buffer(bias_tensor.untyped_storage()) + padding,
                     )
 
                     # deqaunt node -> quant node
@@ -143,32 +145,18 @@ class QnnpackBackend(BackendDetails):
                         # shape=weight_val.shape,
                         # TODO(maxren)
                         shape=[weight_shape[1], weight_shape[0]],
-                        # pyre-ignore
-                        buffer=bindings.copy_buffer(
-                            requantized_weight_tensor.untyped_storage().data_ptr(),
-                            requantized_weight_tensor.untyped_storage().nbytes(),
-                        )
+                        buffer=_copy_buffer(requantized_weight_tensor.untyped_storage())
                         + padding,
                     )
                     # Weight's Scales as Tensor
                     weight_scale = ConstTensor(
                         shape=[output_channels],
-                        # pyre-ignore
-                        buffer=bindings.copy_buffer(
-                            scale_tensor.untyped_storage().data_ptr(),
-                            scale_tensor.untyped_storage().nbytes(),
-                        )
-                        + padding,
+                        buffer=_copy_buffer(scale_tensor.untyped_storage()) + padding,
                     )
                     # Weight's Zeropoints as Tensor
                     weight_zp = ConstTensor(
                         shape=[output_channels],
-                        # pyre-ignore
-                        buffer=bindings.copy_buffer(
-                            zp_tensor.untyped_storage().data_ptr(),
-                            zp_tensor.untyped_storage().nbytes(),
-                        )
-                        + padding,
+                        buffer=_copy_buffer(zp_tensor.untyped_storage()) + padding,
                     )
 
                     dynamic_linear = QNNDynamicLinear(

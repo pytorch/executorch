@@ -1,8 +1,7 @@
+import ctypes
 import typing
 from typing import Dict, List, Type
 
-# pyre-ignore
-import executorch.exir.bindings as bindings  # @manual=//executorch/exir:bindings
 import torch
 import torch.fx
 from executorch.bundled_program.config import (
@@ -49,11 +48,14 @@ def emit_bundled_tensor(spec: TensorSpec, bundled_values: List[BundledValue]) ->
     if spec.allocated_memory == 0:
         tensor_data: bytes = b""
     else:
-        # pyre-ignore
-        tensor_data: bytes = bindings.copy_buffer(
-            typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
-            typing.cast(torch.UntypedStorage, spec.storage).nbytes(),
+        array_type = (
+            ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
         )
+        spec_array = ctypes.cast(
+            typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
+            ctypes.POINTER(array_type),
+        ).contents
+        tensor_data: bytes = bytes(spec_array)
 
     bundled_values.append(
         BundledValue(
