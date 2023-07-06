@@ -74,7 +74,7 @@ namespace native {
 
 Tensor& add_out(const Tensor& a, const Tensor& b, const Scalar& alpha, Tensor& out) {
   // do something
-  retrn out;
+  return out;
 }
 
 } // namespace native
