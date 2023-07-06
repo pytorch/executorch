@@ -2,13 +2,13 @@
 
 #include <cstring>
 
-#include <executorch/compiler/Compiler.h>
 #include <executorch/core/ArrayRef.h>
 #include <executorch/core/Error.h>
 #include <executorch/core/FreeableBuffer.h>
 #include <executorch/core/Result.h>
 #include <executorch/core/values/Evalue.h>
 #include <executorch/executor/MemoryAllocator.h>
+#include <executorch/runtime/platform/compiler.h>
 
 namespace torch {
 namespace executor {

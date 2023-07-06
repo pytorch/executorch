@@ -1,11 +1,14 @@
 #include <stdint.h>
 #include <time.h>
+#include <cstdio>
+#include <cstdlib>
 
-#include <executorch/core/Assert.h>
-#include <executorch/profiler/hooks.h>
+#include <executorch/runtime/platform/hooks.h>
 
 namespace torch {
 namespace executor {
+
+#define ET_LOG_OUTPUT_FILE stderr
 
 #define NSEC_PER_USEC 1000UL
 #define USEC_IN_SEC 1000000UL
@@ -15,7 +18,11 @@ namespace executor {
 uint64_t get_curr_time(void) {
   struct timespec ts;
   auto ret = clock_gettime(CLOCK_REALTIME, &ts);
-  ET_CHECK_MSG(ret == 0, "Failed to get time.");
+  if (ret != 0) {
+    fprintf(ET_LOG_OUTPUT_FILE, "Could not get time\n");
+    fflush(ET_LOG_OUTPUT_FILE);
+    std::abort();
+  }
 
   return ((ts.tv_sec * NSEC_IN_SEC) + (ts.tv_nsec));
 }

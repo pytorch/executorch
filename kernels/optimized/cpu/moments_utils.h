@@ -6,8 +6,8 @@
 
 #include <executorch/kernels/optimized/vec/vec.h>
 
-#include <executorch/compiler/Compiler.h>
 #include <executorch/kernels/optimized/utils/math_utils.h>
+#include <executorch/runtime/platform/compiler.h>
 #include <array>
 
 namespace torch {

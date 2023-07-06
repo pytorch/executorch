@@ -6,7 +6,7 @@
 #include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
 #include <executorch/core/kernel_types/util/tensor_util.h>
 #include <executorch/core/values/Evalue.h>
-#include <executorch/profiler/profiler.h>
+#include <executorch/runtime/platform/profiler.h>
 #include <executorch/threadpool/threadpool.h>
 #include <executorch/util/memory_utils.h>
 #include <pytorch_qnnpack.h>

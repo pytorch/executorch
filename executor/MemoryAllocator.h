@@ -4,10 +4,10 @@
 #include <cinttypes>
 #include <cstdint>
 
-#include <executorch/core/Assert.h>
 #include <executorch/core/Error.h>
-#include <executorch/core/Log.h>
-#include <executorch/profiler/profiler.h>
+#include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/profiler.h>
 
 namespace torch {
 namespace executor {

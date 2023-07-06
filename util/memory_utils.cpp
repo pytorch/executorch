@@ -9,9 +9,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <executorch/compiler/Compiler.h>
 #include <executorch/core/Error.h>
-#include <executorch/core/Log.h>
+#include <executorch/runtime/platform/compiler.h>
+#include <executorch/runtime/platform/log.h>
 
 namespace torch {
 namespace executor {

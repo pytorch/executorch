@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 
-#include <executorch/core/Log.h>
+#include <executorch/runtime/platform/log.h>
 
 namespace torch {
 namespace executor {

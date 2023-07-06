@@ -9,13 +9,13 @@
 #include <cstddef> // size_t
 #include <limits>
 
-#include <executorch/compiler/Compiler.h>
 #include <executorch/core/ArrayRef.h>
-#include <executorch/core/Assert.h>
 #include <executorch/core/Error.h>
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/core/kernel_types/util/DimOrderUtils.h>
 #include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
+#include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/compiler.h>
 
 /// All assertion messages should begin with this prefix.
 #define ET_TENSOR_CHECK_PREFIX__ "Tensors do not match"

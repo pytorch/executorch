@@ -2,7 +2,7 @@
 #pragma once
 
 #include <executorch/backends/xnnpack/runtime/XNNExecutor.h>
-#include <executorch/compiler/Compiler.h>
+#include <executorch/runtime/platform/compiler.h>
 #include <xnnpack.h>
 #include <memory>
 #include <vector>

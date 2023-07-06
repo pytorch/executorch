@@ -103,7 +103,7 @@ def define_common_targets():
             "memory_utils_test.cpp",
         ],
         deps = [
-            "//executorch/compiler:compiler",
+            "//executorch/runtime/platform:compiler",
             "//executorch/util:memory_utils",
         ],
     )

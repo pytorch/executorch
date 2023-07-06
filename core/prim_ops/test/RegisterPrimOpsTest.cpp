@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
 
 #include <executorch/core/OperatorRegistry.h>
-#include <executorch/core/Runtime.h>
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/core/kernel_types/testing/TensorFactory.h>
 #include <executorch/core/kernel_types/testing/TensorUtil.h>
 #include <executorch/core/kernel_types/util/tensor_util.h>
 #include <executorch/core/values/Evalue.h>
 #include <executorch/kernels/kernel_runtime_context.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 
 using exec_aten::SizesType;

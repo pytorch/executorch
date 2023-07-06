@@ -1,8 +1,8 @@
 #include <string.h>
 
-#include <executorch/core/Assert.h>
-#include <executorch/profiler/hooks.h>
-#include <executorch/profiler/profiler.h>
+#include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/hooks.h>
+#include <executorch/runtime/platform/profiler.h>
 #include <inttypes.h>
 
 namespace torch {

@@ -20,7 +20,7 @@
 #include <limits>
 #include <type_traits>
 
-#include <executorch/core/Assert.h>
+#include <executorch/runtime/platform/assert.h>
 #ifdef USE_ATEN_LIB
 // Note that a lot of the macros/functions defined in this ScalarTypeUtil.h file
 // are also defined in c10/core/ScalarType.h, which is included via

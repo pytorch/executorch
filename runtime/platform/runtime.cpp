@@ -1,7 +1,7 @@
-#include <executorch/core/Runtime.h>
-#include <executorch/profiler/profiler.h>
+#include <executorch/runtime/platform/profiler.h>
+#include <executorch/runtime/platform/runtime.h>
 
-#include <executorch/platform/Platform.h>
+#include <executorch/runtime/platform/platform.h>
 
 namespace torch {
 namespace executor {

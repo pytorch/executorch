@@ -51,7 +51,7 @@ def define_common_targets():
         srcs = ["Program.cpp"],
         exported_headers = ["Program.h"],
         deps = [
-            "//executorch/compiler:compiler",
+            "//executorch/runtime/platform:platform",
             "//executorch/core:core",
             "//executorch/schema:extended_header",
             "//executorch/schema:schema",
@@ -79,7 +79,7 @@ def define_common_targets():
                 "//executorch/schema:schema",
             ],
             exported_deps = [
-                "//executorch/compiler:compiler",
+                "//executorch/runtime/platform:platform",
                 "//executorch/core:core",
                 "//executorch/core:operator_registry",
                 "//executorch/core/kernel_types/util:tensor_util" + aten_suffix,

@@ -1,7 +1,7 @@
 #include <sys/times.h>
 #include <xtensa/sim.h>
 
-#include <executorch/profiler/hooks.h>
+#include <executorch/runtime/platform/hooks.h>
 
 namespace torch {
 namespace executor {

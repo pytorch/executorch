@@ -2,9 +2,9 @@
 #include <vector>
 
 #include <executorch/core/OperatorRegistry.h>
-#include <executorch/core/Runtime.h>
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/kernels/kernel_runtime_context.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 
 using namespace ::testing;

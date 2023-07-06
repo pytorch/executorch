@@ -9,8 +9,8 @@
 #include <cstddef>
 #include <cstdlib>
 
-#include <executorch/compiler/Compiler.h>
-#include <executorch/platform/Types.h>
+#include <executorch/runtime/platform/compiler.h>
+#include <executorch/runtime/platform/types.h>
 
 // Set minimum log severity if compiler option is not provided.
 #ifndef ET_MIN_LOG_LEVEL

@@ -1,6 +1,6 @@
 // (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
-#include <executorch/core/Runtime.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/DynamicMemoryAllocator.h>
 
 #include <gtest/gtest.h>

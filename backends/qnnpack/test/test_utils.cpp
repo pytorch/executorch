@@ -2,10 +2,10 @@
 
 #include <gtest/gtest.h>
 
-#include <executorch/core/Runtime.h>
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/core/kernel_types/testing/TensorFactory.h>
 #include <executorch/core/kernel_types/testing/TensorUtil.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/aten_bridge.h>
 #include "executorch/backends/qnnpack/utils/utils.h"
 
@@ -16,7 +16,7 @@ using exec_aten::Tensor;
 using torch::executor::Error;
 using torch::executor::testing::TensorFactory;
 
-TEST(test_utils, choose_quantization_params) {
+TEST(TestUtils, choose_quantization_params) {
   Error e;
   torch::executor::qnnpack_utils::QuantizationParams qparams;
   float min = -128.0 * 10.0;
@@ -28,7 +28,7 @@ TEST(test_utils, choose_quantization_params) {
   ASSERT_EQ(qparams.scale, 10.0);
 }
 
-TEST(test_utils, choose_quantization_params_fails) {
+TEST(TestUtils, choose_quantization_params_fails) {
   torch::executor::runtime_init();
   Error e;
   torch::executor::qnnpack_utils::QuantizationParams qparams;
@@ -39,7 +39,7 @@ TEST(test_utils, choose_quantization_params_fails) {
   ASSERT_EQ(e, Error::Internal);
 }
 
-TEST(test_utils, quantize_per_tensor) {
+TEST(TestUtils, quantize_per_tensor) {
   TensorFactory<ScalarType::Float> tf;
   const Tensor input = tf.full({3, 5}, 4);
   double scale = 0.5;
@@ -59,7 +59,7 @@ TEST(test_utils, quantize_per_tensor) {
   EXPECT_TENSOR_EQ(output, expected);
 }
 
-TEST(test_utils, generate_requantizeation_scale) {
+TEST(TestUtils, generate_requantizeation_scale) {
   TensorFactory<ScalarType::Float> tf;
   const Tensor weight_scales = tf.full({3, 5}, 4.0);
   float input_scale = 2.0;
@@ -73,7 +73,7 @@ TEST(test_utils, generate_requantizeation_scale) {
   }
 }
 
-TEST(test_utils, get_min_max) {
+TEST(TestUtils, get_min_max) {
   TensorFactory<ScalarType::Float> tf;
   float min, max;
 

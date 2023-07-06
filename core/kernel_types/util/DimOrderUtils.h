@@ -4,9 +4,9 @@
 
 #include <cstdint>
 
-#include <executorch/compiler/Compiler.h>
-#include <executorch/core/Assert.h>
 #include <executorch/core/Error.h>
+#include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/compiler.h>
 namespace torch {
 namespace executor {
 

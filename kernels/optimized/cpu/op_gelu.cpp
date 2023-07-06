@@ -7,8 +7,8 @@
 
 #include <cmath>
 
-#include <executorch/core/Assert.h>
 #include <executorch/kernels/kernel_includes.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace torch {
 namespace executor {

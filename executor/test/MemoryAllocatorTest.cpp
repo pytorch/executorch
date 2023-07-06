@@ -3,8 +3,8 @@
 #include <array>
 #include <vector>
 
-#include <executorch/core/Runtime.h>
 #include <executorch/executor/MemoryAllocator.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/alignment.h>
 
 #include <gtest/gtest.h>

@@ -4,8 +4,8 @@
  * Based on `fbcode//common/gtest/LightMain.cpp`
  */
 
-#include <executorch/compiler/Compiler.h>
-#include <executorch/core/Runtime.h>
+#include <executorch/runtime/platform/compiler.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <folly/init/Init.h>
 #include <gtest/gtest.h>
 

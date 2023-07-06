@@ -397,11 +397,11 @@ restrictions of embedded environments, your operator implementations:
 - Must work in an environment without threads. This, along with the stateless
   requirement, means that thread local storage must not be used.
 - Must not use `stdout`, `stderr`, or other file/stream IO via `printf`/`cout`
-  etc.; instead, use `ET_LOG` from `executorch/core/Log.h`.
+  etc.; instead, use `ET_LOG` from `executorch/runtime/platform/log.h`.
 - Must not use `assert()`. Instead use `ET_CHECK` and other macros from
-  `executorch/core/Assert.h`.
+  `executorch/runtime/platform/assert.h`.
 - Must not raise exceptions. Instead use `ET_CHECK` and other macros from
-  `executorch/core/Assert.h`.
+  `executorch/runtime/platform/assert.h`.
 
 Note that not all of these apply to *every* Executorch-compatible operator
 implementation, only those included in this portable library.

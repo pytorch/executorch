@@ -1,6 +1,6 @@
 #pragma once
 
-#include <executorch/core/Assert.h>
+#include <executorch/runtime/platform/assert.h>
 #include <new>
 #include <utility> // std::forward and other template magic checks
 

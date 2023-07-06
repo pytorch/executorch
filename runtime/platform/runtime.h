@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include <executorch/compiler/Compiler.h>
+#include <executorch/runtime/platform/compiler.h>
 
 namespace torch {
 namespace executor {

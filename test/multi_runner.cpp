@@ -25,11 +25,11 @@
 
 #include <executorch/core/Constants.h>
 #include <executorch/core/Error.h>
-#include <executorch/core/Log.h>
 #include <executorch/core/Result.h>
-#include <executorch/core/Runtime.h>
 #include <executorch/executor/Executor.h>
 #include <executorch/executor/test/ManagedMemoryManager.h>
+#include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/embedded_data_loader.h>
 #include <executorch/util/read_file.h>
 #include <executorch/util/util.h>

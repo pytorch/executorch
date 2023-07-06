@@ -5,8 +5,6 @@
 #include <cstdio>
 
 #include <executorch/backends/backend.h>
-#include <executorch/core/Assert.h>
-#include <executorch/core/Log.h>
 #include <executorch/core/OperatorRegistry.h>
 #include <executorch/core/kernel_types/util/DimOrderUtils.h>
 #include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
@@ -16,7 +14,9 @@
 #include <executorch/executor/Program.h>
 #include <executorch/executor/tensor_parser.h>
 #include <executorch/kernels/kernel_runtime_context.h>
-#include <executorch/profiler/profiler.h>
+#include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/schema_generated.h>
 
 namespace torch {

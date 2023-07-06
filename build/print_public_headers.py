@@ -117,7 +117,7 @@ def main():
     all_targets = query_targets(PROJECT_QUERY)
     visible_targets = find_visible_targets(EXTERNAL_CLIENT_TARGET, all_targets)
     index = index_headers(visible_targets)
-    # The list will be build targets like `fbcode//executorch/platform/Platform.h`.
+    # The list will be build targets like `fbcode//executorch/runtime/platform/platform.h`.
     print("\n".join(sorted(index.keys())))
 
 

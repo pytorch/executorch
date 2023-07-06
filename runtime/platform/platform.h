@@ -11,8 +11,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <executorch/compiler/Compiler.h>
-#include <executorch/platform/Types.h>
+#include <executorch/runtime/platform/compiler.h>
+#include <executorch/runtime/platform/types.h>
 
 /**
  * Clients should neither define nor use this macro. Used to optionally declare

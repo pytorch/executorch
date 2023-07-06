@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 
 #include <executorch/core/Result.h>
-#include <executorch/core/Runtime.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/alignment.h>
 #include <executorch/util/test/temp_file.h>
 

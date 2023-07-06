@@ -37,7 +37,7 @@ dependencies except:
 
 To avoid assuming the capabilities of the target system, the Executorch runtime
 lets clients override low-level functions in its Platform Abstraction Layer
-(PAL), defined in `//executorch/platform/Platform.h`, to perform operations
+(PAL), defined in `//executorch/runtime/platform/platform.h`, to perform operations
 like:
 - Getting the current timestamp
 - Printing a log message
@@ -89,8 +89,8 @@ without floating point support.
 
 Instead of using `printf()`, `fprintf()`, `cout`, `cerr`, or a library like
 `folly::logging` or `glog`, the Executorch runtime provides the `ET_LOG`
-interface in `//executorch/core/Log.h` and the `ET_CHECK` interface in
-`//executorch/core/Assert.h`. The messages are printed using a hook in the PAL,
+interface in `//executorch/runtime/platform/log.h` and the `ET_CHECK` interface in
+`//executorch/runtime/platform/assert.h`. The messages are printed using a hook in the PAL,
 which means that clients can redirect them to any underlying logging system, or
 just print them to `stderr` if available.
 

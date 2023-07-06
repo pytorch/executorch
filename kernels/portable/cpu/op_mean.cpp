@@ -1,8 +1,8 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
-#include <executorch/core/Assert.h>
 #include <executorch/kernels/kernel_includes.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace torch {
 namespace executor {

@@ -1,9 +1,9 @@
-#include <executorch/core/Log.h>
+#include <executorch/runtime/platform/log.h>
 
 #include <cstdio>
 
-#include <executorch/compiler/Compiler.h>
-#include <executorch/platform/Platform.h>
+#include <executorch/runtime/platform/compiler.h>
+#include <executorch/runtime/platform/platform.h>
 
 namespace torch {
 namespace executor {

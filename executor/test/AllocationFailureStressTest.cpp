@@ -3,10 +3,10 @@
 #include <memory>
 
 #include <executorch/core/Constants.h>
-#include <executorch/core/Runtime.h>
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/executor/Executor.h>
 #include <executorch/executor/test/ManagedMemoryManager.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/file_data_loader.h>
 #include <executorch/util/util.h>
 

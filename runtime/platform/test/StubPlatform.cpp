@@ -1,12 +1,12 @@
-#include <executorch/platform/test/StubPlatform.h>
+#include <executorch/runtime/platform/test/StubPlatform.h>
 
 #include <chrono>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
 
-#include <executorch/compiler/Compiler.h>
-#include <executorch/platform/Platform.h>
+#include <executorch/runtime/platform/compiler.h>
+#include <executorch/runtime/platform/platform.h>
 
 /**
  * @file

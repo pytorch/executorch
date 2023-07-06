@@ -1,6 +1,6 @@
 #include <executorch/core/kernel_types/kernel_types.h>
 
-#include <executorch/core/Runtime.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>

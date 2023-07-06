@@ -10,7 +10,6 @@ def define_common_targets():
     runtime.cxx_library(
         name = "core",
         srcs = [
-            "Runtime.cpp",
             "String.cpp",
         ],
         exported_headers = [
@@ -19,7 +18,6 @@ def define_common_targets():
             "Error.h",
             "FunctionRef.h",
             "Result.h",
-            "Runtime.h",
             "String.h",
             "macros.h",
             "span.h",
@@ -29,60 +27,10 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            ":log",
             "//executorch/profiler:profiler",
         ],
         exported_deps = [
-            ":abort",
-            ":log",
-            "//executorch/compiler:compiler",
-            "//executorch/platform:platform",
-            # Must be exported to include the weak symbols it defines.
-            "//executorch/platform:platform_private",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "abort",
-        srcs = [
-            "Abort.cpp",
-        ],
-        exported_headers = [
-            "Assert.h",
-            "Abort.h",
-        ],
-        deps = [
-            "//executorch/compiler:compiler",
-            "//executorch/platform:platform_private",
-        ],
-        exported_deps = [
-            ":log",
-            "//executorch/compiler:compiler",
-            "//executorch/platform:platform",
-        ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        reexport_all_header_dependencies = False,
-    )
-
-    runtime.cxx_library(
-        name = "log",
-        srcs = [
-            "Log.cpp",
-        ],
-        exported_headers = [
-            "Log.h",
-        ],
-        deps = [
-            "//executorch/compiler:compiler",
-            "//executorch/platform:platform",
-            "//executorch/platform:platform_private",
-        ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
+            "//executorch/runtime/platform:platform",
         ],
     )
 
@@ -104,7 +52,7 @@ def define_common_targets():
             "DataLoader.h",
         ],
         exported_deps = [
-            "//executorch/compiler:compiler",
+            "//executorch/runtime/platform:platform",
             "//executorch/core:core",
             ":freeable_buffer",
         ],

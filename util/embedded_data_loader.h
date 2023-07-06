@@ -4,8 +4,8 @@
 
 #include <executorch/core/DataLoader.h>
 #include <executorch/core/Error.h>
-#include <executorch/core/Log.h>
 #include <executorch/core/Result.h>
+#include <executorch/runtime/platform/log.h>
 
 namespace torch {
 namespace executor {

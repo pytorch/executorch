@@ -5,14 +5,14 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <executorch/core/Assert.h>
 #include <executorch/core/Constants.h>
 #include <executorch/core/DataLoader.h>
 #include <executorch/core/OperatorRegistry.h>
-#include <executorch/core/Runtime.h>
 #include <executorch/executor/Executor.h>
 #include <executorch/executor/Program.h>
-#include <executorch/profiler/profiler.h>
+#include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/profiler.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/schema/bundled_program_schema_generated.h>
 #include <executorch/schema/schema_generated.h>
 #include <executorch/util/TestMemoryConfig.h>

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <executorch/compiler/Compiler.h>
 #include <executorch/core/Error.h>
+#include <executorch/runtime/platform/compiler.h>
 #include <executorch/util/system.h>
 #include <memory>
 #include <string>

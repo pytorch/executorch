@@ -8,9 +8,9 @@
 // Platform.h. Client users can strongly define any or all of the functions to
 // override them.
 #define ET_INTERNAL_PLATFORM_WEAKNESS __ET_WEAK
-#include <executorch/platform/Platform.h>
+#include <executorch/runtime/platform/platform.h>
 
-#include <executorch/compiler/Compiler.h>
+#include <executorch/runtime/platform/compiler.h>
 
 void et_pal_init(void) {}
 

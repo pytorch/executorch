@@ -1,12 +1,12 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
-#include <executorch/core/Runtime.h>
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/core/kernel_types/testing/TensorFactory.h>
 #include <executorch/core/kernel_types/testing/TensorUtil.h>
 #include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
 #include <executorch/kernels/portable/NativeFunctions.h> // Declares the aten operator
 #include <executorch/kernels/quantized/NativeFunctions.h> // Declares the quantized operator
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>

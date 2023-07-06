@@ -41,8 +41,8 @@ def define_common_targets():
             "StubPlatform.h",
         ],
         deps = [
-            "//executorch/compiler:compiler",
-            "//executorch/platform:platform",
+            "//executorch/runtime/platform:compiler",
+            "//executorch/runtime/platform:platform",
             "//executorch/test/utils:utils",  # gtest.h
         ],
         visibility = [],

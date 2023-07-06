@@ -1,6 +1,6 @@
 #pragma once
 
-#include <executorch/compiler/Compiler.h>
+#include <executorch/runtime/platform/compiler.h>
 #include <sys/types.h> // TODO(T126923429): Include size_t, ssize_t
 
 #include <executorch/core/kernel_types/lean/tensor_impl.h>

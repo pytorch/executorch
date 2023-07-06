@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include <executorch/profiler/profiler.h>
+#include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/extended_header.h>
 #include <executorch/schema/schema_generated.h>
 

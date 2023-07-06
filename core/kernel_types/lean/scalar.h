@@ -1,7 +1,7 @@
 #pragma once
 
-#include <executorch/core/Assert.h>
 #include <executorch/core/values/Tag.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <cstdint>
 #include <type_traits>

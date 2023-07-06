@@ -57,7 +57,7 @@ def define_common_targets():
         exported_deps = [
             ":system",
             "//executorch/core:core",
-            "//executorch/compiler:compiler",
+            "//executorch/runtime/platform:compiler",
         ],
     )
 

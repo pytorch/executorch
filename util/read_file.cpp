@@ -1,6 +1,6 @@
 #include <executorch/util/read_file.h>
 
-#include <executorch/core/Log.h>
+#include <executorch/runtime/platform/log.h>
 
 #include <stdio.h>
 #include <memory>

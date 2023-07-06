@@ -2,13 +2,13 @@
 
 #include <cstring>
 
-#include <executorch/compiler/Compiler.h>
 #include <executorch/core/ArrayRef.h>
 #include <executorch/core/Error.h>
 #include <executorch/core/FunctionRef.h>
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/core/values/Evalue.h>
-#include <executorch/platform/Platform.h>
+#include <executorch/runtime/platform/compiler.h>
+#include <executorch/runtime/platform/platform.h>
 // Debug switch for operator registry
 #if defined(ET_OP_REGISTRY_DEBUG)
 #include <ostream>

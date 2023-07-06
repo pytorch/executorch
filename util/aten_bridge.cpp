@@ -1,6 +1,6 @@
 #include <executorch/util/aten_bridge.h>
 
-#include <executorch/core/Assert.h>
+#include <executorch/runtime/platform/assert.h>
 #include <cstring>
 
 namespace torch {

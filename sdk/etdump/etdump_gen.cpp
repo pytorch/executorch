@@ -1,6 +1,6 @@
-#include <executorch/core/Assert.h>
 #include <executorch/executor/MemoryAllocator.h>
-#include <executorch/profiler/profiler.h>
+#include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/profiler.h>
 #include <executorch/sdk/etdump/etdump_gen.h>
 
 using namespace torch::executor;

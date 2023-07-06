@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <executorch/platform/Platform.h>
+#include <executorch/runtime/platform/platform.h>
 #include <executorch/test/utils/DeathTest.h>
 
 TEST(ExecutorPalTest, UninitializedPalDeath) {

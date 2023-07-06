@@ -3,8 +3,8 @@
 
 #include <cstring>
 
-#include <executorch/core/Assert.h>
 #include <executorch/core/kernel_types/lean/tensor.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace torch {
 namespace executor {

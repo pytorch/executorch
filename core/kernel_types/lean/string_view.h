@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <utility>
 
-#include <executorch/core/Assert.h>
+#include <executorch/runtime/platform/assert.h>
 
 // TODO(T154113473): Document this file
 namespace torch {

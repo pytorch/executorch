@@ -7,10 +7,10 @@
 #include <ATen/ATen.h>
 #endif // USE_ATEN_LIB
 
-#include <executorch/core/Log.h>
 #include <executorch/core/kernel_types/testing/TensorUtil.h>
 #include <executorch/core/kernel_types/util/DimOrderUtils.h>
 #include <executorch/executor/MemoryManager.h>
+#include <executorch/runtime/platform/log.h>
 #include <executorch/schema/bundled_program_schema_generated.h>
 #include <executorch/schema/schema_generated.h>
 

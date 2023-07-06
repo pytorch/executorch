@@ -1,6 +1,6 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
-#include <executorch/core/Assert.h>
 #include <executorch/kernels/kernel_includes.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <cstdint>
 #include <cstring>

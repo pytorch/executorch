@@ -21,7 +21,7 @@
 
 #include <cstdint>
 
-#include <executorch/core/Assert.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace torch {
 namespace executor {

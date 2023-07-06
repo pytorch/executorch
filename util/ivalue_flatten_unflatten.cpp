@@ -1,6 +1,6 @@
 #include <executorch/util/ivalue_flatten_unflatten.h>
 
-#include <executorch/core/Assert.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace torch {
 namespace executor {

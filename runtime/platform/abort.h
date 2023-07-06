@@ -1,5 +1,11 @@
-#include <executorch/core/Abort.h>
-#include <executorch/platform/Platform.h>
+/**
+ * @file
+ * Executorch global abort wrapper function.
+ */
+
+#pragma once
+
+#include <executorch/runtime/platform/compiler.h>
 
 namespace torch {
 namespace executor {
@@ -8,9 +14,7 @@ namespace executor {
  * Trigger the Executorch global runtime to immediately exit without cleaning
  * up, and set an abnormal exit status (platform-defined).
  */
-__ET_NORETURN void runtime_abort() {
-  et_pal_abort();
-}
+__ET_NORETURN void runtime_abort();
 
 } // namespace executor
 } // namespace torch

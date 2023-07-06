@@ -3,7 +3,7 @@
 #include <executorch/core/kernel_types/util/tensor_util.h>
 
 #include <ATen/Tensor.h> // @manual
-#include <executorch/core/Assert.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace torch {
 namespace executor {

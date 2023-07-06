@@ -13,14 +13,14 @@
 // Platform.h. Client users can strongly define any or all of the functions to
 // override them.
 #define ET_INTERNAL_PLATFORM_WEAKNESS __ET_WEAK
-#include <executorch/platform/Platform.h>
+#include <executorch/runtime/platform/platform.h>
 
 #include <chrono>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
 
-#include <executorch/compiler/Compiler.h>
+#include <executorch/runtime/platform/compiler.h>
 
 // The FILE* to write logs to.
 #define ET_LOG_OUTPUT_FILE stderr

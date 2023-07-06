@@ -5,7 +5,7 @@
 #include <executorch/core/values/Evalue.h>
 #include <executorch/executor/Program.h>
 #include <executorch/executor/tensor_parser.h>
-#include <executorch/profiler/profiler.h>
+#include <executorch/runtime/platform/profiler.h>
 
 namespace torch {
 namespace executor {

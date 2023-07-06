@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include <executorch/core/Log.h>
-#include <executorch/core/Runtime.h>
+#include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/runtime.h>
 
 namespace torch {
 namespace executor {

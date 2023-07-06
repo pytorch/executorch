@@ -21,7 +21,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            "//executorch/compiler:compiler",
+            "//executorch/runtime/platform:platform",
             "//executorch/core:core",
         ],
         fbcode_exported_deps = [

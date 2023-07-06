@@ -1,9 +1,9 @@
 #include <executorch/core/Constants.h>
-#include <executorch/core/Log.h>
-#include <executorch/core/Runtime.h>
 #include <executorch/executor/Executor.h>
 #include <executorch/executor/Program.h>
-#include <executorch/profiler/profiler.h>
+#include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/profiler.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/file_data_loader.h>
 #include <executorch/util/util.h>
 #include <stdio.h>

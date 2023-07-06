@@ -40,6 +40,7 @@ def define_common_targets():
             "//executorch/core/kernel_types:kernel_types",
             "//executorch/core/values:executor_values",
             "//executorch/core:core",
+            "//executorch/runtime/platform:platform",
             "//executorch/core:operator_registry",
             "//executorch/executor:executor",
             "//executorch/kernels/portable:generated_lib",

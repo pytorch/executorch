@@ -123,7 +123,7 @@ def define_common_targets():
         deps = [],
         exported_deps = [
             ":etdump_schema",
-            "//executorch/core:abort",
+            "//executorch/runtime/platform:platform",
             "//executorch/executor:memory_manager",
         ],
         visibility = [

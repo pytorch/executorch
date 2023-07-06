@@ -2,9 +2,9 @@
 
 #include <cstring>
 
-#include <executorch/core/Assert.h>
 #include <executorch/kernels/kernel_includes.h>
 #include <executorch/kernels/portable/cpu/util/repeat_util.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace torch {
 namespace executor {

@@ -2,9 +2,9 @@
 
 #include <cstddef>
 
-#include <executorch/compiler/Compiler.h>
-#include <executorch/platform/Platform.h>
-#include <executorch/platform/Types.h>
+#include <executorch/runtime/platform/compiler.h>
+#include <executorch/runtime/platform/platform.h>
+#include <executorch/runtime/platform/types.h>
 
 /**
  * An interface for intercepting calls to the PAL layer.

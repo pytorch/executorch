@@ -1,5 +1,5 @@
-#include <executorch/compiler/Compiler.h>
 #include <executorch/kernels/kernel_includes.h>
+#include <executorch/runtime/platform/compiler.h>
 #include <math.h>
 #include <string.h>
 

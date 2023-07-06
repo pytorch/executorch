@@ -95,7 +95,7 @@ def define_libs():
         ],
         exported_deps = [
             # Needed to access the __ET_INLINE macro
-            "//executorch/compiler:compiler",
+            "//executorch/runtime/platform:compiler",
         ],
     )
 

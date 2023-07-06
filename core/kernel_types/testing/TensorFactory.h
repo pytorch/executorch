@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-#include <executorch/core/Assert.h>
+#include <executorch/runtime/platform/assert.h>
 #include <executorch/core/kernel_types/TensorShapeDynamism.h>
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/core/kernel_types/util/ScalarTypeUtil.h>

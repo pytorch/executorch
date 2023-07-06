@@ -10,6 +10,7 @@ namespace executor {
 // This is expected to return a 64 bit value that contains the most
 // granular time representation available on the system. It could be
 // ticks, cycle count or time in microseconds etc.
+// TODO(T157580075): delete this file and merge functionality into Platform.hå
 uint64_t get_curr_time(void);
 
 } // namespace executor

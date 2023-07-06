@@ -4,9 +4,9 @@
 
 #include <cstddef>
 
-#include <executorch/compiler/Compiler.h>
 #include <executorch/core/DataLoader.h>
 #include <executorch/core/Result.h>
+#include <executorch/runtime/platform/compiler.h>
 
 namespace torch {
 namespace executor {

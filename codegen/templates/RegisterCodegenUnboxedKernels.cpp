@@ -1,7 +1,7 @@
 #include <executorch/core/OperatorRegistry.h>
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/core/values/Evalue.h>
-#include <executorch/profiler/profiler.h>
+#include <executorch/runtime/platform/profiler.h>
 #include "${fn_header}" // Generated Function import headers
 // ${generated_comment}
 

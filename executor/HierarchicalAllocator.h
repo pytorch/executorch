@@ -1,10 +1,10 @@
 #pragma once
 
-#include <executorch/compiler/Compiler.h>
-#include <executorch/core/Assert.h>
-#include <executorch/core/Log.h>
 #include <executorch/core/Result.h>
 #include <executorch/executor/MemoryAllocator.h>
+#include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/compiler.h>
+#include <executorch/runtime/platform/log.h>
 #include <cstdint>
 
 namespace torch {

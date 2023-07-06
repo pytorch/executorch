@@ -1,4 +1,4 @@
-#include <executorch/core/Assert.h>
+#include <executorch/runtime/platform/assert.h>
 #include <executorch/threadpool/threadpool.h>
 #include <executorch/threadpool/threadpool_guard.h>
 #include <algorithm>

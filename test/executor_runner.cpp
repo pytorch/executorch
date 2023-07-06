@@ -1,10 +1,10 @@
 #include <gflags/gflags.h>
 
 #include <executorch/core/Constants.h>
-#include <executorch/core/Log.h>
-#include <executorch/core/Runtime.h>
 #include <executorch/executor/Executor.h>
-#include <executorch/profiler/profiler.h>
+#include <executorch/runtime/platform/log.h>
+#include <executorch/runtime/platform/profiler.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/sdk/etdump/etdump.h>
 #include <executorch/util/bundled_program_verification.h>
 #include <executorch/util/embedded_data_loader.h>

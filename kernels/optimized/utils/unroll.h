@@ -1,6 +1,6 @@
 #pragma once
 
-#include <executorch/compiler/Compiler.h>
+#include <executorch/runtime/platform/compiler.h>
 
 // Utility to guaruntee complete unrolling of a loop where the bounds are known
 // at compile time. Various pragmas achieve similar effects, but are not as

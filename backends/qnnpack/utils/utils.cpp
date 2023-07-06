@@ -1,6 +1,6 @@
 // (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 #include <executorch/backends/qnnpack/utils/utils.h>
-#include <executorch/core/Assert.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace torch {
 namespace executor {

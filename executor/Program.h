@@ -3,11 +3,11 @@
 #include <cinttypes>
 #include <cstdint>
 
-#include <executorch/compiler/Compiler.h>
 #include <executorch/core/DataLoader.h>
 #include <executorch/core/Error.h>
 #include <executorch/core/FreeableBuffer.h>
 #include <executorch/core/Result.h>
+#include <executorch/runtime/platform/compiler.h>
 
 // Forward declare flatbuffer types. This is a public header and must not
 // include the generated flatbuffer header.

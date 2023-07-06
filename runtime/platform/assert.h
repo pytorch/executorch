@@ -1,8 +1,8 @@
 #pragma once
 
-#include <executorch/compiler/Compiler.h>
-#include <executorch/core/Abort.h>
-#include <executorch/core/Log.h>
+#include <executorch/runtime/platform/abort.h>
+#include <executorch/runtime/platform/compiler.h>
+#include <executorch/runtime/platform/log.h>
 
 /**
  * Assertion failure message emit method.

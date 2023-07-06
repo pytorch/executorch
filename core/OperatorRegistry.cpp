@@ -1,10 +1,10 @@
 #include <executorch/core/OperatorRegistry.h>
 
-#include <executorch/core/Runtime.h>
-#include <executorch/platform/System.h>
+#include <executorch/runtime/platform/runtime.h>
+#include <executorch/runtime/platform/system.h>
 #include <cinttypes>
 
-#include <executorch/core/Assert.h>
+#include <executorch/runtime/platform/assert.h>
 
 namespace torch {
 namespace executor {
