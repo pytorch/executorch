@@ -12,7 +12,6 @@ import torch
 from executorch.exir import CaptureConfig, ExecutorchProgram
 from executorch.exir.emit import emit_program
 from executorch.exir.error import InternalError
-from executorch.exir.experimental.funktionalize import FunktionalizationPass
 from executorch.exir.passes.const_prop_pass import ConstPropPass
 from executorch.exir.print_program import print_program  # noqa
 from executorch.exir.schema import (
@@ -679,10 +678,8 @@ class TestEmit(unittest.TestCase):
             _dynamo_config=ExirDynamoConfig(specialize_int=False),
         )
         inputs = (torch.ones(4, 4), torch.ones(4))
-        module = (
-            exir.capture(f, inputs, capture_config)
-            .transform(FunktionalizationPass(inputs))
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+        module = exir.capture(f, inputs, capture_config).to_edge(
+            exir.EdgeCompileConfig(_check_ir_validity=False)
         )
         program = module.to_executorch().program
 

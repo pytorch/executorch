@@ -13,7 +13,6 @@ import torch
 
 import torch.utils._pytree as pytree
 from executorch.exir.error import ExportError
-from executorch.exir.experimental.funktionalize import FunktionalizationPass
 from executorch.exir.passes import DebugPass
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tracer import dynamo_trace, ExirDynamoConfig, using_dynamo
@@ -352,72 +351,6 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         self.assertEqual(len(eager_outputs), 2)
         self.assertTrue(torch.allclose(graph_outputs[0], eager_outputs[0]))
         self.assertTrue(torch.allclose(graph_outputs[1], eager_outputs[1]))
-
-    def test_retain_original_inputs(self) -> None:
-        """
-        The way we setup config here minics what we do for DPE right now.
-
-        The tests makes sure the upperbound shape information is retained
-        after tracing and functionalization.
-        """
-        eager_model = models.ModelWithUnusedArg()
-        inputs = tuple(eager_model.get_random_inputs())
-        gm = (
-            exir.capture(
-                eager_model,
-                inputs,
-                exir.CaptureConfig(
-                    pt2_mode=True,
-                    enable_functionalization=False,
-                    enable_dynamic_shape=True,
-                ),
-            )
-            .transform(FunktionalizationPass(inputs))
-            .to_edge(
-                exir.EdgeCompileConfig(
-                    _check_ir_validity=False,
-                )
-            )
-            .to_executorch()
-        ).dump_graph_module()
-        DebugPass(show_spec=True)(gm)
-        print(f"gm meta {gm.meta}")
-        ncheck = 0
-        for node in gm.graph.nodes:
-            for spec in pytree.tree_flatten(node.meta.get("spec", []))[0]:
-                ncheck += 1
-                self.assertTrue(
-                    spec.shape_dynamism == schema.TensorShapeDynamism.DYNAMIC_BOUND
-                )
-        self.assertTrue(ncheck > 0)
-
-    def test_retain_original_inputs_with_submodule(self) -> None:
-        """
-        For a GraphModule has a submodule, make sure StopIteration is caught when
-        visiting submodule's placeholder nodes in SpecPropPass.
-        The passing criteria for this test is no exception raised in top level.
-        """
-        eager_model = control_flow_models.FTCondBasic()
-        inputs = eager_model.get_random_inputs()
-        (
-            exir.capture(
-                eager_model,
-                inputs,
-                exir.CaptureConfig(
-                    pt2_mode=True,
-                    enable_functionalization=False,
-                    enable_dynamic_shape=True,
-                ),
-            )
-            .transform(FunktionalizationPass(inputs))
-            .to_edge(
-                exir.EdgeCompileConfig(
-                    _check_ir_validity=False,
-                )
-            )
-            .to_executorch()
-        )
-        # pass the test if no exception
 
     def test_assume_constant_by_default_prop(self) -> None:
         def foo(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
