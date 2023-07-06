@@ -1,16 +1,17 @@
 /**
  * @file
  * Fallback PAL implementations for POSIX-compatible systems.
+ *
+ * Note that this assumes that the platform defines the symbols used in this
+ * file (like fprintf()), because this file will still be built even if the
+ * functions are later overridden. When building for a platform that does not
+ * provide the necessary symbols, clients can use Minimal.cpp instead, but they
+ * will need to override all of the functions.
  */
 
 // This cpp file will provide weak implementations of the symbols declared in
 // Platform.h. Client users can strongly define any or all of the functions to
 // override them.
-//
-// Note that this assumes that all platforms define the symbols used in this
-// file, because this file will still be built even if the functions are later
-// overridden. If we find a platform that breaks this assumption, the default
-// implementations here will need to change.
 #define ET_INTERNAL_PLATFORM_WEAKNESS __ET_WEAK
 #include <executorch/platform/Platform.h>
 
