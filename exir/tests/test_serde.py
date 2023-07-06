@@ -45,3 +45,17 @@ class TestSerde(unittest.TestCase):
         aten = exir.capture(MyModule(), inputs, exir.CaptureConfig(pt2_mode=True))
         aten_new = deserialize(*serialize(aten))
         self.check_ep(aten, aten_new, inputs)
+
+    def test_getattr(self) -> None:
+        class MyModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(512, 512)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        inputs = (torch.ones(512, 512, requires_grad=True),)
+        aten = exir.capture(MyModule(), inputs, exir.CaptureConfig(pt2_mode=True))
+        aten_new = deserialize(*serialize(aten))
+        self.check_ep(aten, aten_new, inputs)

@@ -1,26 +1,51 @@
 # pyre-strict
 
+import copy
 import dataclasses
 import json
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import executorch.exir as exir
+import torch
+import torch._export.exported_program as ep
 import torch._export.serde.schema as schema
 import torch._export.serde.serialize as export_serialize
 from torch.fx.experimental import symbolic_shapes
 
 
 class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
-    pass
+    def __init__(
+        self, graph_signature: ep.ExportGraphSignature, call_spec: ep.CallSpec
+    ) -> None:
+        super().__init__(graph_signature, call_spec)
+        self.state_dict: Dict[str, torch.Tensor] = {}  # TODO(T157676982)
+
+    # pyre-ignore
+    def serialize_input(self, arg) -> schema.Argument:
+        if isinstance(arg, torch.fx.Node):
+            if arg.op == "get_attr":
+                attr = getattr(self.original_graph_module, arg.target)  # pyre-ignore
+                if isinstance(attr, torch.Tensor):
+                    self.state_dict[arg.name] = copy.deepcopy(attr)
+                    return schema.Argument.create(
+                        as_tensor=schema.TensorArgument(name=arg.name)
+                    )
+        return super().serialize_input(arg)
+
+    def serialize_graph(self, graph_module: torch.fx.GraphModule) -> schema.Graph:
+        self.original_graph_module: torch.fx.GraphModule = graph_module  # pyre-ignore
+        return super().serialize_graph(graph_module)
 
 
 class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
     def serialize(
         self, exported_program: exir.ExportedProgram
     ) -> Tuple[schema.ExportedProgram, bytes]:
-        serialized_graph_module = GraphModuleSerializer(
+        gm_serializer = GraphModuleSerializer(
             exported_program.graph_signature, exported_program.call_spec
-        ).serialize(exported_program.graph_module)
+        )
+        serialized_graph_module = gm_serializer.serialize(exported_program.graph_module)
+
         serialized_range_constraints = export_serialize.serialize_range_constraints(
             exported_program.range_constraints
         )
@@ -37,13 +62,31 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
                 range_constraints=serialized_range_constraints,
                 equality_constraints=serialized_equality_constraints,
             ),
-            export_serialize.serialize_state_dict(exported_program.state_dict),
+            export_serialize.serialize_state_dict(gm_serializer.state_dict),
         )
 
 
 class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
+    def __init__(self, state_dict: Dict[str, torch.Tensor]) -> None:
+        super().__init__()
+        self.state_dict: Dict[str, Any] = state_dict  # TODO(T157676982)
+
     # TODO(angelayi): implement for delegation
-    pass
+
+    # pyre-ignore
+    def deserialize_input(self, inp: schema.Argument) -> Any:
+        value = inp.value
+        if isinstance(value, schema.TensorArgument):
+            if value.name in self.state_dict:  # TODO(T157676982)
+                val = self.state_dict[value.name]
+                setattr(self.module, value.name, val)
+                return self.graph.create_node(
+                    "get_attr",
+                    value.name,
+                    name=value.name,
+                )
+
+        return super().deserialize_input(inp)
 
 
 class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
@@ -60,12 +103,13 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             for k, v in serialized_exported_program.range_constraints.items()
         }
 
+        state_dict = export_serialize.deserialize_state_dict(serialized_state_dict)
         (
             graph_module,
             sig,
             call_spec,
             symbol_name_to_symbol,
-        ) = GraphModuleDeserializer().deserialize(
+        ) = GraphModuleDeserializer(state_dict).deserialize(
             serialized_exported_program.graph_module,
             symbol_name_to_range,
         )
@@ -73,7 +117,6 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             symbol_name_to_range,
             symbol_name_to_symbol,
         )
-        state_dict = export_serialize.deserialize_state_dict(serialized_state_dict)
 
         # Update the state dict any attributes accessed in the new graph. We need
         # this because we stored the delegate module directly in the new graph
@@ -91,7 +134,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             graph_module.graph,
             sig,
             call_spec,
-            state_dict,
+            {},  # TODO(T157676982)
             range_constraints,
             equality_constraints,
         )
