@@ -69,8 +69,6 @@ def define_common_targets():
         name = "gen_supported_features",
         main_module = "executorch.kernels.test.gen_supported_features",
         deps = [
-            "fbsource//third-party/pkg_resources:pkg_resources",
-            "fbsource//third-party/pypi/pyyaml:pyyaml",
             ":gen_supported_features_lib",
         ],
         visibility = [
@@ -88,6 +86,7 @@ def define_common_targets():
         base_module = "executorch.kernels.test",
         visibility = ["//executorch/kernels/test/..."],
         deps = [
+            "fbsource//third-party/pkg_resources:pkg_resources",
             "fbsource//third-party/pypi/pyyaml:pyyaml",
         ],
     )
