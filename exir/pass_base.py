@@ -53,7 +53,7 @@ def make_inline_interpreter(
 ) -> Type[torch.fx.Interpreter]:
     class InlineInterpreter(parent):
         def call_function(self, target, args, kwargs):
-            if target == torch.ops.cond:
+            if target == torch.ops.higher_order.cond:
                 pred, true, false, params = args
                 return InlineInterpreter(true).run(*params)
             elif target == torch.ops.map:

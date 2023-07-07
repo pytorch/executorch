@@ -749,7 +749,7 @@ class DynamicModelE2ETest(unittest.TestCase):
         run_executor=False,
     )
 
-    # basic test for functorch torch.ops.cond
+    # basic test for functorch torch.ops.higher_order.cond
     test_ft_cond_basic = maketest(
         FTCondBasic,
         capture_config=exir.CaptureConfig(

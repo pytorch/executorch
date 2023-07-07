@@ -115,7 +115,7 @@ class Backend1Demo(BackendDetails):
             processed_bytes = ""
             for node in gm.graph.nodes:
                 if node.op == "call_function":
-                    if node.target is torch.ops.cond:
+                    if node.target is torch.ops.higher_order.cond:
                         _, true_gm, _ = _get_submodule(gm, node, 1)
                         _, false_gm, _ = _get_submodule(gm, node, 2)
                         processed_bytes += f"{node.target.__name__}({process(true_gm)},{process(false_gm)});"
@@ -134,7 +134,7 @@ class Backend1Demo(BackendDetails):
 
 class CondOperatorSupport(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-        return node.op == "call_function" and node.target is torch.ops.cond
+        return node.op == "call_function" and node.target is torch.ops.higher_order.cond
 
 
 @final
@@ -168,7 +168,10 @@ class Backend1PartitionerDemo(Partitioner):
         for partition in partition_list:
             for node in partition.nodes:
                 delegation_tag = f"backend1_tag{partition.id}"
-                if node.op == "call_function" and node.target is torch.ops.cond:
+                if (
+                    node.op == "call_function"
+                    and node.target is torch.ops.higher_order.cond
+                ):
                     # Tag the arguments that take in the submodules to cond
                     # pyre-ignore
                     node.args[1].meta["delegation_tag"] = delegation_tag

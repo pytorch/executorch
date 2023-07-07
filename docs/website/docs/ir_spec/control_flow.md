@@ -4,7 +4,7 @@ EXIR has a couple of special operators used to help specify control flow within
 some code, similar to jax's control flow operators. Currently these operators
 are only supported for inference.
 
-## torch.ops.cond
+## torch.ops.higher_order.cond
 
 The `cond` function represents an “if” statement in other programming languages.
 It can logically be seen as implemented as follows:
@@ -87,7 +87,7 @@ class GraphModule(torch.nn.Module):
         %gt : Sym(s0 > 4) = call_function[target=operator.gt](args = (%sym_size, 4), kwargs = {})
         %true_graph_0 = get_attr[target=true_graph_0]
         %false_graph_0 = get_attr[target=false_graph_0]
-        %cond : f32[s0, s1] = call_function[target=torch.ops.cond](args = (%gt, %true_graph_0, %false_graph_0, [%arg0]), kwargs = {})
+        %cond : f32[s0, s1] = call_function[target=torch.ops.higher_order.cond](args = (%gt, %true_graph_0, %false_graph_0, [%arg0]), kwargs = {})
         return [cond]
 
     # true_graph_0

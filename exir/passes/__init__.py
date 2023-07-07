@@ -314,7 +314,7 @@ class ToOutVarPass(PassBase):
                 continue
 
             target = node.target
-            if target == control_flow.cond or target == torch.ops.cond:
+            if target == control_flow.cond or target == torch.ops.higher_order.cond:
                 self.call(get_submodule(node.args[1]))
                 self.call(get_submodule(node.args[2]))
                 continue
