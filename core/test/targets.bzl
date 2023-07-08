@@ -24,14 +24,6 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
-        name = "StringTest",
-        srcs = ["StringTest.cpp"],
-        deps = [
-            "//executorch/core:core",
-        ],
-    )
-
-    runtime.cxx_test(
         name = "logging_test",
         srcs = [
             "LoggingTest.cpp",

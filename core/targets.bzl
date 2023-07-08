@@ -9,16 +9,12 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "core",
-        srcs = [
-            "String.cpp",
-        ],
         exported_headers = [
             "ArrayRef.h",
             "Constants.h",
             "Error.h",
             "FunctionRef.h",
             "Result.h",
-            "String.h",
             "macros.h",
             "span.h",
         ],
