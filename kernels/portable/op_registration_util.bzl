@@ -121,7 +121,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         # are codegend and linked in later
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
-            "//executorch/kernels:kernel_includes" + aten_suffix,
+            "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
         ] + deps,
         # link_whole is necessary because the operators register themselves
         # via static initializers that run at program startup.

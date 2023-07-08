@@ -18,7 +18,7 @@ MODULE_DEPS = [
     "//caffe2:ATen",
     "//caffe2:torch",
     "//caffe2:torch_extension",
-    "//executorch/core:operator_registry",
+    "//executorch/runtime/kernel:operator_registry",
     "//executorch/executor:executor",
     "//executorch/schema:bundled_program_schema",
     "//executorch/schema:schema",

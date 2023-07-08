@@ -89,7 +89,7 @@ def define_op_library(name, deps):
         # are codegend and linked in later
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
-            "//executorch/kernels:kernel_includes",
+            "//executorch/runtime/kernel:kernel_includes",
         ] + augmented_deps,
         fbandroid_platform_preprocessor_flags = get_vec_android_preprocessor_flags(),
         # link_whole is necessary because the operators register themselves

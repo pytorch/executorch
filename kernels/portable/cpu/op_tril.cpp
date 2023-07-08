@@ -1,5 +1,5 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
-#include <executorch/kernels/kernel_includes.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 #include <cstring>
 #include <type_traits>
 

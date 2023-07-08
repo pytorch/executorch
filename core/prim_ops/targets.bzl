@@ -16,11 +16,11 @@ def define_common_targets():
             visibility = [],  # Private
             exported_headers = ["et_copy_index.h"],
             deps = [
-                "//executorch/kernels:kernel_includes" + aten_suffix,
+                "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
             ],
             exported_deps = [
                 "//executorch/core/values:executor_values" + aten_suffix,
-                "//executorch/kernels:kernel_runtime_context" + aten_suffix,
+                "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
             ],
         )
 
@@ -38,7 +38,7 @@ def define_common_targets():
             deps = [
                 ":et_copy_index" + aten_suffix,
                 "//executorch/core/values:executor_values" + aten_suffix,
-                "//executorch/core:operator_registry",
-                "//executorch/kernels:kernel_includes" + aten_suffix,
+                "//executorch/runtime/kernel:operator_registry",
+                "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
             ],
         )

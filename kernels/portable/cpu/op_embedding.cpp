@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-#include <executorch/kernels/kernel_includes.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
 // A simple lookup table that looks up embeddings in a fixed dictionary and
 // size.

@@ -14,4 +14,4 @@
 #include <executorch/core/kernel_types/kernel_types.h> // IWYU pragma: export
 #include <executorch/core/kernel_types/util/ScalarTypeUtil.h> // IWYU pragma: export
 #include <executorch/core/kernel_types/util/tensor_util.h> // IWYU pragma: export
-#include <executorch/kernels/kernel_runtime_context.h> // IWYU pragma: export
+#include <executorch/runtime/kernel/kernel_runtime_context.h> // IWYU pragma: export

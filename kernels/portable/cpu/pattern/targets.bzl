@@ -19,7 +19,7 @@ def define_common_targets():
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
-            "//executorch/kernels:kernel_includes",
+            "//executorch/runtime/kernel:kernel_includes",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
     )

@@ -36,6 +36,7 @@ question is a bit more specific, then add a descriptive sufix. */
 #pragma once
 
 #include <executorch/core/FunctionRef.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {

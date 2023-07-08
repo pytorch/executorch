@@ -1,7 +1,7 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
-#include <executorch/kernels/kernel_includes.h>
 #include <executorch/kernels/portable/cpu/vec_ops.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 // Performs a batch matrix-matrix product of matrices stored in input and mat2.
 
 // input and mat2 must be 3-D tensors each containing the same number of

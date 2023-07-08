@@ -1,6 +1,6 @@
 #pragma once
 
-#include <executorch/core/kernel_types/kernel_types.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 #include <string.h>
 
 namespace torch {

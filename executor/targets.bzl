@@ -74,14 +74,14 @@ def define_common_targets():
             deps = [
                 "//executorch/backends:backend",
                 "//executorch/core/prim_ops:prim_ops_registry" + aten_suffix,
-                "//executorch/kernels:kernel_runtime_context" + aten_suffix,
+                "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
                 "//executorch/profiler:profiler",
                 "//executorch/schema:schema",
             ],
             exported_deps = [
                 "//executorch/runtime/platform:platform",
                 "//executorch/core:core",
-                "//executorch/core:operator_registry",
+                "//executorch/runtime/kernel:operator_registry",
                 "//executorch/core/kernel_types/util:tensor_util" + aten_suffix,
                 "//executorch/core/kernel_types/util:dim_order_util",
                 "//executorch/core/kernel_types/util:scalar_type_util",

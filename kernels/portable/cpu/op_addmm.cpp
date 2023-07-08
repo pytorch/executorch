@@ -1,9 +1,9 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
-#include <executorch/kernels/kernel_includes.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/vec_ops.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
 /**
  * torch.addmm(input, mat1, mat2, *, beta=1, alpha=1, out=None) → Tensor

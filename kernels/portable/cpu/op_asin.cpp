@@ -1,7 +1,7 @@
 // (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
-#include <executorch/kernels/kernel_includes.h>
 #include <executorch/kernels/portable/cpu/pattern/pattern.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 #include <cmath>
 
 namespace torch {

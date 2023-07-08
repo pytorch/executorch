@@ -1,7 +1,7 @@
-#include <executorch/core/OperatorRegistry.h>
 #include <executorch/core/prim_ops/et_copy_index.h>
 #include <executorch/core/values/Evalue.h>
-#include <executorch/kernels/kernel_includes.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/runtime/kernel/operator_registry.h>
 
 using OpArrayRef = ::torch::executor::ArrayRef<::torch::executor::Operator>;
 using torch::executor::function::et_copy_index;

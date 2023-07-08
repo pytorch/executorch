@@ -31,7 +31,7 @@ def define_common_targets():
         deps = [
             ":repeat_util",
             "//executorch/kernels/portable/cpu:scalar_utils",
-            "//executorch/core/kernel_types:kernel_types",
+            "//executorch/runtime/kernel:kernel_includes",
             "//executorch/core/kernel_types/util:tensor_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
@@ -44,7 +44,7 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/kernels/portable/cpu:scalar_utils",
-            "//executorch/core/kernel_types:kernel_types",
+            "//executorch/runtime/kernel:kernel_includes",
             "//executorch/core/kernel_types/util:tensor_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/..."],
@@ -56,7 +56,7 @@ def define_common_targets():
         srcs = ["index_util.cpp"],
         exported_headers = ["index_util.h"],
         deps = [
-            "//executorch/core/kernel_types:kernel_types",
+            "//executorch/runtime/kernel:kernel_includes",
             "//executorch/core/kernel_types/util:tensor_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
@@ -69,7 +69,7 @@ def define_common_targets():
         srcs = [],
         exported_headers = ["functional_util.h"],
         deps = [
-            "//executorch/core/kernel_types:kernel_types",
+            "//executorch/runtime/kernel:kernel_includes",
             "//executorch/core/kernel_types/util:tensor_util",
             ":broadcast_util",
         ],
@@ -82,7 +82,7 @@ def define_common_targets():
         srcs = ["reduce_util.cpp"],
         exported_headers = ["reduce_util.h"],
         deps = [
-            "//executorch/core/kernel_types:kernel_types",
+            "//executorch/runtime/kernel:kernel_includes",
             "//executorch/core/kernel_types/util:tensor_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],

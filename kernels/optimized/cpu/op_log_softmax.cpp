@@ -8,7 +8,7 @@
 #include <cmath>
 #include <type_traits>
 
-#include <executorch/kernels/kernel_includes.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
 // `_log_softmax_out` Applies the Log_Softmax function to an n-dimensional input
 // Tensor rescaling them so that the elements of the n-dimensional output

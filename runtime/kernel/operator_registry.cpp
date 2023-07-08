@@ -1,4 +1,4 @@
-#include <executorch/core/OperatorRegistry.h>
+#include <executorch/runtime/kernel/operator_registry.h>
 
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/runtime/platform/system.h>

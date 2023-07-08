@@ -61,7 +61,7 @@ def define_common_targets():
             name = "kernel_runtime_context_test" + aten_suffix,
             srcs = ["kernel_runtime_context_test.cpp"],
             deps = [
-                "//executorch/kernels:kernel_runtime_context" + aten_suffix,
+                "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
             ],
         )
 

@@ -290,7 +290,7 @@ struct OperatorRegistry {
    * WARNING: only use this when we are confident that there are no duplicates
    * in Operator name.
    * @param[in] operators Operator object
-   * @retval Error code representing whether registration was succesful.
+   * @retval Error code representing whether registration was successful.
    */
   __ET_NODISCARD Error register_operators(const ArrayRef<Operator>&);
 
@@ -299,7 +299,7 @@ struct OperatorRegistry {
    * pair). The kernels will be merged into Operators based on the op name.
    *
    * @param[in] kernels Kernel object
-   * @retval Error code representing whether registration was succesful.
+   * @retval Error code representing whether registration was successful.
    */
   __ET_NODISCARD Error register_kernels(const ArrayRef<Kernel>&);
 

@@ -6,11 +6,11 @@
 
 #include <executorch/core/Constants.h>
 #include <executorch/core/Error.h>
-#include <executorch/core/OperatorRegistry.h>
 #include <executorch/core/Result.h>
 #include <executorch/executor/Executor.h>
 #include <executorch/executor/Program.h>
 #include <executorch/executor/test/ManagedMemoryManager.h>
+#include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <executorch/util/file_data_loader.h>

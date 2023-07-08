@@ -62,17 +62,3 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
     )
-
-    runtime.cxx_library(
-        name = "operator_registry",
-        srcs = ["OperatorRegistry.cpp"],
-        exported_headers = ["OperatorRegistry.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            ":core",
-            "//executorch/core/values:executor_values",
-        ],
-    )

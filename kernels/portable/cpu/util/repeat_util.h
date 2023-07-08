@@ -1,5 +1,7 @@
 #pragma once
 
+#include <executorch/runtime/kernel/kernel_includes.h>
+
 namespace torch {
 namespace executor {
 

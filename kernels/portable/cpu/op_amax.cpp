@@ -2,8 +2,8 @@
 
 #include <cmath>
 
-#include <executorch/kernels/kernel_includes.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace torch {

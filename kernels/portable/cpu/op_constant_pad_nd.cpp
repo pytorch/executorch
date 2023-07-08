@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstring>
 
-#include <executorch/kernels/kernel_includes.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 

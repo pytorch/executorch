@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <cstring>
 
-#include <executorch/kernels/kernel_includes.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {

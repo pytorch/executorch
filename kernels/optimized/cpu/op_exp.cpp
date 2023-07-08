@@ -1,9 +1,9 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 #include <cmath>
 
-#include <executorch/kernels/kernel_includes.h>
 #include <executorch/kernels/optimized/vec/functional.h>
 #include <executorch/kernels/optimized/vec/vec.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {

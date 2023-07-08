@@ -14,7 +14,7 @@ def define_common_targets():
         deps = [
             "//executorch/core/kernel_types/testing:tensor_util",
             "//executorch/core/prim_ops:prim_ops_registry",
-            "//executorch/core:operator_registry",
-            "//executorch/kernels:kernel_runtime_context",
+            "//executorch/runtime/kernel:operator_registry",
+            "//executorch/runtime/kernel:kernel_runtime_context",
         ],
     )

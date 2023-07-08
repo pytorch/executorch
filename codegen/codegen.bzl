@@ -346,7 +346,7 @@ def executorch_generated_lib(
             platforms = platforms,
             compiler_flags = compiler_flags,
             exported_deps = [
-                "//executorch/kernels:kernel_runtime_context" + aten_suffix,
+                "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
             ],
         )
 
@@ -373,14 +373,14 @@ def executorch_generated_lib(
             # Operator Registration is done through static tables
             compiler_flags = ["-Wno-global-constructors"] + compiler_flags,
             deps = [
-                "//executorch/core:operator_registry",
+                "//executorch/runtime/kernel:operator_registry",
                 "//executorch/core/prim_ops:prim_ops_registry" + aten_suffix,
                 "//executorch/core/values:executor_values" + aten_suffix,
                 "//executorch/profiler:profiler",
             ] + deps,
             exported_deps = [
                 "//executorch/core/kernel_types:kernel_types" + aten_suffix,
-                "//executorch/kernels:kernel_runtime_context" + aten_suffix,
+                "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
             ],
             xplat_deps = xplat_deps,
             fbcode_deps = fbcode_deps,
@@ -428,7 +428,7 @@ def executorch_generated_lib(
                 "//executorch/core:core",
             ] + torch_dep + custom_ops_aten_kernel_deps,
             exported_deps = [
-                "//executorch/kernels:kernel_runtime_context_aten",
+                "//executorch/runtime/kernel:kernel_runtime_context_aten",
             ],
             define_static_target = define_static_targets,
             # Relax visibility restrictions since deps may include targets

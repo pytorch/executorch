@@ -1,7 +1,7 @@
 #pragma once
 
 #include <executorch/core/values/Evalue.h>
-#include <executorch/kernels/kernel_runtime_context.h>
+#include <executorch/runtime/kernel/kernel_runtime_context.h>
 
 namespace torch {
 namespace executor {

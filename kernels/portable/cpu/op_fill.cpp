@@ -1,6 +1,6 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
-#include <executorch/kernels/kernel_includes.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {

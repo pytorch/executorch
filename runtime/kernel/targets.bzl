@@ -7,6 +7,20 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
+    runtime.cxx_library(
+        name = "operator_registry",
+        srcs = ["operator_registry.cpp"],
+        exported_headers = ["operator_registry.h"],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/core:core",
+            "//executorch/core/values:executor_values",
+        ],
+    )
+
     for aten_mode in (True, False):
         aten_suffix = "_aten" if aten_mode else ""
 
@@ -17,9 +31,9 @@ def define_common_targets():
             ],
             visibility = [
                 "//executorch/core/prim_ops/...",  # Contains kernels
-                "//executorch/core/test/...",  # Codegen tests
-                "//executorch/executor/...",
+                "//executorch/runtime/kernel/...",
                 "//executorch/kernels/...",
+                "//executorch/executor/...",
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
@@ -34,6 +48,7 @@ def define_common_targets():
                 "kernel_includes.h",
             ],
             visibility = [
+                "//executorch/runtime/kernel/...",
                 "//executorch/kernels/...",
                 "//executorch/core/prim_ops/...",  # Prim kernels
                 "@EXECUTORCH_CLIENTS",
