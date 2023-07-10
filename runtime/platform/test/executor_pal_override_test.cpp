@@ -1,6 +1,6 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/runtime/platform/test/StubPlatform.h>
+#include <executorch/runtime/platform/test/stub_platform.h>
 #include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>

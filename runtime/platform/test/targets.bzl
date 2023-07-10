@@ -10,20 +10,22 @@ def define_common_targets():
     runtime.cxx_test(
         name = "platform_test",
         srcs = [
-            "ExecutorPalTest.cpp",
+            "executor_pal_test.cpp",
         ],
         deps = [
             "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
         ],
     )
 
     runtime.cxx_test(
         name = "platform_death_test",
         srcs = [
-            "ExecutorPalDeathTest.cpp",
+            "executor_pal_death_test.cpp",
         ],
         deps = [
             "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
         ],
     )
 
@@ -35,10 +37,10 @@ def define_common_targets():
     runtime.cxx_library(
         name = "stub_platform",
         srcs = [
-            "StubPlatform.cpp",
+            "stub_platform.cpp",
         ],
         exported_headers = [
-            "StubPlatform.h",
+            "stub_platform.h",
         ],
         deps = [
             "//executorch/runtime/platform:compiler",
@@ -51,10 +53,25 @@ def define_common_targets():
     runtime.cxx_test(
         name = "platform_override_test",
         srcs = [
-            "ExecutorPalOverrideTest.cpp",
+            "executor_pal_override_test.cpp",
         ],
         deps = [
             "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
             ":stub_platform",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "logging_test",
+        srcs = [
+            "logging_test.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/platform:platform",
+        ],
+        compiler_flags = [
+            # Turn on debug logging.
+            "-DET_MIN_LOG_LEVEL=Debug",
         ],
     )
