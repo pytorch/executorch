@@ -72,7 +72,7 @@ def define_common_targets():
                 "tensor_parser{}.cpp".format(aten_suffix),
             ],
             deps = [
-                "//executorch/backends:backend",
+                "//executorch/runtime/backend:backend_registry",
                 "//executorch/core/prim_ops:prim_ops_registry" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
                 "//executorch/profiler:profiler",

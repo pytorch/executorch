@@ -1,10 +1,10 @@
 // (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 #pragma once
 
-#include <executorch/backends/backend.h>
 #include <executorch/backends/xnnpack/runtime/XNNStatus.h>
 #include <executorch/core/Error.h>
 #include <executorch/core/kernel_types/util/tensor_util.h>
+#include <executorch/runtime/backend/backend_registry.h>
 
 #include <xnnpack.h>
 #include <map>

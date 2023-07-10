@@ -37,6 +37,7 @@ def define_common_targets():
         visibility = [
             "//executorch/...",
             "//executorch/backends/...",
+            "//executorch/runtime/backend/...",
             "//executorch/threadpool/test/...",
             "@EXECUTORCH_CLIENTS",
         ],

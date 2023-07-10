@@ -1,6 +1,6 @@
-#include <executorch/backends/backend.h>
 #include <executorch/backends/test/demos/rpc/ExecutorBackend.h>
 #include <executorch/core/Error.h>
+#include <executorch/runtime/backend/backend_registry.h>
 
 namespace torch {
 namespace executor {

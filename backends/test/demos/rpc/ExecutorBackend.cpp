@@ -5,11 +5,11 @@
 #include <cstdlib> /* strtol */
 #include <memory>
 
-#include <executorch/backends/backend.h>
 #include <executorch/core/Constants.h>
 #include <executorch/core/Error.h>
 #include <executorch/core/values/Evalue.h>
 #include <executorch/executor/Executor.h>
+#include <executorch/runtime/backend/backend_registry.h>
 #include <executorch/util/embedded_data_loader.h>
 #include <executorch/util/util.h>
 

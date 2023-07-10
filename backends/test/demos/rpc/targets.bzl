@@ -25,7 +25,7 @@ def define_common_targets():
         deps = [
             "//executorch/executor:executor",
             "//executorch/kernels/portable:generated_lib",
-            "//executorch/backends:backend",
+            "//executorch/runtime/backend:backend_registry",
             "//executorch/util:embedded_data_loader",
             "//executorch/util:util",
         ] + MODELS_ALL_OPS_LEAN_MODE_GENERATED_LIB,
@@ -41,7 +41,7 @@ def define_common_targets():
         ],
         deps = [
             ":executor_backend",
-            "//executorch/backends:backend",
+            "//executorch/runtime/backend:backend_registry",
             "//executorch/core:core",
         ],
         platforms = [ANDROID, CXX],

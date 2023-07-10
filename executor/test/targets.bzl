@@ -17,6 +17,7 @@ def define_common_targets():
             ],
             visibility = [
                 "//executorch/backends/...",
+                "//executorch/runtime/backend/...",
                 "//executorch/pybindings/...",
                 "//executorch/test/...",
             ],
@@ -24,7 +25,7 @@ def define_common_targets():
             compiler_flags = ["-Wno-global-constructors"],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             exported_deps = [
-                "//executorch/backends:backend" + aten_suffix,
+                "//executorch/runtime/backend:backend_registry" + aten_suffix,
             ],
             # TestBackendCompilerLib.cpp needs to compile with executor as whole
             # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
@@ -153,7 +154,7 @@ def define_common_targets():
             ],
             deps = [
                 ":managed_memory_manager",
-                "//executorch/backends:backend",
+                "//executorch/runtime/backend:backend_registry",
                 "//executorch/executor:executor",
                 "//executorch/util:embedded_data_loader",
                 "//executorch/util:file_data_loader",

@@ -124,6 +124,7 @@ def define_common_targets():
         exported_headers = ["memory_utils.h"],
         visibility = [
             "//executorch/backends/...",
+            "//executorch/runtime/backend/...",
             "//executorch/util/test/...",
         ],
         deps = [

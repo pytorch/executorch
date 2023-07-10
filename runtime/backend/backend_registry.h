@@ -115,7 +115,7 @@ class BackendRegistry {
    * Registers the Backend object (i.e. string name and PyTorchBackendInterface
    * pair) so that it could be called via the name during the runtime.
    * @param[in] name Name of the user-defined backend delegate.
-   * @retval Error code representing whether registration was succesful.
+   * @retval Error code representing whether registration was successful.
    */
   __ET_NODISCARD Error register_backend(const Backend& backend);
 
@@ -151,7 +151,7 @@ PyTorchBackendInterface* get_backend_class(const char* name);
  * pair) so that it could be called via the name during the runtime.
  *
  * @param[in] backend Backend object
- * @retval Error code representing whether registration was succesful.
+ * @retval Error code representing whether registration was successful.
  */
 __ET_NODISCARD Error register_backend(const Backend& backend);
 

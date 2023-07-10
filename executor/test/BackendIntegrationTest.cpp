@@ -4,12 +4,12 @@
 #include <optional>
 #include <vector>
 
-#include <executorch/backends/backend.h>
 #include <executorch/core/Error.h>
 #include <executorch/core/Result.h>
 #include <executorch/executor/Executor.h>
 #include <executorch/executor/Program.h>
 #include <executorch/executor/test/ManagedMemoryManager.h>
+#include <executorch/runtime/backend/backend_registry.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <executorch/test/utils/alignment.h>

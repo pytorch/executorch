@@ -1,4 +1,4 @@
-#include <executorch/backends/backend.h>
+#include <executorch/runtime/backend/backend_registry.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace torch {

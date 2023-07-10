@@ -35,6 +35,7 @@ def define_common_targets():
         exported_headers = ["FreeableBuffer.h"],
         visibility = [
             "//executorch/backends/...",
+            "//executorch/runtime/backend/...",
             "//executorch/core/test/...",
             "//executorch/executor/...",
             "@EXECUTORCH_CLIENTS",

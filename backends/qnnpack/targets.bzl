@@ -51,7 +51,7 @@ def define_common_targets():
             exported_headers = ["utils/utils.h"],
             deps = [
                 "//executorch/core/kernel_types:kernel_types" + aten_suffix,
-                "//executorch/backends:backend",
+                "//executorch/runtime/backend:backend_registry",
             ],
             visibility = [
                 "//executorch/backends/qnnpack/test/...",
@@ -81,7 +81,7 @@ def define_common_targets():
         deps = [
             "//executorch/core/kernel_types/util:scalar_type_util",
             "//executorch/core/kernel_types/util:tensor_util",
-            "//executorch/backends:backend",
+            "//executorch/runtime/backend:backend_registry",
             "//executorch/threadpool:threadpool",
             "//executorch/util:memory_utils",
             ":qnnpack_schema",
