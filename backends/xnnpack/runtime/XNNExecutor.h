@@ -2,9 +2,9 @@
 #pragma once
 
 #include <executorch/backends/xnnpack/runtime/XNNStatus.h>
-#include <executorch/core/Error.h>
 #include <executorch/core/kernel_types/util/tensor_util.h>
 #include <executorch/runtime/backend/backend_registry.h>
+#include <executorch/runtime/core/error.h>
 
 #include <xnnpack.h>
 #include <map>

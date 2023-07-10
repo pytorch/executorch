@@ -13,7 +13,7 @@ def define_common_targets():
             "ExecutorPalTest.cpp",
         ],
         deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
         ],
     )
 
@@ -23,7 +23,7 @@ def define_common_targets():
             "ExecutorPalDeathTest.cpp",
         ],
         deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
         ],
     )
 
@@ -54,7 +54,7 @@ def define_common_targets():
             "ExecutorPalOverrideTest.cpp",
         ],
         deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
             ":stub_platform",
         ],
     )

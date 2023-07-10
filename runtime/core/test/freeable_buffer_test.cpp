@@ -1,6 +1,6 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
-#include <executorch/core/FreeableBuffer.h>
+#include <executorch/runtime/core/freeable_buffer.h>
 
 #include <gtest/gtest.h>
 

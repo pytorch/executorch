@@ -15,7 +15,7 @@ def define_common_targets():
             "fb/thread_pool_use_nthreads.cpp",
         ],
         deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
         ],
         fbcode_deps = [
             ":cpuinfo",

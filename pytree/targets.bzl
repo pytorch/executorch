@@ -17,6 +17,6 @@ def define_common_targets():
         ],
         exported_deps = [
             "//executorch/runtime/platform:platform",
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
         ],
     )

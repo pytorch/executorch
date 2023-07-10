@@ -3,8 +3,8 @@
 #include <cstdlib>
 #include <string>
 
-#include <executorch/core/Error.h>
-#include <executorch/core/Result.h>
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
 
 using namespace torch::executor;

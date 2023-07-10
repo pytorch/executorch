@@ -4,8 +4,8 @@
 
 #include <cstddef>
 
-#include <executorch/core/DataLoader.h>
-#include <executorch/core/Result.h>
+#include <executorch/runtime/core/data_loader.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
 namespace torch {

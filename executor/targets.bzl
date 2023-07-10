@@ -36,7 +36,7 @@ def define_common_targets():
             "MemoryManager.h",
         ],
         exported_deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
             "//executorch/profiler:profiler",
         ],
         visibility = [
@@ -52,13 +52,13 @@ def define_common_targets():
         exported_headers = ["Program.h"],
         deps = [
             "//executorch/runtime/platform:platform",
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
             "//executorch/schema:extended_header",
             "//executorch/schema:schema",
             "//executorch/profiler:profiler",
         ],
         preprocessor_flags = _program_preprocessor_flags(),
-        exported_deps = ["//executorch/core:data_loader", "//executorch/core:freeable_buffer"],
+        exported_deps = ["//executorch/runtime/core:core", "//executorch/core:core"],
         visibility = ["//executorch/executor/...", "@EXECUTORCH_CLIENTS"],
     )
 
@@ -80,7 +80,7 @@ def define_common_targets():
             ],
             exported_deps = [
                 "//executorch/runtime/platform:platform",
-                "//executorch/core:core",
+                "//executorch/runtime/core:core",
                 "//executorch/runtime/kernel:operator_registry",
                 "//executorch/core/kernel_types/util:tensor_util" + aten_suffix,
                 "//executorch/core/kernel_types/util:dim_order_util",

@@ -23,9 +23,9 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
-                "//executorch/core:core",
+                "//executorch/runtime/core:core",
                 "//executorch/core/values:executor_values" + aten_suffix,
-                "//executorch/core:freeable_buffer",
+                "//executorch/core:core",
                 "//executorch/executor:memory_manager",
                 "//executorch/profiler:profiler",
             ],

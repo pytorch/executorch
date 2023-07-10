@@ -1,8 +1,8 @@
 // (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
-#include <executorch/core/FunctionRef.h>
 #include <executorch/kernels/portable/cpu/pattern/pattern.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/runtime/core/function_ref.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {

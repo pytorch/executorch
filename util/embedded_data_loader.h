@@ -2,9 +2,9 @@
 
 #pragma once
 
-#include <executorch/core/DataLoader.h>
-#include <executorch/core/Error.h>
-#include <executorch/core/Result.h>
+#include <executorch/runtime/core/data_loader.h>
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace torch {

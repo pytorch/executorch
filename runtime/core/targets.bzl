@@ -10,7 +10,13 @@ def define_common_targets():
     runtime.cxx_library(
         name = "core",
         exported_headers = [
-            "Constants.h",
+            "array_ref.h",  # TODO(T157717874): Migrate all users to span and then move this to portable_type
+            "data_loader.h",
+            "error.h",
+            "freeable_buffer.h",
+            "function_ref.h",
+            "result.h",
+            "span.h",
         ],
         visibility = [
             "//executorch/...",
@@ -21,5 +27,6 @@ def define_common_targets():
         ],
         exported_deps = [
             "//executorch/runtime/platform:platform",
+            "//executorch/core:core",  # for legacy clients that need Constants.h or macros.h TODO remove this
         ],
     )

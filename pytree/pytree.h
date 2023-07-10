@@ -8,7 +8,7 @@
 #include <memory>
 #include <string>
 
-#include <executorch/core/FunctionRef.h>
+#include <executorch/runtime/core/function_ref.h>
 
 namespace torch {
 namespace executor {

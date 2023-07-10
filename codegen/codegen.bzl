@@ -346,6 +346,7 @@ def executorch_generated_lib(
             platforms = platforms,
             compiler_flags = compiler_flags,
             exported_deps = [
+                "//executorch/codegen:macros",
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
             ],
         )
@@ -377,6 +378,7 @@ def executorch_generated_lib(
                 "//executorch/core/prim_ops:prim_ops_registry" + aten_suffix,
                 "//executorch/core/values:executor_values" + aten_suffix,
                 "//executorch/profiler:profiler",
+                "//executorch/codegen:macros",
             ] + deps,
             exported_deps = [
                 "//executorch/core/kernel_types:kernel_types" + aten_suffix,
@@ -425,7 +427,8 @@ def executorch_generated_lib(
             visibility = visibility,
             deps = [
                 "//executorch/core/kernel_types:kernel_types_aten",
-                "//executorch/core:core",
+                "//executorch/runtime/core:core",
+                "//executorch/codegen:macros",
             ] + torch_dep + custom_ops_aten_kernel_deps,
             exported_deps = [
                 "//executorch/runtime/kernel:kernel_runtime_context_aten",

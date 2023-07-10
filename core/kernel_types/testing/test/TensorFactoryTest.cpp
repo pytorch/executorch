@@ -1,9 +1,9 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
-#include <executorch/core/Error.h>
 #include <executorch/core/kernel_types/testing/TensorFactory.h>
 #include <executorch/core/kernel_types/testing/TensorUtil.h>
 #include <executorch/core/kernel_types/util/tensor_util.h>
+#include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 

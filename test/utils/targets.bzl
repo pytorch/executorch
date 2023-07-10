@@ -22,7 +22,7 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/runtime/platform:platform",
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
         ],
         fbcode_exported_deps = [
             "//common/init:init",

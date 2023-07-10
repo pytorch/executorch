@@ -22,7 +22,6 @@
 #include <c10/util/string_view.h> // @manual
 #include <torch/torch.h>
 #else // use executor
-#include <executorch/core/ArrayRef.h> // @manual
 #include <executorch/core/kernel_types/lean/bfloat16.h> // @manual
 #include <executorch/core/kernel_types/lean/complex.h> // @manual
 #include <executorch/core/kernel_types/lean/device.h> // @manual
@@ -34,6 +33,7 @@
 #include <executorch/core/kernel_types/lean/string_view.h> // @manual
 #include <executorch/core/kernel_types/lean/tensor.h> // @manual
 #include <executorch/core/kernel_types/lean/tensor_options.h> // @manual
+#include <executorch/runtime/core/array_ref.h> // @manual
 
 #endif
 

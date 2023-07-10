@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <executorch/core/Result.h>
+#include <executorch/runtime/core/result.h>
 
 namespace torch {
 namespace executor {

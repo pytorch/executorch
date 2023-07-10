@@ -5,12 +5,12 @@
 #include <cstdint>
 #include <cstring> // std::memcpy
 
-#include <executorch/core/ArrayRef.h>
-#include <executorch/core/Error.h>
 #include <executorch/core/kernel_types/lean/qint_types.h>
 #include <executorch/core/kernel_types/lean/scalar_type.h>
 #include <executorch/core/kernel_types/util/DimOrderUtils.h>
 #include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
+#include <executorch/runtime/core/array_ref.h>
+#include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace torch {

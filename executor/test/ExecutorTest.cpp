@@ -6,13 +6,13 @@
 #include <string>
 #include <unordered_map>
 
-#include <executorch/core/ArrayRef.h>
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/core/values/Evalue.h>
 #include <executorch/executor/Executor.h>
 #include <executorch/executor/HierarchicalAllocator.h>
 #include <executorch/executor/MemoryAllocator.h>
 #include <executorch/pytree/pytree.h>
+#include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/assert.h>

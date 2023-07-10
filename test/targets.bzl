@@ -90,7 +90,7 @@ def define_common_targets():
         name = "multi_runner",
         srcs = ["multi_runner.cpp"],
         deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
             "//executorch/kernels/portable:generated_lib_all_ops",
             "//executorch/executor:executor",
             "//executorch/executor/test:managed_memory_manager",

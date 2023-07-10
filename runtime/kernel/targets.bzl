@@ -16,7 +16,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
             "//executorch/core/values:executor_values",
         ],
     )
@@ -37,7 +37,7 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
-                "//executorch/core:core",
+                "//executorch/runtime/core:core",
                 "//executorch/core/kernel_types:kernel_types" + aten_suffix,
             ],
         )

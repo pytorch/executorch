@@ -139,6 +139,6 @@ def define_common_targets():
             "//executorch/schema/test/...",
         ],
         exported_deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
         ],
     )

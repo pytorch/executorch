@@ -1,11 +1,11 @@
 #include <executorch/backends/qnnpack/executor/QNNExecutor.h>
 #include <executorch/backends/qnnpack/qnnpack_schema_generated.h>
 #include <executorch/backends/qnnpack/utils/utils.h>
-#include <executorch/core/Error.h>
 #include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
 #include <executorch/core/kernel_types/util/tensor_util.h>
 #include <executorch/core/values/Evalue.h>
 #include <executorch/runtime/backend/backend_registry.h>
+#include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/threadpool/threadpool.h>
 #include <executorch/util/memory_utils.h>

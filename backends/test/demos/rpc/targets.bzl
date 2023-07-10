@@ -30,7 +30,7 @@ def define_common_targets():
             "//executorch/util:util",
         ] + MODELS_ALL_OPS_LEAN_MODE_GENERATED_LIB,
         exported_deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
         ],
     )
 
@@ -42,7 +42,7 @@ def define_common_targets():
         deps = [
             ":executor_backend",
             "//executorch/runtime/backend:backend_registry",
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
         ],
         platforms = [ANDROID, CXX],
     )

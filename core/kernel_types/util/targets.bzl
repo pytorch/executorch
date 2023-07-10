@@ -29,7 +29,7 @@ def define_common_targets():
             ],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             exported_deps = [
-                "//executorch/core:core",
+                "//executorch/runtime/core:core",
             ] + aten_types_deps if aten_mode else ["//executorch/core/kernel_types/lean:scalar_type"],
         )
 
@@ -40,7 +40,7 @@ def define_common_targets():
                 "DimOrderUtils.h",
             ],
             exported_deps = [
-                "//executorch/core:core",
+                "//executorch/runtime/core:core",
             ],
             visibility = [
                 "//executorch/...",
@@ -61,7 +61,7 @@ def define_common_targets():
             ],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             exported_deps = [
-                "//executorch/core:core",
+                "//executorch/runtime/core:core",
             ] + [
                 "//executorch/core/kernel_types:kernel_types" + aten_suffix,
                 ":scalar_type_util" + aten_suffix,

@@ -8,7 +8,7 @@
 #include <new>
 #include <utility>
 
-#include "executorch/core/Error.h"
+#include "executorch/runtime/core/error.h"
 #include "executorch/runtime/platform/assert.h"
 
 namespace torch {

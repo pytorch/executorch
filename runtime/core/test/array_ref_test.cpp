@@ -1,4 +1,4 @@
-#include <executorch/core/ArrayRef.h>
+#include <executorch/runtime/core/array_ref.h>
 
 #include <gtest/gtest.h>
 

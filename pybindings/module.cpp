@@ -6,9 +6,9 @@
 #include <pybind11/stl.h>
 
 #include <executorch/core/Constants.h>
-#include <executorch/core/DataLoader.h>
 #include <executorch/executor/Executor.h>
 #include <executorch/executor/Program.h>
+#include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/profiler.h>

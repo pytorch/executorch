@@ -2,11 +2,11 @@
 
 #include <cstring>
 
-#include <executorch/core/ArrayRef.h>
-#include <executorch/core/Error.h>
-#include <executorch/core/FunctionRef.h>
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/core/values/Evalue.h>
+#include <executorch/runtime/core/array_ref.h>
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/function_ref.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/platform.h>
 // Debug switch for operator registry

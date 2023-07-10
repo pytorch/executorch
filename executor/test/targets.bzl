@@ -40,7 +40,7 @@ def define_common_targets():
         deps = [
             "//executorch/core/kernel_types:kernel_types",
             "//executorch/core/values:executor_values",
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
             "//executorch/runtime/platform:platform",
             "//executorch/runtime/kernel:operator_registry",
             "//executorch/executor:executor",

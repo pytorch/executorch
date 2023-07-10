@@ -2,12 +2,12 @@
 
 #include <cstring>
 
-#include <executorch/core/ArrayRef.h>
-#include <executorch/core/Error.h>
-#include <executorch/core/FreeableBuffer.h>
-#include <executorch/core/Result.h>
 #include <executorch/core/values/Evalue.h>
 #include <executorch/executor/MemoryAllocator.h>
+#include <executorch/runtime/core/array_ref.h>
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/freeable_buffer.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
 namespace torch {

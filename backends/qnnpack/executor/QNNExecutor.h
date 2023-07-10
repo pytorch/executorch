@@ -1,6 +1,6 @@
 #pragma once
 
-#include <executorch/core/Error.h>
+#include <executorch/runtime/core/error.h>
 #include <pytorch_qnnpack.h>
 #include <qnnpack_func.h>
 #include <memory>

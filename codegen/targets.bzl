@@ -20,3 +20,15 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
     )
+
+    runtime.cxx_library(
+        name = "macros",
+        exported_headers = [
+            "macros.h",
+        ],
+        visibility = [
+            "//executorch/runtime/kernel/...",
+            "//executorch/kernels/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )

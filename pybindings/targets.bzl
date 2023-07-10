@@ -59,7 +59,7 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
             "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(python_module_name),
         ],
         deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
             "//executorch/schema:schema",
             "//executorch/util:read_file",
         ] + cppdeps,

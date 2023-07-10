@@ -27,7 +27,7 @@ def define_common_targets():
         name = "ATenBridgeTest",
         srcs = ["ATenBridgeTest.cpp"],
         deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
             "//executorch/core/kernel_types:kernel_types",
             "//executorch/util:aten_bridge",
         ],

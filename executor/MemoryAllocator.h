@@ -4,7 +4,7 @@
 #include <cinttypes>
 #include <cstdint>
 
-#include <executorch/core/Error.h>
+#include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>

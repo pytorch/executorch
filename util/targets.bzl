@@ -41,7 +41,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
             "//executorch/executor:memory_manager",
         ],
     )
@@ -56,7 +56,7 @@ def define_common_targets():
         ],
         exported_deps = [
             ":system",
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
             "//executorch/runtime/platform:compiler",
         ],
     )
@@ -73,7 +73,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = [
-            "//executorch/core:data_loader",
+            "//executorch/runtime/core:core",
         ],
     )
 
@@ -85,7 +85,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = [
-            "//executorch/core:data_loader",
+            "//executorch/runtime/core:core",
         ],
     )
 
@@ -99,7 +99,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = [
-            "//executorch/core:data_loader",
+            "//executorch/runtime/core:core",
         ],
     )
 
@@ -114,7 +114,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = [
-            "//executorch/core:data_loader",
+            "//executorch/runtime/core:core",
         ],
     )
 
@@ -128,7 +128,7 @@ def define_common_targets():
             "//executorch/util/test/...",
         ],
         deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
         ],
         exported_deps = [
             ":system",
@@ -144,7 +144,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
             "//executorch/core/kernel_types:kernel_types",
         ],
         fbcode_deps = [

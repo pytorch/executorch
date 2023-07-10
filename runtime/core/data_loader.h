@@ -4,8 +4,8 @@
 
 #include <cstddef>
 
-#include <executorch/core/FreeableBuffer.h>
-#include <executorch/core/Result.h>
+#include <executorch/runtime/core/freeable_buffer.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/compiler.h>
 
 namespace torch {

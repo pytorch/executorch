@@ -1,11 +1,11 @@
 #include <ATen/ATen.h> // @manual=//caffe2/aten:ATen-core
-#include <executorch/core/Error.h>
-#include <executorch/core/Result.h>
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/core/kernel_types/util/DimOrderUtils.h>
 #include <executorch/core/values/Evalue.h>
 #include <executorch/executor/Program.h>
 #include <executorch/executor/tensor_parser.h>
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/profiler.h>
 
 namespace torch {

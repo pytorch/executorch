@@ -4,9 +4,9 @@
 #include <cstring>
 #include <memory>
 
-#include <executorch/core/Error.h>
-#include <executorch/core/Result.h>
 #include <executorch/executor/Program.h>
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <executorch/util/embedded_data_loader.h>

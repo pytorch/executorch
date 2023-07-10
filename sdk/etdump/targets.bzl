@@ -108,7 +108,7 @@ def define_common_targets():
         exported_headers = ["etdump.h"],
         deps = [
             ":etdump_gen",
-            "//executorch/core:core",
+            "//executorch/runtime/core:core",
         ],
         visibility = [
             "//executorch/...",

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <executorch/core/FunctionRef.h>
+#include <executorch/runtime/core/function_ref.h>
 
 using namespace ::testing;
 

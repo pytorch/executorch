@@ -5,8 +5,8 @@
 #include <cinttypes>
 #include <cstring>
 
-#include <executorch/core/Error.h>
-#include <executorch/core/Result.h>
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/result.h>
 
 namespace torch {
 namespace executor {

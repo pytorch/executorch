@@ -9,7 +9,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <executorch/core/Error.h>
+#include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/log.h>
 
