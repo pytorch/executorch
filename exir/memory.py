@@ -9,7 +9,7 @@ from executorch.exir.tensor import TensorSpec
 from torch.utils import _pytree as pytree
 from typing_extensions import TypeAlias
 
-TensorAllocSpec: TypeAlias = Tuple[List[int], torch.dtype]
+TensorAllocSpec: TypeAlias = Tuple[Tuple[int], torch.dtype]
 AllocSpec: TypeAlias = Union[
     TensorAllocSpec,
     List[TensorAllocSpec],

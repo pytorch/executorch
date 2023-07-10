@@ -3,14 +3,20 @@
 import copy
 import dataclasses
 import json
-from typing import Any, Dict, Optional, Tuple
+import logging
+import operator
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import executorch.exir as exir
+import executorch.exir.memory as memory
 import torch
 import torch._export.exported_program as ep
 import torch._export.serde.schema as schema
 import torch._export.serde.serialize as export_serialize
 from torch.fx.experimental import symbolic_shapes
+
+
+log: logging.Logger = logging.getLogger(__name__)
 
 
 class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
@@ -19,6 +25,96 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
     ) -> None:
         super().__init__(graph_signature, call_spec)
         self.state_dict: Dict[str, torch.Tensor] = {}  # TODO(T157676982)
+
+    def handle_call_function(self, node: torch.fx.Node) -> None:
+        assert node.op == "call_function"
+
+        if node.target is memory.alloc:
+            ex_node = schema.Node(
+                target="memory.alloc",
+                inputs=self.serialize_alloc_inputs(node.args),
+                outputs=self.serialize_arbitrary_outputs(node),
+                metadata=self.serialize_metadata(node),
+            )
+            self.graph_state.nodes.append(ex_node)
+            return
+
+        super().handle_call_function(node)
+
+    def serialize_alloc_inputs(
+        self, inputs  # pyre-ignore
+    ) -> List[schema.NamedArgument]:
+        """
+        Serialize the inputs to the memory.alloc function. Since there's no
+        specific spec, we jut serialize the inputs with a dummy name.
+        We serialize the AllocSpec into a string "size;dtype"
+        """
+        assert len(inputs) == 1
+
+        def serialize_alloc_spec(alloc_spec: memory.AllocSpec) -> schema.Argument:
+            return schema.Argument.create(
+                as_string=f"{alloc_spec[0]};{export_serialize._TORCH_TO_SERIALIZE_DTYPE[alloc_spec[1]].value}"
+            )
+
+        if isinstance(inputs[0], list):
+            # Singleton list
+            assert len(inputs[0]) == 1
+            return [
+                schema.NamedArgument(
+                    name="alloc_list", arg=serialize_alloc_spec(inputs[0][0])
+                )
+            ]
+        else:
+            # Single value
+            return [
+                schema.NamedArgument(
+                    name="alloc_arg", arg=serialize_alloc_spec(inputs[0])
+                )
+            ]
+
+    def serialize_arbitrary_outputs(self, node: torch.fx.Node) -> List[schema.Argument]:
+        meta_val = node.meta["val"]
+
+        # Check single value return
+        if isinstance(meta_val, torch.Tensor):
+            return [
+                schema.Argument.create(
+                    as_tensor=self.serialize_tensor_output(node.name, meta_val)
+                )
+            ]
+
+        # There are a two possibilities at this point:
+        # - This operator returns a list of Tensors.
+        # - This operator returns multiple Tensors.
+        #
+        # Either way, start by gathering a list of TensorArguments with the correct names.
+        # For consistent naming with FX, consult the downstream `getitem` node and
+        # make sure our outputs have the same name.
+        idx_to_name = {}
+        for user in node.users:
+            if user.target is not operator.getitem:
+                continue
+            idx_to_name[user.args[1]] = user.name
+
+        for idx, _ in enumerate(meta_val):
+            # FX does not emit a getitem node for any outputs that are unused.
+            # However, we need a name for them so that the number of outputs will
+            # correctly match the schema. Just assign a dummy name.
+            if idx not in idx_to_name:
+                idx_to_name[idx] = f"{node.name}_unused_{idx}"
+
+        arg_list = []
+        for i, element_meta_val in enumerate(meta_val):
+            arg_list.append(
+                self.serialize_tensor_output(idx_to_name[i], element_meta_val)
+            )
+
+        if len(meta_val) == 1:
+            # The operator returns a list of tensors
+            return [schema.Argument.create(as_tensors=arg_list)]
+        else:
+            # The operator returns multiple tensors
+            return [schema.Argument.create(as_tensor=arg) for arg in arg_list]
 
     # pyre-ignore
     def serialize_input(self, arg) -> schema.Argument:
@@ -71,7 +167,75 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         super().__init__()
         self.state_dict: Dict[str, Any] = state_dict  # TODO(T157676982)
 
-    # TODO(angelayi): implement for delegation
+    # pyre-ignore
+    def deserialize_node(self, serialized_node: schema.Node, target: Callable) -> None:
+        if target == "memory.alloc":
+            args = self.deserialize_alloc_inputs(serialized_node.inputs)
+            fx_node = self.graph.create_node(
+                "call_function", memory.alloc, args, {}, "alloc"
+            )
+
+            self.deserialize_arbitrary_outputs(serialized_node, fx_node)
+
+            fx_node.meta.update(self.deserialize_metadata(serialized_node.metadata))
+            return
+
+        elif isinstance(target, str):
+            # Create a dummy fake op if the target does not exist
+            # because we cannot create a call_function node w/o a
+            # callable target
+            log.warning(
+                f"Could not find operator {target}. Returning fake operator."
+            )  # noqa: G004
+
+            # pyre-ignore
+            def fake_op(x):
+                raise NotImplementedError("Fake op is not meant to be run.")
+
+            fake_op.__name__ = target
+            target = fake_op
+            return
+
+        super().deserialize_node(serialized_node, target)
+
+    # pyre-ignore
+    def deserialize_alloc_inputs(self, serialized_inputs: List[schema.NamedArgument]):
+        def deserialize_alloc_spec(serialized_alloc_spec: str) -> memory.AllocSpec:
+            serialized_alloc_spec_elems = serialized_alloc_spec.split(";")
+            assert len(serialized_alloc_spec_elems) == 2
+            serialized_size_elems = (
+                serialized_alloc_spec_elems[0].strip("()").split(",")
+            )
+
+            size = tuple(int(x) for x in serialized_size_elems if x != "")
+            dtype = export_serialize._SERIALIZE_TO_TORCH_DTYPE[
+                int(serialized_alloc_spec_elems[1])
+            ]
+            return (size, dtype)
+
+        assert serialized_inputs[0].arg.type == "as_string"
+
+        # Single value
+        if len(serialized_inputs) == 1 and serialized_inputs[0].name == "alloc_arg":
+            res = (deserialize_alloc_spec(serialized_inputs[0].arg.value),)
+            return res
+
+        # Singleton list value
+        assert len(serialized_inputs) == 1
+        alloc_specs = [deserialize_alloc_spec(serialized_inputs[0].arg.value)]
+        return (alloc_specs,)
+
+    def deserialize_arbitrary_outputs(
+        self, serialized_node: schema.Node, fx_node: torch.fx.Node
+    ) -> None:
+        # Single tensor return
+        if (
+            len(serialized_node.outputs) == 1
+            and serialized_node.outputs[0].type == "as_tensor"
+        ):
+            return self.sync_fx_node(serialized_node.outputs[0].as_tensor.name, fx_node)
+
+        self.deserialize_multiple_outputs(serialized_node, fx_node)
 
     # pyre-ignore
     def deserialize_input(self, inp: schema.Argument) -> Any:

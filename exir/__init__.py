@@ -342,6 +342,9 @@ class ExecutorchProgram:
     def dump_graph_module(self) -> torch.fx.GraphModule:
         return self.graph_module
 
+    def dump_exported_program(self) -> ExirExportedProgram:
+        return self.exported_program
+
 
 # TODO(ycao): Move Executorch dialect to its own file
 @compatibility(is_backward_compatible=False)
