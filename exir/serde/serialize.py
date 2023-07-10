@@ -41,6 +41,15 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
         super().handle_call_function(node)
 
+    def serialize_metadata(self, node: torch.fx.Node) -> Dict[str, str]:
+        meta = super().serialize_metadata(node)
+
+        if "debug_handle" in node.meta:
+            debug_handle = node.meta["debug_handle"]
+            meta["debug_handle"] = str(debug_handle)
+
+        return meta
+
     def serialize_alloc_inputs(
         self, inputs  # pyre-ignore
     ) -> List[schema.NamedArgument]:
@@ -197,6 +206,14 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             return
 
         super().deserialize_node(serialized_node, target)
+
+    def deserialize_metadata(self, metadata: Dict[str, str]) -> Dict[str, Any]:
+        res = super().deserialize_metadata(metadata)
+
+        if debug_handle := metadata.get("debug_handle"):
+            res["debug_handle"] = int(debug_handle)
+
+        return res
 
     # pyre-ignore
     def deserialize_alloc_inputs(self, serialized_inputs: List[schema.NamedArgument]):
