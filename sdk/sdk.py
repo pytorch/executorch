@@ -59,8 +59,8 @@ async def gen_op_graphs_from_etrecord(etrecord: ETRecord) -> Dict[str, FXOperato
     assert graph_map is not None, "ETRecord missing graph modules to be visualized."
 
     op_graph_dict = {
-        name: FXOperatorGraph.gen_operator_graph(graph_module)
-        for name, graph_module in graph_map.items()
+        name: FXOperatorGraph.gen_operator_graph(exported_program.graph_module)
+        for name, exported_program in graph_map.items()
     }
     return op_graph_dict
 

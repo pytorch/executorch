@@ -21,8 +21,8 @@ def _gen_graphs_from_etrecord(etrecord: ETRecord) -> Dict[str, FXOperatorGraph]:
     if etrecord.graph_map is None:
         return {}
     return {
-        name: FXOperatorGraph.gen_operator_graph(graph_module)
-        for name, graph_module in etrecord.graph_map.items()
+        name: FXOperatorGraph.gen_operator_graph(exported_program.graph_module)
+        for name, exported_program in etrecord.graph_map.items()
     }
 
 

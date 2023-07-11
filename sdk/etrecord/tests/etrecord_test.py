@@ -36,11 +36,11 @@ class TestETRecord(unittest.TestCase):
             self.assertEqual(node_a.name, node_b.name)
             self.assertEqual(node_a.type, node_b.type)
             self.assertEqual(node_a.op, node_b.op)
-            self.assertEqual(
-                node_a.meta.get("debug_handle"), node_b.meta.get("debug_handle")
-            )
+            if node_a.op not in {"placeholder", "output"}:
+                self.assertEqual(
+                    node_a.meta.get("debug_handle"), node_b.meta.get("debug_handle")
+                )
 
-    @unittest.expectedFailure
     def test_etrecord_generation(self):
         captured_output, edge_output, et_output, program_buffer = self.get_test_model()
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -55,14 +55,16 @@ class TestETRecord(unittest.TestCase):
 
             etrecord = parse_etrecord(tmpdirname + "/etrecord.bin")
             self.check_graph_closeness(
-                etrecord.graph_map["aten_dialect_output"], captured_output.graph_module
+                etrecord.graph_map["aten_dialect_output/forward"],
+                captured_output.graph_module,
             )
             self.check_graph_closeness(
-                etrecord.graph_map["edge_dialect_output"], edge_output.module
+                etrecord.graph_map["edge_dialect_output/forward"],
+                edge_output.graph_module,
             )
             self.check_graph_closeness(
                 etrecord.graph_map["et_dialect_graph_module/forward"],
-                et_output.dump_graph_module(),
+                et_output.dump_exported_program(),
             )
             self.assertEqual(
                 etrecord._debug_handle_map,

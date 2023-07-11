@@ -1,18 +1,17 @@
 import json
-import pickle
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional, Union
 from zipfile import BadZipFile, ZipFile
 
-import torch
-
 from executorch.exir import (
     ExecutorchProgram,
     ExirExportedProgram,
+    ExportedProgram,
     MultiMethodExecutorchProgram,
     MultiMethodExirExportedProgram,
 )
+from executorch.exir.serde.serialize import deserialize, serialize
 
 
 class ETRecordReservedFileNames(str, Enum):
@@ -24,56 +23,76 @@ class ETRecordReservedFileNames(str, Enum):
 
 @dataclass
 class ETRecord:
-    graph_map: Optional[Dict[str, torch.fx.GraphModule]] = None
+    graph_map: Optional[Dict[str, ExportedProgram]] = None
     program_buffer: Optional[bytes] = None
     _debug_handle_map: Optional[Dict[int, Union[int, List[int]]]] = None
 
 
-def get_export_module_handler(
+def _handle_exported_program(
+    etrecord_zip: ZipFile, module_name: str, method_name: str, ep: ExirExportedProgram
+) -> None:
+    serialized_ep, serialized_state_dict = serialize(ep)
+    etrecord_zip.writestr(f"{module_name}/{method_name}", serialized_ep)
+    etrecord_zip.writestr(
+        f"{module_name}/{method_name}_state_dict", serialized_state_dict
+    )
+
+
+def _handle_multi_method_exported_program(
+    etrecord_zip: ZipFile,
+    module_name: str,
+    multi_method: MultiMethodExirExportedProgram,
+) -> None:
+    for method_name, ep in multi_method.methods().items():
+        _handle_exported_program(etrecord_zip, module_name, method_name, ep)
+
+
+def _handle_export_module(
     etrecord_zip: ZipFile,
     export_module: Union[MultiMethodExirExportedProgram, ExirExportedProgram],
-):
-    export_module_handlers = {
-        MultiMethodExirExportedProgram: lambda module_name, export_module: [
-            etrecord_zip.writestr(
-                module_name + "/" + method_name, pickle.dumps(graph_module)
-            )
-            for method_name, graph_module in export_module.methods().items()
-        ],
-        ExirExportedProgram: lambda module_name, export_module: etrecord_zip.writestr(
-            module_name, pickle.dumps(export_module.graph_module)
-        ),
-    }
-
-    handler = export_module_handlers.get(type(export_module))
-    return handler
+    module_name: str,
+) -> None:
+    if isinstance(export_module, MultiMethodExirExportedProgram):
+        _handle_multi_method_exported_program(etrecord_zip, module_name, export_module)
+    elif isinstance(export_module, ExirExportedProgram):
+        _handle_exported_program(etrecord_zip, module_name, "forward", export_module)
+    else:
+        raise RuntimeError(f"Unsupported graph module type. {type(export_module)}")
 
 
-def get_program_handler(
+def _handle_program(
     etrecord_zip: ZipFile,
     program: Union[ExecutorchProgram, MultiMethodExecutorchProgram],
-):
-    program_handlers = {
-        ExecutorchProgram: lambda program: [
-            etrecord_zip.writestr(
-                ETRecordReservedFileNames.ET_DIALECT_GRAPH_MODULE + "/" + "forward",
-                pickle.dumps(program.dump_graph_module()),
-            ),
-            etrecord_zip.writestr(
-                ETRecordReservedFileNames.PROGRAM_BUFFER, program.buffer
-            ),
-        ],
-        MultiMethodExecutorchProgram: lambda program: [
-            etrecord_zip.writestr(
-                ETRecordReservedFileNames.ET_DIALECT_GRAPH_MODULE + "/" + method_name,
-                pickle.dumps(graph_module),
-            )
-            for method_name, graph_module in program._executorch_dialect_ir_program.methods().items()
-        ],
-    }
+) -> None:
+    if isinstance(program, MultiMethodExecutorchProgram):
+        # Do a dummy read of the program here to make sure that the emitter runs
+        # under the hood which will result in the debug handle map being generated.
+        program.program
 
-    handler = program_handlers.get(type(program))
-    return handler
+        _handle_multi_method_exported_program(
+            etrecord_zip,
+            ETRecordReservedFileNames.ET_DIALECT_GRAPH_MODULE,
+            program._executorch_dialect_ir_program,
+        )
+
+    elif isinstance(program, ExecutorchProgram):
+        # Do a dummy read of the program here to make sure that the emitter runs
+        # under the hood which will result in the debug handle map being generated.
+        program.program
+
+        _handle_exported_program(
+            etrecord_zip,
+            ETRecordReservedFileNames.ET_DIALECT_GRAPH_MODULE,
+            "forward",
+            program.dump_exported_program(),
+        )
+
+        etrecord_zip.writestr(ETRecordReservedFileNames.PROGRAM_BUFFER, program.buffer)
+
+    else:
+        raise RuntimeError(
+            f"program passed in should be either ExecutorchProgram or MultiMethodExecutorchProgram. {type(program)}"
+        )
 
 
 def generate_etrecord(
@@ -121,25 +140,10 @@ def generate_etrecord(
                 raise RuntimeError(
                     f"The name {module_name} provided in the export_modules dict is a reserved name in the ETRecord namespace."
                 )
-            handler = get_export_module_handler(etrecord_zip, export_module)
-            if handler:
-                handler(module_name, export_module)
-            else:
-                raise RuntimeError(
-                    f"Unsupported graph module type. {type(export_module)}"
-                )
+            _handle_export_module(etrecord_zip, export_module, module_name)
 
     if program is not None:
-        handler = get_program_handler(etrecord_zip, program)
-        if handler:
-            # Do a dummy read of the program here to make sure that the emitter runs
-            # under the hood which will result in the debug handle map being generated.
-            program.program
-            handler(program)
-        else:
-            raise RuntimeError(
-                f"program passed in should be either ExecutorchProgram or MultiMethodExecutorchProgram. {type(program)}"
-            )
+        _handle_program(etrecord_zip, program)
 
         etrecord_zip.writestr(
             ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME,
@@ -173,10 +177,12 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
             "ETRecord identifier missing from etrecord file passed in. Either an invalid file was passed in or the file is corrupt."
         )
 
-    graph_map: Dict[str, torch.fx.GraphModule] = {}
+    graph_map: Dict[str, ExportedProgram] = {}
     debug_handle_map = None
     program_buffer = None
 
+    serialized_exported_program_files = set()
+    serialized_state_dict_files = set()
     for entry in file_list:
         if entry == ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME:
             debug_handle_map = json.loads(
@@ -187,7 +193,20 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
         elif entry == ETRecordReservedFileNames.ETRECORD_IDENTIFIER:
             continue
         else:
-            graph_map[entry] = pickle.loads(etrecord_zip.read(entry))
+            if entry.endswith("state_dict"):
+                serialized_state_dict_files.add(entry)
+            else:
+                serialized_exported_program_files.add(entry)
+
+    for serialized_file in serialized_exported_program_files:
+        serialized_state_dict_file = f"{serialized_file}_state_dict"
+        assert (
+            serialized_state_dict_file in serialized_state_dict_files
+        ), "Could not find corresponding state dict file for {serialized_file}."
+        graph_map[serialized_file] = deserialize(
+            etrecord_zip.read(serialized_file),
+            etrecord_zip.read(serialized_state_dict_file),
+        )
 
     return ETRecord(
         graph_map=graph_map,
