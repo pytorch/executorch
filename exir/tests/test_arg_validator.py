@@ -7,7 +7,7 @@ import torch
 from executorch import exir
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.dialects._ops import ops
-from executorch.exir.graph_module import get_exir_meta
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.verification.arg_validator import EdgeOpArgValidator
 
 
@@ -55,12 +55,13 @@ class TestArgValidator(unittest.TestCase):
         validator = EdgeOpArgValidator(egm)
         validator.run(*inputs)
         self.assertEqual(len(validator.violating_ops), 1)
+        key: EdgeOpOverload = next(iter(validator.violating_ops))
         self.assertEqual(
-            validator.violating_ops[0][0].name(),
+            key.name(),
             ops.edge.aten._log_softmax.default.name(),
         )
         self.assertDictEqual(
-            validator.violating_ops[0][1],
+            validator.violating_ops[key],
             {
                 "self": torch.bfloat16,
                 "__ret_0": torch.bfloat16,

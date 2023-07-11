@@ -4,7 +4,10 @@ import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
-from executorch.exir.verification.arg_validator import EdgeOpArgValidator
+from executorch.exir.verification.arg_validator import (
+    EdgeOpArgValidator,
+    RunHigherOrderOperatorError,
+)
 
 from torch._export.verifier import (
     _check_has_fake_tensor,
@@ -70,7 +73,17 @@ def _get_inputs(graph_module: GraphModule) -> List[Optional[FakeTensor]]:
 def _check_tensor_args_matching_op_allowed_dtype(gm: GraphModule) -> None:
     validator = EdgeOpArgValidator(gm)
     inputs = _get_inputs(gm)
-    validator.run(*inputs)
+    try:
+        validator.run(*inputs)
+    except RunHigherOrderOperatorError:
+        # NB: ignore higher order operator in the graph.
+        # If we lower a graph module to delegate and then compose it with some other graph module, retrace it,
+        # if we also turn on edge ops and validator (_use_edge_ops=True, _check_ir_validity=True), we will run
+        # into RunHigherOrderOperatorError. The only thing we can do right now is to ignore this error, since
+        # by definition it's still a valid Edge dialect. This is not ideal because it ignores possible invalidity
+        # later in the graph.
+        return
+
     if validator.violating_ops:
         raise SpecViolationError(
             f"These operators are taking Tensor inputs with mismatched dtypes: {validator.violating_ops}"
