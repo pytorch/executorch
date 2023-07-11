@@ -537,6 +537,8 @@ SUPPORTED_QUANT_OPS = [
 SUPPORTED_QUANT_MODULES = [
     torch.clamp,
     torch.mean,
+    torch.permute,
+    torch.permute_copy,
     torch.nn.Linear,
     torch.nn.functional.linear,
     torch.ao.nn.quantized.reference.modules.linear.Linear,  # TODO

@@ -465,6 +465,28 @@ class TestXNNPACKQuantized(TestXNNPACK):
         module = Clamp(-1, 1)
         self.quantize_and_test_model(module, model_inputs)
 
+    def test_xnnpack_qpermute(self):
+        class Perm(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.nchw_to_nhwc = [0, 2, 3, 1]
+
+            def forward(self, x):
+                return torch.permute(x, self.nchw_to_nhwc)
+
+        self.quantize_and_test_model(Perm(), (torch.randn(1, 2, 4, 5),))
+
+    def test_xnnpack_qpermute_copy(self):
+        class Perm(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.nchw_to_nhwc = [0, 2, 3, 1]
+
+            def forward(self, x):
+                return torch.permute_copy(x, self.nchw_to_nhwc)
+
+        self.quantize_and_test_model(Perm(), (torch.randn(1, 2, 4, 5),))
+
     def test_xnnpack_dqlinear_mm_per_tensor(self):
         self._test_xnnpack_dqlinear(
             weight_qconfig=weight_observer_range_neg_127_to_127, use_bias=False
