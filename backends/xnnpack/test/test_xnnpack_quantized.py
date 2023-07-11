@@ -514,6 +514,29 @@ class TestXNNPACKQuantized(TestXNNPACK):
         example_inputs = (torch.randn(5, 4, 3, 2),)
         self.quantize_and_test_model(StaticConstantPadModule(), example_inputs)
 
+    def test_xnnpack_qelu(self):
+        class ELUModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.elu = torch.nn.ELU(alpha=0.5)
+
+            def forward(self, x):
+                return self.elu(x)
+
+        example_inputs = (torch.randn(1, 3, 4, 4),)
+        self.quantize_and_test_model(ELUModule(), example_inputs)
+
+    def test_xnnpack_qelu2(self):
+        class ELUModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.nn.functional.elu(x, alpha=1.2)
+
+        example_inputs = (torch.randn(1, 3, 4, 4),)
+        self.quantize_and_test_model(ELUModule(), example_inputs)
+
     def test_xnnpack_dqlinear_mm_per_tensor(self):
         self._test_xnnpack_dqlinear(
             weight_qconfig=weight_observer_range_neg_127_to_127, use_bias=False
