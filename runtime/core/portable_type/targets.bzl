@@ -10,7 +10,7 @@ def define_common_targets():
     # Internal target for executor tensor. Clients should depend on
     # :kernel_types below to be flexible with ATen Tensor and executor Tensor.
     runtime.cxx_library(
-        name = "kernel_types",
+        name = "portable_type",
         srcs = ["tensor_impl.cpp"],
         exported_headers = [
             "tensor_options.h",
@@ -25,6 +25,7 @@ def define_common_targets():
         # mean I cant just expose visibility to a single rule.
         visibility = [
             "//executorch/core/kernel_types/...",
+            "//executorch/runtime/core/portable_type/test/...",
         ],
         exported_deps = [
             ":scalar_type",

@@ -22,18 +22,18 @@
 #include <c10/util/string_view.h> // @manual
 #include <torch/torch.h>
 #else // use executor
-#include <executorch/core/kernel_types/lean/bfloat16.h> // @manual
-#include <executorch/core/kernel_types/lean/complex.h> // @manual
-#include <executorch/core/kernel_types/lean/device.h> // @manual
-#include <executorch/core/kernel_types/lean/half.h> // @manual
-#include <executorch/core/kernel_types/lean/optional.h> // @manual
-#include <executorch/core/kernel_types/lean/qint_types.h> // @manual
-#include <executorch/core/kernel_types/lean/scalar.h> // @manual
-#include <executorch/core/kernel_types/lean/scalar_type.h> // @manual
-#include <executorch/core/kernel_types/lean/string_view.h> // @manual
-#include <executorch/core/kernel_types/lean/tensor.h> // @manual
-#include <executorch/core/kernel_types/lean/tensor_options.h> // @manual
 #include <executorch/runtime/core/array_ref.h> // @manual
+#include <executorch/runtime/core/portable_type/bfloat16.h> // @manual
+#include <executorch/runtime/core/portable_type/complex.h> // @manual
+#include <executorch/runtime/core/portable_type/device.h> // @manual
+#include <executorch/runtime/core/portable_type/half.h> // @manual
+#include <executorch/runtime/core/portable_type/optional.h> // @manual
+#include <executorch/runtime/core/portable_type/qint_types.h> // @manual
+#include <executorch/runtime/core/portable_type/scalar.h> // @manual
+#include <executorch/runtime/core/portable_type/scalar_type.h> // @manual
+#include <executorch/runtime/core/portable_type/string_view.h> // @manual
+#include <executorch/runtime/core/portable_type/tensor.h> // @manual
+#include <executorch/runtime/core/portable_type/tensor_options.h> // @manual
 
 #endif
 

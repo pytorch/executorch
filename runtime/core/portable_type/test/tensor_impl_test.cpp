@@ -1,4 +1,4 @@
-#include <executorch/core/kernel_types/kernel_types.h>
+#include <executorch/runtime/core/portable_type/tensor_impl.h>
 
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
@@ -7,12 +7,13 @@
 #include <random>
 
 using namespace ::testing;
-using SizesType = exec_aten::SizesType;
-using DimOrderType = exec_aten::DimOrderType;
-using StridesType = exec_aten::StridesType;
 
 namespace torch {
 namespace executor {
+
+using SizesType = TensorImpl::SizesType;
+using DimOrderType = TensorImpl::DimOrderType;
+using StridesType = TensorImpl::StridesType;
 
 class TensorImplTest : public ::testing::Test {
  protected:

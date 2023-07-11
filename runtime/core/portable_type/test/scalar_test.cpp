@@ -1,4 +1,4 @@
-#include <executorch/core/kernel_types/lean/scalar.h>
+#include <executorch/runtime/core/portable_type/scalar.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 

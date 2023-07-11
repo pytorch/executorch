@@ -1,4 +1,4 @@
-#include <executorch/core/kernel_types/lean/tensor.h>
+#include <executorch/runtime/core/portable_type/tensor.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 

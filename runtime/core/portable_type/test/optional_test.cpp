@@ -1,4 +1,4 @@
-#include <executorch/core/kernel_types/lean/optional.h>
+#include <executorch/runtime/core/portable_type/optional.h>
 
 #include <string>
 #include <type_traits>

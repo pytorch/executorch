@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <executorch/core/kernel_types/lean/half.h>
+#include <executorch/runtime/core/portable_type/half.h>
 
 namespace torch {
 namespace executor {

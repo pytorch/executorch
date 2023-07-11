@@ -14,6 +14,7 @@ def define_common_targets():
         ],
         visibility = [
             "//executorch/core/kernel_types/...",
+            "//executorch/runtime/core/portable_type/...",
         ],
     )
 
@@ -29,7 +30,7 @@ def define_common_targets():
             # of their custom operators, to load into local PyTorch using
             # `torch.ops.load_library()`. See codegen.bzl.
             visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
-            exported_deps = [":tensor_shape_dynamism"] + ([] if aten_mode else ["//executorch/core/kernel_types/lean:kernel_types"]),
+            exported_deps = [":tensor_shape_dynamism"] + ([] if aten_mode else ["//executorch/runtime/core/portable_type:portable_type"]),
             fbcode_exported_deps = ["//caffe2:torch-cpp"] if aten_mode else [],
             xplat_exported_deps = ["//xplat/caffe2:torch_mobile_core"] if aten_mode else [],
         )

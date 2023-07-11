@@ -30,7 +30,7 @@ def define_common_targets():
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             exported_deps = [
                 "//executorch/runtime/core:core",
-            ] + aten_types_deps if aten_mode else ["//executorch/core/kernel_types/lean:scalar_type"],
+            ] + aten_types_deps if aten_mode else ["//executorch/runtime/core/portable_type:scalar_type"],
         )
 
         runtime.cxx_library(

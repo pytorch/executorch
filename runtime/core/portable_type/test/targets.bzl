@@ -10,7 +10,7 @@ def define_common_targets():
         name = "optional_test",
         srcs = ["optional_test.cpp"],
         deps = [
-            "//executorch/core/kernel_types:kernel_types",
+            "//executorch/runtime/core/portable_type:portable_type",
         ],
     )
 
@@ -18,7 +18,7 @@ def define_common_targets():
         name = "executor_tensor_test",
         srcs = ["executor_tensor_test.cpp"],
         deps = [
-            "//executorch/core/kernel_types:kernel_types",
+            "//executorch/runtime/core/portable_type:portable_type",
         ],
     )
 
@@ -26,7 +26,7 @@ def define_common_targets():
         name = "scalar_test",
         srcs = ["scalar_test.cpp"],
         deps = [
-            "//executorch/core/kernel_types:kernel_types",
+            "//executorch/runtime/core/portable_type:portable_type",
         ],
     )
 
@@ -34,6 +34,6 @@ def define_common_targets():
         name = "tensor_impl_test",
         srcs = ["tensor_impl_test.cpp"],
         deps = [
-            "//executorch/core/kernel_types:kernel_types",
+            "//executorch/runtime/core/portable_type:portable_type",
         ],
     )

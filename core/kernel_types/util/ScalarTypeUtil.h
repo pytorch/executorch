@@ -33,7 +33,7 @@ namespace exec_aten {
 using ScalarType = at::ScalarType;
 }
 #else
-#include <executorch/core/kernel_types/lean/scalar_type.h>
+#include <executorch/runtime/core/portable_type/scalar_type.h>
 namespace exec_aten {
 using ScalarType = torch::executor::ScalarType;
 }

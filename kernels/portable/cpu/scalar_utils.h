@@ -8,8 +8,8 @@
 #include <limits>
 
 #include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/kernel_types/lean/scalar.h>
 #include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
+#include <executorch/runtime/core/portable_type/scalar.h>
 
 #define ET_CHECK_SCALAR_SAME_TYPE(a__, b__)                      \
   ({                                                             \

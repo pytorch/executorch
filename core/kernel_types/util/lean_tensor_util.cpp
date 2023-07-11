@@ -3,7 +3,7 @@
 
 #include <cstring>
 
-#include <executorch/core/kernel_types/lean/tensor.h>
+#include <executorch/runtime/core/portable_type/tensor.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace torch {

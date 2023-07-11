@@ -31,11 +31,11 @@
 
 #include <cstdint>
 
-#include <executorch/core/kernel_types/lean/bfloat16.h>
-#include <executorch/core/kernel_types/lean/bits_types.h>
-#include <executorch/core/kernel_types/lean/complex.h>
-#include <executorch/core/kernel_types/lean/half.h>
-#include <executorch/core/kernel_types/lean/qint_types.h>
+#include <executorch/runtime/core/portable_type/bfloat16.h>
+#include <executorch/runtime/core/portable_type/bits_types.h>
+#include <executorch/runtime/core/portable_type/complex.h>
+#include <executorch/runtime/core/portable_type/half.h>
+#include <executorch/runtime/core/portable_type/qint_types.h>
 
 namespace torch {
 namespace executor {
