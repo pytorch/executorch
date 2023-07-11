@@ -42,8 +42,8 @@ from torch.ao.quantization import (  # @manual
     QConfig,
     QConfigMapping,
 )
-from torch.ao.quantization._pt2e.quantizer import QNNPackQuantizer
-from torch.ao.quantization._pt2e.quantizer.qnnpack_quantizer import (
+from torch.ao.quantization.pt2e.quantizer import QNNPackQuantizer
+from torch.ao.quantization.pt2e.quantizer.qnnpack_quantizer import (
     get_symmetric_quantization_config,
 )
 from torch.ao.quantization._quantize_pt2e import convert_pt2e, prepare_pt2e_quantizer
