@@ -487,6 +487,33 @@ class TestXNNPACKQuantized(TestXNNPACK):
 
         self.quantize_and_test_model(Perm(), (torch.randn(1, 2, 4, 5),))
 
+    def test_xnnpack_qconstant_pad(self):
+        class StaticConstantPadModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.cp = torch.nn.ConstantPad2d([1, 2, 3, 4], 2.3)
+
+            def forward(self, x):
+                a = self.cp(x)
+                return a
+
+        example_inputs = (torch.randn(5, 4, 3, 2),)
+        self.quantize_and_test_model(StaticConstantPadModule(), example_inputs)
+
+    def test_xnnpack_qconstant_pad2(self):
+        class StaticConstantPadModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                a = torch.nn.functional.pad(
+                    x, pad=(1, 2, 3, 4, 5, 6), mode="constant", value=1.3
+                )
+                return a
+
+        example_inputs = (torch.randn(5, 4, 3, 2),)
+        self.quantize_and_test_model(StaticConstantPadModule(), example_inputs)
+
     def test_xnnpack_dqlinear_mm_per_tensor(self):
         self._test_xnnpack_dqlinear(
             weight_qconfig=weight_observer_range_neg_127_to_127, use_bias=False
