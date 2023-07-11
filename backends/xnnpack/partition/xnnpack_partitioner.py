@@ -535,6 +535,7 @@ SUPPORTED_QUANT_OPS = [
 
 # TODO delete this and should use SUPPORTED_MODULES instead once we align fp32 and quant support
 SUPPORTED_QUANT_MODULES = [
+    torch.clamp,
     torch.mean,
     torch.nn.Linear,
     torch.nn.functional.linear,

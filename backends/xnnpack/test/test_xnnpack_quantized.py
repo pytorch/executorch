@@ -451,6 +451,20 @@ class TestXNNPACKQuantized(TestXNNPACK):
         )
         self.quantize_and_test_model(model, example_inputs)
 
+    def test_xnnpack_qclamp(self):
+        class Clamp(torch.nn.Module):
+            def __init__(self, min_val, max_val):
+                super().__init__()
+                self.min_val = min_val
+                self.max_val = max_val
+
+            def forward(self, x):
+                return torch.clamp(x + x, min=self.min_val, max=self.max_val)
+
+        model_inputs = (torch.randn(1, 4, 122, 122),)
+        module = Clamp(-1, 1)
+        self.quantize_and_test_model(module, model_inputs)
+
     def test_xnnpack_dqlinear_mm_per_tensor(self):
         self._test_xnnpack_dqlinear(
             weight_qconfig=weight_observer_range_neg_127_to_127, use_bias=False
