@@ -1372,10 +1372,14 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
   for (auto old_id : *flatbuffer_graph->input_ids()) {
     executor->input_ids_.emplace_back(remapped_ids.at(old_id));
   }
+  // External ids need to be in order for wiring with args
+  std::sort(executor->input_ids_.begin(), executor->input_ids_.end());
 
   for (auto old_id : *flatbuffer_graph->output_ids()) {
     executor->output_ids_.emplace_back(remapped_ids.at(old_id));
   }
+  // External ids need to be in order for wiring with args
+  std::sort(executor->output_ids_.begin(), executor->output_ids_.end());
 
   if (!executor->qinputs_.empty() && flatbuffer_graph->xnodes()->size() > 0 &&
       flatbuffer_graph->xnodes()->Get(0)->xnode_union_type() ==
