@@ -66,12 +66,9 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             )
 
         if isinstance(inputs[0], list):
-            # Singleton list
-            assert len(inputs[0]) == 1
             return [
-                schema.NamedArgument(
-                    name="alloc_list", arg=serialize_alloc_spec(inputs[0][0])
-                )
+                schema.NamedArgument(name="alloc_list", arg=serialize_alloc_spec(arg))
+                for arg in inputs[0]
             ]
         else:
             # Single value
@@ -237,9 +234,10 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             res = (deserialize_alloc_spec(serialized_inputs[0].arg.value),)
             return res
 
-        # Singleton list value
-        assert len(serialized_inputs) == 1
-        alloc_specs = [deserialize_alloc_spec(serialized_inputs[0].arg.value)]
+        alloc_specs = [
+            deserialize_alloc_spec(serialized_input.arg.value)
+            for serialized_input in serialized_inputs
+        ]
         return (alloc_specs,)
 
     def deserialize_arbitrary_outputs(
