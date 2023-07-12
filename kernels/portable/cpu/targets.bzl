@@ -264,7 +264,7 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_expand",
+        name = "op_expand_copy",
         deps = [
             "//executorch/core/kernel_types/util:scalar_type_util",
             "//executorch/core/kernel_types/util:tensor_util",
@@ -541,7 +541,7 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_permute",
+        name = "op_permute_copy",
     ),
     op_target(
         name = "op_reciprocal",
@@ -582,7 +582,7 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_rsub_scalar",
+        name = "op_rsub",
         deps = [
             ":scalar_utils",
         ],
@@ -599,7 +599,7 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_select",
+        name = "op_select_copy",
     ),
     op_target(
         name = "op_select_scatter",
@@ -633,7 +633,7 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_slice",
+        name = "op_slice_copy",
     ),
     op_target(
         name = "op_slice_scatter",
@@ -647,7 +647,7 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_split",
+        name = "op_split_copy",
     ),
     op_target(
         name = "op_sqrt",
@@ -656,7 +656,7 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_squeeze",
+        name = "op_squeeze_copy",
     ),
     op_target(
         name = "op_stack",
@@ -678,7 +678,7 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_t",
+        name = "op_t_copy",
         deps = ["//executorch/kernels/portable/cpu/util:transpose_util"],
     ),
     op_target(
@@ -694,10 +694,10 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_to",
+        name = "op_to_copy",
     ),
     op_target(
-        name = "op_transpose",
+        name = "op_transpose_copy",
         deps = ["//executorch/kernels/portable/cpu/util:transpose_util"],
     ),
     op_target(
@@ -707,10 +707,10 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_unbind",
+        name = "op_unbind_copy",
     ),
     op_target(
-        name = "op_unsqueeze",
+        name = "op_unsqueeze_copy",
     ),
     op_target(
         name = "op_var",
@@ -721,7 +721,7 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_view",
+        name = "op_view_copy",
     ),
     op_target(
         name = "op_where",
