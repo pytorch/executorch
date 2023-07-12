@@ -164,7 +164,6 @@ def define_common_targets():
     _common_op_test("op_amax_test", ["aten", "portable"])
     _common_op_test("op_amin_test", ["aten", "portable"])
     _common_op_test("op_any_test", ["aten", "portable"])
-    _common_op_test("op_arange_start_test", ["aten", "portable"])
     _common_op_test("op_arange_test", ["aten", "portable"])
     _common_op_test("op_argmax_test", ["aten", "portable"])
     _common_op_test("op_argmin_test", ["aten", "portable"])

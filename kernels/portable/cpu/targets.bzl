@@ -74,14 +74,6 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_arange_start",
-        deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
-            ":scalar_utils",
-        ],
-    ),
-    op_target(
         name = "op_argmax",
         deps = [
             "//executorch/kernels/portable/cpu/util:reduce_util",
