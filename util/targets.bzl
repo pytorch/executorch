@@ -135,10 +135,22 @@ def define_common_targets():
         ],
     )
 
+    COMPILER_FLAGS = [
+        "-frtti",
+        "-fno-omit-frame-pointer",
+        "-fexceptions",
+        "-Wno-error",
+        "-Wno-unused-local-typedef",
+        "-Wno-self-assign-overloaded",
+        "-Wno-global-constructors",
+        "-Wno-unused-function",
+    ]
+
     runtime.cxx_library(
         name = "aten_bridge",
         srcs = ["aten_bridge.cpp"],
         exported_headers = ["aten_bridge.h"],
+        compiler_flags = COMPILER_FLAGS,
         visibility = [
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
