@@ -80,25 +80,16 @@ class TensorImpl {
   TensorImpl() = delete;
 
   /**
-   * @param type: What scalartype data contains (int, float, bool)
-   *
-   * @param dim: Rank of the tensor
-   *
-   * @param sizes: Sizes of the tensor at each dimension
-   *
-   * @param data: pointer to underlying data blob
-   *
-   * @param dim_order: Order in which dimensions are laid out in memory
-   *
-   * @param strides: Strides of the tensor at each dimension
-   *
-   * @param storage_offset: Offset into data that this tensors data blob starts
-   * at. Typically used in views
-   *
-   * @param dynamism: WILL BE REMOVED DONT RELY ON IT SEE TYPE DECLARATION FOR
-   * MORE INFO. Enum describing if this tensor can be resized, and if so how.
-   * Ex: StaticShape, data cannot be resized and sizes and strides may point to
-   * constant memory.
+   * @param type: The type of the data (int, float, bool).
+   * @param dim: Number of dimensions, and the length of the `sizes` array.
+   * @param sizes: Sizes of the tensor at each dimension. Must contain `dim`
+   *     entries.
+   * @param data: Pointer to the data, whose size is determined by `type`,
+   *     `dim`, and `sizes`. The tensor will not own this memory.
+   * @param dim_order: Order in which dimensions are laid out in memory.
+   * @param strides: Strides of the tensor at each dimension. Must contain `dim`
+   *     entries.
+   * @param dynamism: The mutability of the shape of the tensor.
    */
   TensorImpl(
       ScalarType type,
@@ -107,8 +98,6 @@ class TensorImpl {
       void* data = nullptr,
       DimOrderType* dim_order = nullptr,
       StridesType* strides = nullptr,
-      ssize_t storage_offset = 0,
-      // THIS FIELD (dynamism) WILL BE REMOVED DONT RELY ON IT
       TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC);
 
   /**
@@ -140,12 +129,6 @@ class TensorImpl {
 
   /// Returns the size in bytes of one element of the tensor.
   ssize_t element_size() const;
-
-  /// Returns the offset from `data_` to the beginning of the actual tensor
-  /// data, in units of `type_` elements. E.g., if this is an int32 tensor, an
-  /// offset of 1 would be a 4-byte offset from `data_` since `sizeof(int32) ==
-  /// 4`.
-  ssize_t storage_offset() const;
 
   /// Returns the sizes of the tensor at each dimension.
   const ArrayRef<SizesType> sizes() const;
@@ -223,9 +206,6 @@ class TensorImpl {
 
   /// Tensor's number of dimensions.
   const ssize_t dim_;
-
-  /// Offset in elements into data that this tensor's data blob starts at.
-  const ssize_t storage_offset_;
 
   /// Number of elements in the tensor.
   ssize_t numel_;

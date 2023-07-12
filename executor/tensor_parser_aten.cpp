@@ -26,6 +26,13 @@ Result<at::Tensor> parseTensor(
     MemoryManager* memory_manager,
     const executorch::Tensor* s_tensor) {
   EXECUTORCH_SCOPE_PROF("TensorParser::parseTensor");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->storage_offset() == 0,
+      NotSupported,
+      "Non-zero storage offset %" PRId32 " not supported",
+      s_tensor->storage_offset());
+
   // get metadata
   at::ScalarType type = static_cast<at::ScalarType>(s_tensor->scalar_type());
   auto options = at::CPU(type).options();
@@ -51,7 +58,7 @@ Result<at::Tensor> parseTensor(
       /*data=*/nullptr,
       sizes,
       strides,
-      s_tensor->storage_offset(),
+      /*storage_offset=*/0,
       deleteNothing,
       options);
 

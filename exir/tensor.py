@@ -286,7 +286,6 @@ def make_tensor_value(
 ) -> schema.Tensor:
     """
     Converts the normal torch tensor to a flatbuffer tensor.
-    Currently the storage_offset field is set to 0 until we can handle aliasing behavior.
     """
 
     def to_list(
@@ -309,6 +308,7 @@ def make_tensor_value(
 
     flatbuffer_tensor = schema.Tensor(
         scalar_type=scalar_type_enum(spec.scalar_type),
+        # The runtime currently only supports tensors with offsets of zero.
         storage_offset=0,
         sizes=tensor_size,
         dim_order=tensor_dim_order,

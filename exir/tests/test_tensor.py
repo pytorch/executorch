@@ -30,12 +30,11 @@ class TestTensor(unittest.TestCase):
     ) -> None:
         """Checks if the given normal torch tensor is equivalent to the
         flatbuffer tensor.
-        Also checks that the buffer_index field is set to None, and the
-        storage_offset field is set to 0.
         """
         self.assertEqual(
             flatbuffer_tensor.scalar_type, scalar_type_enum(torch_tensor.dtype)
         )
+        # The runtime currently only supports tensors with offset 0.
         self.assertEqual(flatbuffer_tensor.storage_offset, 0)
         self.assertEqual(flatbuffer_tensor.sizes, list(torch_tensor.size()))
         self.assertEqual(flatbuffer_tensor.requires_grad, torch_tensor.requires_grad)

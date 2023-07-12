@@ -83,13 +83,6 @@ class Tensor {
     return impl_->element_size();
   }
 
-  /// Offset from `data_` to the beginning of the actual tensor data, in units
-  /// of `type_` elements. E.g., if this is an int32 tensor, an offset of 1
-  /// would be a 4-byte offset from `data_` since `sizeof(int32) == 4`.
-  ssize_t storage_offset() const {
-    return impl_->storage_offset();
-  }
-
   /// Returns the sizes of the tensor at each dimension.
   const ArrayRef<SizesType> sizes() const {
     return impl_->sizes();

@@ -872,7 +872,6 @@ class TensorFactory {
               data_.data(),
               dim_order_.data(),
               strides_.data(),
-              0,
               dynamism) {}
 
     std::vector<int32_t> sizes_;

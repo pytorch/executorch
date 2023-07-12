@@ -46,12 +46,18 @@ enum TensorShapeDynamism : byte {
 
 table Tensor {
   scalar_type:ScalarType;
+
+  // Offset in scalar_type elements (e.g., multiples of 4 bytes for an int
+  // scalar type) from the beginning of the tensor buffer to the beginning of
+  // the actual data. Currently, the runtime only supports a value of zero.
   storage_offset:int;
+
   sizes:[int];
-// Specifies in what order the dimensions are laid out in memory (from outer to inner).
-// For example, given a rank 3 Tensor of size (3, 5, 2). If we name dimensions: [row, column, batch], then a dim_order of:
-// (2, 0, 1) represents a [batch, row, column] ordering where "column" is the innermost dimension, then comes "row", and the outermost dimension is "batch".
-// (0, 2, 1) represents a [row, batch, column] ordering where "column" is the innermost dimension, then comes "batch", and the outermost dimension is "row".
+
+  // Specifies in what order the dimensions are laid out in memory (from outer to inner).
+  // For example, given a rank 3 Tensor of size (3, 5, 2). If we name dimensions: [row, column, batch], then a dim_order of:
+  // (2, 0, 1) represents a [batch, row, column] ordering where "column" is the innermost dimension, then comes "row", and the outermost dimension is "batch".
+  // (0, 2, 1) represents a [row, batch, column] ordering where "column" is the innermost dimension, then comes "batch", and the outermost dimension is "row".
   dim_order:[ubyte];
 
   // out of scope M1

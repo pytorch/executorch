@@ -221,7 +221,7 @@ Error defineTensor(
               ScalarType::QInt8,
               input_shape.size(),
               input_shape.data(),
-              nullptr);
+              /*data=*/nullptr);
 
           // Add post padding to make xnnpack happy
           constexpr size_t post_pad_bytes = XNN_EXTRA_BYTES;

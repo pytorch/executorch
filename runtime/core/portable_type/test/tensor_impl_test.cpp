@@ -29,31 +29,19 @@ TEST_F(TensorImplTest, TestCtorAndGetters) {
   DimOrderType dim_order[2] = {0, 1};
   StridesType strides[2] = {2, 1};
   float data[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
-  TensorImpl t(ScalarType::Float, 2, sizes, data, dim_order, strides, 0);
+  TensorImpl t(ScalarType::Float, 2, sizes, data, dim_order, strides);
 
   EXPECT_EQ(t.numel(), 6);
   EXPECT_EQ(t.nbytes(), 6 * 4); // 6 4 byte floats
   EXPECT_EQ(t.dim(), 2);
   EXPECT_EQ(t.scalar_type(), ScalarType::Float);
   EXPECT_EQ(t.element_size(), 4);
-  EXPECT_EQ(t.storage_offset(), 0);
   EXPECT_EQ(t.data(), data);
   EXPECT_EQ(t.mutable_data(), data);
   EXPECT_EQ(t.sizes().data(), sizes);
   EXPECT_EQ(t.sizes().size(), 2);
   EXPECT_EQ(t.strides().data(), strides);
   EXPECT_EQ(t.strides().size(), 2);
-  EXPECT_EQ(t.storage_offset(), 0);
-}
-
-TEST_F(TensorImplTest, TestDataOffset) {
-  SizesType sizes[1] = {1};
-  DimOrderType dim_order[1] = {0};
-  StridesType strides[1] = {1};
-  float data[6] = {1.0, 2.0};
-
-  TensorImpl t(ScalarType::Float, 1, sizes, data, dim_order, strides, 1);
-  EXPECT_EQ(t.data(), data + 1);
 }
 
 // Verify that contig means stride[0] >= stride[1] >= ... stride[size-1] == 1
@@ -72,7 +60,6 @@ TEST_F(TensorImplTest, TestSetSizesContigContract) {
       data,
       dim_order,
       strides,
-      0,
       TensorShapeDynamism::DYNAMIC_UNBOUND);
 
   SizesType new_sizes[RANK] = {0, 0, 0, 0, 0};
@@ -102,7 +89,6 @@ TEST_F(TensorImplTest, TestSetSizesContigZeroSizes) {
       data,
       dim_order,
       strides,
-      0,
       TensorShapeDynamism::DYNAMIC_UNBOUND);
 
   SizesType new_sizes_1[3] = {1, 0, 2};
@@ -124,7 +110,7 @@ TEST_F(TensorImplTest, TestSetSizesContigStatic) {
   DimOrderType dim_order[2] = {0, 1};
   StridesType strides[2] = {2, 1};
   float data[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
-  TensorImpl t(ScalarType::Float, 2, sizes, data, dim_order, strides, 0);
+  TensorImpl t(ScalarType::Float, 2, sizes, data, dim_order, strides);
 
   SizesType new_sizes_1[2] = {3, 2};
   t.set_sizes_contiguous({new_sizes_1, 2});
@@ -156,7 +142,6 @@ TEST_F(TensorImplTest, TestSetSizesContigUpperBounded) {
       data,
       dim_order,
       strides,
-      0,
       TensorShapeDynamism::DYNAMIC_BOUND);
 
   SizesType new_sizes_1[2] = {1, 1};
@@ -192,13 +177,16 @@ TEST_F(TensorImplTest, TestWriteRead) {
   SizesType sizes[1] = {1};
   DimOrderType dim_order[1] = {0};
   StridesType strides[1] = {1};
-  float data[6] = {1.0, 2.0};
-  TensorImpl t(ScalarType::Float, 1, sizes, data, dim_order, strides, 1);
+  float data[1] = {1.0};
+  TensorImpl t(ScalarType::Float, 1, sizes, data, dim_order, strides);
+
+  const float* y = t.data<float>();
+  EXPECT_EQ(y[0], 1.0);
 
   float* x = t.mutable_data<float>();
-  x[0] = -1.0;
-  const float* y = t.data<float>();
-  EXPECT_EQ(y[0], -1.0);
+  x[0] = 22.0;
+
+  EXPECT_EQ(y[0], 22.0);
 }
 
 } // namespace executor

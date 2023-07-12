@@ -792,8 +792,8 @@ void run_zeros_like_test(Tensor input) {
       // static shape tensor so const_cast is fine.
       /*sizes=*/const_cast<SizesType*>(input.sizes().data()),
       /*data=*/expected_data.data(),
-      /*dim order*/ const_cast<DimOrderType*>(input.dim_order().data()),
-      /*strides*/ const_cast<StridesType*>(input.strides().data()));
+      /*dim_order=*/const_cast<DimOrderType*>(input.dim_order().data()),
+      /*strides=*/const_cast<StridesType*>(input.strides().data()));
   Tensor expected(&impl);
 #endif
 
@@ -850,8 +850,8 @@ void run_ones_like_test(Tensor input) {
       // static shape tensor so const_cast is fine.
       /*sizes=*/const_cast<SizesType*>(input.sizes().data()),
       /*data=*/expected_data.data(),
-      /*dim order*/ const_cast<DimOrderType*>(input.dim_order().data()),
-      /*strides*/ const_cast<StridesType*>(input.strides().data()));
+      /*dim_order=*/const_cast<DimOrderType*>(input.dim_order().data()),
+      /*strides=*/const_cast<StridesType*>(input.strides().data()));
   Tensor expected(&impl);
 #endif
 

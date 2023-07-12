@@ -60,7 +60,6 @@ Error allocate_tensor(
       nullptr,
       tensor_dim_order,
       tensor_strides,
-      static_cast<ssize_t>(0),
       TensorShapeDynamism::DYNAMIC_BOUND);
   size_t nbytes = tensor_impl->nbytes();
   void* tensor_storage =

@@ -39,14 +39,12 @@ TensorImpl::TensorImpl(
     void* data,
     DimOrderType* dim_order,
     StridesType* strides,
-    ssize_t storage_offset,
     TensorShapeDynamism dynamism)
     : sizes_(sizes),
       dim_order_(dim_order),
       strides_(strides),
       data_(data),
       dim_(dim),
-      storage_offset_(storage_offset),
       numel_(compute_numel(sizes, dim)),
       capacity_(numel_ * sizeof_scalar_type(type)),
       type_(type),
@@ -82,10 +80,6 @@ ssize_t TensorImpl::element_size() const {
   return sizeof_scalar_type(type_);
 }
 
-ssize_t TensorImpl::storage_offset() const {
-  return storage_offset_;
-}
-
 const ArrayRef<TensorImpl::SizesType> TensorImpl::sizes() const {
   return ArrayRef<SizesType>{sizes_, static_cast<size_t>(dim_)};
 }
@@ -99,15 +93,11 @@ const ArrayRef<TensorImpl::StridesType> TensorImpl::strides() const {
 }
 
 const void* TensorImpl::data() const {
-  return mutable_data();
+  return data_;
 }
 
 void* TensorImpl::mutable_data() const {
-  if (data_ == nullptr) {
-    return nullptr; // NOLINT facebook-hte-NullableReturn
-  }
-  return static_cast<void*>(
-      static_cast<char*>(data_) + element_size() * storage_offset_);
+  return data_;
 }
 
 void TensorImpl::set_data(void* ptr) {

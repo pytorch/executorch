@@ -17,31 +17,11 @@ TEST(TensorTest, InvalidScalarType) {
   ET_EXPECT_DEATH({ TensorImpl y(ScalarType::NumOptions, 1, sizes); }, "");
 }
 
-TEST(TensorTest, StorageOffset) {
-  TensorImpl::SizesType sizes[1] = {5};
-  TensorImpl::DimOrderType dim_order[1] = {0};
-  int32_t data[5] = {0, 0, 1, 0, 0};
-  auto a_impl =
-      TensorImpl(ScalarType::Int, 1, sizes, data, dim_order, nullptr, 0);
-  auto b_impl =
-      TensorImpl(ScalarType::Int, 1, sizes, data, dim_order, nullptr, 2);
-  Tensor a(&a_impl);
-  Tensor b(&b_impl);
-
-  EXPECT_EQ(a_impl.scalar_type(), ScalarType::Int);
-  EXPECT_EQ(b_impl.scalar_type(), ScalarType::Int);
-  EXPECT_EQ(a.scalar_type(), ScalarType::Int);
-  EXPECT_EQ(b.scalar_type(), ScalarType::Int);
-  EXPECT_EQ(0, a.const_data_ptr<int32_t>()[0]);
-  EXPECT_EQ(1, b.const_data_ptr<int32_t>()[0]);
-}
-
 TEST(TensorTest, SetData) {
   TensorImpl::SizesType sizes[1] = {5};
   TensorImpl::DimOrderType dim_order[1] = {0};
   int32_t data[5] = {0, 0, 1, 0, 0};
-  auto a_impl =
-      TensorImpl(ScalarType::Int, 1, sizes, data, dim_order, nullptr, 0);
+  auto a_impl = TensorImpl(ScalarType::Int, 1, sizes, data, dim_order, nullptr);
   auto a = Tensor(&a_impl);
   EXPECT_EQ(a.const_data_ptr(), data);
   a.set_data(nullptr);

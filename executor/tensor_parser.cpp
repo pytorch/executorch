@@ -16,10 +16,13 @@ Result<torch::executor::Tensor> parseTensor(
     MemoryManager* memory_manager,
     const executorch::Tensor* s_tensor) {
   EXECUTORCH_SCOPE_PROF("TensorParser::parseTensor");
-  size_t dim = s_tensor->sizes()->size();
   auto runtime_allocator = memory_manager->get_runtime_allocator();
-  auto* tensor_impl = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-      runtime_allocator, torch::executor::TensorImpl);
+
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->storage_offset() == 0,
+      NotSupported,
+      "Non-zero storage offset %" PRId32 " not supported",
+      s_tensor->storage_offset());
 
   TensorShapeDynamism dynamism =
       static_cast<TensorShapeDynamism>(s_tensor->shape_dynamism());
@@ -32,8 +35,9 @@ Result<torch::executor::Tensor> parseTensor(
 
   exec_aten::SizesType* sizes = nullptr;
   exec_aten::DimOrderType* dim_order = nullptr;
-  auto serialized_sizes = s_tensor->sizes()->data();
-  auto serialized_dim_order = s_tensor->dim_order()->data();
+  const auto dim = s_tensor->sizes()->size();
+  const auto serialized_sizes = s_tensor->sizes()->data();
+  const auto serialized_dim_order = s_tensor->dim_order()->data();
   // For dynamic shape tensors, allocate local buffers to allow mutable sizes
   // and strides
   if (dynamism != TensorShapeDynamism::STATIC) {
@@ -72,6 +76,8 @@ Result<torch::executor::Tensor> parseTensor(
       Internal,
       "dim_order_to_stride returned invalid status");
 
+  auto* tensor_impl = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
+      runtime_allocator, torch::executor::TensorImpl);
   // Placement new on the allocated memory space. Note that we create this first
   // with null data so we can find its expected size before getting its memory.
   new (tensor_impl) torch::executor::TensorImpl(
@@ -81,7 +87,6 @@ Result<torch::executor::Tensor> parseTensor(
       /*data=*/nullptr,
       dim_order,
       strides,
-      s_tensor->storage_offset(),
       dynamism);
 
   // Now that we know how big the tensor is, find and assign its memory.

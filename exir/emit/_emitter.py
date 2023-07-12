@@ -978,6 +978,7 @@ class _Emitter(torch.fx.Interpreter):
             return EValue(
                 Tensor(
                     scalar_type=ScalarType.BYTE,
+                    # The runtime currently only supports tensors with offset 0.
                     storage_offset=0,
                     sizes=[0],
                     dim_order=[],
