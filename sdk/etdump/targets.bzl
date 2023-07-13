@@ -124,7 +124,7 @@ def define_common_targets():
         exported_deps = [
             ":etdump_schema",
             "//executorch/runtime/platform:platform",
-            "//executorch/executor:memory_manager",
+            "//executorch/runtime/core:memory_allocator",
         ],
         visibility = [
             "//executorch/...",

@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <vector>
 
-#include <executorch/executor/MemoryAllocator.h>
+#include <executorch/runtime/core/memory_allocator.h>
 
 namespace torch {
 namespace executor {

@@ -25,8 +25,7 @@ def define_common_targets():
             exported_deps = [
                 "//executorch/runtime/core:core",
                 "//executorch/core/values:executor_values" + aten_suffix,
-                "//executorch/core:core",
-                "//executorch/executor:memory_manager",
+                "//executorch/runtime/core:memory_allocator",
                 "//executorch/profiler:profiler",
             ],
         )

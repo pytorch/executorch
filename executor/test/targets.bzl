@@ -64,16 +64,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            "//executorch/executor:memory_manager",
-        ],
-    )
-
-    runtime.cxx_test(
-        name = "memory_allocator_test",
-        srcs = [
-            "MemoryAllocatorTest.cpp",
-        ],
-        deps = [
+            "//executorch/runtime/core:memory_allocator",
             "//executorch/executor:memory_manager",
         ],
     )

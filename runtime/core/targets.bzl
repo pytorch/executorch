@@ -30,3 +30,19 @@ def define_common_targets():
             "//executorch/core:core",  # for legacy clients that need Constants.h or macros.h TODO remove this
         ],
     )
+
+    runtime.cxx_library(
+        name = "memory_allocator",
+        exported_headers = [
+            "hierarchical_allocator.h",
+            "memory_allocator.h",
+        ],
+        exported_deps = [
+            ":core",
+            "//executorch/profiler:profiler",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )

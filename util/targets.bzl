@@ -13,7 +13,7 @@ def define_common_targets():
             "DynamicMemoryAllocator.h",
         ],
         exported_deps = [
-            "//executorch/executor:memory_manager",
+            "//executorch/runtime/core:memory_allocator",
         ],
         visibility = [
             "//executorch/util/test/...",
@@ -42,7 +42,7 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/runtime/core:core",
-            "//executorch/executor:memory_manager",
+            "//executorch/runtime/core:memory_allocator",
         ],
     )
 

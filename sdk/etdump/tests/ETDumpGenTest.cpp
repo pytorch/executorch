@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <executorch/executor/MemoryAllocator.h>
+#include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/sdk/etdump/etdump_gen.h>

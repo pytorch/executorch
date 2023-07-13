@@ -1,6 +1,6 @@
 #pragma once
 
-#include <executorch/executor/MemoryAllocator.h>
+#include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/compiler.h>

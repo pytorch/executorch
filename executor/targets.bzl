@@ -31,13 +31,10 @@ def define_common_targets():
     runtime.cxx_library(
         name = "memory_manager",
         exported_headers = [
-            "HierarchicalAllocator.h",
-            "MemoryAllocator.h",
             "MemoryManager.h",
         ],
         exported_deps = [
             "//executorch/runtime/core:core",
-            "//executorch/profiler:profiler",
         ],
         visibility = [
             "//executorch/...",
@@ -52,13 +49,12 @@ def define_common_targets():
         exported_headers = ["Program.h"],
         deps = [
             "//executorch/runtime/platform:platform",
-            "//executorch/runtime/core:core",
             "//executorch/schema:extended_header",
             "//executorch/schema:schema",
             "//executorch/profiler:profiler",
         ],
         preprocessor_flags = _program_preprocessor_flags(),
-        exported_deps = ["//executorch/runtime/core:core", "//executorch/core:core"],
+        exported_deps = ["//executorch/runtime/core:core"],
         visibility = ["//executorch/executor/...", "@EXECUTORCH_CLIENTS"],
     )
 
@@ -72,6 +68,7 @@ def define_common_targets():
                 "tensor_parser{}.cpp".format(aten_suffix),
             ],
             deps = [
+                ":memory_manager",
                 "//executorch/runtime/backend:backend_registry",
                 "//executorch/core/prim_ops:prim_ops_registry" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
@@ -86,9 +83,10 @@ def define_common_targets():
                 "//executorch/core/kernel_types/util:dim_order_util",
                 "//executorch/core/kernel_types/util:scalar_type_util",
                 "//executorch/core/values:executor_values",
-                "//executorch/executor:memory_manager",
+                "//executorch/runtime/core:memory_allocator",
                 "//executorch/core/kernel_types:kernel_types" + aten_suffix,
                 ":program",
+                ":memory_manager",
             ],
             exported_headers = [
                 "Executor.h",

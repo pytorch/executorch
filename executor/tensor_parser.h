@@ -3,9 +3,9 @@
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/core/values/Evalue.h>
 #include <executorch/executor/Executor.h>
-#include <executorch/executor/MemoryAllocator.h>
 #include <executorch/executor/Program.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/schema/schema_generated.h>
 

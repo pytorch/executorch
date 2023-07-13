@@ -1,6 +1,6 @@
 #pragma once
 
-#include <executorch/executor/MemoryAllocator.h>
+#include <executorch/runtime/core/memory_allocator.h>
 #include "executorch/sdk/etdump/etdump_schema_generated.h"
 
 typedef flatbuffers::FlatBufferBuilder* ETDBuilder;
