@@ -247,7 +247,7 @@ def get_all_ops(target_model: EagerModelBase) -> List[str]:
     export_config = target_model.get_export_config()
     export_config.enable_dynamic_shape = False
     multi_methods_prog = target_model.compile(
-        ModelVariant.FP32, methods, CompilationStage.EDGE, export_config
+        ModelVariant.FP32, methods, CompilationStage.ATEN, export_config
     )
     for _, gm in multi_methods_prog.methods().items():
         all_aten_ops += target_model._get_operators(gm)

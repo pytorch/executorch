@@ -198,6 +198,15 @@
   - self: T0
     __ret_0: T0
 
+- func: aten::lift_fresh_copy
+  namespace: edge
+  inherits: aten::lift_fresh_copy
+  type_alias:
+    T0: [Bool, Byte, Char, Double, Float, Int, Long, Short]
+  type_constraint:
+  - self: T0
+    __ret_0: T0
+
 - func: aten::masked_fill.Scalar
   namespace: edge
   inherits: aten::masked_fill.Scalar
@@ -235,6 +244,16 @@
   - self: T7
     mask: T0
     __ret_0: T7
+
+- func: aten::minimum
+  namespace: edge
+  inherits: aten::minimum
+  type_alias:
+    T0: [Bool, Byte, Char, Double, Float, Int, Long, Short]
+  type_constraint:
+  - self: T0
+    other: T0
+    __ret_0: T0
 
 - func: aten::mm
   namespace: edge
@@ -305,6 +324,15 @@
   - self: T0
     __ret_0: T0
 
+- func: aten::select_copy.int
+  namespace: edge
+  inherits: aten::select_copy.int
+  type_alias:
+    T0: [Bool, Byte, Char, Double, Float, Int, Long, Short]
+  type_constraint:
+  - self: T0
+    __ret_0: T0
+
 - func: aten::sigmoid
   namespace: edge
   inherits: aten::sigmoid
@@ -355,9 +383,9 @@
     other: T0
     __ret_0: T0
 
-- func: aten::t_copy
+- func: aten::t
   namespace: edge
-  inherits: aten::t_copy
+  inherits: aten::t
   type_alias:
     T0: [Bool, Byte, Char, Double, Float, Int, Long, Short]
   type_constraint:
