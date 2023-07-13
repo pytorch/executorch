@@ -218,37 +218,48 @@ class OperatorGraphWithStats(OperatorGraph):
     # Generate summary stats grouped by operator type
     def _gen_op_summary_stats(self) -> List[Any]:
         grouped_ops = {}
+
+        def gen_stats(node):
+            if not isinstance(node, OperatorNode):
+                return
+
+            metadata = node.metadata
+
+            if metadata is None:
+                return
+
+            metrics = metadata.get(RESERVED_METADATA_ARG.METRICS_KEYWORD.value)
+            if metrics is None:
+                return
+            if metadata is not None:
+                run_durations = [
+                    end - start
+                    for start, end in zip(
+                        metadata[RESERVED_METADATA_ARG.PROFILE_START_TIME.value],
+                        metadata[RESERVED_METADATA_ARG.PROFILE_END_TIME.value],
+                    )
+                ]
+                if node.op in grouped_ops:
+                    grouped_ops[node.op] = (
+                        grouped_ops[node.op][0] + run_durations,
+                        grouped_ops[node.op][1] + 1,
+                    )
+                else:
+                    grouped_ops[node.op] = (np.array(run_durations), 1)
+
         for element in self.elements:
-            if isinstance(element, OperatorGraph) and element.graph_name == "forward":
-                for node in element.elements:
-                    if isinstance(node, OperatorNode):
-                        metadata = node.metadata
-                        if metadata is None:
-                            continue
-                        metrics = metadata.get(
-                            RESERVED_METADATA_ARG.METRICS_KEYWORD.value
-                        )
-                        if metrics is None:
-                            continue
-                        if metadata is not None:
-                            run_durations = [
-                                end - start
-                                for start, end in zip(
-                                    metadata[
-                                        RESERVED_METADATA_ARG.PROFILE_START_TIME.value
-                                    ],
-                                    metadata[
-                                        RESERVED_METADATA_ARG.PROFILE_END_TIME.value
-                                    ],
-                                )
-                            ]
-                            if node.op in grouped_ops:
-                                grouped_ops[node.op] = (
-                                    grouped_ops[node.op][0] + run_durations,
-                                    grouped_ops[node.op][1] + 1,
-                                )
-                            else:
-                                grouped_ops[node.op] = (np.array(run_durations), 1)
+            if (
+                not isinstance(element, OperatorGraph)
+                or element.graph_name != "forward"
+            ):
+                continue
+
+            for node in element.elements:
+                if isinstance(node, OperatorGraphWithStats):
+                    for node_with_stats in node.elements:
+                        gen_stats(node_with_stats)
+                else:
+                    gen_stats(node)
 
         header_row = [
             [
@@ -314,41 +325,42 @@ class OperatorGraphWithStats(OperatorGraph):
                 PROFILE_STAT_HEADER.MAX_MS.value,
             ]
         ]
+
+        def extract_node_stats(node):
+            if not isinstance(node, OperatorNode):
+                return
+
+            metadata = node.metadata
+            if metadata is not None:
+                metrics = metadata.get(RESERVED_METADATA_ARG.METRICS_KEYWORD.value)
+                if metrics is None:
+                    return
+                data_rows.append(
+                    [
+                        node.name,
+                        metrics[RESERVED_METADATA_ARG.PROFILE_SUMMARY_COLDSTART.value],
+                        metrics[RESERVED_METADATA_ARG.PROFILE_SUMMARY_AVERAGE.value],
+                        metrics[RESERVED_METADATA_ARG.PROFILE_SUMMARY_MIN.value],
+                        metrics[RESERVED_METADATA_ARG.PROFILE_SUMMARY_P10.value],
+                        metrics[RESERVED_METADATA_ARG.PROFILE_SUMMARY_P90.value],
+                        metrics[RESERVED_METADATA_ARG.PROFILE_SUMMARY_MAX.value],
+                    ]
+                )
+
         data_rows = []
         for element in self.elements:
-            if isinstance(element, OperatorGraph) and element.graph_name == "forward":
-                for node in element.elements:
-                    if isinstance(node, OperatorNode):
-                        metadata = node.metadata
-                        if metadata is not None:
-                            metrics = metadata.get(
-                                RESERVED_METADATA_ARG.METRICS_KEYWORD.value
-                            )
-                            if metrics is None:
-                                continue
-                            data_rows.append(
-                                [
-                                    node.name,
-                                    metrics[
-                                        RESERVED_METADATA_ARG.PROFILE_SUMMARY_COLDSTART.value
-                                    ],
-                                    metrics[
-                                        RESERVED_METADATA_ARG.PROFILE_SUMMARY_AVERAGE.value
-                                    ],
-                                    metrics[
-                                        RESERVED_METADATA_ARG.PROFILE_SUMMARY_MIN.value
-                                    ],
-                                    metrics[
-                                        RESERVED_METADATA_ARG.PROFILE_SUMMARY_P10.value
-                                    ],
-                                    metrics[
-                                        RESERVED_METADATA_ARG.PROFILE_SUMMARY_P90.value
-                                    ],
-                                    metrics[
-                                        RESERVED_METADATA_ARG.PROFILE_SUMMARY_MAX.value
-                                    ],
-                                ]
-                            )
+            if (
+                not isinstance(element, OperatorGraph)
+                or element.graph_name != "forward"
+            ):
+                continue
+
+            for node in element.elements:
+                if isinstance(node, OperatorGraphWithStats):
+                    for node_with_stats in node.elements:
+                        extract_node_stats(node_with_stats)
+                else:
+                    extract_node_stats(node)
 
         return header_row + data_rows
 
@@ -615,7 +627,6 @@ class FXOperatorGraph(OperatorGraphWithStats):
                 raise Exception(f"Unsupported op type encountered {op}, {name}")
 
             nodes[name] = node
-
         return FXOperatorGraph._compose_op_graph(
             "base",
             nodes,
