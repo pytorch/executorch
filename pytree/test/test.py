@@ -17,6 +17,7 @@ from executorch.pytree import (
 
 # pyre-fixme[11]: Annotation `TreeSpec` is not defined as a type.
 def _spec(o: Any) -> TreeSpec:
+    # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
     _, spec = tree_flatten(o)
     return spec
 

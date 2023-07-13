@@ -562,8 +562,10 @@ def maketest(
                     expected = getattr(module.eager_module, method)(*inputs)
 
                 if do_tree_flatten:
+                    # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
                     flatten_inputs, inputs_spec = pytree.tree_flatten(*inputs)
                     executorch_result = executorch_module.forward([*flatten_inputs])
+                    # pyre-fixme[16]: Module `pytree` has no attribute `TreeSpec`.
                     executorch_result_unflatten = pytree.TreeSpec.from_str(
                         program.execution_plan[0].container_meta_type.encoded_out_str
                     ).tree_unflatten(executorch_result)

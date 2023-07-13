@@ -151,6 +151,7 @@ class BundledConfig:
         Returns:
             flatten_data: Flatten data with legal type.
         """
+        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         flatten_data, _ = tree_flatten(unflatten_data)
 
         for data in flatten_data:

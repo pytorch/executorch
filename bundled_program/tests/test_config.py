@@ -128,6 +128,7 @@ class TestConfig(unittest.TestCase):
 
                 model_outputs = eager_model(*ri)
                 if isinstance(model_outputs, get_args(DataContainer)):
+                    # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
                     flatten_eager_model_outputs = tree_flatten(model_outputs)
                 else:
                     flatten_eager_model_outputs = [

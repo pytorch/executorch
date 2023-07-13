@@ -45,6 +45,7 @@ class TestCustomOps(unittest.TestCase):
         # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `portable`.
         cls.module = _load_for_executorch_from_buffer(cls.flatbuff_without_stacktrace)
 
+        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         cls.inputs_flattened, _ = tree_flatten(inputs)
         cls.module.run_method("forward", tuple(cls.inputs_flattened))
         # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `portable`.

@@ -1258,6 +1258,7 @@ class _TopLevelEmitter(_Emitter):
             # pyre-fixme[16]: `TreeSpec` has no attribute `num_leaves`.
             dummy_leaves = [0] * spec.num_leaves
             tree = torch.utils._pytree.tree_unflatten(dummy_leaves, spec)
+            # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
             _, tree = ex_pytree.tree_flatten(tree)
             return tree.to_str()
 

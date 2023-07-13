@@ -86,6 +86,7 @@ class TestBackends(unittest.TestCase):
         # Test the model with executor
         # pyre-ignore
         executorch_module = _load_for_executorch_from_buffer(buffer)
+        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(sample_inputs)
 
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))

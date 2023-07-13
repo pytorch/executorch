@@ -33,6 +33,7 @@ def _emit_prim_getters(prim_getters: Dict[str, Any]) -> List[ExecutionPlan]:
     plans = []
     # flatten any structures
     for method, vals in prim_getters.items():
+        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         flattened_output, spec = ex_pytree.tree_flatten(vals)
         spec = spec.to_str()
         chain = Chain(
