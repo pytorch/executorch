@@ -1,4 +1,3 @@
-load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 # Construct the input and output file names. All input and output files rely on scalar_type file.
@@ -53,20 +52,20 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    export_file(
+    runtime.export_file(
         name = INPUT_PROGRAM,
         visibility = [
             "//executorch/exir/scripts/...",
             "//executorch/exir/serialize/...",
         ],
     )
-    export_file(
+    runtime.export_file(
         name = INPUT_BUNDLED,
         visibility = [
             "//executorch/bundled_program/serialize/...",
         ],
     )
-    export_file(
+    runtime.export_file(
         name = INPUT_SCALAR_TYPE,
         visibility = [
             "//executorch/bundled_program/serialize/...",
