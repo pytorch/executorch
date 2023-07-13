@@ -1,10 +1,10 @@
 #pragma once
 
 #include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/values/Evalue.h>
 #include <executorch/executor/MemoryManager.h>
 #include <executorch/executor/Program.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/compiler.h>
 
 // Forward declare flatbuffer types. This is a public header and must not

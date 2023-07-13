@@ -4,7 +4,7 @@
 #include <executorch/core/kernel_types/testing/TensorFactory.h>
 #include <executorch/core/kernel_types/testing/TensorUtil.h>
 #include <executorch/core/kernel_types/util/tensor_util.h>
-#include <executorch/core/values/Evalue.h>
+#include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/runtime.h>

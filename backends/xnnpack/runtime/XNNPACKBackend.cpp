@@ -1,7 +1,7 @@
 #include <executorch/backends/xnnpack/runtime/XNNCompiler.h>
-#include <executorch/core/values/Evalue.h>
 #include <executorch/runtime/backend/backend_registry.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/util/memory_utils.h>
 #include <memory>

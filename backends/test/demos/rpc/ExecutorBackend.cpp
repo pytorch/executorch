@@ -6,10 +6,10 @@
 #include <memory>
 
 #include <executorch/core/Constants.h>
-#include <executorch/core/values/Evalue.h>
 #include <executorch/executor/Executor.h>
 #include <executorch/runtime/backend/backend_registry.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/evalue.h>
 #include <executorch/util/embedded_data_loader.h>
 #include <executorch/util/util.h>
 

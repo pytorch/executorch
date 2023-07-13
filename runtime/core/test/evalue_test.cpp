@@ -2,7 +2,7 @@
 
 #include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/core/kernel_types/testing/TensorFactory.h>
-#include <executorch/core/values/Evalue.h>
+#include <executorch/runtime/core/evalue.h>
 #include <executorch/test/utils/DeathTest.h>
 
 using namespace ::testing;

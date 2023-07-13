@@ -62,3 +62,16 @@ def define_common_targets():
             "//executorch/runtime/core:memory_allocator",
         ],
     )
+
+    for aten_mode in (True, False):
+        aten_suffix = "_aten" if aten_mode else ""
+
+        runtime.cxx_test(
+            name = "evalue_test" + aten_suffix,
+            srcs = ["evalue_test.cpp"],
+            deps = [
+                "//executorch/core/kernel_types:kernel_types" + aten_suffix,
+                "//executorch/core/kernel_types/testing:tensor_util" + aten_suffix,
+                "//executorch/runtime/core:evalue" + aten_suffix,
+            ],
+        )

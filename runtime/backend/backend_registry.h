@@ -2,9 +2,9 @@
 
 #include <cstring>
 
-#include <executorch/core/values/Evalue.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>

@@ -46,3 +46,31 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
     )
+
+    for aten_mode in (True, False):
+        aten_suffix = ("_aten" if aten_mode else "")
+        runtime.cxx_library(
+            name = "evalue" + aten_suffix,
+            exported_headers = [
+                "evalue.h",
+            ],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:core",
+                "//executorch/core/kernel_types:kernel_types" + aten_suffix,
+                ":tag",
+            ],
+        )
+
+    runtime.cxx_library(
+        name = "tag",
+        exported_headers = [
+            "tag.h",
+        ],
+        visibility = [
+            "//executorch/...",
+        ],
+    )

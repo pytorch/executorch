@@ -3,9 +3,9 @@
 #include <executorch/backends/qnnpack/utils/utils.h>
 #include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
 #include <executorch/core/kernel_types/util/tensor_util.h>
-#include <executorch/core/values/Evalue.h>
 #include <executorch/runtime/backend/backend_registry.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/threadpool/threadpool.h>
 #include <executorch/util/memory_utils.h>

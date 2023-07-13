@@ -376,7 +376,7 @@ def executorch_generated_lib(
             deps = [
                 "//executorch/runtime/kernel:operator_registry",
                 "//executorch/core/prim_ops:prim_ops_registry" + aten_suffix,
-                "//executorch/core/values:executor_values" + aten_suffix,
+                "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/profiler:profiler",
                 "//executorch/codegen:macros",
             ] + deps,

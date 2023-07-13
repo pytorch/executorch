@@ -33,7 +33,7 @@ def define_common_targets():
             "//executorch/core/kernel_types:tensor_shape_dynamism",
             "//executorch/core/kernel_types/util:scalar_type_util",
             "//executorch/core/kernel_types/util:dim_order_util",
-            "//executorch/core/values:executor_tag",
+            "//executorch/runtime/core:tag",
         ],
     )
 
@@ -55,6 +55,6 @@ def define_common_targets():
         ],
         exported_deps = [
             "//executorch/runtime/core:core",
-            "//executorch/core/values:executor_tag",
+            "//executorch/runtime/core:tag",
         ],
     )

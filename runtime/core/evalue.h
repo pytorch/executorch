@@ -1,7 +1,7 @@
 #pragma once
 
 #include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/values/Tag.h>
+#include <executorch/runtime/core/tag.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace torch {

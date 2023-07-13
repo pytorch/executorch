@@ -82,7 +82,7 @@ def define_common_targets():
                 "//executorch/core/kernel_types/util:tensor_util" + aten_suffix,
                 "//executorch/core/kernel_types/util:dim_order_util",
                 "//executorch/core/kernel_types/util:scalar_type_util",
-                "//executorch/core/values:executor_values",
+                "//executorch/runtime/core:evalue",
                 "//executorch/runtime/core:memory_allocator",
                 "//executorch/core/kernel_types:kernel_types" + aten_suffix,
                 ":program",

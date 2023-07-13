@@ -7,7 +7,7 @@ def define_common_targets():
         deps = [
             "//executorch/core/kernel_types:kernel_types",
             "//executorch/core/kernel_types/testing:tensor_util",
-            "//executorch/core/values:executor_values",
+            "//executorch/runtime/core:evalue",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
     )

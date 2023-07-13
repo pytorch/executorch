@@ -19,7 +19,7 @@ def define_common_targets():
                 "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
             ],
             exported_deps = [
-                "//executorch/core/values:executor_values" + aten_suffix,
+                "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
             ],
         )
@@ -37,7 +37,7 @@ def define_common_targets():
             compiler_flags = ["-Wno-global-constructors"],
             deps = [
                 ":et_copy_index" + aten_suffix,
-                "//executorch/core/values:executor_values" + aten_suffix,
+                "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/runtime/kernel:operator_registry",
                 "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
             ],
