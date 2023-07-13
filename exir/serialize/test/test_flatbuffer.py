@@ -32,10 +32,10 @@ class TestResourceFiles(unittest.TestCase):
             files: Mapping of filename to contents.
         """
         with patch.object(
-            _flatbuffer.pkg_resources, "resource_string"
-        ) as mock_resource_string:
+            _flatbuffer.importlib.resources, "read_binary"
+        ) as mock_read_binary:
             # Use the fake resource files when looking up resources.
-            mock_resource_string.side_effect = lambda _, name: files[name]
+            mock_read_binary.side_effect = lambda _, name: files[name]
             return _ResourceFiles(tuple(files.keys()))
 
     def test_load_and_write(self) -> None:
@@ -105,10 +105,10 @@ class TestPrepareSchema(unittest.TestCase):
         of the schema files.
         """
         with patch.object(
-            _flatbuffer.pkg_resources, "resource_string"
-        ) as mock_resource_string:
+            _flatbuffer.importlib.resources, "read_binary"
+        ) as mock_read_binary:
             # Use the fake resource files when looking up resources.
-            mock_resource_string.side_effect = lambda _, name: schema_files[name]
+            mock_read_binary.side_effect = lambda _, name: schema_files[name]
             return _flatbuffer._prepare_schema(
                 out_dir=out_dir,
                 constant_tensor_alignment=constant_tensor_alignment,
