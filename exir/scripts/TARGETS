@@ -1,0 +1,37 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("//antlir/fbpkg:fbpkg.bzl", "fbpkg")
+
+python_binary(
+    name = "serialize",
+    srcs = [
+        "serialize.py",
+    ],
+    main_module = "executorch.exir.scripts.serialize",
+    deps = [
+        "//caffe2:torch",  # @manual
+        "//executorch/exir/serialize:lib",
+        "//executorch/exir/tests:lib",
+    ],
+)
+
+fbpkg.builder(
+    name = "executorch",
+    buck_opts = fbpkg.buck_opts(version = "v2"),
+    path_actions = {
+        "serialize_to_flatbuffer": "//executorch/exir/scripts:serialize",
+    },
+)
+
+python_library(
+    name = "lib",
+    srcs = [
+        "__init__.py",
+    ],
+    resources = {
+        "//executorch/schema:schema.fbs": "schema.fbs",
+    },
+    deps = [
+        "//libfb/py:fbpkg",
+    ],
+)

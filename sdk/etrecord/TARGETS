@@ -1,0 +1,13 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "etrecord",
+    srcs = [
+        "__init__.py",
+        "_etrecord.py",
+    ],
+    deps = [
+        "//executorch/exir:lib",
+        "//executorch/exir/serde:serialize",
+    ],
+)

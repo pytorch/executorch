@@ -1,0 +1,34 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+
+python_binary(
+    # @autodeps-skip
+    name = "torchnn_graph_on_tb",
+    main_src = "torchnn_graph_on_tb.py",
+    par_style = "xar",
+    deps = [
+        "//caffe2:torch_tensorboard",
+        "//pytorch/vision:torchvision",
+    ],
+)
+
+python_binary(
+    # @autodeps-skip
+    name = "hardcoded_graph_on_tb",
+    main_src = "hardcoded_graph_on_tb.py",
+    par_style = "xar",
+    deps = [
+        "//caffe2:torch_tensorboard",
+        "//pytorch/vision:torchvision",
+    ],
+)
+
+python_binary(
+    # @autodeps-skip
+    name = "edir_graph_on_tb",
+    main_src = "edir_graph_on_tb.py",
+    par_style = "xar",
+    deps = [
+        "//caffe2:torch_tensorboard",
+        "//pytorch/vision:torchvision",
+    ],
+)

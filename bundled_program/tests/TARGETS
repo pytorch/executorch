@@ -1,0 +1,64 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_library(
+    name = "lib",
+    srcs = [
+        "common.py",
+    ],
+    visibility = [],
+    deps = [
+        "fbsource//third-party/pypi/typing-extensions:typing-extensions",
+        "//caffe2:torch",
+        "//executorch/bundled_program:config",
+        "//executorch/exir:lib",
+        "//executorch/exir:schema",
+    ],
+)
+
+python_unittest(
+    name = "bundle_data",
+    srcs = [
+        "test_bundle_data.py",
+    ],
+    supports_static_listing = True,
+    deps = [
+        ":lib",
+        "//caffe2:torch",
+        "//executorch/bundled_program:config",
+        "//executorch/bundled_program:core",
+        "//executorch/bundled_program:schema",
+        "//executorch/exir/serialize:lib",
+    ],
+)
+
+python_unittest(
+    name = "serialize",
+    srcs = [
+        "test_serialize.py",
+    ],
+    supports_static_listing = True,
+    deps = [
+        ":lib",
+        "//executorch/bundled_program:core",
+        "//executorch/bundled_program/serialize:lib",
+        "//executorch/exir:print_program",
+    ],
+)
+
+python_unittest(
+    name = "config",
+    srcs = [
+        "test_config.py",
+    ],
+    supports_static_listing = True,
+    deps = [
+        ":lib",
+        "//caffe2:torch",
+        "//executorch/bundled_program:config",
+        "//executorch/bundled_program:schema",
+        "//executorch/pytree:pylib",
+    ],
+)

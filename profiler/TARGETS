@@ -1,0 +1,57 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load(":targets.bzl", "define_common_targets")
+
+define_common_targets()
+
+python_library(
+    name = "parse_profiler_library",
+    srcs = [
+        "parse_profiler_results.py",
+    ],
+    visibility = [
+        "fbcode//aibench/...",
+        "fbcode//on_device_ai/Assistant/Jarvis/...",
+        "fbsource//xplat/on_device_ai/Assistant/Jarvis/...",
+        "//executorch/exir:bento_deps",
+        "//executorch/profiler/test/...",
+        "//executorch/test/end2end/...",
+        "//pye/lib/...",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/prettytable:prettytable",
+        "//executorch/exir:schema",
+        "//executorch/exir/serialize:lib",
+    ],
+)
+
+python_library(
+    name = "profiler_results_scuba",
+    srcs = [
+        "profiler_results_scuba.py",
+    ],
+    deps = [
+        ":parse_profiler_library",
+        "//executorch/exir:schema",
+        "//executorch/exir/serialize:lib",
+        "//libfb/py:fburl",
+        "//libfb/py:scuba_url",
+        "//rfe/scubadata:scubadata_py3",
+    ],
+)
+
+python_binary(
+    name = "profiler_results_cli",
+    srcs = [
+        "profiler_results_cli.py",
+    ],
+    main_module = "executorch.profiler.profiler_results_cli",
+    deps = [
+        ":parse_profiler_library",
+        ":profiler_results_scuba",
+        "//executorch/exir/serialize:lib",
+    ],
+)

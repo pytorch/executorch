@@ -1,0 +1,47 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+python_unittest(
+    name = "test_xnnpack_qnnpack",
+    srcs = [
+        "test_xnnpack_qnnpack.py",
+    ],
+    preload_deps = [
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
+    supports_static_listing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends:backend_api",
+        "//executorch/backends/qnnpack:qnnpack_backend",
+        "//executorch/backends/qnnpack:qnnpack_preprocess",
+        "//executorch/backends/qnnpack/partition:qnnpack_partitioner",
+        "//executorch/backends/xnnpack:xnnpack_backend",
+        "//executorch/backends/xnnpack:xnnpack_preprocess",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/exir:lib",
+        "//executorch/exir/passes:spec_prop_pass",
+        "//executorch/pybindings:portable",  # @manual
+        "//executorch/pytree:pylib",
+    ],
+)
+
+python_unittest(
+    name = "test_delegate_aten_mode",
+    srcs = [
+        "test_delegate_aten_mode.py",
+    ],
+    preload_deps = [
+        "//executorch/kernels/portable:custom_ops_generated_lib_aten",
+    ],
+    supports_static_listing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends:backend_api",
+        "//executorch/backends:compile_spec_schema",
+        "//executorch/backends/test:backend_with_compiler_demo",
+        "//executorch/exir:lib",
+        "//executorch/pybindings:aten_mode_lib",  # @manual
+        "//executorch/pytree:pylib",
+    ],
+)

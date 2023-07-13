@@ -1,0 +1,27 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    # @autodeps-skip
+    # autodeps has a real hard time tracking the owner of the pybindings
+    # from portable and the suggested fixes I could find didnt work, so
+    # just disabling for now
+    name = "test",
+    srcs = [
+        "test.py",
+    ],
+    supports_static_listing = True,
+    deps = [
+        "//caffe2:torch",
+        "//caffe2:torch_fx",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir:scalar_type",
+        "//executorch/exir/emit:lib",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/serialize:lib",
+        "//executorch/pybindings:portable",
+        "//executorch/runtime/core:core",
+    ],
+)
