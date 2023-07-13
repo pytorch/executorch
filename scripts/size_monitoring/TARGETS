@@ -1,0 +1,39 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "gcc_linker_map_parse",
+    srcs = [
+        "gcc_linker_map_parse.py",
+    ],
+)
+
+python_library(
+    name = "clang_linker_map_parse",
+    srcs = [
+        "clang_linker_map_parse.py",
+    ],
+)
+
+python_library(
+    name = "build_utils",
+    srcs = [
+        "build_utils.py",
+    ],
+)
+
+python_binary(
+    name = "etsize",
+    srcs = [
+        "etsize.py",
+    ],
+    main_module = "executorch.scripts.size_monitoring.etsize",
+    deps = [
+        ":build_utils",
+        ":clang_linker_map_parse",
+        ":gcc_linker_map_parse",
+        "//libfb/py:fburl",
+        "//libfb/py:scuba_url",
+        "//rfe/scubadata:scubadata_py3",
+    ],
+)

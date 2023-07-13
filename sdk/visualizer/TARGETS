@@ -1,0 +1,53 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    # @autodeps-skip
+    name = "writer",
+    srcs = [
+        "writer.py",
+    ],
+)
+
+python_library(
+    # @autodeps-skip
+    name = "converter",
+    srcs = [
+        "converter.py",
+    ],
+    deps = [
+        "//caffe2:torch_tensorboard",
+        "//executorch/sdk/edir:et_schema",
+    ],
+)
+
+python_library(
+    # @autodeps-skip
+    name = "generator",
+    srcs = [
+        "generator.py",
+    ],
+    deps = [
+        ":converter",
+        ":utils",
+        ":writer",
+        "//manifold/clients/python:manifold_client",
+    ],
+)
+
+python_binary(
+    name = "example_runner",
+    main_src = "example_runner.py",
+    par_style = "xar",
+    deps = [
+        ":generator",
+        "//executorch/sdk/edir/tests:exported_op_graph_test_library",
+    ],
+)
+
+python_library(
+    name = "utils",
+    srcs = [
+        "utils.py",
+    ],
+)

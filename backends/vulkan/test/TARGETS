@@ -1,0 +1,23 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+python_unittest(
+    name = "test_vulkan_delegate",
+    srcs = [
+        "test_vulkan_delegate.py",
+    ],
+    preload_deps = [
+        "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
+        "//executorch/backends/vulkan:vulkan_backend_lib",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends:backend_api",
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/executor/test:test_backend_compiler_lib",
+        "//executorch/exir:lib",
+        "//executorch/exir/serialize:lib",
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/pybindings:portable",  # @manual
+        "//executorch/pytree:pylib",
+    ],
+)
