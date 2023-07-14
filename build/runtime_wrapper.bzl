@@ -384,21 +384,6 @@ def _patch_kwargs_common(kwargs):
         if "exported_external_deps" in kwargs:
             kwargs.pop("exported_external_deps")
 
-    # Append repo-specific preprocessor_flags.
-    for pp_type in ("preprocessor_flags", "exported_preprocessor_flags"):
-        if is_xplat():
-            extra_pp_flags = kwargs.pop("xplat_" + pp_type, [])
-            kwargs.pop("fbcode_" + pp_type, None)  # Also remove the other one.
-        elif is_fbcode():
-            extra_pp_flags = kwargs.pop("fbcode_" + pp_type, [])
-            kwargs.pop("xplat_" + pp_type, None)  # Also remove the other one.
-        else:
-            extra_pp_flags = []  # Silence a not-initialized warning.
-            _fail_unknown_environment()
-        if extra_pp_flags:
-            # This should work even with select() elements.
-            kwargs[pp_type] = kwargs.get(pp_type, []) + extra_pp_flags
-
     # Append repo-specific deps.
     for dep_type in ("deps", "exported_deps"):
         if is_xplat():
