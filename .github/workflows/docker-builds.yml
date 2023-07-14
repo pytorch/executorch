@@ -30,7 +30,7 @@ jobs:
         include:
           - docker-image-name: executorch-ubuntu-22.04-clang12
     env:
-      DOCKER_IMAGE_BASE: 308535385114.dkr.ecr.us-east-1.amazonaws.com/pytorch/${{ matrix.docker-image-name }}
+      DOCKER_IMAGE_BASE: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/${{ matrix.docker-image-name }}
     steps:
       - name: Clean workspace
         shell: bash
