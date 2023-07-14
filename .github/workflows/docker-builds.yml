@@ -39,6 +39,11 @@ jobs:
           sudo rm -rf "${GITHUB_WORKSPACE}"
           mkdir "${GITHUB_WORKSPACE}"
 
+      - name: Setup SSH (Click me for login details)
+        uses: pytorch/test-infra/.github/actions/setup-ssh@main
+        with:
+          github-secret: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Checkout Executorch
         uses: actions/checkout@v3
 
@@ -52,4 +57,4 @@ jobs:
         env:
           DOCKER_IMAGE_NAME: ${{ matrix.docker-image-name }}
         run: |
-          .ci/docker/build.sh
+          .ci/docker/build.sh "${DOCKER_IMAGE_NAME}"
