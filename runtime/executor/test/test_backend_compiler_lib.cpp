@@ -118,7 +118,7 @@ class BackendWithCompiler final : public PyTorchBackendInterface {
 
     parse_delegate(instruction_number_end + 1, kSignLiteral, op_list->ops);
 
-    // Can't call `processed->Free()` becuase op_list points into it.
+    // Can't call `processed->Free()` because op_list points into it.
 
     return op_list;
   }

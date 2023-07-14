@@ -2,7 +2,7 @@
 #include <vector>
 
 #include <executorch/core/Constants.h>
-#include <executorch/executor/Executor.h>
+#include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/embedded_data_loader.h>

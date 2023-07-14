@@ -33,7 +33,7 @@ void test_ones_out(std::vector<int32_t>&& size_int32_t) {
 }
 
 #define GENERATE_TEST(_, DTYPE)                  \
-  TEST(op_ones_test, DTYPE##Tensors) {           \
+  TEST(OpOnesOutKernelTest, DTYPE##Tensors) {    \
     test_ones_out<ScalarType::DTYPE>({});        \
     test_ones_out<ScalarType::DTYPE>({1});       \
     test_ones_out<ScalarType::DTYPE>({1, 1, 1}); \

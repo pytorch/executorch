@@ -24,10 +24,10 @@
 #include <tuple>
 
 #include <executorch/core/Constants.h>
-#include <executorch/executor/Executor.h>
-#include <executorch/executor/test/ManagedMemoryManager.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/embedded_data_loader.h>

@@ -1,12 +1,10 @@
 #pragma once
 
 #include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/executor/Executor.h>
-#include <executorch/executor/Program.h>
-#include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/memory_allocator.h>
-#include <executorch/runtime/core/result.h>
+#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/program.h>
 #include <executorch/schema/schema_generated.h>
 
 namespace torch {

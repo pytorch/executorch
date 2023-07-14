@@ -13,7 +13,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "test_backend_compiler_lib" + aten_suffix,
             srcs = [
-                "TestBackendCompilerLib.cpp",
+                "test_backend_compiler_lib.cpp",
             ],
             visibility = [
                 "//executorch/backends/...",
@@ -35,7 +35,7 @@ def define_common_targets():
     runtime.cxx_test(
         name = "executor_test",
         srcs = [
-            "ExecutorTest.cpp",
+            "executor_test.cpp",
         ],
         deps = [
             "//executorch/core/kernel_types:kernel_types",
@@ -43,7 +43,7 @@ def define_common_targets():
             "//executorch/runtime/core:core",
             "//executorch/runtime/platform:platform",
             "//executorch/runtime/kernel:operator_registry",
-            "//executorch/executor:executor",
+            "//executorch/runtime/executor:executor",
             "//executorch/kernels/portable:generated_lib",
             "//executorch/runtime/kernel:kernel_runtime_context",
             "//executorch/pytree:pytree",
@@ -56,16 +56,16 @@ def define_common_targets():
         name = "managed_memory_manager",
         srcs = [],
         exported_headers = [
-            "ManagedMemoryManager.h",
+            "managed_memory_manager.h",
         ],
         visibility = [
-            "//executorch/executor/test/...",
+            "//executorch/runtime/executor/test/...",
             "//executorch/test/...",
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
             "//executorch/runtime/core:memory_allocator",
-            "//executorch/executor:memory_manager",
+            "//executorch/runtime/executor:memory_manager",
         ],
     )
 
@@ -84,11 +84,11 @@ def define_common_targets():
         runtime.cxx_test(
             name = "allocation_failure_stress_test",
             srcs = [
-                "AllocationFailureStressTest.cpp",
+                "allocation_failure_stress_test.cpp",
             ],
             deps = [
                 ":managed_memory_manager",
-                "//executorch/executor:executor",
+                "//executorch/runtime/executor:executor",
                 "//executorch/kernels/portable:generated_lib",
                 "//executorch/util:file_data_loader",
                 "//executorch/util:util",
@@ -99,11 +99,11 @@ def define_common_targets():
         runtime.cxx_test(
             name = "execution_plan_test",
             srcs = [
-                "ExecutionPlanTest.cpp",
+                "execution_plan_test.cpp",
             ],
             deps = [
                 ":managed_memory_manager",
-                "//executorch/executor:executor",
+                "//executorch/runtime/executor:executor",
                 "//executorch/util:util",
                 "//executorch/util:file_data_loader",
                 "//executorch/kernels/portable:generated_lib",
@@ -114,10 +114,10 @@ def define_common_targets():
         runtime.cxx_test(
             name = "program_test",
             srcs = [
-                "ProgramTest.cpp",
+                "program_test.cpp",
             ],
             deps = [
-                "//executorch/executor:program",
+                "//executorch/runtime/executor:program",
                 "//executorch/util:embedded_data_loader",
                 "//executorch/util:file_data_loader",
             ],
@@ -127,11 +127,11 @@ def define_common_targets():
         runtime.cxx_test(
             name = "kernel_resolution_test",
             srcs = [
-                "KernelResolutionTest.cpp",
+                "kernel_resolution_test.cpp",
             ],
             deps = [
                 ":managed_memory_manager",
-                "//executorch/executor:executor",
+                "//executorch/runtime/executor:executor",
                 "//executorch/util:util",
                 "//executorch/util:file_data_loader",
             ],
@@ -141,12 +141,12 @@ def define_common_targets():
         runtime.cxx_test(
             name = "backend_integration_test",
             srcs = [
-                "BackendIntegrationTest.cpp",
+                "backend_integration_test.cpp",
             ],
             deps = [
                 ":managed_memory_manager",
                 "//executorch/runtime/backend:backend_registry",
-                "//executorch/executor:executor",
+                "//executorch/runtime/executor:executor",
                 "//executorch/util:embedded_data_loader",
                 "//executorch/util:file_data_loader",
                 "//executorch/util:util",

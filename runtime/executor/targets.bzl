@@ -31,7 +31,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "memory_manager",
         exported_headers = [
-            "MemoryManager.h",
+            "memory_manager.h",
         ],
         exported_deps = [
             "//executorch/runtime/core:core",
@@ -45,8 +45,8 @@ def define_common_targets():
 
     runtime.cxx_library(
         name = "program",
-        srcs = ["Program.cpp"],
-        exported_headers = ["Program.h"],
+        srcs = ["program.cpp"],
+        exported_headers = ["program.h"],
         deps = [
             "//executorch/runtime/platform:platform",
             "//executorch/schema:extended_header",
@@ -55,7 +55,7 @@ def define_common_targets():
         ],
         preprocessor_flags = _program_preprocessor_flags(),
         exported_deps = ["//executorch/runtime/core:core"],
-        visibility = ["//executorch/executor/...", "@EXECUTORCH_CLIENTS"],
+        visibility = ["//executorch/runtime/executor/...", "@EXECUTORCH_CLIENTS"],
     )
 
     for aten_mode in (True, False):
@@ -64,7 +64,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = "executor" + aten_suffix,
             srcs = [
-                "Executor.cpp",
+                "executor.cpp",
                 "tensor_parser{}.cpp".format(aten_suffix),
             ],
             deps = [
@@ -89,14 +89,14 @@ def define_common_targets():
                 ":memory_manager",
             ],
             exported_headers = [
-                "Executor.h",
+                "executor.h",
             ],
             headers = [
                 "tensor_parser.h",
             ],
             visibility = [
                 "//executorch/backends/test/...",
-                "//executorch/executor/test/...",
+                "//executorch/runtime/executor/test/...",
                 "//executorch/pybindings/...",
                 "//executorch/test/...",
                 "//executorch/util/...",

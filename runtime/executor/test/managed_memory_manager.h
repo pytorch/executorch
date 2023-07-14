@@ -5,9 +5,9 @@
 #include <memory>
 #include <vector>
 
-#include <executorch/executor/MemoryManager.h>
 #include <executorch/runtime/core/hierarchical_allocator.h>
 #include <executorch/runtime/core/memory_allocator.h>
+#include <executorch/runtime/executor/memory_manager.h>
 
 namespace torch {
 namespace executor {

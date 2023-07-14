@@ -95,9 +95,9 @@ def define_common_targets():
         visibility = [
             # Lock this down as tightly as possible to ensure that flatbuffers
             # are an implementation detail. Ideally this list would only include
-            # //executorch/executor/...
+            # //executorch/runtime/executor/...
             "//executorch/pybindings/...",
-            "//executorch/executor/...",
+            "//executorch/runtime/executor/...",
             "//executorch/util/...",  # bundled_program_verification
         ],
         exported_headers = {
@@ -134,7 +134,7 @@ def define_common_targets():
             "extended_header.h",
         ],
         visibility = [
-            "//executorch/executor/...",
+            "//executorch/runtime/executor/...",
             "//executorch/schema/test/...",
         ],
         exported_deps = [

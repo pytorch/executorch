@@ -31,7 +31,7 @@ executorch_pybindings(
     ],
     cppdeps = [
         "//executorch/runtime/kernel:operator_registry",
-        "//executorch/executor:executor_aten",
+        "//executorch/runtime/executor:executor_aten",
         "//executorch/core/kernel_types:kernel_types",
         "//executorch/schema:bundled_program_schema",
         "//executorch/schema:schema",
@@ -41,7 +41,7 @@ executorch_pybindings(
         "//executorch/util:test_memory_config",
         "//executorch/util:bundled_program_verification_aten",
         "//caffe2:torch-cpp",
-        "//executorch/executor/test:test_backend_compiler_lib_aten",
+        "//executorch/runtime/executor/test:test_backend_compiler_lib_aten",
     ] + MODELS_ALL_OPS_ATEN_MODE_GENERATED_LIB,
     python_module_name = "aten_mode_lib",
     visibility = ["PUBLIC"],

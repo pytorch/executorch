@@ -19,7 +19,7 @@ MODULE_DEPS = [
     "//caffe2:torch",
     "//caffe2:torch_extension",
     "//executorch/runtime/kernel:operator_registry",
-    "//executorch/executor:executor",
+    "//executorch/runtime/executor:executor",
     "//executorch/schema:bundled_program_schema",
     "//executorch/schema:schema",
     "//executorch/util:aten_bridge",
@@ -28,7 +28,7 @@ MODULE_DEPS = [
     "//executorch/util:mmap_data_loader",
     "//executorch/util:test_memory_config",
     "//executorch/util:util",
-    "//executorch/executor/test:test_backend_compiler_lib",
+    "//executorch/runtime/executor/test:test_backend_compiler_lib",
 ] + get_all_cpu_backend_targets()
 
 # Generated lib for all ATen ops with aten kernel used by models in model inventory

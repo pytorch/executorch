@@ -1,7 +1,7 @@
 #include <gflags/gflags.h>
 
 #include <executorch/core/Constants.h>
-#include <executorch/executor/Executor.h>
+#include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>

@@ -96,7 +96,6 @@ python_unittest(
         "//executorch/backends:backend_api",
         "//executorch/backends:compile_spec_schema",
         "//executorch/backends:partitioner",
-        "//executorch/executor/test:test_backend_compiler_lib",
         "//executorch/exir:delegate",
         "//executorch/exir:graph_module",
         "//executorch/exir:lib",
@@ -106,6 +105,7 @@ python_unittest(
         "//executorch/kernels/quantized:custom_ops_generated_lib",
         "//executorch/pybindings:portable",  # @manual
         "//executorch/pytree:pylib",
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )
 
@@ -141,12 +141,12 @@ python_unittest(
         "//executorch/backends:compile_spec_schema",
         "//executorch/backends:partitioner",
         "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
-        "//executorch/executor/test:test_backend_compiler_lib",
         "//executorch/exir:delegate",
         "//executorch/exir:graph_module",
         "//executorch/exir:lib",
         "//executorch/kernels/portable:custom_ops_generated_lib",
         "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )
 
@@ -161,9 +161,9 @@ python_unittest(
         "//executorch/backends:backend_api",
         "//executorch/backends:partitioner",
         "//executorch/backends:utils",
-        "//executorch/executor/test:test_backend_compiler_lib",
         "//executorch/exir:lib",
         "//executorch/exir/dialects:lib",
         "//executorch/pybindings:portable",  # @manual
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )

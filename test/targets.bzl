@@ -11,7 +11,7 @@ SIZE_TEST_SOURCES = [
 ]
 
 SIZE_TEST_DEPS = [
-    "//executorch/executor:executor",
+    "//executorch/runtime/executor:executor",
     "//executorch/util:file_data_loader",
     "//executorch/util:util",
 ]
@@ -30,8 +30,8 @@ def define_common_targets():
             name = "executor_runner" + aten_suffix,
             srcs = ["executor_runner.cpp"],
             deps = [
-                "//executorch/executor/test:test_backend_compiler_lib" + aten_suffix,
-                "//executorch/executor:executor" + aten_suffix,
+                "//executorch/runtime/executor/test:test_backend_compiler_lib" + aten_suffix,
+                "//executorch/runtime/executor:executor" + aten_suffix,
                 "//executorch/sdk/etdump:etdump",
                 "//executorch/util:bundled_program_verification" + aten_suffix,
                 "//executorch/util:embedded_data_loader",
@@ -92,8 +92,8 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/core:core",
             "//executorch/kernels/portable:generated_lib_all_ops",
-            "//executorch/executor:executor",
-            "//executorch/executor/test:managed_memory_manager",
+            "//executorch/runtime/executor:executor",
+            "//executorch/runtime/executor/test:managed_memory_manager",
             "//executorch/util:embedded_data_loader",
             "//executorch/util:read_file",
             "//executorch/util:util",
@@ -112,7 +112,7 @@ def define_common_targets():
         srcs = ["relocatable_runner.cpp"],
         deps = [
             "//executorch/kernels/portable:generated_lib_all_ops",
-            "//executorch/executor:executor",
+            "//executorch/runtime/executor:executor",
             "//executorch/configurations:executor_cpu_optimized",
             "//executorch/util:embedded_data_loader",
             "//executorch/util:read_file",

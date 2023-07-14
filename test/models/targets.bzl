@@ -142,7 +142,7 @@ def define_common_targets():
         },
         default_outs = ["."],
         visibility = [
-            "//executorch/executor/test/...",
+            "//executorch/runtime/executor/test/...",
             "//executorch/test/...",
         ],
     )

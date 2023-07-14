@@ -1,7 +1,7 @@
 #pragma once
 
 #include <executorch/core/Constants.h>
-#include <executorch/executor/MemoryManager.h>
+#include <executorch/runtime/executor/memory_manager.h>
 #include <memory>
 
 // mimic a typical memory pool pre-allocation in an embedded system.

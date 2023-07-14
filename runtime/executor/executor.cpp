@@ -1,4 +1,4 @@
-#include <executorch/executor/Executor.h>
+#include <executorch/runtime/executor/executor.h>
 
 #include <cinttypes>
 #include <cstdint>
@@ -7,11 +7,11 @@
 #include <executorch/core/kernel_types/util/DimOrderUtils.h>
 #include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
 #include <executorch/core/kernel_types/util/tensor_util.h>
-#include <executorch/executor/MemoryManager.h>
-#include <executorch/executor/Program.h>
-#include <executorch/executor/tensor_parser.h>
 #include <executorch/runtime/backend/backend_registry.h>
 #include <executorch/runtime/core/span.h>
+#include <executorch/runtime/executor/memory_manager.h>
+#include <executorch/runtime/executor/program.h>
+#include <executorch/runtime/executor/tensor_parser.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/assert.h>

@@ -128,7 +128,7 @@ In our Executorch binary target, add `add_lib` as a dependency:
 cxx_binary(
   name = "executorch_bin",
   deps = [
-    "//executorch/executor:executor", # Executor
+    "//executorch/runtime/executor:executor", # Executor
     "//path/to:add_lib", # operator library
   ],
 )

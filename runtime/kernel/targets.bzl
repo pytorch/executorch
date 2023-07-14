@@ -33,7 +33,7 @@ def define_common_targets():
                 "//executorch/core/prim_ops/...",  # Contains kernels
                 "//executorch/runtime/kernel/...",
                 "//executorch/kernels/...",
-                "//executorch/executor/...",
+                "//executorch/runtime/executor/...",
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [

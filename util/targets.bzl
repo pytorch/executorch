@@ -67,7 +67,7 @@ def define_common_targets():
         exported_headers = ["embedded_data_loader.h"],
         visibility = [
             "//executorch/backends/test/...",
-            "//executorch/executor/test/...",
+            "//executorch/runtime/executor/test/...",
             "//executorch/pybindings/...",
             "//executorch/test/...",
             "@EXECUTORCH_CLIENTS",
@@ -95,7 +95,7 @@ def define_common_targets():
         exported_headers = ["file_data_loader.h"],
         visibility = [
             "//executorch/test/...",
-            "//executorch/executor/test/...",
+            "//executorch/runtime/executor/test/...",
             "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = [
@@ -110,7 +110,7 @@ def define_common_targets():
         visibility = [
             "//executorch/test/...",
             "//executorch/pybindings/...",
-            "//executorch/executor/test/...",
+            "//executorch/runtime/executor/test/...",
             "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = [
@@ -205,7 +205,7 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/core/kernel_types/testing:tensor_util" + aten_suffix,
-                "//executorch/executor:executor" + aten_suffix,
+                "//executorch/runtime/executor:executor" + aten_suffix,
                 "//executorch/core/kernel_types/util:dim_order_util" + aten_suffix,
                 "//executorch/schema:schema",
                 "//executorch/schema:bundled_program_schema",
@@ -221,6 +221,6 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             deps = [
-                "//executorch/executor:executor" + aten_suffix,
+                "//executorch/runtime/executor:executor" + aten_suffix,
             ],
         )

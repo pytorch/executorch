@@ -13,11 +13,11 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/backends:backend_api",
         "//executorch/backends/vulkan:vulkan_preprocess",
-        "//executorch/executor/test:test_backend_compiler_lib",
         "//executorch/exir:lib",
         "//executorch/exir/serialize:lib",
         "//executorch/kernels/portable:custom_ops_generated_lib",
         "//executorch/pybindings:portable",  # @manual
         "//executorch/pytree:pylib",
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )

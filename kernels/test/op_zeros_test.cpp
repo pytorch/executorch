@@ -32,7 +32,7 @@ void test_zeros_out(std::vector<int32_t>&& size_int32_t) {
 }
 
 #define GENERATE_TEST(_, DTYPE)                   \
-  TEST(op_zeros_test, DTYPE##Tensors) {           \
+  TEST(OpZerosOutKernelTest, DTYPE##Tensors) {    \
     test_zeros_out<ScalarType::DTYPE>({2, 3, 4}); \
     test_zeros_out<ScalarType::DTYPE>({2, 0, 4}); \
     test_zeros_out<ScalarType::DTYPE>({});        \
