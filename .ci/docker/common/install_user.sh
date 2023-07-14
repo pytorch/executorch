@@ -16,4 +16,4 @@ chown ci-user:ci-user /var/lib/ci-user
 echo 'ci-user ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ci-user
 
 # Test that sudo works
-$SUDO -u ci-user $SUDO -v
+sudo -u ci-user sudo -v

@@ -11,6 +11,7 @@ COPY ./common/install_base.sh install_base.sh
 RUN bash ./install_base.sh && rm install_base.sh
 
 # Install clang
+ARG CLANG_VERSION
 COPY ./common/install_clang.sh install_clang.sh
 RUN bash ./install_clang.sh && rm install_clang.sh
 

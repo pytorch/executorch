@@ -16,10 +16,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
   cancel-in-progress: true
 
-env:
-  ALPINE_IMAGE: 308535385114.dkr.ecr.us-east-1.amazonaws.com/tool/alpine
-  AWS_DEFAULT_REGION: us-east-1
-
 jobs:
   docker-build:
     runs-on: [self-hosted, linux.2xlarge]
@@ -30,7 +26,7 @@ jobs:
         include:
           - docker-image-name: executorch-ubuntu-22.04-clang12
     env:
-      DOCKER_IMAGE_BASE: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/${{ matrix.docker-image-name }}
+      DOCKER_IMAGE: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/${{ matrix.docker-image-name }}
     steps:
       - name: Clean workspace
         shell: bash
@@ -50,14 +46,12 @@ jobs:
       - name: Setup Linux
         uses: pytorch/test-infra/.github/actions/setup-linux@main
 
-      # TODO: Move calculate Docker image to test-infra as a shareable GHA
       - name: Build docker image
         id: build-docker-image
         shell: bash
-        env:
-          DOCKER_IMAGE_NAME: ${{ matrix.docker-image-name }}
+        working-directory: .ci/docker
         run: |
-          # DEBUG
-          sleep 300
-
-          .ci/docker/build.sh "${DOCKER_IMAGE_NAME}"
+          # TODO: Move calculate Docker image to test-infra as a shareable GHA
+          # and use that here instead.
+          DOCKER_TAG=$(git rev-parse HEAD:./)
+          ./build.sh "${DOCKER_IMAGE_NAME}" -t "${DOCKER_IMAGE}:${DOCKER_TAG}"
