@@ -54,4 +54,4 @@ jobs:
           # TODO: Move calculate Docker image to test-infra as a shareable GHA
           # and use that here instead.
           DOCKER_TAG=$(git rev-parse HEAD:./)
-          ./build.sh "${DOCKER_IMAGE_NAME}" -t "${DOCKER_IMAGE}:${DOCKER_TAG}"
+          ./build.sh -t "${DOCKER_IMAGE}:${DOCKER_TAG}"
