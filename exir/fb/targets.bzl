@@ -1,7 +1,7 @@
 load("//bento:buck_macros.bzl", "bento_kernel")
 
 executorch_bento_kernels_base_deps = [
-    "//executorch/exir:bento_deps",
+    "//executorch/exir/fb:bento_deps",
     "//pye/lib:eager_model_base",
 ]
 

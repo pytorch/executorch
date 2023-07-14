@@ -147,23 +147,6 @@ python_library(
     ],
 )
 
-# Please don't add "//executorch/pybindings:portable" here, runtime lib should be added separately.
-python_library(
-    name = "bento_deps",
-    deps = [
-        ":lib",
-        "//aibench/api:aibench_api",
-        "//executorch/backends:backend_lib",
-        "//executorch/backends/test:example_backends",
-        "//executorch/bundled_program:core",
-        "//executorch/exir/scripts:lib",
-        "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
-        "//executorch/profiler:parse_profiler_library",
-        "//executorch/sdk:lib",
-    ],
-)
-
 python_library(
     name = "memory_planning",
     srcs = [

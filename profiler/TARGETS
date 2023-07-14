@@ -12,15 +12,7 @@ python_library(
     srcs = [
         "parse_profiler_results.py",
     ],
-    visibility = [
-        "fbcode//aibench/...",
-        "fbcode//on_device_ai/Assistant/Jarvis/...",
-        "fbsource//xplat/on_device_ai/Assistant/Jarvis/...",
-        "//executorch/exir:bento_deps",
-        "//executorch/profiler/test/...",
-        "//executorch/test/end2end/...",
-        "//pye/lib/...",
-    ],
+    visibility = ["PUBLIC"],
     deps = [
         "fbsource//third-party/pypi/prettytable:prettytable",
         "//executorch/exir:schema",
