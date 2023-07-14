@@ -57,4 +57,7 @@ jobs:
         env:
           DOCKER_IMAGE_NAME: ${{ matrix.docker-image-name }}
         run: |
+          # DEBUG
+          sleep 300
+
           .ci/docker/build.sh "${DOCKER_IMAGE_NAME}"
