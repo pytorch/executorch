@@ -1,7 +1,6 @@
 #include <memory>
 #include <vector>
 
-#include <executorch/core/Constants.h>
 #include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -29,12 +28,12 @@ using namespace torch::executor;
  * This tool demonstrates that the memory can be managed this way.
  */
 
-static constexpr size_t kRuntimeMemorySize = 2 * kMB;
+static constexpr size_t kRuntimeMemorySize = 2 * 1024U * 1024U; // 2MB
 static uint8_t runtime_pool[kRuntimeMemorySize];
 
 // This is to emulate the local memory that a particular instance of hardware
 // own and shared across different model instances
-static constexpr size_t kNonConstantMemorySize = 10 * kMB;
+static constexpr size_t kNonConstantMemorySize = 10 * 1024U * 1024U; // 10MB
 static uint8_t shared_local_non_constant_pool[kNonConstantMemorySize];
 
 #define MAX_INPUTS_PER_MODEL 16
@@ -247,7 +246,7 @@ int main(int argc, char** argv) {
    * Step 2: Prepare the memory space required for worker core
    */
   // The actual allocation size can be backend/model specific and smaller
-  constexpr size_t kWorkerBufferSize = 1 * kMB;
+  constexpr size_t kWorkerBufferSize = 1 * 1024U * 1024U; // 1 MB
   auto worker_buffer = std::make_unique<uint8_t[]>(kWorkerBufferSize);
   MemoryAllocator worker_allocator(kWorkerBufferSize, worker_buffer.get());
 

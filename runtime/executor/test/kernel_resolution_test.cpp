@@ -4,7 +4,6 @@
 #include <cstring>
 #include <memory>
 
-#include <executorch/core/Constants.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/executor.h>
@@ -24,7 +23,6 @@ using torch::executor::Executor;
 using torch::executor::Kernel;
 using torch::executor::KernelKey;
 using torch::executor::KernelRuntimeContext;
-using torch::executor::kKB;
 using torch::executor::Program;
 using torch::executor::register_kernels;
 using torch::executor::Result;
@@ -34,8 +32,8 @@ using torch::executor::TensorMeta;
 using torch::executor::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
-constexpr size_t kDefaultNonConstMemBytes = 32 * kKB;
-constexpr size_t kDefaultRuntimeMemBytes = 32 * kKB;
+constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
+constexpr size_t kDefaultRuntimeMemBytes = 32 * 1024U;
 
 class KernelResolutionTest : public ::testing::Test {
  protected:

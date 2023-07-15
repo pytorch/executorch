@@ -5,7 +5,6 @@
 #include <cstdlib> /* strtol */
 #include <memory>
 
-#include <executorch/core/Constants.h>
 #include <executorch/runtime/backend/backend_registry.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -88,7 +87,7 @@ class ExecutorBackend final : public PyTorchBackendInterface {
     // dedicated to this specific hardware
     auto client_runtime_allocator = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
         runtime_allocator, MemoryAllocator);
-    const size_t kClientRuntimeMemorySize = 4 * kKB;
+    const size_t kClientRuntimeMemorySize = 4 * 1024U;
     auto runtime_pool = ET_ALLOCATE_OR_RETURN_ERROR(
         runtime_allocator, kClientRuntimeMemorySize);
     new (client_runtime_allocator) MemoryAllocator(

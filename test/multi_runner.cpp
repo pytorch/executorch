@@ -23,7 +23,6 @@
 #include <thread>
 #include <tuple>
 
-#include <executorch/core/Constants.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/executor.h>
@@ -56,7 +55,6 @@ using torch::executor::DataLoader;
 using torch::executor::Error;
 using torch::executor::Executor;
 using torch::executor::FreeableBuffer;
-using torch::executor::kMB;
 using torch::executor::MemoryAllocator;
 using torch::executor::MemoryManager;
 using torch::executor::Program;
@@ -141,8 +139,8 @@ class ModelFactory {
       const std::string& name, // For debugging
       std::shared_ptr<const char> model_data,
       size_t model_data_size,
-      size_t non_const_mem_bytes = 40 * kMB,
-      size_t runtime_mem_bytes = 2 * kMB)
+      size_t non_const_mem_bytes = 40 * 1024U * 1024U, // 40 MB
+      size_t runtime_mem_bytes = 2 * 1024U * 1024U) // 2 MB
       : name_(name),
         model_data_(model_data),
         model_data_size_(model_data_size),

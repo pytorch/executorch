@@ -1,4 +1,3 @@
-#include <executorch/core/Constants.h>
 #include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>

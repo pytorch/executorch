@@ -1,6 +1,5 @@
 #include <gflags/gflags.h>
 
-#include <executorch/core/Constants.h>
 #include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
@@ -32,9 +31,9 @@
 
 using namespace torch::executor;
 
-static constexpr size_t kRuntimeMemorySize = 4 * kMB;
+static constexpr size_t kRuntimeMemorySize = 4 * 1024U * 1024U; // 4 MB
 static uint8_t runtime_pool[kRuntimeMemorySize];
-static constexpr size_t kBundledAllocatorPoolSize = 16 * kKB;
+static constexpr size_t kBundledAllocatorPoolSize = 16 * 1024U;
 static uint8_t bundled_allocator_pool[kBundledAllocatorPoolSize];
 
 DEFINE_bool(

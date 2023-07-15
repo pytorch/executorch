@@ -1,6 +1,5 @@
 #pragma once
 
-#include <executorch/core/Constants.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <memory>
 
@@ -12,10 +11,10 @@
 constexpr size_t NUM_NON_CONSTANT_POOLS = 1;
 
 // NON_CONSTANT_POOL_SIZE is set at compilation
-constexpr size_t NON_CONSTANT_POOL_SIZE = 2 * torch::executor::kMB;
+constexpr size_t NON_CONSTANT_POOL_SIZE = 2 * 1024U * 1024U; // 2MB
 
 // Memory used to save executor related structures
-constexpr size_t EXECUTOR_POOL_SIZE = 128 * torch::executor::kKB;
+constexpr size_t EXECUTOR_POOL_SIZE = 128 * 1024U;
 
 namespace torch {
 namespace executor {

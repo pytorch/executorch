@@ -27,7 +27,6 @@ def define_common_targets():
         ],
         exported_deps = [
             "//executorch/runtime/platform:platform",
-            "//executorch/core:core",  # for legacy clients that need Constants.h or macros.h TODO remove this
         ],
     )
 
@@ -48,9 +47,11 @@ def define_common_targets():
             "hierarchical_allocator.h",
             "memory_allocator.h",
         ],
+        deps = [
+            "//executorch/profiler:profiler",
+        ],
         exported_deps = [
             ":core",
-            "//executorch/profiler:profiler",
         ],
         visibility = [
             "//executorch/...",

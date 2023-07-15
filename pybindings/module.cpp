@@ -5,7 +5,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <executorch/core/Constants.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/executor/program.h>
@@ -274,9 +273,10 @@ py::object pyFromEValue(const EValue& v, KeepAlive& keep_alive) {
   ET_ASSERT_UNREACHABLE();
 }
 
-static constexpr size_t kDEFAULT_NON_CONSTANT_POOL_SIZE = 256 * kMB;
-static constexpr size_t kRUNTIME_POOL_SIZE = 256 * kMB;
-static constexpr size_t kDEFAULT_BUNDLED_INPUT_POOL_SIZE = 16 * kKB;
+static constexpr size_t kDEFAULT_NON_CONSTANT_POOL_SIZE =
+    256 * 1024U * 1024U; // 256 MB
+static constexpr size_t kRUNTIME_POOL_SIZE = 256 * 1024U * 1024U; // 256 MB
+static constexpr size_t kDEFAULT_BUNDLED_INPUT_POOL_SIZE = 16 * 1024U;
 
 struct PyBundledModule final {
   explicit PyBundledModule(

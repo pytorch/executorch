@@ -2,7 +2,6 @@
 #include <filesystem>
 #include <memory>
 
-#include <executorch/core/Constants.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
@@ -18,7 +17,6 @@ using exec_aten::Scalar;
 using exec_aten::Tensor;
 using torch::executor::Error;
 using torch::executor::Executor;
-using torch::executor::kKB;
 using torch::executor::MemoryAllocator;
 using torch::executor::MemoryManager;
 using torch::executor::Program;
@@ -26,8 +24,8 @@ using torch::executor::Result;
 using torch::executor::testing::ManagedMemoryManager;
 using torch::executor::util::FileDataLoader;
 
-constexpr size_t kDefaultNonConstMemBytes = 32 * kKB;
-constexpr size_t kDefaultRuntimeMemBytes = 32 * kKB;
+constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
+constexpr size_t kDefaultRuntimeMemBytes = 32 * 1024U;
 
 class AllocationFailureStressTest : public ::testing::Test {
  protected:
