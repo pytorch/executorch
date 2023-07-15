@@ -24,7 +24,6 @@ python_library(
         ":spec_prop_pass",
         ":sym_shape_eval_pass",
         "//caffe2:torch",
-        "//executorch/core/prim_ops:prim_to_executorch_ops",
         "//executorch/exir:common",
         "//executorch/exir:control_flow",
         "//executorch/exir:delegate",
@@ -37,6 +36,7 @@ python_library(
         "//executorch/exir/dialects/backend:lib",
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/operator:convert",
+        "//executorch/kernels/prim_ops:prim_to_executorch_ops",
     ],
 )
 
@@ -203,9 +203,9 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/core/prim_ops:prim_to_executorch_ops",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
+        "//executorch/kernels/prim_ops:prim_to_executorch_ops",
     ],
 )
 
@@ -227,10 +227,10 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/core/prim_ops:prim_to_executorch_ops",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",
+        "//executorch/kernels/prim_ops:prim_to_executorch_ops",
     ],
 )
 

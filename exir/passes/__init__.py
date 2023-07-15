@@ -10,8 +10,6 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import torch
-
-from executorch.core.prim_ops.prim_to_executorch_ops import _EXECUTORCH_SYM_OPS
 from executorch.exir import control_flow, delegate, memory, memory_planning
 from executorch.exir.common import override_logger
 from executorch.exir.dialects.backend._ops import BackendOpOverload
@@ -44,6 +42,8 @@ from executorch.exir.passes.replace_sym_size_op_pass import ReplaceSymSizeOpPass
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_shape_eval_pass import SymShapeEvalPass
+
+from executorch.kernels.prim_ops.prim_to_executorch_ops import _EXECUTORCH_SYM_OPS
 from torch import fx
 from torch._subclasses import FakeTensor
 from torch.fx.passes.infra.pass_base import PassBase, PassResult

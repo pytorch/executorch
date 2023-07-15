@@ -1,7 +1,7 @@
 import unittest
 
 # necessary to ensure the ops are registered
-import executorch.core.prim_ops.executorch_prim_ops_registry
+import executorch.kernels.prim_ops.executorch_prim_ops_registry
 
 import torch
 

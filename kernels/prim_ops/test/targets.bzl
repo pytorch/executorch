@@ -9,11 +9,11 @@ def define_common_targets():
     runtime.cxx_test(
         name = "register_prim_ops_test",
         srcs = [
-            "RegisterPrimOpsTest.cpp",
+            "register_prim_ops_test.cpp",
         ],
         deps = [
             "//executorch/core/kernel_types/testing:tensor_util",
-            "//executorch/core/prim_ops:prim_ops_registry",
+            "//executorch/kernels/prim_ops:prim_ops_registry",
             "//executorch/runtime/kernel:operator_registry",
             "//executorch/runtime/kernel:kernel_runtime_context",
         ],

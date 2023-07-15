@@ -1,6 +1,6 @@
 // (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
-#include <executorch/core/prim_ops/et_copy_index.h>
+#include <executorch/kernels/prim_ops/et_copy_index.h>
 
 #include <cstring>
 

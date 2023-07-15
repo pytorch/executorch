@@ -26,7 +26,7 @@ def define_common_targets():
 
         runtime.cxx_library(
             name = "prim_ops_registry" + aten_suffix,
-            srcs = ["RegisterPrimOps.cpp"],
+            srcs = ["register_prim_ops.cpp"],
             visibility = [
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",

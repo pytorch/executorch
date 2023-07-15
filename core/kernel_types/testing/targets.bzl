@@ -26,7 +26,7 @@ def define_common_targets():
                 # list.
                 "//executorch/core/kernel_types/util/test/...",
                 "//executorch/core/values/test/...",
-                "//executorch/core/prim_ops/test/...",
+                "//executorch/kernels/prim_ops/test/...",
                 "//executorch/kernels/portable/test/...",
                 "//executorch/kernels/portable/cpu/util/test/...",
                 "//executorch/kernels/quantized/test/...",

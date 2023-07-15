@@ -15,6 +15,6 @@ python_unittest(
     supports_static_listing = True,
     deps = [
         "//caffe2:torch",
-        "//executorch/core/prim_ops:prim_ops_py_registry",
+        "//executorch/kernels/prim_ops:prim_ops_py_registry",
     ],
 )

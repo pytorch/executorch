@@ -30,7 +30,7 @@ def define_common_targets():
                 "kernel_runtime_context.h",
             ],
             visibility = [
-                "//executorch/core/prim_ops/...",  # Contains kernels
+                "//executorch/kernels/prim_ops/...",  # Contains kernels
                 "//executorch/runtime/kernel/...",
                 "//executorch/kernels/...",
                 "//executorch/runtime/executor/...",
@@ -50,7 +50,7 @@ def define_common_targets():
             visibility = [
                 "//executorch/runtime/kernel/...",
                 "//executorch/kernels/...",
-                "//executorch/core/prim_ops/...",  # Prim kernels
+                "//executorch/kernels/prim_ops/...",  # Prim kernels
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [

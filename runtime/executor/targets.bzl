@@ -70,7 +70,7 @@ def define_common_targets():
             deps = [
                 ":memory_manager",
                 "//executorch/runtime/backend:backend_registry",
-                "//executorch/core/prim_ops:prim_ops_registry" + aten_suffix,
+                "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
                 "//executorch/profiler:profiler",
                 "//executorch/schema:schema",

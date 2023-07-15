@@ -2,7 +2,7 @@ import operator
 from typing import Dict, Set
 
 # necessary to ensure the ops are registered
-import executorch.core.prim_ops.executorch_prim_ops_registry  # noqa
+import executorch.kernels.prim_ops.executorch_prim_ops_registry  # noqa
 import torch
 from executorch.exir.dialects._ops import ops
 from torch._ops import OpOverload

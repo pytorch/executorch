@@ -20,7 +20,6 @@ python_library(
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",
-        "//executorch/core/prim_ops:prim_to_executorch_ops",
         "//executorch/exir:common",
         "//executorch/exir:delegate",
         "//executorch/exir:error",
@@ -34,6 +33,7 @@ python_library(
         "//executorch/exir/dialects/backend:lib",
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/operator:convert",
+        "//executorch/kernels/prim_ops:prim_to_executorch_ops",
         "//executorch/pytree:pylib",
     ],
 )

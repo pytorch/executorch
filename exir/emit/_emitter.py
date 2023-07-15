@@ -33,7 +33,6 @@ import executorch.exir.memory as memory
 import executorch.pytree as ex_pytree
 import torch
 import torch.fx
-from executorch.core.prim_ops.prim_to_executorch_ops import is_sym_op
 from executorch.exir import delegate
 from executorch.exir.common import add_cursor_to_graph
 from executorch.exir.delegate import LoweredBackendModule
@@ -85,6 +84,7 @@ from executorch.exir.tensor import (
     TensorSpec,
 )
 from executorch.exir.types import LeafValueSpec, ValueSpec
+from executorch.kernels.prim_ops.prim_to_executorch_ops import is_sym_op
 from functorch.experimental import control_flow
 from torch.utils import _pytree as pytree
 
