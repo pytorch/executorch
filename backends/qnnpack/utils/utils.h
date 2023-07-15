@@ -5,8 +5,8 @@
 #include <limits>
 #include <vector>
 
-#include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 #ifdef __aarch64__
 #include <arm_neon.h>

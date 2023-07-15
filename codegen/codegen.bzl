@@ -381,7 +381,7 @@ def executorch_generated_lib(
                 "//executorch/codegen:macros",
             ] + deps,
             exported_deps = [
-                "//executorch/core/kernel_types:kernel_types" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
             ],
             xplat_deps = xplat_deps,
@@ -426,7 +426,7 @@ def executorch_generated_lib(
             link_whole = True,
             visibility = visibility,
             deps = [
-                "//executorch/core/kernel_types:kernel_types_aten",
+                "//executorch/runtime/core/exec_aten:lib_aten",
                 "//executorch/runtime/core:core",
                 "//executorch/codegen:macros",
             ] + torch_dep + custom_ops_aten_kernel_deps,

@@ -1,5 +1,5 @@
 // (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
-#include <executorch/core/kernel_types/util/tensor_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 #include <cstring>
 

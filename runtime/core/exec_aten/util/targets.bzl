@@ -21,7 +21,7 @@ def define_common_targets():
             name = "scalar_type_util" + aten_suffix,
             srcs = [],
             exported_headers = [
-                "ScalarTypeUtil.h",
+                "scalar_type_util.h",
             ],
             visibility = [
                 "//executorch/...",
@@ -37,7 +37,7 @@ def define_common_targets():
             name = "dim_order_util" + aten_suffix,
             srcs = [],
             exported_headers = [
-                "DimOrderUtils.h",
+                "dim_order_util.h",
             ],
             exported_deps = [
                 "//executorch/runtime/core:core",
@@ -51,7 +51,7 @@ def define_common_targets():
 
         runtime.cxx_library(
             name = "tensor_util" + aten_suffix,
-            srcs = ["aten_tensor_util.cpp"] if aten_mode else ["lean_tensor_util.cpp"],
+            srcs = ["tensor_util_aten.cpp"] if aten_mode else ["tensor_util_portable.cpp"],
             exported_headers = [
                 "tensor_util.h",
             ],
@@ -63,7 +63,7 @@ def define_common_targets():
             exported_deps = [
                 "//executorch/runtime/core:core",
             ] + [
-                "//executorch/core/kernel_types:kernel_types" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 ":scalar_type_util" + aten_suffix,
                 ":dim_order_util" + aten_suffix,
             ],

@@ -9,11 +9,11 @@
 #include <cstddef> // size_t
 #include <limits>
 
-#include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/kernel_types/util/DimOrderUtils.h>
-#include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/compiler.h>
 

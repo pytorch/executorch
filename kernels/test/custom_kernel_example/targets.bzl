@@ -6,8 +6,8 @@ MY_ATEN_COMPLIANT_OPS = (
     op_target(
         name = "op_relu",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
 )

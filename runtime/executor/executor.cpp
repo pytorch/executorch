@@ -4,10 +4,10 @@
 #include <cstdint>
 #include <cstdio>
 
-#include <executorch/core/kernel_types/util/DimOrderUtils.h>
-#include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
-#include <executorch/core/kernel_types/util/tensor_util.h>
 #include <executorch/runtime/backend/backend_registry.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/program.h>

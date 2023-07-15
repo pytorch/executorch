@@ -32,6 +32,17 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "tensor_shape_dynamism",
+        exported_headers = [
+            "tensor_shape_dynamism.h",
+        ],
+        visibility = [
+            "//executorch/runtime/core/exec_aten/...",
+            "//executorch/runtime/core/portable_type/...",
+        ],
+    )
+
+    runtime.cxx_library(
         name = "memory_allocator",
         exported_headers = [
             "hierarchical_allocator.h",
@@ -60,7 +71,7 @@ def define_common_targets():
             ],
             exported_deps = [
                 "//executorch/runtime/core:core",
-                "//executorch/core/kernel_types:kernel_types" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 ":tag",
             ],
         )

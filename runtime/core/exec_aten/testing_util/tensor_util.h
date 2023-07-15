@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <executorch/core/kernel_types/kernel_types.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <gmock/gmock.h> // For MATCHER_P
 
 namespace torch {

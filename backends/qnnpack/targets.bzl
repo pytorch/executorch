@@ -50,7 +50,7 @@ def define_common_targets():
             ],
             exported_headers = ["utils/utils.h"],
             deps = [
-                "//executorch/core/kernel_types:kernel_types" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/backend:backend_registry",
             ],
             visibility = [
@@ -79,8 +79,8 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/runtime/backend:backend_registry",
             "//executorch/threadpool:threadpool",
             "//executorch/util:memory_utils",

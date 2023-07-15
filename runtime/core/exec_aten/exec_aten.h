@@ -1,6 +1,6 @@
 #pragma once
 
-#include <executorch/core/kernel_types/TensorShapeDynamism.h> // @manual
+#include <executorch/runtime/core/tensor_shape_dynamism.h> // @manual
 
 #ifdef USE_ATEN_LIB
 #include <ATen/Tensor.h> // @manual

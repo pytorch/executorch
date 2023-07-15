@@ -6,10 +6,10 @@
 #include <string>
 #include <unordered_map>
 
-#include <executorch/core/kernel_types/kernel_types.h>
 #include <executorch/pytree/pytree.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/hierarchical_allocator.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/executor.h>

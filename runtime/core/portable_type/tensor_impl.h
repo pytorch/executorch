@@ -4,17 +4,17 @@
 
 #include <sys/types.h> // TODO(T126923429): Include size_t, ssize_t
 
-#include <executorch/core/kernel_types/TensorShapeDynamism.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/portable_type/scalar_type.h>
+#include <executorch/runtime/core/tensor_shape_dynamism.h>
 
 namespace torch {
 namespace executor {
 
 // Forward declaration of a helper that provides access to internal resizing
 // methods of TensorImpl. Real definition is in
-// executorch/core/kernel_types/util/TensorUtil.h.
+// executorch/runtime/core/exec_aten/tensor_util.h.
 namespace internal {
 class TensorResizerFriend;
 } // namespace internal

@@ -1,10 +1,10 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
-#include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 #include <vector>
 
-#include <executorch/core/kernel_types/kernel_types.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 

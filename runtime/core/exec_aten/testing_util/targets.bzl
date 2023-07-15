@@ -14,25 +14,24 @@ def define_common_targets():
 
         runtime.cxx_library(
             name = "tensor_util" + (aten_suffix),
-            srcs = ["TensorUtil.cpp"],
+            srcs = ["tensor_util.cpp"],
             exported_headers = [
-                "TensorUtil.h",
-                "TensorFactory.h",
+                "tensor_util.h",
+                "tensor_factory.h",
             ],
             visibility = [
                 # Be strict with the visibility so that operator implementations
                 # under //executorch/kernels/... can't depend on this test-only
                 # target. It's ok to add any //executorch/*/test/... path to this
                 # list.
-                "//executorch/core/kernel_types/util/test/...",
-                "//executorch/core/values/test/...",
+                "//executorch/runtime/core/exec_aten/util/test/...",
+                "//executorch/runtime/core/exec_aten/testing_util/test/...",
                 "//executorch/kernels/prim_ops/test/...",
                 "//executorch/kernels/portable/test/...",
                 "//executorch/kernels/portable/cpu/util/test/...",
                 "//executorch/kernels/quantized/test/...",
                 "//executorch/kernels/optimized/test/...",
                 "//executorch/kernels/test/...",
-                "//executorch/core/test/...",
                 "//executorch/runtime/core/test/...",
                 "//executorch/test/...",
                 "//executorch/util/...",
@@ -42,35 +41,10 @@ def define_common_targets():
             compiler_flags = ["-Wno-unneeded-internal-declaration"],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             exported_deps = [
-                "//executorch/core/kernel_types:kernel_types" + aten_suffix,
-                "//executorch/core/kernel_types/util:scalar_type_util" + aten_suffix,
-                "//executorch/core/kernel_types/util:tensor_util" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
             fbcode_exported_deps = fbcode_deps,
             xplat_exported_deps = xplat_deps,
         )
-
-    runtime.cxx_test(
-        name = "tensor_util_test",
-        srcs = ["test/TensorUtilTest.cpp"],
-        deps = [
-            ":tensor_util",
-        ],
-    )
-
-    runtime.cxx_test(
-        name = "tensor_factory_test",
-        srcs = ["test/TensorFactoryTest.cpp"],
-        deps = [
-            ":tensor_util",
-        ],
-    )
-
-    runtime.cxx_test(
-        name = "tensor_factory_test_aten",
-        srcs = ["test/TensorFactoryTest.cpp"],
-        preprocessor_flags = ["-DUSE_ATEN_LIB"],
-        deps = [
-            ":tensor_util_aten",
-        ],
-    )

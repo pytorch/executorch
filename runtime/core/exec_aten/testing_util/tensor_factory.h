@@ -5,9 +5,9 @@
 #include <algorithm>
 
 #include <executorch/runtime/platform/assert.h>
-#include <executorch/core/kernel_types/TensorShapeDynamism.h>
-#include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
+#include <executorch/runtime/core/tensor_shape_dynamism.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 #ifdef USE_ATEN_LIB
 #include <ATen/ATen.h>

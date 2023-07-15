@@ -1,6 +1,6 @@
-#include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/kernel_types/util/DimOrderUtils.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/tensor_parser.h>
 #include <executorch/runtime/platform/profiler.h>

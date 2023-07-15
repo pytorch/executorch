@@ -5,7 +5,7 @@
 #include <torch/library.h>
 #include <ATen/Tensor.h>
 
-#include <executorch/core/kernel_types/kernel_types.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 $ops_headers
 
 namespace torch {

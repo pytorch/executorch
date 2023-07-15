@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-#include <executorch/core/kernel_types/kernel_types.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/platform/log.h>
 #ifdef USE_ATEN_LIB

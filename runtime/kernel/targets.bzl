@@ -38,7 +38,7 @@ def define_common_targets():
             ],
             exported_deps = [
                 "//executorch/runtime/core:core",
-                "//executorch/core/kernel_types:kernel_types" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
             ],
         )
 
@@ -55,8 +55,8 @@ def define_common_targets():
             ],
             exported_deps = [
                 ":kernel_runtime_context" + aten_suffix,
-                "//executorch/core/kernel_types:kernel_types" + aten_suffix,
-                "//executorch/core/kernel_types/util:scalar_type_util" + aten_suffix,
-                "//executorch/core/kernel_types/util:tensor_util" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
         )

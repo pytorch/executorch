@@ -32,7 +32,7 @@ executorch_pybindings(
     cppdeps = [
         "//executorch/runtime/kernel:operator_registry",
         "//executorch/runtime/executor:executor_aten",
-        "//executorch/core/kernel_types:kernel_types",
+        "//executorch/runtime/core/exec_aten:lib",
         "//executorch/schema:bundled_program_schema",
         "//executorch/schema:schema",
         "//executorch/util:embedded_data_loader",

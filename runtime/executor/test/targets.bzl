@@ -38,7 +38,7 @@ def define_common_targets():
             "executor_test.cpp",
         ],
         deps = [
-            "//executorch/core/kernel_types:kernel_types",
+            "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core:evalue",
             "//executorch/runtime/core:core",
             "//executorch/runtime/platform:platform",

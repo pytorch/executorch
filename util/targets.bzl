@@ -157,7 +157,7 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/runtime/core:core",
-            "//executorch/core/kernel_types:kernel_types",
+            "//executorch/runtime/core/exec_aten:lib",
         ],
         fbcode_deps = [
             "//caffe2:ATen-core",
@@ -204,9 +204,9 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             deps = [
-                "//executorch/core/kernel_types/testing:tensor_util" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
                 "//executorch/runtime/executor:executor" + aten_suffix,
-                "//executorch/core/kernel_types/util:dim_order_util" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:dim_order_util" + aten_suffix,
                 "//executorch/schema:schema",
                 "//executorch/schema:bundled_program_schema",
             ],

@@ -3,7 +3,7 @@
 
 #include <tuple>
 
-#include <executorch/core/kernel_types/kernel_types.h> // at::Tensor etc.
+#include <executorch/runtime/core/exec_aten/exec_aten.h> // at::Tensor etc.
 #include <executorch/codegen/macros.h> // TORCH_API
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 

@@ -5,8 +5,8 @@ def define_common_targets():
         name = "broadcast_test",
         srcs = ["broadcast_test.cpp"],
         deps = [
-            "//executorch/core/kernel_types:kernel_types",
-            "//executorch/core/kernel_types/testing:tensor_util",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/runtime/core:evalue",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
@@ -16,8 +16,8 @@ def define_common_targets():
         name = "reduce_test",
         srcs = ["reduce_test.cpp"],
         deps = [
-            "//executorch/core/kernel_types:kernel_types",
-            "//executorch/core/kernel_types/testing:tensor_util",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     )

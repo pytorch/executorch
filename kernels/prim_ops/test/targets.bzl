@@ -12,7 +12,7 @@ def define_common_targets():
             "register_prim_ops_test.cpp",
         ],
         deps = [
-            "//executorch/core/kernel_types/testing:tensor_util",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/kernels/prim_ops:prim_ops_registry",
             "//executorch/runtime/kernel:operator_registry",
             "//executorch/runtime/kernel:kernel_runtime_context",

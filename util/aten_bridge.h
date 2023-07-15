@@ -1,6 +1,6 @@
 #pragma once
 
-#include <executorch/core/kernel_types/kernel_types.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 #include <ATen/Functions.h> // @manual=//caffe2/aten:ATen-cpu
 #include <ATen/Tensor.h> // @manual=//caffe2/aten:ATen-core

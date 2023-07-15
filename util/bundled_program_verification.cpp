@@ -7,8 +7,8 @@
 #include <ATen/ATen.h>
 #endif // USE_ATEN_LIB
 
-#include <executorch/core/kernel_types/testing/TensorUtil.h>
-#include <executorch/core/kernel_types/util/DimOrderUtils.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/schema/bundled_program_schema_generated.h>

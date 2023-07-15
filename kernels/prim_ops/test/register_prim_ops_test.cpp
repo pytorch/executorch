@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
-#include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/kernel_types/testing/TensorFactory.h>
-#include <executorch/core/kernel_types/testing/TensorUtil.h>
-#include <executorch/core/kernel_types/util/tensor_util.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/runtime.h>

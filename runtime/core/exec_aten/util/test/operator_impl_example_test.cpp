@@ -7,10 +7,10 @@
  * this package.
  */
 
-#include <executorch/core/kernel_types/testing/TensorFactory.h>
-#include <executorch/core/kernel_types/testing/TensorUtil.h>
-#include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
-#include <executorch/core/kernel_types/util/tensor_util.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 

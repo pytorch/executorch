@@ -1,6 +1,6 @@
 #pragma once
 
-#include <executorch/core/kernel_types/kernel_types.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/tag.h>
 #include <executorch/runtime/platform/assert.h>
 

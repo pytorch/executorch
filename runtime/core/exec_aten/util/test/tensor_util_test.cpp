@@ -1,8 +1,8 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
-#include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/kernel_types/testing/TensorFactory.h>
-#include <executorch/core/kernel_types/util/tensor_util.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <cmath>
 #include <limits>

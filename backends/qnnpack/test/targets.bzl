@@ -18,8 +18,8 @@ def define_common_targets():
         ],
         platforms = [ANDROID, APPLE, CXX],
         deps = [
-            "//executorch/core/kernel_types/testing:tensor_util",
-            "//executorch/core/kernel_types/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/util:aten_bridge",
             "//executorch/backends/qnnpack:qnnpack_utils",
         ],
