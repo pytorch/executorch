@@ -141,10 +141,6 @@ def _to_edge(expo_prog, config: EdgeCompileConfig) -> "ExirExportedProgram":
         expo_prog.graph_module,
         expo_prog.graph_module.graph,
         ExportGraphSignature([], [], [], [], {}, {}, {}, None),
-        # pyre-fixme[6]: For 1st argument expected `TreeSpec` but got
-        #  `Optional[TreeSpec]`.
-        # pyre-fixme[6]: For 2nd argument expected `TreeSpec` but got
-        #  `Optional[TreeSpec]`.
         CallSpec(meta.in_spec, meta.out_spec),
         {},
         {},
@@ -413,10 +409,6 @@ def edge_gm_deserializer(pickled_states: bytes) -> "ExirExportedProgram":
         annotated_gm.module,
         annotated_gm.graph,
         ExportGraphSignature([], [], [], [], {}, {}, {}, None),
-        # pyre-fixme[6]: For 1st argument expected `TreeSpec` but got
-        #  `Optional[TreeSpec]`.
-        # pyre-fixme[6]: For 2nd argument expected `TreeSpec` but got
-        #  `Optional[TreeSpec]`.
         CallSpec(meta.in_spec, meta.out_spec),
         {},
         {},
@@ -604,10 +596,6 @@ def capture(
         module,
         module.graph,
         ExportGraphSignature([], [], [], [], {}, {}, {}, None),
-        # pyre-fixme[6]: For 1st argument expected `TreeSpec` but got
-        #  `Optional[TreeSpec]`.
-        # pyre-fixme[6]: For 2nd argument expected `TreeSpec` but got
-        #  `Optional[TreeSpec]`.
         CallSpec(meta.in_spec, meta.out_spec),
         {},
         {},
@@ -953,10 +941,6 @@ def export_graph_module_to_executorch(
         res.graph_module,
         res.graph_module.graph,
         ExportGraphSignature([], [], [], [], {}, {}, {}, None),
-        # pyre-fixme[6]: For 1st argument expected `TreeSpec` but got
-        #  `Optional[TreeSpec]`.
-        # pyre-fixme[6]: For 2nd argument expected `TreeSpec` but got
-        #  `Optional[TreeSpec]`.
         CallSpec(meta.in_spec, meta.out_spec),
         {},
         {},

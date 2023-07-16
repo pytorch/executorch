@@ -305,7 +305,6 @@ def to_backend_multiple(
             gm,
             gm.graph,
             ExportGraphSignature([], [], [], [], {}, {}, {}, None),
-            # pyre-ignore[6]
             CallSpec(None, None),
             {},
             {},
