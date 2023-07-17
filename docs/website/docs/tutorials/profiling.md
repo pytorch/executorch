@@ -213,12 +213,12 @@ Here is an example of what a ExecuTorch run + profile + post-procesing workflow 
 
 This runs the sample program with profiling enabled
 ```
-tkaruturi@devvm7197:~/fbsource/fbcode$ buck2 run -c executorch.prof_enabled=true executorch/test:executor_runner -- --model_path executorch/test/models/linear_out.ff
+~/fbsource/fbcode$ buck2 run -c executorch.prof_enabled=true executorch/sdk/runners:executor_runner -- --model_path executorch/test/models/linear_out.ff
 ```
 Run the post-processing CLI tool that calls into the same API's listed above and prints out the profiling results in a tabulated format in the terminal.
 
 ```
-tkaruturi@devvm7197:~/fbsource/fbcode$ buck2 run fbcode//executorch/profiler:profiler_results_cli -- --prof_results_bin prof_result.bin
+~/fbsource/fbcode$ buck2 run fbcode//executorch/profiler:profiler_results_cli -- --prof_results_bin prof_result.bin
 ```
 
 [This](https://www.internalfb.com/phabricator/paste/view/P543434004) is what the output of the CLI tools like.

@@ -125,7 +125,7 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
 
 ### Example
 
-Here we provide an example about how to run the bundled program step by step. Most of the code are borrowed from "fbcode/executorch/test/executor_runner.cpp":
+Here we provide an example about how to run the bundled program step by step. Most of the code are borrowed from "fbcode/executorch/sdk/runners/executor_runner.cpp":
 
 ```c++
     // model path is the path to flatbuffer file.

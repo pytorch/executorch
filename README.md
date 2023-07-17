@@ -93,23 +93,29 @@ buck2 test fbcode//executorch/...
 * Uses the lean Executorch `Tensor` class and related types
 * Uses the kernels under `//executorch/kernels/portable` instead of the ATen kernels
 ```
-buck2 run fbcode//executorch/test:executor_runner -- --model_path=fbcode/executorch/test/models/linear_out.ff
+buck2 run fbcode//executorch/sdk/runners:executor_runner -- \
+    --model_path=fbcode/executorch/test/models/linear_out.ff
 ```
 ### Run a model in ATen mode
 * Instead of the lean Executorch `Tensor`, using ATen tensor so that all ATen kernels can be leveraged
 * Note there can be significant size regression in ATen mode
 ```
-buck2 run fbcode//executorch/test:executor_runner_aten -- --model_path=fbcode/executorch/test/models/linear_out.ff
+buck2 run fbcode//executorch/sdk/runners:executor_runner_aten -- \
+    --model_path=fbcode/executorch/test/models/linear_out.ff
 ```
 
 ## Special build modes
 ### Android/mobile builds
 In xplat:
 ```
-buck2 build @fbandroid/mode/opt @fbandroid/mode/ndk_libcxx -c user.ndk_cxxflags="-frtti -fexceptions" fbsource//xplat/executorch/test:executor_runner
+buck2 build @fbandroid/mode/opt @fbandroid/mode/ndk_libcxx \
+    -c user.ndk_cxxflags="-frtti -fexceptions" \
+    fbsource//xplat/executorch/sdk/runners:executor_runner
 ```
 ## ARVR builds
 In xplat:
 ```
-buck2 build @arvr/mode/android/linux/opt-stripped -c ndk.custom_libcxx=false fbsource//xplat/executorch/test:executor_runner
+buck2 build @arvr/mode/android/linux/opt-stripped \
+    -c ndk.custom_libcxx=false \
+    fbsource//xplat/executorch/sdk/runners:executor_runner
 ```
