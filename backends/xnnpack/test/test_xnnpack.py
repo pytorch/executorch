@@ -179,6 +179,30 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
         conv.eval()
         self.lower_and_test_with_partitioner(conv, example_inputs)
 
+    def test_xnnpack_backend_conv2d_single_int_params(self):
+        groups = 1
+        stride = 2
+        padding = "valid"
+        dilation = 1
+        in_channels = 2
+        out_channels = 1
+        width = 8
+        height = 8
+        batches = 1
+        example_inputs = (torch.randn(batches, in_channels, height, width),)
+        conv = torch.nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            stride=stride,
+            padding=padding,
+            groups=groups,
+            dilation=dilation,
+            bias=True,
+        )
+        conv.eval()
+        self.lower_and_test_with_partitioner(conv, example_inputs)
+
     def test_xnnpack_backend_conv2d_dw(self):
         # Depthwise Convolution Requirements:
         # - Groups must equal In Channels
