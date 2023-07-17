@@ -13,8 +13,6 @@ python_library(
         "//executorch/sdk/edir:et_schema",
         "//executorch/sdk/etdb:etdb",
         "//executorch/sdk/etrecord:etrecord",
-        "//executorch/sdk/visualizer:generator",
-        "//manifold/clients/python:manifold_client",
     ],
 )
 
@@ -26,8 +24,6 @@ python_binary(
         "//executorch/sdk/edir:et_schema",
         "//executorch/sdk/etdb:etdb",
         "//executorch/sdk/etrecord:etrecord",
-        "//executorch/sdk/visualizer:generator",
-        "//manifold/clients/python:manifold_client",
     ],
 )
 
