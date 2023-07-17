@@ -38,7 +38,6 @@ def define_common_targets():
         ],
         visibility = [
             "//executorch/...",
-            "//executorch/test/...",
             "@EXECUTORCH_CLIENTS",
         ],
     )
@@ -95,11 +94,6 @@ def define_common_targets():
                 "tensor_parser.h",
             ],
             visibility = [
-                "//executorch/backends/test/...",
-                "//executorch/runtime/executor/test/...",
-                "//executorch/pybindings/...",
-                "//executorch/test/...",
-                "//executorch/util/...",
                 "@EXECUTORCH_CLIENTS",
             ],
         )
