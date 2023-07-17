@@ -1,9 +1,13 @@
 import argparse
 import asyncio
 import os
-from typing import Dict, Optional
+from typing import Mapping, Optional
 
-from executorch.sdk.edir.et_schema import FXOperatorGraph, InferenceRun
+from executorch.sdk.edir.et_schema import (
+    FXOperatorGraph,
+    InferenceRun,
+    OperatorGraphWithStats,
+)
 from executorch.sdk.etdb.etdb import debug_graphs
 from executorch.sdk.etrecord import ETRecord, parse_etrecord
 
@@ -12,7 +16,9 @@ Private Lib Helpers
 """
 
 
-def _gen_graphs_from_etrecord(etrecord: ETRecord) -> Dict[str, FXOperatorGraph]:
+def _gen_graphs_from_etrecord(
+    etrecord: ETRecord,
+) -> Mapping[str, OperatorGraphWithStats]:
     if etrecord.graph_map is None:
         return {}
     return {
@@ -22,7 +28,7 @@ def _gen_graphs_from_etrecord(etrecord: ETRecord) -> Dict[str, FXOperatorGraph]:
 
 
 def _gen_and_attach_metadata(
-    op_graph_dict: Dict[str, FXOperatorGraph], et_dump_path: str
+    op_graph_dict: Mapping[str, OperatorGraphWithStats], et_dump_path: str
 ) -> None:
     """
     (!!) Note: Currently we only support attaching etdump data to the
@@ -38,11 +44,11 @@ def _gen_and_attach_metadata(
 
     op_graph = op_graph_dict["et_dialect_graph_module/forward"]
 
-    if os.path.exists(et_dump_path):  # Local path
+    if os.path.exists(et_dump_path):
         op_graph.attach_metadata(
             inference_run=InferenceRun.extract_runs_from_path(file_path=et_dump_path)[0]
         )
-    else:  # Invalid path
+    else:
         raise Exception("Invalid ET Dump path")
 
 
@@ -57,10 +63,11 @@ def debug_etrecord(
     """
     Given an ETRecord, kick off ETDB
     """
-    op_graph_dict: Dict[str, FXOperatorGraph] = _gen_graphs_from_etrecord(etrecord)
+    op_graph_dict: Mapping[str, OperatorGraphWithStats] = _gen_graphs_from_etrecord(
+        etrecord
+    )
     if et_dump_path is not None:
         _gen_and_attach_metadata(op_graph_dict, et_dump_path)
-    # pyre-ignore Expecting value to be a Union, but provided arg with one type
     debug_graphs(op_graph_dict, verbose)
 
 

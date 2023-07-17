@@ -118,8 +118,6 @@ async def gen_tb_url(
     # Initialize the TB URL generator and call gen()
     generator = Generator()
     return await generator.gen_multiple(
-        # pyre-fixme[[6]]: Incompatible parameter type [6]: In call `Generator.gen_multiple`, for argument `op_graphs_dict`,
-        # expected `Dict[str, OperatorGraph]` but got `Dict[str, Union[ExportedETOperatorGraph, FXOperatorGraph]]`.
         op_graphs_dict=op_graphs_dict,
         run_name=run_name,
     )

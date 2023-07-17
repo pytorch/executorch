@@ -81,7 +81,7 @@ class InferenceRun:
     # Given an ET Dump object, extract all inference runs
     # Note: This current supports ET Dump files containing only one ET Dump Run
     @staticmethod
-    def _extract_runs_from_etdump(et_dump: ETDump) -> List[InferenceRun]:
+    def extract_runs_from_etdump(et_dump: ETDump) -> List[InferenceRun]:
         node_metadata = defaultdict(lambda: defaultdict(list))
         run_metadata = {}
         for run in et_dump.run_data:
@@ -140,7 +140,7 @@ class InferenceRun:
     def extract_runs_from_path(file_path: str) -> List[InferenceRun]:
         with open(file_path, "rb") as buff:
             et_dump = deserialize_from_etdump(buff.read())
-            return InferenceRun._extract_runs_from_etdump(et_dump)
+            return InferenceRun.extract_runs_from_etdump(et_dump)
 
 
 class OperatorGraphWithStats(OperatorGraph):
@@ -654,7 +654,7 @@ class FXOperatorGraph(OperatorGraphWithStats):
         # Generate Module Graphs
         module_graphs: List[OperatorGraph] = []
         for module_key, module_nodes in module_mapping.items():
-            module_element = OperatorGraphWithStats(
+            module_element = OperatorGraph(
                 graph_name=module_key[0],
                 elements=module_nodes,
                 metadata={"module_type": module_key[1]},

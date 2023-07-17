@@ -6,7 +6,11 @@ from typing import Any, List, Tuple
 import torch
 import torch.nn as nn
 from executorch import exir
-from executorch.exir import ExecutorchBackendConfig
+from executorch.exir import (
+    ExecutorchBackendConfig,
+    ExecutorchProgram,
+    ExirExportedProgram,
+)
 from executorch.exir.delegate import LoweredBackendModule, patch_lowered_functions
 from executorch.sdk.edir.base_schema import OperatorNode
 from executorch.sdk.edir.et_schema import (
@@ -605,7 +609,9 @@ def generate_json_fixtures() -> None:
             f.write(output)
 
 
-def gen_graphs_from_model(model: torch.nn.Module) -> Tuple[Any, Any, Any]:
+def gen_graphs_from_model(
+    model: torch.nn.Module,
+) -> Tuple[ExirExportedProgram, ExirExportedProgram, ExecutorchProgram]:
     et_aten = exir.capture(
         model,
         model.get_random_inputs(),
@@ -634,7 +640,9 @@ def generate_fx_json_fixture() -> None:
             gen_fx_graph_file_contents(et_aten_copy.graph_module),
         )
         write_fx_graph_file_contents(
-            model_name, "edge_dialect", gen_fx_graph_file_contents(et_edge_copy.module)
+            model_name,
+            "edge_dialect",
+            gen_fx_graph_file_contents(et_edge_copy.graph_module),
         )
         write_fx_graph_file_contents(
             model_name,
@@ -764,5 +772,5 @@ class InferenceRunTest(unittest.TestCase):
         inference_run = model.gen_inference_run()
 
         self.assertEqual(
-            inference_run, InferenceRun._extract_runs_from_etdump(et_dump)[0]
+            inference_run, InferenceRun.extract_runs_from_etdump(et_dump)[0]
         )
