@@ -320,7 +320,7 @@ class ExecutorchProgram:
     def program(self) -> Program:
         if self._emitter_output is None:
             self._emitter_output = emit_program(
-                self.graph_module, self._emit_stacktrace
+                self.exported_program, self._emit_stacktrace
             )
         return self._emitter_output.program
 
@@ -357,10 +357,7 @@ class MultiMethodExecutorchProgram:
     ) -> None:
         self._buffer: Optional[bytes] = None
         self._emitter_output: EmitterOutput = emit_program(
-            {
-                k: v.graph_module
-                for k, v in executorch_dialect_program.methods().items()
-            },
+            executorch_dialect_program.methods(),  # pyre-ignore
             emit_stacktrace,
             executorch_dialect_program.prim_getters(),
         )

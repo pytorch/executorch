@@ -869,8 +869,8 @@ class TestEmit(unittest.TestCase):
             .to_executorch()
         )
         exir_input = {
-            "forward_relu": program_relu.dump_graph_module(),
-            "forward_sigmoid": program_sigmoid.dump_graph_module(),
+            "forward_relu": program_relu.dump_exported_program(),
+            "forward_sigmoid": program_sigmoid.dump_exported_program(),
         }
         merged_program = emit_program(exir_input, False).program
         self.assertEqual(len(merged_program.execution_plan), 2)
@@ -936,8 +936,8 @@ class TestEmit(unittest.TestCase):
             .to_executorch()
         )
         exir_input = {
-            "forward_relu": program_relu.dump_graph_module(),
-            "forward_sigmoid": program_sigmoid.dump_graph_module(),
+            "forward_relu": program_relu.dump_exported_program(),
+            "forward_sigmoid": program_sigmoid.dump_exported_program(),
         }
         merged_program = emit_program(exir_input, False).program
         self.assertEqual(len(merged_program.execution_plan), 2)
@@ -1000,10 +1000,11 @@ class TestEmit(unittest.TestCase):
         program_c = make_program(model.c, inputs)
 
         exir_input = {
-            "b": program_b.dump_graph_module(),
-            "c": program_c.dump_graph_module(),
-            "a": program_a.dump_graph_module(),
+            "b": program_b.dump_exported_program(),
+            "c": program_c.dump_exported_program(),
+            "a": program_a.dump_exported_program(),
         }
+        # pyre-ignore
         merged_program = emit_program(exir_input, False).program
         self.assertEqual(len(merged_program.execution_plan), 3)
         self.assertEqual(merged_program.execution_plan[0].name, "a")
@@ -1013,10 +1014,11 @@ class TestEmit(unittest.TestCase):
         # Create a second program equivalent to the first, but the input is in a different order.
         # python dicts are instertion ordered
         exir_input2 = {
-            "a": program_b.dump_graph_module(),
-            "b": program_c.dump_graph_module(),
-            "c": program_a.dump_graph_module(),
+            "a": program_b.dump_exported_program(),
+            "b": program_c.dump_exported_program(),
+            "c": program_a.dump_exported_program(),
         }
+        # pyre-ignore
         merged_program2 = emit_program(exir_input2, False).program
         self.assertEqual(
             merged_program2.execution_plan[0], merged_program.execution_plan[0]
@@ -1057,7 +1059,7 @@ class TestEmit(unittest.TestCase):
             .to_executorch()
         )
         exir_input = {
-            "forward": program.dump_graph_module(),
+            "forward": program.dump_exported_program(),
         }
         getters = {}
         getters["get_ints"] = model.get_ints()
@@ -1159,7 +1161,7 @@ class TestEmit(unittest.TestCase):
         program.execution_plan[0].chains[0].instructions[0].instr_args.op_index
 
         # Find the multiplication node in the graph that was emitted.
-        for node in program_mul.dump_graph_module().graph.nodes:
+        for node in program_mul.dump_exported_program().graph.nodes:
             if node.target == torch.ops.aten.mul.out:
                 break
         self.assertIsNotNone(node)

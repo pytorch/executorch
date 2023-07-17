@@ -276,7 +276,7 @@ class TestPasses(unittest.TestCase):
                 self.assertIs(node.kwargs["out2"], None)
 
         new_prog = new_prog.transform(MemoryPlanningPass())
-        emit_program(new_prog.graph_module)
+        emit_program(new_prog)
 
     def test_to_out_variant_singleon_tensor_list(self) -> None:
         class MyModel(nn.Module):

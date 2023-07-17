@@ -86,6 +86,7 @@ from executorch.exir.tensor import (
 from executorch.exir.types import LeafValueSpec, ValueSpec
 from executorch.kernels.prim_ops.prim_to_executorch_ops import is_sym_op
 from functorch.experimental import control_flow
+from torch._export.exported_program import ExportedProgram
 from torch.utils import _pytree as pytree
 
 # @manual=fbsource//third-party/pypi/typing-extensions:typing-extensions
@@ -1243,11 +1244,11 @@ class _TopLevelEmitter(_Emitter):
     def __init__(
         self,
         name: str,
-        graph_module: torch.fx.GraphModule,
+        exported_program: ExportedProgram,
         program_state: _ProgramState,
         emitter_state: _EmitterState,
     ) -> None:
-        super().__init__(graph_module, emitter_state, program_state)
+        super().__init__(exported_program.graph_module, emitter_state, program_state)
         self.name = name
 
         self.inputs: List[int] = []
@@ -1262,7 +1263,7 @@ class _TopLevelEmitter(_Emitter):
             _, tree = ex_pytree.tree_flatten(tree)
             return tree.to_str()
 
-        meta = get_exir_meta(graph_module)
+        meta = get_exir_meta(exported_program.graph_module)
         inp_container_str = create_container_str(
             typing.cast(pytree.TreeSpec, meta.in_spec)
         )

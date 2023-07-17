@@ -20,6 +20,7 @@ from executorch.exir.schema import (
 )
 from executorch.exir.tensor import layout_enum, scalar_type_enum
 from executorch.exir.version import EXECUTORCH_SCHEMA_VERSION
+from torch._export.exported_program import ExportedProgram
 
 
 def _emit_prim_getters(prim_getters: Dict[str, Any]) -> List[ExecutionPlan]:
@@ -103,17 +104,18 @@ class EmitterOutput:
 
 
 def emit_program(
-    methods: Union[torch.fx.GraphModule, Dict[str, torch.fx.GraphModule]],
+    methods: Union[ExportedProgram, Dict[str, ExportedProgram]],
     emit_stacktrace: bool = False,
     prim_getters: Optional[Dict[str, Any]] = None,
 ) -> EmitterOutput:
     """
-    Given a graph module, it returns the graph module’s program in the format
+    Given a exported program, it returns the program in the format
     of the Python version of the flatbuffer Program schema.
 
     Args:
-        graph_module: Either the graph module that we want to emit into the flatbuffer
-           format, must be torch.fx.GraphModule type or a dictionary of method names to torch.fx.GraphModules
+        methods: Either the exported program (Exported_Program) that we want to
+            emit into the flatbuffer, or a dictionary of method names to
+            ExportedPrograms.
         emit_stacktrace: Flag to enable emission of a stacktrace for each
            instruction for debugging purposes
 
@@ -121,18 +123,18 @@ def emit_program(
         The program in a Python class which mimics the flatbuffer schema
     """
 
-    if isinstance(methods, torch.fx.GraphModule):
+    if isinstance(methods, ExportedProgram):
         methods = {"forward": methods}
 
     # validation
     bad_methods = []
-    for name, graph_module in methods.items():
-        if not isinstance(graph_module, torch.fx.GraphModule):
+    for name, exported_program in methods.items():
+        if not isinstance(exported_program, ExportedProgram):
             bad_methods.append(name)
     if len(bad_methods) != 0:
         raise ExportError(
             ExportErrorType.INVALID_INPUT_TYPE,
-            f"Did not receive torch.fx.GraphModule for the following methods {str(bad_methods)}",
+            f"Did not receive ExportedProgram for the following methods {str(bad_methods)}",
         )
 
     plans = []
