@@ -13,7 +13,7 @@ from executorch.sdk.edir.et_schema import (
 )
 from executorch.sdk.etdb.etdb import debug_graph
 from executorch.sdk.etrecord import ETRecord, parse_etrecord
-from executorch.sdk.visualizer.generator import Generator
+from executorch.sdk.fb.visualizer.generator import Generator
 from manifold.clients.python import ManifoldClient
 
 # Keywords used to identify graphs
