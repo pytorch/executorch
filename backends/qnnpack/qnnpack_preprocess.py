@@ -16,6 +16,7 @@ from executorch.backends.qnnpack.serialization.qnnpack_graph_serialize import (
 from executorch.backends.transforms import get_shape
 
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch._export.exported_program import ExportedProgram
 
 T_Mm = exir_ops.edge.aten.mm.default
 T_Addmm = exir_ops.edge.aten.addmm.default
@@ -35,11 +36,11 @@ def _copy_buffer(storage: torch.UntypedStorage) -> bytes:
 class QnnpackBackend(BackendDetails):
     @staticmethod
     def preprocess(
-        edge_ir_module: torch.fx.GraphModule,
+        edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> bytes:
 
-        for node in edge_ir_module.graph.nodes:
+        for node in edge_program.graph.nodes:
             # TODO(maxren): Follow this up by removing addm and mm nodes
             if node.op == "call_function":
                 # Finding the linear node
@@ -52,7 +53,7 @@ class QnnpackBackend(BackendDetails):
                         weight = node.args[2]
                         # For linear node, bias is known
                         bias_tensor = getattr(
-                            edge_ir_module, node.args[0].target
+                            edge_program.graph_module, node.args[0].target
                         ).contiguous()
                         # t_defualt node -> dequant node
                         weight_dequant = weight.args[0]
@@ -66,7 +67,7 @@ class QnnpackBackend(BackendDetails):
                         weight_dequant = node.args[1]
                         if len(node.args) > 2:
                             bias_tensor = getattr(
-                                edge_ir_module, node.args[2].target
+                                edge_program.graph_module, node.args[2].target
                             ).contiguous()
                     else:
                         raise RuntimeError(
@@ -89,17 +90,22 @@ class QnnpackBackend(BackendDetails):
                     # deqaunt node -> quant node
                     weight_quant = weight_dequant.args[0]
                     # quant node -> tensor_constant
-                    weight_const = getattr(edge_ir_module, weight_quant.args[0].target)
+                    weight_const = getattr(
+                        edge_program.graph_module, weight_quant.args[0].target
+                    )
                     if (
                         weight_quant.target.__name__
                         == "quantized_decomposed.quantize_per_channel.default"
                     ):
                         # scale and zero_point are tensors
                         weight_scale = weight_quant.args[1]
-                        scale_tensor = getattr(edge_ir_module, weight_scale.target)
+                        scale_tensor = getattr(
+                            edge_program.graph_module, weight_scale.target
+                        )
                         weight_zeropoint = weight_quant.args[2]
                         zp_tensor = (
-                            getattr(edge_ir_module, weight_zeropoint.target) + 128
+                            getattr(edge_program.graph_module, weight_zeropoint.target)
+                            + 128
                         )
                         axis = weight_quant.args[3]
                         # requantize weight to uint8

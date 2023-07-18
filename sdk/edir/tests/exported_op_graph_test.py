@@ -11,7 +11,7 @@ from executorch.exir import (
     ExecutorchProgram,
     ExirExportedProgram,
 )
-from executorch.exir.delegate import LoweredBackendModule, patch_lowered_functions
+from executorch.exir.delegate import LoweredBackendModule
 from executorch.sdk.edir.base_schema import OperatorNode
 from executorch.sdk.edir.et_schema import (
     ExportedETOperatorGraph,
@@ -338,12 +338,11 @@ class CompositeDelegateModule(torch.nn.Module):
             exir.CaptureConfig(pt2_mode=True),
         ).to_edge()
         lowered_module = LoweredBackendModule(
-            edge_ir_m=edge_ir_m,
+            edge_program=edge_ir_m,
             backend_id="backend_demo",
             processed_bytes=bytes("basic_module_add", encoding="utf8"),
             compile_specs=[],
         )
-        patch_lowered_functions(lowered_module)
         self.lowered_module: LoweredBackendModule = lowered_module
 
     def forward(self, a: exir.Value, b: exir.Value, s: Tensor) -> Tensor:

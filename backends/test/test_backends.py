@@ -24,10 +24,7 @@ from executorch.backends.test.op_partitioner_demo import (
     AddMulPartitionerDemo,
 )
 from executorch.backends.test.qnn_backend_demo import QnnBackend
-from executorch.exir import (
-    export_graph_module_to_executorch,
-    multi_method_program_to_executorch,
-)
+from executorch.exir import multi_method_program_to_executorch
 
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_submodules
 from executorch.exir.graph_module import get_control_flow_submodules
@@ -616,11 +613,9 @@ class TestBackends(unittest.TestCase):
         composite_m = CompositeModel(3)
         orig_res = composite_m(*inputs)
 
-        traced = (
-            exir.capture(composite_m, inputs, exir.CaptureConfig(pt2_mode=True))
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-            .graph_module
-        )
+        traced = exir.capture(
+            composite_m, inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
 
         program_without_delegates = (
             exir.capture(
@@ -635,8 +630,9 @@ class TestBackends(unittest.TestCase):
         )
         # after this step, part of the graph will be lowered to backend, depending on
         # HTAPartitionerDemo's rule.
-        program_with_delegates = export_graph_module_to_executorch(
-            to_backend(traced, HTAPartitionerMultiplePatternsDemo),
+        program_with_delegates = to_backend(
+            traced, HTAPartitionerMultiplePatternsDemo
+        ).to_executorch(
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
 
@@ -724,11 +720,9 @@ class TestBackends(unittest.TestCase):
         composite_m = CompositeModel(3)
         orig_res = composite_m(*inputs)
 
-        traced = (
-            exir.capture(composite_m, inputs, exir.CaptureConfig(pt2_mode=True))
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-            .graph_module
-        )
+        traced = exir.capture(
+            composite_m, inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
 
         program_without_delegates = (
             exir.capture(
@@ -749,9 +743,8 @@ class TestBackends(unittest.TestCase):
         for t1, t2 in zip(new_res, orig_res):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 
-        program_with_delegates = export_graph_module_to_executorch(
-            traced_with_delegate,
-            exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+        program_with_delegates = traced_with_delegate.to_executorch(
+            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
 
         # TODO(T143084047): Currently not retraceable
@@ -835,13 +828,8 @@ class TestBackends(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
         orig_res = m(*inputs)
 
-        gm = (
-            exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True))
-            .to_edge()
-            .graph_module
-        )
-        executorch_prog = export_graph_module_to_executorch(
-            to_backend(gm, AddMulPartitionerDemo),
+        ep = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
+        executorch_prog = to_backend(ep, AddMulPartitionerDemo).to_executorch(
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
 
@@ -894,13 +882,8 @@ class TestBackends(unittest.TestCase):
 
         inputs = (torch.randn(1, 3), torch.randn(1, 3))
         orig_res = Model()(*inputs)
-        gm = (
-            exir.capture(Model(), inputs, exir.CaptureConfig(pt2_mode=True))
-            .to_edge()
-            .graph_module
-        )
-        executorch_prog = export_graph_module_to_executorch(
-            to_backend(gm, AddAttributePartitionerDemo),
+        ep = exir.capture(Model(), inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
+        executorch_prog = to_backend(ep, AddAttributePartitionerDemo).to_executorch(
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
 
@@ -949,13 +932,9 @@ class TestBackends(unittest.TestCase):
                         node.target = torch.ops.aten.mul.Tensor
                 return edge_graph_module
 
-        gm = (
-            exir.capture(Model(), inputs, exir.CaptureConfig(pt2_mode=True))
-            .to_edge()
-            .graph_module
-        )
+        ep = exir.capture(Model(), inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
         with self.assertRaises(AssertionError):
-            _ = to_backend(gm, BadPartitioner)
+            _ = to_backend(ep, BadPartitioner)
 
     def test_quantized_with_delegate(self) -> None:
         torch.ops.load_library(
@@ -1011,43 +990,39 @@ class TestBackends(unittest.TestCase):
 
         inputs = (torch.ones(2, 2), torch.ones(2, 2))
         orig_res = f(*inputs)
-        orig = (
-            exir.capture(
-                f,
-                inputs,
-                exir.CaptureConfig(pt2_mode=True),
-            )
-            .to_edge()
-            .graph_module
-        )
+        orig = exir.capture(
+            f,
+            inputs,
+            exir.CaptureConfig(pt2_mode=True),
+        ).to_edge()
 
         partitioned = to_backend(orig, AddMulPartitionerDemo)
 
         new_res = partitioned(*inputs)
         self.assertTrue(torch.allclose(orig_res, new_res[0]))
 
-        toplevel_lowered = get_lowered_submodules(partitioned)
+        toplevel_lowered = get_lowered_submodules(partitioned.graph_module)
         self.assertEqual(len(toplevel_lowered), 1)
         FileCheck().check("torch.ops.aten.add.Tensor").run(
-            toplevel_lowered[0][1].original_module.code
+            toplevel_lowered[0][1].original_module.graph_module.code
         )
 
         # Toplevel module only has the cond submodules
-        partitioned_submodules = get_control_flow_submodules(partitioned)
+        partitioned_submodules = get_control_flow_submodules(partitioned.graph_module)
         self.assertEqual(len(partitioned_submodules), 2)
 
         true_gm = partitioned_submodules[0][1]
         true_lowered = get_lowered_submodules(true_gm)
         self.assertEqual(len(true_lowered), 1)
         FileCheck().check("torch.ops.aten.add.Tensor").run(
-            true_lowered[0][1].original_module.code
+            true_lowered[0][1].original_module.graph_module.code
         )
 
         false_gm = partitioned_submodules[1][1]
         false_lowered = get_lowered_submodules(false_gm)
         self.assertEqual(len(true_lowered), 1)
         FileCheck().check("torch.ops.aten.mm.default").run(
-            false_lowered[0][1].original_module.code
+            false_lowered[0][1].original_module.graph_module.code
         )
 
     def test_partition_with_map(self) -> None:
@@ -1062,32 +1037,28 @@ class TestBackends(unittest.TestCase):
 
         inputs = (torch.ones(2, 2), torch.ones(2, 2))
         orig_res = f(*inputs)
-        orig = (
-            exir.capture(
-                f,
-                inputs,
-                exir.CaptureConfig(pt2_mode=True),
-            )
-            .to_edge()
-            .graph_module
-        )
+        orig = exir.capture(
+            f,
+            inputs,
+            exir.CaptureConfig(pt2_mode=True),
+        ).to_edge()
         partitioned = to_backend(orig, AddMulPartitionerDemo)
 
-        toplevel_lowered = get_lowered_submodules(partitioned)
+        toplevel_lowered = get_lowered_submodules(partitioned.graph_module)
         self.assertEqual(len(toplevel_lowered), 1)
         FileCheck().check("torch.ops.aten.mm.default").run(
-            toplevel_lowered[0][1].original_module.code
+            toplevel_lowered[0][1].original_module.graph_module.code
         )
 
         # Toplevel module only has the map submodule
-        partitioned_submodules = get_control_flow_submodules(partitioned)
+        partitioned_submodules = get_control_flow_submodules(partitioned.graph_module)
         self.assertEqual(len(partitioned_submodules), 1)
 
         map_fn_gm = partitioned_submodules[0][1]
         map_fn_lowered = get_lowered_submodules(map_fn_gm)
         self.assertEqual(len(map_fn_lowered), 1)
         FileCheck().check("torch.ops.aten.add.Tensor").run(
-            map_fn_lowered[0][1].original_module.code
+            map_fn_lowered[0][1].original_module.graph_module.code
         )
 
         new_res = partitioned(*inputs)
@@ -1132,29 +1103,25 @@ class TestBackends(unittest.TestCase):
         )
 
         orig_res = f(*inputs)
-        orig = (
-            exir.capture(
-                f,
-                inputs,
-                exir.CaptureConfig(pt2_mode=True),
-            )
-            .to_edge()
-            .graph_module
-        )
+        orig = exir.capture(
+            f,
+            inputs,
+            exir.CaptureConfig(pt2_mode=True),
+        ).to_edge()
 
         partitioned = to_backend(orig, AddMulPartitionerDemo)
 
         new_res = partitioned(*inputs)
         self.assertTrue(torch.allclose(orig_res, new_res[0]))
 
-        toplevel_lowered = get_lowered_submodules(partitioned)
+        toplevel_lowered = get_lowered_submodules(partitioned.graph_module)
         self.assertEqual(len(toplevel_lowered), 1)
         FileCheck().check("torch.ops.aten.mm.default").run(
-            toplevel_lowered[0][1].original_module.code
+            toplevel_lowered[0][1].original_module.graph_module.code
         )
 
         # Toplevel module only has the map submodule
-        partitioned_submodules = get_control_flow_submodules(partitioned)
+        partitioned_submodules = get_control_flow_submodules(partitioned.graph_module)
         self.assertEqual(len(partitioned_submodules), 1)
 
         # Map module has the cond submodules
@@ -1166,7 +1133,7 @@ class TestBackends(unittest.TestCase):
         true_lowered = get_lowered_submodules(true_module)
         self.assertEqual(len(true_lowered), 1)
         FileCheck().check("torch.ops.aten.add.Tensor").run(
-            true_lowered[0][1].original_module.code
+            true_lowered[0][1].original_module.graph_module.code
         )
 
         # False module
@@ -1182,13 +1149,13 @@ class TestBackends(unittest.TestCase):
         self.assertEqual(len(true_true_lowered), 1)
         FileCheck().check("torch.ops.aten.add.Tensor").check(
             "torch.ops.aten.mm.default"
-        ).run(true_true_lowered[0][1].original_module.code)
+        ).run(true_true_lowered[0][1].original_module.graph_module.code)
 
         # Nested False module
         true_false_lowered = get_lowered_submodules(true_submodules[1][1])
         self.assertEqual(len(true_false_lowered), 1)
         FileCheck().check("torch.ops.aten.mm.default").run(
-            true_false_lowered[0][1].original_module.code
+            true_false_lowered[0][1].original_module.graph_module.code
         )
 
     def test_list_input(self):

@@ -26,6 +26,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
 from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
     convert_to_flatbuffer,
 )
+from torch._export.exported_program import ExportedProgram
 
 XNN_VALUE_FLAG_NON_EXTERNAL = 0
 XNN_VALUE_FLAG_EXTERNAL_INPUT = 1
@@ -169,10 +170,10 @@ def generate_node_to_external_map(
 class XnnpackBackend(BackendDetails):
     @staticmethod
     def preprocess(
-        edge_ir_module: torch.fx.GraphModule,
+        edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> bytes:
-        edge_ir_copy = copy.deepcopy(edge_ir_module)
+        edge_ir_copy = copy.deepcopy(edge_program.graph_module)
 
         # XNNPACK Delegate Specific Passes
         pass_result = xnnpack_delegation_passes(edge_ir_copy)

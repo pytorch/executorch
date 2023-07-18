@@ -5,7 +5,7 @@ from typing import final, List
 import executorch.exir as exir
 
 import torch
-from executorch.backends.backend_api import to_backend
+from executorch.backends.backend_api import ExportedProgram, to_backend
 from executorch.backends.backend_details import BackendDetails
 from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,
@@ -63,11 +63,11 @@ class M(torch.nn.Module):
 class Backend2Demo(BackendDetails):
     @staticmethod
     def preprocess(
-        edge_ir_module: exir.torch.fx.GraphModule,
+        edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> bytes:
         processed_bytes = "Backend2::"
-        for node in edge_ir_module.graph.nodes:
+        for node in edge_program.graph.nodes:
             if node.op == "call_function":
                 processed_bytes += f"{node.target.__name__};"
         return bytes(processed_bytes, encoding="utf8")
@@ -106,10 +106,10 @@ class Backend2PartitionerDemo(Partitioner):
 class Backend1Demo(BackendDetails):
     @staticmethod
     def preprocess(
-        edge_ir_module: exir.torch.fx.GraphModule,
+        edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> bytes:
-        partitioned_module = to_backend(edge_ir_module, Backend2PartitionerDemo)
+        partitioned_module = to_backend(edge_program, Backend2PartitionerDemo)
 
         def process(gm):
             processed_bytes = ""
@@ -128,7 +128,7 @@ class Backend1Demo(BackendDetails):
                         processed_bytes += f"{node.target.__name__};"
             return processed_bytes
 
-        processed_bytes = f"Backend1::({process(partitioned_module)})"
+        processed_bytes = f"Backend1::({process(partitioned_module.graph_module)})"
         return bytes(processed_bytes, encoding="utf8")
 
 
@@ -153,8 +153,8 @@ class Backend1PartitionerDemo(Partitioner):
         self.partition_tags = {}
 
     def partition(
-        self, edge_graph_module: exir.torch.fx.GraphModule
-    ) -> exir.torch.fx.GraphModule:
+        self, edge_graph_module: torch.fx.GraphModule
+    ) -> torch.fx.GraphModule:
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, op_support=self.op_support
         )
@@ -190,15 +190,11 @@ class TestNestedBackends(unittest.TestCase):
 
         m = M()
         orig_res = m(*m.get_example_inputs())
-        orig = (
-            exir.capture(
-                m,
-                m.get_example_inputs(),
-                exir.CaptureConfig(pt2_mode=True),
-            )
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-            .graph_module
-        )
+        orig = exir.capture(
+            m,
+            m.get_example_inputs(),
+            exir.CaptureConfig(pt2_mode=True),
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
 
         partitioned = to_backend(orig, Backend1PartitionerDemo)
 

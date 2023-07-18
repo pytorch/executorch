@@ -12,13 +12,9 @@ from executorch.backends.compile_spec_schema import CompileSpec
 from executorch.backends.partitioner import Partitioner, TPartitioner
 from executorch.backends.utils import is_identical_graph
 from executorch.exir import (
-    attach_export_graph_metadata,
     CallSpec,
-    ExirExportedProgram,
     ExportGraphSignature,
-    get_exir_meta,
     MultiMethodExirExportedProgram,
-    pytree,
 )
 
 from executorch.exir.delegate import (
@@ -26,10 +22,14 @@ from executorch.exir.delegate import (
     executorch_call_delegate,
     get_lowered_module_name,
     LoweredBackendModule,
-    patch_lowered_functions,
 )
-from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.graph_module import (
+    attach_export_graph_metadata,
+    ExirMetadata,
+    get_control_flow_submodules,
+)
 from executorch.exir.pass_base import ExportPass
+from torch._export.exported_program import ExportedProgram
 
 
 @singledispatch
@@ -39,7 +39,7 @@ def to_backend(args):
 
     def to_backend(
         backend_id: str,
-        edge_graph_module: torch.fx.GraphModule,
+        edge_graph_module: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> LoweredBackendModule:
 
@@ -58,23 +58,24 @@ def to_backend(args):
 @to_backend.register
 def _(
     backend_id: str,
-    edge_graph_module: torch.fx.GraphModule,
+    edge_program: ExportedProgram,
     compile_specs: List[CompileSpec],
 ) -> LoweredBackendModule:
     """
     Add overloaded implementations for to_backend:
     def to_backend(
         backend_id: str,
-        edge_graph_module: torch.fx.GraphModule,
+        edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> LoweredBackendModule:
-    Requires the passed in Module in Edge dialect to be executed in the backend identified
-    by backend_id. The forward method of the given edge_graph_module will be
-    targeted for execution.
+    Requires the passed in exported program in Edge dialect to be executed in
+    the backend identified by backend_id. The forward method of the given
+    edge_graph_module will be targeted for execution.
 
     Args:
         backend_id: The backend identifier.
-        edge_graph_module: A module in Edge dialect to target for lowering to the backend.
+        exported_program: An exported program in Edge dialect to target for
+        lowering to the backend.
         compile_specs: A list of backend-specific objects with static
             metadata to configure the "compilation" process (e.g. it could be
             another dictionary itself).
@@ -83,7 +84,7 @@ def _(
         LoweredBackendModule: A Module that has been lowered to the target backend.
         Internally, the lowered Module contains these special attributes:
         backend_id (str: backend id), __processed_module__ (str: a compiled module)
-        compile_spec, original_module (original exported module)
+        compile_spec, original_module (original exported program)
 
     Raises:
         NotImplementedError: The backend is not implemented (e.g. it was not found).
@@ -93,18 +94,17 @@ def _(
     # All backend implementation are final, so we don't need to consider nested subclasses.
     for cls in BackendDetails.__subclasses__():
         if backend_id == cls.__name__:
-            copied_graph_module = copy.deepcopy(edge_graph_module)
+            copied_edge_program = copy.deepcopy(edge_program)
             processed_bytes = cls.preprocess(
-                copied_graph_module,
+                copied_edge_program,
                 compile_specs,
             )
             lowered_module = LoweredBackendModule(
-                edge_graph_module,
+                edge_program,
                 backend_id,
                 processed_bytes,
                 compile_specs,
             )
-            patch_lowered_functions(lowered_module)
             return lowered_module
     raise NotImplementedError(f"Backend {backend_id} was not found.")
 
@@ -156,9 +156,26 @@ def _partition_and_lower(
         )
         logging.debug(f"Partitioned graph module: {tagged_graph_module}")
 
+        # TODO(T158558782): Update the metadata once we migrate to torch.export
+        submodule_program = ExportedProgram(
+            submodule,
+            submodule.graph,
+            ExportGraphSignature([], [], [], [], {}, {}, {}, None),
+            CallSpec(None, None),
+            {},
+            {},
+            [],
+        )
+        meta = ExirMetadata(
+            in_spec=None,
+            out_spec=None,
+            update_spec=0,
+        )
+        attach_export_graph_metadata(submodule_program.graph_module, meta)
+
         lowered_submodule = to_backend(
             delegation_spec.backend_id,
-            submodule,
+            submodule_program,
             delegation_spec.compile_specs,
         )
 
@@ -199,22 +216,22 @@ def _partition_and_lower(
 
 @to_backend.register
 def _(
-    edge_graph_module: torch.fx.GraphModule,
+    edge_program: ExportedProgram,
     partitioner: Type[TPartitioner],
-) -> torch.fx.GraphModule:
+) -> ExportedProgram:
     """
     Add overloaded implementations for to_backend:
     def to_backend(
-        edge_graph_module: torch.fx.GraphModule,
+        edge_program: ExportedProgram,
         partitioner: Type[TPartitioner],
-    ) -> torch.fx.GraphModule
+    ) -> ExportedProgram:
 
     Returns a semantically-equivalent program to the one given as input (represented
     as a graph module in Edge dialect), but with portions of the program targeted for
     delegation as determined by the partitioner.
 
     Args:
-        torch.fx.GraphModule: Program in Edge dialect.
+        ExportedProgram: Program in Edge dialect.
 
         partitioner: An instance of the Partitioner class type, in charge with tagging
         portions of the input program for delegation. A valid partitioner must have
@@ -224,8 +241,9 @@ def _(
 
 
     Returns:
-        torch.fx.GraphModule: The input program, with some portions targeted for delegation.
+        ExportedProgram: The input program, with some portions targeted for delegation.
     """
+    edge_graph_module = edge_program.graph_module
     copied_graph_module = copy.deepcopy(edge_graph_module)
     # Call the partitioner on the given graph module
     partitioner_instance: Partitioner = partitioner()
@@ -249,7 +267,8 @@ def _(
         tagged_graph_module, partitioner_instance
     )
 
-    return tagged_graph_module
+    edge_program.graph_module = tagged_graph_module
+    return edge_program
 
 
 def to_backend_multiple(
@@ -287,35 +306,18 @@ def to_backend_multiple(
             + "partitioner subclass, or a partitioner subclass."
         )
 
-    method_name_to_delegated_gm = {}
+    method_name_to_delegated_program = {}
     for method_name, prog in multi_method_program.methods().items():
-        gm = prog.graph_module
         if isinstance(partitioner, dict):
             if method_name in partitioner:
-                method_name_to_delegated_gm[method_name] = to_backend(
-                    gm, partitioner[method_name]
+                method_name_to_delegated_program[method_name] = to_backend(
+                    prog, partitioner[method_name]
                 )
             else:
-                method_name_to_delegated_gm[method_name] = gm
+                method_name_to_delegated_program[method_name] = prog
         else:
-            method_name_to_delegated_gm[method_name] = to_backend(gm, partitioner)
+            method_name_to_delegated_program[method_name] = to_backend(
+                prog, partitioner
+            )
 
-    def gm_to_program(gm: torch.fx.GraphModule):
-        ep = ExirExportedProgram(
-            gm,
-            gm.graph,
-            ExportGraphSignature([], [], [], [], {}, {}, {}, None),
-            CallSpec(None, None),
-            {},
-            {},
-            [],
-            True,
-        )
-        ep.graph_module.meta.update(gm.meta)
-        attach_export_graph_metadata(ep.graph_module, get_exir_meta(gm))
-        return ep
-
-    method_name_to_delegated_program = pytree.tree_map(
-        gm_to_program, method_name_to_delegated_gm
-    )
     return MultiMethodExirExportedProgram(method_name_to_delegated_program)

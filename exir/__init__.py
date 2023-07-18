@@ -279,6 +279,9 @@ class ExirExportedProgram(ExportedProgram):
         new_ep.graph_module.meta.update(self.graph_module.meta)
         return new_ep
 
+    def get_submodule(self, target: str):
+        return self.graph_module.get_submodule(target)
+
 
 @compatibility(is_backward_compatible=False)
 class ExecutorchProgram:

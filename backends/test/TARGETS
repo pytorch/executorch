@@ -29,7 +29,6 @@ python_library(
         "//executorch/test/...",
     ],
     deps = [
-        "//caffe2:torch",
         "//executorch/backends:backend_details",
         "//executorch/backends:compile_spec_schema",
     ],

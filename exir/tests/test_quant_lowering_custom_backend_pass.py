@@ -27,6 +27,7 @@ from executorch.exir import CaptureConfig
 from executorch.exir.pass_base import ExportPass, map_args
 from executorch.exir.tracer import ExirDynamoConfig
 from torch import fx
+from torch._export.exported_program import ExportedProgram
 
 from torch.ao.quantization import (  # @manual
     default_dynamic_qconfig,
@@ -51,7 +52,6 @@ from torch.ao.quantization.quantize_fx import (
     prepare_qat_fx,
 )
 from torch.fx import subgraph_rewriter
-from torch.fx.node import Node
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.testing import FileCheck
 
@@ -421,10 +421,10 @@ class DuplicateDequantNodePass(ExportPass):
 class ConvAddBackendDemo(BackendDetails):
     @staticmethod
     def preprocess(
-        edge_ir_module: torch.fx.GraphModule,
+        edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> bytes:
-        sub_module = copy.deepcopy(edge_ir_module)
+        sub_module = copy.deepcopy(edge_program.graph_module)
         modified_sub_module_with_delegate = ReplaceQuantizedOperatorsWithQualcommNPU()(
             sub_module
         )
@@ -515,16 +515,12 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         )
 
         # Step 2: EXIR capturing + duplicating dequant nodes
-        captured_program = (
-            exir.capture(
-                converted_mod, example_inputs, exir.CaptureConfig(pt2_mode=True)
+        captured_program = exir.capture(
+            converted_mod, example_inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge(
+            exir.EdgeCompileConfig(
+                passes=[DuplicateDequantNodePass()], _check_ir_validity=False
             )
-            .to_edge(
-                exir.EdgeCompileConfig(
-                    passes=[DuplicateDequantNodePass()], _check_ir_validity=False
-                )
-            )
-            .graph_module
         )
 
         # After quantization/tracing:
@@ -538,6 +534,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
 
         # Step 3.1: Partitioning and delegation using to_backend()
         delegated_mod = to_backend(captured_program, QuantizedConvAddOpPartitioner)
+        lowered_module_0 = delegated_mod.graph_module.lowered_module_0
         # The blob in the example backend is a list of ops, examining them to ensure they are replaced correctly.
         FileCheck().check(
             "convolution.default,sub.Tensor,convolution.default,sub.Tensor,"
@@ -546,7 +543,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         ).check_not(
             "torch.ops.quantized_decomposed.dequantize_per_tensor.default"
         ).run(
-            delegated_mod.lowered_module_0.processed_bytes
+            lowered_module_0.processed_bytes
         )
 
         # After partitioning/to_backend:
@@ -572,21 +569,21 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         ).check(
             "torch.ops.aten.max_pool2d_with_indices.default"
         ).run(
-            delegated_mod.code
+            delegated_mod.graph_module.code
         )
 
         # Check lowered module
         FileCheck().check_count(
             "torch.ops.quantized_decomposed.dequantize_per_tensor.default", 5
-        ).run(delegated_mod.lowered_module_0.original_module.code)
+        ).run(lowered_module_0.original_module.graph_module.code)
         FileCheck().check_count(
             "torch.ops.quantized_decomposed.quantize_per_tensor.default", 4
-        ).run(delegated_mod.lowered_module_0.original_module.code)
+        ).run(lowered_module_0.original_module.graph_module.code)
         FileCheck().check_count("torch.ops.aten.add.Tensor", 2).run(
-            delegated_mod.lowered_module_0.original_module.code
+            lowered_module_0.original_module.graph_module.code
         )
         FileCheck().check_count("torch.ops.aten.convolution.default", 2).run(
-            delegated_mod.lowered_module_0.original_module.code
+            lowered_module_0.original_module.graph_module.code
         )
 
         FileCheck().check(
@@ -596,7 +593,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         ).check_not(
             "torch.ops.aten.sigmoid"
         ).run(
-            delegated_mod.code
+            delegated_mod.graph_module.code
         )
 
         # # Step 4:

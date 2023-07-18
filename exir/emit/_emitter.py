@@ -1254,7 +1254,9 @@ class _TopLevelEmitter(_Emitter):
         self.inputs: List[int] = []
         self.outputs: List[int] = []
 
-        def create_container_str(spec: pytree.TreeSpec) -> str:
+        def create_container_str(spec: Optional[pytree.TreeSpec]) -> str:
+            if spec is None:
+                return ""
             assert isinstance(spec, pytree.TreeSpec), type(spec)
             # pyre-fixme[16]: `TreeSpec` has no attribute `num_leaves`.
             dummy_leaves = [0] * spec.num_leaves

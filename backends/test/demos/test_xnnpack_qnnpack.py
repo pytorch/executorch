@@ -74,12 +74,9 @@ class TestXnnQnnBackends(unittest.TestCase):
 
         # Step 2: EXIR capturing
         capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
-        captured_mod = (
-            exir.capture(converted_mod, example_inputs, config=capture_config)
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-            .module
-        )
-        captured_mod.graph.print_tabular()
+        captured_mod = exir.capture(
+            converted_mod, example_inputs, config=capture_config
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
 
         # Step 3.1: Lower dynamic quant linear to qnnpack
         with validation_disabled():
@@ -91,8 +88,7 @@ class TestXnnQnnBackends(unittest.TestCase):
                 module_with_qnnpack_delegate, XnnpackFloatingPointPartitioner
             )
 
-        program_with_delegates = exir.export_graph_module_to_executorch(
-            module_with_xnn_and_qnn,
+        program_with_delegates = module_with_xnn_and_qnn.to_executorch(
             exir.ExecutorchBackendConfig(passes=[SpecPropPass()]),
         )
         # The first delegate backend is Qnnpack

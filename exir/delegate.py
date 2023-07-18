@@ -5,6 +5,7 @@ from typing import List, Tuple
 
 import torch
 import torch.utils._pytree as pytree
+
 from executorch.backends.compile_spec_schema import CompileSpec
 from executorch.exir.graph_module import (
     _get_submodule,
@@ -12,6 +13,7 @@ from executorch.exir.graph_module import (
     make_export_graph_module,
 )
 from executorch.exir.tracer import Value
+from torch._export.exported_program import ExportedProgram
 from torch._functorch.eager_transforms import (
     _unwrap_all_tensors_from_functional,
     _wrap_all_tensors_to_functional,
@@ -57,17 +59,17 @@ class LoweredBackendModule(torch.nn.Module):
     _backend_id: str
     _processed_bytes: bytes
     _compile_specs: List[CompileSpec]
-    _original_module: torch.fx.GraphModule
+    _original_module: ExportedProgram
 
     def __init__(
         self,
-        edge_ir_m: torch.fx.GraphModule,
+        edge_program: ExportedProgram,
         backend_id: str,
         processed_bytes: bytes,
         compile_specs: List[CompileSpec],
     ) -> None:
         super().__init__()
-        self._original_module = edge_ir_m
+        self._original_module = edge_program
         self._backend_id = backend_id
         self._processed_bytes = processed_bytes
         self._compile_specs = compile_specs
@@ -85,17 +87,17 @@ class LoweredBackendModule(torch.nn.Module):
         return self._compile_specs
 
     @property
-    def original_module(self) -> torch.fx.GraphModule:
+    def original_module(self) -> ExportedProgram:
         return self._original_module
 
     # Used to patch each delegated function with a call_delegate call
-    @staticmethod
-    def patched_method(
-        backend_module: "LoweredBackendModule",
+    # @staticmethod
+    def forward(
+        self,
         *args: Value,
         **kwargs: Tuple[Value, ...],
     ) -> Value:
-        return executorch_call_delegate(backend_module, *args)
+        return executorch_call_delegate(self, *args)
 
 
 executorch_call_delegate = HigherOrderOperator(
@@ -235,31 +237,6 @@ def call_delegate_functionalize(interpreter, lowered_module, *args):
     with interpreter.lower():
         res = executorch_call_delegate(lowered_module, *unwrapped_args)
         return _wrap_all_tensors_to_functional(res, level=interpreter.level())
-
-
-def patch_lowered_functions(module: LoweredBackendModule) -> None:
-    """
-    Patches the forward function that will be delegated so that during tracing,
-    all callsites to the graph module will instead have a
-    "executorch_call_delegate" op in the FX graph.
-
-    Args:
-        module: A module that should contain the attributes contained in a
-            lowered module (``compile_specs``,
-            ``processed_bytes``, ``backend_id``, and
-            ``original_module``)
-
-    Returns:
-        A module where if called during tracing, we will insert a
-        executorch_call_delegate op into the FX graph marking a callsite to
-        these delegated functions.
-    """
-    if not isinstance(module, LoweredBackendModule):
-        return
-
-    # Monkey-patch the forward function
-    # pyre-ignore
-    module.forward = types.MethodType(LoweredBackendModule.patched_method, module)
 
 
 def get_lowered_module_name(

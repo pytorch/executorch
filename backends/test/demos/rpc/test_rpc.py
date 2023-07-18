@@ -94,15 +94,11 @@ class TestRPCDemos(unittest.TestCase):
 
         simple_net = self.get_a_simple_net()
         simple_net_input = simple_net.get_example_inputs()
-        graph_module = (
-            exir.capture(
-                simple_net, simple_net_input, exir.CaptureConfig(pt2_mode=True)
-            )
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-            .graph_module
-        )
+        exported_program = exir.capture(
+            simple_net, simple_net_input, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         # delegate the whole graph to the client executor
-        lowered_module = to_backend(ExecutorBackend.__name__, graph_module, [])
+        lowered_module = to_backend(ExecutorBackend.__name__, exported_program, [])
 
         class CompositeModule(torch.nn.Module):
             def __init__(self):
@@ -133,7 +129,7 @@ class TestRPCDemos(unittest.TestCase):
 
         # Compare the server executor final result with eager model
         self.assertTrue(
-            torch.allclose(model_output[0], ref_output[0], rtol=1e-03, atol=1e-03)
+            torch.allclose(model_output[0], ref_output, rtol=1e-03, atol=1e-03)
         )
 
     def test_delegate_partial_program(self):
@@ -155,21 +151,19 @@ class TestRPCDemos(unittest.TestCase):
         model = Model()
         inputs = (torch.ones(2, 2), torch.ones(2, 2), torch.ones(2, 2))
 
-        graph_module = (
-            exir.capture(model, inputs, exir.CaptureConfig(pt2_mode=True))
-            .to_edge()
-            .graph_module
-        )
+        exported_program = exir.capture(
+            model, inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
 
         # First lower to demo backend
-        demo_backend_lowered = to_backend(graph_module, AddMulPartitionerDemo)
+        demo_backend_lowered = to_backend(exported_program, AddMulPartitionerDemo)
 
         # Then lower to executor backend
         executor_backend_lowered = to_backend(
             demo_backend_lowered, ExecutorBackendPartitioner
         )
 
-        prog_buffer = exir.export_graph_module_to_executorch(executor_backend_lowered)
+        prog_buffer = executor_backend_lowered.to_executorch()
         buffer = prog_buffer.buffer
 
         executorch_module = _load_for_executorch_from_buffer(buffer)

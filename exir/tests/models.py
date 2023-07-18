@@ -9,7 +9,7 @@ import executorch.exir as exir
 
 import torch  # noqa: F401
 import torch.nn as nn
-from executorch.exir.delegate import LoweredBackendModule, patch_lowered_functions
+from executorch.exir.delegate import LoweredBackendModule
 from torch import Tensor
 
 # TODO: add one more test for data dependent op plus repeat
@@ -150,12 +150,11 @@ class CompositeDelegateModule(torch.nn.Module):
             exir.CaptureConfig(pt2_mode=True),
         ).to_edge()
         lowered_module = LoweredBackendModule(
-            edge_ir_m=edge_ir_m,
+            edge_program=edge_ir_m,
             backend_id="backend_demo",
             processed_bytes=bytes("basic_module_add", encoding="utf8"),
             compile_specs=[],
         )
-        patch_lowered_functions(lowered_module)
         self.lowered_module: LoweredBackendModule = lowered_module
 
     def forward(self, a: exir.Value, b: exir.Value, s: Tensor) -> Tensor:

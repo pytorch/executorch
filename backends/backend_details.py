@@ -1,11 +1,9 @@
 from abc import ABC, abstractmethod
 
-from typing import Callable, Dict, List
-
-import torch
+from typing import List
 
 from executorch.backends.compile_spec_schema import CompileSpec
-from torch.fx.node import Node
+from torch._export.exported_program import ExportedProgram
 
 
 def enforcedmethod(func):
@@ -31,7 +29,7 @@ class BackendDetails(ABC):
     enforced to implement this method.
 
     Args:
-        edge_ir_module: The original module. It will not be modified in place.
+        edge_program: The original exported program. It will not be modified in place.
         backend_debug_handle_generator: A callable to map a graph to a dictionary (key is node, value is id)
         compile_specs: List of values needed for compilation
 
@@ -45,7 +43,7 @@ class BackendDetails(ABC):
     # it's a virtual method and inheritant class needs to implement the actual function
     @abstractmethod
     def preprocess(
-        edge_ir_module: torch.fx.GraphModule,
+        edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> bytes:
         # Users should return a compiled blob - a binary that can run the desired

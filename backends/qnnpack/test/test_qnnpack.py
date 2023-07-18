@@ -77,11 +77,9 @@ class TestQnnbackends(unittest.TestCase):
 
         # Step 2: EXIR capturing
         capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
-        captured_mod = (
-            exir.capture(converted_mod, example_inputs, config=capture_config)
-            .to_edge(EDGE_COMPILE_CONFIG)
-            .graph_module
-        )
+        captured_mod = exir.capture(
+            converted_mod, example_inputs, config=capture_config
+        ).to_edge(EDGE_COMPILE_CONFIG)
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_tensor"
         ).check(
@@ -91,7 +89,7 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_aten_mm"
         ).run(
-            captured_mod.code
+            captured_mod.graph_module.code
         )
 
         # Step 3: Lower to QNNPack
@@ -155,11 +153,9 @@ class TestQnnbackends(unittest.TestCase):
 
         # Step 2: EXIR capturing
         capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
-        captured_mod = (
-            exir.capture(converted_mod, example_inputs, config=capture_config)
-            .to_edge(EDGE_COMPILE_CONFIG)
-            .graph_module
-        )
+        captured_mod = exir.capture(
+            converted_mod, example_inputs, config=capture_config
+        ).to_edge(EDGE_COMPILE_CONFIG)
 
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_tensor"
@@ -180,7 +176,7 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "aten_view_copy_default"
         ).run(
-            captured_mod.code
+            captured_mod.graph_module.code
         )
 
         # Step 3: Lower to QNNPack
@@ -244,11 +240,9 @@ class TestQnnbackends(unittest.TestCase):
 
         # Step 2: EXIR capturing
         capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
-        captured_mod = (
-            exir.capture(converted_mod, example_inputs, config=capture_config)
-            .to_edge(EDGE_COMPILE_CONFIG)
-            .graph_module
-        )
+        captured_mod = exir.capture(
+            converted_mod, example_inputs, config=capture_config
+        ).to_edge(EDGE_COMPILE_CONFIG)
         captured_mod.graph.print_tabular()
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_tensor"
@@ -259,7 +253,7 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_aten_mm"
         ).run(
-            captured_mod.code
+            captured_mod.graph_module.code
         )
 
         # Step 3: Lower to QNNPack
@@ -321,11 +315,9 @@ class TestQnnbackends(unittest.TestCase):
 
         # Step 2: EXIR capturing
         capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
-        captured_mod = (
-            exir.capture(converted_mod, example_inputs, config=capture_config)
-            .to_edge(EDGE_COMPILE_CONFIG)
-            .graph_module
-        )
+        captured_mod = exir.capture(
+            converted_mod, example_inputs, config=capture_config
+        ).to_edge(EDGE_COMPILE_CONFIG)
 
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_tensor"
@@ -346,7 +338,7 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "aten_view_copy_default"
         ).run(
-            captured_mod.code
+            captured_mod.graph_module.code
         )
 
         # Step 3: Lower to QNNPack
@@ -408,11 +400,9 @@ class TestQnnbackends(unittest.TestCase):
 
         # Step 2: EXIR capturing
         capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=True)
-        captured_mod = (
-            exir.capture(converted_mod, example_inputs, config=capture_config)
-            .to_edge(EDGE_COMPILE_CONFIG)
-            .graph_module
-        )
+        captured_mod = exir.capture(
+            converted_mod, example_inputs, config=capture_config
+        ).to_edge(EDGE_COMPILE_CONFIG)
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_tensor"
         ).check(
@@ -422,7 +412,7 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_aten_mm"
         ).run(
-            captured_mod.code
+            captured_mod.graph_module.code
         )
 
         # Step 3: Lower to QNNPack
@@ -487,11 +477,9 @@ class TestQnnbackends(unittest.TestCase):
 
         # Step 2: EXIR capturing
         capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
-        captured_mod = (
-            exir.capture(converted_mod, example_inputs, config=capture_config)
-            .to_edge(EDGE_COMPILE_CONFIG)
-            .graph_module
-        )
+        captured_mod = exir.capture(
+            converted_mod, example_inputs, config=capture_config
+        ).to_edge(EDGE_COMPILE_CONFIG)
 
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_tensor"
@@ -512,7 +500,7 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "aten_view_copy_default"
         ).run(
-            captured_mod.code
+            captured_mod.graph_module.code
         )
 
         with validation_disabled():
@@ -523,9 +511,7 @@ class TestQnnbackends(unittest.TestCase):
             lowered_module.code
         )
 
-        program = exir.export_graph_module_to_executorch(
-            lowered_module, config=EXECUTORCH_BACKEND_CONFIG
-        ).program
+        program = lowered_module.to_executorch(config=EXECUTORCH_BACKEND_CONFIG).program
 
         # TODO(T143084047)
         # class CompositeModule(torch.nn.Module):
