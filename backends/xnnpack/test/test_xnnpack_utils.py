@@ -41,13 +41,6 @@ from torch.ao.quantization import (  # @manual
     QConfigMapping,
 )
 
-from torch.ao.quantization._quantize_pt2e import (
-    convert_pt2e,
-    get_symmetric_quantization_config,
-    prepare_pt2e_quantizer,
-    QNNPackQuantizer,
-)
-
 from torch.ao.quantization.backend_config.executorch import (
     get_executorch_backend_config,
 )
@@ -65,6 +58,13 @@ from torch.ao.quantization.qconfig_mapping import (
 from torch.ao.quantization.quantize_fx import (
     _convert_to_reference_decomposed_fx,
     prepare_fx,
+)
+
+from torch.ao.quantization.quantize_pt2e import (
+    convert_pt2e,
+    get_symmetric_quantization_config,
+    prepare_pt2e_quantizer,
+    QNNPackQuantizer,
 )
 
 from torch.testing import FileCheck
