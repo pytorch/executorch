@@ -1,0 +1,9 @@
+[submodule "third-party/prelude"]
+	path = third-party/prelude
+	url = https://github.com/facebook/buck2-prelude.git
+[submodule "third-party/flatbuffers"]
+	path = third-party/flatbuffers
+	url = https://github.com/google/flatbuffers.git
+[submodule "third-party/pytorch"]
+	path = third-party/pytorch
+	url = https://github.com/pytorch/pytorch.git
