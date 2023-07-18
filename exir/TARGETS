@@ -34,9 +34,6 @@ python_library(
         "graph_module.py",
     ],
     deps = [
-        ":common",
-        ":error",
-        ":graph",
         "//caffe2:torch",
     ],
 )
@@ -129,7 +126,6 @@ python_library(
         ":control_flow",  # @manual
         ":dynamic_shape",
         ":error",
-        ":graph_module",
         ":pass_base",  # @manual
         ":pass_manager",
         ":schema",
@@ -156,7 +152,6 @@ python_library(
         ":control_flow",
         ":delegate",
         ":error",
-        ":graph_module",
         ":memory",
         ":schema",
         ":tensor",
@@ -234,7 +229,6 @@ python_library(
     deps = [
         ":delegate",
         ":error",
-        ":graph_module",
         ":memory",
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",

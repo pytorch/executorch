@@ -11,13 +11,6 @@ import torch
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
-from executorch.exir.graph_module import (
-    attach_export_graph_metadata,
-    EXIR_METADATA,
-    get_exir_meta,
-    make_export_graph_module,
-    reduce_graph_module,
-)
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes import (
     aten_to_edge_passes,
@@ -119,35 +112,17 @@ class ExecutorchBackendConfig:
 
 
 # TODO(ycao): set up "__all__" to limit symbol exposure
-def _to_edge(expo_prog, config: EdgeCompileConfig) -> "ExirExportedProgram":
-    meta = get_exir_meta(expo_prog.graph_module)
+def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     if config._check_ir_validity:
         try:
-            EXIRATenDialectVerifier()(expo_prog.graph_module)
+            EXIRATenDialectVerifier()(ep.graph_module)
         except ExportError:
             logging.info(
                 "If you'd like to disable IR validation checking, please set _check_ir_validity in EdgeCompileConfig, "
                 "like *.to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))."
             )
             raise
-    mutation = meta.mutation
-    num_mutated = len(mutation) if mutation is not None else 0
-    output_node = next(iter(reversed(expo_prog.graph_module.graph.nodes)))
-    assert output_node.op == "output"
-    output_node.args = (output_node.args[0][num_mutated:],)
-    expo_prog.graph_module.graph.eliminate_dead_code()
 
-    ep = ExirExportedProgram(
-        expo_prog.graph_module,
-        expo_prog.graph_module.graph,
-        ExportGraphSignature([], [], [], [], {}, {}, {}, None),
-        CallSpec(meta.in_spec, meta.out_spec),
-        {},
-        {},
-        [],
-        False,
-    )
-    attach_export_graph_metadata(ep.graph_module, meta)
     op_replace_pass = [OpReplacePass()] if config._use_edge_ops else []
     passes = aten_to_edge_passes.passes + op_replace_pass + config.passes
     new_ep = ep.transform(*passes)
@@ -198,7 +173,6 @@ class ExirExportedProgram(ExportedProgram):
             ep.equality_constraints,
             self.after_to_edge_passes,
         )
-
         transformed_ep.graph_module.meta.update(ep.graph_module.meta)
         transformed_ep.graph_module.meta.update(self.graph_module.meta)
         return transformed_ep
@@ -228,24 +202,6 @@ class ExirExportedProgram(ExportedProgram):
         return res.graph_module
 
     @property
-    def meta(self):
-        return self.graph_module.meta
-
-    @property
-    def in_spec(self):
-        meta = get_exir_meta(self.graph_module)
-        return meta.in_spec
-
-    @property
-    def out_spec(self):
-        meta = get_exir_meta(self.graph_module)
-        return meta.out_spec
-
-    @property
-    def graph(self):
-        return self.graph_module.graph
-
-    @property
     def code(self):
         return self.graph_module.code
 
@@ -257,7 +213,6 @@ class ExirExportedProgram(ExportedProgram):
             raise RuntimeError("Must run to_edge before to_executorch.")
         config = config or ExecutorchBackendConfig()
         new_prog = self.transform(*edge_to_executorch_passes(config))
-        meta = get_exir_meta(new_prog.graph_module)
         executorch_prog = ExecutorchProgram(
             new_prog,
             emit_stacktrace=config.emit_stacktrace,
@@ -266,19 +221,9 @@ class ExirExportedProgram(ExportedProgram):
             constant_tensor_alignment=config.constant_tensor_alignment,
             delegate_alignment=config.delegate_alignment,
         )
-        attach_export_graph_metadata(executorch_prog.graph_module, meta)
-        # We only need to update the meta of the root graph module since it is
-        # reconstructed in ExecutorchProgram. The submodules are exactly the
-        # original submodules in new_prog.
         executorch_prog.graph_module.meta.update(new_prog.graph_module.meta)
         executorch_prog.graph_module.meta.update(self.graph_module.meta)
         return executorch_prog
-
-    def __reduce__(
-        self,
-    ) -> Tuple[Callable[..., "ExirExportedProgram"], Tuple[bytes]]:
-        _, (pickled_states,) = self.graph_module.__reduce__()
-        return (edge_gm_deserializer, (pickled_states,))
 
     def __deepcopy__(self, memo: Optional[Dict[int, Any]] = None) -> "ExportedProgram":
         gm = self.graph_module.__deepcopy__(memo)
@@ -291,9 +236,6 @@ class ExirExportedProgram(ExportedProgram):
             copy.deepcopy(self.range_constraints),
             copy.deepcopy(self.equality_constraints),
             self.after_to_edge_passes,
-        )
-        attach_export_graph_metadata(
-            new_ep.graph_module, get_exir_meta(self.graph_module)
         )
         new_ep.graph_module.meta.update(self.graph_module.meta)
         return new_ep
@@ -418,27 +360,6 @@ class MultiMethodExecutorchProgram:
         return self._executorch_dialect_ir_program
 
 
-def edge_gm_deserializer(pickled_states: bytes) -> "ExirExportedProgram":
-    loaded_gm = reduce_graph_module(pickled_states)
-    # restore node.meta["val"], which is deleted before pickling
-    annotated_gm = aten_to_edge_passes(loaded_gm).graph_module
-    meta = get_exir_meta(annotated_gm)
-
-    ep = ExirExportedProgram(
-        annotated_gm.module,
-        annotated_gm.graph,
-        ExportGraphSignature([], [], [], [], {}, {}, {}, None),
-        CallSpec(meta.in_spec, meta.out_spec),
-        {},
-        {},
-        [],
-        after_to_edge_passes=True,
-    )
-    attach_export_graph_metadata(ep.graph_module, meta)
-    ep.graph_module.meta.update(annotated_gm.graph_module.meta)
-    return ep
-
-
 # This is to bootstrap the missing meta["val"] when 1. ph consists of scalar
 # 2. meta["val"] is not properly set in dispatch_trace.
 def _instantiate_missing_placeholder_val_with_real_inputs(gm, args):
@@ -468,7 +389,6 @@ def capture(
         )
 
     config = config or CaptureConfig()
-    mutation = None
     out_spec = None
     # TODO (zhxchen17) Always functionalize in a second pass no matter which path is taken.
     flat_args = tuple(pytree.tree_flatten(args)[0])
@@ -578,15 +498,8 @@ def capture(
                     tracing_mode=tracing_mode,
                     _allow_non_fake_inputs=True,
                 )(*args)
-        module = make_export_graph_module(
-            graph_module,
-            graph_module.graph,
-        )
 
-        flatten_output(module)
-        meta = get_exir_meta(module)
-        meta.in_spec = in_spec
-        meta.out_spec = out_spec
+        flatten_output(graph_module)
 
     else:
         warnings.warn(
@@ -604,24 +517,22 @@ def capture(
             raise InternalError(
                 "Using AOT mode is not supported for leagacy capture mode, please use pt2_mode=True instead."
             )
-        module = dispatch_trace(f, args)
-        # TODO(shunting) move this into ExportModuleState
-        meta = module.meta[EXIR_METADATA]
-    _instantiate_missing_placeholder_val_with_real_inputs(module, flat_args)
-    module._apply(torch.Tensor.contiguous)
-    meta = get_exir_meta(module)
-    meta.mutation = mutation  # pyre-ignore
+        graph_module = dispatch_trace(f, args)
+        in_spec, out_spec = graph_module.in_spec, graph_module.out_spec
+
+    _instantiate_missing_placeholder_val_with_real_inputs(graph_module, flat_args)
+    graph_module._apply(torch.Tensor.contiguous)
+
     ep = ExirExportedProgram(
-        module,
-        module.graph,
+        graph_module,
+        graph_module.graph,
         ExportGraphSignature([], [], [], [], {}, {}, {}, None),
-        CallSpec(meta.in_spec, meta.out_spec),
+        CallSpec(in_spec, out_spec),
         {},
         {},
         [],
         False,
     )
-    attach_export_graph_metadata(ep.graph_module, meta)
     return ep
 
 
@@ -719,18 +630,6 @@ class MultiMethodExirExportedProgram:
         "please look up one of its methods first via `find_method(method_name)` "
         "to access property: {property_name}."""
         return getattr(default_program.graph_module, property_name)
-
-    @property
-    def meta(self):
-        return self.access_property_of_default_method("meta")
-
-    @property
-    def in_spec(self):
-        return self.meta[EXIR_METADATA].in_spec
-
-    @property
-    def out_spec(self):
-        return self.meta[EXIR_METADATA].out_spec
 
     @property
     def graph(self):

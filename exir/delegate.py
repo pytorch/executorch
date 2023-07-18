@@ -7,11 +7,7 @@ import torch
 import torch.utils._pytree as pytree
 
 from executorch.backends.compile_spec_schema import CompileSpec
-from executorch.exir.graph_module import (
-    _get_submodule,
-    EXIR_METADATA,
-    make_export_graph_module,
-)
+from executorch.exir.graph_module import _get_submodule
 from executorch.exir.tracer import Value
 from torch._export.exported_program import ExportedProgram
 from torch._functorch.eager_transforms import (
@@ -281,22 +277,6 @@ def _fixup_output_node(gm: torch.fx.GraphModule) -> None:
             return
 
 
-def generate_in_spec_out_spec(gm: torch.fx.GraphModule) -> None:
-    output_nodes = []
-    for node in gm.graph.nodes:
-        if node.op == "output":
-            output_nodes = node.args[0]
-
-    all_placeholders = [node for node in gm.graph.nodes if node.op == "placeholder"]
-
-    (_, pytree_in) = tree_flatten(tuple(all_placeholders))
-    (_, pytree_out) = tree_flatten(tuple(output_nodes))
-
-    meta = gm.meta[EXIR_METADATA]
-    meta.in_spec = pytree_in
-    meta.out_spec = pytree_out
-
-
 def create_submodule_from_nodes(
     gm: torch.fx.GraphModule,
     node_list: NodeList,
@@ -319,14 +299,11 @@ def create_submodule_from_nodes(
     sorted_nodes = topo_sort(node_list)
 
     submodule_name = "fused_" + tag
-    initial_sub_gm, orig_inputs, orig_outputs = fuse_as_graphmodule(
+    sub_gm, orig_inputs, orig_outputs = fuse_as_graphmodule(
         gm, sorted_nodes, submodule_name
     )
 
-    _fixup_output_node(initial_sub_gm)
-    sub_gm = make_export_graph_module(
-        initial_sub_gm, initial_sub_gm.graph, submodule_name
-    )
+    _fixup_output_node(sub_gm)
 
     gm = insert_subgm(gm, sub_gm, orig_inputs, orig_outputs)
     if len(orig_outputs) == 1 and isinstance(orig_outputs[0].meta["val"], FakeTensor):
@@ -365,7 +342,6 @@ def create_submodule_from_nodes(
         submodule_node is not None
     ), f"No submodule was created with the nodes {node_list} in the graph {gm.graph}"
 
-    generate_in_spec_out_spec(sub_gm)
     return sub_gm, submodule_node
 
 

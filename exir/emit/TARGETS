@@ -23,7 +23,6 @@ python_library(
         "//executorch/exir:common",
         "//executorch/exir:delegate",
         "//executorch/exir:error",
-        "//executorch/exir:graph_module",
         "//executorch/exir:memory",
         "//executorch/exir:print_program",
         "//executorch/exir:schema",

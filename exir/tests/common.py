@@ -5,7 +5,6 @@ from typing import Any, Callable, List
 import executorch.exir as exir
 import torch
 import torch.utils._pytree as pytree
-from executorch.exir.graph_module import make_export_graph_module
 
 from executorch.exir.schema import (
     AllocationDetails,
@@ -102,7 +101,7 @@ def get_graph_module_with_op(op: Callable, args: Any) -> torch.fx.GraphModule:
         op_node = graph.call_function(op, tuple(input_nodes))
         graph.output(op_node)
 
-    graph_module = make_export_graph_module(torch.nn.Module(), graph)
+    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
     graph_module.recompile()
 
     graph_module = exir.capture(graph_module, args).to_edge().module

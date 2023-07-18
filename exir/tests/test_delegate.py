@@ -10,10 +10,8 @@ from executorch.exir import CaptureConfig
 from executorch.exir.delegate import (
     create_submodule_from_nodes,
     executorch_call_delegate,  # noqa
-    generate_in_spec_out_spec,
     LoweredBackendModule,
 )
-from executorch.exir.graph_module import get_exir_meta
 from executorch.exir.schema import (
     BackendDelegate,
     BackendDelegateDataReference,
@@ -290,43 +288,3 @@ class TestDelegate(unittest.TestCase):
 
         new_res = prog(*inputs)
         self.assertTrue(torch.allclose(new_res, orig_res))
-
-    def test_generate_in_out_spec_for_fused_submodules(self) -> None:
-        inputs = (torch.randn(1, 3), torch.randn(1, 3))
-
-        class Model(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                x = x + y
-                x = x * y
-                x = x - y
-                x = x / y
-                return x
-
-        gm = (
-            exir.capture(Model(), inputs, CaptureConfig(pt2_mode=True))
-            .to_edge()
-            .graph_module
-        )
-
-        node_list = []
-        for node in gm.graph.nodes:
-            if node.op == "call_function" and node.target in {
-                torch.ops.aten.add.Tensor,
-                torch.ops.aten.mul.Tensor,
-            }:
-                node_list.append(node)
-        sub_gm, node = create_submodule_from_nodes(gm, node_list, "tag")
-        sub_gm.recompile()
-        gm.recompile()
-        generate_in_spec_out_spec(sub_gm)
-        self.assertEqual(
-            "".join(str(get_exir_meta(sub_gm).in_spec).split()),
-            "TreeSpec(tuple,None,[*,*])",
-        )
-        self.assertEqual(
-            "".join(str(get_exir_meta(sub_gm).out_spec).split()),
-            "TreeSpec(tuple,None,[*])",
-        )

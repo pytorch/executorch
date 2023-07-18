@@ -39,7 +39,6 @@ from executorch.exir.delegate import LoweredBackendModule
 from executorch.exir.dialects.backend._ops import BackendOpOverload
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
-from executorch.exir.graph_module import get_exir_meta
 from executorch.exir.operator.convert import is_out_variant
 from executorch.exir.print_program import pretty_print_stacktraces
 from executorch.exir.schema import (
@@ -1265,13 +1264,8 @@ class _TopLevelEmitter(_Emitter):
             _, tree = ex_pytree.tree_flatten(tree)
             return tree.to_str()
 
-        meta = get_exir_meta(exported_program.graph_module)
-        inp_container_str = create_container_str(
-            typing.cast(pytree.TreeSpec, meta.in_spec)
-        )
-        out_container_str = create_container_str(
-            typing.cast(pytree.TreeSpec, meta.out_spec)
-        )
+        inp_container_str = create_container_str(exported_program.call_spec.in_spec)
+        out_container_str = create_container_str(exported_program.call_spec.out_spec)
 
         self.container_meta_type = ContainerMetadata(
             inp_container_str, out_container_str

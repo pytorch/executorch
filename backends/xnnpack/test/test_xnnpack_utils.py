@@ -27,8 +27,6 @@ from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 
-from executorch.exir.graph_module import attach_export_graph_metadata, get_exir_meta
-
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.serialize import serialize_to_flatbuffer
 
@@ -306,14 +304,13 @@ class TestXNNPACK(unittest.TestCase):
         )
         captured_program = exir.capture(module, example_inputs, config=capture_config)
         m = captured_program.graph_module
-        exir_meta = get_exir_meta(m)
 
         quantizer = QNNPackQuantizer()
         quantization_config = get_symmetric_quantization_config()
         quantizer.set_global(quantization_config)
         prepared = prepare_pt2e_quantizer(captured_program.graph_module, quantizer)
         converted = convert_pt2e(prepared)
-        attach_export_graph_metadata(converted, exir_meta)
+
         captured_program.graph_module = converted
         edge_program = captured_program.to_edge(get_xnnpack_edge_compile_config())
         delegated_module = self.lower_module_and_test_output(

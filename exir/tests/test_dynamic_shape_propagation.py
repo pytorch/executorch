@@ -1,10 +1,7 @@
-import copy
 from unittest import TestCase
 
 from executorch import exir
-from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import DebugPass, SpecPropPass, SymShapeEvalPass
-from executorch.exir.passes.sym_shape_eval_pass import SymShapeEvalPass
 from executorch.exir.tests.models import Repeat
 
 
@@ -26,9 +23,6 @@ class TestDynamicShapeProp(TestCase):
         new_prog = prog.transform(SpecPropPass(), SymShapeEvalPass())
 
         gm = new_prog.graph_module
-        # meta is preserved thru deepcopy
-        cp = copy.deepcopy(gm)
-        self.assertTrue(len(cp.meta) > 0)
 
         DebugPass(show_spec=True)(gm)
         *_, return_node = gm.graph.nodes

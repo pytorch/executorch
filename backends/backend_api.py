@@ -23,11 +23,7 @@ from executorch.exir.delegate import (
     get_lowered_module_name,
     LoweredBackendModule,
 )
-from executorch.exir.graph_module import (
-    attach_export_graph_metadata,
-    ExirMetadata,
-    get_control_flow_submodules,
-)
+from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.pass_base import ExportPass
 from torch._export.exported_program import ExportedProgram
 
@@ -166,12 +162,6 @@ def _partition_and_lower(
             {},
             [],
         )
-        meta = ExirMetadata(
-            in_spec=None,
-            out_spec=None,
-            update_spec=0,
-        )
-        attach_export_graph_metadata(submodule_program.graph_module, meta)
 
         lowered_submodule = to_backend(
             delegation_spec.backend_id,
