@@ -618,11 +618,7 @@ class TestBackends(unittest.TestCase):
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
 
         program_without_delegates = (
-            exir.capture(
-                composite_m,
-                (input_x, input_h, input_c),
-                exir.CaptureConfig(pt2_mode=True),
-            )
+            exir.capture(CompositeModel(3), inputs)
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
@@ -726,7 +722,7 @@ class TestBackends(unittest.TestCase):
 
         program_without_delegates = (
             exir.capture(
-                composite_m,
+                CompositeModel(3),
                 (input_x, input_h, input_c),
                 exir.CaptureConfig(pt2_mode=True),
             )
@@ -962,7 +958,8 @@ class TestBackends(unittest.TestCase):
             example_inputs,
             exir.CaptureConfig(
                 pt2_mode=True,
-                enable_functionalization=False,
+                enable_aot=True,
+                _unlift=True,
             ),
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         FileCheck().check_count("quantize_per_tensor.default", 3).check("addmm").run(

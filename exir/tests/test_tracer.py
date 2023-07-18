@@ -12,10 +12,12 @@ import executorch.exir.tests.models as models
 import torch
 
 import torch.utils._pytree as pytree
+from executorch.exir import CaptureConfig
 from executorch.exir.error import ExportError
 from executorch.exir.passes import DebugPass
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tracer import dynamo_trace, ExirDynamoConfig, using_dynamo
+from functorch.experimental.control_flow import cond, map
 
 from parameterized import parameterized
 from torch._export.verifier import SpecViolationError
@@ -408,3 +410,135 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
                 )
 
         self.assertEqual(len(placeholder_nodes), 2)
+
+    def test_export_unlift(self) -> None:
+        class Foo(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("buffer", torch.ones(6, 4))
+
+            def forward(self, x):
+                return x.cos() + self.buffer.sin()
+
+        ep = exir.capture(
+            Foo(),
+            (torch.ones(6, 4),),
+            exir.CaptureConfig(enable_aot=True, pt2_mode=True, _unlift=True),
+        )
+
+        self.assertTrue(torch.allclose(ep(torch.ones(6, 4)), Foo()(torch.ones(6, 4))))
+
+    def test_export_container_unlift(self) -> None:
+        class FooContainerInputOutput(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("buffer", torch.ones(6, 4))
+
+            def forward(self, x):
+                return x[0][0].cos() + x[0][1].sin() + self.buffer.sin()
+
+        inp = ((torch.ones(6, 4), torch.ones(6, 4)),)
+        ep = exir.capture(
+            FooContainerInputOutput(),
+            (inp,),
+            CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True),
+        )
+        self.assertTrue(torch.allclose(ep(inp), FooContainerInputOutput()(inp)))
+
+    def test_export_container_input_unlift(self) -> None:
+        class FooContainerInputOutputV2(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("buffer", torch.ones(6, 4))
+
+            def forward(self, x, y):
+                return x[0].cos() + y[0].sin() + self.buffer.sin()
+
+        inp = ((torch.ones(6, 4),), (torch.ones(6, 4),))
+        ep = exir.capture(
+            FooContainerInputOutputV2(),
+            inp,
+            CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True),
+        )
+        self.assertTrue(torch.allclose(ep(*inp), FooContainerInputOutputV2()(*inp)))
+
+    def test_export_cond(self) -> None:
+        class A(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("buffer", torch.ones(6, 4))
+
+            def forward(self):
+                return self.buffer.cos()
+
+        class Foo(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.a = A()
+
+            def forward(self, x):
+                def true_fn(x):
+                    return x.cos() + self.a().sum()
+
+                def false_fn(x):
+                    return x.sin()
+
+                return cond(x.shape[0] > 4, true_fn, false_fn, [x])
+
+        inp = torch.ones(6, 4)
+        ep = exir.capture(
+            Foo(),
+            (inp,),
+            CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True),
+        )
+        self.assertTrue(torch.allclose(ep(torch.ones(6, 4)), Foo()(torch.ones(6, 4))))
+
+    def test_export_cond_map(self) -> None:
+        class A(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("buffer", torch.ones(6, 4))
+
+            def forward(self):
+                return self.buffer.sum()
+
+        class Module(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.a = A()
+
+            def inner(self, x, pred):
+                def true_fn(x):
+                    return x + x + self.a()
+
+                def false_fn(x):
+                    return x * x - self.a()
+
+                return cond(pred, true_fn, false_fn, [x])
+
+            def forward(self, pred, xs):
+                def body(x, pred):
+                    return self.inner(x, pred) + self.a()
+
+                return map(body, xs, pred)
+
+        inp = torch.randn(3, 2, 1)
+        ep = exir.capture(
+            Module(),
+            (torch.tensor(True), inp),
+            CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True),
+        )
+
+        inp_test = torch.randn(3, 2, 1)
+        self.assertTrue(
+            torch.allclose(
+                ep(torch.tensor(True), inp_test),
+                Module()(torch.tensor(True), inp_test),
+            )
+        )
+        self.assertTrue(
+            torch.allclose(
+                ep(torch.tensor(False), inp_test),
+                Module()(torch.tensor(False), inp_test),
+            )
+        )

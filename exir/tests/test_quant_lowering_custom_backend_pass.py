@@ -642,11 +642,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         )
 
         # Step 2: EXIR capturing
-        dynamo_config = ExirDynamoConfig(
-            dynamic_shapes=False,
-        )
-
-        capture_config = CaptureConfig(pt2_mode=True, _dynamo_config=dynamo_config)
+        capture_config = CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True)
         captured_mod = (
             exir.capture(converted_mod, example_inputs, config=capture_config)
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
@@ -777,11 +773,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         print("converted:", converted_mod)
 
         # Step 2: EXIR capturing
-        dynamo_config = ExirDynamoConfig(
-            dynamic_shapes=False,
-        )
-
-        capture_config = CaptureConfig(pt2_mode=True, _dynamo_config=dynamo_config)
+        capture_config = CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
@@ -839,10 +831,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         print("converted:", converted_mod)
 
         # Step 2: EXIR capturing
-        dynamo_config = ExirDynamoConfig(
-            dynamic_shapes=False,
-        )
-        capture_config = CaptureConfig(pt2_mode=True, _dynamo_config=dynamo_config)
+        capture_config = CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
