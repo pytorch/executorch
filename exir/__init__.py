@@ -253,7 +253,26 @@ class ExirExportedProgram(ExportedProgram):
         self,
         config: Optional[ExecutorchBackendConfig] = None,
     ) -> "ExecutorchProgram":
-        return exir_exported_program_to_executorch(self, config)
+        if not self.after_to_edge_passes:
+            raise RuntimeError("Must run to_edge before to_executorch.")
+        config = config or ExecutorchBackendConfig()
+        new_prog = self.transform(*edge_to_executorch_passes(config))
+        meta = get_exir_meta(new_prog.graph_module)
+        executorch_prog = ExecutorchProgram(
+            new_prog,
+            emit_stacktrace=config.emit_stacktrace,
+            extract_segments=config.extract_segments,
+            segment_alignment=config.segment_alignment,
+            constant_tensor_alignment=config.constant_tensor_alignment,
+            delegate_alignment=config.delegate_alignment,
+        )
+        attach_export_graph_metadata(executorch_prog.graph_module, meta)
+        # We only need to update the meta of the root graph module since it is
+        # reconstructed in ExecutorchProgram. The submodules are exactly the
+        # original submodules in new_prog.
+        executorch_prog.graph_module.meta.update(new_prog.graph_module.meta)
+        executorch_prog.graph_module.meta.update(self.graph_module.meta)
+        return executorch_prog
 
     def __reduce__(
         self,
@@ -899,66 +918,6 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
         config.memory_planning_pass,
     ]
     return passes
-
-
-def exir_exported_program_to_executorch(
-    edge_dialect_program: ExirExportedProgram,
-    config: Optional[ExecutorchBackendConfig] = None,
-) -> ExecutorchProgram:
-    if not edge_dialect_program.after_to_edge_passes:
-        raise RuntimeError("Must run to_edge before to_executorch.")
-    config = config or ExecutorchBackendConfig()
-    new_prog = edge_dialect_program.transform(*edge_to_executorch_passes(config))
-    meta = get_exir_meta(new_prog.graph_module)
-    executorch_prog = ExecutorchProgram(
-        new_prog,
-        emit_stacktrace=config.emit_stacktrace,
-        extract_segments=config.extract_segments,
-        segment_alignment=config.segment_alignment,
-        constant_tensor_alignment=config.constant_tensor_alignment,
-        delegate_alignment=config.delegate_alignment,
-    )
-    attach_export_graph_metadata(executorch_prog.graph_module, meta)
-    # We only need to update the meta of the root graph module since it is
-    # reconstructed in ExecutorchProgram. The submodules are exactly the
-    # original submodules in new_prog.
-    executorch_prog.graph_module.meta.update(new_prog.graph_module.meta)
-    executorch_prog.graph_module.meta.update(edge_dialect_program.graph_module.meta)
-    return executorch_prog
-
-
-# TODO(ycao): Remove this once all single-method programs migrated to new API
-def export_graph_module_to_executorch(
-    edge_dialect_graph_module: torch.fx.GraphModule,
-    config: Optional[ExecutorchBackendConfig] = None,
-) -> ExecutorchProgram:
-    config = config or ExecutorchBackendConfig()
-    pm = PassManager(edge_to_executorch_passes(config))
-    res = pm(edge_dialect_graph_module)
-    meta = get_exir_meta(res.graph_module)
-    assert res is not None
-    ep = ExirExportedProgram(
-        res.graph_module,
-        res.graph_module.graph,
-        ExportGraphSignature([], [], [], [], {}, {}, {}, None),
-        CallSpec(meta.in_spec, meta.out_spec),
-        {},
-        {},
-        [],
-        True,
-    )
-    executorch_prog = ExecutorchProgram(
-        ep,
-        emit_stacktrace=config.emit_stacktrace,
-        extract_segments=config.extract_segments,
-        segment_alignment=config.segment_alignment,
-        constant_tensor_alignment=config.constant_tensor_alignment,
-        delegate_alignment=config.delegate_alignment,
-    )
-    attach_export_graph_metadata(executorch_prog.graph_module, meta)
-    executorch_prog.graph_module.meta.update(edge_dialect_graph_module.meta)
-    executorch_prog.graph_module.meta.update(res.graph_module.meta)
-    return executorch_prog
 
 
 def multi_method_program_to_executorch(
