@@ -24,23 +24,19 @@ Step 2: Set up Executorch. This will install an  `executorch` pip package to you
 mkdir -p ~/src/
 cd ~/src/
 
-# Do one of these, depending on how your auth is set up 
-git clone https://github.com/pytorch/executorch.git 
+# Do one of these, depending on how your auth is set up
+git clone https://github.com/pytorch/executorch.git
 git clone git@github.com:pytorch/executorch.git
-
-(cd executorch && git checkout demo_2023_06)
 
 ./executorch/install.sh
 
-# cd into a directory that doesn't contain a `./executorch/exir` directory, since 
-# otherwise python will try using it for `import executorch.exir...` instead of using the 
+# cd into a directory that doesn't contain a `./executorch/exir` directory, since
+# otherwise python will try using it for `import executorch.exir...` instead of using the
 # installed pip package.
-cd ~/ 
+cd ~/
 ```
 
 Step 3: Try it out!
 ```
-python ~/src/executorch/examples/export/export_examples.py -m "add"
+python ~/src/executorch/examples/export/export_example.py -m "add"
 ```
-
-

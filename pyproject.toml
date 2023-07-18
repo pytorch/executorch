@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies=[
   "ruamel.yaml",
   "pyyaml",
+  "sympy",
 ]
 
 [tool.setuptools.packages.find]
