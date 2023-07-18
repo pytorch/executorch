@@ -96,6 +96,9 @@ python_unittest(
     ],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends:backend_api",
+        "//executorch/backends/test:backend_with_compiler_demo",
+        "//executorch/backends/test:op_partitioner_demo",
         "//executorch/exir:lib",
         "//executorch/exir/serde:serialize",
     ],

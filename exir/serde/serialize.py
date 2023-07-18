@@ -1,5 +1,6 @@
 # pyre-strict
 
+import base64
 import copy
 import dataclasses
 import json
@@ -8,11 +9,14 @@ import operator
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import executorch.exir as exir
+import executorch.exir.delegate as delegate
 import executorch.exir.memory as memory
 import torch
 import torch._export.exported_program as ep
 import torch._export.serde.schema as schema
 import torch._export.serde.serialize as export_serialize
+from executorch.backends.compile_spec_schema import CompileSpec as delegate_CompileSpec
+from executorch.exir.serde.schema import CompileSpec, LoweredBackendModule
 from torch.fx.experimental import symbolic_shapes
 
 
@@ -33,6 +37,16 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             ex_node = schema.Node(
                 target="memory.alloc",
                 inputs=self.serialize_alloc_inputs(node.args),
+                outputs=self.serialize_arbitrary_outputs(node),
+                metadata=self.serialize_metadata(node),
+            )
+            self.graph_state.nodes.append(ex_node)
+            return
+
+        elif node.target is delegate.executorch_call_delegate:
+            ex_node = schema.Node(
+                target=export_serialize.serialize_operator(node.target),
+                inputs=self.serialize_call_delegate_inputs(node.args),
                 outputs=self.serialize_arbitrary_outputs(node),
                 metadata=self.serialize_metadata(node),
             )
@@ -138,6 +152,71 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         self.original_graph_module: torch.fx.GraphModule = graph_module  # pyre-ignore
         return super().serialize_graph(graph_module)
 
+    def serialize_call_delegate_inputs(
+        self, args  # pyre-ignore
+    ) -> List[schema.NamedArgument]:
+        lowered_module_arg = args[0]
+        delegate_args = args[1:]
+
+        serialized_lowered_module = self.serialize_lowered_module(lowered_module_arg)
+        serialized_lowered_module_arg = schema.NamedArgument(
+            name=lowered_module_arg.target,
+            arg=schema.Argument.create(as_string=serialized_lowered_module),
+        )
+
+        serialized_args = [serialized_lowered_module_arg]
+        for i, arg in enumerate(delegate_args):
+            serialized_args.append(
+                schema.NamedArgument(
+                    name=f"delegate_arg_{i}", arg=self.serialize_input(arg)
+                )
+            )
+        return serialized_args
+
+    def serialize_lowered_module(self, lowered_module_arg: torch.fx.Node) -> str:
+        assert lowered_module_arg.op == "get_attr"
+        assert isinstance(lowered_module_arg.target, str)
+
+        def serialize_bytes(b: bytes) -> str:
+            # We want to serialize the bytes to string because JSON cannot
+            # serialize bytes.
+            # Since the given bytes may be serialized with any encoding, so we
+            # want to first encode with base64, and then decode it with
+            # ascii. During deserialization we can just directly decode with b64
+            # to get the original encoded bytes.
+            return base64.b64encode(b).decode("ascii")
+
+        lowered_module = getattr(
+            lowered_module_arg.graph.owning_module, lowered_module_arg.target
+        )
+        assert isinstance(lowered_module, delegate.LoweredBackendModule)
+
+        serialized_compile_spec = [
+            CompileSpec(cs.key, serialize_bytes(cs.value))
+            for cs in lowered_module.compile_specs
+        ]
+
+        (
+            serialized_original_module,
+            serialized_original_state_dict,
+        ) = ExportedProgramSerializer().serialize(lowered_module.original_module)
+
+        serialized_processed_bytes = serialize_bytes(lowered_module.processed_bytes)
+
+        serialized_lowered_module = LoweredBackendModule(
+            original_module=serialized_original_module,
+            original_state_dict=serialize_bytes(serialized_original_state_dict),
+            processed_bytes=serialized_processed_bytes,
+            compile_specs=serialized_compile_spec,
+            backend_id=lowered_module.backend_id,
+        )
+
+        json_lowered_module = json.dumps(
+            dataclasses.asdict(serialized_lowered_module),
+            cls=export_serialize.EnumEncoder,
+        )
+        return json_lowered_module
+
 
 class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
     def serialize(
@@ -180,6 +259,27 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             fx_node = self.graph.create_node(
                 "call_function", memory.alloc, args, {}, "alloc"
             )
+
+            self.deserialize_arbitrary_outputs(serialized_node, fx_node)
+
+            fx_node.meta.update(self.deserialize_metadata(serialized_node.metadata))
+            return
+
+        elif target is delegate.executorch_call_delegate:
+            if (
+                len(serialized_node.outputs) == 1
+                and serialized_node.outputs[0].type == "as_tensor"
+            ):
+                # If it's a single tensor return then we can use the name of the
+                # node itself
+                name = serialized_node.outputs[0].value.name
+            else:
+                # Otherwise FX will make a name for us, and we'll have `getitem`
+                # nodes pointed to that
+                name = None
+
+            args = self.deserialize_call_delegate_inputs(serialized_node.inputs)
+            fx_node = self.graph.create_node("call_function", target, args, {}, name)
 
             self.deserialize_arbitrary_outputs(serialized_node, fx_node)
 
@@ -266,6 +366,49 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
                 )
 
         return super().deserialize_input(inp)
+
+    # pyre-ignore
+    def deserialize_call_delegate_inputs(
+        self, serialized_inputs: List[schema.NamedArgument]
+    ):
+        serialized_lowered_module = serialized_inputs[0]
+        lowered_module_node = self.deserialize_lowered_module(serialized_lowered_module)
+        serialized_delegate_inputs = serialized_inputs[1:]
+        args = tuple(
+            self.deserialize_input(input.arg) for input in serialized_delegate_inputs
+        )
+        return (lowered_module_node,) + args
+
+    def deserialize_lowered_module(
+        self, serialized_lowered_module_arg: schema.NamedArgument
+    ) -> torch.fx.Node:
+        assert serialized_lowered_module_arg.arg.type == "as_string"
+        lowered_module_str = serialized_lowered_module_arg.arg.value
+        json_lowered_module = json.loads(lowered_module_str)
+        serialized_lowered_module = export_serialize._dict_to_dataclass(
+            LoweredBackendModule, json_lowered_module
+        )
+
+        backend_id = serialized_lowered_module.backend_id
+        processed_bytes = base64.b64decode(serialized_lowered_module.processed_bytes)
+        compile_specs = [
+            delegate_CompileSpec(key=cs.key, value=base64.b64decode(cs.value))
+            for cs in serialized_lowered_module.compile_specs
+        ]
+
+        original_module = ExportedProgramDeserializer().deserialize(
+            serialized_lowered_module.original_module,
+            base64.b64decode(serialized_lowered_module.original_state_dict),
+        )
+
+        lowered_module = delegate.LoweredBackendModule(
+            original_module,
+            backend_id,
+            processed_bytes,
+            compile_specs,
+        )
+        self.module.register_module(serialized_lowered_module_arg.name, lowered_module)
+        return self.graph.get_attr(serialized_lowered_module_arg.name)
 
 
 class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
