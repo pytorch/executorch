@@ -15,6 +15,10 @@ ARG CLANG_VERSION
 COPY ./common/install_clang.sh install_clang.sh
 RUN bash ./install_clang.sh && rm install_clang.sh
 
+# Setup buck
+COPY ./common/install_buck.sh install_buck.sh
+RUN bash ./install_buck.sh && rm install_buck.sh
+
 # Setup user
 COPY ./common/install_user.sh install_user.sh
 RUN bash ./install_user.sh && rm install_user.sh

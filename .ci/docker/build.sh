@@ -5,6 +5,8 @@ set -ex
 IMAGE_NAME="$1"
 shift
 
+echo "Building ${IMAGE_NAME} Docker image"
+
 OS="ubuntu"
 OS_VERSION=22.04
 CLANG_VERSION=12

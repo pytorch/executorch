@@ -21,4 +21,3 @@ that are used in Executorch CI.
 # Set CLANG version (see build.sh) and build image
 CLANG_VERSION=11 ./build.sh executorch-ubuntu-22.04-clang11 -t myimage:latest
 ```
-

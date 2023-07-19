@@ -17,8 +17,11 @@ install_ubuntu() {
 
   # CLANG's packaging is a little messed up (the runtime libs aren't
   # added into the linker path), so give it a little help
-  CLANG_LIB=("/usr/lib/llvm-$CLANG_VERSION/lib/clang/"*"/lib/linux")
-  echo "$CLANG_LIB" > /etc/ld.so.conf.d/clang.conf
+  CLANG_LIBS=("/usr/lib/llvm-$CLANG_VERSION/lib/clang/"*"/lib/linux")
+  for CLANG_LIB in "${CLANG_LIB[@]}"
+  do
+    echo "${CLANG_LIB}" > /etc/ld.so.conf.d/clang.conf
+  done
   ldconfig
 
   # Cleanup package manager
