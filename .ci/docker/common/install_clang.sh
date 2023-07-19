@@ -15,15 +15,6 @@ install_ubuntu() {
   update-alternatives --install /usr/bin/cc cc /usr/bin/clang 50
   update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++ 50
 
-  # CLANG's packaging is a little messed up (the runtime libs aren't
-  # added into the linker path), so give it a little help
-  CLANG_LIBS=("/usr/lib/llvm-$CLANG_VERSION/lib/clang/"*"/lib/linux")
-  for CLANG_LIB in "${CLANG_LIB[@]}"
-  do
-    echo "${CLANG_LIB}" > /etc/ld.so.conf.d/clang.conf
-  done
-  ldconfig
-
   # Cleanup package manager
   apt-get autoclean && apt-get clean
   rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
