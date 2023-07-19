@@ -111,6 +111,9 @@ union XNodeUnion {
   XNNELU,
   XNNAbs: _XNNNode1x1,
   XNNPReLU: _XNNNode2x1,
+  XNNConcatenate2: _XNNCat,
+  XNNConcatenate3: _XNNCat,
+  XNNConcatenate4: _XNNCat,
 }
 
 union XValueUnion {
@@ -174,6 +177,16 @@ table _XNNNode1x1 {
   input_id:uint;
   output_id:uint;
   flags:uint;
+}
+
+table _XNNCat {
+  axis: uint;
+  input1_id: uint;
+  input2_id: uint;
+  input3_id: uint;
+  input4_id: uint;
+  output_id: uint;
+  flags: uint;
 }
 
 table XNNELU {

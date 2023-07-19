@@ -26,6 +26,18 @@ class XNNNode2x1:
     flags: int
 
 
+# Generic node data class for concatenation node
+@dataclass
+class XNNCat:
+    axis: int
+    input1_id: int
+    input2_id: int
+    input3_id: int
+    input4_id: int
+    output_id: int
+    flags: int
+
+
 # Generic node data class for convolution type nodes
 @dataclass
 class XNNNodeConv:
@@ -141,6 +153,21 @@ class XNNNegate(XNNNode1x1):
 
 @dataclass
 class XNNAbs(XNNNode1x1):
+    pass
+
+
+@dataclass
+class XNNConcatenate2(XNNCat):
+    pass
+
+
+@dataclass
+class XNNConcatenate3(XNNCat):
+    pass
+
+
+@dataclass
+class XNNConcatenate4(XNNCat):
     pass
 
 
@@ -294,6 +321,9 @@ XNodeUnion = Union[
     XNNELU,
     XNNAbs,
     XNNPReLU,
+    XNNConcatenate2,
+    XNNConcatenate3,
+    XNNConcatenate4,
 ]
 
 

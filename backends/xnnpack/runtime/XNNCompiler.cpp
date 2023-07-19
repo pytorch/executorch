@@ -1217,6 +1217,96 @@ Error definePReLUNode(
 }
 
 /*
+Defines serialized concatenate2 node into the subgraph,
+using the remapped ids to map the serialized ids,
+to the new ids generated when defining the tensor value
+*/
+Error defineConcatenate2Node(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node) noexcept {
+  auto graph_node = node->xnode_union_as_XNNConcatenate2();
+
+  xnn_status status = xnn_define_concatenate2(
+      subgraph_ptr,
+      graph_node->axis(),
+      remapped_ids.at(graph_node->input1_id()),
+      remapped_ids.at(graph_node->input2_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create cat2 node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
+Defines serialized concatenate2 node into the subgraph,
+using the remapped ids to map the serialized ids,
+to the new ids generated when defining the tensor value
+*/
+Error defineConcatenate3Node(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node) noexcept {
+  auto graph_node = node->xnode_union_as_XNNConcatenate3();
+
+  xnn_status status = xnn_define_concatenate3(
+      subgraph_ptr,
+      graph_node->axis(),
+      remapped_ids.at(graph_node->input1_id()),
+      remapped_ids.at(graph_node->input2_id()),
+      remapped_ids.at(graph_node->input3_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create cat3 node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
+Defines serialized concatenate2 node into the subgraph,
+using the remapped ids to map the serialized ids,
+to the new ids generated when defining the tensor value
+*/
+Error defineConcatenate4Node(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node) noexcept {
+  auto graph_node = node->xnode_union_as_XNNConcatenate4();
+
+  xnn_status status = xnn_define_concatenate4(
+      subgraph_ptr,
+      graph_node->axis(),
+      remapped_ids.at(graph_node->input1_id()),
+      remapped_ids.at(graph_node->input2_id()),
+      remapped_ids.at(graph_node->input3_id()),
+      remapped_ids.at(graph_node->input4_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create cat4 node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
 Returns not Implemented Error code. This function is meant to be
 called when the compiler encountes a XNodeType from the flatbuffer
 that has not yet been implemented
@@ -1273,6 +1363,9 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
     _DEFINE(ELU)
     _DEFINE(Abs)
     _DEFINE(PReLU)
+    _DEFINE(Concatenate2)
+    _DEFINE(Concatenate3)
+    _DEFINE(Concatenate4)
     case fb_xnnpack::XNodeUnion::NONE:
     default: // Adding here as a catch all, just in case
       return &defineNotImplementedNode;

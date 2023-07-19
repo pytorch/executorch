@@ -886,3 +886,42 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
             torch.nn.PReLU(),
             (torch.randn(1, 2),),
         )
+
+    def test_xnnpack_backend_concatenate2(self):
+        class Concat(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.cat((y, x), 0)
+
+        self.lower_and_test_with_partitioner(
+            Concat(), (torch.ones(4, 2, 3), torch.randn(1, 2, 3))
+        )
+
+    def test_xnnpack_backend_concatenate3(self):
+        class Concat(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.concat((y, y, x), 0)
+
+        self.lower_and_test_with_partitioner(
+            Concat(), (torch.ones(4, 2, 3), torch.randn(1, 2, 3))
+        )
+
+    def test_xnnpack_backend_concatenate4(self):
+        class Concat(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.concatenate((y, x, y, x), 2)
+
+        self.lower_and_test_with_partitioner(
+            Concat(), (torch.randn(1, 2, 3), torch.randn(1, 2, 5))
+        )
+
+    def test_xnnpack_backend_concatenate5(self):
+        class Concat(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.cat((y, x, y, x, y), 2)
+
+        self.assertRaises(
+            Exception,
+            self.lower_and_test_with_partitioner,
+            Concat(),
+            (torch.randn(1, 2, 3), torch.randn(1, 2, 5)),
+        )

@@ -265,6 +265,14 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         weight_dim = cast(torch.fx.Node, node.args[1]).meta["val"].dim()
         return input_dim == 4 and weight_dim == 4
 
+    @_constraint(exir_ops.edge.aten.cat.default)
+    def cat(node: torch.fx.Node) -> bool:  # noqa
+        """
+        Only support concatenation of 2 - 4 tensors
+        """
+        num_tensors = len(cast(List[torch.fx.Node], node.args[0]))
+        return num_tensors >= 2 and num_tensors <= 4
+
 
 ###
 ### Graph pattern based partitioners
@@ -522,6 +530,9 @@ SUPPORTED_MODULES = [
     torch.nn.ELU,
     torch.nn.AvgPool2d,
     torch.nn.PReLU,  # Without this, the PReLU weight becomes not a get_attr
+    torch.cat,
+    torch.concat,
+    torch.concatenate,
 ]
 
 # TODO delete this and should use SUPPORTED_OPS instead once we align fp32 and quant support
