@@ -97,9 +97,7 @@ def define_common_targets():
             ETDUMP_SCHEMA_HEADER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME, ETDUMP_SCHEMA_HEADER),
             OUTPUT_SCALAR_TYPE_HEADER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME, OUTPUT_SCALAR_TYPE_HEADER),
         },
-        exported_deps = [
-            "fbsource//third-party/flatbuffers:flatbuffers-api",
-        ],
+        exported_external_deps = ["flatbuffers-api"],
     )
 
     runtime.cxx_library(

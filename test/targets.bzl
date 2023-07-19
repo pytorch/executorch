@@ -64,9 +64,6 @@ def define_common_targets():
         external_deps = [
             "gflags",
         ],
-        xplat_deps = [
-            "//xplat/third-party/gflags:gflags",
-        ],
     )
 
     # Test binary that can create relocatable Executor instances.
@@ -86,7 +83,4 @@ def define_common_targets():
         ],
         preprocessor_flags = [],
         define_static_target = True,
-        xplat_deps = [
-            "//xplat/third-party/gflags:gflags",
-        ],
     )

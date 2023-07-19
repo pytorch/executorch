@@ -119,6 +119,25 @@ def _patch_test_compiler_flags(kwargs):
     kwargs["compiler_flags"].extend(["-Wno-missing-prototypes", "-Wno-unused-variable", "-Wno-error"])
     return kwargs
 
+def _resolve_external_deps(kwargs):
+    """Converts `[exported_]external_deps` entries into real deps if necessary."""
+    for prefix in ("exported_", ""):
+        external_deps = kwargs.pop(prefix + "external_deps", [])
+        remaining_deps = []
+        for dep in external_deps:
+            targets = env.resolve_external_dep(dep)
+            if targets == env.EXTERNAL_DEP_FALLTHROUGH:
+                # Unhandled external_deps remain on the external_deps list of
+                # the target.
+                remaining_deps.append(dep)
+            else:
+                # Add the real targets that the external_deps entry refers to.
+                if (prefix + "deps") not in kwargs:
+                    kwargs[prefix + "deps"] = []
+                kwargs[prefix + "deps"].extend(targets)
+        if remaining_deps:
+            kwargs[prefix + "external_deps"] = remaining_deps
+
 def _patch_kwargs_common(kwargs):
     """Applies modifications to kwargs for all rule types.
 
@@ -136,8 +155,10 @@ def _patch_kwargs_common(kwargs):
     else:
         kwargs.pop("_is_external_target", None)
 
-    kwargs = env.patch_external_deps(kwargs)
+    # Convert `[exported_]external_deps` entries into real deps if necessary.
+    _resolve_external_deps(kwargs)
 
+    # TODO(T158275165): Remove this once everyone uses external_deps
     # Append repo-specific deps.
     for dep_type in ("deps", "exported_deps"):
         env.patch_deps(kwargs, dep_type)

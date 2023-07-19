@@ -35,9 +35,6 @@ def define_common_targets():
                 "gflags",
             ],
             platforms = [ANDROID, CXX],
-            xplat_deps = [
-                "//xplat/third-party/gflags:gflags",
-            ],
             define_static_target = not aten_mode,
             visibility = [
                 "@EXECUTORCH_CLIENTS",

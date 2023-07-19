@@ -37,6 +37,10 @@ load("@fbsource//tools/build_defs:type_defs.bzl", "is_dict", "is_list", "is_stri
 load("//tools/build_defs:fb_xplat_genrule.bzl", "fb_xplat_genrule")
 load(":clients.bzl", "EXECUTORCH_CLIENTS")
 
+# Unique internal keys that refer to specific repos. Values don't matter.
+_FBCODE = "F"
+_XPLAT = "X"
+
 # Map of rule name to the actual rule in xplat (0th element) and fbcode (1st element)
 _RULE_MAP = {
     "cxx_binary": [fb_xplat_cxx_binary, cpp_binary],
@@ -61,6 +65,24 @@ _DEFAULT_PLATFORMS = (CXX, ANDROID, APPLE)
 
 _DEFAULT_APPLE_SDKS = (IOS, MACOSX)
 
+# Indicates that an external_dep entry should fall through to the underlying
+# buck rule.
+_EXTERNAL_DEP_FALLTHROUGH = "<fallthrough>"
+
+# Maps `external_deps` keys to actual targets. Values can be single strings or
+# lists. If the mapped value is None, the environment (typically fbcode) will
+# handle the key itself.
+_EXTERNAL_DEPS_MAP = {
+    "flatbuffers-api": {
+        _FBCODE: "fbsource//third-party/flatbuffers:flatbuffers-api",
+        _XPLAT: "fbsource//third-party/flatbuffers:flatbuffers-api",
+    },
+    "gflags": {
+        _FBCODE: _EXTERNAL_DEP_FALLTHROUGH,
+        _XPLAT: "//xplat/third-party/gflags:gflags",
+    },
+}
+
 def _start_with_et_targets(target):
     for prefix in _ET_TARGET_PREFIXES:
         prefix = "//" + prefix
@@ -74,6 +96,16 @@ def _fail_unknown_environment():
         get_fbsource_cell(),
         native.package_name(),
     ))
+
+def _current_repo():
+    """Returns _FBCODE or _XPLAT depending on the current repo."""
+    if is_fbcode():
+        return _FBCODE
+    elif is_xplat():
+        return _XPLAT
+    else:
+        _fail_unknown_environment()
+        return None
 
 def _xplat_coerce_platforms(platforms):
     """Make sure `platforms` is a subset of _DEFAULT_PLATFORMS. If `platforms`
@@ -175,27 +207,39 @@ def _patch_platforms(kwargs):
         _fail_unknown_environment()
     return kwargs
 
-def _patch_external_deps(kwargs):
-    """Pops out external_deps and exported_external_deps in kwargs.
-    These two attributes are not supported in xplat.
+def _resolve_external_dep(name):
+    """Converts an `external_dep` name to actual buck targets.
 
-    Args:
-        kwargs: The `kwargs` parameter from a rule.
-
-    Returns:
-        The possibly-modified `kwargs` parameter.
+    Returns a sequence of targets that map to the provided `external_deps`
+    name, or _EXTERNAL_DEP_FALLTHROUGH if the rule should handle the entry.
     """
+    if name in _EXTERNAL_DEPS_MAP:
+        target = _EXTERNAL_DEPS_MAP[name].get(_current_repo(), _EXTERNAL_DEP_FALLTHROUGH)
+        if target != _EXTERNAL_DEP_FALLTHROUGH:
+            # Always return a sequence of targets, even if the map only has a
+            # single string.
+            if is_list(target) or is_tuple(target):
+                return target
+            return [target]
+
     if is_xplat():
-        # xplat doesn't support external_deps and exported_external_deps
-        if "external_deps" in kwargs:
-            kwargs.pop("external_deps")
-        if "exported_external_deps" in kwargs:
-            kwargs.pop("exported_external_deps")
-    return kwargs
+        # xplat doesn't support external_deps. Returning an empty list will
+        # cause the caller to remove its external_deps entry.
+        return []
+    elif is_fbcode():
+        # fbcode does support external_deps. If the name wasn't found, pass
+        # it on to the underlying rule.
+        return _EXTERNAL_DEP_FALLTHROUGH
+    else:
+        _fail_unknown_environment()
+        return None
 
 def _patch_deps(kwargs, dep_type):
     """cxx_library/cxx_binary wrapper rules supports both fbcode and xplat version of deps.
     This function extracts the deps for the proper environment and pops out the unused one.
+
+    TODO(T158275165): Remove this once all targets use `external_deps` instead
+    of repo-specific deps.
 
     Args:
         dep_type: can be either `deps` or `exported_deps`.
@@ -409,7 +453,7 @@ env = struct(
     genrule = native.partial(_get_rule, "genrule"),
     patch_deps = _patch_deps,
     patch_executorch_genrule_cmd = _patch_executorch_genrule_cmd,
-    patch_external_deps = _patch_external_deps,
+    resolve_external_dep = _resolve_external_dep,
     patch_headers = _patch_headers,
     patch_platform_build_mode_flags = _patch_platform_build_mode_flags,
     patch_platforms = _patch_platforms,
@@ -420,4 +464,5 @@ env = struct(
     python_test = native.partial(_get_rule, "python_test"),
     remove_platform_specific_args = _remove_platform_specific_args,
     target_needs_patch = _target_needs_patch,
+    EXTERNAL_DEP_FALLTHROUGH = _EXTERNAL_DEP_FALLTHROUGH,
 )

@@ -104,9 +104,7 @@ def define_common_targets():
             OUTPUT_PROGRAM_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_PROGRAM_HEADER),
             OUTPUT_SCALAR_TYPE_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_SCALAR_TYPE_HEADER),
         },
-        exported_deps = [
-            "fbsource//third-party/flatbuffers:flatbuffers-api",
-        ],
+        exported_external_deps = ["flatbuffers-api"],
     )
 
     # Header-only library target with the generate bundled program schema header.
@@ -122,9 +120,7 @@ def define_common_targets():
             OUTPUT_BUNDLED_HEADER: ":{}[{}]".format(BUNDLED_GEN_RULE_NAME, OUTPUT_BUNDLED_HEADER),
             OUTPUT_SCALAR_TYPE_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_SCALAR_TYPE_HEADER),
         },
-        exported_deps = [
-            "fbsource//third-party/flatbuffers:flatbuffers-api",
-        ],
+        exported_external_deps = ["flatbuffers-api"],
     )
 
     runtime.cxx_library(
