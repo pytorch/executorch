@@ -63,7 +63,7 @@ from torch.ao.quantization.quantize_fx import (
 from torch.ao.quantization.quantize_pt2e import (
     convert_pt2e,
     get_symmetric_quantization_config,
-    prepare_pt2e_quantizer,
+    prepare_pt2e,
     QNNPackQuantizer,
 )
 
@@ -308,7 +308,7 @@ class TestXNNPACK(unittest.TestCase):
         quantizer = QNNPackQuantizer()
         quantization_config = get_symmetric_quantization_config()
         quantizer.set_global(quantization_config)
-        prepared = prepare_pt2e_quantizer(captured_program.graph_module, quantizer)
+        prepared = prepare_pt2e(m, quantizer)
         converted = convert_pt2e(prepared)
 
         captured_program.graph_module = converted
