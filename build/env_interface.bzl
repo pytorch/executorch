@@ -73,9 +73,20 @@ _EXTERNAL_DEP_FALLTHROUGH = "<fallthrough>"
 # lists. If the mapped value is None, the environment (typically fbcode) will
 # handle the key itself.
 _EXTERNAL_DEPS_MAP = {
+    # The root of a tree that contains YAML files at
+    # <aten-src-patn>/aten/src/ATen/native/*.yaml
+    "aten-src-path": {
+        _FBCODE: "fbsource//xplat/caffe2:aten_src_path",
+        _XPLAT: "fbsource//xplat/caffe2:aten_src_path",
+    },
     "flatbuffers-api": {
         _FBCODE: "fbsource//third-party/flatbuffers:flatbuffers-api",
         _XPLAT: "fbsource//third-party/flatbuffers:flatbuffers-api",
+    },
+    # The gen_executorch commandline tool.
+    "gen-executorch": {
+        _FBCODE: "fbsource//xplat/caffe2/torchgen:gen_executorch",
+        _XPLAT: "fbsource//xplat/caffe2/torchgen:gen_executorch",
     },
     "gflags": {
         _FBCODE: _EXTERNAL_DEP_FALLTHROUGH,

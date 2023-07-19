@@ -112,10 +112,10 @@ def _prepare_genrule_and_lib(
     }
     """
     genrule_cmd = [
-        "$(exe fbsource//xplat/caffe2/torchgen:gen_executorch)",
+        "$(exe " + runtime.external_dep_location("gen-executorch") + ")",
         "--source-path=$(location //executorch/codegen:templates)",
-        "--tags-path $(location fbsource//xplat/caffe2:aten_src_path)/aten/src/ATen/native/tags.yaml",
-        "--aten_yaml_path $(location fbsource//xplat/caffe2:aten_src_path)/aten/src/ATen/native/native_functions.yaml",
+        "--tags-path $(location " + runtime.external_dep_location("aten-src-path") + ")/aten/src/ATen/native/tags.yaml",
+        "--aten_yaml_path $(location " + runtime.external_dep_location("aten-src-path") + ")/aten/src/ATen/native/native_functions.yaml",
         "--install_dir=${OUT}",
         # TODO(dbort): Add a second step that verifies that the set of
         # actually-generated files matches GENERATED_FILES.

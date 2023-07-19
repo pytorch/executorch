@@ -119,6 +119,20 @@ def _patch_test_compiler_flags(kwargs):
     kwargs["compiler_flags"].extend(["-Wno-missing-prototypes", "-Wno-unused-variable", "-Wno-error"])
     return kwargs
 
+def _external_dep_location(name):
+    """Returns the target path for the specified external_dep name.
+
+    Only for use in genrule `$(location )`-like strings; e.g.,
+
+        "cmd $(location " + runtime.external_dep_location("functions-yaml") + ")"
+
+    Can only be used with external_deps names that map to exactly one target.
+    """
+    targets = env.resolve_external_dep(name)
+    if type(targets) == type(None) or len(targets) != 1:
+        fail("Could not resolve external_dep {}: saw {}".format(name, targets))
+    return targets[0]
+
 def _resolve_external_deps(kwargs):
     """Converts `[exported_]external_deps` entries into real deps if necessary."""
     for prefix in ("exported_", ""):
@@ -297,6 +311,7 @@ runtime = struct(
     cxx_python_extension = _cxx_python_extension,
     cxx_test = _cxx_test,
     export_file = _export_file,
+    external_dep_location = _external_dep_location,
     filegroup = _filegroup,
     genrule = _genrule,
     python_binary = _python_binary,
