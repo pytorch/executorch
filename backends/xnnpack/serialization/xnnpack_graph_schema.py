@@ -181,6 +181,16 @@ class XNNStaticTranspose:
 
 
 @dataclass
+class XNNStaticSlice:
+    num_dims: int
+    offsets: List[int]
+    sizes: List[int]
+    input_id: int
+    output_id: int
+    flags: int
+
+
+@dataclass
 class XNNClamp(XNNNode1x1):
     pass
 
@@ -324,6 +334,7 @@ XNodeUnion = Union[
     XNNConcatenate2,
     XNNConcatenate3,
     XNNConcatenate4,
+    XNNStaticSlice,
 ]
 
 

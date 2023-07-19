@@ -925,3 +925,33 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
             Concat(),
             (torch.randn(1, 2, 3), torch.randn(1, 2, 5)),
         )
+
+    def test_xnnpack_backend_slice_copy(self):
+        class Slice(torch.nn.Module):
+            def forward(self, x):
+                return x[1:3, -2:, :-1]
+
+        self.lower_and_test_with_partitioner(Slice(), (torch.randn(5, 5, 5),))
+
+    def test_xnnpack_backend_slice_copy_stride_non_1(self):
+        class Slice(torch.nn.Module):
+            def forward(self, x):
+                return x[:3:-1, 2:, :3]
+
+        self.assertRaises(
+            Exception,
+            self.lower_and_test_with_partitioner,
+            Slice(),
+            (torch.randn(5, 5, 5),),
+        )
+
+    def test_xnnpack_backend_slice_copy_dim_0(self):
+        class Slice(torch.nn.Module):
+            def forward(self, x):
+                return x[-1:3, 2:, 3:3]
+
+        # Did not partition
+        with self.assertRaisesRegex(IndexError, "list index out of range"):
+            self.lower_module_and_test_output(
+                Slice(), (torch.randn(5, 5, 5),), use_partitioner=True
+            )

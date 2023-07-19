@@ -40,6 +40,7 @@ from executorch.backends.xnnpack.partition.support_patterns import (
     get_static_constant_pad_graph,
     get_sub_graph,
 )
+from executorch.backends.xnnpack.utils.utils import get_input_node
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.infra.partitioner import Partition
@@ -272,6 +273,34 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         """
         num_tensors = len(cast(List[torch.fx.Node], node.args[0]))
         return num_tensors >= 2 and num_tensors <= 4
+
+    @_constraint(exir_ops.edge.aten.slice_copy.Tensor)
+    def slice_copy(node: torch.fx.Node) -> bool:  # noqa
+        """
+        Support slicing with stride = 1, no zero-dim tensors
+        """
+        stride = 1
+        if len(node.args) > 4:
+            stride = cast(int, node.args[4])
+
+        if stride != 1:
+            return False
+
+        input_node = get_input_node(node, 0)
+        output_node = node
+
+        input_shape = list(input_node.meta["val"].shape)
+        output_shape = list(output_node.meta["val"].shape)
+
+        for dim in input_shape:
+            if dim == 0:
+                return False
+
+        for dim in output_shape:
+            if dim == 0:
+                return False
+
+        return True
 
 
 ###
@@ -512,6 +541,7 @@ SUPPORTED_OPS = [
     exir_ops.edge.aten.pow.Tensor_Scalar,
     exir_ops.edge.aten.abs.default,
     exir_ops.edge.aten._prelu_kernel.default,
+    exir_ops.edge.aten.slice_copy.Tensor,
 ]
 
 SUPPORTED_MODULES = [
