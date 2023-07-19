@@ -30,11 +30,11 @@ Compared to the legacy Lite Interpreter, there are some major benefits:
 
 ## Quick Links
 
-- [Basics: Terminology](//executorch/docs/website/docs/basics/terminology.md)
+- [Basics: Terminology](/docs/website/docs/basics/terminology.md)
 - [Wiki (internal-only)](https://www.internalfb.com/intern/wiki/PyTorch/Using_PyTorch/Executorch/)
 - [Static docs website (internal-only)](https://www.internalfb.com/intern/staticdocs/executorch/)
 - [Testing (internal-only)](https://www.internalfb.com/intern/staticdocs/executorch/docs/fb/poc/)
 
 ## Quick Links for Partners
 
-- [Setting up ExecuTorch from GitHub](//executorch/docs/website/docs/tutorials/setting_up_executorch.md)
+- [Setting up ExecuTorch from GitHub](/docs/website/docs/tutorials/setting_up_executorch.md)
