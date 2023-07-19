@@ -955,3 +955,21 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
             self.lower_module_and_test_output(
                 Slice(), (torch.randn(5, 5, 5),), use_partitioner=True
             )
+
+    def test_xnnpack_backend_slice_copy_memory_format(self):
+        class ConvSlice(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(
+                    in_channels=1,
+                    out_channels=3,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+
+            def forward(self, x):
+                y = self.conv(x)
+                return y[:, :, 2:3, -2:]
+
+        self.lower_and_test_with_partitioner(ConvSlice(), (torch.randn(1, 1, 3, 3),))

@@ -10,7 +10,12 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNStaticSlice,
     XNode,
 )
-from executorch.backends.xnnpack.utils.utils import check_or_raise, get_input_node
+from executorch.backends.xnnpack.utils.utils import (
+    check_or_raise,
+    get_input_node,
+    PERM_NCHW_TO_NHWC,
+    PERM_NHWC_TO_NCHW,
+)
 
 
 @register_node_visitor
@@ -52,8 +57,13 @@ class SliceCopyVisitor(NodeVisitor):
         )
         output_tensor_val = node.meta["val"]
         output_shape = list(output_tensor_val.shape)
-
         dim_of_slice = cast(int, node.args[1])
+
+        if "XNN_NHWC_NODE" in node.meta:
+            input_shape = [input_shape[i] for i in PERM_NCHW_TO_NHWC]
+            output_shape = [output_shape[i] for i in PERM_NCHW_TO_NHWC]
+            dim_of_slice = PERM_NHWC_TO_NCHW[dim_of_slice]
+
         slice_begin_index = cast(int, node.args[2])
         if slice_begin_index < 0:
             slice_begin_index = input_shape[dim_of_slice] + slice_begin_index
