@@ -143,6 +143,8 @@ def get_test_gen_key(op_name: str) -> str:
         opdb_key = opdb_key[:-5]
     elif opdb_key == "sym_size":
         opdb_key = "resize_"
+    elif opdb_key == "sym_numel":
+        opdb_key = "abs"
     elif opdb_key == "convolution":
         opdb_key = "conv_transpose2d"
     elif opdb_key == "embedding":
