@@ -7,7 +7,7 @@ install_ubuntu() {
 
   # TODO: Setup buck will come later in a separate PR
   wget -q https://github.com/facebook/buck/releases/download/v2021.01.12.01/buck.2021.01.12.01_all.deb
-  apt install ./buck.2021.01.12.01_all.deb
+  apt install -y ./buck.2021.01.12.01_all.deb
 
   rm buck.2021.01.12.01_all.deb
   # Cleanup package manager
