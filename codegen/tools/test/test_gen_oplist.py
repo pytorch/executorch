@@ -72,6 +72,7 @@ class TestGenOpList(unittest.TestCase):
             output_path,
             None,
             {"aten::add": ["default"], "aten::mul": ["default"]},
+            False,
         )
 
     @patch("executorch.codegen.tools.gen_oplist._get_operators")
@@ -97,6 +98,27 @@ class TestGenOpList(unittest.TestCase):
                 "aten::add.out": ["default"],
                 "aten::mul.out": ["default"],
             },
+            False,
+        )
+
+    @patch("executorch.codegen.tools.gen_oplist._dump_yaml")
+    def test_gen_op_list_with_include_all_operators(
+        self,
+        mock_dump_yaml: NonCallableMock,
+    ) -> None:
+        output_path = os.path.join(self.temp_dir.name, "output.yaml")
+        args = [
+            f"--output_path={output_path}",
+            "--root_ops=aten::add,aten::mul",
+            "--include_all_operators",
+        ]
+        gen_oplist.main(args)
+        mock_dump_yaml.assert_called_once_with(
+            ["aten::add", "aten::mul"],
+            output_path,
+            None,
+            {"aten::add": ["default"], "aten::mul": ["default"]},
+            True,
         )
 
     def test_get_custom_build_selector_with_both_allowlist_and_yaml(

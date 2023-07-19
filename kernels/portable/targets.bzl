@@ -52,18 +52,30 @@ def define_common_targets():
         name = "executorch_all_ops",
         include_all_operators = True,
         define_static_targets = True,
+        visibility = [
+            "//executorch/codegen/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
     )
 
     et_operator_library(
         name = "executorch_aten_ops",
         ops_schema_yaml_target = "//executorch/kernels/portable:functions.yaml",
         define_static_targets = True,
+        visibility = [
+            "//executorch/codegen/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
     )
 
     et_operator_library(
         name = "executorch_custom_ops",
         ops_schema_yaml_target = "//executorch/kernels/portable:custom_ops.yaml",
         define_static_targets = True,
+        visibility = [
+            "//executorch/codegen/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
     )
 
     generated_lib_common_args = {

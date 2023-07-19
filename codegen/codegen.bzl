@@ -1,5 +1,4 @@
 load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_xplat")
-load("@fbsource//xplat/caffe2:pt_ops.bzl", "pt_operator_library")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "runtime")
 
 # Headers that declare the function signatures of the C++ functions that
@@ -59,27 +58,18 @@ def et_operator_library(
         genrule_cmd.append(
             "--model_file_path=$(location {})".format(model),
         )
-    if ops_schema_yaml_target or ops or model:
-        runtime.genrule(
-            name = name,
-            macros_only = False,
-            cmd = " ".join(genrule_cmd),
-            out = "selected_operators.yaml",
-            labels = ["pt_operator_library"],
-            **kwargs
+    if include_all_operators:
+        genrule_cmd.append(
+            "--include_all_operators",
         )
-    else:
-        kwargs["exported_deps"] = exported_deps
-        kwargs["include_all_operators"] = include_all_operators
-        pt_operator_library(
-            name = name,
-            **kwargs
-        )
-        if define_static_targets:
-            pt_operator_library(
-                name = name + "_static",
-                **kwargs
-            )
+    runtime.genrule(
+        name = name,
+        macros_only = False,
+        cmd = " ".join(genrule_cmd),
+        out = "selected_operators.yaml",
+        labels = ["et_operator_library"],
+        **kwargs
+    )
 
 def _get_headers(genrule_name, prefix = "", custom_op = None):
     return {
@@ -308,7 +298,7 @@ def executorch_generated_lib(
         name = oplist_dir_name,
         macros_only = False,
         cmd = ("$(exe fbsource//xplat/executorch/codegen/tools:gen_all_oplist) " +
-               "--model_file_list_path $(@query_outputs 'attrfilter(labels, pt_operator_library, deps(set({deps})))') " +
+               "--model_file_list_path $(@query_outputs 'attrfilter(labels, et_operator_library, deps(set({deps})))') " +
                "--allow_include_all_overloads " +
                "--output_dir $OUT ").format(deps = " ".join(["\"{}\"".format(d) for d in deps])),
         outs = {"selected_operators.yaml": ["selected_operators.yaml"]},

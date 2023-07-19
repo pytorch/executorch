@@ -154,6 +154,7 @@ def _dump_yaml(
     output_path: str,
     model_name: Optional[str] = None,
     et_kernel_metadata: Optional[Dict[str, List[str]]] = None,
+    include_all_operators: bool = False,
 ):
     # no debug info yet
     output = {}
@@ -174,7 +175,7 @@ def _dump_yaml(
     output["custom_classes"] = []
     output["build_features"] = []
     output["include_all_non_op_selectives"] = False
-    output["include_all_operators"] = False
+    output["include_all_operators"] = include_all_operators
     output["kernel_metadata"] = {}
     output["et_kernel_metadata"] = et_kernel_metadata
     with open(output_path, "wb") as out_file:
@@ -214,10 +215,21 @@ def main(args: List[Any]) -> None:
         help="A comma separated list of root operators used by the model",
         required=False,
     )
+    parser.add_argument(
+        "--include-all-operators",
+        "--include_all_operators",
+        action="store_true",
+        default=False,
+        help="Set this flag to request inclusion of all operators (i.e. build is not selective).",
+        required=False,
+    )
     options = parser.parse_args(args)
     assert (
-        options.model_file_path or options.ops_schema_yaml_path or options.root_ops
-    ), "Need to provide either model_file_path or ops_schema_yaml_path or root_ops."
+        options.model_file_path
+        or options.ops_schema_yaml_path
+        or options.root_ops
+        or options.include_all_operators
+    ), "Need to provide either model_file_path or ops_schema_yaml_path or root_ops or include_all_operators."
     op_set = set()
     source_name = None
     et_kernel_metadata = {}
@@ -250,6 +262,7 @@ def main(args: List[Any]) -> None:
         options.output_path,
         os.path.basename(source_name) if source_name else None,
         et_kernel_metadata,
+        options.include_all_operators,
     )
 
 
