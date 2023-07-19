@@ -14,8 +14,8 @@
 #endif
 
 #if !defined(USE_ATEN_LIB)
-#include <executorch/threadpool/fb/thread_pool_use_nthreads.h>
-#include <executorch/threadpool/threadpool.h>
+#include <executorch/extension/fb/threadpool/threadpool.h>
+#include <executorch/extension/fb/threadpool/threadpool_use_n_threads.h>
 #endif
 
 // This tool includes all of the headers necessary to execute a model.

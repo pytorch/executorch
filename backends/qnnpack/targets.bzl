@@ -82,7 +82,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/runtime/backend:backend_registry",
-            "//executorch/threadpool:threadpool",
+            "//executorch/extension/fb/threadpool:threadpool",
             "//executorch/util:memory_utils",
             ":qnnpack_schema",
             ":qnnpack_utils",

@@ -52,6 +52,7 @@ runtime.python_library(
         "//executorch/exir/scripts:serialize",
         "//executorch/exir/scripts:serialize-library",
         "//executorch/exir/tests/...",
+        "//executorch/extension/...",
         "//executorch/profiler/...",
         "//executorch/pybindings/test:test",
         "//executorch/pybindings/test:test-library",

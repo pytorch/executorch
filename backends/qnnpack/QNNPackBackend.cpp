@@ -1,13 +1,13 @@
 #include <executorch/backends/qnnpack/executor/QNNExecutor.h>
 #include <executorch/backends/qnnpack/qnnpack_schema_generated.h>
 #include <executorch/backends/qnnpack/utils/utils.h>
+#include <executorch/extension/fb/threadpool/threadpool.h>
 #include <executorch/runtime/backend/backend_registry.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/profiler.h>
-#include <executorch/threadpool/threadpool.h>
 #include <executorch/util/memory_utils.h>
 #include <pytorch_qnnpack.h>
 #include <qnnpack_func.h>

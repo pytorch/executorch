@@ -2,8 +2,8 @@
 
 #include <executorch/backends/xnnpack/runtime/XNNCompiler.h>
 #include <executorch/backends/xnnpack/xnnpack_schema_generated.h>
+#include <executorch/extension/fb/threadpool/threadpool.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
-#include <executorch/threadpool/threadpool.h>
 #include <unordered_map>
 
 namespace torch {
