@@ -926,6 +926,47 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
             (torch.randn(1, 2, 3), torch.randn(1, 2, 5)),
         )
 
+    def test_xnnpack_backend_concatenate_nhwc(self):
+        class Concat(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(
+                    in_channels=1,
+                    out_channels=3,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+
+            def forward(self, x, y):
+                x = self.conv(x)
+                return torch.concatenate((y, x, y, x), 1)
+
+        self.lower_and_test_with_partitioner(
+            Concat(), (torch.randn(1, 1, 3, 3), torch.randn(1, 1, 3, 3))
+        )
+
+    def test_xnnpack_backend_concatenate_nhwc2(self):
+        class Concat(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(
+                    in_channels=1,
+                    out_channels=3,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+
+            def forward(self, x, y):
+                x = self.conv(x)
+                y = self.conv(y)
+                return torch.concatenate((y, x, y, x), 3)
+
+        self.lower_and_test_with_partitioner(
+            Concat(), (torch.randn(1, 1, 3, 3), torch.randn(1, 1, 3, 3))
+        )
+
     def test_xnnpack_backend_slice_copy(self):
         class Slice(torch.nn.Module):
             def forward(self, x):

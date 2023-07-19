@@ -13,6 +13,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNode,
 )
 from executorch.backends.xnnpack.utils.quant_utils import QuantParams
+from executorch.backends.xnnpack.utils.utils import PERM_NHWC_TO_NCHW
 from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_INVALID_VALUE_ID
 
 
@@ -48,6 +49,9 @@ class CeilingVisitor(NodeVisitor):
 
         if len(node.args) > 1:
             axis = cast(int, node.args[1])
+
+        if "XNN_NHWC_NODE" in node.meta:
+            axis = PERM_NHWC_TO_NCHW[axis]
 
         if num_tensors_to_cat == 2:
             xnode = XNNConcatenate2(
