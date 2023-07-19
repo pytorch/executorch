@@ -26,6 +26,9 @@ cd ~/src/
 git clone https://github.com/pytorch/executorch.git
 git clone git@github.com:pytorch/executorch.git
 
+# Run the following to get all submodules
+git submodule update --init --recursive
+
 ./executorch/install.sh
 
 # cd into a directory that doesn't contain a `./executorch/exir` directory, since
