@@ -325,6 +325,7 @@ class TestXNNPACK(unittest.TestCase):
             "torch.ops.aten.convolution.default",
             "torch.ops.aten.relu.default",
             "torch.ops.aten.add.Tensor",
+            "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor",
         }
         for op in supported_ops:
             FileCheck().check_count(op, 0, exactly=True).run(delegated_module.code)

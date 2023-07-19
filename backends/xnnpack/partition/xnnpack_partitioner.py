@@ -572,6 +572,7 @@ SUPPORTED_QUANT_OPS = [
     exir_ops.edge.aten.mul.Tensor,
     exir_ops.edge.aten.mean.dim,
     exir_ops.edge.aten.hardtanh.default,  # TODO - which one module or op or both?
+    exir_ops.edge.aten.slice_copy.Tensor,
 ]
 
 # TODO delete this and should use SUPPORTED_MODULES instead once we align fp32 and quant support
