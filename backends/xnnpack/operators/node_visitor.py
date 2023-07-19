@@ -21,7 +21,11 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
 )
 
 from executorch.backends.xnnpack.utils.quant_utils import QuantParams
-from executorch.backends.xnnpack.utils.utils import check_or_raise, get_input_node
+from executorch.backends.xnnpack.utils.utils import (
+    check_or_raise,
+    get_input_node,
+    PERM_NCHW_TO_NHWC,
+)
 
 from executorch.backends.xnnpack.utils.xnnpack_constants import (
     XNN_INVALID_VALUE_ID,
@@ -33,8 +37,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 XNN_TYPE_MAP = {
     torch.float32: XNNDatatype.xnn_datatype_fp32,
 }
-PERM_NCHW_TO_NHWC = [0, 2, 3, 1]
-PERM_NHWC_TO_NCHW = [0, 3, 1, 2]
 
 
 class InputTypeToIndex:
@@ -242,7 +244,7 @@ class NodeVisitor:
             dims = [dims[1], dims[0]] + dims[2:]
         if convert_to_nhwc:
             check_or_raise(len(dims) == 4, "Converting to nhwc requires 4d tensor")
-            dims = [dims[i] for i in [0, 2, 3, 1]]
+            dims = [dims[i] for i in PERM_NCHW_TO_NHWC]
 
         dtype, dq_dtype = self.get_serialized_dtype(quant_params)
 

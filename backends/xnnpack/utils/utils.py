@@ -23,6 +23,10 @@ def capture_graph_for_xnnpack(
 
 
 ### XNNPACK Utils ###
+PERM_NCHW_TO_NHWC = [0, 2, 3, 1]
+PERM_NHWC_TO_NCHW = [0, 3, 1, 2]
+
+
 def check_or_raise(condition: bool, err: str) -> None:
     """
     Raises runtime error if condition is false, with the given error message

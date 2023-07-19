@@ -4,8 +4,6 @@ import torch
 from executorch.backends.xnnpack.operators.node_visitor import (
     get_tensor_value,
     NodeVisitor,
-    PERM_NCHW_TO_NHWC,
-    PERM_NHWC_TO_NCHW,
     register_node_visitor,
 )
 
@@ -15,7 +13,12 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNode,
 )
 from executorch.backends.xnnpack.utils.quant_utils import QuantParams
-from executorch.backends.xnnpack.utils.utils import check_or_raise, get_input_node
+from executorch.backends.xnnpack.utils.utils import (
+    check_or_raise,
+    get_input_node,
+    PERM_NCHW_TO_NHWC,
+    PERM_NHWC_TO_NCHW,
+)
 
 
 @register_node_visitor
