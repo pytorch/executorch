@@ -537,6 +537,30 @@ class TestXNNPACKQuantized(TestXNNPACK):
         example_inputs = (torch.randn(1, 3, 4, 4),)
         self.quantize_and_test_model(ELUModule(), example_inputs)
 
+    def test_xnnpack_qcat2(self):
+        class CatModule(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.cat((x, y), axis=2)
+
+        example_inputs = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
+        self.quantize_and_test_model(CatModule(), example_inputs)
+
+    def test_xnnpack_qcat3(self):
+        class CatModule(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.concat((y, y, x), axis=2)
+
+        example_inputs = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
+        self.quantize_and_test_model(CatModule(), example_inputs)
+
+    def test_xnnpack_qcat4(self):
+        class CatModule(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.concatenate((y, y, x, x), axis=2)
+
+        example_inputs = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
+        self.quantize_and_test_model(CatModule(), example_inputs)
+
     def test_xnnpack_dqlinear_mm_per_tensor(self):
         self._test_xnnpack_dqlinear(
             weight_qconfig=weight_observer_range_neg_127_to_127, use_bias=False
