@@ -1,5 +1,8 @@
 # Using AIBench along with the SDK
 
+AIBench is a benchmarking framework used to execute binaries on-device and collect output. It's an intuitive tool for on-device workloads, including testing, benchmarking ML models, measuring PyTorch operator performance, and scheduling continuous benchmark runs.
+Get started at the [AIBench wiki](https://www.internalfb.com/intern/wiki/AIBench/Mobile_Overview/Submitting_a_Job/)
+
 If you're interested in benchmarking your model on a device using AIBench and then visualizing the performance data along with the model visualization then the `ExecutorchAIBenchAPI` is your one-stop solution for all of this.
 
 AIBench handles all of the plumbing required to generate an ETdump and also to subsequently generate the visualization along with the performance data.
