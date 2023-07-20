@@ -7,3 +7,6 @@
 [submodule "third-party/pytorch"]
 	path = third-party/pytorch
 	url = https://github.com/pytorch/pytorch.git
+[submodule "third-party/gflags"]
+	path = third-party/gflags
+	url = https://github.com/gflags/gflags.git
