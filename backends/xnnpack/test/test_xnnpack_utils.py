@@ -66,7 +66,7 @@ from torch.ao.quantization.quantize_pt2e import (
     convert_pt2e,
     get_symmetric_quantization_config,
     prepare_pt2e,
-    QNNPackQuantizer,
+    XNNPACKQuantizer,
 )
 
 from torch.testing import FileCheck
@@ -307,7 +307,7 @@ class TestXNNPACK(unittest.TestCase):
         captured_program = exir.capture(module, example_inputs, config=capture_config)
         m = captured_program.graph_module
 
-        quantizer = QNNPackQuantizer()
+        quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config()
         quantizer.set_global(quantization_config)
         prepared = prepare_pt2e(m, quantizer)
