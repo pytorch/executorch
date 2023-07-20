@@ -12,7 +12,7 @@ namespace deserialization {
 Result<torch::executor::Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
-    const executorch::Tensor* s_tensor) {
+    const executorch_flatbuffer::Tensor* s_tensor) {
   EXECUTORCH_SCOPE_PROF("TensorParser::parseTensor");
   auto runtime_allocator = memory_manager->get_runtime_allocator();
 

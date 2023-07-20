@@ -285,12 +285,13 @@ struct PyBundledModule final {
       : bundled_program_ptr_(
             static_cast<const void*>((buffer.cast<std::string_view>().data()))),
         program_ptr_(static_cast<const void*>(
-            executorch::GetBundledProgram(bundled_program_ptr_)
+            executorch_flatbuffer::GetBundledProgram(bundled_program_ptr_)
                 ->program()
                 ->data())),
-        program_len_(executorch::GetBundledProgram(bundled_program_ptr_)
-                         ->program()
-                         ->size()),
+        program_len_(
+            executorch_flatbuffer::GetBundledProgram(bundled_program_ptr_)
+                ->program()
+                ->size()),
         bundled_input_allocator_(
             {bundled_input_pool_size, new uint8_t[bundled_input_pool_size]}) {}
 

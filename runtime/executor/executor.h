@@ -14,11 +14,11 @@ class Vector;
 template <typename T>
 struct Offset;
 } // namespace flatbuffers
-namespace executorch {
+namespace executorch_flatbuffer {
 struct Chain;
 struct ExecutionPlan;
 struct EValue;
-} // namespace executorch
+} // namespace executorch_flatbuffer
 
 namespace torch {
 namespace executor {
@@ -36,7 +36,7 @@ using OpFunction = FunctionRef<void(KernelRuntimeContext&, EValue**)>;
 /// argument list for a single instruction
 using InstructionArgs = Span<EValue*>;
 // ExecutionPlan in executor (runtime) namespace.
-// Differences from executorch::ExecutionPlan in serialization:
+// Differences from executorch_flatbuffer::ExecutionPlan in serialization:
 // It holds Evalues with APIs that are compatible operator unboxing.
 // The data pointers of the Evalues should be mapped to serialization buffer.
 // It holds function pointers of kernels, instead of operator names.
@@ -62,7 +62,7 @@ class ExecutionPlan {
    *
    * @retval Error::Ok on successful initialization.
    */
-  __ET_NODISCARD Error init(executorch::ExecutionPlan* s_plan);
+  __ET_NODISCARD Error init(executorch_flatbuffer::ExecutionPlan* s_plan);
 
   /**
    * Sets the specific index input of execution plan with input_evalue
@@ -190,7 +190,7 @@ class ExecutionPlan {
   StepState step_state_;
   const Program* program_;
   MemoryManager* memory_manager_;
-  executorch::ExecutionPlan* serialization_plan_;
+  executorch_flatbuffer::ExecutionPlan* serialization_plan_;
 
   size_t n_value_;
   EValue* values_;
@@ -209,8 +209,8 @@ class ExecutionPlan {
    * of elements actually parsed, which may be less than n_value_ on failure.
    */
   __ET_NODISCARD Error parse_values(
-      const flatbuffers::Vector<flatbuffers::Offset<executorch::EValue>>*
-          fb_values,
+      const flatbuffers::Vector<
+          flatbuffers::Offset<executorch_flatbuffer::EValue>>* fb_values,
       size_t* num_parsed);
 
   __ET_NODISCARD Error resolve_operator(

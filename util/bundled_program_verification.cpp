@@ -25,7 +25,7 @@ namespace {
 #define kMaxDim 16
 
 // Create an aten tensor with same content using bundled tensor
-at::Tensor tensor_like(executorch::BundledTensor* bundled_tensor) {
+at::Tensor tensor_like(executorch_flatbuffer::BundledTensor* bundled_tensor) {
   ET_CHECK(bundled_tensor->sizes()->size() <= kMaxDim);
   int64_t ret_t_sizes[kMaxDim];
 
@@ -46,7 +46,7 @@ at::Tensor tensor_like(executorch::BundledTensor* bundled_tensor) {
 #else // !USE_ATEN_LIB
 // Create a tensorimpl with same content using bundled tensor
 TensorImpl impl_like(
-    executorch::BundledTensor* bundled_tensor,
+    executorch_flatbuffer::BundledTensor* bundled_tensor,
     MemoryAllocator* runtime_allocator) {
   ScalarType scalar_type =
       static_cast<ScalarType>(bundled_tensor->scalar_type());
@@ -77,16 +77,18 @@ __ET_NODISCARD Error LoadBundledInput(
     size_t plan_idx,
     size_t testset_idx) {
   ET_CHECK_OR_RETURN_ERROR(
-      executorch::BundledProgramBufferHasIdentifier(bundled_program_ptr),
+      executorch_flatbuffer::BundledProgramBufferHasIdentifier(
+          bundled_program_ptr),
       NotSupported,
       "The input buffer should be a bundled program.");
 
-  auto bundled_inputs = executorch::GetBundledProgram(bundled_program_ptr)
-                            ->execution_plan_tests()
-                            ->Get(plan_idx)
-                            ->test_sets()
-                            ->Get(testset_idx)
-                            ->inputs();
+  auto bundled_inputs =
+      executorch_flatbuffer::GetBundledProgram(bundled_program_ptr)
+          ->execution_plan_tests()
+          ->Get(plan_idx)
+          ->test_sets()
+          ->Get(testset_idx)
+          ->inputs();
 
   for (size_t input_idx = 0; input_idx < plan.inputs_size(); input_idx++) {
     auto bundled_input = bundled_inputs->GetMutableObject(input_idx);
@@ -99,9 +101,10 @@ __ET_NODISCARD Error LoadBundledInput(
 
     // Set e_input with bundled_input based on different types.
     switch (bundled_input->val_type()) {
-      case executorch::BundledValueUnion::BundledTensor: {
-        auto bundled_input_tensor = static_cast<executorch::BundledTensor*>(
-            bundled_input->mutable_val());
+      case executorch_flatbuffer::BundledValueUnion::BundledTensor: {
+        auto bundled_input_tensor =
+            static_cast<executorch_flatbuffer::BundledTensor*>(
+                bundled_input->mutable_val());
 
 #ifdef USE_ATEN_LIB
         Tensor t = tensor_like(bundled_input_tensor);
@@ -119,19 +122,19 @@ __ET_NODISCARD Error LoadBundledInput(
         status = plan.set_input(e_input, input_idx);
         break;
       }
-      case executorch::BundledValueUnion::BundledInt: {
+      case executorch_flatbuffer::BundledValueUnion::BundledInt: {
         auto bundled_input_int = bundled_input->val_as_BundledInt();
         e_input = EValue(bundled_input_int->int_val());
         status = plan.set_input(e_input, input_idx);
         break;
       }
-      case executorch::BundledValueUnion::BundledDouble: {
+      case executorch_flatbuffer::BundledValueUnion::BundledDouble: {
         auto bundled_input_int = bundled_input->val_as_BundledDouble();
         e_input = EValue(bundled_input_int->double_val());
         status = plan.set_input(e_input, input_idx);
         break;
       }
-      case executorch::BundledValueUnion::BundledBool: {
+      case executorch_flatbuffer::BundledValueUnion::BundledBool: {
         auto bundled_input_int = bundled_input->val_as_BundledBool();
         e_input = EValue(bundled_input_int->bool_val());
         status = plan.set_input(e_input, input_idx);
@@ -166,12 +169,13 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
     double rtol,
     double atol) {
   ET_CHECK_OR_RETURN_ERROR(
-      executorch::BundledProgramBufferHasIdentifier(bundled_program_ptr),
+      executorch_flatbuffer::BundledProgramBufferHasIdentifier(
+          bundled_program_ptr),
       NotSupported,
       "The input buffer should be a bundled program.");
 
   auto bundled_expected_outputs =
-      executorch::GetBundledProgram(bundled_program_ptr)
+      executorch_flatbuffer::GetBundledProgram(bundled_program_ptr)
           ->execution_plan_tests()
           ->Get(plan_idx)
           ->test_sets()
@@ -183,9 +187,9 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
         bundled_expected_outputs->GetMutableObject(output_idx);
     auto plan_output = plan.get_output(output_idx);
     switch (bundled_expected_output->val_type()) {
-      case executorch::BundledValueUnion::BundledTensor: {
+      case executorch_flatbuffer::BundledValueUnion::BundledTensor: {
         auto bundled_expected_output_tensor =
-            static_cast<executorch::BundledTensor*>(
+            static_cast<executorch_flatbuffer::BundledTensor*>(
                 bundled_expected_output->mutable_val());
         const auto plan_output_tensor = plan_output.toTensor();
 
@@ -221,11 +225,12 @@ __ET_NODISCARD Error GetProgramData(
     size_t file_data_len,
     const void** out_program_data,
     size_t* out_program_data_len) {
-  if (executorch::ProgramBufferHasIdentifier(file_data)) {
+  if (executorch_flatbuffer::ProgramBufferHasIdentifier(file_data)) {
     *out_program_data = file_data;
     *out_program_data_len = file_data_len;
-  } else if (executorch::BundledProgramBufferHasIdentifier(file_data)) {
-    auto program_bundled = executorch::GetBundledProgram(file_data);
+  } else if (executorch_flatbuffer::BundledProgramBufferHasIdentifier(
+                 file_data)) {
+    auto program_bundled = executorch_flatbuffer::GetBundledProgram(file_data);
     *out_program_data = program_bundled->program()->data();
     *out_program_data_len = program_bundled->program()->size();
   } else {

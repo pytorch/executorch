@@ -6,7 +6,7 @@
 
 include "scalar_type.fbs";
 
-namespace executorch;
+namespace executorch_flatbuffer;
 
 // Identifier of a valid executor schema.
 file_identifier "ET12";

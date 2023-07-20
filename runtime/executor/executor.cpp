@@ -42,7 +42,7 @@ class BackendDelegate final {
    * @returns Error::Ok if the initialization succeeded, or an error otherwise.
    */
   static Error Init(
-      const executorch::BackendDelegate& delegate,
+      const executorch_flatbuffer::BackendDelegate& delegate,
       const Program* program,
       MemoryAllocator* runtime_allocator,
       BackendDelegate* out) {
@@ -122,8 +122,8 @@ class BackendDelegate final {
   BackendDelegate& operator=(BackendDelegate&&) = delete;
 
   static Error PopulateCompileSpecs(
-      const flatbuffers::Vector<flatbuffers::Offset<executorch::CompileSpec>>*
-          compile_specs_in_program,
+      const flatbuffers::Vector<flatbuffers::Offset<
+          executorch_flatbuffer::CompileSpec>>* compile_specs_in_program,
       torch::executor::MemoryAllocator* runtime_allocator,
       CompileSpec** out_spec) {
     auto number_of_compile_specs = compile_specs_in_program->size();
@@ -148,12 +148,12 @@ class BackendDelegate final {
   }
 
   static Result<FreeableBuffer> GetProcessedData(
-      const executorch::BackendDelegate& delegate,
+      const executorch_flatbuffer::BackendDelegate& delegate,
       const Program* program) {
-    const executorch::BackendDelegateDataReference* processed =
+    const executorch_flatbuffer::BackendDelegateDataReference* processed =
         delegate.processed();
     switch (processed->location()) {
-      case executorch::DataLocation::INLINE: {
+      case executorch_flatbuffer::DataLocation::INLINE: {
         const void* data;
         size_t size;
         Error err = program->get_backend_delegate_data(
@@ -166,7 +166,7 @@ class BackendDelegate final {
             size,
             /*free_fn=*/nullptr);
       }
-      case executorch::DataLocation::SEGMENT: {
+      case executorch_flatbuffer::DataLocation::SEGMENT: {
         return program->LoadSegment(processed->index());
       }
       default:
@@ -188,7 +188,7 @@ class BackendDelegate final {
  */
 struct Chain {
   /// Pointer to the associated flatbuffer chain.
-  const executorch::Chain* s_chain_;
+  const executorch_flatbuffer::Chain* s_chain_;
 
   /// Each entry is a list of parameters for a kernel or delegate call.
   Span<InstructionArgs> argument_lists_;
@@ -262,8 +262,8 @@ Error Executor::init_execution_plan(size_t index) {
 
 Error Executor::init_execution_plan(const char* method_name) {
   EXECUTORCH_SCOPE_PROF("ExecPlan::init_execution_plan");
-  auto internal_program =
-      static_cast<const executorch::Program*>(program_->get_internal_program());
+  auto internal_program = static_cast<const executorch_flatbuffer::Program*>(
+      program_->get_internal_program());
   auto execution_plans = internal_program->execution_plan();
   for (size_t i = 0; i < execution_plans->size(); i++) {
     auto serialization_plan = execution_plans->GetMutableObject(i);
@@ -275,30 +275,30 @@ Error Executor::init_execution_plan(const char* method_name) {
 }
 
 Error ExecutionPlan::parse_values(
-    const flatbuffers::Vector<flatbuffers::Offset<executorch::EValue>>*
-        flatbuffer_values,
+    const flatbuffers::Vector<
+        flatbuffers::Offset<executorch_flatbuffer::EValue>>* flatbuffer_values,
     size_t* num_parsed) {
   for (size_t i = 0; i < n_value_; ++i) {
     auto serialization_value = flatbuffer_values->Get(i);
     switch (serialization_value->val_type()) {
-      case executorch::KernelTypes::Null: {
+      case executorch_flatbuffer::KernelTypes::Null: {
         // Placement new as the list elements are not initialized, so calling
         // copy assignment is not defined if its non trivial (Imagine the
         // garbage in values_[i] thinks its an at::Tensor).
         new (&values_[i]) EValue();
       } break;
-      case executorch::KernelTypes::Int: {
+      case executorch_flatbuffer::KernelTypes::Int: {
         new (&values_[i]) EValue(serialization_value->val_as_Int()->int_val());
       } break;
-      case executorch::KernelTypes::Double: {
+      case executorch_flatbuffer::KernelTypes::Double: {
         new (&values_[i])
             EValue(serialization_value->val_as_Double()->double_val());
       } break;
-      case executorch::KernelTypes::Bool: {
+      case executorch_flatbuffer::KernelTypes::Bool: {
         new (&values_[i])
             EValue(serialization_value->val_as_Bool()->bool_val());
       } break;
-      case executorch::KernelTypes::IntList: {
+      case executorch_flatbuffer::KernelTypes::IntList: {
         const auto items = serialization_value->val_as_IntList()->items();
         // Allocate space for boxed and unboxed list representations using
         // values_ as source of truth
@@ -316,7 +316,7 @@ Error ExecutionPlan::parse_values(
         new (&values_[i]) EValue(
             BoxedEvalueList<int64_t>(evalp_list, int_list, items->size()));
       } break;
-      case executorch::KernelTypes::BoolList: {
+      case executorch_flatbuffer::KernelTypes::BoolList: {
         const auto items = serialization_value->val_as_BoolList()->items();
         // NOTE: This is technically not portable. A platform could technically
         // define boolean as something longer than a byte. This would be an
@@ -328,16 +328,16 @@ Error ExecutionPlan::parse_values(
         new (&values_[i]) EValue(exec_aten::ArrayRef<bool>(
             (const bool*)items->data(), items->size()));
       } break;
-      case executorch::KernelTypes::DoubleList: {
+      case executorch_flatbuffer::KernelTypes::DoubleList: {
         const auto items = serialization_value->val_as_DoubleList()->items();
         new (&values_[i])
             EValue(exec_aten::ArrayRef<double>(items->data(), items->size()));
       } break;
-      case executorch::KernelTypes::String: {
+      case executorch_flatbuffer::KernelTypes::String: {
         const auto fb_str = serialization_value->val_as_String()->string_val();
         new (&values_[i]) EValue(fb_str->c_str(), fb_str->size());
       } break;
-      case executorch::KernelTypes::Tensor: {
+      case executorch_flatbuffer::KernelTypes::Tensor: {
         auto t = deserialization::parseTensor(
             program_, memory_manager_, serialization_value->val_as_Tensor());
         if (!t.ok()) {
@@ -351,7 +351,7 @@ Error ExecutionPlan::parse_values(
         }
         new (&values_[i]) EValue(t.get());
       } break;
-      case executorch::KernelTypes::TensorList: {
+      case executorch_flatbuffer::KernelTypes::TensorList: {
         // get list of serialization tensors and allocate storage for executor
         // tensors
         auto tensors = deserialization::parseTensorList(
@@ -369,7 +369,7 @@ Error ExecutionPlan::parse_values(
         }
         new (&values_[i]) EValue(tensors.get());
       } break;
-      case executorch::KernelTypes::OptionalTensorList: {
+      case executorch_flatbuffer::KernelTypes::OptionalTensorList: {
         // Same as TensorList but optional<Tensor> instead of Tensor
         auto tensors =
             deserialization::parseListOptionalType<exec_aten::Tensor>(
@@ -411,7 +411,7 @@ Error ExecutionPlan::parse_values(
  * of this buffer is of size operator_name_size.
  */
 static void populateOperatorName(
-    const executorch::Operator* const& op,
+    const executorch_flatbuffer::Operator* const& op,
     const size_t operator_name_size,
     char* operator_name) {
   int cx;
@@ -491,7 +491,7 @@ Error ExecutionPlan::resolve_operator(
   }
 }
 
-Error ExecutionPlan::init(executorch::ExecutionPlan* s_plan) {
+Error ExecutionPlan::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
   EXECUTORCH_SCOPE_PROF("ExecPlan::init");
   ET_CHECK_OR_RETURN_ERROR(
       // Don't use !initialized() here because we also want to fail on the
@@ -571,7 +571,7 @@ Error ExecutionPlan::init(executorch::ExecutionPlan* s_plan) {
            ++instr_idx) {
         const auto instruction = s_chain->instructions()->Get(instr_idx);
         switch (instruction->instr_args_type()) {
-          case executorch::InstructionArguments::KernelCall: {
+          case executorch_flatbuffer::InstructionArguments::KernelCall: {
             const auto arg_idxs =
                 instruction->instr_args_as_KernelCall()->args();
             auto res = gen_instruction_arguments(
@@ -592,7 +592,7 @@ Error ExecutionPlan::init(executorch::ExecutionPlan* s_plan) {
               return err;
             }
           } break;
-          case executorch::InstructionArguments::DelegateCall: {
+          case executorch_flatbuffer::InstructionArguments::DelegateCall: {
             const auto arg_idxs =
                 instruction->instr_args_as_DelegateCall()->args();
             auto res = gen_instruction_arguments(
@@ -786,14 +786,14 @@ Error ExecutionPlan::execute_instruction() {
 
   auto instruction = instructions->Get(step_state_.instr_idx);
   switch (instruction->instr_args_type()) {
-    case executorch::InstructionArguments::KernelCall: {
+    case executorch_flatbuffer::InstructionArguments::KernelCall: {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
       KernelRuntimeContext context{};
       chain.kernels_[step_state_.instr_idx](
           context, chain.argument_lists_[step_state_.instr_idx].data());
       // TODO(T135464333): inspect runtime context for error state
     } break;
-    case executorch::InstructionArguments::DelegateCall: {
+    case executorch_flatbuffer::InstructionArguments::DelegateCall: {
       EXECUTORCH_SCOPE_PROF("DELEGATE_CALL");
       auto delegate_idx =
           instruction->instr_args_as_DelegateCall()->delegate_index();
@@ -813,7 +813,7 @@ Error ExecutionPlan::execute_instruction() {
           step_state_.instr_idx,
           err);
     } break;
-    case executorch::InstructionArguments::JumpFalseCall: {
+    case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {
       EXECUTORCH_SCOPE_PROF("JF_CALL");
       auto jf_call = instruction->instr_args_as_JumpFalseCall();
       bool jf_result = parse_cond_value(values_[jf_call->cond_value_index()]);
@@ -822,12 +822,12 @@ Error ExecutionPlan::execute_instruction() {
         return Error::Ok;
       }
     } break;
-    case executorch::InstructionArguments::MoveCall: {
+    case executorch_flatbuffer::InstructionArguments::MoveCall: {
       EXECUTORCH_SCOPE_PROF("MOVE_CALL");
       auto move_call = instruction->instr_args_as_MoveCall();
       mutable_value(move_call->move_to()) = get_value(move_call->move_from());
     } break;
-    case executorch::InstructionArguments::FreeCall: {
+    case executorch_flatbuffer::InstructionArguments::FreeCall: {
       EXECUTORCH_SCOPE_PROF("FREE_CALL");
       auto free_call = instruction->instr_args_as_FreeCall();
       auto t = values_[free_call->value_index()].toTensor();

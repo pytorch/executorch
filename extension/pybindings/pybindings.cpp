@@ -20,8 +20,8 @@ struct IOMetaData {
   std::vector<unsigned int> dim_order;
 
   // Create tensor metadata. It records tensor's dtype and dim order.
-  explicit IOMetaData(const executorch::Tensor* t)
-      : type(static_cast<int>(executorch::KernelTypes::Tensor)),
+  explicit IOMetaData(const executorch_flatbuffer::Tensor* t)
+      : type(static_cast<int>(executorch_flatbuffer::KernelTypes::Tensor)),
         dtype(static_cast<int>(t->scalar_type())) {
     for (size_t i = 0; i < t->dim_order()->size(); i++) {
       dim_order.push_back(static_cast<unsigned int>(t->dim_order()->Get(i)));
@@ -29,12 +29,12 @@ struct IOMetaData {
   }
 
   // Create metadata for non-tensor variable.
-  explicit IOMetaData(executorch::KernelTypes type)
+  explicit IOMetaData(executorch_flatbuffer::KernelTypes type)
       : type(static_cast<int>(type)) {
     ET_CHECK(
-        type != executorch::KernelTypes::Tensor &&
-        type != executorch::KernelTypes::TensorList &&
-        type != executorch::KernelTypes::OptionalTensorList);
+        type != executorch_flatbuffer::KernelTypes::Tensor &&
+        type != executorch_flatbuffer::KernelTypes::TensorList &&
+        type != executorch_flatbuffer::KernelTypes::OptionalTensorList);
   }
 };
 
@@ -49,7 +49,8 @@ struct KernelIOMetaDataComparsion {
       if (lhs[i].type != rhs[i].type) {
         return lhs[i].type < rhs[i].type;
       }
-      if (lhs[i].type != static_cast<int>(executorch::KernelTypes::Tensor)) {
+      if (lhs[i].type !=
+          static_cast<int>(executorch_flatbuffer::KernelTypes::Tensor)) {
         continue;
       }
       if (lhs[i].dtype != rhs[i].dtype) {
@@ -68,9 +69,9 @@ using KernelIOMetadata = std::vector<IOMetaData>;
 using OpIOMetaData = std::set<KernelIOMetadata, KernelIOMetaDataComparsion>;
 
 std::vector<std::string> get_operators_from_execution_plan(
-    const executorch::ExecutionPlan& plan) {
+    const executorch_flatbuffer::ExecutionPlan& plan) {
   std::vector<std::string> op_names;
-  for (const executorch::Operator* op : *plan.operators()) {
+  for (const executorch_flatbuffer::Operator* op : *plan.operators()) {
     if (op->overload()->str().empty()) {
       op_names.push_back(op->name()->str());
     } else {
@@ -82,15 +83,16 @@ std::vector<std::string> get_operators_from_execution_plan(
 
 std::map<std::string, OpIOMetaData>
 get_kernel_tensor_metadatas_from_execution_plan(
-    const executorch::ExecutionPlan* plan) {
+    const executorch_flatbuffer::ExecutionPlan* plan) {
   std::map<std::string, OpIOMetaData> op_io_metadata;
-  for (const executorch::Chain* chain : *plan->chains()) {
-    for (const executorch::Instruction* inst : *chain->instructions()) {
+  for (const executorch_flatbuffer::Chain* chain : *plan->chains()) {
+    for (const executorch_flatbuffer::Instruction* inst :
+         *chain->instructions()) {
       if (inst->instr_args_type() ==
-          executorch::InstructionArguments::KernelCall) {
-        const executorch::KernelCall* kernel_call =
+          executorch_flatbuffer::InstructionArguments::KernelCall) {
+        const executorch_flatbuffer::KernelCall* kernel_call =
             inst->instr_args_as_KernelCall();
-        const executorch::Operator* op =
+        const executorch_flatbuffer::Operator* op =
             plan->operators()->Get(kernel_call->op_index());
         std::string op_overload_name = op->name()->str();
         if (op->overload()->size()) {
@@ -106,33 +108,37 @@ get_kernel_tensor_metadatas_from_execution_plan(
         // go through IOs of this operator and collect tensor metadatas.
         KernelIOMetadata kernel_io_metadata;
         for (int arg_id : *kernel_call->args()) {
-          const executorch::EValue* arg = plan->values()->Get(arg_id);
-          if (arg->val_type() == executorch::KernelTypes::Tensor) {
+          const executorch_flatbuffer::EValue* arg =
+              plan->values()->Get(arg_id);
+          if (arg->val_type() == executorch_flatbuffer::KernelTypes::Tensor) {
             kernel_io_metadata.push_back(IOMetaData(arg->val_as_Tensor()));
-          } else if (arg->val_type() == executorch::KernelTypes::TensorList) {
+          } else if (
+              arg->val_type() ==
+              executorch_flatbuffer::KernelTypes::TensorList) {
             if (arg->val_as_TensorList()->items()->size() == 0) {
               // treat empty tensor list as null type since we can not get
               // metadata from it.
               kernel_io_metadata.push_back(
-                  IOMetaData(executorch::KernelTypes::Null));
+                  IOMetaData(executorch_flatbuffer::KernelTypes::Null));
             } else {
               // all eles in TensorList are tensor and share same tensor
               // metadata. use the metadata of first element as the metadata for
               // whole list.
-              const executorch::Tensor* tensor_arg =
+              const executorch_flatbuffer::Tensor* tensor_arg =
                   plan->values()
                       ->Get(arg->val_as_TensorList()->items()->Get(0))
                       ->val_as_Tensor();
               kernel_io_metadata.push_back(IOMetaData(tensor_arg));
             }
           } else if (
-              arg->val_type() == executorch::KernelTypes::OptionalTensorList) {
+              arg->val_type() ==
+              executorch_flatbuffer::KernelTypes::OptionalTensorList) {
             // all eles in OptionalTensorList are either tensor or null, and all
             // tensors share same metadata. Use the metadata of first tensor
             // element as the metadata for whole list. If no tensor exists (e.g.
             // each element is None), treat the whole list as a single null
             // element.
-            const executorch::OptionalTensorList* opt_tensor_list =
+            const executorch_flatbuffer::OptionalTensorList* opt_tensor_list =
                 arg->val_as_OptionalTensorList();
 
             // Find one non-null tensor
@@ -143,8 +149,9 @@ get_kernel_tensor_metadatas_from_execution_plan(
               if (opt_tensor_list->items()->Get(i) != -1 &&
                   plan->values()
                           ->Get(opt_tensor_list->items()->Get(i))
-                          ->val_type() == executorch::KernelTypes::Tensor) {
-                const executorch::Tensor* tensor_arg =
+                          ->val_type() ==
+                      executorch_flatbuffer::KernelTypes::Tensor) {
+                const executorch_flatbuffer::Tensor* tensor_arg =
                     plan->values()
                         ->Get(arg->val_as_TensorList()->items()->Get(i))
                         ->val_as_Tensor();
@@ -155,7 +162,7 @@ get_kernel_tensor_metadatas_from_execution_plan(
             }
             if (!found_tensor_element) {
               kernel_io_metadata.push_back(
-                  IOMetaData(executorch::KernelTypes::Null));
+                  IOMetaData(executorch_flatbuffer::KernelTypes::Null));
             }
           } else {
             kernel_io_metadata.push_back(IOMetaData(arg->val_type()));
@@ -169,11 +176,13 @@ get_kernel_tensor_metadatas_from_execution_plan(
 }
 } // namespace
 
-const executorch::Program* _get_program_from_buffer(const py::bytes& buffer) {
-  return executorch::GetProgram(buffer.cast<std::string_view>().data());
+const executorch_flatbuffer::Program* _get_program_from_buffer(
+    const py::bytes& buffer) {
+  return executorch_flatbuffer::GetProgram(
+      buffer.cast<std::string_view>().data());
 }
 
-py::list _get_program_operators(const executorch::Program* program) {
+py::list _get_program_operators(const executorch_flatbuffer::Program* program) {
   const auto& plans = *program->execution_plan();
   std::vector<std::string> op_names;
   for (const auto& plan : plans) {
@@ -187,12 +196,12 @@ py::list _get_program_operators(const executorch::Program* program) {
 
 // expose IO metadatas for all operators in given program
 py::dict _get_io_metadata_for_program_operators(
-    const executorch::Program* program) {
+    const executorch_flatbuffer::Program* program) {
   const auto& plans = *program->execution_plan();
   std::map<std::string, OpIOMetaData> program_op_io_metadata;
 
   // aggregrate op metadata from different execution plan.
-  for (const executorch::ExecutionPlan* plan : plans) {
+  for (const executorch_flatbuffer::ExecutionPlan* plan : plans) {
     std::map<std::string, OpIOMetaData> plan_op_io_metadata =
         get_kernel_tensor_metadatas_from_execution_plan(plan);
 
@@ -241,10 +250,10 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       &_get_io_metadata_for_program_operators,
       py::return_value_policy::copy);
 
-  py::class_<executorch::Chain>(m, "Chain")
+  py::class_<executorch_flatbuffer::Chain>(m, "Chain")
       .def(
           "stacktraces",
-          [](const executorch::Chain& self) -> py::object {
+          [](const executorch_flatbuffer::Chain& self) -> py::object {
             if (!self.stacktrace()) {
               return py::none();
             }
@@ -275,16 +284,16 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def_readwrite("dtype", &IOMetaData::dtype)
       .def_readwrite("dim_order", &IOMetaData::dim_order);
 
-  py::class_<executorch::ExecutionPlan>(m, "ExecutionPlan")
+  py::class_<executorch_flatbuffer::ExecutionPlan>(m, "ExecutionPlan")
       .def(
           "chain",
-          [](const executorch::ExecutionPlan& self, py::int_ index) {
+          [](const executorch_flatbuffer::ExecutionPlan& self, py::int_ index) {
             return self.chains()->Get(index);
           },
           py::return_value_policy::reference)
       .def(
           "inputs_size",
-          [](const executorch::ExecutionPlan& self) -> int32_t {
+          [](const executorch_flatbuffer::ExecutionPlan& self) -> int32_t {
             if (!self.inputs()) {
               return -1;
             } else {
@@ -293,15 +302,15 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           })
       .def(
           "operators",
-          [](const executorch::ExecutionPlan& self) -> py::list {
+          [](const executorch_flatbuffer::ExecutionPlan& self) -> py::list {
             return py::cast(get_operators_from_execution_plan(self));
           },
           py::return_value_policy::reference);
 
-  py::class_<executorch::Program>(m, "Program")
+  py::class_<executorch_flatbuffer::Program>(m, "Program")
       .def(
           "execution_plan",
-          [](const executorch::Program& self, py::int_ index) {
+          [](const executorch_flatbuffer::Program& self, py::int_ index) {
             return self.execution_plan()->Get(index);
           },
           py::return_value_policy::reference);

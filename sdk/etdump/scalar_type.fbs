@@ -4,7 +4,7 @@
 // See README.md before modifying this file.
 //
 
-namespace executorch;
+namespace executorch_flatbuffer;
 
 // The scalar data type.
 // Must match executorch/runtime/core/portable_type/tensor_impl.h

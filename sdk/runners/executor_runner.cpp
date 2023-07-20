@@ -39,7 +39,7 @@ static uint8_t bundled_allocator_pool[kBundledAllocatorPoolSize];
 DEFINE_bool(
     bundled_program,
     false,
-    "True for running bundled program, false for executorch::program");
+    "True for running bundled program, false for executorch_flatbuffer::program");
 
 DEFINE_bool(
     generate_etdump,

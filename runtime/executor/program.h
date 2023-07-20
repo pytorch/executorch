@@ -11,9 +11,9 @@
 
 // Forward declare flatbuffer types. This is a public header and must not
 // include the generated flatbuffer header.
-namespace executorch {
+namespace executorch_flatbuffer {
 struct Program;
-} // namespace executorch
+} // namespace executorch_flatbuffer
 
 namespace torch {
 namespace executor {
@@ -257,7 +257,7 @@ class Program final {
   friend class Executor;
   friend class testing::ProgramTestFriend;
 
-  const executorch::Program* get_internal_program() const {
+  const executorch_flatbuffer::Program* get_internal_program() const {
     return internal_program_;
   }
 
@@ -287,7 +287,7 @@ class Program final {
       DataLoader* loader,
       size_t segment_base_offset,
       FreeableBuffer&& program_data,
-      const executorch::Program* internal_program)
+      const executorch_flatbuffer::Program* internal_program)
       : program_data_(std::move(program_data)),
         // Don't need the loader if there are no segments.
         loader_(segment_base_offset > 0 ? loader : nullptr),
@@ -307,7 +307,7 @@ class Program final {
 
   /// The flatbuffer representation of the program. Must not be exposed to
   /// users.
-  const executorch::Program* internal_program_;
+  const executorch_flatbuffer::Program* internal_program_;
 
   /// The offset to the first segment, in bytes. If zero, no segments should
   /// be present in internal_program_.

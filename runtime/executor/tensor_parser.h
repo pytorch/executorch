@@ -14,7 +14,7 @@ namespace deserialization {
 Result<exec_aten::Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
-    const executorch::Tensor* s_tensor);
+    const executorch_flatbuffer::Tensor* s_tensor);
 
 inline Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
     const flatbuffers::Vector<int32_t>* tensor_indices,
@@ -105,7 +105,7 @@ inline Result<BoxedEvalueList<exec_aten::optional<T>>> parseListOptionalType(
  *     non-Ok Error.
  */
 __ET_NODISCARD inline Result<void*> getTensorDataPtr(
-    const executorch::Tensor* s_tensor,
+    const executorch_flatbuffer::Tensor* s_tensor,
     const Program* program,
     size_t nbytes,
     HierarchicalAllocator* allocator) {
@@ -117,7 +117,7 @@ __ET_NODISCARD inline Result<void*> getTensorDataPtr(
     return const_cast<void*>(data);
   }
 
-  const executorch::AllocationDetails* allocation_info =
+  const executorch_flatbuffer::AllocationDetails* allocation_info =
       s_tensor->allocation_info();
   if (allocation_info != nullptr) {
     // Normal non-constant Tensor. Allocate data using mem_id and offset.

@@ -22,7 +22,7 @@ void deleteNothing(void*) {}
 Result<at::Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
-    const executorch::Tensor* s_tensor) {
+    const executorch_flatbuffer::Tensor* s_tensor) {
   EXECUTORCH_SCOPE_PROF("TensorParser::parseTensor");
 
   ET_CHECK_OR_RETURN_ERROR(
@@ -61,7 +61,7 @@ Result<at::Tensor> parseTensor(
       options);
 
   if (s_tensor->shape_dynamism() ==
-      executorch::TensorShapeDynamism::DYNAMIC_UNBOUND) {
+      executorch_flatbuffer::TensorShapeDynamism::DYNAMIC_UNBOUND) {
     // Provide fully dynamic tensors with an allocator so they can be resized
     // within aten kernels.
     auto impl = tensor.unsafeGetTensorImpl();

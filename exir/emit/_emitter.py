@@ -743,7 +743,7 @@ class _Emitter(torch.fx.Interpreter):
         # At the end of each submodule emit we insert a move call that moves the output of the
         # submodule to a deterministic EValue, which is especially useful for if/else branches where
         # we want the output of either branch to be in the same EValue, but we don't need a move
-        # here as our custom op executorch::prim::et_copy_index which is inserted later does that
+        # here as our custom op executorch_prim::et_copy_index which is inserted later does that
         # for us.
 
         # Now that the map emitter has finished running retrieve the input placeholder EValue id and
