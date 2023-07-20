@@ -2,8 +2,8 @@
 #include <numeric>
 #include <random>
 
+#include <executorch/extension/aten_util/aten_bridge.h>
 #include <executorch/test/utils/DeathTest.h>
-#include <executorch/util/aten_bridge.h>
 
 #include <gtest/gtest.h>
 

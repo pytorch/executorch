@@ -20,7 +20,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-            "//executorch/util:aten_bridge",
+            "//executorch/extension/aten_util:aten_bridge",
             "//executorch/backends/qnnpack:qnnpack_utils",
         ],
     )

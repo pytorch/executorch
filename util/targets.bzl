@@ -64,64 +64,6 @@ def define_common_targets():
         ],
     )
 
-    COMPILER_FLAGS = [
-        "-frtti",
-        "-fno-omit-frame-pointer",
-        "-fexceptions",
-        "-Wno-error",
-        "-Wno-unused-local-typedef",
-        "-Wno-self-assign-overloaded",
-        "-Wno-global-constructors",
-        "-Wno-unused-function",
-    ]
-
-    runtime.cxx_library(
-        name = "aten_bridge",
-        srcs = ["aten_bridge.cpp"],
-        exported_headers = ["aten_bridge.h"],
-        compiler_flags = COMPILER_FLAGS,
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/core/exec_aten:lib",
-        ],
-        fbcode_deps = [
-            "//caffe2:ATen-core",
-            "//caffe2:ATen-cpu",
-            "//caffe2/c10:c10",
-        ],
-        xplat_deps = [
-            "//xplat/caffe2:torch_mobile_core",
-            "//xplat/caffe2/c10:c10",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "ivalue_flatten_unflatten",
-        srcs = ["ivalue_flatten_unflatten.cpp"],
-        exported_headers = ["ivalue_flatten_unflatten.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/extension/pytree:pytree",
-        ],
-        compiler_flags = ["-Wno-missing-prototypes"],
-        fbcode_deps = [
-            "//caffe2:ATen-core",
-            "//caffe2:ATen-cpu",
-            "//caffe2/c10:c10",
-        ],
-        xplat_deps = [
-            "//xplat/caffe2:torch_mobile_core",
-            "//xplat/caffe2/c10:c10",
-        ],
-    )
-
     for aten_mode in (True, False):
         aten_suffix = ("_aten" if aten_mode else "")
         runtime.cxx_library(

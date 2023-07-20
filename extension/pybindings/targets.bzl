@@ -22,7 +22,7 @@ MODULE_DEPS = [
     "//executorch/runtime/executor:executor",
     "//executorch/schema:bundled_program_schema",
     "//executorch/schema:schema",
-    "//executorch/util:aten_bridge",
+    "//executorch/extension/aten_util:aten_bridge",
     "//executorch/util:bundled_program_verification",
     "//executorch/extension/data_loader:buffer_data_loader",
     "//executorch/extension/data_loader:mmap_data_loader",

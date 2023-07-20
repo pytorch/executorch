@@ -29,7 +29,7 @@
 
 #ifndef USE_ATEN_LIB
 #include <c10/core/impl/LocalDispatchKeySet.h>
-#include <executorch/util/aten_bridge.h>
+#include <executorch/extension/aten_util/aten_bridge.h>
 #endif
 
 /// Throws a runtime_error with the provided message if `error` is not `Ok`.

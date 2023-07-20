@@ -8,12 +8,13 @@ def define_common_targets():
     """
 
     runtime.cxx_test(
-        name = "memory_utils_test",
-        srcs = [
-            "memory_utils_test.cpp",
+        name = "ivalue_util_test",
+        srcs = ["ivalue_util_test.cpp"],
+        deps = ["//executorch/extension/pytree/aten_util:ivalue_util"],
+        fbcode_deps = [
+            "//caffe2:torch-cpp",
         ],
-        deps = [
-            "//executorch/runtime/platform:compiler",
-            "//executorch/util:memory_utils",
+        xplat_deps = [
+            "//xplat/caffe2:torch_mobile_all_ops",
         ],
     )

@@ -1,4 +1,4 @@
-#include <executorch/util/aten_bridge.h>
+#include <executorch/extension/aten_util/aten_bridge.h>
 
 #include <executorch/runtime/platform/assert.h>
 #include <cstring>
