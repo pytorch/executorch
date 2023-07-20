@@ -8,20 +8,6 @@ def define_common_targets():
     """
 
     runtime.cxx_library(
-        name = "dynamic_memory_allocator",
-        exported_headers = [
-            "DynamicMemoryAllocator.h",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:memory_allocator",
-        ],
-        visibility = [
-            "//executorch/util/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-    )
-
-    runtime.cxx_library(
         name = "system",
         exported_headers = [
             "system.h",

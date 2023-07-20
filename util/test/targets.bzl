@@ -30,16 +30,6 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
-        name = "dynamic_memory_allocator_test",
-        srcs = [
-            "DynamicMemoryAllocatorTest.cpp",
-        ],
-        deps = [
-            "//executorch/util:dynamic_memory_allocator",
-        ],
-    )
-
-    runtime.cxx_test(
         name = "memory_utils_test",
         srcs = [
             "memory_utils_test.cpp",

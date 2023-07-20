@@ -19,18 +19,18 @@ namespace util {
  * For systems with malloc(), this can be easier than using a fixed-sized
  * MemoryAllocator.
  */
-class DynamicMemoryAllocator : public MemoryAllocator {
+class MallocMemoryAllocator : public MemoryAllocator {
  public:
   /**
-   * Construct a new Dynamic memory allocator via an optional alignment size
+   * Construct a new Malloc memory allocator via an optional alignment size
    * parameter.
    *
    * @param[in] align_size An optional parameter to specify alignment parameter
    * for each allocate() call.
    */
-  DynamicMemoryAllocator() : MemoryAllocator(0, nullptr) {}
+  MallocMemoryAllocator() : MemoryAllocator(0, nullptr) {}
 
-  ~DynamicMemoryAllocator() override {
+  ~MallocMemoryAllocator() override {
     reset();
   }
 

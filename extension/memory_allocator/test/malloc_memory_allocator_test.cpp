@@ -1,17 +1,17 @@
 // (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
+#include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/DynamicMemoryAllocator.h>
 
 #include <gtest/gtest.h>
 
 using namespace ::testing;
-using torch::executor::util::DynamicMemoryAllocator;
+using torch::executor::util::MallocMemoryAllocator;
 
 constexpr auto kDefaultAlignment =
-    torch::executor::util::DynamicMemoryAllocator::kDefaultAlignment;
+    torch::executor::util::MallocMemoryAllocator::kDefaultAlignment;
 
-class DynamicMemoryAllocatorTest : public ::testing::Test {
+class MallocMemoryAllocatorTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
@@ -29,7 +29,7 @@ bool is_aligned(const void* ptr, size_t alignment) {
   EXPECT_TRUE(is_aligned((ptr), (alignment))) \
       << "Pointer " << (ptr) << " is not aligned to " << (alignment)
 
-TEST_F(DynamicMemoryAllocatorTest, IsAlignedTest) {
+TEST_F(MallocMemoryAllocatorTest, IsAlignedTest) {
   struct TestCase {
     uintptr_t address;
     size_t alignment;
@@ -53,8 +53,8 @@ TEST_F(DynamicMemoryAllocatorTest, IsAlignedTest) {
   }
 }
 
-TEST_F(DynamicMemoryAllocatorTest, SimpleAllocateSucceeds) {
-  DynamicMemoryAllocator allocator = DynamicMemoryAllocator();
+TEST_F(MallocMemoryAllocatorTest, SimpleAllocateSucceeds) {
+  MallocMemoryAllocator allocator = MallocMemoryAllocator();
 
   auto p = allocator.allocate(16);
   EXPECT_NE(p, nullptr);
@@ -71,8 +71,8 @@ TEST_F(DynamicMemoryAllocatorTest, SimpleAllocateSucceeds) {
   EXPECT_ALIGNED(p3, kDefaultAlignment);
 }
 
-TEST_F(DynamicMemoryAllocatorTest, AlignmentSmokeTest) {
-  DynamicMemoryAllocator allocator = DynamicMemoryAllocator();
+TEST_F(MallocMemoryAllocatorTest, AlignmentSmokeTest) {
+  MallocMemoryAllocator allocator = MallocMemoryAllocator();
 
   // A set of alignments that alternate between big and small. The behavior of
   // this test will depend on the state of the heap.
@@ -101,8 +101,8 @@ TEST_F(DynamicMemoryAllocatorTest, AlignmentSmokeTest) {
   }
 }
 
-TEST_F(DynamicMemoryAllocatorTest, BadAlignmentFails) {
-  DynamicMemoryAllocator allocator = DynamicMemoryAllocator();
+TEST_F(MallocMemoryAllocatorTest, BadAlignmentFails) {
+  MallocMemoryAllocator allocator = MallocMemoryAllocator();
 
   // Should fail because the requested alignment is not a power of 2.
   std::vector<size_t> alignments = {0, 5, 6, 12, 34};
@@ -112,8 +112,8 @@ TEST_F(DynamicMemoryAllocatorTest, BadAlignmentFails) {
   }
 }
 
-TEST_F(DynamicMemoryAllocatorTest, ResetSucceeds) {
-  DynamicMemoryAllocator allocator = DynamicMemoryAllocator();
+TEST_F(MallocMemoryAllocatorTest, ResetSucceeds) {
+  MallocMemoryAllocator allocator = MallocMemoryAllocator();
 
   auto p = allocator.allocate(16);
   EXPECT_NE(p, nullptr);
