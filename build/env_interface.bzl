@@ -375,6 +375,9 @@ def _patch_pp_flags(kwargs):
         )
     return kwargs
 
+def _patch_cxx_compiler_flags(kwargs):
+    return kwargs
+
 def _patch_executorch_genrule_cmd(cmd, macros_only = True):
     """Patches references to //executorch in genrule commands.
 
@@ -462,6 +465,7 @@ env = struct(
     export_file = native.partial(_get_rule, "export_file"),
     filegroup = native.partial(_get_rule, "filegroup"),
     genrule = native.partial(_get_rule, "genrule"),
+    patch_cxx_compiler_flags = _patch_cxx_compiler_flags,
     patch_deps = _patch_deps,
     patch_executorch_genrule_cmd = _patch_executorch_genrule_cmd,
     resolve_external_dep = _resolve_external_dep,

@@ -216,6 +216,7 @@ def _cxx_library_common(*args, **kwargs):
     env.patch_platform_build_mode_flags(kwargs)
     env.patch_headers(kwargs)
     env.patch_pp_flags(kwargs)
+    env.patch_cxx_compiler_flags(kwargs)
 
     env.cxx_library(*args, **kwargs)
 
@@ -237,6 +238,7 @@ def _cxx_binary_helper(*args, **kwargs):
     _patch_kwargs_cxx(kwargs)
     _patch_build_mode_flags(kwargs)
     env.patch_platform_build_mode_flags(kwargs)
+    env.patch_cxx_compiler_flags(kwargs)
 
     env.cxx_binary(*args, **kwargs)
 
