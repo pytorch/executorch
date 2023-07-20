@@ -21,7 +21,7 @@ python_unittest(
         "//executorch/backends/qnnpack/partition:qnnpack_partitioner",
         "//executorch/exir:lib",
         "//executorch/exir/serialize:lib",
-        "//executorch/pybindings:portable",  # @manual
+        "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/pytree:pylib",
     ],
 )
@@ -42,6 +42,6 @@ python_unittest(
         "//executorch/backends/qnnpack/partition:support_patterns",
         "//executorch/backends/transforms:lib",
         "//executorch/exir:lib",
-        "//executorch/pybindings:portable",  # @manual
+        "//executorch/extension/pybindings:portable",  # @manual
     ],
 )

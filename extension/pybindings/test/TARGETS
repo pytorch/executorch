@@ -21,7 +21,7 @@ python_unittest(
         "//executorch/exir/emit:lib",
         "//executorch/exir/passes:lib",
         "//executorch/exir/serialize:lib",
-        "//executorch/pybindings:portable",
+        "//executorch/extension/pybindings:portable",
         "//executorch/runtime/core:core",
     ],
 )

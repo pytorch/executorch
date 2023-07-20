@@ -35,7 +35,7 @@ runtime.python_library(
         "//caffe2/torchgen:torchgen",
     ] + select({
         "DEFAULT": [],
-        "ovr_config//os:linux": ["//executorch/pybindings:operator"],
+        "ovr_config//os:linux": ["//executorch/extension/pybindings:operator"],
     }),
 )
 

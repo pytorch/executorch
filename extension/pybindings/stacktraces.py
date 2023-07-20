@@ -2,8 +2,8 @@
 
 from executorch.exir.schema import Frame, FrameList
 
-# pyre-fixme[21]: Could not find module `executorch.pybindings.core`.
-from executorch.pybindings.core import Module
+# pyre-fixme[21]: Could not find module `executorch.extension.pybindings.core`.
+from executorch.extension.pybindings.core import Module
 
 
 # pyre-fixme[11]: Annotation `Module` is not defined as a type.

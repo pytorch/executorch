@@ -30,8 +30,10 @@ from executorch.bundled_program.serialize import (
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.serialize import serialize_to_flatbuffer
 
-# pyre-ignore[21]: Could not find module `executorch.pybindings.portable`.
-from executorch.pybindings.portable import _load_for_executorch_from_buffer  # @manual
+# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
+from executorch.extension.pybindings.portable import (  # @manual
+    _load_for_executorch_from_buffer,
+)
 from executorch.pytree import tree_flatten
 
 from torch.ao.quantization import (  # @manual

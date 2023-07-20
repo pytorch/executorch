@@ -15,7 +15,7 @@ python_binary(
     deps = [
         "//executorch/exir:lib",
         "//executorch/exir/serialize:lib",
+        "//executorch/extension/pybindings:portable",
         "//executorch/profiler:parse_profiler_library",
-        "//executorch/pybindings:portable",
     ],
 )

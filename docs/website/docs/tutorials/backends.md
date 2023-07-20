@@ -40,7 +40,7 @@ from executorch.exir import ExecutorchBackendConfig, EdgeCompileConfig
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
 from torch.fx import symbolic_trace
-from executorch.pybindings.portable import _load_for_executorch, _load_for_executorch_from_buffer   # @manual
+from executorch.extension.pybindings.portable import _load_for_executorch, _load_for_executorch_from_buffer   # @manual
 ```
 
 If the whole module in eager mode looks like:

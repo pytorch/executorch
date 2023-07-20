@@ -10,7 +10,7 @@ runtime.cxx_library(
     link_whole = True,
     visibility = [
         "//executorch/backends/...",
-        "//executorch/pybindings/...",
+        "//executorch/extension/pybindings/...",
         "//executorch/test/...",
         "@EXECUTORCH_CLIENTS",
     ],

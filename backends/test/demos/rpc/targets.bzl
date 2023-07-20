@@ -4,7 +4,7 @@ load(
     "CXX",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/pybindings:targets.bzl", "MODELS_ALL_OPS_LEAN_MODE_GENERATED_LIB")
+load("@fbsource//xplat/executorch/extension/pybindings:targets.bzl", "MODELS_ALL_OPS_LEAN_MODE_GENERATED_LIB")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.

@@ -68,7 +68,7 @@ def define_common_targets():
         visibility = [
             "//executorch/backends/test/...",
             "//executorch/runtime/executor/test/...",
-            "//executorch/pybindings/...",
+            "//executorch/extension/pybindings/...",
             "//executorch/test/...",
             "@EXECUTORCH_CLIENTS",
         ],
@@ -109,7 +109,7 @@ def define_common_targets():
         exported_headers = ["mmap_data_loader.h"],
         visibility = [
             "//executorch/test/...",
-            "//executorch/pybindings/...",
+            "//executorch/extension/pybindings/...",
             "//executorch/runtime/executor/test/...",
             "@EXECUTORCH_CLIENTS",
         ],

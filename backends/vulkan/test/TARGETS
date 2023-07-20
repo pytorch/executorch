@@ -15,8 +15,8 @@ python_unittest(
         "//executorch/backends/vulkan:vulkan_preprocess",
         "//executorch/exir:lib",
         "//executorch/exir/serialize:lib",
+        "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/pybindings:portable",  # @manual
         "//executorch/pytree:pylib",
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],

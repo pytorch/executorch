@@ -18,7 +18,7 @@ def define_common_targets():
             visibility = [
                 "//executorch/backends/...",
                 "//executorch/runtime/backend/...",
-                "//executorch/pybindings/...",
+                "//executorch/extension/pybindings/...",
                 "//executorch/sdk/runners/...",
             ],
             # registration of backends is done through a static global

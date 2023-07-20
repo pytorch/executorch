@@ -6,19 +6,19 @@ import torch
 
 from executorch import exir
 from executorch.exir.serialize import serialize_to_flatbuffer
+
+# pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.extension.pybindings.portable`.
+from executorch.extension.pybindings.portable import (
+    _create_profile_block,
+    _dump_profile_results,
+    _load_for_executorch_from_buffer,
+    _reset_profile_results,
+)
 from executorch.profiler.parse_profiler_results import (
     deserialize_profile_results,
     profile_aggregate_framework_tax,
     profile_framework_tax_table,
     profile_table,
-)
-
-# pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.pybindings.portable`.
-from executorch.pybindings.portable import (
-    _create_profile_block,
-    _dump_profile_results,
-    _load_for_executorch_from_buffer,
-    _reset_profile_results,
 )
 from executorch.pytree import tree_flatten
 
@@ -42,28 +42,28 @@ class TestCustomOps(unittest.TestCase):
         inputs = (torch.ones(2, 2, dtype=torch.float),)
         program = exir.capture(model, inputs).to_edge().to_executorch().program
         cls.flatbuff_without_stacktrace = serialize_to_flatbuffer(program)
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `portable`.
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         cls.module = _load_for_executorch_from_buffer(cls.flatbuff_without_stacktrace)
 
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         cls.inputs_flattened, _ = tree_flatten(inputs)
         cls.module.run_method("forward", tuple(cls.inputs_flattened))
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `portable`.
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         prof_dump = _dump_profile_results()
         cls.prof_results, cls.mem_results = deserialize_profile_results(prof_dump)
         cls.expect_ops = ["native_call_add.out", "native_call_mul.out"]
 
     def test_profiler_new_block(self) -> None:
         block_names = ["block_1", "block_2"]
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `portable`.
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         _reset_profile_results()
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `portable`.
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         _create_profile_block(block_names[0])
         self.module.run_method("forward", tuple(self.inputs_flattened))
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `portable`.
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         _create_profile_block(block_names[1])
         self.module.run_method("forward", tuple(self.inputs_flattened))
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `portable`.
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         prof_dump = _dump_profile_results()
         prof_results, mem_results = deserialize_profile_results(prof_dump)
         for i, (block_name_, _) in enumerate(prof_results.items()):

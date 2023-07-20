@@ -100,9 +100,9 @@ python_unittest(
         "//executorch/exir:lib",
         "//executorch/exir:print_program",
         "//executorch/exir:schema",
+        "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/kernels/portable:custom_ops_generated_lib",
         "//executorch/kernels/quantized:custom_ops_generated_lib",
-        "//executorch/pybindings:portable",  # @manual
         "//executorch/pytree:pylib",
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
@@ -162,7 +162,7 @@ python_unittest(
         "//executorch/backends:utils",
         "//executorch/exir:lib",
         "//executorch/exir/dialects:lib",
-        "//executorch/pybindings:portable",  # @manual
+        "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )

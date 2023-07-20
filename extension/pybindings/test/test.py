@@ -8,11 +8,10 @@ from executorch.exir import CaptureConfig
 from executorch.exir.print_program import pretty_print
 from executorch.exir.scalar_type import ScalarType
 from executorch.exir.schema import Program
-from executorch.exir.serialize import serialize_to_flatbuffer
 
-# executorch.pybindings.portable is a cpp_python_extension target.
-# pyre-ignore[21]: Could not find module `executorch.pybindings.portable`.
-from executorch.pybindings.portable import (
+# executorch.extension.pybindings.portable is a cpp_python_extension target.
+# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
+from executorch.extension.pybindings.portable import (
     _get_io_metadata_for_program_operators,  # @manual
     _get_program_from_buffer,  # @manual
     _get_program_operators,  # @manual

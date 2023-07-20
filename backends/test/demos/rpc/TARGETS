@@ -53,6 +53,6 @@ python_unittest(
         "//executorch/backends:backend_api",
         "//executorch/backends/test:op_partitioner_demo",
         "//executorch/exir:lib",
-        "//executorch/pybindings:portable",  # @manual
+        "//executorch/extension/pybindings:portable",  # @manual
     ],
 )

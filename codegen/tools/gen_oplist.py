@@ -72,9 +72,9 @@ class KernelType(IntEnum):
 
 
 def _get_operators(model_file: str) -> List[str]:
-    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.pybindings.operator`.
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `operator`
-    from executorch.pybindings.operator import (
+    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.extension.pybindings.operator`.
+    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`
+    from executorch.extension.pybindings.operator import (
         _get_program_from_buffer,
         _get_program_operators,
     )
@@ -82,9 +82,9 @@ def _get_operators(model_file: str) -> List[str]:
     print("Processing model file: ", model_file)
     with open(model_file, "rb") as f:
         buf = f.read()
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `operator`.
+    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`.
     program = _get_program_from_buffer(buf)
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `operator`.
+    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`.
     operators = _get_program_operators(program)
     print(f"Model file loaded, operators are: {operators}")
     return operators
@@ -92,7 +92,7 @@ def _get_operators(model_file: str) -> List[str]:
 
 def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
 
-    from executorch.pybindings.operator import (
+    from executorch.extension.pybindings.operator import (
         _get_io_metadata_for_program_operators,
         _get_program_from_buffer,
         IOMetaData,
@@ -100,9 +100,9 @@ def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
 
     with open(model_file, "rb") as f:
         buf = f.read()
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `operator`.
+    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`.
     program = _get_program_from_buffer(buf)
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `operator`.
+    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`.
     operators_with_io_metadata = _get_io_metadata_for_program_operators(program)
 
     op_kernel_key_list: Dict[str, List[str]] = {}

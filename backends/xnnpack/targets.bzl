@@ -47,7 +47,7 @@ def define_common_targets():
             "//executorch/backends:backend_lib",
             "//executorch/backends/test/...",
             "//executorch/backends/xnnpack/test/...",
-            "//executorch/pybindings/...",
+            "//executorch/extension/pybindings/...",
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [

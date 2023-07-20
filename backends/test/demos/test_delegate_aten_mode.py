@@ -7,8 +7,8 @@ from executorch.backends.backend_api import to_backend
 from executorch.backends.compile_spec_schema import CompileSpec
 from executorch.backends.test.backend_with_compiler_demo import BackendWithCompilerDemo
 
-# pyre-ignore[21]: Could not find module `executorch.pybindings.portable`.
-from executorch.pybindings.aten_mode_lib import (  # @manual
+# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
+from executorch.extension.pybindings.aten_mode_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 

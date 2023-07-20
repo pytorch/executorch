@@ -54,7 +54,7 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
         srcs = [
             "pybindings.cpp",
         ] + srcs,
-        base_module = "executorch.pybindings",
+        base_module = "executorch.extension.pybindings",
         preprocessor_flags = [
             "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(python_module_name),
         ],
