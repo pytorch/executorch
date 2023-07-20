@@ -2,11 +2,11 @@
 #include <filesystem>
 #include <memory>
 
+#include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/file_data_loader.h>
 #include <executorch/util/util.h>
 
 #include <gtest/gtest.h>

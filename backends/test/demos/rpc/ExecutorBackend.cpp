@@ -5,11 +5,11 @@
 #include <cstdlib> /* strtol */
 #include <memory>
 
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/runtime/backend/backend_registry.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/executor/executor.h>
-#include <executorch/util/embedded_data_loader.h>
 #include <executorch/util/util.h>
 
 namespace torch {
@@ -41,8 +41,8 @@ class ExecutorBackend final : public PyTorchBackendInterface {
     // `processed` contains an executorch program. Wrap it in a DataLoader that
     // will return the data directly without copying it.
     auto loader = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        runtime_allocator, util::EmbeddedDataLoader);
-    new (loader) util::EmbeddedDataLoader(processed->data(), processed->size());
+        runtime_allocator, util::BufferDataLoader);
+    new (loader) util::BufferDataLoader(processed->data(), processed->size());
     // Can't free `processed` because the program will point into that memory.
 
     // Try loading the program.

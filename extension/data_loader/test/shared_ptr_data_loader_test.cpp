@@ -1,8 +1,9 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
-#include <executorch/util/embedded_data_loader.h>
+#include <executorch/extension/data_loader/shared_ptr_data_loader.h>
 
 #include <cstring>
+#include <memory>
 
 #include <gtest/gtest.h>
 
@@ -13,9 +14,9 @@ using namespace ::testing;
 using torch::executor::Error;
 using torch::executor::FreeableBuffer;
 using torch::executor::Result;
-using torch::executor::util::EmbeddedDataLoader;
+using torch::executor::util::SharedPtrDataLoader;
 
-class EmbeddedDataLoaderTest : public ::testing::Test {
+class SharedPtrDataLoaderTest : public ::testing::Test {
  protected:
   void SetUp() override {
     // Since these tests cause ET_LOG to be called, the PAL must be initialized
@@ -24,24 +25,26 @@ class EmbeddedDataLoaderTest : public ::testing::Test {
   }
 };
 
-TEST_F(EmbeddedDataLoaderTest, InBoundsLoadsSucceed) {
+TEST_F(SharedPtrDataLoaderTest, InBoundsLoadsSucceed) {
   // Create some heterogeneous data.
-  uint8_t data[256];
-  for (int i = 0; i < sizeof(data); ++i) {
+  const size_t SIZE = 256;
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[SIZE], std::default_delete<uint8_t[]>());
+  for (int i = 0; i < SIZE; ++i) {
     data[i] = i;
   }
 
   // Wrap it in a loader.
-  EmbeddedDataLoader edl(data, sizeof(data));
+  SharedPtrDataLoader sbdl(data, SIZE);
 
   // size() should succeed and reflect the total size.
-  Result<size_t> size = edl.size();
+  Result<size_t> size = sbdl.size();
   EXPECT_TRUE(size.ok());
-  EXPECT_EQ(*size, sizeof(data));
+  EXPECT_EQ(*size, SIZE);
 
   // Load the first bytes of the data.
   {
-    Result<FreeableBuffer> fb = edl.Load(/*offset=*/0, /*size=*/8);
+    Result<FreeableBuffer> fb = sbdl.Load(/*offset=*/0, /*size=*/8);
     EXPECT_TRUE(fb.ok());
     EXPECT_EQ(fb->size(), 8);
     EXPECT_EQ(
@@ -63,8 +66,7 @@ TEST_F(EmbeddedDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Load the last few bytes of the data, a different size than the first time.
   {
-    Result<FreeableBuffer> fb =
-        edl.Load(/*offset=*/sizeof(data) - 3, /*size=*/3);
+    Result<FreeableBuffer> fb = sbdl.Load(/*offset=*/SIZE - 3, /*size=*/3);
     EXPECT_TRUE(fb.ok());
     EXPECT_EQ(fb->size(), 3);
     EXPECT_EQ(0, std::memcmp(fb->data(), "\xfd\xfe\xff", fb->size()));
@@ -72,36 +74,38 @@ TEST_F(EmbeddedDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Loading all of the data succeeds.
   {
-    Result<FreeableBuffer> fb = edl.Load(/*offset=*/0, /*size=*/sizeof(data));
+    Result<FreeableBuffer> fb = sbdl.Load(/*offset=*/0, /*size=*/SIZE);
     EXPECT_TRUE(fb.ok());
-    EXPECT_EQ(fb->size(), sizeof(data));
-    EXPECT_EQ(0, std::memcmp(fb->data(), data, fb->size()));
+    EXPECT_EQ(fb->size(), SIZE);
+    EXPECT_EQ(0, std::memcmp(fb->data(), data.get(), fb->size()));
   }
 
   // Loading zero-sized data succeeds, even at the end of the data.
   {
-    Result<FreeableBuffer> fb = edl.Load(/*offset=*/sizeof(data), /*size=*/0);
+    Result<FreeableBuffer> fb = sbdl.Load(/*offset=*/SIZE, /*size=*/0);
     EXPECT_TRUE(fb.ok());
     EXPECT_EQ(fb->size(), 0);
   }
 }
 
-TEST_F(EmbeddedDataLoaderTest, OutOfBoundsLoadFails) {
+TEST_F(SharedPtrDataLoaderTest, OutOfBoundsLoadFails) {
   // Wrap some data in a loader.
-  uint8_t data[256] = {};
-  EmbeddedDataLoader edl(data, sizeof(data));
+  const size_t SIZE = 256;
+  std::shared_ptr<uint8_t[]> data(
+      new uint8_t[SIZE], std::default_delete<uint8_t[]>());
+
+  // Wrap it in a loader.
+  SharedPtrDataLoader sbdl(data, SIZE);
 
   // Loading beyond the end of the data should fail.
   {
-    Result<FreeableBuffer> fb =
-        edl.Load(/*offset=*/0, /*size=*/sizeof(data) + 1);
+    Result<FreeableBuffer> fb = sbdl.Load(/*offset=*/0, /*size=*/SIZE + 1);
     EXPECT_NE(fb.error(), Error::Ok);
   }
 
   // Loading zero bytes still fails if it's past the end of the data.
   {
-    Result<FreeableBuffer> fb =
-        edl.Load(/*offset=*/sizeof(data) + 1, /*size=*/0);
+    Result<FreeableBuffer> fb = sbdl.Load(/*offset=*/SIZE + 1, /*size=*/0);
     EXPECT_NE(fb.error(), Error::Ok);
   }
 }

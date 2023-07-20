@@ -24,8 +24,8 @@ def define_common_targets():
                 "//executorch/runtime/executor:executor" + aten_suffix,
                 "//executorch/sdk/etdump:etdump",
                 "//executorch/util:bundled_program_verification" + aten_suffix,
-                "//executorch/util:embedded_data_loader",
-                "//executorch/util:file_data_loader",
+                "//executorch/extension/data_loader:buffer_data_loader",
+                "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/util:util" + aten_suffix,
             ] + (MODELS_ALL_OPS_ATEN_MODE_GENERATED_LIB if aten_mode else [
                 "//executorch/configurations:executor_cpu_optimized",

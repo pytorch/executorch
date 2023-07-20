@@ -18,9 +18,9 @@ namespace util {
  * This can be used to wrap data that is directly embedded into the firmware
  * image, or to wrap data that was allocated elsewhere.
  */
-class EmbeddedDataLoader : public DataLoader {
+class BufferDataLoader : public DataLoader {
  public:
-  EmbeddedDataLoader(const void* data, size_t size)
+  BufferDataLoader(const void* data, size_t size)
       : data_(reinterpret_cast<const uint8_t*>(data)), size_(size) {}
 
   __ET_NODISCARD Result<FreeableBuffer> Load(size_t offset, size_t size)

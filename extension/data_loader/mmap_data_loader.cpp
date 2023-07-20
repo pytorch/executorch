@@ -1,6 +1,6 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
-#include <executorch/util/mmap_data_loader.h>
+#include <executorch/extension/data_loader/mmap_data_loader.h>
 
 #include <cerrno>
 #include <cstring>

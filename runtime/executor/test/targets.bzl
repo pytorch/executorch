@@ -90,7 +90,7 @@ def define_common_targets():
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:executor",
                 "//executorch/kernels/portable:generated_lib",
-                "//executorch/util:file_data_loader",
+                "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/util:util",
             ],
             env = modules_env,
@@ -105,7 +105,7 @@ def define_common_targets():
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:executor",
                 "//executorch/util:util",
-                "//executorch/util:file_data_loader",
+                "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/kernels/portable:generated_lib",
             ],
             env = modules_env,
@@ -118,8 +118,8 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/runtime/executor:program",
-                "//executorch/util:embedded_data_loader",
-                "//executorch/util:file_data_loader",
+                "//executorch/extension/data_loader:buffer_data_loader",
+                "//executorch/extension/data_loader:file_data_loader",
             ],
             env = modules_env,
         )
@@ -133,7 +133,7 @@ def define_common_targets():
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:executor",
                 "//executorch/util:util",
-                "//executorch/util:file_data_loader",
+                "//executorch/extension/data_loader:file_data_loader",
             ],
             env = modules_env,
         )
@@ -147,8 +147,8 @@ def define_common_targets():
                 ":managed_memory_manager",
                 "//executorch/runtime/backend:backend_registry",
                 "//executorch/runtime/executor:executor",
-                "//executorch/util:embedded_data_loader",
-                "//executorch/util:file_data_loader",
+                "//executorch/extension/data_loader:buffer_data_loader",
+                "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/util:util",
             ],
             env = {

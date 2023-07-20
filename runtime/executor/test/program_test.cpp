@@ -4,13 +4,13 @@
 #include <cstring>
 #include <memory>
 
+#include <executorch/extension/data_loader/buffer_data_loader.h>
+#include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
-#include <executorch/util/embedded_data_loader.h>
-#include <executorch/util/file_data_loader.h>
 
 #include <gtest/gtest.h>
 
@@ -19,7 +19,7 @@ using torch::executor::Error;
 using torch::executor::FreeableBuffer;
 using torch::executor::Program;
 using torch::executor::Result;
-using torch::executor::util::EmbeddedDataLoader;
+using torch::executor::util::BufferDataLoader;
 using torch::executor::util::FileDataLoader;
 
 // Verification level to use for tests not specifically focused on verification.
@@ -125,7 +125,7 @@ TEST_F(ProgramTest, BadMagicFailsToLoad) {
   data[5] = 'Y';
 
   // Wrap the modified data in a loader.
-  EmbeddedDataLoader data_loader(data.get(), data_len);
+  BufferDataLoader data_loader(data.get(), data_len);
 
   {
     // Parse the Program from the data. Use minimal verification to show that
@@ -159,7 +159,7 @@ TEST_F(ProgramTest, VerificationCatchesTruncation) {
   ASSERT_EQ(full_data.error(), Error::Ok);
 
   // Make a loader that only exposes half of the data.
-  EmbeddedDataLoader half_data_loader(full_data->data(), full_data_len / 2);
+  BufferDataLoader half_data_loader(full_data->data(), full_data_len / 2);
 
   // Loading with full verification should fail.
   Result<Program> program = Program::Load(
@@ -183,7 +183,7 @@ TEST_F(ProgramTest, VerificationCatchesCorruption) {
   std::memset(&data[data_len / 2], 0x55, data_len - (data_len / 2));
 
   // Wrap the corrupted data in a loader.
-  EmbeddedDataLoader data_loader(data.get(), data_len);
+  BufferDataLoader data_loader(data.get(), data_len);
 
   // Should fail to parse corrupted data when using full verification.
   Result<Program> program =
@@ -204,7 +204,7 @@ TEST_F(ProgramTest, UnalignedProgramDataFails) {
   }
 
   // Wrap the offset data in a loader.
-  EmbeddedDataLoader data_loader(data.get() + 1, data_len);
+  BufferDataLoader data_loader(data.get() + 1, data_len);
 
   // Should refuse to accept unaligned data.
   Result<Program> program =

@@ -1,15 +1,15 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
-#include <executorch/util/file_data_loader.h>
+#include <executorch/extension/data_loader/file_data_loader.h>
 
 #include <cstring>
 
 #include <gtest/gtest.h>
 
+#include <executorch/extension/testing_util/temp_file.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/alignment.h>
-#include <executorch/util/test/temp_file.h>
 
 using namespace ::testing;
 using torch::executor::Error;

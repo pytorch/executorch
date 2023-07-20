@@ -1,4 +1,4 @@
-#include <executorch/util/test/temp_file.h>
+#include <executorch/extension/testing_util/temp_file.h>
 
 #include <memory>
 #include <string>

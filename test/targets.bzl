@@ -6,7 +6,7 @@ SIZE_TEST_SOURCES = [
 
 SIZE_TEST_DEPS = [
     "//executorch/runtime/executor:executor",
-    "//executorch/util:file_data_loader",
+    "//executorch/extension/data_loader:file_data_loader",
     "//executorch/util:util",
 ]
 
@@ -57,7 +57,7 @@ def define_common_targets():
             "//executorch/kernels/portable:generated_lib_all_ops",
             "//executorch/runtime/executor:executor",
             "//executorch/runtime/executor/test:managed_memory_manager",
-            "//executorch/util:embedded_data_loader",
+            "//executorch/extension/data_loader:buffer_data_loader",
             "//executorch/util:read_file",
             "//executorch/util:util",
         ],
@@ -74,7 +74,7 @@ def define_common_targets():
             "//executorch/kernels/portable:generated_lib_all_ops",
             "//executorch/runtime/executor:executor",
             "//executorch/configurations:executor_cpu_optimized",
-            "//executorch/util:embedded_data_loader",
+            "//executorch/extension/data_loader:buffer_data_loader",
             "//executorch/util:read_file",
             "//executorch/util:util",
         ],

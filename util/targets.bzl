@@ -62,63 +62,6 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "embedded_data_loader",
-        srcs = [],
-        exported_headers = ["embedded_data_loader.h"],
-        visibility = [
-            "//executorch/backends/test/...",
-            "//executorch/runtime/executor/test/...",
-            "//executorch/extension/pybindings/...",
-            "//executorch/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "shared_ptr_data_loader",
-        srcs = [],
-        exported_headers = ["shared_ptr_data_loader.h"],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "file_data_loader",
-        srcs = ["file_data_loader.cpp"],
-        exported_headers = ["file_data_loader.h"],
-        visibility = [
-            "//executorch/test/...",
-            "//executorch/runtime/executor/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-        ],
-    )
-
-    runtime.cxx_library(
-        name = "mmap_data_loader",
-        srcs = ["mmap_data_loader.cpp"],
-        exported_headers = ["mmap_data_loader.h"],
-        visibility = [
-            "//executorch/test/...",
-            "//executorch/extension/pybindings/...",
-            "//executorch/runtime/executor/test/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-        ],
-    )
-
-    runtime.cxx_library(
         name = "memory_utils",
         srcs = ["memory_utils.cpp"],
         exported_headers = ["memory_utils.h"],

@@ -6,22 +6,6 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
-    runtime.cxx_library(
-        name = "temp_file",
-        srcs = [],
-        exported_headers = ["temp_file.h"],
-        visibility = [],  # Private
-    )
-
-    runtime.cxx_test(
-        name = "temp_file_test",
-        srcs = [
-            "temp_file_test.cpp",
-        ],
-        deps = [
-            ":temp_file",
-        ],
-    )
 
     runtime.cxx_test(
         name = "ATenBridgeTest",
@@ -52,48 +36,6 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/util:dynamic_memory_allocator",
-        ],
-    )
-
-    runtime.cxx_test(
-        name = "embedded_data_loader_test",
-        srcs = [
-            "embedded_data_loader_test.cpp",
-        ],
-        deps = [
-            "//executorch/util:embedded_data_loader",
-        ],
-    )
-
-    runtime.cxx_test(
-        name = "shared_ptr_data_loader_test",
-        srcs = [
-            "shared_ptr_data_loader_test.cpp",
-        ],
-        deps = [
-            "//executorch/util:shared_ptr_data_loader",
-        ],
-    )
-
-    runtime.cxx_test(
-        name = "file_data_loader_test",
-        srcs = [
-            "file_data_loader_test.cpp",
-        ],
-        deps = [
-            ":temp_file",
-            "//executorch/util:file_data_loader",
-        ],
-    )
-
-    runtime.cxx_test(
-        name = "mmap_data_loader_test",
-        srcs = [
-            "mmap_data_loader_test.cpp",
-        ],
-        deps = [
-            ":temp_file",
-            "//executorch/util:mmap_data_loader",
         ],
     )
 

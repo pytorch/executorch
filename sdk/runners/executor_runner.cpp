@@ -1,13 +1,13 @@
 #include <gflags/gflags.h>
 
+#include <executorch/extension/data_loader/buffer_data_loader.h>
+#include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/sdk/etdump/etdump.h>
 #include <executorch/util/bundled_program_verification.h>
-#include <executorch/util/embedded_data_loader.h>
-#include <executorch/util/file_data_loader.h>
 #include <executorch/util/util.h>
 #ifdef USE_ATEN_LIB
 #include <c10/core/impl/LocalDispatchKeySet.h>
@@ -148,7 +148,7 @@ class ProgramData {
     // Wrap the Program in a loader, and pass on the FreeableBuffer that
     // contains the full bundled program data.
     return ProgramData(
-        new util::EmbeddedDataLoader(program_data, program_data_len),
+        new util::BufferDataLoader(program_data, program_data_len),
         std::move(*file_data));
   }
 

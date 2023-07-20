@@ -5,6 +5,8 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <executorch/extension/data_loader/buffer_data_loader.h>
+#include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/executor/program.h>
@@ -16,8 +18,6 @@
 #include <executorch/schema/schema_generated.h>
 #include <executorch/util/TestMemoryConfig.h>
 #include <executorch/util/bundled_program_verification.h>
-#include <executorch/util/embedded_data_loader.h>
-#include <executorch/util/mmap_data_loader.h>
 #include <executorch/util/read_file.h>
 
 #include <ATen/Functions.h>
@@ -50,7 +50,7 @@ namespace executor {
 
 namespace {
 
-using util::EmbeddedDataLoader;
+using util::BufferDataLoader;
 using util::MmapDataLoader;
 
 class Module final {
@@ -183,7 +183,7 @@ inline std::unique_ptr<Module> load_from_buffer(
     size_t ptr_len,
     MemoryManager* memory_manager) {
   EXECUTORCH_SCOPE_PROF("load_from_buffer");
-  auto loader = std::make_unique<EmbeddedDataLoader>(ptr.get(), ptr_len);
+  auto loader = std::make_unique<BufferDataLoader>(ptr.get(), ptr_len);
   auto m = std::make_unique<Module>(std::move(loader), memory_manager);
   m->set_delete_memory(std::move(ptr));
   return m;
@@ -194,7 +194,7 @@ inline std::unique_ptr<Module> load_from_buffer(
     size_t ptr_len,
     MemoryManager* memory_manager) {
   EXECUTORCH_SCOPE_PROF("load_from_buffer");
-  auto loader = std::make_unique<EmbeddedDataLoader>(ptr, ptr_len);
+  auto loader = std::make_unique<BufferDataLoader>(ptr, ptr_len);
   return std::make_unique<Module>(std::move(loader), memory_manager);
 }
 

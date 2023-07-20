@@ -1,10 +1,10 @@
 #include <memory>
 #include <vector>
 
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/embedded_data_loader.h>
 #include <executorch/util/read_file.h>
 #include <executorch/util/util.h>
 
@@ -50,9 +50,9 @@ Program* load_program(
     MemoryAllocator& allocator) {
   // Wrap the data in a DataLoader. The Program will take a pointer to it, so it
   // must live for at least as long as the Program instance.
-  auto loader = allocator.allocateInstance<util::EmbeddedDataLoader>();
+  auto loader = allocator.allocateInstance<util::BufferDataLoader>();
   ET_CHECK(loader != nullptr);
-  new (loader) util::EmbeddedDataLoader(file_data, file_data_len);
+  new (loader) util::BufferDataLoader(file_data, file_data_len);
 
   // Load the program.
   Result<Program> program_result = Program::Load(loader);

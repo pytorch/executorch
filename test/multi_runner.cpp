@@ -23,13 +23,13 @@
 #include <thread>
 #include <tuple>
 
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/embedded_data_loader.h>
 #include <executorch/util/read_file.h>
 #include <executorch/util/util.h>
 
@@ -60,7 +60,7 @@ using torch::executor::MemoryManager;
 using torch::executor::Program;
 using torch::executor::Result;
 using torch::executor::testing::ManagedMemoryManager;
-using torch::executor::util::EmbeddedDataLoader;
+using torch::executor::util::BufferDataLoader;
 
 /**
  * A model that has been loaded and has had its execution plan and inputs
@@ -120,7 +120,7 @@ class PreparedModel final {
   }
 
   const std::string name_;
-  EmbeddedDataLoader loader_; // Needs to outlive program_
+  BufferDataLoader loader_; // Needs to outlive program_
   Program program_; // Needs to outlive executor_
   ManagedMemoryManager memory_manager_; // Needs to outlive executor_
   Executor executor_;
