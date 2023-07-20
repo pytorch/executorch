@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <string>
 
-#include <executorch/pytree/pytree.h>
+#include <executorch/extension/pytree/pytree.h>
 
 int main(int argc, char* argv[]) {
   ::testing::InitGoogleTest(&argc, argv);

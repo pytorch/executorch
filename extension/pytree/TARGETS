@@ -13,7 +13,7 @@ cpp_python_extension(
     srcs = [
         "pybindings.cpp",
     ],
-    base_module = "executorch.pytree",
+    base_module = "executorch.extension.pytree",
     deps = [
         ":pytree",
     ],
@@ -27,7 +27,7 @@ cpp_python_extension(
     srcs = [
         "pybindings.cpp",
     ],
-    base_module = "executorch.pytree",
+    base_module = "executorch.extension.pytree",
     deps = [
         ":pytree",
     ],
@@ -41,7 +41,7 @@ python_library(
     srcs = [
         "__init__.py",
     ],
-    base_module = "executorch.pytree",
+    base_module = "executorch.extension.pytree",
     deps = [
         ":pybindings",
         "//caffe2:torch",

@@ -41,7 +41,7 @@ from executorch.exir.schema import (
 from executorch.extension.pybindings.portable import (  # @manual
     _load_for_executorch_from_buffer,
 )
-from executorch.pytree import tree_flatten
+from executorch.extension.pytree import tree_flatten
 
 from functorch.experimental import control_flow
 from torch.ao.quantization import get_default_qconfig_mapping  # @manual

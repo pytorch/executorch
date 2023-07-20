@@ -13,7 +13,7 @@ python_library(
         ":types",
         "//caffe2:torch",
         "//executorch/exir/operator:convert",
-        "//executorch/pytree:pylib",
+        "//executorch/extension/pytree:pylib",
     ],
 )
 

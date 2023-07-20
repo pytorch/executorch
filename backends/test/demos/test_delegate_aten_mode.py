@@ -12,7 +12,7 @@ from executorch.extension.pybindings.aten_mode_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 
-from executorch.pytree import tree_flatten
+from executorch.extension.pytree import tree_flatten
 
 
 class TestDelegateAtenMode(unittest.TestCase):

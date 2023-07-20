@@ -13,7 +13,7 @@ from executorch.bundled_program.schema import (
     BundledInt,
     BundledString,
 )
-from executorch.pytree import tree_flatten
+from executorch.extension.pytree import tree_flatten
 
 from typing_extensions import TypeAlias
 

@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from typing import Callable, cast, Dict, List, Mapping, Optional, Tuple, Union
 
 import executorch.exir.memory as memory
-import executorch.pytree as ex_pytree
+import executorch.extension.pytree as ex_pytree
 import torch
 import torch.fx
 from executorch.exir import delegate

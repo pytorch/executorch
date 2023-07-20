@@ -4,8 +4,8 @@ from typing import Any, Dict
 
 import torch
 
-# @manual=//executorch/pytree:pybindings
-from executorch.pytree import (
+# @manual=//executorch/extension/pytree:pybindings
+from executorch.extension.pytree import (
     broadcast_to_and_flatten,
     register_custom,
     tree_flatten,

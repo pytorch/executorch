@@ -179,7 +179,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = [
-            "//executorch/pytree:pytree",
+            "//executorch/extension/pytree:pytree",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
         fbcode_deps = [

@@ -18,7 +18,7 @@ from typing import (
     Union,
 )
 
-import executorch.pytree as ex_pytree
+import executorch.extension.pytree as ex_pytree
 import torch
 import torch._dynamo as torchdynamo
 import torch.fx as fx

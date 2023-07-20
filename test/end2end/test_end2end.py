@@ -10,8 +10,8 @@ import executorch.exir as exir
 
 import executorch.exir.control_flow as control_flow
 
-# @manual=//executorch/pytree:pybindings
-import executorch.pytree as pytree
+# @manual=//executorch/extension/pytree:pybindings
+import executorch.extension.pytree as pytree
 
 # The module itself is not used directly. But we need the side effect of importing
 # it so the get_scratch_metas methods are attached to out variant ops.

@@ -101,9 +101,9 @@ python_unittest(
         "//executorch/exir:print_program",
         "//executorch/exir:schema",
         "//executorch/extension/pybindings:portable",  # @manual
+        "//executorch/extension/pytree:pylib",
         "//executorch/kernels/portable:custom_ops_generated_lib",
         "//executorch/kernels/quantized:custom_ops_generated_lib",
-        "//executorch/pytree:pylib",
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )

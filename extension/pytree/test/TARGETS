@@ -8,7 +8,7 @@ cpp_unittest(
     name = "cpptest",
     srcs = ["test_pytree.cpp"],
     supports_static_listing = True,
-    deps = ["//executorch/pytree:pytree"],
+    deps = ["//executorch/extension/pytree:pytree"],
 )
 
 python_unittest(
@@ -19,7 +19,7 @@ python_unittest(
     supports_static_listing = True,
     deps = [
         "//caffe2:torch",
-        "//executorch/pytree:pybindings",
-        "//executorch/pytree:pylib",
+        "//executorch/extension/pytree:pybindings",
+        "//executorch/extension/pytree:pylib",
     ],
 )

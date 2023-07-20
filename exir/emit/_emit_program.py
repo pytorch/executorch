@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
-import executorch.pytree as ex_pytree
+import executorch.extension.pytree as ex_pytree
 import torch
 import torch.fx
 from executorch.exir.emit._emitter import _EmitterState, _ProgramState, _TopLevelEmitter

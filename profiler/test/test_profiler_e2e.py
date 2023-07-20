@@ -14,13 +14,13 @@ from executorch.extension.pybindings.portable import (
     _load_for_executorch_from_buffer,
     _reset_profile_results,
 )
+from executorch.extension.pytree import tree_flatten
 from executorch.profiler.parse_profiler_results import (
     deserialize_profile_results,
     profile_aggregate_framework_tax,
     profile_framework_tax_table,
     profile_table,
 )
-from executorch.pytree import tree_flatten
 
 
 class Module(torch.nn.Module):

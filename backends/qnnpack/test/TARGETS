@@ -22,7 +22,7 @@ python_unittest(
         "//executorch/exir:lib",
         "//executorch/exir/serialize:lib",
         "//executorch/extension/pybindings:portable",  # @manual
-        "//executorch/pytree:pylib",
+        "//executorch/extension/pytree:pylib",
     ],
 )
 

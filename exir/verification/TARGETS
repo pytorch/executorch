@@ -29,7 +29,7 @@ python_library(
         "//executorch/exir:lib",
         "//executorch/exir:schema",
         "//executorch/exir:tensor",
-        "//executorch/pytree:pylib",
+        "//executorch/extension/pytree:pylib",
     ],
 )
 

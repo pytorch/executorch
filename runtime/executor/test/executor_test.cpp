@@ -6,7 +6,7 @@
 #include <string>
 #include <unordered_map>
 
-#include <executorch/pytree/pytree.h>
+#include <executorch/extension/pytree/pytree.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>

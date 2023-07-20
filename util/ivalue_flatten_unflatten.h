@@ -9,7 +9,7 @@
 // patternlint-disable executorch-cpp-nostdinc
 #include <vector>
 
-#include <executorch/pytree/pytree.h>
+#include <executorch/extension/pytree/pytree.h>
 
 namespace torch {
 namespace executor {

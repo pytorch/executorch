@@ -20,7 +20,7 @@ from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.extension.pybindings.portable import (  # @manual
     _load_for_executorch_from_buffer,
 )
-from executorch.pytree import tree_flatten
+from executorch.extension.pytree import tree_flatten
 from torch.ao.quantization.backend_config.executorch import (
     get_executorch_backend_config,
 )

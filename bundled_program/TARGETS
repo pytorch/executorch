@@ -27,7 +27,7 @@ python_library(
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
         "//caffe2:torch",
         "//executorch/bundled_program:schema",
-        "//executorch/pytree:pylib",
+        "//executorch/extension/pytree:pylib",
     ],
 )
 

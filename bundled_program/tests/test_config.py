@@ -13,7 +13,7 @@ from executorch.bundled_program.tests.common import (
     get_random_config_with_eager_model,
     MISOModel,
 )
-from executorch.pytree import tree_flatten
+from executorch.extension.pytree import tree_flatten
 
 
 class TestConfig(unittest.TestCase):

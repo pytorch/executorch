@@ -3,7 +3,7 @@
 #include <memory>
 #include <stack>
 
-#include "executorch/pytree/pytree.h"
+#include "executorch/extension/pytree/pytree.h"
 
 namespace py = pybind11;
 

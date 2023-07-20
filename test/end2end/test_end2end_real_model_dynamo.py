@@ -5,8 +5,8 @@ from typing import Dict, Tuple
 
 import executorch.exir as exir
 
-# @manual=//executorch/pytree:pybindings
-import executorch.pytree as pytree
+# @manual=//executorch/extension/pytree:pybindings
+import executorch.extension.pytree as pytree
 import torch
 from executorch.exir import (
     CaptureConfig,

@@ -57,8 +57,8 @@ python_unittest(
         "//executorch/exir/tests:models",
         "//executorch/exir/tests:transformer",
         "//executorch/extension/pybindings:aten_mode_lib",
+        "//executorch/extension/pytree:pybindings",
         "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/pytree:pybindings",
     ],
 )
 
@@ -89,8 +89,8 @@ python_unittest(
         "//executorch/exir/tests:models",
         "//executorch/exir/tests:transformer",
         "//executorch/extension/pybindings:portable",
+        "//executorch/extension/pytree:pybindings",
         "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/pytree:pybindings",
     ],
 )
 
@@ -114,8 +114,8 @@ python_unittest(
         "//executorch/exir/emit:lib",
         "//executorch/exir/passes:lib",
         "//executorch/extension/pybindings:portable",
+        "//executorch/extension/pytree:pybindings",
         "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/pytree:pybindings",
         "//pye/model_inventory/asr_models/milan_dictation:milan_dictation_lib",
     ],
 )

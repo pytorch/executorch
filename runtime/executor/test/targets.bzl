@@ -46,7 +46,7 @@ def define_common_targets():
             "//executorch/runtime/executor:executor",
             "//executorch/kernels/portable:generated_lib",
             "//executorch/runtime/kernel:kernel_runtime_context",
-            "//executorch/pytree:pytree",
+            "//executorch/extension/pytree:pytree",
             "//executorch/test/utils:utils",
             "//executorch/util:test_memory_config",
         ],

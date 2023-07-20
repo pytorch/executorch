@@ -5,7 +5,7 @@ from typing import List, Optional, Union
 
 # pyre-fixme[21]: Could not find module `executorch.exir.verification.bindings`.
 import executorch.exir.verification.bindings as bindings  # @manual=//executorch/exir/verification:bindings
-import executorch.pytree as ex_pytree
+import executorch.extension.pytree as ex_pytree
 
 import torch
 

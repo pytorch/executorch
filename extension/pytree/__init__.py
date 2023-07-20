@@ -10,9 +10,9 @@ try:
     now as in most cases the runtime will not need it.
     """
 
-    # pyre-fixme[21]: Could not find module `executorch.pytree.pybindings`.
-    # @manual=//executorch/pytree:pybindings
-    from executorch.pytree.pybindings import (
+    # pyre-fixme[21]: Could not find module `executorch.extension.pytree.pybindings`.
+    # @manual=//executorch/extension/pytree:pybindings
+    from executorch.extension.pytree.pybindings import (
         broadcast_to_and_flatten as broadcast_to_and_flatten,
         from_str as from_str,
         register_custom as register_custom,
@@ -23,7 +23,7 @@ try:
     )
 except:
     warnings.warn(
-        "Unable to import executorch.pytree, using native torch pytree instead."
+        "Unable to import executorch.extension.pytree, using native torch pytree instead."
     )
 
     from torch.utils._pytree import (
