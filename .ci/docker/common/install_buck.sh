@@ -4,12 +4,15 @@ set -ex
 
 install_ubuntu() {
   apt-get update
+  apt-get install -y zstd
 
-  # TODO: Setup buck will come later in a separate PR
-  wget -q https://github.com/facebook/buck/releases/download/v2021.01.12.01/buck.2021.01.12.01_all.deb
-  apt install -y ./buck.2021.01.12.01_all.deb
+  wget -q https://github.com/facebook/buck2/releases/download/2023-07-18/buck2-x86_64-unknown-linux-gnu.zst
+  zstd -d buck2-x86_64-unknown-linux-gnu.zst -o buck2
 
-  rm buck.2021.01.12.01_all.deb
+  chmod +x buck2
+  mv buck2 /usr/bin/
+
+  rm buck2-x86_64-unknown-linux-gnu.zst
   # Cleanup package manager
   apt-get autoclean && apt-get clean
   rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
