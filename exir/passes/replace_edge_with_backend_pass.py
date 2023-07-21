@@ -3,7 +3,7 @@
 import torch
 from executorch.exir.dialects._ops import ops
 from executorch.exir.pass_base import ExportPass
-from executorch.kernels.prim_ops.prim_to_executorch_ops import (
+from executorch.exir.passes.executorch_prim_ops_registry import (
     _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS,
 )
 

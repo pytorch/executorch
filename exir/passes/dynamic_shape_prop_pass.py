@@ -14,10 +14,10 @@ from executorch.exir.dynamic_shape import (
 from executorch.exir.pass_base import Argument, BackendPass
 from executorch.exir.pass_infra.node_metadata import NodeMetadata
 from executorch.exir.pass_infra.proxy_value import ProxyValue
+from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
 from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.sym_util import collect_free_symbols, eval_expr
 from executorch.exir.tensor import TensorSpec
-from executorch.kernels.prim_ops.prim_to_executorch_ops import _EXECUTORCH_SYM_OPS
 from torch._subclasses import FakeTensor
 from torch.fx import GraphModule
 

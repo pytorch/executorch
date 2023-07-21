@@ -1,11 +1,10 @@
+load("@fbcode_macros//build_defs:cpp_unittest.bzl", "cpp_unittest")
+
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
-load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
-
-define_common_targets()
 
 python_unittest(
     name = "test_prim_ops",
@@ -15,6 +14,24 @@ python_unittest(
     supports_static_listing = True,
     deps = [
         "//caffe2:torch",
-        "//executorch/kernels/prim_ops:prim_ops_py_registry",
+        "//executorch/exir/passes:prim_ops_py_registry",
+    ],
+)
+
+cpp_unittest(
+    name = "register_prim_ops_test",
+    srcs = [
+        "register_prim_ops_test.cpp",
+    ],
+    deps = [
+        "//executorch/kernels/prim_ops:prim_ops_registry",  # @manual
+        "//executorch/runtime/core:evalue",  # @manual
+        "//executorch/runtime/core/exec_aten:lib",  # @manual
+        "//executorch/runtime/core/exec_aten/testing_util:tensor_util",  # @manual
+        "//executorch/runtime/core/exec_aten/util:tensor_util",  # @manual
+        "//executorch/runtime/kernel:kernel_runtime_context",  # @manual
+        "//executorch/runtime/kernel:operator_registry",
+        "//executorch/runtime/platform:platform",
+        "//executorch/test/utils:utils",
     ],
 )

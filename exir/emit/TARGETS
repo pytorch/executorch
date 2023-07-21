@@ -32,7 +32,7 @@ python_library(
         "//executorch/exir/dialects/backend:lib",
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/operator:convert",
+        "//executorch/exir/passes:prim_ops_py_registry",
         "//executorch/extension/pytree:pylib",
-        "//executorch/kernels/prim_ops:prim_to_executorch_ops",
     ],
 )

@@ -40,6 +40,7 @@ from executorch.exir.dialects.backend._ops import BackendOpOverload
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.operator.convert import is_out_variant
+from executorch.exir.passes.executorch_prim_ops_registry import is_sym_op
 from executorch.exir.print_program import pretty_print_stacktraces
 from executorch.exir.schema import (
     BackendDelegate,
@@ -83,12 +84,10 @@ from executorch.exir.tensor import (
     TensorSpec,
 )
 from executorch.exir.types import LeafValueSpec, ValueSpec
-from executorch.kernels.prim_ops.prim_to_executorch_ops import is_sym_op
 from functorch.experimental import control_flow
 from torch._export.exported_program import ExportedProgram
 from torch.utils import _pytree as pytree
 
-# @manual=fbsource//third-party/pypi/typing-extensions:typing-extensions
 from typing_extensions import TypeAlias
 
 

@@ -27,6 +27,8 @@ from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes.const_prop_pass import ConstPropPass
 from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
+
+from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePass
 from executorch.exir.passes.pass_registry import PassRegistry
@@ -42,8 +44,6 @@ from executorch.exir.passes.replace_sym_size_op_pass import ReplaceSymSizeOpPass
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_shape_eval_pass import SymShapeEvalPass
-
-from executorch.kernels.prim_ops.prim_to_executorch_ops import _EXECUTORCH_SYM_OPS
 from torch import fx
 from torch._subclasses import FakeTensor
 from torch.fx.passes.infra.pass_base import PassBase, PassResult

@@ -13,6 +13,7 @@ python_library(
         ":memory_planning_pass",
         ":normalize_transpose_pass",
         ":pass_registry",
+        ":prim_ops_py_registry",
         ":quant_fusion_pass",
         ":remove_mixed_type_operators",
         ":remove_noop_pass",
@@ -36,7 +37,6 @@ python_library(
         "//executorch/exir/dialects/backend:lib",
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/operator:convert",
-        "//executorch/kernels/prim_ops:prim_to_executorch_ops",
     ],
 )
 
@@ -203,10 +203,10 @@ python_library(
         "replace_edge_with_backend_pass.py",
     ],
     deps = [
+        ":prim_ops_py_registry",
         "//caffe2:torch",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
-        "//executorch/kernels/prim_ops:prim_to_executorch_ops",
     ],
 )
 
@@ -227,11 +227,11 @@ python_library(
         "replace_aten_with_edge_pass.py",
     ],
     deps = [
+        ":prim_ops_py_registry",
         "//caffe2:torch",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",
-        "//executorch/kernels/prim_ops:prim_to_executorch_ops",
     ],
 )
 
@@ -243,5 +243,14 @@ python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:pass_base",
+    ],
+)
+
+python_library(
+    name = "prim_ops_py_registry",
+    srcs = ["executorch_prim_ops_registry.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
     ],
 )
