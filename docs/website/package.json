@@ -40,5 +40,8 @@
     "node": ">=16",
     "npm": "use yarn instead",
     "yarn": "^1.16"
+  },
+  "devDependencies": {
+    "yarn-audit-fix": "^9.3.12"
   }
 }
