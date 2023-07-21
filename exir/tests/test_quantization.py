@@ -57,7 +57,7 @@ class TestQuantization(unittest.TestCase):
             exported_program = exir.capture(m, example_inputs, config=capture_config)
             # TODO: probably need to support exported_program.to_aten()
             m = exported_program.to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False)
+                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True),
             ).graph_module
 
             quantizer = XNNPACKQuantizer()
@@ -75,14 +75,17 @@ class TestQuantization(unittest.TestCase):
             compile_config = EdgeCompileConfig(
                 passes=[QuantFusionPass(), SpecPropPass()],
                 _check_ir_validity=False,
+                _use_edge_ops=True,
             )
             m = exir.capture(m, example_inputs, config=capture_config).to_edge(
                 config=compile_config
             )
             FileCheck().check(
-                "torch.ops.quantized_decomposed.quantize_per_tensor"
-            ).check("torch.ops.quantized_decomposed.add_relu.default").check(
-                "torch.ops.quantized_decomposed.dequantize_per_tensor"
+                "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor"
+            ).check(
+                "executorch_exir_dialects_edge__ops_quantized_decomposed_add_relu_default"
+            ).check(
+                "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor"
             ).run(
                 m.code
             )

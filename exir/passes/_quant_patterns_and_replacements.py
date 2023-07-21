@@ -2,8 +2,15 @@ import copy
 from typing import Callable, List, Tuple
 
 import torch
-from executorch.exir.dialects._ops import bind_pattern_to_op
+from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
+
+from executorch.exir.passes.replace_aten_with_edge_pass import (
+    aten_to_edge,
+    should_lower_to_edge,
+)
+from torch import fx
 from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib
+
 
 __all__ = [
     "get_quant_patterns_and_replacements",
@@ -28,6 +35,15 @@ quantized_decomposed_lib.define(
 quantized_decomposed_lib.define(
     "add_relu(Tensor a, float a_scale, int a_zero_point, int a_quant_min, int a_quant_max, Tensor b, float b_scale, int b_zero_point, int b_quant_min, int b_quant_max, float out_scale, int out_zero_point, int out_quant_min, int out_quant_max) -> Tensor qc"
 )
+
+
+def _trace_and_lower_to_edge_ops(f: Callable) -> fx.GraphModule:
+    gm = fx.symbolic_trace(f)
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and should_lower_to_edge(node.target):
+            node.target = aten_to_edge(node.target)
+    gm.recompile()
+    return gm
 
 
 def _sixth_input_is_scalar(match, original_graph, pattern_graph):
@@ -288,16 +304,24 @@ def _get_binary_op_patterns_and_replacements(
         return out
 
     return [
-        (binary_relu_op_pattern, binary_relu_op_replacement, []),
-        (binary_op_pattern, binary_op_replacement, []),
         (
-            binary_op_scalar_1_pattern,
-            binary_op_scalar_1_replacement,
+            _trace_and_lower_to_edge_ops(binary_relu_op_pattern),
+            _trace_and_lower_to_edge_ops(binary_relu_op_replacement),
+            [],
+        ),
+        (
+            _trace_and_lower_to_edge_ops(binary_op_pattern),
+            _trace_and_lower_to_edge_ops(binary_op_replacement),
+            [],
+        ),
+        (
+            _trace_and_lower_to_edge_ops(binary_op_scalar_1_pattern),
+            _trace_and_lower_to_edge_ops(binary_op_scalar_1_replacement),
             [_sixth_input_is_scalar],
         ),
         (
-            binary_op_scalar_2_pattern,
-            binary_op_scalar_2_replacement,
+            _trace_and_lower_to_edge_ops(binary_op_scalar_2_pattern),
+            _trace_and_lower_to_edge_ops(binary_op_scalar_2_replacement),
             [_sixth_input_is_scalar],
         ),
     ]
@@ -309,10 +333,10 @@ def _get_binary_ops_patterns_and_replacements() -> List[
 
     # TODO: replace qbinary op with the ops implemented in lean mode
     binary_op_to_qbinary_ops = {
-        torch.ops.aten.add.Tensor: (
-            torch.ops.quantized_decomposed.add.default,
-            torch.ops.quantized_decomposed.add.scalar,
-            torch.ops.quantized_decomposed.add_relu.default,
+        exir_ops.edge.aten.add.Tensor: (
+            exir_ops.edge.quantized_decomposed.add.default,
+            exir_ops.edge.quantized_decomposed.add.scalar,
+            exir_ops.edge.quantized_decomposed.add_relu.default,
         ),
     }
     pattern_and_replacements = []
@@ -370,7 +394,13 @@ def _get_reshape_patterns_and_replacements() -> List[
         x = torch.ops.aten._reshape_alias_copy.default(x, arg0, arg1)
         return x
 
-    return [(pattern, replacement, [])]
+    return [
+        (
+            _trace_and_lower_to_edge_ops(pattern),
+            _trace_and_lower_to_edge_ops(replacement),
+            [],
+        )
+    ]
 
 
 def _get_slice_patterns_and_replacements() -> List[
@@ -390,7 +420,13 @@ def _get_slice_patterns_and_replacements() -> List[
         x = torch.ops.aten.slice_copy.Tensor(x, dim, start, end)
         return x
 
-    return [(pattern, replacement, [])]
+    return [
+        (
+            _trace_and_lower_to_edge_ops(pattern),
+            _trace_and_lower_to_edge_ops(replacement),
+            [],
+        )
+    ]
 
 
 def _get_embedding_ops_patterns_and_replacements() -> List[
@@ -436,7 +472,13 @@ def _get_embedding_ops_patterns_and_replacements() -> List[
             )
             return out
 
-        return [(pattern, replacement, [])]
+        return [
+            (
+                _trace_and_lower_to_edge_ops(pattern),
+                _trace_and_lower_to_edge_ops(replacement),
+                [],
+            )
+        ]
 
     patterns_and_replacements = []
     patterns_and_replacements.extend(

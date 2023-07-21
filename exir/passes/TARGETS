@@ -103,6 +103,7 @@ python_library(
         "quant_fusion_pass.py",
     ],
     deps = [
+        ":replace_aten_with_edge_pass",
         "//caffe2:torch",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",

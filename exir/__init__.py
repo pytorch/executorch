@@ -586,7 +586,7 @@ def capture(
 
         if out_spec is None:
             out_spec = (
-                graph_module.graph._codegen.pytree_info.out_spec  # pyre-ignore
+                graph_module.graph._codegen.pytree_info.out_spec
                 or pytree.tree_flatten(f(*args))[1]
             )
 

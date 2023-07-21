@@ -23,8 +23,14 @@ from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
 from executorch.backends.compile_spec_schema import CompileSpec
 from executorch.backends.partitioner import DelegationSpec, Partitioner
 from executorch.exir import CaptureConfig
+from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.pass_base import ExportPass, map_args
+
+from executorch.exir.passes.replace_aten_with_edge_pass import (
+    aten_to_edge,
+    should_lower_to_edge,
+)
 from executorch.exir.tracer import ExirDynamoConfig
 from torch import fx
 from torch._export.exported_program import ExportedProgram
@@ -54,6 +60,16 @@ from torch.ao.quantization.quantize_fx import (
 from torch.fx import subgraph_rewriter
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.testing import FileCheck
+
+
+# pyre-ignore
+def _trace_and_lower_to_edge_ops(f: Callable) -> fx.GraphModule:
+    gm = fx.symbolic_trace(f)
+    for node in gm.graph.nodes:
+        if node.op == "call_function" and should_lower_to_edge(node.target):
+            node.target = aten_to_edge(node.target)
+    gm.recompile()
+    return gm
 
 
 # Test Module that we are demonstrating.
@@ -179,7 +195,11 @@ class ReplaceQuantizedOperatorsWithQualcommDSP(ExportPass):
             return torch.ops.aten.sigmoid(x)
 
         return [
-            (pattern_quantized_conv_relu, replacement_quantized_conv_relu, [])
+            (
+                _trace_and_lower_to_edge_ops(pattern_quantized_conv_relu),
+                _trace_and_lower_to_edge_ops(replacement_quantized_conv_relu),
+                [],
+            )
             # More pattern-replacements could be added here
         ]
 
@@ -205,7 +225,9 @@ class PatternWrapper:
                 self.inputs,
                 exir.CaptureConfig(pt2_mode=True),
             )
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            .to_edge(
+                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+            )
             .graph_module
         )
 
@@ -400,7 +422,7 @@ class DuplicateDequantNodePass(ExportPass):
 
     # pyre-ignore
     def call_operator(self, op, args, kwargs, meta):
-        if op == torch.ops.quantized_decomposed.dequantize_per_tensor.default:
+        if op == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default:
             res = super().call_operator(op, args, kwargs, meta)
             self.dequant_map[id(res)] = (op, args, kwargs, meta)
             return res
@@ -519,7 +541,9 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
             converted_mod, example_inputs, exir.CaptureConfig(pt2_mode=True)
         ).to_edge(
             exir.EdgeCompileConfig(
-                passes=[DuplicateDequantNodePass()], _check_ir_validity=False
+                passes=[DuplicateDequantNodePass()],
+                _check_ir_validity=False,
+                _use_edge_ops=True,
             )
         )
 
@@ -535,13 +559,14 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         # Step 3.1: Partitioning and delegation using to_backend()
         delegated_mod = to_backend(captured_program, QuantizedConvAddOpPartitioner)
         lowered_module_0 = delegated_mod.graph_module.lowered_module_0
+
         # The blob in the example backend is a list of ops, examining them to ensure they are replaced correctly.
         FileCheck().check(
-            "convolution.default,sub.Tensor,convolution.default,sub.Tensor,"
+            "aten.convolution.default,aten.sub.Tensor,aten.convolution.default,aten.sub.Tensor,"
         ).check_not(
-            "torch.ops.quantized_decomposed.quantize_per_tensor.default"
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_tensor"
         ).check_not(
-            "torch.ops.quantized_decomposed.dequantize_per_tensor.default"
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_tensor"
         ).run(
             lowered_module_0.processed_bytes
         )
@@ -555,43 +580,45 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
 
         # Check the toplevel graph
         FileCheck().check(
-            "torch.ops.quantized_decomposed.quantize_per_tensor.default"
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default"
         ).check("torch.ops.executorch_call_delegate").check(
-            "torch.ops.quantized_decomposed.dequantize_per_tensor.default"
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
         ).check(
-            "torch.ops.aten.convolution.default"
+            "executorch_exir_dialects_edge__ops_aten_convolution_default"
         ).check(
-            "torch.ops.aten.relu.default"
+            "executorch_exir_dialects_edge__ops_aten_relu_default"
         ).check(
-            "torch.ops.quantized_decomposed.quantize_per_tensor.default"
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default"
         ).check(
-            "torch.ops.quantized_decomposed.dequantize_per_tensor.default"
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
         ).check(
-            "torch.ops.aten.max_pool2d_with_indices.default"
+            "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default"
         ).run(
             delegated_mod.graph_module.code
         )
 
         # Check lowered module
         FileCheck().check_count(
-            "torch.ops.quantized_decomposed.dequantize_per_tensor.default", 5
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default",
+            5,
         ).run(lowered_module_0.original_module.graph_module.code)
         FileCheck().check_count(
-            "torch.ops.quantized_decomposed.quantize_per_tensor.default", 4
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default",
+            4,
         ).run(lowered_module_0.original_module.graph_module.code)
-        FileCheck().check_count("torch.ops.aten.add.Tensor", 2).run(
-            lowered_module_0.original_module.graph_module.code
-        )
-        FileCheck().check_count("torch.ops.aten.convolution.default", 2).run(
-            lowered_module_0.original_module.graph_module.code
-        )
+        FileCheck().check_count(
+            "executorch_exir_dialects_edge__ops_aten_add_Tensor", 2
+        ).run(lowered_module_0.original_module.graph_module.code)
+        FileCheck().check_count(
+            "executorch_exir_dialects_edge__ops_aten_convolution_default", 2
+        ).run(lowered_module_0.original_module.graph_module.code)
 
         FileCheck().check(
-            "torch.ops.quantized_decomposed.dequantize_per_tensor.default"
-        ).check("torch.ops.aten.convolution.default").check(
-            "torch.ops.aten.relu.default"
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
+        ).check("executorch_exir_dialects_edge__ops_aten_convolution_default").check(
+            "executorch_exir_dialects_edge__ops_aten_relu_default"
         ).check_not(
-            "torch.ops.aten.sigmoid"
+            "executorch_exir_dialects_edge__ops_aten_sigmoid"
         ).run(
             delegated_mod.graph_module.code
         )
@@ -645,7 +672,9 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         capture_config = CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True)
         captured_mod = (
             exir.capture(converted_mod, example_inputs, config=capture_config)
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            .to_edge(
+                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+            )
             .graph_module
         )
 
@@ -655,9 +684,15 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         #                weight -> quant -> dequant* -> t* -\
         #     x -> choose_qparams* -> quant* -> dequant* -> addmm* -> out
         # note: nodes with `*` should be fused in delegation
-        FileCheck().check("torch.ops.quantized_decomposed.choose_qparams.tensor").check(
-            "torch.ops.quantized_decomposed.quantize_per_tensor.tensor"
-        ).check("torch.ops.aten.t_copy.default").check("torch.ops.aten.addmm").run(
+        FileCheck().check(
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_tensor"
+        ).check(
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_tensor"
+        ).check(
+            "executorch_exir_dialects_edge__ops_aten_t_copy_default"
+        ).check(
+            "executorch_exir_dialects_edge__ops_aten_addmm"
+        ).run(
             captured_mod.code
         )
 
@@ -776,7 +811,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         capture_config = CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
 
         print("captured mod:", captured_mod)
 
@@ -784,9 +819,15 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         #                weight -> quant -> dequant* -> t* -\
         #     x -> choose_qparams* -> quant* -> dequant* -> addmm* -> out
         # note: nodes with `*` should be fused in delegation
-        FileCheck().check("torch.ops.quantized_decomposed.choose_qparams.tensor").check(
-            "torch.ops.quantized_decomposed.quantize_per_tensor.tensor"
-        ).check("torch.ops.aten.t_copy.default").check("torch.ops.aten.addmm").run(
+        FileCheck().check(
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_tensor"
+        ).check(
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_tensor"
+        ).check(
+            "executorch_exir_dialects_edge__ops_aten_t_copy_default"
+        ).check(
+            "executorch_exir_dialects_edge__ops_aten_addmm"
+        ).run(
             captured_mod.code
         )
 
@@ -834,7 +875,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         capture_config = CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
 
         print("captured mod:", captured_mod)
 
@@ -842,9 +883,15 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         #                weight -> quant -> dequant* -> t* -\
         #     x -> choose_qparams* -> quant* -> dequant* -> addmm* -> out
         # note: nodes with `*` should be fused in delegation
-        FileCheck().check("torch.ops.quantized_decomposed.choose_qparams.tensor").check(
-            "torch.ops.quantized_decomposed.quantize_per_tensor.tensor"
-        ).check("torch.ops.aten.t_copy.default").check("torch.ops.aten.addmm").run(
+        FileCheck().check(
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_tensor"
+        ).check(
+            "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_tensor"
+        ).check(
+            "executorch_exir_dialects_edge__ops_aten_t_copy_default"
+        ).check(
+            "executorch_exir_dialects_edge__ops_aten_addmm"
+        ).run(
             captured_mod.code
         )
 
@@ -880,7 +927,9 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
             capture_config = CaptureConfig(pt2_mode=True, _dynamo_config=dynamo_config)
             captured_mod = exir.capture(
                 converted_mod, example_inputs, config=capture_config
-            ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            ).to_edge(
+                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+            )
 
             print("captured mod:", captured_mod)
 
@@ -889,7 +938,9 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
             #       x -> quant -> dequant* -> conv -> quant -> out
             # note: nodes with `*` should be fused in delegation
             FileCheck().check_count(
-                "torch.ops.aten.native_batch_norm.default", 0, exactly=True
+                "executorch_exir_dialects_edge__ops_aten_native_batch_norm_default",
+                0,
+                exactly=True,
             ).run(captured_mod.code)
 
     def test_qat_linear(self) -> None:
@@ -925,7 +976,9 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
             capture_config = CaptureConfig(pt2_mode=True, _dynamo_config=dynamo_config)
             captured_mod = exir.capture(
                 converted_mod, example_inputs, config=capture_config
-            ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            ).to_edge(
+                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+            )
 
             print("captured mod:", captured_mod)
 
@@ -934,13 +987,13 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
             #               x -> quant -> dequant* -> addmm -> quant -> dequant -> out
             # note: nodes with `*` should be fused in delegation
             FileCheck().check_count(
-                "torch.ops.quantized_decomposed.dequantize_per_tensor.default",
+                "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default",
                 3,
                 exactly=True,
             ).run(captured_mod.code)
 
             FileCheck().check_count(
-                "torch.ops.quantized_decomposed.quantize_per_tensor.default",
+                "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default",
                 3,
                 exactly=True,
             ).run(captured_mod.code)

@@ -80,6 +80,7 @@ python_unittest(
         ":lib",
         ":models",
         "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
         "//executorch/exir:error",
         "//executorch/exir:lib",
         "//executorch/exir:schema",
@@ -270,6 +271,8 @@ python_unittest(
         "//executorch/exir:lib",
         "//executorch/exir:pass_base",
         "//executorch/exir:tracer",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:replace_aten_with_edge_pass",
     ],
 )
 
