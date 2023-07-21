@@ -36,6 +36,7 @@ def define_common_targets():
         srcs = SIZE_TEST_SOURCES,
         deps = SIZE_TEST_DEPS + [
             "//executorch/kernels/portable:generated_lib_all_ops",
+            "//executorch/runtime/executor/test:test_backend_compiler_lib",
         ],
         define_static_target = True,
     )
