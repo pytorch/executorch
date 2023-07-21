@@ -51,11 +51,12 @@ main() {
   "${PIP}" uninstall -y executorch
 
   # Install the tree as a pip package.
-  cd "${et_root}/../../"
+  pushd "${et_root}/../../"
   "${PIP}" install .
 
   # Clean up.
   rm -rf "${pip_root}"
+  popd
 }
 
 main "$@"
