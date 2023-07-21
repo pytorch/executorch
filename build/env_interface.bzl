@@ -92,6 +92,10 @@ _EXTERNAL_DEPS_MAP = {
         _FBCODE: _EXTERNAL_DEP_FALLTHROUGH,
         _XPLAT: "//xplat/third-party/gflags:gflags",
     },
+    "libtorch": {
+        _FBCODE: "//caffe2:libtorch",
+        _XPLAT: "//xplat/caffe2:torch_mobile_all_ops",
+    },
 }
 
 def _start_with_et_targets(target):

@@ -23,6 +23,7 @@ _EXTERNAL_DEPS = {
     "gen-executorch": "//third-party:gen_executorch",
     # Commandline flags library
     "gflags": [],  # TODO(larryliu0820): Add support
+    "libtorch": [],  # TODO(larryliu0820): Add support
 }
 
 def _resolve_external_dep(name):

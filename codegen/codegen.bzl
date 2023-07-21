@@ -1,4 +1,3 @@
-load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_xplat")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "runtime")
 
 # Headers that declare the function signatures of the C++ functions that
@@ -111,11 +110,13 @@ def _prepare_genrule_and_lib(
         },
     }
     """
+    target = runtime.external_dep_location("gen-executorch")
+    aten_src_path = runtime.external_dep_location("aten-src-path")
     genrule_cmd = [
-        "$(exe " + runtime.external_dep_location("gen-executorch") + ")",
+        "$(exe {})".format(target),
         "--source-path=$(location //executorch/codegen:templates)",
-        "--tags-path $(location " + runtime.external_dep_location("aten-src-path") + ")/aten/src/ATen/native/tags.yaml",
-        "--aten_yaml_path $(location " + runtime.external_dep_location("aten-src-path") + ")/aten/src/ATen/native/native_functions.yaml",
+        "--tags-path $(location {})/aten/src/ATen/native/tags.yaml".format(aten_src_path),
+        "--aten_yaml_path $(location {})/aten/src/ATen/native/native_functions.yaml".format(aten_src_path),
         "--install_dir=${OUT}",
         # TODO(dbort): Add a second step that verifies that the set of
         # actually-generated files matches GENERATED_FILES.
@@ -146,7 +147,7 @@ def _prepare_genrule_and_lib(
 
     if need_reg_aten_ops:
         path = (
-            "$(location fbsource//xplat/caffe2:aten_src_path)/aten/src/ATen/native/native_functions.yaml"
+            "$(location {})/aten/src/ATen/native/native_functions.yaml".format(aten_src_path)
         ) if not functions_yaml_path else functions_yaml_path
         genrule_cmd = genrule_cmd + [
             "--functions_yaml_path={}".format(path),
@@ -341,8 +342,6 @@ def executorch_generated_lib(
             ],
         )
 
-    xplat_deps = xplat_deps + (["//xplat/caffe2:torch_mobile_all_ops"] if aten_mode and use_default_aten_ops_lib else [])
-    fbcode_deps = fbcode_deps + (["//caffe2:libtorch"] if aten_mode and use_default_aten_ops_lib else [])
     if name in libs:
         lib_name = name
         runtime.cxx_library(
@@ -376,6 +375,7 @@ def executorch_generated_lib(
             ],
             xplat_deps = xplat_deps,
             fbcode_deps = fbcode_deps,
+            external_deps = ["libtorch"] if aten_mode and use_default_aten_ops_lib else [],
             define_static_target = define_static_targets,
             # Relax visibility restrictions since deps may include targets outside
             # of //executorch.
@@ -392,12 +392,6 @@ def executorch_generated_lib(
     # custom_ops_requires_runtime_registration is True.
     compiler_lib = "custom_ops_" + name if "custom_ops_" + name in libs else None
     if compiler_lib:
-        # The library needs to be able to include <torch/library.h>.
-        if is_xplat():
-            torch_dep = ["//xplat/caffe2:torch"]
-        else:
-            torch_dep = ["//caffe2:libtorch"]
-
         # TODO(T129125039): Rename this to make it clear that it's not part of
         # the embedded runtime; it's only for registering custom ops with the
         # PyTorch authoring runtime.
@@ -419,10 +413,11 @@ def executorch_generated_lib(
                 "//executorch/runtime/core/exec_aten:lib_aten",
                 "//executorch/runtime/core:core",
                 "//executorch/codegen:macros",
-            ] + torch_dep + custom_ops_aten_kernel_deps,
+            ] + custom_ops_aten_kernel_deps,
             exported_deps = [
                 "//executorch/runtime/kernel:kernel_runtime_context_aten",
             ],
+            external_deps = ["libtorch"],
             define_static_target = define_static_targets,
             # Relax visibility restrictions since deps may include targets
             # outside of //executorch.
