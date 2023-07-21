@@ -1,6 +1,6 @@
 # EXIR Reference
 
-**Last Update:** May 1, 2023
+**Last Update:** July 21, 2023
 
 EXIR is an intermediate representation (IR) for compilers, which bears
 similarities to MLIR and TorchScript. It is specifically designed to express the
@@ -13,8 +13,9 @@ program via a trace-specializing mechanism. The resulting EXIR can then be
 optimized and executed by a backend.
 
  The key concepts that will be covered in this document include:
+ - ExportedProgram: the datastructure containing the EXIR program
  - Graph: which consists of a list of nodes.
- - Nodes represent operations, control flow, and other constructs.
+ - Nodes represent operations, control flow, and metadata stored on this node.
  - Values are produced and consumed by nodes.
  - Types are associated with values and nodes.
  - The size and memory layout of values are also defined.
@@ -23,7 +24,7 @@ optimized and executed by a backend.
 ## Assumptions:
 
 This doc assumes that the audience is sufficiently familiar with PyTorch
-specifically will `torch.fx` and its related toolings. Thus it will stop
+specifically with `torch.fx` and its related toolings. Thus it will stop
 describing contents present in torch.fx documentation and paper. [1](#torchfx)
 
 
@@ -42,66 +43,38 @@ similarities with FX.
 You can follow the [tutorial](../tutorials/frontend.md) to play around with what is said here.
 
 
-## GraphModule
+## ExportedProgram
 
-The top-level EXIR construct is a “GraphModule”. A GraphModule is represented
-using `torch.fx.GraphModule` class in Python.
+The top-level EXIR construct is an `ExportedProgram` class. It bundles the
+computational graph of a PyTorch model (which is usually a `torch.nn.Module`)
+with the parameters or weights that this model consumes.
 
-EXIR GraphModule bundles the computational graph of a PyTorch model (which is
-usually a `torch.nn.Module`, but can also be any python callable that
-manipulates torch.Tensor) with the parameters or weights that
-this model consumes. A GraphModule captures these 2 elements. We call them
-**graph** which describe the computation and **parameters** which stores any
-parameters or constants consumed by the graph.
+The `ExportedProgram` has the following attributes:
 
-In other words, one can image GraphModule has the following schema:
+* `graph_module (torch.fx.GraphModule)`: Data structure containing the flattened
+  computational graph of the PyTorch model. The graph can be directly accessed
+  through `ExportedProgram.graph`.
+* `graph_signature (ExportGraphSignature)`: The graph signature specifies the
+  parameters and buffer names used and mutated within the graph. Instead of
+  storing parameters and buffers as attributes of the graph, they are lifted as
+  inputs to the graph. The graph_signature is utilized to keep track of
+  additional information on these parameters and buffers.
+* `call_spec (CallSpec)`:  When running the exported program in eager mode, the
+  call spec defines the format specification of inputs and outputs. The graph
+  itself accepts a flattened list of inputs and returns a flattened list of
+  outputs. In cases where inputs/outputs are not in a flattened list format
+  (e.g., a list of lists), we use `call_spec.in_spec` to flatten the inputs and
+  `call_spec.out_spec` to unflatten the outputs into the format expected by the
+  models when running eagerly.
+* `state_dict (Dict[str, Union[torch.Tensor, torch.nn.Parameter]])`: Data structure
+  containing the parameters and buffers.
+* `range constraints (Dict[sympy.Symbol, RangeConstraint])`: For programs that
+  are exported with data dependent behavior, the metadata on each node will
+  contain symbolic shapes (hich look like `s0`, `i0`). This attribute maps the
+  symbolic shapes to their lower/upper ranges.
+* `equality_constraints (List[Tuple[InputDim, InputDim]])`: A list of nodes in
+  the graph and dimensions that have the same shape.
 
-```python
-class GraphModule:
-    parameters: dict[str, Parameter]
-    graph: Graph
-    meta: dict
-```
-
-In practice the above class doesn't exist, intead, we just use `torch.fx.GraphModule` Python class.
-
-To create a EXIR `torch.fx.GraphModule`, we use the `torch._export.export` function
-
-Example:
-
-```python
-from torch import nn
-from executorch import exir
-
-class MyModule(nn.Module):
-
-    def forward(self, x, y):
-      return x + y
-
-tracing_inputs = (torch.rand(2, 2), torch.rand(2, 2))
-mod = torch._export.export(MyModule(), tracing_inputs)
-```
-
-### Metadata
-
-The GraphModule returned contains export-specific metadata which can be accessed
-by calling:
-```python
-meta: ExportMetadata = get_export_metadata(gm: fx.GraphModule)
-```
-This metadata contains the following fields:
-
-* `constraints`: contains the list of constraints used to trace the given module.
-* `in_spec`: contains the format spec of the inputs in eager mode. The graph
-  itself takes in a flattened list of inputs, so for inputs that are not a
-  flattened list (ex. list of lists) we use the `in_spec` to flatten the inputs
-  given when running the model eagerly into what the graph can take in as
-  inputs.
-* `out_spec`: contains the format spec of the outputs in eager mode. The graph
-  itself returns a flattened list of outputs, so for eager models that do not
-  return a flattened list (ex. list of lists), we use the `out_spec` to
-  unflatten the inputs into the format that models expect to return when running
-  eagerly.
 
 ## Graph
 
@@ -321,8 +294,11 @@ Output node has the same metadata as `call_function` nodes.
 
 ### get_attr
 
-`get_attr` nodes represent reading a attribute out of the encapsulating
-`GraphModule`.
+`get_attr` nodes represent reading a submodule from the encapsulating
+`GraphModule`. Unlike a vanilla FX graph from `torch.fx.symbolic_trace` in which
+`get_attr` nodes are used to read attributes such as parameters and buffers from
+the top-level `GraphModule`, parameters and buffers will be passed in as inputs
+to the graph module, and stored in the toplevel `ExportedProgram`.
 
 #### Representation in FX:
 
@@ -333,17 +309,26 @@ Output node has the same metadata as `call_function` nodes.
 #### Example:
 Consider the following model:
 
-```
+```python
+class TrueModule(torch.nn.Module):
+  def forward(self, x):
+    return x.sin()
+
+class FalseModule(torch.nn.Module):
+  def forward(self, x):
+    return x.cos()
+
 class Module(torch.nn.Module):
   def __init__(self):
-    self.a = torch.randn(2,2)
+    self.true_module = TrueModule()
+    self.false_module = FalseModule()
 
   def forward(self, x):
-    return self.a + x
+    return torch.ops.higher_order.cond(x.shape[0] == 1, self.true_module, self.false_module, x)
 ```
 
-Then, `%name = get_attr[target = a](args = ())` appears in the corresponding
-graph to read the attribute `self.a`.
+Then, `%name = get_attr[target = true_module](args = ())` appears in the corresponding
+graph to read the attribute `self.true_module`.
 
 
 ## EXIR Dialects

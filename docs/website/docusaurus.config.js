@@ -37,7 +37,7 @@ const darkCodeTheme = require('prism-react-renderer/themes/dracula');
             internal:
               'https://www.internalfb.com/code/fbsource/fbcode/executorch/docs/website',
             external:
-              'https://github.com/raziel/executorch',
+              'https://github.com/pytorch/executorch/',
           }),
         },
         theme: {

@@ -11,7 +11,7 @@ An ATen dialect graph is a valid EXIR graph with the following additional proper
   registered custom operator. A registered custom operator is an operator
   registered into the current Pytorch eager mode runtime, usually with
   TORCH_LIBRARY call (implies schema).
-2. Every ATen operator must also have a  meta kernel. A meta kernel is a
+2. Every ATen operator must also have a meta kernel. A meta kernel is a
   function that, given the shapes of the input tensors, can return the shape of
   output tensor.
 3. Input value type must be “Pytree-able[See 2]”. As a consequence, the output

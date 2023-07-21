@@ -1,4 +1,4 @@
-# Control Flow
+# (Prototype) Control Flow
 
 EXIR has a couple of special operators used to help specify control flow within
 some code, similar to jax's control flow operators. Currently these operators
@@ -108,7 +108,7 @@ class GraphModule(torch.nn.Module):
 **See examples of advanced usage of `cond()` operator in ExportDB: [cond tag](https://www.internalfb.com/intern/staticdocs/exportdb/cond.html)**
 
 
-## torch.ops.map
+## torch.ops.higher_order.map
 
 The `map` function is similar to Python's builtin `map`, where it represents
 applying an operation in the first dimension of a tensor.
@@ -159,7 +159,7 @@ class GraphModule(torch.nn.Module):
         %arg0: f32[3, s1] = placeholder[target=arg0]
         %arg1: f32[s1] = placeholder[target=arg1]
         %body_graph_0 = get_attr[target=body_graph_0]
-        map_1: f32[3, s1] = call_function[target=torch.ops.map](args = (%body_graph_0, %arg0, %arg1), kwargs = {})
+        map_1: f32[3, s1] = call_function[target=torch.ops.higher_order.map](args = (%body_graph_0, %arg0, %arg1), kwargs = {})
         return [map_1]
 
     # body_graph_0
