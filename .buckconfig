@@ -6,7 +6,7 @@
 
 [repositories]
   root = .
-  prelude = prelude
+  prelude = third-party/prelude
   shim = shim
 
 [repository_aliases]

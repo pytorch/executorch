@@ -10,6 +10,10 @@ load(":type_defs.bzl", "is_list", "is_tuple")
 
 _ET_TARGET_PREFIX = "executorch"
 
+# Indicates that an external_dep entry should fall through to the underlying
+# buck rule.
+_EXTERNAL_DEP_FALLTHROUGH = "<fallthrough>"
+
 _EXTERNAL_DEPS = {
     # ATen C++ library deps
     "aten-core": [],  # TODO(larryliu0820): Add support
@@ -185,4 +189,5 @@ env = struct(
     remove_platform_specific_args = _remove_platform_specific_args,
     resolve_external_dep = _resolve_external_dep,
     target_needs_patch = _target_needs_patch,
+    EXTERNAL_DEP_FALLTHROUGH = _EXTERNAL_DEP_FALLTHROUGH,
 )
