@@ -12,10 +12,6 @@ from executorch.exir.tracer import ExirDynamoConfig
 from torch.ao.ns.fx.utils import compute_sqnr
 from torch.ao.quantization import get_default_qconfig, QConfigMapping  # @manual
 
-from torch.ao.quantization.backend_config._qnnpack_pt2e import (
-    get_qnnpack_pt2e_backend_config,
-)
-
 from torch.ao.quantization.pt2e.quantizer import XNNPACKQuantizer
 from torch.ao.quantization.pt2e.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,

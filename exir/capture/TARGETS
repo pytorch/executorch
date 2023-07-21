@@ -1,0 +1,53 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "lib",
+    srcs = [
+        "__init__.py",
+    ],
+    deps = [
+        ":capture",
+        ":config",
+        ":unlift",
+    ],
+)
+
+python_library(
+    name = "capture",
+    srcs = [
+        "_capture.py",
+    ],
+    deps = [
+        ":config",
+        ":unlift",
+        "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/exir:error",
+        "//executorch/exir:tracer",
+        "//executorch/exir/program:lib",
+    ],
+)
+
+python_library(
+    name = "config",
+    srcs = [
+        "_config.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:dynamic_shape",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir:tracer",
+        "//executorch/exir/passes:lib",
+    ],
+)
+
+python_library(
+    name = "unlift",
+    srcs = [
+        "_unlift.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)

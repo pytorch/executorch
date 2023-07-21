@@ -121,25 +121,12 @@ python_library(
         "__init__.py",
     ],
     deps = [
-        "fbsource//third-party/pypi/sympy:sympy",
-        ":common",  # @manual
-        ":control_flow",  # @manual
-        ":dynamic_shape",
-        ":error",
-        ":pass_base",  # @manual
-        ":pass_manager",
-        ":schema",
         ":tracer",
         "//caffe2:torch",
-        "//caffe2/functorch:functorch_src",
-        "//executorch/bundled_program/serialize:lib",  # @manual
-        "//executorch/exir/dialects:lib",  # @manual
+        "//executorch/exir/capture:lib",
         "//executorch/exir/emit:lib",
-        "//executorch/exir/passes:lib",
-        "//executorch/exir/passes:remove_assert_async_pass",
-        "//executorch/exir/passes:spec_prop_pass",
+        "//executorch/exir/program:lib",
         "//executorch/exir/serialize:lib",
-        "//executorch/exir/verification:verifier",
     ],
 )
 

@@ -85,8 +85,8 @@ class Backend2PartitionerDemo(Partitioner):
         self.partition_tags = {}
 
     def partition(
-        self, edge_graph_module: exir.torch.fx.GraphModule
-    ) -> exir.torch.fx.GraphModule:
+        self, edge_graph_module: torch.fx.GraphModule
+    ) -> torch.fx.GraphModule:
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, op_support=self.op_support
         )

@@ -1,0 +1,65 @@
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
+from executorch.exir.pass_manager import PassType
+from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
+from executorch.exir.tracer import ExirDynamoConfig
+from torch.fx._compatibility import compatibility
+
+
+@compatibility(is_backward_compatible=False)
+@dataclass
+class CaptureConfig:
+    pt2_mode: bool = True
+    enable_functionalization: bool = True
+    enable_dynamic_shape: bool = False
+    enable_aot: bool = False
+    _dynamo_config: "ExirDynamoConfig" = ExirDynamoConfig()
+    _unlift: bool = False
+
+
+@compatibility(is_backward_compatible=False)
+@dataclass
+class EdgeCompileConfig:
+    passes: List[PassType] = field(default_factory=list)
+    # TODO(qihan): remove ability to opt out
+    _check_ir_validity: bool = True
+    # TODO(larryliu): remove this
+    _use_edge_ops: bool = False
+
+
+@compatibility(is_backward_compatible=False)
+@dataclass
+class ServerCompileConfig:
+    passes: List[PassType] = field(default_factory=list)
+
+
+@compatibility(is_backward_compatible=False)
+@dataclass
+class ExecutorchBackendConfig:
+    passes: List[PassType] = field(default_factory=list)
+    memory_planning_pass: PassType = MemoryPlanningPass("greedy")
+    to_out_var_pass: PassType = ToOutVarPass(ignore_to_out_var_failure=False)
+    dynamic_memory_planning_mode: DynamicMemoryPlanningMode = (
+        DynamicMemoryPlanningMode.UPPER_BOUND
+    )
+    emit_stacktrace: bool = False
+
+    # Whether to move certain data blobs from the Program into separate
+    # segments, rather than encoding those blobs in the flatbuffer data.
+    # This makes it possible to free those blobs at runtime.
+    extract_segments: bool = False
+
+    # When extracting segments, the starting offset of each segment will be
+    # aligned to this value (in bytes). When using mmap() to load segments, this
+    # should be a multiple of the OS page size.
+    segment_alignment: int = 4096
+
+    # If provided, the minimum alignment of tensor buffers in the program. Must
+    # be a power of 2. If not provided, uses the value in the schema file.
+    constant_tensor_alignment: Optional[int] = None
+
+    # If provided, the minimum alignment of delegate data in the program. Must
+    # be a power of 2. If not provided, uses the value in the schema file.
+    delegate_alignment: Optional[int] = None
