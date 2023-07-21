@@ -24,6 +24,7 @@ COPY ./common/install_user.sh install_user.sh
 RUN bash ./install_user.sh && rm install_user.sh
 
 # Install conda and other dependencies
+ARG MINICONDA_VERSION
 ARG PYTHON_VERSION
 ENV PYTHON_VERSION=$PYTHON_VERSION
 ENV PATH /opt/conda/envs/py_$PYTHON_VERSION/bin:/opt/conda/bin:$PATH
