@@ -15,6 +15,8 @@ install_miniconda() {
   wget -q "${BASE_URL}/${CONDA_FILE}"
   # Install miniconda
   as_ci_user bash "${CONDA_FILE}" -b -f -p "/opt/conda"
+  # Clean up the download file
+  rm "${CONDA_FILE}"
   popd
 
   sed -e 's|PATH="\(.*\)"|PATH="/opt/conda/bin:\1"|g' -i /etc/environment

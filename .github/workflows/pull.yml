@@ -21,6 +21,13 @@ jobs:
       fetch-depth: 0
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        # TODO: A placeholder for future build and test steps
-        echo "Thank You Mario, But Our Princess is in Another Castle"
-        sleep 300
+        WORKSPACE=$(pwd)
+
+        pushd "${HOME}"
+        # Create the softlink to the workspace as install.sh requires to run from its parent directory
+        ln -s "${WORKSPACE}" executorch
+        # Install executorch
+        source executorch/install.sh
+
+        # Just print out the list of packages for debugging
+        pip list

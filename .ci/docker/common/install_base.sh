@@ -16,7 +16,8 @@ install_ubuntu() {
     jq \
     vim \
     unzip \
-    gdb
+    gdb \
+    rsync
 
   # Cleanup package manager
   apt-get autoclean && apt-get clean
