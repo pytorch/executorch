@@ -19,6 +19,7 @@ _EXTERNAL_DEPS = {
     "aten-core": [],  # TODO(larryliu0820): Add support
     # ATen native_functions.yaml file deps
     "aten-src-path": [],  # TODO(larryliu0820): Add support
+    "cpuinfo": [],  # TODO(larryliu0820): Add support
     # Flatbuffer C++ library deps
     "flatbuffers-api": "//third-party:flatbuffers-api",
     # Flatc binary
@@ -27,7 +28,11 @@ _EXTERNAL_DEPS = {
     "gen-executorch": "//third-party:gen_executorch",
     # Commandline flags library
     "gflags": [],  # TODO(larryliu0820): Add support
+    "gmock": [],  # TODO(larryliu0820): Add support
     "libtorch": [],  # TODO(larryliu0820): Add support
+    "pybind11": [],  # TODO(larryliu0820): Add support
+    # Core C++ PyTorch functionality like Tensor and ScalarType.
+    "torch-core-cpp": [],  # TODO(larryliu0820): Add support
 }
 
 def _resolve_external_dep(name):

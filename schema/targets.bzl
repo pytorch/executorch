@@ -32,7 +32,7 @@ def _generate_schema_header(rule_name, srcs, headers, default_header):
         outs = {header: [header] for header in headers},
         default_outs = [default_header],
         cmd = " ".join([
-            "$(exe fbsource//third-party/flatbuffers:flatc)",
+            "$(exe {})".format(runtime.external_dep_location("flatc")),
             "--cpp",
             "--cpp-std c++11",
             "--gen-mutable",

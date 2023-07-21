@@ -9,9 +9,6 @@ def define_common_targets():
     for aten_mode in (True, False):
         aten_suffix = ("_aten" if aten_mode else "")
 
-        xplat_deps = ["//xplat/third-party/gmock:gmock"] + (["//xplat/caffe2:torch_mobile_all_ops"] if aten_mode else [])
-        fbcode_deps = ["fbsource//third-party/googletest:gtest", "fbsource//third-party/googletest:gmock"] + (["//caffe2:libtorch"] if aten_mode else [])
-
         runtime.cxx_library(
             name = "tensor_util" + (aten_suffix),
             srcs = ["tensor_util.cpp"],
@@ -45,6 +42,7 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
-            fbcode_exported_deps = fbcode_deps,
-            xplat_exported_deps = xplat_deps,
+            exported_external_deps = [
+                "gmock",
+            ] + (["libtorch"] if aten_mode else []),
         )

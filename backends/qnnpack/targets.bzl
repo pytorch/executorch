@@ -4,6 +4,7 @@ load(
     "APPLE",
     "CXX",
 )
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_xplat")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -84,6 +85,11 @@ def define_common_targets():
             "//executorch/runtime/backend:backend_registry",
             "//executorch/extension/fb/threadpool:threadpool",
             "//executorch/util:memory_utils",
+            "//{prefix}caffe2/aten/src/ATen/native/quantized/cpu/qnnpack:pytorch_qnnpack".format(
+                prefix = (
+                    "xplat/" if is_xplat() else ""
+                ),
+            ),
             ":qnnpack_schema",
             ":qnnpack_utils",
         ],
@@ -91,12 +97,6 @@ def define_common_targets():
             ANDROID,
             APPLE,
             CXX,
-        ],
-        fbcode_deps = [
-            "//caffe2/aten/src/ATen/native/quantized/cpu/qnnpack:pytorch_qnnpack",
-        ],
-        xplat_deps = [
-            "//xplat/caffe2/aten/src/ATen/native/quantized/cpu/qnnpack:pytorch_qnnpack",
         ],
         # XnnpackBackend.cpp needs to compile with executor as whole
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)

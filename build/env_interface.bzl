@@ -73,15 +73,34 @@ _EXTERNAL_DEP_FALLTHROUGH = "<fallthrough>"
 # lists. If the mapped value is None, the environment (typically fbcode) will
 # handle the key itself.
 _EXTERNAL_DEPS_MAP = {
+    "aten-core": {
+        _FBCODE: [
+            "fbcode//caffe2:ATen-core",
+            "fbcode//caffe2:ATen-cpu",
+            "fbcode//caffe2/c10:c10",
+        ],
+        _XPLAT: [
+            "fbsource//xplat/caffe2:torch_mobile_core",
+            "fbsource//xplat/caffe2/c10:c10",
+        ],
+    },
     # The root of a tree that contains YAML files at
     # <aten-src-patn>/aten/src/ATen/native/*.yaml
     "aten-src-path": {
         _FBCODE: "fbsource//xplat/caffe2:aten_src_path",
         _XPLAT: "fbsource//xplat/caffe2:aten_src_path",
     },
+    "cpuinfo": {
+        _FBCODE: "fbsource//third-party/cpuinfo:cpuinfo",
+        _XPLAT: "fbsource//third-party/cpuinfo:cpuinfo",
+    },
     "flatbuffers-api": {
         _FBCODE: "fbsource//third-party/flatbuffers:flatbuffers-api",
         _XPLAT: "fbsource//third-party/flatbuffers:flatbuffers-api",
+    },
+    "flatc": {
+        _FBCODE: "fbsource//third-party/flatbuffers:flatc",
+        _XPLAT: "fbsource//third-party/flatbuffers:flatc",
     },
     # The gen_executorch commandline tool.
     "gen-executorch": {
@@ -90,11 +109,29 @@ _EXTERNAL_DEPS_MAP = {
     },
     "gflags": {
         _FBCODE: _EXTERNAL_DEP_FALLTHROUGH,
-        _XPLAT: "//xplat/third-party/gflags:gflags",
+        _XPLAT: "fbsource//xplat/third-party/gflags:gflags",
     },
+    "gmock": {
+        _FBCODE: ["fbsource//third-party/googletest:gtest", "fbsource//third-party/googletest:gmock"],
+        _XPLAT: "fbsource//xplat/third-party/gmock:gmock",
+    },
+    # All ATen operators from core PyTorch.
     "libtorch": {
-        _FBCODE: "//caffe2:libtorch",
-        _XPLAT: "//xplat/caffe2:torch_mobile_all_ops",
+        _FBCODE: "fbcode//caffe2:libtorch",
+        _XPLAT: "fbsource//xplat/caffe2:torch_mobile_all_ops",
+    },
+    "pybind11": {
+        _FBCODE: _EXTERNAL_DEP_FALLTHROUGH,
+        _XPLAT: "fbsource//arvr/third-party/pybind11:pybind11",
+    },
+    # Core C++ PyTorch functionality like Tensor and ScalarType.
+    "torch-core-cpp": {
+        _FBCODE: "fbcode//caffe2:torch-cpp",
+        _XPLAT: "fbsource//xplat/caffe2:torch_mobile_core",
+    },
+    "torchgen": {
+        _FBCODE: "fbcode//caffe2/torchgen:torchgen",
+        _XPLAT: "fbsource//xplat/caffe2/torchgen:torchgen",
     },
 }
 

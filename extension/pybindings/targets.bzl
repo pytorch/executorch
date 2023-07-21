@@ -66,9 +66,6 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
         external_deps = [
             "pybind11",
         ],
-        xplat_deps = [
-            "//arvr/third-party/pybind11:pybind11",
-        ],
         use_static_deps = True,
         _is_external_target = bool(visibility != ["//executorch/..."]),
         visibility = visibility,
