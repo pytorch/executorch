@@ -1,4 +1,118 @@
 load("@fbsource//xplat/executorch/build/runtime_wrapper.bzl", "runtime")
+load("@prelude//rules.bzl", "prebuilt_python_library", "remote_file")
+load(":glob_defs.bzl", "subdir_glob")
+load(":gflags.bzl", "define_gflags")
+
+define_gflags()
+
+# TODO(chenlai): linux-specific needs to be fixed
+remote_file(
+    name = "pyyaml-download",
+    url = "https://files.pythonhosted.org/packages/12/fc/a4d5a7554e0067677823f7265cb3ae22aed8a238560b5133b58cda252dad/PyYAML-6.0-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_12_x86_64.manylinux2010_x86_64.whl",
+    sha1 = "11aa9c5fe2d890b6a73212beadc7c8a4265ebc39",
+    out = "pyyaml.whl",
+)
+
+prebuilt_python_library(
+    name = "pyyaml",
+    binary_src = ":pyyaml-download",
+    visibility = ["PUBLIC"],
+    deps = [":pyyaml-download"],
+)
+
+# TODO(chenlai): linux-specific needs to be fixed
+remote_file(
+    name = "typing-extensions-download",
+    url = "https://files.pythonhosted.org/packages/75/e1/932e06004039dd670c9d5e1df0cd606bf46e29a28e65d5bb28e894ea29c9/typing_extensions-4.2.0-py3-none-any.whl",
+    sha1 = "ff0849420e94f425818bff5d0f25e3cdfaba8601",
+    out = "typing_extensions-4.2.0-py3-none-any.whl",
+)
+
+prebuilt_python_library(
+    name = "typing-extensions",
+    binary_src = ":typing-extensions-download",
+    visibility = ["PUBLIC"],
+    deps = [":typing-extensions-download"],
+)
+
+runtime.python_library(
+    name = "torchgen",
+    srcs = subdir_glob(
+        [
+            ("pytorch/torchgen", "**/*.py"),
+        ],
+    ),
+    base_module = "torchgen",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//third-party:pyyaml",
+        "//third-party:typing-extensions",
+    ],
+    _is_external_target = True,
+)
+
+runtime.python_binary(
+    name = "gen",
+    main_module = "torchgen.gen",
+    visibility = [
+        "PUBLIC",
+    ],
+    deps = [
+        ":torchgen",
+    ],
+    _is_external_target = True,
+)
+
+runtime.python_binary(
+    name = "gen_executorch",
+    main_module = "torchgen.gen_executorch",
+    visibility = [
+        "PUBLIC",
+    ],
+    deps = [
+        ":torchgen",
+    ],
+    _is_external_target = True,
+)
+
+runtime.filegroup(
+    name = "aten_src_path",
+    srcs = subdir_glob([
+        ("pytorch", "aten/src/ATen/templates/*"),
+        ("pytorch", "aten/src/ATen/native/native_functions.yaml"),
+        ("pytorch", "aten/src/ATen/native/tags.yaml"),
+    ]),
+    visibility = [
+        "PUBLIC",
+    ],
+    _is_external_target = True,
+)
+
+runtime.python_library(
+    name = "gen_selected_mobile_ops_header",
+    srcs = subdir_glob([
+        ("pytorch/tools", "lite_interpreter/gen_selected_mobile_ops_header.py"),
+    ]),
+    base_module = "tools",
+    _is_external_target = True,
+)
+
+runtime.python_library(
+    name = "gen_oplist_lib",
+    srcs = subdir_glob([
+        ("pytorch/tools/code_analyzer", "gen_oplist.py"),
+        ("pytorch/tools/code_analyzer", "gen_op_registration_allowlist.py"),
+    ]),
+    base_module = "tools.code_analyzer",
+    visibility = ["PUBLIC"],
+    _is_external_target = True,
+    deps = [
+        ":gen_selected_mobile_ops_header",
+        ":torchgen",
+        ":pyyaml",
+    ],
+    _is_external_target = True,
+)
 
 runtime.cxx_library(
     name = "flatbuffers-api",
@@ -10,6 +124,7 @@ runtime.cxx_library(
     ],
     link_style = "static",
     visibility = ["PUBLIC"],
+    _is_external_target = True,
 )
 
 runtime.cxx_library(
@@ -43,6 +158,7 @@ runtime.cxx_library(
     ],
     link_style = "static",
     visibility = ["PUBLIC"],
+    _is_external_target = True,
 )
 
 runtime.cxx_binary(
@@ -91,4 +207,5 @@ runtime.cxx_binary(
     visibility = ["PUBLIC"],
     deps = [":flatc_library"],
     link_style = "static",
+    _is_external_target = True,
 )
