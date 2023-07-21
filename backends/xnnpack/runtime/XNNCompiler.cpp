@@ -2,8 +2,8 @@
 
 #include <executorch/backends/xnnpack/runtime/XNNCompiler.h>
 #include <executorch/backends/xnnpack/xnnpack_schema_generated.h>
-#include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
-#include <executorch/threadpool/threadpool.h>
+#include <executorch/extension/fb/threadpool/threadpool.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <unordered_map>
 
 namespace torch {
@@ -1217,6 +1217,129 @@ Error definePReLUNode(
 }
 
 /*
+Defines serialized concatenate2 node into the subgraph,
+using the remapped ids to map the serialized ids,
+to the new ids generated when defining the tensor value
+*/
+Error defineConcatenate2Node(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node) noexcept {
+  auto graph_node = node->xnode_union_as_XNNConcatenate2();
+
+  xnn_status status = xnn_define_concatenate2(
+      subgraph_ptr,
+      graph_node->axis(),
+      remapped_ids.at(graph_node->input1_id()),
+      remapped_ids.at(graph_node->input2_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create cat2 node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
+Defines serialized concatenate2 node into the subgraph,
+using the remapped ids to map the serialized ids,
+to the new ids generated when defining the tensor value
+*/
+Error defineConcatenate3Node(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node) noexcept {
+  auto graph_node = node->xnode_union_as_XNNConcatenate3();
+
+  xnn_status status = xnn_define_concatenate3(
+      subgraph_ptr,
+      graph_node->axis(),
+      remapped_ids.at(graph_node->input1_id()),
+      remapped_ids.at(graph_node->input2_id()),
+      remapped_ids.at(graph_node->input3_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create cat3 node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
+Defines serialized concatenate2 node into the subgraph,
+using the remapped ids to map the serialized ids,
+to the new ids generated when defining the tensor value
+*/
+Error defineConcatenate4Node(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node) noexcept {
+  auto graph_node = node->xnode_union_as_XNNConcatenate4();
+
+  xnn_status status = xnn_define_concatenate4(
+      subgraph_ptr,
+      graph_node->axis(),
+      remapped_ids.at(graph_node->input1_id()),
+      remapped_ids.at(graph_node->input2_id()),
+      remapped_ids.at(graph_node->input3_id()),
+      remapped_ids.at(graph_node->input4_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create cat4 node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
+Defines serialized static_slice node into the subgraph,
+using the remapped ids to map the serialized ids,
+to the new ids generated when defining the tensor value
+*/
+Error defineStaticSliceNode(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node) noexcept {
+  auto graph_node = node->xnode_union_as_XNNStaticSlice();
+
+  std::vector<size_t> offsets = flatbufferDimsToVector(graph_node->offsets());
+  std::vector<size_t> sizes = flatbufferDimsToVector(graph_node->sizes());
+
+  xnn_status status = xnn_define_static_slice(
+      subgraph_ptr,
+      graph_node->num_dims(),
+      offsets.data(),
+      sizes.data(),
+      remapped_ids.at(graph_node->input_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create static slice node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/*
 Returns not Implemented Error code. This function is meant to be
 called when the compiler encountes a XNodeType from the flatbuffer
 that has not yet been implemented
@@ -1273,6 +1396,10 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
     _DEFINE(ELU)
     _DEFINE(Abs)
     _DEFINE(PReLU)
+    _DEFINE(Concatenate2)
+    _DEFINE(Concatenate3)
+    _DEFINE(Concatenate4)
+    _DEFINE(StaticSlice)
     case fb_xnnpack::XNodeUnion::NONE:
     default: // Adding here as a catch all, just in case
       return &defineNotImplementedNode;

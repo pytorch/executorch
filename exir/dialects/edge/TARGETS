@@ -1,0 +1,83 @@
+load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "yaml_generator_lib",
+    srcs = [
+        "yaml_generator.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/ruamel-yaml:ruamel-yaml",
+        ":support_dtypes",
+        ":utils",
+        "//caffe2:test-lib",
+        "//caffe2:torch",
+        "//pye/lib:eager_model_base",
+        "//pye/model_inventory/asr_models/milan_dictation:milan_dictation_lib",
+    ],
+)
+
+python_binary(
+    name = "yaml_generator",
+    srcs = [
+        "yaml_generator.py",
+    ],
+    main_module = "executorch.exir.dialects.edge.yaml_generator",
+    deps = [
+        "fbsource//third-party/pypi/ruamel-yaml:ruamel-yaml",
+        ":support_dtypes",
+        ":utils",
+        "//caffe2:test-lib",
+        "//caffe2:torch",
+        "//pye/lib:eager_model_base",
+        "//pye/model_inventory/asr_models/milan_dictation:milan_dictation_lib",
+    ],
+)
+
+python_library(
+    name = "lib",
+    srcs = [
+        "_ops.py",
+    ],
+    resources = {
+        ":edge_yaml": "edge.yaml",
+    },
+    deps = [
+        "fbsource//third-party/pypi/ruamel-yaml:ruamel-yaml",
+        "fbsource//third-party/pypi/setuptools:setuptools",
+        ":support_dtypes",
+        ":utils",
+        "//caffe2:torch",
+        "//caffe2/torchgen:torchgen",
+        "//executorch/exir/operator:convert",
+    ],
+)
+
+python_library(
+    name = "support_dtypes",
+    srcs = [
+        "support_dtypes.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+export_file(
+    name = "edge_yaml",
+    src = "edge.yaml",
+    visibility = ["//executorch/..."],
+)
+
+python_library(
+    name = "utils",
+    srcs = [
+        "utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)

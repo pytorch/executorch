@@ -4,6 +4,7 @@ load(
     "APPLE",
     "CXX",
 )
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_xplat")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -50,7 +51,7 @@ def define_common_targets():
             ],
             exported_headers = ["utils/utils.h"],
             deps = [
-                "//executorch/core/kernel_types:kernel_types" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/backend:backend_registry",
             ],
             visibility = [
@@ -75,15 +76,20 @@ def define_common_targets():
             "//executorch/backends:backend_lib",
             "//executorch/backends/qnnpack/test/...",
             "//executorch/backends/test/...",
-            "//executorch/pybindings/...",
+            "//executorch/extension/pybindings/...",
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/runtime/backend:backend_registry",
-            "//executorch/threadpool:threadpool",
+            "//executorch/extension/fb/threadpool:threadpool",
             "//executorch/util:memory_utils",
+            "//{prefix}caffe2/aten/src/ATen/native/quantized/cpu/qnnpack:pytorch_qnnpack".format(
+                prefix = (
+                    "xplat/" if is_xplat() else ""
+                ),
+            ),
             ":qnnpack_schema",
             ":qnnpack_utils",
         ],
@@ -91,12 +97,6 @@ def define_common_targets():
             ANDROID,
             APPLE,
             CXX,
-        ],
-        fbcode_deps = [
-            "//caffe2/aten/src/ATen/native/quantized/cpu/qnnpack:pytorch_qnnpack",
-        ],
-        xplat_deps = [
-            "//xplat/caffe2/aten/src/ATen/native/quantized/cpu/qnnpack:pytorch_qnnpack",
         ],
         # XnnpackBackend.cpp needs to compile with executor as whole
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)

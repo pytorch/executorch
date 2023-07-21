@@ -5,13 +5,11 @@ from typing import List, Tuple
 
 import torch
 import torch.utils._pytree as pytree
+
 from executorch.backends.compile_spec_schema import CompileSpec
-from executorch.exir.graph_module import (
-    _get_submodule,
-    EXIR_METADATA,
-    make_export_graph_module,
-)
+from executorch.exir.graph_module import _get_submodule
 from executorch.exir.tracer import Value
+from torch._export.exported_program import ExportedProgram
 from torch._functorch.eager_transforms import (
     _unwrap_all_tensors_from_functional,
     _wrap_all_tensors_to_functional,
@@ -57,17 +55,17 @@ class LoweredBackendModule(torch.nn.Module):
     _backend_id: str
     _processed_bytes: bytes
     _compile_specs: List[CompileSpec]
-    _original_module: torch.fx.GraphModule
+    _original_module: ExportedProgram
 
     def __init__(
         self,
-        edge_ir_m: torch.fx.GraphModule,
+        edge_program: ExportedProgram,
         backend_id: str,
         processed_bytes: bytes,
         compile_specs: List[CompileSpec],
     ) -> None:
         super().__init__()
-        self._original_module = edge_ir_m
+        self._original_module = edge_program
         self._backend_id = backend_id
         self._processed_bytes = processed_bytes
         self._compile_specs = compile_specs
@@ -85,17 +83,17 @@ class LoweredBackendModule(torch.nn.Module):
         return self._compile_specs
 
     @property
-    def original_module(self) -> torch.fx.GraphModule:
+    def original_module(self) -> ExportedProgram:
         return self._original_module
 
     # Used to patch each delegated function with a call_delegate call
-    @staticmethod
-    def patched_method(
-        backend_module: "LoweredBackendModule",
+    # @staticmethod
+    def forward(
+        self,
         *args: Value,
         **kwargs: Tuple[Value, ...],
     ) -> Value:
-        return executorch_call_delegate(backend_module, *args)
+        return executorch_call_delegate(self, *args)
 
 
 executorch_call_delegate = HigherOrderOperator(
@@ -237,31 +235,6 @@ def call_delegate_functionalize(interpreter, lowered_module, *args):
         return _wrap_all_tensors_to_functional(res, level=interpreter.level())
 
 
-def patch_lowered_functions(module: LoweredBackendModule) -> None:
-    """
-    Patches the forward function that will be delegated so that during tracing,
-    all callsites to the graph module will instead have a
-    "executorch_call_delegate" op in the FX graph.
-
-    Args:
-        module: A module that should contain the attributes contained in a
-            lowered module (``compile_specs``,
-            ``processed_bytes``, ``backend_id``, and
-            ``original_module``)
-
-    Returns:
-        A module where if called during tracing, we will insert a
-        executorch_call_delegate op into the FX graph marking a callsite to
-        these delegated functions.
-    """
-    if not isinstance(module, LoweredBackendModule):
-        return
-
-    # Monkey-patch the forward function
-    # pyre-ignore
-    module.forward = types.MethodType(LoweredBackendModule.patched_method, module)
-
-
 def get_lowered_module_name(
     root: torch.nn.Module, lowered_module: LoweredBackendModule
 ) -> str:
@@ -304,22 +277,6 @@ def _fixup_output_node(gm: torch.fx.GraphModule) -> None:
             return
 
 
-def generate_in_spec_out_spec(gm: torch.fx.GraphModule) -> None:
-    output_nodes = []
-    for node in gm.graph.nodes:
-        if node.op == "output":
-            output_nodes = node.args[0]
-
-    all_placeholders = [node for node in gm.graph.nodes if node.op == "placeholder"]
-
-    (_, pytree_in) = tree_flatten(tuple(all_placeholders))
-    (_, pytree_out) = tree_flatten(tuple(output_nodes))
-
-    meta = gm.meta[EXIR_METADATA]
-    meta.in_spec = pytree_in
-    meta.out_spec = pytree_out
-
-
 def create_submodule_from_nodes(
     gm: torch.fx.GraphModule,
     node_list: NodeList,
@@ -342,14 +299,11 @@ def create_submodule_from_nodes(
     sorted_nodes = topo_sort(node_list)
 
     submodule_name = "fused_" + tag
-    initial_sub_gm, orig_inputs, orig_outputs = fuse_as_graphmodule(
+    sub_gm, orig_inputs, orig_outputs = fuse_as_graphmodule(
         gm, sorted_nodes, submodule_name
     )
 
-    _fixup_output_node(initial_sub_gm)
-    sub_gm = make_export_graph_module(
-        initial_sub_gm, initial_sub_gm.graph, submodule_name
-    )
+    _fixup_output_node(sub_gm)
 
     gm = insert_subgm(gm, sub_gm, orig_inputs, orig_outputs)
     if len(orig_outputs) == 1 and isinstance(orig_outputs[0].meta["val"], FakeTensor):
@@ -388,7 +342,6 @@ def create_submodule_from_nodes(
         submodule_node is not None
     ), f"No submodule was created with the nodes {node_list} in the graph {gm.graph}"
 
-    generate_in_spec_out_spec(sub_gm)
     return sub_gm, submodule_node
 
 

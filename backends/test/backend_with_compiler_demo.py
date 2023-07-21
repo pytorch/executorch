@@ -1,10 +1,10 @@
-from typing import Callable, Dict, final, List, NamedTuple
+from typing import final, List, NamedTuple
 
 import torch
 
 from executorch.backends.backend_details import BackendDetails
 from executorch.backends.compile_spec_schema import CompileSpec
-from torch.fx.node import Node
+from torch._export.exported_program import ExportedProgram
 
 
 # A simple way to represent an op used in BackendWithCompilerDemo
@@ -70,12 +70,12 @@ class BackendWithCompilerDemo(BackendDetails):
 
     @staticmethod
     def preprocess(
-        edge_ir_module: torch.fx.GraphModule,
+        edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> bytes:
         processed_bytes = ""
         number_of_instruction = 0
-        for node in edge_ir_module.graph.nodes:
+        for node in edge_program.graph.nodes:
             if node.op == "call_function":
                 if (
                     node.target == torch.ops.aten.sin.default

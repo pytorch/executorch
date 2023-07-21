@@ -3,8 +3,11 @@ from typing import final, List
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
-import torch
-from executorch.backends.backend_details import BackendDetails, CompileSpec
+from executorch.backends.backend_details import (
+    BackendDetails,
+    CompileSpec,
+    ExportedProgram,
+)
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     convert_to_flatbuffer,
 )
@@ -42,7 +45,7 @@ class VulkanBackend(BackendDetails):
     # pyre-ignore
     def preprocess(
         cls,
-        edge_ir_module: torch.fx.GraphModule,
+        edge_program: ExportedProgram,
         module_compile_spec: List[CompileSpec],
     ) -> bytes:
         vk_nodes = []
@@ -72,7 +75,7 @@ class VulkanBackend(BackendDetails):
         def assign_non_const_vk_value_id(node: Node) -> int:
             return assign_vk_value_id(node, node.meta["val"], 0)
 
-        for node in edge_ir_module.graph.nodes:
+        for node in edge_program.graph.nodes:
             if node.op == "placeholder":
                 # Input
                 vk_input_ids.append(assign_non_const_vk_value_id(node))

@@ -1,8 +1,8 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
-#include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/kernel_types/testing/TensorFactory.h>
-#include <executorch/core/kernel_types/testing/TensorUtil.h>
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
 #include <gtest/gtest.h>
 
@@ -33,7 +33,7 @@ void test_ones_out(std::vector<int32_t>&& size_int32_t) {
 }
 
 #define GENERATE_TEST(_, DTYPE)                  \
-  TEST(op_ones_test, DTYPE##Tensors) {           \
+  TEST(OpOnesOutKernelTest, DTYPE##Tensors) {    \
     test_ones_out<ScalarType::DTYPE>({});        \
     test_ones_out<ScalarType::DTYPE>({1});       \
     test_ones_out<ScalarType::DTYPE>({1, 1, 1}); \

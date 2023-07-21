@@ -18,7 +18,7 @@ from typing import (
     Union,
 )
 
-import executorch.pytree as ex_pytree
+import executorch.extension.pytree as ex_pytree
 import torch
 import torch._dynamo as torchdynamo
 import torch.fx as fx
@@ -33,11 +33,7 @@ from executorch.exir.common import (
     setting_python_recursive_limit,
 )
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
-from executorch.exir.graph_module import (
-    EXIR_METADATA,
-    LeafValue,
-    make_export_graph_module,
-)
+from executorch.exir.graph_module import LeafValue
 from executorch.exir.operator.convert import is_out_variant
 from executorch.exir.types import ValueSpec
 
@@ -325,11 +321,14 @@ class PythonTensor(torch.Tensor):
 
         tensor_args = [
             x
+            # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
             for x in ex_pytree.tree_flatten(args)[0] + ex_pytree.tree_flatten(kwargs)[0]
             if isinstance(x, torch.Tensor)
         ]
 
+        # pyre-fixme[16]: Module `pytree` has no attribute `tree_map`.
         proxy_args = ex_pytree.tree_map(unwrap_proxy, args)
+        # pyre-fixme[16]: Module `pytree` has no attribute `tree_map`.
         proxy_kwargs = ex_pytree.tree_map(unwrap_proxy, kwargs)
 
         # Get the output of the function
@@ -589,8 +588,7 @@ def flattened_dispatch_trace(
     tree_out = tracer.trace(f, concrete_args=args, in_spec=in_spec)
 
     name = type(f).__name__ if isinstance(f, torch.nn.Module) else f.__name__
-
-    gm = make_export_graph_module(tracer.root, tracer.graph, name)
+    gm = torch.fx.GraphModule(tracer.root, tracer.graph, name)
 
     return (gm, tree_out)
 
@@ -722,9 +720,8 @@ def dispatch_trace(
 
     _, out_spec = pytree.tree_flatten(tree_out)
 
-    meta = gm.meta[EXIR_METADATA]
-    meta.in_spec = in_spec
-    meta.out_spec = out_spec
+    gm.in_spec = in_spec
+    gm.out_spec = out_spec
 
     # TODO (tmanlaibaatar) This is bit clowny, but our
     # dispatch_trace sometimes creates unused node that
@@ -745,26 +742,26 @@ def dispatch_trace(
     # pyre-ignore
     def graph_with_interpreter(*args):
         try:
-            args = fx_pytree.tree_flatten_spec(args, meta.in_spec)  # type: ignore[assignment]
+            args = fx_pytree.tree_flatten_spec(args, gm.in_spec)  # type: ignore[assignment]
         except Exception:
             _, received_spec = pytree.tree_flatten(args)
             raise RuntimeError(
                 "Trying to flatten user inputs with exported input tree spec: \n"
-                f"{meta.in_spec}\n"
+                f"{gm.in_spec}\n"
                 "but actually got inputs with tree spec of: \n"
                 f"{received_spec}"
             )
         with torch.fx.traceback.preserve_node_meta():
             res = gm(*args)
 
-        if meta.out_spec is not None:
+        if gm.out_spec is not None:
             try:
-                res = pytree.tree_unflatten(res, meta.out_spec)
+                res = pytree.tree_unflatten(res, gm.out_spec)
             except Exception:
                 _, received_spec = pytree.tree_flatten(res)
                 raise RuntimeError(
                     "Trying to flatten user outputs with exported output tree spec: \n"
-                    f"{meta.out_spec}\n"
+                    f"{gm.out_spec}\n"
                     "but actually got outputs with tree spec of: \n"
                     f"{received_spec}"
                 )
@@ -778,8 +775,7 @@ def dispatch_trace(
         enable_functionalization=True,
     )
 
-    meta = gm.meta[EXIR_METADATA]
-    meta.in_spec = in_spec
-    meta.out_spec = out_spec
+    gm.in_spec = in_spec
+    gm.out_spec = out_spec
 
     return gm

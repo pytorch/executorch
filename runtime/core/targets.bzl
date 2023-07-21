@@ -27,6 +27,62 @@ def define_common_targets():
         ],
         exported_deps = [
             "//executorch/runtime/platform:platform",
-            "//executorch/core:core",  # for legacy clients that need Constants.h or macros.h TODO remove this
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "tensor_shape_dynamism",
+        exported_headers = [
+            "tensor_shape_dynamism.h",
+        ],
+        visibility = [
+            "//executorch/runtime/core/exec_aten/...",
+            "//executorch/runtime/core/portable_type/...",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "memory_allocator",
+        exported_headers = [
+            "hierarchical_allocator.h",
+            "memory_allocator.h",
+        ],
+        deps = [
+            "//executorch/profiler:profiler",
+        ],
+        exported_deps = [
+            ":core",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    for aten_mode in (True, False):
+        aten_suffix = ("_aten" if aten_mode else "")
+        runtime.cxx_library(
+            name = "evalue" + aten_suffix,
+            exported_headers = [
+                "evalue.h",
+            ],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                ":tag",
+            ],
+        )
+
+    runtime.cxx_library(
+        name = "tag",
+        exported_headers = [
+            "tag.h",
+        ],
+        visibility = [
+            "//executorch/...",
         ],
     )

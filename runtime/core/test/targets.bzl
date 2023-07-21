@@ -52,3 +52,34 @@ def define_common_targets():
             "//executorch/runtime/core:core",
         ],
     )
+
+    runtime.cxx_test(
+        name = "memory_allocator_test",
+        srcs = [
+            "memory_allocator_test.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/core:memory_allocator",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "tensor_shape_dynamism_test_aten",
+        srcs = ["tensor_shape_dynamism_test_aten.cpp"],
+        deps = [
+            "//executorch/runtime/core/exec_aten:lib_aten",
+        ],
+    )
+
+    for aten_mode in (True, False):
+        aten_suffix = "_aten" if aten_mode else ""
+
+        runtime.cxx_test(
+            name = "evalue_test" + aten_suffix,
+            srcs = ["evalue_test.cpp"],
+            deps = [
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
+                "//executorch/runtime/core:evalue" + aten_suffix,
+            ],
+        )

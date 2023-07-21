@@ -89,6 +89,14 @@
     mat2: T0
     __ret_0: T0
 
+- func: aten::arange.start_step
+  namespace: edge
+  inherits: aten::arange.start_step
+  type_alias:
+    T0: [Byte, Char, Double, Float, Int, Long, Short]
+  type_constraint:
+  - __ret_0: T0
+
 - func: aten::bmm
   namespace: edge
   inherits: aten::bmm
@@ -197,6 +205,44 @@
   type_constraint:
   - self: T0
     __ret_0: T0
+
+- func: aten::index_select
+  namespace: edge
+  inherits: aten::index_select
+  type_alias:
+    T0: [Bool]
+    T1: [Byte]
+    T2: [Char]
+    T3: [Double]
+    T4: [Float]
+    T5: [Int]
+    T6: [Long]
+    T7: [Short]
+  type_constraint:
+  - self: T0
+    index: T6
+    __ret_0: T0
+  - self: T1
+    index: T6
+    __ret_0: T1
+  - self: T2
+    index: T6
+    __ret_0: T2
+  - self: T3
+    index: T6
+    __ret_0: T3
+  - self: T4
+    index: T6
+    __ret_0: T4
+  - self: T5
+    index: T6
+    __ret_0: T5
+  - self: T6
+    index: T6
+    __ret_0: T6
+  - self: T7
+    index: T6
+    __ret_0: T7
 
 - func: aten::masked_fill.Scalar
   namespace: edge
@@ -354,6 +400,22 @@
   - self: T0
     other: T0
     __ret_0: T0
+
+- func: aten::sym_numel
+  namespace: edge
+  inherits: aten::sym_numel
+  type_alias:
+    T0: [Bool, Byte, Char, Double, Float, Int, Long, Short]
+  type_constraint:
+  - self: T0
+
+- func: aten::sym_size.int
+  namespace: edge
+  inherits: aten::sym_size.int
+  type_alias:
+    T0: [Bool, Byte, Char, Double, Float, Int, Long, Short]
+  type_constraint:
+  - self: T0
 
 - func: aten::t_copy
   namespace: edge

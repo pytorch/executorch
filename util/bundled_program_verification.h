@@ -1,7 +1,7 @@
 #pragma once
 
-#include <executorch/executor/Executor.h>
-#include <executorch/executor/MemoryManager.h>
+#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/memory_manager.h>
 
 namespace torch {
 namespace executor {

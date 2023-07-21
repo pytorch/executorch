@@ -1,6 +1,6 @@
 #pragma once
 
-#include <executorch/core/values/Tag.h>
+#include <executorch/runtime/core/tag.h>
 #include <executorch/runtime/platform/assert.h>
 
 #include <cstdint>

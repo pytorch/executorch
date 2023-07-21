@@ -1,0 +1,38 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+runtime.python_library(
+    name = "support_patterns",
+    srcs = [
+        "support_patterns.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends:utils",
+        "//executorch/backends/transforms:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "qnnpack_partitioner",
+    srcs = [
+        "qnnpack_partitioner.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":support_patterns",
+        "//executorch/backends:partitioner",
+        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/backends/qnnpack:qnnpack_preprocess",
+        "//executorch/backends/transforms:lib",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/exir:delegate",
+        "//executorch/exir:lib",
+    ],
+)

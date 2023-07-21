@@ -10,8 +10,8 @@ import executorch.exir as exir
 
 import executorch.exir.control_flow as control_flow
 
-# @manual=//executorch/pytree:pybindings
-import executorch.pytree as pytree
+# @manual=//executorch/extension/pytree:pybindings
+import executorch.extension.pytree as pytree
 
 # The module itself is not used directly. But we need the side effect of importing
 # it so the get_scratch_metas methods are attached to out variant ops.
@@ -53,8 +53,8 @@ from executorch.exir.tests.transformer import Transformer
 
 kernel_mode = None  # either aten mode or lean mode
 try:
-    # pyre-fixme[21]: Could not find module `executorch.pybindings.portable`.
-    from executorch.pybindings.portable import (
+    # pyre-fixme[21]: Could not find module `executorch.extension.pybindings.portable`.
+    from executorch.extension.pybindings.portable import (
         _load_bundled_program_from_buffer,
         _load_for_executorch_from_buffer,
         _load_for_executorch_from_bundled_program,
@@ -66,8 +66,8 @@ except:
     pass
 
 try:
-    # pyre-fixme[21]: Could not find module `executorch.pybindings.portable`.
-    from executorch.pybindings.aten_mode_lib import (
+    # pyre-fixme[21]: Could not find module `executorch.extension.pybindings.portable`.
+    from executorch.extension.pybindings.aten_mode_lib import (
         _load_bundled_program_from_buffer,
         _load_for_executorch_from_buffer,
         _load_for_executorch_from_bundled_program,
@@ -554,7 +554,7 @@ def maketest(
 
         if run_executor:
             print("Running on the runtime")
-            # pyre-fixme[16]: Module `executorch.pybindings` has no attribute `portable`.
+            # pyre-fixme[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
             executorch_module = _load_for_executorch_from_buffer(buff)
             # compare the result between eager module and executor
             for idx, inputs in enumerate(inputs_list):
@@ -562,8 +562,10 @@ def maketest(
                     expected = getattr(module.eager_module, method)(*inputs)
 
                 if do_tree_flatten:
+                    # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
                     flatten_inputs, inputs_spec = pytree.tree_flatten(*inputs)
                     executorch_result = executorch_module.forward([*flatten_inputs])
+                    # pyre-fixme[16]: Module `pytree` has no attribute `TreeSpec`.
                     executorch_result_unflatten = pytree.TreeSpec.from_str(
                         program.execution_plan[0].container_meta_type.encoded_out_str
                     ).tree_unflatten(executorch_result)
@@ -595,17 +597,17 @@ def maketest(
                 bundled_program
             )
 
-            # pyre-fixme[16]: Module `executorch.pybindings` has no attribute `portable`.
+            # pyre-fixme[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
             executorch_bundled_program = _load_bundled_program_from_buffer(
                 bundled_program_buffer
             )
 
-            # pyre-fixme[16]: Module `executorch.pybindings` has no attribute `portable`.
+            # pyre-fixme[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
             executorch_module = _load_for_executorch_from_bundled_program(
                 executorch_bundled_program
             )
 
-            # pyre-fixme[16]: Module `executorch.pybindings` has no attribute `portable`.
+            # pyre-fixme[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
             default_execution_plan_id = Module.FORWARD_METHOD_INDEX
 
             # TODO(T144329357): check bundled attachment correctness

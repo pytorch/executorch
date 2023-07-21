@@ -11,11 +11,13 @@ from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.tracer import ExirDynamoConfig
 from torch.ao.ns.fx.utils import compute_sqnr
 from torch.ao.quantization import get_default_qconfig, QConfigMapping  # @manual
-from torch.ao.quantization._quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.backend_config._qnnpack_pt2e import (
-    get_qnnpack_pt2e_backend_config,
+
+from torch.ao.quantization.pt2e.quantizer import XNNPACKQuantizer
+from torch.ao.quantization.pt2e.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
 )
 from torch.ao.quantization.quantize_fx import convert_to_reference_fx, prepare_fx
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.testing import FileCheck
 from torch.testing._internal.common_quantization import skipIfNoQNNPACK
 from torch.testing._internal.common_quantized import override_quantized_engine
@@ -51,13 +53,13 @@ class TestQuantization(unittest.TestCase):
             exported_program = exir.capture(m, example_inputs, config=capture_config)
             # TODO: probably need to support exported_program.to_aten()
             m = exported_program.to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False)
+                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True),
             ).graph_module
 
-            backend_config = get_qnnpack_pt2e_backend_config()
-            qconfig = get_default_qconfig("qnnpack")
-            qconfig_mapping = QConfigMapping().set_global(qconfig)
-            m = prepare_pt2e(m, qconfig_mapping, example_inputs, backend_config)
+            quantizer = XNNPACKQuantizer()
+            operator_config = get_symmetric_quantization_config(is_per_channel=True)
+            quantizer.set_global(operator_config)
+            m = prepare_pt2e(m, quantizer)
             self.assertEqual(
                 id(m.activation_post_process_3), id(m.activation_post_process_2)
             )
@@ -69,14 +71,17 @@ class TestQuantization(unittest.TestCase):
             compile_config = EdgeCompileConfig(
                 passes=[QuantFusionPass(), SpecPropPass()],
                 _check_ir_validity=False,
+                _use_edge_ops=True,
             )
             m = exir.capture(m, example_inputs, config=capture_config).to_edge(
                 config=compile_config
             )
             FileCheck().check(
-                "torch.ops.quantized_decomposed.quantize_per_tensor"
-            ).check("torch.ops.quantized_decomposed.add_relu.default").check(
-                "torch.ops.quantized_decomposed.dequantize_per_tensor"
+                "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor"
+            ).check(
+                "executorch_exir_dialects_edge__ops_quantized_decomposed_add_relu_default"
+            ).check(
+                "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor"
             ).run(
                 m.code
             )
@@ -91,6 +96,8 @@ class TestQuantization(unittest.TestCase):
             # self.assertEqual(compute_sqnr(after_quant_fusion_result, after_to_executorch), torch.tensor(float("inf")))
 
             # comparing with existing fx graph mode quantization reference flow
+            qconfig = get_default_qconfig("qnnpack")
+            qconfig_mapping = QConfigMapping().set_global(qconfig)
             m_fx = prepare_fx(m_copy, qconfig_mapping, example_inputs)
             after_prepare_result_fx = m_fx(*example_inputs)
             m_fx = convert_to_reference_fx(m_fx)  # , backend_config=backend_config)

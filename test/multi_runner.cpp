@@ -23,14 +23,13 @@
 #include <thread>
 #include <tuple>
 
-#include <executorch/core/Constants.h>
-#include <executorch/executor/Executor.h>
-#include <executorch/executor/test/ManagedMemoryManager.h>
+#include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/embedded_data_loader.h>
 #include <executorch/util/read_file.h>
 #include <executorch/util/util.h>
 
@@ -56,13 +55,12 @@ using torch::executor::DataLoader;
 using torch::executor::Error;
 using torch::executor::Executor;
 using torch::executor::FreeableBuffer;
-using torch::executor::kMB;
 using torch::executor::MemoryAllocator;
 using torch::executor::MemoryManager;
 using torch::executor::Program;
 using torch::executor::Result;
 using torch::executor::testing::ManagedMemoryManager;
-using torch::executor::util::EmbeddedDataLoader;
+using torch::executor::util::BufferDataLoader;
 
 /**
  * A model that has been loaded and has had its execution plan and inputs
@@ -122,7 +120,7 @@ class PreparedModel final {
   }
 
   const std::string name_;
-  EmbeddedDataLoader loader_; // Needs to outlive program_
+  BufferDataLoader loader_; // Needs to outlive program_
   Program program_; // Needs to outlive executor_
   ManagedMemoryManager memory_manager_; // Needs to outlive executor_
   Executor executor_;
@@ -141,8 +139,8 @@ class ModelFactory {
       const std::string& name, // For debugging
       std::shared_ptr<const char> model_data,
       size_t model_data_size,
-      size_t non_const_mem_bytes = 40 * kMB,
-      size_t runtime_mem_bytes = 2 * kMB)
+      size_t non_const_mem_bytes = 40 * 1024U * 1024U, // 40 MB
+      size_t runtime_mem_bytes = 2 * 1024U * 1024U) // 2 MB
       : name_(name),
         model_data_(model_data),
         model_data_size_(model_data_size),

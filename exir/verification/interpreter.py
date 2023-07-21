@@ -5,7 +5,7 @@ from typing import List, Optional, Union
 
 # pyre-fixme[21]: Could not find module `executorch.exir.verification.bindings`.
 import executorch.exir.verification.bindings as bindings  # @manual=//executorch/exir/verification:bindings
-import executorch.pytree as ex_pytree
+import executorch.extension.pytree as ex_pytree
 
 import torch
 
@@ -362,6 +362,7 @@ class Interpreter:
         Outputs after completing all computations
         """
 
+        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         args, pytree = ex_pytree.tree_flatten(raw_args)
 
         if pytree.to_str() != self.container_metatype.encoded_inp_str:
@@ -412,5 +413,7 @@ class Interpreter:
             ip += 1
 
         ret = [self._value_list[i] for i in self.execution_plan.outputs]
+        # pyre-fixme[16]: Module `pytree` has no attribute `from_str`.
         treespec = ex_pytree.from_str(self.container_metatype.encoded_out_str)
+        # pyre-fixme[16]: Module `pytree` has no attribute `tree_unflatten`.
         return ex_pytree.tree_unflatten(ret, treespec)

@@ -1,18 +1,12 @@
-load(
-    "@fbsource//tools/build_defs:default_platform_defs.bzl",
-    "ANDROID",
-    "CXX",
-)
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/pybindings:targets.bzl", "MODELS_ALL_OPS_ATEN_MODE_GENERATED_LIB", "MODELS_ALL_OPS_LEAN_MODE_GENERATED_LIB")
 
 SIZE_TEST_SOURCES = [
     "size_test.cpp",
 ]
 
 SIZE_TEST_DEPS = [
-    "//executorch/executor:executor",
-    "//executorch/util:file_data_loader",
+    "//executorch/runtime/executor:executor",
+    "//executorch/extension/data_loader:file_data_loader",
     "//executorch/util:util",
 ]
 
@@ -22,37 +16,6 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
-
-    # Test driver for models, uses all portable kernels.
-    for aten_mode in (True, False):
-        aten_suffix = ("_aten" if aten_mode else "")
-        runtime.cxx_binary(
-            name = "executor_runner" + aten_suffix,
-            srcs = ["executor_runner.cpp"],
-            deps = [
-                "//executorch/executor/test:test_backend_compiler_lib" + aten_suffix,
-                "//executorch/executor:executor" + aten_suffix,
-                "//executorch/sdk/etdump:etdump",
-                "//executorch/util:bundled_program_verification" + aten_suffix,
-                "//executorch/util:embedded_data_loader",
-                "//executorch/util:file_data_loader",
-                "//executorch/util:util" + aten_suffix,
-            ] + (MODELS_ALL_OPS_ATEN_MODE_GENERATED_LIB if aten_mode else [
-                "//executorch/configurations:executor_cpu_optimized",
-            ] + MODELS_ALL_OPS_LEAN_MODE_GENERATED_LIB),
-            preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
-            external_deps = [
-                "gflags",
-            ],
-            platforms = [ANDROID, CXX],
-            xplat_deps = [
-                "//xplat/third-party/gflags:gflags",
-            ],
-            define_static_target = not aten_mode,
-            visibility = [
-                "@EXECUTORCH_CLIENTS",
-            ],
-        )
 
     # DO NOT MODIFY: This target `size_test_static` is being used on a per-diff
     # CI job to guard Executorch binary size. It doesn't contain any operators
@@ -73,6 +36,7 @@ def define_common_targets():
         srcs = SIZE_TEST_SOURCES,
         deps = SIZE_TEST_DEPS + [
             "//executorch/kernels/portable:generated_lib_all_ops",
+            "//executorch/runtime/executor/test:test_backend_compiler_lib",
         ],
         define_static_target = True,
     )
@@ -92,17 +56,14 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/core:core",
             "//executorch/kernels/portable:generated_lib_all_ops",
-            "//executorch/executor:executor",
-            "//executorch/executor/test:managed_memory_manager",
-            "//executorch/util:embedded_data_loader",
+            "//executorch/runtime/executor:executor",
+            "//executorch/runtime/executor/test:managed_memory_manager",
+            "//executorch/extension/data_loader:buffer_data_loader",
             "//executorch/util:read_file",
             "//executorch/util:util",
         ],
         external_deps = [
             "gflags",
-        ],
-        xplat_deps = [
-            "//xplat/third-party/gflags:gflags",
         ],
     )
 
@@ -112,9 +73,9 @@ def define_common_targets():
         srcs = ["relocatable_runner.cpp"],
         deps = [
             "//executorch/kernels/portable:generated_lib_all_ops",
-            "//executorch/executor:executor",
+            "//executorch/runtime/executor:executor",
             "//executorch/configurations:executor_cpu_optimized",
-            "//executorch/util:embedded_data_loader",
+            "//executorch/extension/data_loader:buffer_data_loader",
             "//executorch/util:read_file",
             "//executorch/util:util",
         ],
@@ -123,7 +84,4 @@ def define_common_targets():
         ],
         preprocessor_flags = [],
         define_static_target = True,
-        xplat_deps = [
-            "//xplat/third-party/gflags:gflags",
-        ],
     )

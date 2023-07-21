@@ -1,6 +1,6 @@
 import unittest
 from random import randint
-from typing import Tuple
+from typing import Any, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -26,15 +26,15 @@ from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-from executorch.exir import CaptureConfig, export_graph_module_to_executorch
-from executorch.exir.graph_module import attach_export_graph_metadata, get_exir_meta
 
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.serialize import serialize_to_flatbuffer
 
-# pyre-ignore[21]: Could not find module `executorch.pybindings.portable`.
-from executorch.pybindings.portable import _load_for_executorch_from_buffer  # @manual
-from executorch.pytree import tree_flatten
+# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
+from executorch.extension.pybindings.portable import (  # @manual
+    _load_for_executorch_from_buffer,
+)
+from executorch.extension.pytree import tree_flatten
 
 from torch.ao.quantization import (  # @manual
     default_per_channel_symmetric_qnnpack_qconfig,
@@ -42,11 +42,7 @@ from torch.ao.quantization import (  # @manual
     QConfig,
     QConfigMapping,
 )
-from torch.ao.quantization._pt2e.quantizer import QNNPackQuantizer
-from torch.ao.quantization._pt2e.quantizer.qnnpack_quantizer import (
-    get_symmetric_quantization_config,
-)
-from torch.ao.quantization._quantize_pt2e import convert_pt2e, prepare_pt2e_quantizer
+
 from torch.ao.quantization.backend_config.executorch import (
     get_executorch_backend_config,
 )
@@ -64,6 +60,13 @@ from torch.ao.quantization.qconfig_mapping import (
 from torch.ao.quantization.quantize_fx import (
     _convert_to_reference_decomposed_fx,
     prepare_fx,
+)
+
+from torch.ao.quantization.quantize_pt2e import (
+    convert_pt2e,
+    get_symmetric_quantization_config,
+    prepare_pt2e,
+    XNNPACKQuantizer,
 )
 
 from torch.testing import FileCheck
@@ -141,7 +144,7 @@ class TestXNNPACK(unittest.TestCase):
 
     def lower_module_and_test_output(
         self,
-        module: torch.nn.Module,
+        module: Any,
         sample_inputs: Tuple[torch.Tensor],
         use_partitioner: bool = False,
         quantized: bool = False,
@@ -149,25 +152,27 @@ class TestXNNPACK(unittest.TestCase):
         # TODO: remove this after we migrate to use long term flow
         quantizer_api_test: bool = False,
         dump_ff: bool = False,  # for debugging, dump the generated flatbuffer file
-    ) -> torch.fx.GraphModule:
+    ) -> exir.ExirExportedProgram:
         """
         Helper testing function that takes a torch.nn.Module and lowers it to XNNPACK with
         the given sample inputs. It then runs the lowered module and compares its
         outputs with the outputs of the eager module.
         """
 
-        class WrappedModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.one_module = module
-
-            def forward(self, *args):
-                return self.one_module(*args)
-
         if quantizer_api_test:
-            edge_module = module
+            assert isinstance(module, exir.ExirExportedProgram)
+            edge_program = module
         else:
-            edge_module = capture_graph_for_xnnpack(WrappedModule(), sample_inputs)
+
+            class WrappedModule(torch.nn.Module):
+                def __init__(self):
+                    super().__init__()
+                    self.one_module = module
+
+                def forward(self, *args):
+                    return self.one_module(*args)
+
+            edge_program = capture_graph_for_xnnpack(WrappedModule(), sample_inputs)
 
         partitioner = None
         if quantized:
@@ -180,18 +185,18 @@ class TestXNNPACK(unittest.TestCase):
 
         if use_partitioner:
             with validation_disabled():
-                delegated_module = to_backend(edge_module, partitioner)
+                delegated_program = to_backend(edge_program, partitioner)
 
-            program = export_graph_module_to_executorch(
-                delegated_module,
+            program = delegated_program.to_executorch(
                 get_xnnpack_executorch_backend_config([SpecPropPass()]),
             ).program
         else:
-            delegated_module = to_backend("XnnpackBackend", edge_module, [])
+            delegated_program = to_backend("XnnpackBackend", edge_program, [])
 
-            graph_module = capture_graph_for_xnnpack(delegated_module, sample_inputs)
-            program = export_graph_module_to_executorch(
-                graph_module,
+            exported_program = capture_graph_for_xnnpack(
+                delegated_program, sample_inputs
+            )
+            program = exported_program.to_executorch(
                 get_xnnpack_executorch_backend_config(),
             ).program
 
@@ -205,7 +210,7 @@ class TestXNNPACK(unittest.TestCase):
         )
         buffer = serialize_to_flatbuffer(program)
 
-        ref_output = delegated_module(*sample_inputs)
+        ref_output = delegated_program(*sample_inputs)
         if dump_ff:
             filename = f"/tmp/xnnpack_test_{randint(1, 99999)}.ff"
             print(f"Writing flatbuffer to {filename} ...")
@@ -220,13 +225,14 @@ class TestXNNPACK(unittest.TestCase):
         # Test the model with executor
         # pyre-ignore
         executorch_module = _load_for_executorch_from_buffer(buffer)
+        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(sample_inputs)
 
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
 
         self.assert_outputs_equal(model_output, ref_output)
 
-        return delegated_module
+        return delegated_program
 
     def lower_and_test_with_partitioner(
         self,
@@ -295,23 +301,22 @@ class TestXNNPACK(unittest.TestCase):
     ):
         module.eval()
         # program capture
-        capture_config = CaptureConfig(pt2_mode=True, enable_functionalization=True)
+        capture_config = exir.CaptureConfig(
+            pt2_mode=True, enable_functionalization=True
+        )
         captured_program = exir.capture(module, example_inputs, config=capture_config)
         m = captured_program.graph_module
-        exir_meta = get_exir_meta(m)
 
-        quantizer = QNNPackQuantizer()
+        quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config()
         quantizer.set_global(quantization_config)
-        prepared = prepare_pt2e_quantizer(m, quantizer)
+        prepared = prepare_pt2e(m, quantizer)
         converted = convert_pt2e(prepared)
-        attach_export_graph_metadata(converted, exir_meta)
+
         captured_program.graph_module = converted
-        edge_module = captured_program.to_edge(
-            get_xnnpack_edge_compile_config()
-        ).graph_module
+        edge_program = captured_program.to_edge(get_xnnpack_edge_compile_config())
         delegated_module = self.lower_module_and_test_output(
-            module=edge_module,
+            module=edge_program,
             sample_inputs=example_inputs,
             use_partitioner=True,
             quantized=True,
@@ -322,6 +327,7 @@ class TestXNNPACK(unittest.TestCase):
             "torch.ops.aten.convolution.default",
             "torch.ops.aten.relu.default",
             "torch.ops.aten.add.Tensor",
+            "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor",
         }
         for op in supported_ops:
             FileCheck().check_count(op, 0, exactly=True).run(delegated_module.code)
@@ -388,9 +394,8 @@ class TestXNNPACK(unittest.TestCase):
         composite_model = CompositeModule()
         composite_model(*example_inputs)
 
-        graph_module = capture_graph_for_xnnpack(composite_model, example_inputs)
-        program = export_graph_module_to_executorch(
-            graph_module,
+        exported_program = capture_graph_for_xnnpack(composite_model, example_inputs)
+        program = exported_program.to_executorch(
             get_xnnpack_executorch_backend_config(),
         ).program
 
@@ -422,6 +427,7 @@ class TestXNNPACK(unittest.TestCase):
         buffer = serialize_to_flatbuffer(program)
         # pyre-ignore
         executorch_module = _load_for_executorch_from_buffer(buffer)
+        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(example_inputs)
 
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
@@ -430,9 +436,9 @@ class TestXNNPACK(unittest.TestCase):
 
         print("Model_output:", model_output[0])
 
-        # Compare the result from executor and eager mode direclty
+        # Compare the result from executor and eager mode directly
         self.assertTrue(
-            torch.allclose(model_output[0], ref_output[0], atol=1e-03, rtol=1e-03)
+            torch.allclose(model_output[0], ref_output, atol=1e-03, rtol=1e-03)
         )
 
     def _get_dqlinear_graph_module(self, weight_qconfig, linear, example_inputs):

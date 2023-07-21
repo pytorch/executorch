@@ -1,0 +1,33 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+python_library(
+    name = "schema",
+    srcs = [
+        "schema.py",
+    ],
+    deps = [
+        "//executorch/exir:scalar_type",
+    ],
+)
+
+python_library(
+    name = "serialize",
+    srcs = [
+        "serialize.py",
+    ],
+    resources = {
+        "//executorch/schema:scalar_type.fbs": "scalar_type.fbs",
+        "//executorch/sdk/etdump:etdump_schema.fbs": "etdump_schema.fbs",
+    },
+    deps = [
+        "fbsource//third-party/pypi/setuptools:setuptools",
+        ":schema",
+        "//executorch/exir/serialize:bindings",
+        "//executorch/exir/serialize:lib",
+    ],
+)

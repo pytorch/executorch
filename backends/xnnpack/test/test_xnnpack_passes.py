@@ -63,21 +63,6 @@ class TestXNNPackPasses(unittest.TestCase):
         def forward(self, x):
             return self.relu(self.conv(x))
 
-    def run_passes_on_graph(self, graph_module, passes):
-        """
-        Runs a list of [passes] on the edge graph [graph_module].
-
-        the passes are run in the order of the list passes.
-        """
-
-        for graph_pass in passes:
-            self.assertIsNotNone(graph_module)
-            pass_result = graph_pass(graph_module)
-            self.assertIsNotNone(pass_result)
-            graph_module = pass_result.graph_module
-
-        return graph_module
-
     def capture_and_test_pass(
         self,
         module,
@@ -92,17 +77,17 @@ class TestXNNPackPasses(unittest.TestCase):
         that the number of _to_copy.default ops in the newly created graph is
         equal to the number of [expected_copies]
         """
-        graph_module = capture_graph_for_xnnpack(
+        exported_program = capture_graph_for_xnnpack(
             module, example_inputs, enable_aot=enable_aot
         )
 
-        new_graph = self.run_passes_on_graph(graph_module, passes)
+        new_exported_program = exported_program.transform(*passes)
 
         FileCheck().check_count(
             expected_node,
             expected_copies,
             exactly=True,
-        ).run(new_graph.code)
+        ).run(new_exported_program.graph_module.code)
 
     def test_channels_last_tagged_reshape_pass(self) -> None:
         passes = [ChannelsLastTaggedReshapePass()]
@@ -136,8 +121,8 @@ class TestXNNPackPasses(unittest.TestCase):
 
         sample_input = (torch.ones(1, 1, 6, 6),)
         model = self.ConvRelu()
-        graph_module = capture_graph_for_xnnpack(model, sample_input)
-        new_graph = self.run_passes_on_graph(graph_module, passes)
+        exported_program = capture_graph_for_xnnpack(model, sample_input)
+        new_exported_program = exported_program.transform(*passes)
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_aten__to_copy_default"
         ).check("executorch_exir_dialects_edge__ops_aten_convolution_default").check(
@@ -145,7 +130,7 @@ class TestXNNPackPasses(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_aten__to_copy_default"
         ).run(
-            new_graph.code
+            new_exported_program.graph_module.code
         )
 
         prepared = prepare_fx(
@@ -158,8 +143,8 @@ class TestXNNPackPasses(unittest.TestCase):
         converted = _convert_to_reference_decomposed_fx(
             prepared, backend_config=get_executorch_backend_config()
         )
-        quantized_graph = capture_graph_for_xnnpack(converted, sample_input)
-        new_quantized_graph = self.run_passes_on_graph(quantized_graph, passes)
+        quantized_ep = capture_graph_for_xnnpack(converted, sample_input)
+        new_quantized_ep = quantized_ep.transform(*passes)
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_aten__to_copy_default"
         ).check(
@@ -177,7 +162,7 @@ class TestXNNPackPasses(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_aten__to_copy_default"
         ).run(
-            new_quantized_graph.code
+            new_quantized_ep.graph_module.code
         )
 
     def test_channels_last_tagged_reshape_pass_conv2d_bn_hardtanh_mean_sequence(
@@ -265,23 +250,23 @@ class TestXNNPackPasses(unittest.TestCase):
 
         conv = capture_graph_for_xnnpack(converted, (torch.randn(1, 1, 3, 3),))
 
-        result = self.run_passes_on_graph(conv, passes)
+        result = conv.transform(*passes)
 
         FileCheck().check_count(
             "executorch_exir_dialects_edge__ops_aten__to_copy_default", 2, exactly=True
-        ).run(result.code)
+        ).run(result.graph_module.code)
 
         FileCheck().check_count(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default",
             5,  # 3 original q(input, weights, output) + 2 generated from to_copy
             exactly=True,
-        ).run(result.code)
+        ).run(result.graph_module.code)
 
         FileCheck().check_count(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default",
             5,  # 3 original q(input, weights, output) + 2 generated from to_copy
             exactly=True,
-        ).run(result.code)
+        ).run(result.graph_module.code)
 
     def test_conv_batch_norm_fusion(self) -> None:
         passes = [FuseBatchNormWithConvPass()]
@@ -304,11 +289,11 @@ class TestXNNPackPasses(unittest.TestCase):
         model = ModelConvBN(2, 2, (2, 2))
         sample_input = (torch.randn(2, 2, 4, 4),)
 
-        edge_graph = capture_graph_for_xnnpack(model.eval(), sample_input)
+        edge_ep = capture_graph_for_xnnpack(model.eval(), sample_input)
 
-        new_graph = self.run_passes_on_graph(edge_graph, passes)
-        bn_result = edge_graph(sample_input[0])[0]
-        fused_result = new_graph(sample_input[0])[0]
+        new_ep = edge_ep.transform(*passes)
+        bn_result = edge_ep(sample_input[0])[0]
+        fused_result = new_ep(sample_input[0])[0]
 
         # one batchnorm was not removed because it was separated by add
         # Filecheck exir_ops.edge.aten.native_batch_norm_legit_no_training.default node.
@@ -317,7 +302,7 @@ class TestXNNPackPasses(unittest.TestCase):
             "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
             1,
             exactly=True,
-        ).run(new_graph.code)
+        ).run(new_ep.graph_module.code)
 
         self.assertTrue(torch.allclose(bn_result, fused_result))
 
@@ -346,18 +331,17 @@ class TestXNNPackPasses(unittest.TestCase):
         maxpool2d_module = MaxPool2dModule(3, 1, 0, 1)
         model_inputs = (torch.randn(4, 3, 24, 24),)
 
-        edge_graph = capture_graph_for_xnnpack(maxpool2d_module.eval(), model_inputs)
-
-        new_graph = self.run_passes_on_graph(edge_graph, passes)
-        result1 = edge_graph(model_inputs[0])[0]
-        result2 = new_graph(model_inputs[0])[0]
+        edge_ep = capture_graph_for_xnnpack(maxpool2d_module.eval(), model_inputs)
+        new_ep = edge_ep.transform(*passes)
+        result1 = edge_ep(model_inputs[0])[0]
+        result2 = new_ep(model_inputs[0])[0]
 
         # Filecheck exir_ops.edge.aten.max_pool2d.default node.
         FileCheck().check_count(
             "executorch_exir_dialects_edge__ops_aten_max_pool2d_default",
             1,
             exactly=True,
-        ).run(new_graph.code)
+        ).run(new_ep.graph_module.code)
 
         self.assertTrue(torch.allclose(result1, result2))
 
@@ -377,16 +361,16 @@ class TestXNNPackPasses(unittest.TestCase):
         max_module = MaxModule()
         model_inputs = (torch.randn(4, 3, 24, 24),)
 
-        edge_graph = capture_graph_for_xnnpack(max_module.eval(), model_inputs)
+        edge_ep = capture_graph_for_xnnpack(max_module.eval(), model_inputs)
 
-        new_graph = self.run_passes_on_graph(edge_graph, passes)
-        result1 = edge_graph(model_inputs[0])[0]
-        result2 = new_graph(model_inputs[0])[0]
+        new_ep = edge_ep.transform(*passes)
+        result1 = edge_ep(model_inputs[0])[0]
+        result2 = new_ep(model_inputs[0])[0]
 
         # Filecheck exir_ops.edge.aten.amax.default node.
         FileCheck().check_count(
             "executorch_exir_dialects_edge__ops_aten_amax_default", 1, exactly=True
-        ).run(new_graph.code)
+        ).run(new_ep.graph_module.code)
 
         self.assertTrue(torch.allclose(result1, result2))
 
@@ -408,28 +392,22 @@ class TestXNNPackPasses(unittest.TestCase):
             prepared, backend_config=get_executorch_backend_config()
         )
 
-        prepass_graph = (
-            exir.capture(
-                converted,
-                sample_input,
-                get_xnnpack_capture_config(),
-            )
-            .to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
-            )
-            .graph_module
-        )
+        prepass_ep = exir.capture(
+            converted,
+            sample_input,
+            get_xnnpack_capture_config(),
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
 
         FileCheck().check_count(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default",
             6,
             exactly=True,
-        ).run(prepass_graph.code)
+        ).run(prepass_ep.graph_module.code)
 
-        postpass_graph = self.run_passes_on_graph(prepass_graph, passes)
+        postpass_ep = prepass_ep.transform(*passes)
 
-        duplicated = postpass_graph(sample_input[0])[0]
-        non_duplicated = prepass_graph(sample_input[0])[0]
+        duplicated = postpass_ep(sample_input[0])[0]
+        non_duplicated = prepass_ep(sample_input[0])[0]
 
         self.assertTrue(torch.allclose(duplicated, non_duplicated))
 
@@ -437,7 +415,7 @@ class TestXNNPackPasses(unittest.TestCase):
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default",
             7,
             exactly=True,
-        ).run(postpass_graph.code)
+        ).run(postpass_ep.graph_module.code)
 
     def test_convert_to_linear(self):
         in_sizes = [1, 4, 4]

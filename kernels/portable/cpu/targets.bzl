@@ -46,38 +46,30 @@ _ATEN_OPS = (
     op_target(
         name = "op_amax",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
     op_target(
         name = "op_amin",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
     op_target(
         name = "op_any",
         deps = [
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(
         name = "op_arange",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
-            ":scalar_utils",
-        ],
-    ),
-    op_target(
-        name = "op_arange_start",
-        deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":scalar_utils",
         ],
     ),
@@ -126,8 +118,8 @@ _ATEN_OPS = (
     op_target(
         name = "op_bitwise_and",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
             ":scalar_utils",
@@ -136,16 +128,16 @@ _ATEN_OPS = (
     op_target(
         name = "op_bitwise_not",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
         ],
     ),
     op_target(
         name = "op_bitwise_or",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
             ":scalar_utils",
@@ -154,8 +146,8 @@ _ATEN_OPS = (
     op_target(
         name = "op_bitwise_xor",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
             ":scalar_utils",
@@ -202,8 +194,8 @@ _ATEN_OPS = (
         name = "op_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":scalar_utils",
         ],
     ),
@@ -222,14 +214,14 @@ _ATEN_OPS = (
     op_target(
         name = "op_cumsum",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(
         name = "op_detach_copy",
         deps = [
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(
@@ -264,10 +256,10 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_expand",
+        name = "op_expand_copy",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:repeat_util",
             ":scalar_utils",
         ],
@@ -276,8 +268,8 @@ _ATEN_OPS = (
         name = "op_fill",
         deps = [
             ":scalar_utils",
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(
@@ -300,16 +292,16 @@ _ATEN_OPS = (
     op_target(
         name = "op_full",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":scalar_utils",
         ],
     ),
     op_target(
         name = "op_full_like",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":scalar_utils",
         ],
     ),
@@ -331,8 +323,8 @@ _ATEN_OPS = (
     op_target(
         name = "op_glu",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(
@@ -395,7 +387,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_lift_fresh_copy",
         deps = [
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(
@@ -415,7 +407,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_logical_and",
         deps = [
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
             ":scalar_utils",
@@ -424,14 +416,14 @@ _ATEN_OPS = (
     op_target(
         name = "op_logical_not",
         deps = [
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
         ],
     ),
     op_target(
         name = "op_logical_or",
         deps = [
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
             ":scalar_utils",
@@ -440,7 +432,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_logical_xor",
         deps = [
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
             ":scalar_utils",
@@ -470,24 +462,24 @@ _ATEN_OPS = (
     op_target(
         name = "op_max",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
     op_target(
         name = "op_mean",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
     op_target(
         name = "op_min",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -537,11 +529,11 @@ _ATEN_OPS = (
     op_target(
         name = "op_ones",
         deps = [
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(
-        name = "op_permute",
+        name = "op_permute_copy",
     ),
     op_target(
         name = "op_reciprocal",
@@ -582,7 +574,7 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_rsub_scalar",
+        name = "op_rsub",
         deps = [
             ":scalar_utils",
         ],
@@ -594,18 +586,18 @@ _ATEN_OPS = (
     op_target(
         name = "op_scatter_add",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(
-        name = "op_select",
+        name = "op_select_copy",
     ),
     op_target(
         name = "op_select_scatter",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(
@@ -633,7 +625,7 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_slice",
+        name = "op_slice_copy",
     ),
     op_target(
         name = "op_slice_scatter",
@@ -647,7 +639,7 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_split",
+        name = "op_split_copy",
     ),
     op_target(
         name = "op_sqrt",
@@ -656,7 +648,7 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_squeeze",
+        name = "op_squeeze_copy",
     ),
     op_target(
         name = "op_stack",
@@ -672,13 +664,13 @@ _ATEN_OPS = (
     op_target(
         name = "op_sum",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
     op_target(
-        name = "op_t",
+        name = "op_t_copy",
         deps = ["//executorch/kernels/portable/cpu/util:transpose_util"],
     ),
     op_target(
@@ -694,41 +686,41 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_to",
+        name = "op_to_copy",
     ),
     op_target(
-        name = "op_transpose",
+        name = "op_transpose_copy",
         deps = ["//executorch/kernels/portable/cpu/util:transpose_util"],
     ),
     op_target(
         name = "op_tril",
         deps = [
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
     op_target(
-        name = "op_unbind",
+        name = "op_unbind_copy",
     ),
     op_target(
-        name = "op_unsqueeze",
+        name = "op_unsqueeze_copy",
     ),
     op_target(
         name = "op_var",
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
     op_target(
-        name = "op_view",
+        name = "op_view_copy",
     ),
     op_target(
         name = "op_where",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
-            "//executorch/core/kernel_types:kernel_types",
+            "//executorch/runtime/core/exec_aten:lib",
         ],
     ),
     op_target(
@@ -822,7 +814,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            "//executorch/core/kernel_types:kernel_types",
-            "//executorch/core/kernel_types/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
         ],
     )

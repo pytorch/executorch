@@ -1,10 +1,10 @@
 // (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
-#include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/kernel_types/testing/TensorFactory.h>
-#include <executorch/core/kernel_types/testing/TensorUtil.h>
 #include <executorch/kernels/portable/NativeFunctions.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <algorithm>
 
 #include <gtest/gtest.h>

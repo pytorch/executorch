@@ -115,6 +115,8 @@ class Conv2d(NodeVisitor):
         stride = cast(List[int], node.args[3])
         padding = cast(List[int], node.args[4])
         dilation = cast(List[int], node.args[5])
+        if len(padding) == 1:
+            padding = padding + padding
 
         # args[6] = transposed
         check_or_raise(

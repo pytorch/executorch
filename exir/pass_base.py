@@ -25,7 +25,6 @@ from executorch.exir.delegate import LoweredBackendModule
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
-from executorch.exir.graph_module import get_exir_meta, make_export_graph_module
 from executorch.exir.pass_infra.node_metadata import NodeMetadata
 from executorch.exir.pass_infra.proxy_value import ProxyValue
 from functorch.experimental import control_flow
@@ -443,7 +442,7 @@ class ExportPassBase(PassBase):
         with fx_traceback.preserve_node_meta():
             interpreter.run(*inputs_data)
 
-        new_graph_module = make_export_graph_module(self.tracer.root, self.tracer.graph)
+        new_graph_module = torch.fx.GraphModule(self.tracer.root, self.tracer.graph)
 
         def preserve_original_ph_meta_val(
             gm: torch.fx.GraphModule, new_gm: torch.fx.GraphModule
@@ -517,11 +516,6 @@ class ExportPassBase(PassBase):
             # pyre-ignore
             result = self.call_submodule(graph_module, inputs)
 
-        new_graph_module = result.graph_module
-        new_meta = get_exir_meta(new_graph_module)
-        old_meta = get_exir_meta(graph_module)
-        new_meta.in_spec = old_meta.in_spec
-        new_meta.out_spec = old_meta.out_spec
         return result
 
 

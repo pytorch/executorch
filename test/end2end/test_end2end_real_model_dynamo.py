@@ -5,8 +5,8 @@ from typing import Dict, Tuple
 
 import executorch.exir as exir
 
-# @manual=//executorch/pytree:pybindings
-import executorch.pytree as pytree
+# @manual=//executorch/extension/pytree:pybindings
+import executorch.extension.pytree as pytree
 import torch
 from executorch.exir import (
     CaptureConfig,
@@ -23,8 +23,8 @@ from executorch.exir.passes import (
 from executorch.exir.tensor import make_tensor_value, TensorSpec
 from executorch.exir.tracer import using_dynamo
 
-# pyre-fixme[21]: Could not find module `executorch.pybindings.portable`.
-from executorch.pybindings.portable import _load_for_executorch_from_buffer
+# pyre-fixme[21]: Could not find module `executorch.extension.pybindings.portable`.
+from executorch.extension.pybindings.portable import _load_for_executorch_from_buffer
 from torch import nn
 
 

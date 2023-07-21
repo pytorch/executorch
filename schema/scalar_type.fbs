@@ -4,10 +4,10 @@
 // See README.md before modifying this file.
 //
 
-namespace executorch;
+namespace executorch_flatbuffer;
 
 // The scalar data type.
-// Must match executorch/core/kernel_types/TensorImpl.h
+// Must match executorch/runtime/core/portable_type/tensor_impl.h
 enum ScalarType : byte {
   BYTE = 0,
   CHAR = 1,

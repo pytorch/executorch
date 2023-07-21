@@ -1,17 +1,13 @@
 # pyre-strict
 
+import importlib.resources
 import os
 import re
+import subprocess
 import tempfile
 
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional, Sequence
-
-# pyre-ignore[21]: Could not find module `executorch.exir.serialize.bindings`.
-import executorch.exir.serialize.bindings as bindings  # @manual=//executorch/exir/serialize:bindings
-
-# @manual=fbsource//third-party/pypi/setuptools:setuptools
-import pkg_resources
 
 
 def _is_valid_alignment(alignment: int) -> bool:
@@ -94,7 +90,7 @@ class _ResourceFiles:
         # Map each name to its contents.
         self._files: Dict[str, bytes] = {}
         for name in resource_names:
-            self._files[name] = pkg_resources.resource_string(__name__, name)
+            self._files[name] = importlib.resources.read_binary(__package__, name)
 
     def patch_files(self, patch_fn: Callable[[bytes], bytes]) -> None:
         """Uses the provided patching function to update the contents of all
@@ -169,6 +165,72 @@ class _FlatbufferResult:
     max_alignment: int
 
 
+# Name of an optional resource containing the `flatc` executable.
+_FLATC_RESOURCE_NAME: str = "flatbuffers-flatc"
+
+
+def _run_flatc(args: Sequence[str]) -> None:
+    """Runs the `flatc` command with the provided args.
+
+    If a resource matching _FLATC_RESOURCE_NAME exists, uses that executable.
+    Otherwise, expects the `flatc` tool to be available on the system path.
+    """
+    if importlib.resources.is_resource(__package__, _FLATC_RESOURCE_NAME):
+        # Use the provided flatc binary.
+        with importlib.resources.path(__package__, _FLATC_RESOURCE_NAME) as flatc_path:
+            subprocess.run([flatc_path] + list(args), check=True)
+    else:
+        # Expect the `flatc` tool to be on the system path.
+        subprocess.run(["flatc"] + list(args), check=True)
+
+
+def _flatc_compile(output_dir: str, schema_path: str, json_path: str) -> None:
+    """Serializes JSON data to a binary flatbuffer file.
+
+    Args:
+        output_dir: Directory under which to create the binary flatbuffer file.
+        schema_path: Path to the flatbuffer schema to use for serialization.
+            If the schema inclues other schema files, they must be present in
+            the same directory.
+        json_path: Path to the data to serialize, as JSON data whose structure
+            matches the schema.
+    """
+    _run_flatc(
+        [
+            "--binary",
+            "-o",
+            output_dir,
+            schema_path,
+            json_path,
+        ]
+    )
+
+
+def _flatc_decompile(output_dir: str, schema_path: str, bin_path: str) -> None:
+    """Deserializes binary flatbuffer data to a JSON file.
+
+    Args:
+        output_dir: Directory under which to create the JSON file.
+        schema_path: Path to the flatbuffer schema to use for deserialization.
+            If the schema inclues other schema files, they must be present in
+            the same directory.
+        bin_path: Path to the data to deserialize, as binary data compatible
+            with the schema.
+    """
+    _run_flatc(
+        [
+            "--json",
+            "--defaults-json",
+            "--strict-json",
+            "-o",
+            output_dir,
+            schema_path,
+            "--",
+            bin_path,
+        ]
+    )
+
+
 def _program_json_to_flatbuffer(
     program_json: str,
     *,
@@ -202,8 +264,7 @@ def _program_json_to_flatbuffer(
         with open(json_path, "wb") as json_file:
             json_file.write(program_json.encode("ascii"))
 
-        # pyre-ignore[16]: Module `executorch.exir.serialize` has no attribute `bindings`.
-        bindings.flatc_compile(temp_dir, schema_info.root_path, json_path)
+        _flatc_compile(temp_dir, schema_info.root_path, json_path)
         with open(output_path, "rb") as output_file:
             return _FlatbufferResult(
                 data=output_file.read(), max_alignment=schema_info.max_alignment
@@ -226,7 +287,6 @@ def _program_flatbuffer_to_json(program_flatbuffer: bytes) -> bytes:
         with open(bin_path, "wb") as bin_file:
             bin_file.write(program_flatbuffer)
 
-        # pyre-ignore[16]: Module `executorch.exir.serialize` has no attribute `bindings`.
-        bindings.flatc_decompile(temp_dir, schema_info.root_path, bin_path)
+        _flatc_decompile(temp_dir, schema_info.root_path, bin_path)
         with open(json_path, "rb") as output_file:
             return output_file.read()

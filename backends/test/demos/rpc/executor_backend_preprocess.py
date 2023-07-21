@@ -1,16 +1,20 @@
-from typing import Callable, Dict, final, List
+from typing import final, List
 
-import torch
-from executorch.backends.backend_details import BackendDetails
+import executorch.exir as exir
+from executorch.backends.backend_details import BackendDetails, ExportedProgram
 from executorch.backends.compile_spec_schema import CompileSpec
-from executorch.exir import export_graph_module_to_executorch
 
 
 @final
 class ExecutorBackend(BackendDetails):
     @staticmethod
     def preprocess(
-        edge_ir_module: torch.fx.GraphModule,
+        edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> bytes:
-        return export_graph_module_to_executorch(edge_ir_module).buffer
+        new_prog = edge_program.transform(
+            *exir.edge_to_executorch_passes(exir.ExecutorchBackendConfig())
+        )
+        program = exir.emit_program(new_prog).program
+        buffer = exir.serialize_to_flatbuffer(program)
+        return buffer

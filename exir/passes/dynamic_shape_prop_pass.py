@@ -6,7 +6,6 @@ import sympy
 
 import torch
 import torch.utils._pytree as pytree
-from executorch.core.prim_ops.prim_to_executorch_ops import _EXECUTORCH_SYM_OPS
 from executorch.exir.delegate import LoweredBackendModule
 from executorch.exir.dynamic_shape import (
     calculate_dynamic_shape_spec,
@@ -15,6 +14,7 @@ from executorch.exir.dynamic_shape import (
 from executorch.exir.pass_base import Argument, BackendPass
 from executorch.exir.pass_infra.node_metadata import NodeMetadata
 from executorch.exir.pass_infra.proxy_value import ProxyValue
+from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
 from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.sym_util import collect_free_symbols, eval_expr
 from executorch.exir.tensor import TensorSpec

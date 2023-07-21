@@ -1,7 +1,7 @@
 #pragma once
 
-#include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/kernel_types/util/tensor_util.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace torch {
 namespace executor {

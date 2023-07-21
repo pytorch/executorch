@@ -1,10 +1,10 @@
 # (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
 import torch
-from executorch.core.prim_ops.prim_to_executorch_ops import _EXECUTORCH_SYM_OPS
 from executorch.exir.dialects._ops import ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.pass_base import ExportPass
+from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
 from torch.fx.node import Target
 
 

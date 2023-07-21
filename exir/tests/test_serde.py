@@ -6,6 +6,11 @@ from typing import Tuple
 import executorch.exir as exir
 
 import torch
+from executorch.backends.backend_api import CompileSpec, to_backend
+from executorch.backends.test.backend_with_compiler_demo import (  # noqa
+    BackendWithCompilerDemo,
+)
+from executorch.backends.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.serde.serialize import deserialize, serialize
 from torch._export.exported_program import ExportedProgram as TorchExportedProgram
 from torch.utils import _pytree as pytree
@@ -89,3 +94,62 @@ class TestSerde(unittest.TestCase):
         model = MyModel()
         inputs = model.get_random_inputs()
         self.check_serde(model, inputs)
+
+    def test_delegate(self) -> None:
+        class SinModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sin(x)
+
+        sin_module = SinModule()
+        model_inputs = (torch.ones(1),)
+        edgeir_m = exir.capture(
+            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
+        max_value = model_inputs[0].shape[0]
+        compile_specs = [CompileSpec("max_value", bytes([max_value]))]
+        lowered_sin_module = to_backend(
+            "BackendWithCompilerDemo", edgeir_m, compile_specs
+        )
+
+        class CompositeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered_linear_sin = lowered_sin_module
+
+            def forward(self, x):
+                return self.lowered_linear_sin(x)
+
+        composite_model = CompositeModule()
+        model_inputs = (torch.ones(1),)
+
+        composite_model(*model_inputs)
+
+        aten = exir.capture(
+            composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
+        )
+        aten_new = deserialize(*serialize(aten))
+        self.check_ep(aten, aten_new, model_inputs)
+
+    def test_delegate_partitioner(self) -> None:
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, a, x, b):
+                y = torch.mm(a, x)
+                z = y + b
+                a = z - a
+                y = torch.mm(a, x)
+                z = y + b
+                return z
+
+        m = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+
+        ep = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
+        edge = to_backend(ep, AddMulPartitionerDemo)
+        edge_new = deserialize(*serialize(edge))
+        self.check_ep(edge, edge_new, inputs)

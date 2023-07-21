@@ -17,7 +17,6 @@ from executorch.exir.error import (
     internal_assert,
     InternalError,
 )
-from executorch.exir.graph_module import get_exir_meta
 from executorch.exir.operator.convert import is_out_variant
 from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
@@ -462,7 +461,6 @@ def greedy(
     # Don't do assertion in collect_specs_from_nodes if we have already encountered
     # and ignored some to_out_variant errors.
     do_assertion = not getattr(graph_module, "encounter_to_out_var_failure", False)
-    meta = get_exir_meta(graph_module)
     # For each tensor, pick the available shared object with closest size to
     # the tensor. If there are no available shared object left, create a new
     # one.
@@ -514,7 +512,6 @@ def naive(
         bufsizes = [0, 0]
 
     bufsizes = typing.cast(List[int], bufsizes)
-    meta = get_exir_meta(graph_module)
     for spec in collect_specs_from_nodes(
         graph_module.graph.nodes,
         ignore_graph_input=not alloc_graph_input,

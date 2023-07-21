@@ -72,9 +72,9 @@ class KernelType(IntEnum):
 
 
 def _get_operators(model_file: str) -> List[str]:
-    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.pybindings.operator`.
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `operator`
-    from executorch.pybindings.operator import (
+    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.extension.pybindings.operator`.
+    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`
+    from executorch.extension.pybindings.operator import (
         _get_program_from_buffer,
         _get_program_operators,
     )
@@ -82,9 +82,9 @@ def _get_operators(model_file: str) -> List[str]:
     print("Processing model file: ", model_file)
     with open(model_file, "rb") as f:
         buf = f.read()
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `operator`.
+    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`.
     program = _get_program_from_buffer(buf)
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `operator`.
+    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`.
     operators = _get_program_operators(program)
     print(f"Model file loaded, operators are: {operators}")
     return operators
@@ -92,7 +92,7 @@ def _get_operators(model_file: str) -> List[str]:
 
 def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
 
-    from executorch.pybindings.operator import (
+    from executorch.extension.pybindings.operator import (
         _get_io_metadata_for_program_operators,
         _get_program_from_buffer,
         IOMetaData,
@@ -100,9 +100,9 @@ def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
 
     with open(model_file, "rb") as f:
         buf = f.read()
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `operator`.
+    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`.
     program = _get_program_from_buffer(buf)
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.pybindings` has no attribute `operator`.
+    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`.
     operators_with_io_metadata = _get_io_metadata_for_program_operators(program)
 
     op_kernel_key_list: Dict[str, List[str]] = {}
@@ -154,6 +154,7 @@ def _dump_yaml(
     output_path: str,
     model_name: Optional[str] = None,
     et_kernel_metadata: Optional[Dict[str, List[str]]] = None,
+    include_all_operators: bool = False,
 ):
     # no debug info yet
     output = {}
@@ -174,7 +175,7 @@ def _dump_yaml(
     output["custom_classes"] = []
     output["build_features"] = []
     output["include_all_non_op_selectives"] = False
-    output["include_all_operators"] = False
+    output["include_all_operators"] = include_all_operators
     output["kernel_metadata"] = {}
     output["et_kernel_metadata"] = et_kernel_metadata
     with open(output_path, "wb") as out_file:
@@ -214,10 +215,21 @@ def main(args: List[Any]) -> None:
         help="A comma separated list of root operators used by the model",
         required=False,
     )
+    parser.add_argument(
+        "--include-all-operators",
+        "--include_all_operators",
+        action="store_true",
+        default=False,
+        help="Set this flag to request inclusion of all operators (i.e. build is not selective).",
+        required=False,
+    )
     options = parser.parse_args(args)
     assert (
-        options.model_file_path or options.ops_schema_yaml_path or options.root_ops
-    ), "Need to provide either model_file_path or ops_schema_yaml_path or root_ops."
+        options.model_file_path
+        or options.ops_schema_yaml_path
+        or options.root_ops
+        or options.include_all_operators
+    ), "Need to provide either model_file_path or ops_schema_yaml_path or root_ops or include_all_operators."
     op_set = set()
     source_name = None
     et_kernel_metadata = {}
@@ -250,6 +262,7 @@ def main(args: List[Any]) -> None:
         options.output_path,
         os.path.basename(source_name) if source_name else None,
         et_kernel_metadata,
+        options.include_all_operators,
     )
 
 

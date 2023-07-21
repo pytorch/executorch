@@ -1,5 +1,5 @@
-#include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/values/Evalue.h>
+#include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/profiler.h>
 #include "${fn_header}" // Generated Function import headers

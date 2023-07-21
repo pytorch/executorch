@@ -30,18 +30,17 @@ from dataclasses import dataclass, field
 from typing import Callable, cast, Dict, List, Mapping, Optional, Tuple, Union
 
 import executorch.exir.memory as memory
-import executorch.pytree as ex_pytree
+import executorch.extension.pytree as ex_pytree
 import torch
 import torch.fx
-from executorch.core.prim_ops.prim_to_executorch_ops import is_sym_op
 from executorch.exir import delegate
 from executorch.exir.common import add_cursor_to_graph
 from executorch.exir.delegate import LoweredBackendModule
 from executorch.exir.dialects.backend._ops import BackendOpOverload
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
-from executorch.exir.graph_module import get_exir_meta
 from executorch.exir.operator.convert import is_out_variant
+from executorch.exir.passes.executorch_prim_ops_registry import is_sym_op
 from executorch.exir.print_program import pretty_print_stacktraces
 from executorch.exir.schema import (
     BackendDelegate,
@@ -86,9 +85,9 @@ from executorch.exir.tensor import (
 )
 from executorch.exir.types import LeafValueSpec, ValueSpec
 from functorch.experimental import control_flow
+from torch._export.exported_program import ExportedProgram
 from torch.utils import _pytree as pytree
 
-# @manual=fbsource//third-party/pypi/typing-extensions:typing-extensions
 from typing_extensions import TypeAlias
 
 
@@ -743,7 +742,7 @@ class _Emitter(torch.fx.Interpreter):
         # At the end of each submodule emit we insert a move call that moves the output of the
         # submodule to a deterministic EValue, which is especially useful for if/else branches where
         # we want the output of either branch to be in the same EValue, but we don't need a move
-        # here as our custom op executorch::prim::et_copy_index which is inserted later does that
+        # here as our custom op executorch_prim::et_copy_index which is inserted later does that
         # for us.
 
         # Now that the map emitter has finished running retrieve the input placeholder EValue id and
@@ -1243,31 +1242,29 @@ class _TopLevelEmitter(_Emitter):
     def __init__(
         self,
         name: str,
-        graph_module: torch.fx.GraphModule,
+        exported_program: ExportedProgram,
         program_state: _ProgramState,
         emitter_state: _EmitterState,
     ) -> None:
-        super().__init__(graph_module, emitter_state, program_state)
+        super().__init__(exported_program.graph_module, emitter_state, program_state)
         self.name = name
 
         self.inputs: List[int] = []
         self.outputs: List[int] = []
 
-        def create_container_str(spec: pytree.TreeSpec) -> str:
+        def create_container_str(spec: Optional[pytree.TreeSpec]) -> str:
+            if spec is None:
+                return ""
             assert isinstance(spec, pytree.TreeSpec), type(spec)
             # pyre-fixme[16]: `TreeSpec` has no attribute `num_leaves`.
             dummy_leaves = [0] * spec.num_leaves
             tree = torch.utils._pytree.tree_unflatten(dummy_leaves, spec)
+            # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
             _, tree = ex_pytree.tree_flatten(tree)
             return tree.to_str()
 
-        meta = get_exir_meta(graph_module)
-        inp_container_str = create_container_str(
-            typing.cast(pytree.TreeSpec, meta.in_spec)
-        )
-        out_container_str = create_container_str(
-            typing.cast(pytree.TreeSpec, meta.out_spec)
-        )
+        inp_container_str = create_container_str(exported_program.call_spec.in_spec)
+        out_container_str = create_container_str(exported_program.call_spec.out_spec)
 
         self.container_meta_type = ContainerMetadata(
             inp_container_str, out_container_str

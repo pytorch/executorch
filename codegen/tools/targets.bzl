@@ -34,12 +34,7 @@ def define_common_targets():
         deps = [
             ":yaml_util",
         ],
-        fbcode_deps = [
-            "//caffe2/torchgen:torchgen",
-        ],
-        xplat_deps = [
-            "//xplat/caffe2/torchgen:torchgen",
-        ],
+        external_deps = ["torchgen"],
     )
 
     runtime.python_binary(

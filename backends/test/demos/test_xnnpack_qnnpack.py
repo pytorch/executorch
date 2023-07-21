@@ -16,9 +16,11 @@ from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 from executorch.exir import CaptureConfig
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 
-# pyre-ignore[21]: Could not find module `executorch.pybindings.portable`.
-from executorch.pybindings.portable import _load_for_executorch_from_buffer  # @manual
-from executorch.pytree import tree_flatten
+# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
+from executorch.extension.pybindings.portable import (  # @manual
+    _load_for_executorch_from_buffer,
+)
+from executorch.extension.pytree import tree_flatten
 from torch.ao.quantization.backend_config.executorch import (
     get_executorch_backend_config,
 )
@@ -74,12 +76,9 @@ class TestXnnQnnBackends(unittest.TestCase):
 
         # Step 2: EXIR capturing
         capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
-        captured_mod = (
-            exir.capture(converted_mod, example_inputs, config=capture_config)
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-            .module
-        )
-        captured_mod.graph.print_tabular()
+        captured_mod = exir.capture(
+            converted_mod, example_inputs, config=capture_config
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
 
         # Step 3.1: Lower dynamic quant linear to qnnpack
         with validation_disabled():
@@ -91,8 +90,7 @@ class TestXnnQnnBackends(unittest.TestCase):
                 module_with_qnnpack_delegate, XnnpackFloatingPointPartitioner
             )
 
-        program_with_delegates = exir.export_graph_module_to_executorch(
-            module_with_xnn_and_qnn,
+        program_with_delegates = module_with_xnn_and_qnn.to_executorch(
             exir.ExecutorchBackendConfig(passes=[SpecPropPass()]),
         )
         # The first delegate backend is Qnnpack

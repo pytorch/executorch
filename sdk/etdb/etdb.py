@@ -1,12 +1,18 @@
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 from executorch.sdk.edir.base_schema import Node, OperatorGraph, OperatorNode, ValueNode
-from executorch.sdk.edir.et_schema import (
-    ExportedETOperatorGraph,
-    FXOperatorGraph,
-    PROFILE_STAT_HEADER,
-    RESERVED_METADATA_ARG,
-)
+from executorch.sdk.edir.et_schema import PROFILE_STAT_HEADER, RESERVED_METADATA_ARG
 from executorch.sdk.etdb.row_schema import (
     AbstractNodeInstanceRow,
     GraphInstanceRow,
@@ -253,7 +259,7 @@ def _eval_op_summary(
 #  - Op Instance
 #  - Op Summary
 #  - Constant Instance
-def _eval(
+def _eval(  # noqa C901
     target: str,
     history: List[str],
     input_instances: Dict[str, ValueInstanceRow],
@@ -381,9 +387,7 @@ def enter_interactive_debugging(
 
 # Select one of the graphs for debugging
 # TODO: Add the ability to toggle between graphs
-def debug_graphs(
-    graphs: Dict[str, Union[FXOperatorGraph, ExportedETOperatorGraph]], verbose=False
-):
+def debug_graphs(graphs: Mapping[str, OperatorGraph], verbose: bool = False):
     print("Graphs: ", "\t".join(graphs.keys()))
     target = input("Select a graph to investigate:\n> ")
     if target not in graphs:
@@ -394,9 +398,7 @@ def debug_graphs(
 
 # Entry point for interactive debugging via ETDB
 # Complexity lint, will be fixed in refactor
-def debug_graph(  # noqa C901
-    graph: Union[FXOperatorGraph, ExportedETOperatorGraph], verbose: bool = False
-):
+def debug_graph(graph: OperatorGraph, verbose: bool = False):  # noqa C901
     # Visual Separator
     print("\n")
 

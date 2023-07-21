@@ -179,6 +179,30 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
         conv.eval()
         self.lower_and_test_with_partitioner(conv, example_inputs)
 
+    def test_xnnpack_backend_conv2d_single_int_params(self):
+        groups = 1
+        stride = 2
+        padding = "valid"
+        dilation = 1
+        in_channels = 2
+        out_channels = 1
+        width = 8
+        height = 8
+        batches = 1
+        example_inputs = (torch.randn(batches, in_channels, height, width),)
+        conv = torch.nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            stride=stride,
+            padding=padding,
+            groups=groups,
+            dilation=dilation,
+            bias=True,
+        )
+        conv.eval()
+        self.lower_and_test_with_partitioner(conv, example_inputs)
+
     def test_xnnpack_backend_conv2d_dw(self):
         # Depthwise Convolution Requirements:
         # - Groups must equal In Channels
@@ -862,3 +886,131 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
             torch.nn.PReLU(),
             (torch.randn(1, 2),),
         )
+
+    def test_xnnpack_backend_concatenate2(self):
+        class Concat(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.cat((y, x), 0)
+
+        self.lower_and_test_with_partitioner(
+            Concat(), (torch.ones(4, 2, 3), torch.randn(1, 2, 3))
+        )
+
+    def test_xnnpack_backend_concatenate3(self):
+        class Concat(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.concat((y, y, x), 0)
+
+        self.lower_and_test_with_partitioner(
+            Concat(), (torch.ones(4, 2, 3), torch.randn(1, 2, 3))
+        )
+
+    def test_xnnpack_backend_concatenate4(self):
+        class Concat(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.concatenate((y, x, y, x), 2)
+
+        self.lower_and_test_with_partitioner(
+            Concat(), (torch.randn(1, 2, 3), torch.randn(1, 2, 5))
+        )
+
+    def test_xnnpack_backend_concatenate5(self):
+        class Concat(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.cat((y, x, y, x, y), 2)
+
+        self.assertRaises(
+            Exception,
+            self.lower_and_test_with_partitioner,
+            Concat(),
+            (torch.randn(1, 2, 3), torch.randn(1, 2, 5)),
+        )
+
+    def test_xnnpack_backend_concatenate_nhwc(self):
+        class Concat(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(
+                    in_channels=1,
+                    out_channels=3,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+
+            def forward(self, x, y):
+                x = self.conv(x)
+                return torch.concatenate((y, x, y, x), 1)
+
+        self.lower_and_test_with_partitioner(
+            Concat(), (torch.randn(1, 1, 3, 3), torch.randn(1, 1, 3, 3))
+        )
+
+    def test_xnnpack_backend_concatenate_nhwc2(self):
+        class Concat(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(
+                    in_channels=1,
+                    out_channels=3,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+
+            def forward(self, x, y):
+                x = self.conv(x)
+                y = self.conv(y)
+                return torch.concatenate((y, x, y, x), 3)
+
+        self.lower_and_test_with_partitioner(
+            Concat(), (torch.randn(1, 1, 3, 3), torch.randn(1, 1, 3, 3))
+        )
+
+    def test_xnnpack_backend_slice_copy(self):
+        class Slice(torch.nn.Module):
+            def forward(self, x):
+                return x[1:3, -2:, :-1]
+
+        self.lower_and_test_with_partitioner(Slice(), (torch.randn(5, 5, 5),))
+
+    def test_xnnpack_backend_slice_copy_stride_non_1(self):
+        class Slice(torch.nn.Module):
+            def forward(self, x):
+                return x[:3:-1, 2:, :3]
+
+        self.assertRaises(
+            Exception,
+            self.lower_and_test_with_partitioner,
+            Slice(),
+            (torch.randn(5, 5, 5),),
+        )
+
+    def test_xnnpack_backend_slice_copy_dim_0(self):
+        class Slice(torch.nn.Module):
+            def forward(self, x):
+                return x[-1:3, 2:, 3:3]
+
+        # Did not partition
+        with self.assertRaisesRegex(IndexError, "list index out of range"):
+            self.lower_module_and_test_output(
+                Slice(), (torch.randn(5, 5, 5),), use_partitioner=True
+            )
+
+    def test_xnnpack_backend_slice_copy_memory_format(self):
+        class ConvSlice(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(
+                    in_channels=1,
+                    out_channels=3,
+                    kernel_size=(3, 3),
+                    padding=1,
+                    bias=False,
+                )
+
+            def forward(self, x):
+                y = self.conv(x)
+                return y[:, :, 2:3, -2:]
+
+        self.lower_and_test_with_partitioner(ConvSlice(), (torch.randn(1, 1, 3, 3),))

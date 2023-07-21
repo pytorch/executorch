@@ -2,10 +2,10 @@
 
 #include <cstring>
 
-#include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/values/Evalue.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/function_ref.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/platform.h>

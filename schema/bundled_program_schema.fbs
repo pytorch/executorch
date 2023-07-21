@@ -6,7 +6,8 @@
 
 include "scalar_type.fbs";
 
-namespace executorch;
+// TODO make this unique from the main schemas namespace
+namespace executorch_flatbuffer;
 
 // Identifier of a valid bundled program schema.
 file_identifier "BP04";

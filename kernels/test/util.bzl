@@ -49,8 +49,8 @@ def op_test(name, deps = [], aten_compatible = True, kernel_name = "portable", u
         ],
         visibility = ["//executorch/kernels/..."],
         deps = [
-            "//executorch/core/kernel_types:kernel_types" + aten_suffix,
-            "//executorch/core/kernel_types/testing:tensor_util" + aten_suffix,
+            "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
             "//executorch/kernels/test:test_util" + aten_suffix,
         ] + generated_lib_and_op_deps + deps,
     )
@@ -82,8 +82,8 @@ def generated_op_test(name, op_impl_target, generated_lib_headers_target, suppor
             "//executorch/kernels/test:test_srcs_gen[{}.cpp]".format(name),
         ],
         deps = [
-            "//executorch/core/kernel_types:kernel_types",
-            "//executorch/core/kernel_types/testing:tensor_util",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/kernels/test:test_util",
             op_impl_target,
             generated_lib_headers_target,

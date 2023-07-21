@@ -26,6 +26,18 @@ class XNNNode2x1:
     flags: int
 
 
+# Generic node data class for concatenation node
+@dataclass
+class XNNCat:
+    axis: int
+    input1_id: int
+    input2_id: int
+    input3_id: int
+    input4_id: int
+    output_id: int
+    flags: int
+
+
 # Generic node data class for convolution type nodes
 @dataclass
 class XNNNodeConv:
@@ -145,9 +157,34 @@ class XNNAbs(XNNNode1x1):
 
 
 @dataclass
+class XNNConcatenate2(XNNCat):
+    pass
+
+
+@dataclass
+class XNNConcatenate3(XNNCat):
+    pass
+
+
+@dataclass
+class XNNConcatenate4(XNNCat):
+    pass
+
+
+@dataclass
 class XNNStaticTranspose:
     num_dims: int
     perm: List[int]
+    input_id: int
+    output_id: int
+    flags: int
+
+
+@dataclass
+class XNNStaticSlice:
+    num_dims: int
+    offsets: List[int]
+    sizes: List[int]
     input_id: int
     output_id: int
     flags: int
@@ -294,6 +331,10 @@ XNodeUnion = Union[
     XNNELU,
     XNNAbs,
     XNNPReLU,
+    XNNConcatenate2,
+    XNNConcatenate3,
+    XNNConcatenate4,
+    XNNStaticSlice,
 ]
 
 

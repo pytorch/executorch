@@ -13,7 +13,7 @@ def define_common_targets():
             "ETDumpGenTest.cpp",
         ],
         deps = [
-            "//executorch/executor:memory_manager",
+            "//executorch/runtime/core:memory_allocator",
             "//executorch/profiler:profiler",
             "//executorch/sdk/etdump:etdump_gen",
         ],

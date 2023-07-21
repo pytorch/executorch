@@ -1,10 +1,10 @@
 // (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
-#include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/kernel_types/testing/TensorFactory.h>
-#include <executorch/core/kernel_types/testing/TensorUtil.h>
-#include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/supported_features.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 #include <gtest/gtest.h>
 
@@ -32,7 +32,7 @@ void test_zeros_out(std::vector<int32_t>&& size_int32_t) {
 }
 
 #define GENERATE_TEST(_, DTYPE)                   \
-  TEST(op_zeros_test, DTYPE##Tensors) {           \
+  TEST(OpZerosOutKernelTest, DTYPE##Tensors) {    \
     test_zeros_out<ScalarType::DTYPE>({2, 3, 4}); \
     test_zeros_out<ScalarType::DTYPE>({2, 0, 4}); \
     test_zeros_out<ScalarType::DTYPE>({});        \

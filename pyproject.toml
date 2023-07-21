@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "executorch"
+version = "0.1.0"
+dependencies=[
+  "ruamel.yaml",
+  "pyyaml",
+  "sympy",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.fbs", "*.yaml"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.pyc"]

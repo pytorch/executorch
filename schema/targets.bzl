@@ -1,4 +1,3 @@
-load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 # Construct the input and output file names. All input and output files rely on scalar_type file.
@@ -33,7 +32,7 @@ def _generate_schema_header(rule_name, srcs, headers, default_header):
         outs = {header: [header] for header in headers},
         default_outs = [default_header],
         cmd = " ".join([
-            "$(exe fbsource//third-party/flatbuffers:flatc)",
+            "$(exe {})".format(runtime.external_dep_location("flatc")),
             "--cpp",
             "--cpp-std c++11",
             "--gen-mutable",
@@ -53,20 +52,20 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    export_file(
+    runtime.export_file(
         name = INPUT_PROGRAM,
         visibility = [
             "//executorch/exir/scripts/...",
             "//executorch/exir/serialize/...",
         ],
     )
-    export_file(
+    runtime.export_file(
         name = INPUT_BUNDLED,
         visibility = [
             "//executorch/bundled_program/serialize/...",
         ],
     )
-    export_file(
+    runtime.export_file(
         name = INPUT_SCALAR_TYPE,
         visibility = [
             "//executorch/bundled_program/serialize/...",
@@ -96,18 +95,16 @@ def define_common_targets():
         visibility = [
             # Lock this down as tightly as possible to ensure that flatbuffers
             # are an implementation detail. Ideally this list would only include
-            # //executorch/executor/...
-            "//executorch/pybindings/...",
-            "//executorch/executor/...",
+            # //executorch/runtime/executor/...
+            "//executorch/extension/pybindings/...",
+            "//executorch/runtime/executor/...",
             "//executorch/util/...",  # bundled_program_verification
         ],
         exported_headers = {
             OUTPUT_PROGRAM_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_PROGRAM_HEADER),
             OUTPUT_SCALAR_TYPE_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_SCALAR_TYPE_HEADER),
         },
-        exported_deps = [
-            "fbsource//third-party/flatbuffers:flatbuffers-api",
-        ],
+        exported_external_deps = ["flatbuffers-api"],
     )
 
     # Header-only library target with the generate bundled program schema header.
@@ -116,16 +113,14 @@ def define_common_targets():
         srcs = [],
         visibility = [
             "//executorch/bundled_program/...",
-            "//executorch/pybindings/...",
+            "//executorch/extension/pybindings/...",
             "//executorch/util/...",  # bundled_program_verification
         ],
         exported_headers = {
             OUTPUT_BUNDLED_HEADER: ":{}[{}]".format(BUNDLED_GEN_RULE_NAME, OUTPUT_BUNDLED_HEADER),
             OUTPUT_SCALAR_TYPE_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_SCALAR_TYPE_HEADER),
         },
-        exported_deps = [
-            "fbsource//third-party/flatbuffers:flatbuffers-api",
-        ],
+        exported_external_deps = ["flatbuffers-api"],
     )
 
     runtime.cxx_library(
@@ -135,7 +130,7 @@ def define_common_targets():
             "extended_header.h",
         ],
         visibility = [
-            "//executorch/executor/...",
+            "//executorch/runtime/executor/...",
             "//executorch/schema/test/...",
         ],
         exported_deps = [

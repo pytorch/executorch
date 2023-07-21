@@ -39,10 +39,10 @@ the types defined by PyTorch core in the `at` or `c10` namespaces. To retain
 tigher control over CPU and memory runtime behavior, Executorch reimplements
 compatible but restricted subsets of those types.
 
-[`//executorch/core/kernel_types/kernel_types.h`](https://www.internalfb.com/code/fbsource/fbcode/executorch/core/kernel_types/kernel_types.h)
+[`//executorch/runtime/core/exec_aten/exec_aten.h`](https://www.internalfb.com/code/fbsource/fbcode/executorch/runtime/core/exec_aten/exec_aten.h)
 contains the mapping between ATen/c10 types and the Executorch types. The
 Executorch types are defined in other headers in that same directory,
-[`//executorch/core/kernel_types/`](https://www.internalfb.com/code/fbsource/fbcode/executorch/core/kernel_types/).
+[`//executorch/runtime/core/portable_type/`](https://www.internalfb.com/code/fbsource/fbcode/executorch/runtime/core/portable_type/).
 
 The Executorch types are source-compatible with the ATen/c10 types; if you write
 code that works with the Executorch types, then that same code should work when
@@ -318,7 +318,7 @@ _op_target(name = "op_<name>_test")
 By default, this target will depend on
 `//executorch/kernels/portable/cpu:op_<name>`, the core Executor types, and
 some helper test utilities ([see
-headers](https://www.internalfb.com/code/fbsource/fbcode/executorch/core/kernel_types/testing/)),
+headers](https://www.internalfb.com/code/fbsource/fbcode/executorch/runtime/core/exec_aten/testing_util/)),
 but you can add additional deps if you want to.
 
 ### Create a skeleton test .cpp file
@@ -330,9 +330,9 @@ starting point:
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
-#include <executorch/core/kernel_types/kernel_types.h>
-#include <executorch/core/kernel_types/testing/TensorFactory.h>
-#include <executorch/core/kernel_types/testing/TensorUtil.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
 #include <gtest/gtest.h>
 

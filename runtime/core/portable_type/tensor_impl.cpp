@@ -5,10 +5,8 @@
 #include <cstdint>
 #include <cstring> // std::memcpy
 
-#include <executorch/core/kernel_types/util/DimOrderUtils.h>
-#include <executorch/core/kernel_types/util/ScalarTypeUtil.h>
-#include <executorch/runtime/core/array_ref.h>
-#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/portable_type/qint_types.h>
 #include <executorch/runtime/core/portable_type/scalar_type.h>
 #include <executorch/runtime/platform/assert.h>

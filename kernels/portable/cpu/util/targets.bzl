@@ -14,8 +14,8 @@ def define_common_targets():
         ],
         exported_headers = ["repeat_util.h"],
         deps = [
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
         visibility = ["//executorch/kernels/portable/cpu/..."],
@@ -32,7 +32,7 @@ def define_common_targets():
             ":repeat_util",
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
     )
@@ -45,7 +45,7 @@ def define_common_targets():
         deps = [
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )
@@ -57,7 +57,7 @@ def define_common_targets():
         exported_headers = ["index_util.h"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
     )
@@ -70,7 +70,7 @@ def define_common_targets():
         exported_headers = ["functional_util.h"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":broadcast_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
@@ -83,7 +83,7 @@ def define_common_targets():
         exported_headers = ["reduce_util.h"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
     )

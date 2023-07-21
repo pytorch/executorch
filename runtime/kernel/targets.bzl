@@ -17,7 +17,7 @@ def define_common_targets():
         ],
         exported_deps = [
             "//executorch/runtime/core:core",
-            "//executorch/core/values:executor_values",
+            "//executorch/runtime/core:evalue",
         ],
     )
 
@@ -30,15 +30,15 @@ def define_common_targets():
                 "kernel_runtime_context.h",
             ],
             visibility = [
-                "//executorch/core/prim_ops/...",  # Contains kernels
+                "//executorch/kernels/prim_ops/...",  # Contains kernels
                 "//executorch/runtime/kernel/...",
                 "//executorch/kernels/...",
-                "//executorch/executor/...",
+                "//executorch/runtime/executor/...",
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
                 "//executorch/runtime/core:core",
-                "//executorch/core/kernel_types:kernel_types" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
             ],
         )
 
@@ -50,13 +50,13 @@ def define_common_targets():
             visibility = [
                 "//executorch/runtime/kernel/...",
                 "//executorch/kernels/...",
-                "//executorch/core/prim_ops/...",  # Prim kernels
+                "//executorch/kernels/prim_ops/...",  # Prim kernels
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
                 ":kernel_runtime_context" + aten_suffix,
-                "//executorch/core/kernel_types:kernel_types" + aten_suffix,
-                "//executorch/core/kernel_types/util:scalar_type_util" + aten_suffix,
-                "//executorch/core/kernel_types/util:tensor_util" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
         )

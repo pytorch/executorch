@@ -46,7 +46,7 @@ like:
 ## Memory Allocation
 
 Instead of using `malloc()` or `new`, the runtime code should allocate memory
-using the `MemoryManager` (`//executorch/executor/MemoryManager.h`) provided by
+using the `MemoryManager` (`//executorch/runtime/executor/MemoryManager.h`) provided by
 the client.
 
 ## File Loading

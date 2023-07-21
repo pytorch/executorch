@@ -14,7 +14,7 @@ For a full walk through, please refer to this [notebook](https://www.internalfb.
 
 ### Visualizer
 ```python
-from executorch.sdk import visualize_etrecord, visualize_etrecord_path
+from executorch.sdk.fb import visualize_etrecord, visualize_etrecord_path
 
 async def visualize_etrecord(
     etrecord: ETRecord,
@@ -47,7 +47,7 @@ If an `et_dump_path` is provided, associate the profiling information from the e
 ### ETDB
 
 ```python
-from executorch.sdk import debug_etrecord, debug_etrecord_path
+from executorch.sdk.fb import debug_etrecord, debug_etrecord_path
 
 async def debug_etrecord(
     etrecord: ETRecord, et_dump_path: Optional[str] = None, verbose: bool = False
@@ -74,7 +74,7 @@ If an `et_dump_path` is provided, associate the profiling information from the e
 
 ### ETRecord Helper
 ```python
-from executorch.sdk import ETRecord, generate_etrecord, parse_etrecord
+from executorch.sdk.fb import ETRecord, generate_etrecord, parse_etrecord
 ```
 See [ETRecord](./01_generating_etrecord.md) for more information
 
@@ -84,7 +84,7 @@ See [ETRecord](./01_generating_etrecord.md) for more information
 The Buck CLI is perfect for ad hoc visualization and debugging saved ETRecord's (and associated ETDump's). The CLI operates as a convenient wrapper for calling `visualize_etrecord_path` and `debug_etrecord_path`
 
 ``` bash
-buck run //executorch/sdk:cli ...
+buck run //executorch/sdk/fb:cli ...
 
           <et_record>: Mandatory Path to ETRecord
 
@@ -96,10 +96,10 @@ buck run //executorch/sdk:cli ...
 
 Example: Generate TB Visualization via CLI:
 ``` bash
-buck run //executorch/sdk:cli et_record.bin --et_dump et_dump.etdp
+buck run //executorch/sdk/fb:cli et_record.bin --et_dump et_dump.etdp
 ```
 
 Example: Kickoff ETDB in Verbose mode via CLI:
 ``` bash
-buck run //executorch/sdk:cli et_record.bin --et_dump et_dump.etdp --terminal_mode --verbose
+buck run //executorch/sdk/fb:cli et_record.bin --et_dump et_dump.etdp --terminal_mode --verbose
 ```

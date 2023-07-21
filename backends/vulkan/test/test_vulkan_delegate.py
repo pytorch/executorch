@@ -13,9 +13,11 @@ from executorch.exir.serialize import serialize_to_flatbuffer
 
 ctypes.CDLL("libvulkan.so.1")
 
-# pyre-ignore[21]: Could not find module `executorch.pybindings.portable`.
-from executorch.pybindings.portable import _load_for_executorch_from_buffer  # @manual
-from executorch.pytree import tree_flatten
+# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
+from executorch.extension.pybindings.portable import (  # @manual
+    _load_for_executorch_from_buffer,
+)
+from executorch.extension.pytree import tree_flatten
 
 
 class TestBackends(unittest.TestCase):
@@ -86,6 +88,7 @@ class TestBackends(unittest.TestCase):
         # Test the model with executor
         # pyre-ignore
         executorch_module = _load_for_executorch_from_buffer(buffer)
+        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(sample_inputs)
 
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))

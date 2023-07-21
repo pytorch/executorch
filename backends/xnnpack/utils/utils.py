@@ -14,19 +14,19 @@ def capture_graph_for_xnnpack(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
     enable_aot: Optional[bool] = None,
-) -> torch.fx.GraphModule:
-    return (
-        exir.capture(
-            module,
-            inputs,
-            get_xnnpack_capture_config(enable_aot=enable_aot),
-        )
-        .to_edge(get_xnnpack_edge_compile_config())
-        .graph_module
-    )
+) -> exir.ExirExportedProgram:
+    return exir.capture(
+        module,
+        inputs,
+        get_xnnpack_capture_config(enable_aot=enable_aot),
+    ).to_edge(get_xnnpack_edge_compile_config())
 
 
 ### XNNPACK Utils ###
+PERM_NCHW_TO_NHWC = [0, 2, 3, 1]
+PERM_NHWC_TO_NCHW = [0, 3, 1, 2]
+
+
 def check_or_raise(condition: bool, err: str) -> None:
     """
     Raises runtime error if condition is false, with the given error message

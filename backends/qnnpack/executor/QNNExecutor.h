@@ -5,7 +5,7 @@
 #include <qnnpack_func.h>
 #include <memory>
 
-#include <executorch/core/kernel_types/kernel_types.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 namespace torch {
 namespace executor {

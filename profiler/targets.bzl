@@ -22,7 +22,7 @@ def define_common_targets():
             "//executorch/backends/...",
             "//executorch/codegen/...",
             "//executorch/core/...",
-            "//executorch/executor/...",
+            "//executorch/runtime/executor/...",
             "//executorch/runtime/...",
             "//executorch/kernels/...",
             "//executorch/test/...",

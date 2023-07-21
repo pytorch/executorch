@@ -426,14 +426,14 @@ class TestMisc(unittest.TestCase):
             )
         )
         with validation_disabled():
-            backend_module = to_backend(edge_program.graph_module, QnnpackPartitioner)
+            backend_module = to_backend(edge_program, QnnpackPartitioner)
 
         debug_pass = DebugPass(show_spec=True)
         debug_pass(edge_program.graph_module)
         config = exir.ExecutorchBackendConfig(
             passes=[QuantFusionPass(), ConstPropPass(propogate_quant=True)],
         )
-        program = exir.export_graph_module_to_executorch(backend_module, config)
+        program = backend_module.to_executorch(config)
         gm = program.dump_graph_module()
         gm.print_readable()
         print_program(program.program, mark_dynamic_shape_tensor=True)

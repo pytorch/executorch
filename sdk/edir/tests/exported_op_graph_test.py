@@ -6,8 +6,12 @@ from typing import Any, List, Tuple
 import torch
 import torch.nn as nn
 from executorch import exir
-from executorch.exir import ExecutorchBackendConfig
-from executorch.exir.delegate import LoweredBackendModule, patch_lowered_functions
+from executorch.exir import (
+    ExecutorchBackendConfig,
+    ExecutorchProgram,
+    ExirExportedProgram,
+)
+from executorch.exir.delegate import LoweredBackendModule
 from executorch.sdk.edir.base_schema import OperatorNode
 from executorch.sdk.edir.et_schema import (
     ExportedETOperatorGraph,
@@ -332,14 +336,13 @@ class CompositeDelegateModule(torch.nn.Module):
             delegated_m,
             delegated_m.get_random_inputs(),
             exir.CaptureConfig(pt2_mode=True),
-        ).to_edge()
+        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
         lowered_module = LoweredBackendModule(
-            edge_ir_m=edge_ir_m,
+            edge_program=edge_ir_m,
             backend_id="backend_demo",
             processed_bytes=bytes("basic_module_add", encoding="utf8"),
             compile_specs=[],
         )
-        patch_lowered_functions(lowered_module)
         self.lowered_module: LoweredBackendModule = lowered_module
 
     def forward(self, a: exir.Value, b: exir.Value, s: Tensor) -> Tensor:
@@ -542,7 +545,7 @@ def generate_op_graph(m: Any, inputs: Any) -> ExportedETOperatorGraph:
     """
     et_program = (
         exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True))
-        .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+        .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
         .to_executorch(config=ExecutorchBackendConfig())
     )
     program = et_program.program
@@ -605,14 +608,18 @@ def generate_json_fixtures() -> None:
             f.write(output)
 
 
-def gen_graphs_from_model(model: torch.nn.Module) -> Tuple[Any, Any, Any]:
+def gen_graphs_from_model(
+    model: torch.nn.Module,
+) -> Tuple[ExirExportedProgram, ExirExportedProgram, ExecutorchProgram]:
     et_aten = exir.capture(
         model,
         model.get_random_inputs(),
         exir.CaptureConfig(pt2_mode=True),
     )
     et_aten_copy = copy.deepcopy(et_aten)
-    et_edge = et_aten.to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+    et_edge = et_aten.to_edge(
+        exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+    )
     et_edge_copy = copy.deepcopy(et_edge)
     et_program = et_edge.to_executorch(
         config=ExecutorchBackendConfig(emit_stacktrace=False)
@@ -634,7 +641,9 @@ def generate_fx_json_fixture() -> None:
             gen_fx_graph_file_contents(et_aten_copy.graph_module),
         )
         write_fx_graph_file_contents(
-            model_name, "edge_dialect", gen_fx_graph_file_contents(et_edge_copy.module)
+            model_name,
+            "edge_dialect",
+            gen_fx_graph_file_contents(et_edge_copy.graph_module),
         )
         write_fx_graph_file_contents(
             model_name,
@@ -764,5 +773,5 @@ class InferenceRunTest(unittest.TestCase):
         inference_run = model.gen_inference_run()
 
         self.assertEqual(
-            inference_run, InferenceRun._extract_runs_from_etdump(et_dump)[0]
+            inference_run, InferenceRun.extract_runs_from_etdump(et_dump)[0]
         )

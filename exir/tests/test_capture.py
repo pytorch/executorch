@@ -6,7 +6,6 @@ from typing import Tuple
 import executorch.exir as exir
 import executorch.exir.tests.models as models
 import torch
-from executorch.exir.graph_module import get_exir_meta
 
 from parameterized import parameterized
 
@@ -243,10 +242,6 @@ class TestCapture(unittest.TestCase):
         forward_method_prog = mmep.find_method("forward")
         forward_method_gm = forward_method_prog.graph_module
         self.assertEqual(mmep.module, forward_method_gm)
-        self.assertEqual(mmep.meta, forward_method_gm.meta)
-        meta = get_exir_meta(forward_method_gm)
-        self.assertEqual(mmep.in_spec, meta.in_spec)
-        self.assertEqual(mmep.out_spec, meta.out_spec)
         self.assertEqual(mmep.graph, forward_method_gm.graph)
         self.assertEqual(mmep.code, forward_method_gm.code)
 
@@ -274,10 +269,6 @@ class TestCapture(unittest.TestCase):
         method1_prog = mmep.find_method("method1")
         method1_gm = method1_prog.graph_module
         self.assertEqual(mmep.module, method1_gm)
-        self.assertEqual(mmep.meta, method1_gm.meta)
-        meta = get_exir_meta(method1_gm)
-        self.assertEqual(mmep.in_spec, meta.in_spec)
-        self.assertEqual(mmep.out_spec, meta.out_spec)
         self.assertEqual(mmep.graph, method1_gm.graph)
         self.assertEqual(mmep.code, method1_gm.code)
 
@@ -310,21 +301,6 @@ class TestCapture(unittest.TestCase):
             AssertionError, "impossible to identify the default method"
         ):
             _ = mmep.module
-
-        with self.assertRaisesRegex(
-            AssertionError, "impossible to identify the default method"
-        ):
-            _ = mmep.meta
-
-        with self.assertRaisesRegex(
-            AssertionError, "impossible to identify the default method"
-        ):
-            _ = mmep.in_spec
-
-        with self.assertRaisesRegex(
-            AssertionError, "impossible to identify the default method"
-        ):
-            _ = mmep.out_spec
 
         with self.assertRaisesRegex(
             AssertionError, "impossible to identify the default method"

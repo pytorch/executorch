@@ -253,22 +253,18 @@ class TestPartitioners(unittest.TestCase):
             ) -> torch.fx.GraphModule:
                 return edge_graph_module
 
-        graph_module = (
-            exir.capture(
-                torch.nn.Linear(3, 3),
-                (torch.randn(3, 3),),
-                CaptureConfig(pt2_mode=True),
-            )
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-            .graph_module
-        )
+        exported_program = exir.capture(
+            torch.nn.Linear(3, 3),
+            (torch.randn(3, 3),),
+            CaptureConfig(pt2_mode=True),
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
 
         error_msg = r"Partitioner <class 'executorch.backends.test.test_utils.TestPartitioners.test_invalid_partitioner_without_partitioner.<locals>.InvalidPartitioner'> needs a `partition_tags` field containing a mapping of tags to delegate spec"
         with self.assertRaisesRegex(
             AssertionError,
             error_msg,
         ):
-            _ = to_backend(graph_module, InvalidPartitioner)
+            _ = to_backend(exported_program, InvalidPartitioner)
 
     test_lib = Library("test_lib", "DEF")
 

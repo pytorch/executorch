@@ -10,8 +10,6 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import torch
-
-from executorch.core.prim_ops.prim_to_executorch_ops import _EXECUTORCH_SYM_OPS
 from executorch.exir import control_flow, delegate, memory, memory_planning
 from executorch.exir.common import override_logger
 from executorch.exir.dialects.backend._ops import BackendOpOverload
@@ -29,6 +27,8 @@ from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes.const_prop_pass import ConstPropPass
 from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
+
+from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePass
 from executorch.exir.passes.pass_registry import PassRegistry

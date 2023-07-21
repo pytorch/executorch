@@ -4,12 +4,7 @@ from executorch.sdk.etrecord._etrecord import (
     parse_etrecord,
 )
 
-from executorch.sdk.lib import (
-    debug_etrecord,
-    debug_etrecord_path,
-    visualize_etrecord,
-    visualize_etrecord_path,
-)
+from executorch.sdk.lib import debug_etrecord, debug_etrecord_path
 
 __all__ = [
     "ETRecord",
@@ -17,6 +12,4 @@ __all__ = [
     "parse_etrecord",
     "debug_etrecord",
     "debug_etrecord_path",
-    "visualize_etrecord",
-    "visualize_etrecord_path",
 ]

@@ -67,7 +67,7 @@ def stride_from_dim_order(sizes: List[int], dim_order: List[bytes]) -> List[int]
     Converts dim order to stride using sizes
     e.g. if sizes = (2, 3, 4) and dim_order = (0, 1, 2) then strides = (12, 4, 1)
     while for the same size if dim_order = (0, 2, 1) then strides = (12, 1, 3)
-    See executorch/core/kernel_types/util/DimOrderUtils.h for details
+    See executorch/runtime/core/exec_aten/util/dim_order_util.h for details
     Args:
         sizes (Tuple[int]): sizes of the tensor
         dim_order (Tuple[bytes]): dim order of the tensor

@@ -24,24 +24,22 @@ def define_common_targets():
         # Only should be depended on by kernel_types:kernel_types, but various suffixes like Android and Static
         # mean I cant just expose visibility to a single rule.
         visibility = [
-            "//executorch/core/kernel_types/...",
+            "//executorch/runtime/core/exec_aten/...",
             "//executorch/runtime/core/portable_type/test/...",
         ],
         exported_deps = [
             ":scalar_type",
             "//executorch/runtime/core:core",
-            "//executorch/core/kernel_types:tensor_shape_dynamism",
-            "//executorch/core/kernel_types/util:scalar_type_util",
-            "//executorch/core/kernel_types/util:dim_order_util",
-            "//executorch/core/values:executor_tag",
+            "//executorch/runtime/core:tensor_shape_dynamism",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:dim_order_util",
+            "//executorch/runtime/core:tag",
         ],
     )
 
     # Set up a specific exported library for scalar_type to avoid circle dependency in ScalarTypeUtil.h
     runtime.cxx_library(
         name = "scalar_type",
-        srcs = [
-        ],
         exported_headers = [
             "bfloat16.h",
             "complex.h",
@@ -51,10 +49,10 @@ def define_common_targets():
             "bits_types.h",
         ],
         visibility = [
-            "//executorch/core/kernel_types/util/...",
+            "//executorch/runtime/core/exec_aten/util/...",
         ],
         exported_deps = [
             "//executorch/runtime/core:core",
-            "//executorch/core/values:executor_tag",
+            "//executorch/runtime/core:tag",
         ],
     )

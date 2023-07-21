@@ -47,7 +47,7 @@ def define_common_targets():
             "//executorch/backends:backend_lib",
             "//executorch/backends/test/...",
             "//executorch/backends/xnnpack/test/...",
-            "//executorch/pybindings/...",
+            "//executorch/extension/pybindings/...",
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
@@ -55,9 +55,9 @@ def define_common_targets():
             ":xnnpack_schema",
             "//executorch/runtime/backend:backend_registry",
             "//executorch/backends/qnnpack:qnnpack_utils",  # TODO Use (1) portable for choose_qparams(), (2) xnnpack for quantize_per_tensor()
-            "//executorch/threadpool:threadpool",
+            "//executorch/extension/fb/threadpool:threadpool",
             "//executorch/util:memory_utils",
-            "//executorch/core/kernel_types/util:tensor_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         # XnnpackBackend.cpp needs to compile with executor as whole
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
