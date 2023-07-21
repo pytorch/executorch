@@ -11,6 +11,7 @@ python_binary(
         "fbsource//third-party/pypi/exhale:exhale",
         "fbsource//third-party/pypi/pytorch-sphinx-theme:pytorch-sphinx-theme",
         "fbsource//third-party/pypi/sphinx:sphinx",
+        "//executorch/backends:backend_lib",
         "//executorch/exir:lib",
     ],
 )

@@ -450,3 +450,91 @@ Returns
 * A list of partitions (largest possible subgraphs) containing nodes are
   supported by the union of the given OperatorSupportBase object and the
   given pattern graphs
+
+
+### Source Partitioner
+
+For more complicated use cases in which users want to partition based on higher
+level modules (`torch.nn.Linear` or `torch.nn.functional.Linear`) which are now
+decomposed into their operators (`aten.permute`, `aten.addmm`), we have the
+following [helper function](https://github.com/pytorch/pytorch/blob/main/torch/fx/passes/utils/source_matcher_utils.py#L51):
+
+`get_source_partitions(graph: torch.fx.Graph, wanted_sources: List[Any]) -> Dict[Any, SourcePartition]`
+
+Args:
+* `graph`: The graph we want to partition
+* `wanted_sources`: List of sources of nodes that were decomposed from this
+    source. This can be a function (ex. `torch.nn.functional.linear`) or a leaf
+    module type (ex. `torch.nn.Linear`)
+
+Returns:
+* Dictionary mapping sources (ex. `torch.nn.modules.linear.Linear`) to a list of
+    `SourcePartitions` that correspond to the list of nodes that were flattened from
+    a module of that type.
+
+```python
+@dataclass
+class SourcePartition():
+    # Nodes in a particular partition
+    nodes: List[Node]
+    # Module type
+    module_type: Type
+    # Nodes in the graph that are needed as inputs to the partition
+    input_nodes: List[Node] = field(default_factory=list)
+    # Nodes in the partition that are being used by nodes outside of the partition
+    output_nodes: List[Node] = field(default_factory=list)
+    # Parameters that are being used
+    params: List[str] = field(default_factory=list)
+```
+
+An example:
+
+```python
+class M(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear1 = torch.nn.Linear(3, 3)
+        self.relu = torch.nn.ReLU()
+        self.linear2 = torch.nn.Linear(3, 5)
+
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.linear1(x)
+        x = self.relu(x)
+        x = self.linear2(x)
+        return x
+
+inputs = (torch.randn(3, 3),)
+edge_graph = exir.capture(M(), inputs).to_edge().graph
+print(edge_graph)
+"""
+graph():
+    %arg0 : [#users=1] = placeholder[target=arg0]
+    %_param_constant0 : [#users=1] = get_attr[target=_param_constant0]
+    %permute_default : [#users=1] = call_function[target=torch.ops.aten.permute_copy.default](args = (%_param_constant0,), kwargs = {})
+    %_param_constant1 : [#users=1] = get_attr[target=_param_constant1]
+    %addmm_default : [#users=1] = call_function[target=torch.ops.aten.addmm.default](args = (%_param_constant1, %arg0, %t_default), kwargs = {})
+    %_param_constant0_1 : [#users=1] = get_attr[target=_param_constant0]
+    %permute_default_1 : [#users=1] = call_function[target=torch.ops.aten.permute_copy.default](args = (%_param_constant0_1,), kwargs = {})
+    %_param_constant1_1 : [#users=1] = get_attr[target=_param_constant1]
+    %addmm_default_1 : [#users=1] = call_function[target=torch.ops.aten.addmm.default](args = (%_param_constant1_1, %addmm_default, %t_default_1), kwargs = {})
+    %relu_default : [#users=1] = call_function[target=torch.ops.aten.relu.default](args = (%addmm_default_1,), kwargs = {})
+    %_param_constant2 : [#users=1] = get_attr[target=_param_constant2]
+    %permute_default_2 : [#users=1] = call_function[target=torch.ops.aten.permute_copy.default](args = (%_param_constant2,), kwargs = {})
+    %_param_constant3 : [#users=1] = get_attr[target=_param_constant3]
+    %addmm_default_2 : [#users=1] = call_function[target=torch.ops.aten.addmm.default](args = (%_param_constant3, %relu_default, %t_default_2), kwargs = {})
+    return [addmm_default_2]
+"""
+
+module_partitions = get_source_partitions(edge_graph, [torch.nn.Linear, torch.nn.ReLU])
+print(module_partitions)
+"""
+{<class 'torch.nn.modules.linear.Linear'>: [
+    ModulePartition(nodes=[_param_constant0, t_default, _param_constant1, addmm_default], module_type=<class 'torch.nn.modules.linear.Linear'>, input_nodes=[arg0], output_nodes=[addmm_default], params=["_param_constant0", "_param_constant1"]),
+    ModulePartition(nodes=[_param_constant0_1, t_default_1, _param_constant1_1, addmm_default_1], module_type=<class 'torch.nn.modules.linear.Linear'>, input_nodes=[addmm_default], output_nodes=[addmm_default_1], params=["_param_constant0_1", "_param_constant1_1"]),
+    ModulePartition(nodes=[_param_constant2, t_default_2, _param_constant3, addmm_default_2], module_type=<class 'torch.nn.modules.linear.Linear'>, input_nodes=[relu_default], output_nodes=[addmm_default_2], params=["_param_constant2", "_param_constant3"])],
+
+ <class 'torch.nn.modules.activation.ReLU'>: [
+    ModulePartition(nodes=[relu_default], module_type=<class 'torch.nn.modules.activation.ReLU'>, input_nodes=[addmm_default_1], output_nodes=[relu_default], params=[])]}
+"""
+```

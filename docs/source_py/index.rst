@@ -6,3 +6,4 @@ Reference
    :caption: API
 
    exir
+   backends

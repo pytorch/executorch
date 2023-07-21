@@ -1,62 +1,53 @@
 # Delegate a PyTorch module to Executorch runtime
 
-This note is to demonstrate the basic end-to-end flow of backend delegation in new Executorch runtime. Please refer to the [design doc]( https://docs.google.com/document/d/1YTn1jxdOsY5EezmdiAJYTJPz6EOGY93DSPIpgCWTowc/edit#heading=h.q866lyxainnb). The new delegate workflow can be found in [N1820138](https://www.internalfb.com/intern/anp/view/?id=1820138), and the previous delegate with lite interpreter workflow can be found in [N509022](https://www.internalfb.com/intern/anp/view/?id=509022)
+This note is to demonstrate the basic end-to-end flow of backend delegation in
+the Executorch runtime.
 
-Please note that both Executorch runtime and the new delegate workflow is under development. This note currently covers basic capabilities of this flow.
-
-If your team has an existing delegate workflow, the new flow will be very similar to the old ones. Please reach out to PyTorch Edge team for further discusion.
-
-### Ahead of Time
-The flow starts from a traced graph module with Edge IR representation. Then it goes through the preprocess that produces a program with compiled blobs. The lowered module can be directly captured, or be put back in a parent module to be captured. Eventually the captured module is serialized in the flatbuffers model that can be loaded by the runtime.
-
-### Runtime
-The serialized flatbuffer model can be loaded by the Executorch runtime. The preprocessed blob is loaded and the backend's init() function is called at the model initialization stage. At the model execution stage, the initialized handled can be executed through the backend.
-
-Using a demo backend, following codes show the three steps to integrate a backend to the flow:
+At a high level, here are the steps needed for delegation:
 
 1. Add your backend to Executorch.
+2. Frontend: lower the PyTorch module or part of the module to a backend.
+3. Deployment: load and run the lowered module through Executorch runtime
+interface.
 
-2. Frontend: lower the PyTorch module to a backend.
 
-3. Deployment: load and run the lowered module through Executorch runtime interface.
+## Frontend
 
-## Python API
-The Python API for this backend will be automatically ported when this shared lib is loaded into PyTorch. The following sections show how to use this backend from Python directly.
+There are two flows for delegation:
 
-#### Frontend  end
-In this section, a Pytorch Model is created, captured and lowered to `backend_with_compiler_demo`. First we define the module in eager mode. The module can be lowered via the api `to_backend`.
+1. Lower delegatable module ahead of time and compose it with another module
+    which will later be traced through the Executorch workflow.
+2. Trace a module, partition the nodes that are lowerable into a module, lower
+    that module, and insert it into the original toplevel module.
 
-# Example user flow
+### Flow 1: Lowering ahead of time
 
-Following is to show how user can author a model and deploy the model in executor:
+The flow starts from a traced graph module with Edge Dialect representation. To lower
+it, we call the following function which returns a `LoweredBackendModule` (more
+documentation on this function can be found in the Python API reference):
 
+```python
+def to_backend(
+    backend_id: str,
+    edge_program: ExportedProgram,
+    compile_spec: List[CompileSpec],
+) -> LoweredBackendModule:
 ```
+
+Within this function, the backend's `preprocess()` function is called which
+produces a compiled blob which will be emitted to the flatbuffer binary. The
+lowered module can be directly captured, or be put back in a parent module to be
+captured.  Eventually the captured module is serialized in the flatbuffers model
+that can be loaded by the runtime.
+
+The following is an example of this flow:
+
+```python
+from executorch.backends.backend_api import to_backend, MethodCompileSpec
 import executorch.exir as exir
-
 import torch
-from executorch.backends.backend_details import to_backend
 
-from executorch.exir import ExecutorchBackendConfig, EdgeCompileConfig
-from executorch.exir.pass_manager import PassManager
-from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
-from torch.fx import symbolic_trace
-from executorch.extension.pybindings.portable import _load_for_executorch, _load_for_executorch_from_buffer   # @manual
-```
-
-If the whole module in eager mode looks like:
-
-```python
-# the submodule runs in executor runtime
-class NonLowerableSubModel(torch.nn.Module):
-    def __init__(self, bias):
-        super().__init__()
-        self.bias = bias
-
-    def forward(self, a, b):
-        return torch.add(torch.add(a, b), self.bias)
-
-
-# the submodule runs in a specific backend. In this example,  `BackendWithCompilerDemo` backend
+# The submodule runs in a specific backend. In this example,  `BackendWithCompilerDemo` backend
 class LowerableSubModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -64,51 +55,22 @@ class LowerableSubModel(torch.nn.Module):
     def forward(self, x):
         return torch.sin(x)
 
-# the composite modules, including lower part and non-lowerpart
-class CompositeModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.non_lowerable = NonLowerableSubModel(torch.ones(1) * 0.3)
-        self.lowerable = LowerableSubModel()
-
-    def forward(self, x):
-        a = self.lowerable(x)
-        b = self.lowerable(a)
-        ret = self.non_lowerable(a, b)
-        return a, b, ret
-```
-And we want to lower `LowerableSubModel` to a specific backend
-
-### The submodule to be lowered.
-```python
-class LowerableSubModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return torch.sin(x)
-# sin_module is an nn.Module
+# Convert the lowerable module to Edge IR Representation
 to_be_lowered = LowerableSubModel()
 example_input = (torch.ones(1), )
 to_be_lowered_exir_submodule = exir.capture(to_be_lowered, example_input).to_edge()
-```
-### Lower the module to the according backend
 
-```python
-# import the backend implementation
+# Import the backend implementation
 from executorch.backends.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
-method_compile_spec = bytes('{"forward": ""}', encoding="utf8")
-lowered_module = to_backend('BackendWithCompilerDemo', to_be_lowered_exir_submodule, method_compile_spec)
-
-# Prepare the model inputs to get exir
-model_inputs = (torch.ones(1), )
-lowered_sin_graph_module = exir.capture(lowered_module, model_inputs).to_edge()
+lowered_module = to_backend('BackendWithCompilerDemo', to_be_lowered_exir_submodule, [])
 ```
-### Composite the module with the lowered module
+
+We can now compose this lowered module with another module:
 
 ```python
+# This submodule runs in executor runtime
 class NonLowerableSubModel(torch.nn.Module):
     def __init__(self, bias):
         super().__init__()
@@ -117,11 +79,13 @@ class NonLowerableSubModel(torch.nn.Module):
     def forward(self, a, b):
         return torch.add(torch.add(a, b), self.bias)
 
+
+# The composite module, including lower part and non-lowerpart
 class CompositeModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.non_lowerable = NonLowerableSubModel(torch.ones(1) * 0.3)
-        self.lowerable = lowered_sin_graph_module
+        self.lowerable = lowered_module
 
     def forward(self, x):
         a = self.lowerable(x)
@@ -130,29 +94,80 @@ class CompositeModel(torch.nn.Module):
         return a, b, ret
 
 composite_model = CompositeModel()
-```
-
-### Run passes, capture and emit the program
-```
-
-# Run somes passes. The passes depends on the targets.
-# Customized passes can be used in EdgeCompileConfig and ExecutorchBackendConfig
+model_inputs = (torch.ones(1), )
 exec_prog = exir.capture(composite_model, model_inputs).to_edge().to_executorch()
-graph_module = exec_prog
-program = exec_prog.program
-flatbuffer = exec_prog.buffer
 
-print("Output trace through graph result")
-print(graph_module.graph.print_tabular())
-
-# Uncomment the following lines to save the program to a local file
-# save_path = "delegate.fft"
-# with open(save_path, "wb") as f:
-#     f.write(flatbuffer)
+# Save the flatbuffer to a local file
+save_path = "delegate.fft"
+with open(save_path, "wb") as f:
+    f.write(exec_prog.buffer)
 ```
 
-# Runtime
-### Run the real model with executor
+### Flow 2: Partitioning
+
+The flow starts from a traced graph module with Edge Dialect representation. To lower
+certain nodes in this graph module, we can use the overloaded `to_backend`
+function (more documentation on this function can be found in the Python API
+reference):
+
+```python
+def to_backend(
+    edge_program: ExportedProgram,
+    partitioner: Type[TPartitioner],
+) -> ExportedProgram:
+```
+
+This function takes in a `Partitioner` which adds a tag to all the nodes that
+are meant to be lowered. It will also contain a `partition_tags` mapping tags to
+backend names and module compile specs. The tagged nodes will then be
+partitioned and lowered to their mapped backends using Flow 1's process.
+Available helper partitioner are documented [here](./passes.md#partitioner). These
+lowered modules will be inserted into the toplevel module and serialized.
+
+The following is an example of the flow:
+```python
+from executorch.backends.backend_api import to_backend
+import executorch.exir as exir
+import torch
+
+class Model(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        x = x + y
+        x = x * y
+        x = x - y
+        x = x / y
+        x = x * y
+        x = x + y
+        return x
+
+model = Model()
+model_inputs = (torch.randn(1, 3), torch.randn(1, 3))
+gm = exir.capture(model, model_inputs).to_edge()
+
+from executorch.backends.test.op_partitioner_demo import AddMulPartitionerDemo
+exec_prog = to_backend(gm, AddMulPartitionerDemo).to_executorch(
+    exir.ExecutorchBackendConfig(passes=SpecPropPass())
+)
+
+# Save the flatbuffer to a local file
+save_path = "delegate.fft"
+with open(save_path, "wb") as f:
+    f.write(exec_prog.buffer)
+```
+
+## Runtime
+
+The serialized flatbuffer model is loaded by the Executorch runtime. The
+preprocessed blob is directly stored in the flatbuffer, which is loaded into a
+call to the backend's `init()` function during model initialization stage. At
+the model execution stage, the initialized handled can be executed through the
+backend's `execute()` function.
+
+To run the real model with executor:
+
 ```python
 # Load the program with executor runtime
 executorch_module = _load_for_executorch_from_buffer(flatbuffer)
@@ -163,7 +178,10 @@ model_outputs = executorch_module.forward([*model_inputs])
 
 ## Error Messages
 
-If there is an error in the backend, for example, if there is any operator that is not supported by the backend, debug handler can be thrown. It can surface back to the Python frontend with source code information. Below is an example where operator `tan` is not supported in `BackendWithCompilerDemo` backend.
+If there is an error in the backend, for example, if there is any operator that
+is not supported by the backend, a debug handler can be thrown. It can surface
+back to the Python frontend with source code information. Below is an example
+where operator `tan` is not supported in `BackendWithCompilerDemo` backend.
 
 A problematic program:
 ```python
@@ -171,17 +189,14 @@ class TanModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-    # TODO(chenlai): add a test with a diffrent method name when
-    # it's resolved in compiler side.
     def forward(self, x):
         return torch.tan(x)
 
 tan_module = TanModule()
 model_inputs = (torch.ones(1),)
 edgeir_m = exir.capture(tan_module, model_inputs).to_edge()
-method_compile_spec = bytes('{"forward": ""}', encoding="utf8")
 lowered_tan_module = to_backend(
-    "BackendWithCompilerDemo", edgeir_m, method_compile_spec
+    "BackendWithCompilerDemo", edgeir_m, []
 )
 
 class CompositeModelWithTan(torch.nn.Module):
@@ -212,4 +227,4 @@ executorch_module = _load_for_executorch_from_buffer(buff)
 model_outputs = executorch_module.forward([model_inputs])
 ```
 
-It's expected to capture debug handler like `instruction demo::tan_default<debug_handle>1 is not supported, debug handler is: 1`
+It's expected to capture debug handler like `instruction demo::tan_default<debug_handle>1 is not supported, debug handler is: 1`
