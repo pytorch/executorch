@@ -1,56 +1,5 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
-define_common_targets()
-
-runtime.python_binary(
-    name = "gen_functions_yaml",
-    srcs = ["gen_ops_def.py"],
-    main_module = "executorch.codegen.tools.gen_ops_def",
-    package_style = "inplace",
-    visibility = [
-        "//executorch/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
-    deps = [
-        "fbsource//third-party/pypi/pyyaml:pyyaml",
-        ":yaml_util",
-        "//caffe2:torch",
-        "//executorch/exir:schema",
-        "//executorch/exir/serialize:lib",
-    ],
-)
-
-runtime.python_library(
-    # @autodeps-skip
-    name = "gen_oplist_lib",
-    srcs = ["gen_oplist.py"],
-    base_module = "executorch.codegen.tools",
-    visibility = [
-        "//executorch/...",
-    ],
-    deps = [
-        "//caffe2/torchgen:torchgen",
-    ] + select({
-        "DEFAULT": [],
-        "ovr_config//os:linux": ["//executorch/extension/pybindings:operator"],
-    }),
-)
-
-runtime.python_test(
-    name = "test_gen_oplist_real_model",
-    srcs = ["test/test_gen_oplist_real_model.py"],
-    base_module = "",
-    resources = {
-        "//executorch/test/models:exported_programs[ModuleLinear.ff]": "test/ModuleLinear.ff",
-    },
-    visibility = [
-        "//executorch/...",
-    ],
-    deps = [
-        ":gen_oplist_lib",
-        "//libfb/py:parutil",
-    ],
-)
+define_common_targets(is_fbcode = True)

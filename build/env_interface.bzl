@@ -107,6 +107,10 @@ _EXTERNAL_DEPS_MAP = {
         _FBCODE: "fbsource//xplat/caffe2/torchgen:gen_executorch",
         _XPLAT: "fbsource//xplat/caffe2/torchgen:gen_executorch",
     },
+    "gen-oplist-lib": {
+        _FBCODE: "fbsource//xplat/caffe2/tools:gen_oplist_lib",  # no fbcode version
+        _XPLAT: "fbsource//xplat/caffe2/tools:gen_oplist_lib",
+    },
     "gflags": {
         _FBCODE: _EXTERNAL_DEP_FALLTHROUGH,
         _XPLAT: "fbsource//xplat/third-party/gflags:gflags",
@@ -506,6 +510,7 @@ env = struct(
     export_file = native.partial(_get_rule, "export_file"),
     filegroup = native.partial(_get_rule, "filegroup"),
     genrule = native.partial(_get_rule, "genrule"),
+    is_oss = False,
     patch_cxx_compiler_flags = _patch_cxx_compiler_flags,
     patch_deps = _patch_deps,
     patch_executorch_genrule_cmd = _patch_executorch_genrule_cmd,

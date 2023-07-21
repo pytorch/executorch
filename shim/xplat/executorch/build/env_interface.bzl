@@ -26,6 +26,7 @@ _EXTERNAL_DEPS = {
     "flatc": "//third-party:flatc",
     # Codegen driver
     "gen-executorch": "//third-party:gen_executorch",
+    "gen-oplist-lib": "//third-party:gen_oplist_lib",
     # Commandline flags library
     "gflags": [],  # TODO(larryliu0820): Add support
     "gmock": [],  # TODO(larryliu0820): Add support
@@ -177,6 +178,7 @@ env = struct(
     filegroup = native.filegroup,
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     genrule = native.genrule,
+    is_oss = True,
     patch_deps = _patch_deps,
     patch_cxx_compiler_flags = _patch_cxx_compiler_flags,
     patch_executorch_genrule_cmd = _patch_executorch_genrule_cmd,

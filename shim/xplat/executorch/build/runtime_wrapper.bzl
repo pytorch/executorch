@@ -148,7 +148,9 @@ def _resolve_external_deps(kwargs):
                 # Add the real targets that the external_deps entry refers to.
                 if (prefix + "deps") not in kwargs:
                     kwargs[prefix + "deps"] = []
-                kwargs[prefix + "deps"].extend(targets)
+
+                # Do not use extend because kwargs[prefix + "deps"] may be a select.
+                kwargs[prefix + "deps"] += targets
         if remaining_deps:
             kwargs[prefix + "external_deps"] = remaining_deps
 
@@ -316,6 +318,7 @@ runtime = struct(
     external_dep_location = _external_dep_location,
     filegroup = _filegroup,
     genrule = _genrule,
+    is_oss = env.is_oss,
     python_binary = _python_binary,
     python_library = _python_library,
     python_test = _python_test,

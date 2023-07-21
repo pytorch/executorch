@@ -1,6 +1,6 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-def define_common_targets():
+def define_common_targets(is_fbcode = False):
     """Defines targets that should be shared between fbcode and xplat.
 
     The directory containing this targets.bzl file should also contain both
@@ -8,6 +8,20 @@ def define_common_targets():
 
     See README.md for instructions on selective build.
     """
+    runtime.python_library(
+        name = "gen_oplist_lib",
+        srcs = ["gen_oplist.py"],
+        base_module = "executorch.codegen.tools",
+        visibility = [
+            "//executorch/...",
+        ],
+        external_deps = ["torchgen"],
+        deps = select({
+            "DEFAULT": [],
+            "ovr_config//os:linux": [] if runtime.is_oss else ["//executorch/extension/pybindings:operator"],  # TODO(larryliu0820): pybindings:operator doesn't build in OSS yet
+        }),
+    )
+
     runtime.python_binary(
         name = "gen_oplist",
         main_module = "executorch.codegen.tools.gen_oplist",
@@ -63,3 +77,79 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
     )
+
+    runtime.python_library(
+        name = "gen_all_oplist_lib",
+        srcs = ["gen_all_oplist.py"],
+        base_module = "executorch.codegen.tools",
+        visibility = [
+            "//executorch/...",
+        ],
+        external_deps = [
+            "gen-oplist-lib",
+        ],
+    )
+
+    runtime.python_binary(
+        name = "gen_all_oplist",
+        main_module = "executorch.codegen.tools.gen_all_oplist",
+        package_style = "inplace",
+        visibility = [
+            "PUBLIC",
+        ],
+        deps = [
+            ":gen_all_oplist_lib",
+        ],
+        _is_external_target = True,
+    )
+
+    runtime.python_test(
+        name = "test_gen_all_oplist",
+        srcs = [
+            "test/test_gen_all_oplist.py",
+        ],
+        package_style = "inplace",
+        visibility = [
+            "PUBLIC",
+        ],
+        deps = [
+            ":gen_all_oplist_lib",
+        ],
+        _is_external_target = True,
+    )
+
+    # TODO(larryliu0820): This is a hack to only run these two on fbcode. These targets depends on exir which is only available in fbcode.
+    if not runtime.is_oss and is_fbcode:
+        runtime.python_binary(
+            name = "gen_functions_yaml",
+            srcs = ["gen_ops_def.py"],
+            main_module = "executorch.codegen.tools.gen_ops_def",
+            package_style = "inplace",
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            deps = [
+                "fbsource//third-party/pypi/pyyaml:pyyaml",
+                ":yaml_util",
+                "//caffe2:torch",
+                "//executorch/exir:schema",
+                "//executorch/exir/serialize:lib",
+            ],
+        )
+
+        runtime.python_test(
+            name = "test_gen_oplist_real_model",
+            srcs = ["test/test_gen_oplist_real_model.py"],
+            base_module = "",
+            resources = {
+                "//executorch/test/models:exported_programs[ModuleLinear.ff]": "test/ModuleLinear.ff",
+            },
+            visibility = [
+                "//executorch/...",
+            ],
+            deps = [
+                ":gen_oplist_lib",
+                "//libfb/py:parutil",
+            ],
+        )

@@ -209,3 +209,19 @@ runtime.cxx_binary(
     link_style = "static",
     _is_external_target = True,
 )
+
+runtime.python_library(
+    name = "gen_oplist_lib",
+    srcs = subdir_glob([
+        ("pytorch/tools/code_analyzer", "gen_oplist.py"),
+        ("pytorch/tools/code_analyzer", "gen_op_registration_allowlist.py"),
+    ]),
+    base_module = "tools.code_analyzer",
+    visibility = ["PUBLIC"],
+    _is_external_target = True,
+    deps = [
+        ":gen_selected_mobile_ops_header",
+        ":torchgen",
+        ":pyyaml",
+    ],
+)
