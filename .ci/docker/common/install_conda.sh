@@ -2,6 +2,7 @@
 
 set -ex
 
+# shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 install_miniconda() {
@@ -26,7 +27,7 @@ install_miniconda() {
 install_python() {
   pushd /opt/conda
   # Install the correct Python version
-  as_ci_user conda create -n py_$PYTHON_VERSION -y python="$PYTHON_VERSION"
+  as_ci_user conda create -n "py_${PYTHON_VERSION}" -y python="${PYTHON_VERSION}"
   popd
 }
 

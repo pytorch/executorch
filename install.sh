@@ -50,13 +50,15 @@ main() {
   # Uninstall older pip package if present.
   "${PIP}" uninstall -y executorch
 
-  # Install the tree as a pip package.
-  pushd "${et_root}/../../"
-  "${PIP}" install .
+  (
+    # Install the tree as a pip package.
+    pushd "${et_root}/../../"
+    "${PIP}" install .
+    popd
+  )
 
   # Clean up.
   rm -rf "${pip_root}"
-  popd
 }
 
 main "$@"
