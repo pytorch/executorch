@@ -18,7 +18,7 @@ _EXTERNAL_DEPS = {
     # ATen C++ library deps
     "aten-core": [],  # TODO(larryliu0820): Add support
     # ATen native_functions.yaml file deps
-    "aten-src-path": [],  # TODO(larryliu0820): Add support
+    "aten-src-path": "//third-party:aten_src_path",
     "cpuinfo": [],  # TODO(larryliu0820): Add support
     # Flatbuffer C++ library deps
     "flatbuffers-api": "//third-party:flatbuffers-api",
@@ -34,6 +34,7 @@ _EXTERNAL_DEPS = {
     "pybind11": [],  # TODO(larryliu0820): Add support
     # Core C++ PyTorch functionality like Tensor and ScalarType.
     "torch-core-cpp": [],  # TODO(larryliu0820): Add support
+    "torchgen": "//third-party:torchgen",
 }
 
 def _resolve_external_dep(name):
@@ -151,6 +152,10 @@ def _patch_executorch_genrule_cmd(cmd, macros_only = True):
     )
     cmd = cmd.replace(
         "//xplat/{prefix}/".format(prefix = _ET_TARGET_PREFIX),
+        "//",
+    )
+    cmd = cmd.replace(
+        "fbsource//",
         "//",
     )
     return cmd

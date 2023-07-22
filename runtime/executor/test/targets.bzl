@@ -1,7 +1,6 @@
-load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-def define_common_targets():
+def define_common_targets(is_fbcode = False):
     """Defines targets that should be shared between fbcode and xplat.
 
     The directory containing this targets.bzl file should also contain both
@@ -73,7 +72,7 @@ def define_common_targets():
     # TODO(dbort): Find a way to make these run for ANDROID/APPLE in xplat. The
     # android and ios test determinators don't like the reference to the model
     # file in fbcode. See https://fburl.com/9esapdmd
-    if is_fbcode():
+    if not runtime.is_oss and is_fbcode:
         modules_env = {
             # The tests use this var to find the program file to load. This uses
             # an fbcode target path because the authoring/export tools

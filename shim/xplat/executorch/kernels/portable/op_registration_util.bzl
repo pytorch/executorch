@@ -1,5 +1,5 @@
-load("@fbsource//tools/build_defs:selects.bzl", "selects")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 
 def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = False):
     """Registers an implementation of an operator overload group.

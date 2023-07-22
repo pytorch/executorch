@@ -105,7 +105,6 @@ runtime.python_library(
     ]),
     base_module = "tools.code_analyzer",
     visibility = ["PUBLIC"],
-    _is_external_target = True,
     deps = [
         ":gen_selected_mobile_ops_header",
         ":torchgen",
