@@ -14,7 +14,7 @@ concurrency:
 jobs:
   buck-build-test:
     name: buck-build-test
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@use-shareable-gha-calculate-docker-image
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
