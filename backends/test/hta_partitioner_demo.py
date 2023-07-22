@@ -58,7 +58,9 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
                 (input_x, input_h, input_c),
                 exir.CaptureConfig(pt2_mode=True),
             )
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            .to_edge(
+                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+            )
             .graph_module
         )
 
@@ -71,7 +73,7 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
                 (input_x, input_h),
                 exir.CaptureConfig(pt2_mode=True),
             )
-            .to_edge()
+            .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
             .graph_module
         )
         self.patterns = [pattern_lstm_conv.graph, pattern_sub.graph]
@@ -213,7 +215,9 @@ class HTAPartitionerOnePatternDemo(Partitioner):
                 (input_x, input_h, input_c),
                 exir.CaptureConfig(pt2_mode=True),
             )
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            .to_edge(
+                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+            )
             .graph_module
         )
         self.patterns = [pattern_lstm_conv.graph]

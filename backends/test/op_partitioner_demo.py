@@ -8,6 +8,7 @@ from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
 from executorch.backends.compile_spec_schema import CompileSpec
 from executorch.backends.partitioner import DelegationSpec, Partitioner
 from executorch.backends.test.backend_with_compiler_demo import BackendWithCompilerDemo
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_control_flow_submodules
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
@@ -15,14 +16,14 @@ from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 class AddOperatorSupport(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         return node.op == "call_function" and node.target in [
-            torch.ops.aten.add.Tensor,
+            exir_ops.edge.aten.add.Tensor,
         ]
 
 
 class MatmulOperatorSupport(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         return node.op == "call_function" and node.target in [
-            torch.ops.aten.mm.default,
+            exir_ops.edge.aten.mm.default,
         ]
 
 

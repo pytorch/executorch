@@ -30,7 +30,7 @@ class TestDelegateAtenMode(unittest.TestCase):
         model_inputs = (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
         edge_graph_module = exir.capture(
             add_mul_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge()
+        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_add_mul = to_backend(
@@ -53,7 +53,7 @@ class TestDelegateAtenMode(unittest.TestCase):
             exir.capture(
                 composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
             )
-            .to_edge()
+            .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
             .to_executorch()
         )
 

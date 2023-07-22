@@ -16,6 +16,7 @@ python_library(
         "//caffe2:torch",
         "//executorch/backends:backend_details",
         "//executorch/backends:compile_spec_schema",
+        "//executorch/exir/dialects:lib",
     ],
 )
 
@@ -68,6 +69,7 @@ python_library(
         "//executorch/backends:partitioner",
         "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir:graph_module",
+        "//executorch/exir/dialects:lib",
     ],
 )
 
@@ -100,6 +102,7 @@ python_unittest(
         "//executorch/exir:lib",
         "//executorch/exir:print_program",
         "//executorch/exir:schema",
+        "//executorch/exir/dialects:lib",
         "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/extension/pytree:pylib",
         "//executorch/kernels/portable:custom_ops_generated_lib",
@@ -122,6 +125,7 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir:lib",
+        "//executorch/exir/dialects:lib",
     ],
 )
 

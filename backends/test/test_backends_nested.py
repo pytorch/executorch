@@ -194,7 +194,7 @@ class TestNestedBackends(unittest.TestCase):
             m,
             m.get_example_inputs(),
             exir.CaptureConfig(pt2_mode=True),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
 
         partitioned = to_backend(orig, Backend1PartitionerDemo)
 
@@ -210,13 +210,13 @@ class TestNestedBackends(unittest.TestCase):
             str(toplevel_lowered.processed_bytes),
             (
                 'b"Backend1::('
-                + "call_delegate(b'Backend2::add.Tensor;');"
+                + "call_delegate(b'Backend2::aten.add.Tensor;');"
                 + "cond("
                 # True function of toplevel cond (nested cond)
-                + "cond(call_delegate(b'Backend2::add.Tensor;mm.default;');,call_delegate(b'Backend2::mm.default;'););"
+                + "cond(call_delegate(b'Backend2::aten.add.Tensor;aten.mm.default;');,call_delegate(b'Backend2::aten.mm.default;'););"
                 # True function of toplevel cond (delegated add)
-                + "call_delegate(b'Backend2::add.Tensor;');,"
+                + "call_delegate(b'Backend2::aten.add.Tensor;');,"
                 # False function of toplevel cond
-                + "call_delegate(b'Backend2::mm.default;'););)\""
+                + "call_delegate(b'Backend2::aten.mm.default;'););)\""
             ),
         )

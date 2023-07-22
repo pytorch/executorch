@@ -4,6 +4,7 @@ import torch
 
 from executorch.backends.backend_details import BackendDetails
 from executorch.backends.compile_spec_schema import CompileSpec
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch._export.exported_program import ExportedProgram
 
 
@@ -77,10 +78,12 @@ class BackendWithCompilerDemo(BackendDetails):
         number_of_instruction = 0
         for node in edge_program.graph.nodes:
             if node.op == "call_function":
+                # TODO(gasoonjia): remove the support of torch.ops.aten.sin.default after migrate serde to edge dialect.
                 if (
-                    node.target == torch.ops.aten.sin.default
-                    or node.target == torch.ops.aten.mm.default
-                    or node.target == torch.ops.aten.add.Tensor
+                    node.target == exir_ops.edge.aten.sin.default
+                    or node.target == exir_ops.edge.aten.mm.default
+                    or node.target == exir_ops.edge.aten.add.Tensor
+                    or node.target == torch.ops.aten.sin.default
                 ):
                     simple_op = DemoOp(
                         node.target.__name__,

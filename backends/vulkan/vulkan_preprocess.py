@@ -21,13 +21,13 @@ DEFAULT_DEBUG_HANDLE = 65535
 class VulkanBackend(BackendDetails):
     @staticmethod
     def get_vk_op_type(target_name: str) -> vk_graph_schema.VkArithmeticOpType:
-        if target_name == "add.Tensor":
+        if target_name == "aten.add.Tensor":
             return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_add
-        elif target_name == "sub.Tensor":
+        elif target_name == "aten.sub.Tensor":
             return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_sub
-        elif target_name == "mul.Tensor":
+        elif target_name == "aten.mul.Tensor":
             return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_mul
-        elif target_name == "div.Tensor":
+        elif target_name == "aten.div.Tensor":
             return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_div
         else:
             raise AssertionError(

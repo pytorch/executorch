@@ -8,6 +8,7 @@ from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
 )
 from executorch.exir import CaptureConfig, EdgeCompileConfig
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.node import Node
 from torch.fx.passes.operator_support import OperatorSupportBase
 
@@ -21,7 +22,7 @@ class TestGraphPartition(unittest.TestCase):
         )
         graph_module = (
             exir.capture(module, inputs, capture_config)
-            .to_edge(EdgeCompileConfig(_check_ir_validity=False))
+            .to_edge(EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
             .graph_module
         )
 
@@ -129,17 +130,17 @@ class TestGraphPartition(unittest.TestCase):
             "_param_constant4_1",
             "_param_constant5",
             "_param_constant5_1",
-            "convolution_default_2",
-            "convolution_default_3",
-            "relu_default",
+            "aten_convolution_default_2",
+            "aten_convolution_default_3",
+            "aten_relu_default",
         ]
         partition_2 = [
             "_param_constant0",
             "_param_constant1",
             "_param_constant2",
             "_param_constant3",
-            "convolution_default",
-            "convolution_default_1",
+            "aten_convolution_default",
+            "aten_convolution_default_1",
         ]
 
         # extract node names from partition_list, compare them with expected node names
@@ -165,8 +166,8 @@ class TestGraphPartition(unittest.TestCase):
         class TestOperatorSupport(OperatorSupportBase):
             def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
                 return node.op == "call_function" and node.target in [
-                    torch.ops.aten.div.Tensor,
-                    torch.ops.aten.add.Tensor,
+                    exir_ops.edge.aten.div.Tensor,
+                    exir_ops.edge.aten.add.Tensor,
                 ]
 
         class TestModule(torch.nn.Module):
@@ -201,7 +202,7 @@ class TestGraphPartition(unittest.TestCase):
 
         assert len(partition_list) == 2, "the subgraph should be divided into 2 parts"
 
-        partition_1 = ["relu_default"]
+        partition_1 = ["aten_relu_default"]
         partition_2 = [
             "_param_constant0",
             "_param_constant1",
@@ -211,11 +212,11 @@ class TestGraphPartition(unittest.TestCase):
             "_param_constant4_1",
             "_param_constant5",
             "_param_constant5_1",
-            "add_tensor",
-            "convolution_default",
-            "convolution_default_1",
-            "convolution_default_2",
-            "convolution_default_3",
+            "aten_add_tensor",
+            "aten_convolution_default",
+            "aten_convolution_default_1",
+            "aten_convolution_default_2",
+            "aten_convolution_default_3",
         ]
 
         # extract node names from partition_list, compare them with expected node names

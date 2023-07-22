@@ -134,9 +134,9 @@ class BackendWithCompiler final : public PyTorchBackendInterface {
     // example: [('prim::Constant#1', 14), ('aten::add', 15)]
     auto op_list = static_cast<const DemoOpList*>(handle);
 
-    const char* kDemoAdd = "demo::add.Tensor";
-    const char* kDemoMul = "demo::mm.default";
-    const char* kDemoSin = "demo::sin.default";
+    const char* kDemoAdd = "demo::aten.add.Tensor";
+    const char* kDemoMul = "demo::aten.mm.default";
+    const char* kDemoSin = "demo::aten.sin.default";
     const char* kTorchFloat32 = "torch.float32";
 
     for (size_t index = 0; index < op_list->numops; index++) {
