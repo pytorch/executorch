@@ -1,0 +1,15 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+python_unittest(
+    name = "test_export",
+    srcs = [
+        "test_export.py",
+    ],
+    supports_static_listing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples:utils",
+        "//executorch/examples/models/mobilenet_v3:mv3_export",
+        "//executorch/exir:lib",
+    ],
+)

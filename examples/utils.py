@@ -1,0 +1,11 @@
+import executorch.exir as exir
+
+# Using dynamic shape does not allow us to run graph_module returned by
+# to_executorch for mobilenet_v3.
+# Reason is that there memory allocation ops with symbolic shape nodes.
+# and when evaulating shape, it doesnt seem that we presenting them with shape env
+# that contain those variables.
+_CAPTURE_CONFIG = exir.CaptureConfig(enable_dynamic_shape=True)
+_EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
+    _check_ir_validity=False, _use_edge_ops=True
+)

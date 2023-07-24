@@ -5,6 +5,8 @@ import argparse
 import executorch.exir as exir
 
 import torch
+from executorch.examples.models.mobilenet_v3 import MV3Model
+from executorch.examples.utils import _CAPTURE_CONFIG, _EDGE_COMPILE_CONFIG
 
 
 class MulModule(torch.nn.Module):
@@ -14,7 +16,7 @@ class MulModule(torch.nn.Module):
     def forward(self, input, other):
         return input * other
 
-    def get_random_inputs(self):
+    def get_example_inputs(self):
         return (torch.randn(3, 2), torch.randn(3, 2))
 
 
@@ -26,7 +28,7 @@ class LinearModule(torch.nn.Module):
     def forward(self, arg):
         return self.linear(arg)
 
-    def get_random_inputs(self):
+    def get_example_inputs(self):
         return (torch.randn(3, 3),)
 
 
@@ -41,7 +43,7 @@ class AddModule(torch.nn.Module):
         z = z + z
         return z
 
-    def get_random_inputs(self):
+    def get_example_inputs(self):
         return (torch.ones(1), torch.ones(1))
 
 
@@ -49,14 +51,15 @@ MODEL_NAME_TO_MODEL = {
     "mul": MulModule,
     "linear": LinearModule,
     "add": AddModule,
+    "mv3": None,
 }
 
 
-def export_to_ff(model_name, model):
-    m = model()
-    edge = exir.capture(
-        m, m.get_random_inputs(), exir.CaptureConfig(enable_dynamic_shape=True)
-    ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+def export_to_ff(model_name, model, example_inputs):
+    m = model
+    edge = exir.capture(m, example_inputs, _CAPTURE_CONFIG).to_edge(
+        _EDGE_COMPILE_CONFIG
+    )
     print("Exported graph:\n", edge.graph)
 
     exec_prog = edge.to_executorch()
@@ -85,6 +88,17 @@ if __name__ == "__main__":
             f"Model {args.model_name} is not a valid name. "
             f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}."
         )
-    model = MODEL_NAME_TO_MODEL[args.model_name]
 
-    export_to_ff(args.model_name, model)
+    if args.model_name == "mv3":
+        # Unfortunately lack of consistent interface on example models in this file
+        # and how we obtain oss models result in changes like this.
+        # we should probably fix this if all the MVP model's export example
+        # wiil be added here.
+        # For now, to unblock, not planning to land those changes in the current diff
+        model = MV3Model.get_model().eval()
+        example_inputs = MV3Model.get_example_inputs()
+    else:
+        model = MODEL_NAME_TO_MODEL[args.model_name]()
+        example_inputs = model.get_example_inputs()
+
+    export_to_ff(args.model_name, model, example_inputs)
