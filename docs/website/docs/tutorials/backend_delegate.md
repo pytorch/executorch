@@ -1,4 +1,4 @@
-# Delegate a PyTorch module to Executorch runtime
+# Delegate a PyTorch module to a different backend in Executorch
 
 This note is to demonstrate the basic end-to-end flow of backend delegation in
 the Executorch runtime.
@@ -13,14 +13,13 @@ interface.
 
 ## Frontend
 
-There are two flows for delegation:
+There are three flows for delegation:
 
-1. Lower delegatable module ahead of time and compose it with another module
-    which will later be traced through the Executorch workflow.
-2. Trace a module, partition the nodes that are lowerable into a module, lower
-    that module, and insert it into the original toplevel module.
+1. Lower the whole module.
+1. Lower the whole module and compose it with another module.
+2. After getting the module, lowering the subgraph partitioned by the according partitioner, like XNNPACK partitioner.
 
-### Flow 1: Lowering ahead of time
+### Flow 1: Lowering the whole module
 
 The flow starts from a traced graph module with Edge Dialect representation. To lower
 it, we call the following function which returns a `LoweredBackendModule` (more
@@ -67,7 +66,16 @@ from executorch.backends.test.backend_with_compiler_demo import (
 lowered_module = to_backend('BackendWithCompilerDemo', to_be_lowered_exir_submodule, [])
 ```
 
-We can now compose this lowered module with another module:
+We can emit the program directly by running
+
+```python
+# API to be added
+program = lowered_module.program
+```
+
+### Flow 2: Lowering the whole module and composite
+
+After flow 1, alternatively we can compose this lowered module with another module:
 
 ```python
 # This submodule runs in executor runtime
