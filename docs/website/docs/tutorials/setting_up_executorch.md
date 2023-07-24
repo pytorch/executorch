@@ -14,6 +14,8 @@ conda activate executorch
 conda install -c conda-forge flatbuffers
 
 # Install the nightly builds
+# Note that ff you are behind firewall,
+# appropriate proxy server must be setup for all subsequent steps
 pip install --pre torch -i https://download.pytorch.org/whl/nightly/cpu
 ```
 
