@@ -26,6 +26,5 @@ def define_common_targets():
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/runtime/core:memory_allocator",
-                "//executorch/profiler:profiler",
             ],
         )

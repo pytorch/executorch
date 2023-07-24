@@ -2,6 +2,7 @@
 
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/hooks.h>
+#include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <inttypes.h>
 
@@ -59,13 +60,13 @@ uint32_t begin_profiling(const char* name) {
   prof_arr[curr_counter].instruction_idx = state.instruction_idx;
   // Set start time at the last to ensure that we're not capturing
   // any of the overhead in this function.
-  prof_arr[curr_counter].start_time = get_curr_time();
+  prof_arr[curr_counter].start_time = et_pal_current_ticks();
   return curr_counter;
 }
 
 void end_profiling(uint32_t token_id) {
   ET_CHECK_MSG(token_id < MAX_PROFILE_EVENTS, "Invalid token id.");
-  prof_arr[token_id].end_time = get_curr_time();
+  prof_arr[token_id].end_time = et_pal_current_ticks();
 }
 
 void dump_profile_stats(prof_result_t* prof_result) {

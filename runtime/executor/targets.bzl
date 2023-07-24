@@ -50,7 +50,6 @@ def define_common_targets():
             "//executorch/runtime/platform:platform",
             "//executorch/schema:extended_header",
             "//executorch/schema:schema",
-            "//executorch/profiler:profiler",
         ],
         preprocessor_flags = _program_preprocessor_flags(),
         exported_deps = ["//executorch/runtime/core:core"],
@@ -71,7 +70,6 @@ def define_common_targets():
                 "//executorch/runtime/backend:backend_registry",
                 "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
-                "//executorch/profiler:profiler",
                 "//executorch/schema:schema",
             ],
             exported_deps = [

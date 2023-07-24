@@ -14,7 +14,6 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/runtime/core:memory_allocator",
-            "//executorch/profiler:profiler",
             "//executorch/sdk/etdump:etdump_gen",
         ],
         preprocessor_flags = ["-DPROFILING_ENABLED"],

@@ -3,9 +3,6 @@
 
 load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
-load(":targets.bzl", "define_common_targets")
-
-define_common_targets()
 
 python_library(
     name = "parse_profiler_library",
