@@ -28,6 +28,10 @@ jobs:
         ln -s "${WORKSPACE}" executorch
         # Install executorch
         source executorch/install.sh
+        popd
 
         # Just print out the list of packages for debugging
         pip list
+
+        buck2 build //test:size_test_all_ops
+        sleep 300
