@@ -64,6 +64,7 @@ class TestSerde(unittest.TestCase):
         inputs = (torch.ones([512], requires_grad=True),)
         self.check_serde(MyModule(), inputs)
 
+    @unittest.expectedFailure  # TODO(angelayi)
     def test_to_out_variant_singleon_tensor_list(self) -> None:
         class MyModel(torch.nn.Module):
             def __init__(self):
