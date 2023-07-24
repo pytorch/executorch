@@ -33,5 +33,5 @@ jobs:
         # Just print out the list of packages for debugging
         pip list
 
-        buck2 build //test:size_test_all_ops
         sleep 300
+        buck2 build //test:size_test_all_ops
