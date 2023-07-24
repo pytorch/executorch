@@ -1,7 +1,9 @@
 # Docker images for Executorch CI
 
 This directory contains everything needed to build the Docker images
-that are used in Executorch CI.
+that are used in Executorch CI. The content of this directory are copied
+from PyTorch CI https://github.com/pytorch/pytorch/tree/main/.ci/docker.
+It also uses the same directory structure as PyTorch.
 
 ## Contents
 
