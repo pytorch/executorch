@@ -14,11 +14,12 @@ concurrency:
 jobs:
   buck-build-test:
     name: buck-build-test
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@init-submodules
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
       fetch-depth: 0
+      submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         WORKSPACE=$(pwd)
@@ -33,5 +34,4 @@ jobs:
         # Just print out the list of packages for debugging
         pip list
 
-        sleep 300
         buck2 build //test:size_test_all_ops
