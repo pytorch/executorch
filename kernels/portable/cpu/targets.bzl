@@ -652,6 +652,9 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_stack",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
     ),
     op_target(
         name = "op_sub",
