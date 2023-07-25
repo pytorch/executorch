@@ -54,11 +54,15 @@ void check_preconditions(
  * transpose_copy.int_out(Tensor self, int dim0, int dim1, *, Tensor(a!) out)
  */
 Tensor& transpose_copy_int_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& a,
     int64_t dim0,
     int64_t dim1,
     Tensor& out) {
+  (void)ctx;
+
+  ET_CHECK_SAME_DTYPE2(a, out);
+
   // fix python negative indexing
   if (dim0 < 0) {
     dim0 += out.dim();
