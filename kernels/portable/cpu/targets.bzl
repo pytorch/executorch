@@ -580,6 +580,7 @@ _ATEN_OPS = (
         name = "op_rsub",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:functional_util",
         ],
     ),
     op_target(
