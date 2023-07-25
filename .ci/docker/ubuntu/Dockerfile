@@ -29,9 +29,10 @@ ARG PYTHON_VERSION
 ENV PYTHON_VERSION=$PYTHON_VERSION
 ENV PATH /opt/conda/envs/py_$PYTHON_VERSION/bin:/opt/conda/bin:$PATH
 COPY requirements-ci.txt /opt/conda/
+COPY conda-env-ci.yml /opt/conda/
 COPY ./common/install_conda.sh install_conda.sh
 COPY ./common/utils.sh utils.sh
-RUN bash ./install_conda.sh && rm install_conda.sh utils.sh /opt/conda/requirements-ci.txt
+RUN bash ./install_conda.sh && rm install_conda.sh utils.sh /opt/conda/requirements-ci.txt /opt/conda/conda-env-ci.yml
 
 USER ci-user
 CMD ["bash"]
