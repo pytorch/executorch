@@ -85,9 +85,9 @@ Tensor& div_scalar_out(
   ET_CHECK(common_type == out_type);
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div", CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES(common_type, ctx, "div", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES(out_type, ctx, "div", CTYPE_OUT, [&]() {
+    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "div", CTYPE_B, [&]() {
+      ET_SWITCH_FLOAT_TYPES(common_type, ctx, "div", CTYPE_IN, [&]() {
+        ET_SWITCH_FLOAT_TYPES(out_type, ctx, "div", CTYPE_OUT, [&]() {
           CTYPE_B b_val;
           ET_EXTRACT_SCALAR(b, b_val);
           CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);

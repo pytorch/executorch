@@ -73,7 +73,7 @@ Tensor& sub_scalar_out(
   ET_CHECK(common_type == out_type);
 
   ET_SWITCH_REAL_TYPES(a_type, ctx, "sub", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES(b_type, ctx, "sub", CTYPE_B, [&]() {
+    ET_SWITCH_SCALAR_OBJ_REAL_TYPES(b_type, ctx, "sub", CTYPE_B, [&]() {
       ET_SWITCH_REAL_TYPES(common_type, ctx, "sub", CTYPE_IN, [&]() {
         ET_SWITCH_REAL_TYPES(out_type, ctx, "sub", CTYPE_OUT, [&]() {
           CTYPE_B b_val;
