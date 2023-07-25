@@ -39,8 +39,6 @@ exir.emit
 .. automodule:: exir.emit
 
 .. autofunction:: emit_program
-.. autofunction:: pretty_print
-.. autofunction:: pretty_print_stacktraces
 
 exir.error
 ----------------------------
