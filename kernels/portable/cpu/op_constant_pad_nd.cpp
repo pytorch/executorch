@@ -131,7 +131,7 @@ template <typename CTYPE>
 void constant_pad_nd_out_impl(
     const Tensor& self,
     IntArrayRef pad,
-    const Scalar& value,
+    CTYPE value_v,
     Tensor& out) {
   const CTYPE* self_data = self.data_ptr<CTYPE>();
   CTYPE* out_data = out.data_ptr<CTYPE>();
@@ -165,10 +165,6 @@ void constant_pad_nd_out_impl(
   IntArrayRef out_sizes_ref(out_sizes, ndim);
   IntArrayRef out_strides_ref(out_strides, ndim);
 
-  CTYPE value_v = 0;
-  bool ok = utils::extract_scalar(value, &value_v);
-  ET_CHECK_MSG(ok, "Invalid value: wrong type or out of range");
-
   apply_padding_to_dim(
       ndim,
       self_data,
@@ -186,33 +182,36 @@ void constant_pad_nd_out_impl(
 } // namespace
 
 Tensor& constant_pad_nd_out(
-    RuntimeContext& context,
-    const Tensor& self,
+    RuntimeContext& ctx,
+    const Tensor& in,
     IntArrayRef pad,
     const Scalar& value,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
 
-  check_input_output(self, out);
-  check_padding_arg(self, pad);
+  check_input_output(in, out);
+  check_padding_arg(in, pad);
 
   // resize out tensor for dynamic shapes
-  auto error = resize_to_expected_out_size(self, pad, out);
+  auto error = resize_to_expected_out_size(in, pad, out);
   // TODO: Construct error message with requested output sizes.
   ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
-#define CONSTANT_PAD_ND(ctype, dtype)                       \
-  case ScalarType::dtype:                                   \
-    constant_pad_nd_out_impl<ctype>(self, pad, value, out); \
-    break;
+  ScalarType in_type = in.scalar_type();
+  ScalarType value_type = utils::get_scalar_dtype(value);
+  ScalarType out_type = out.scalar_type();
 
-  switch (self.scalar_type()) {
-    ET_FORALL_REAL_TYPES(CONSTANT_PAD_ND);
-    default:
-      ET_CHECK_MSG(
-          false, "%hhd scalar type is not supported.", self.scalar_type());
-  }
-#undef CONSTANT_PAD_ND
+  ET_CHECK(in_type == out_type);
+
+  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE, [&]() {
+    CTYPE value_v;
+    ET_SWITCH_SCALAR_OBJ_TYPES(value_type, ctx, __func__, CTYPE_VALUE, [&]() {
+      CTYPE_VALUE val;
+      ET_EXTRACT_SCALAR(value, val);
+      value_v = static_cast<CTYPE>(val);
+    });
+    constant_pad_nd_out_impl<CTYPE>(in, pad, value_v, out);
+  });
 
   return out;
 }
