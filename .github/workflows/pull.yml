@@ -29,7 +29,7 @@ jobs:
         # Install executorch
         # source executorch/install.sh
         # pip3 install --upgrade pip
-        # sleep 300
+        sleep 300
         pip3 install executorch
         # python3 -m pip install executorch
 
