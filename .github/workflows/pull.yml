@@ -28,7 +28,14 @@ jobs:
         # Create the softlink to the workspace as install.sh requires to run from its parent directory
         ln -s "${WORKSPACE}" executorch
         # Install executorch
-        source executorch/install.sh
+        pushd executorch
+
+
+        # Install nightly pytorch
+        pip3 install --pre torch -i https://download.pytorch.org/whl/nightly/cpu
+        # Install executorch
+        pip3 install .
+
         popd
 
         # Just print out the list of packages for debugging

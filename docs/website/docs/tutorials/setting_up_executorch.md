@@ -21,29 +21,27 @@ pip install --pre torch -i https://download.pytorch.org/whl/nightly/cpu
 
 **Step 2: Set up Executorch**. This will install an  `executorch` pip package to your conda environment.
 ```bash
-mkdir -p ~/src/
-cd ~/src/
 
 # Do one of these, depending on how your auth is set up
 git clone https://github.com/pytorch/executorch.git
 git clone git@github.com:pytorch/executorch.git
 
-# Run the following to get all submodules
+# [Runtime requirement] Run the following to get all submodules, only need for runtime setup
 git submodule update --init --recursive
 
-./executorch/install.sh
+pip install executorch
 
 # cd into a directory that doesn't contain a `./executorch/exir` directory, since
 # otherwise python will try using it for `import executorch.exir...` instead of using the
 # installed pip package.
-cd ~/
+cd executorch
 ```
 
 **Step 3: Try it out**
 
 Via python script:
 ```
-python ~/src/executorch/examples/export/export_example.py -m "add"
+python ~/executorch/examples/export/export_example.py -m "add"
 ```
 
 Or via python interpreter:
