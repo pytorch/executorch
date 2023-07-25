@@ -162,13 +162,17 @@ class QuantParams:
     @classmethod
     def from_weights(cls, tensor_node: torch.fx.Node) -> Optional[QuantParams]:
         # Ignore transpose for weights
-        # TODO:T148540997 remove the t_copy check when convert addmm to linear
+        # TODO:T148540997 remove the t_copy/permute_copy check when convert addmm to linear
         dq = (
             tensor_node.all_input_nodes[0]
-            if tensor_node.target == exir_ops.edge.aten.t_copy.default
+            if tensor_node.target
+            in (
+                exir_ops.edge.aten.permute_copy.default,
+                exir_ops.edge.aten.t_copy.default,
+            )
             else tensor_node
         )
-        # check input of t_copy is dequant
+        # check input of t_copy/permute_copy is dequant
         if not is_dequant(dq):
             return None
 
@@ -181,7 +185,7 @@ class QuantParams:
         # if no one else uses this weight value then take it out of the toplevel module
         check_or_raise(
             q.all_input_nodes[0].op == "get_attr",
-            "q->dq->t_copy not derived from static weight",
+            "q->dq->permute_copy not derived from static weight",
         )
 
         return cls.from_q_dq_node(q)

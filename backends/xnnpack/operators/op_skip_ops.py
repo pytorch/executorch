@@ -108,3 +108,12 @@ class OpSymSizeInt(OpSkipOps):
     """
 
     target = "sym_size.int"
+
+
+@register_node_visitor
+class OpPermuteCopyDefault(OpSkipOps):
+    """
+    do nothing if node is permute_copy.default
+    """
+
+    target = "aten.permute_copy.default"
