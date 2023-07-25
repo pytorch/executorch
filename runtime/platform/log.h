@@ -109,7 +109,7 @@ void vlogf(
  * @param[in] format Format string.
  */
 __ET_PRINTFLIKE(6, 7)
-__ET_INLINE void logf(
+inline void logf(
     LogLevel level,
     et_timestamp_t timestamp,
     const char* filename,
