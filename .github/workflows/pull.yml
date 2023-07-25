@@ -27,8 +27,8 @@ jobs:
         # Create the softlink to the workspace as install.sh requires to run from its parent directory
         ln -s "${WORKSPACE}" executorch
 
-        pip3.7 install executorch
-        python3 -m pip install executorch
+        pip3 install executorch
+        # python3 -m pip install executorch
 
         # Just print out the list of packages for debugging
         pip list
