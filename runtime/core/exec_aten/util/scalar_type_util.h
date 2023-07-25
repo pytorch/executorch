@@ -786,5 +786,15 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
       ET_INTERNAL_SWITCH_CASE_SCALAR_OBJ_FLOATB_TYPES( \
           CTYPE_ALIAS, __VA_ARGS__))
 
+#define ET_SWITCH_TWO_TYPES(T1, T2, TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH(                                                      \
+      TYPE,                                                                \
+      CONTEXT,                                                             \
+      NAME,                                                                \
+      ET_INTERNAL_SWITCH_CASE(                                             \
+          exec_aten::ScalarType::T1, CTYPE_ALIAS, __VA_ARGS__)             \
+          ET_INTERNAL_SWITCH_CASE(                                         \
+              exec_aten::ScalarType::T2, CTYPE_ALIAS, __VA_ARGS__))
+
 } // namespace executor
 } // namespace torch
