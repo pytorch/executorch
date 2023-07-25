@@ -31,7 +31,7 @@ jobs:
         # pip3 install --upgrade pip
         # sleep 300
         pip3 install executorch
-        python3 -m pip install executorch
+        # python3 -m pip install executorch
 
         # Just print out the list of packages for debugging
         pip list
