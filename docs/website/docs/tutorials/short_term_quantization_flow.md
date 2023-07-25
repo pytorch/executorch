@@ -75,16 +75,16 @@ A partially lowered model with some reference quantized patterns been replaced b
 Another path is to implement quantized operator and lower the reference quantized pattern to quantized operators.
 See [this diff](https://www.internalfb.com/diff/D39974289) for an example implementation for quantized add. Basically we need to
 
-(1). Implement a functional quantized operator in quantized_decomposed namespace in [fbcode/executorch/exir/passes/_quant_patterns_and_replacements.py](https://www.internalfb.com/code/fbsource/fbcode/executorch/exir/passes/_quant_patterns_and_replacements.py)
+(1). Implement a functional quantized operator in quantized_decomposed namespace in [//exir/passes/_quant_patterns_and_replacements.py](https://github.com/pytorch/executorch/blob/main/exir/passes/_quant_patterns_and_replacements.py). Notice that these operators are categorized as backend operators since they are meaningful to the target backends.
 
-(2). Implement the out variant quantized operator in quantized_decomposed namespace in fbcode/executorch/kernels/quantized/op_QOP.cpp and add test to fbcode/executorch/kernels/quantized/test/op_QOP_test.cpp
-Also we need to make sure the operator here matches the operator in (1) in signature so that ToOutVar pass can establish the connection between these two ops. Example: https://fburl.com/code/uu9lyx5u
+(2). Implement the out variant quantized operator in quantized_decomposed namespace in //kernels/quantized/op_QOP.cpp and add test to //kernels/quantized/test/op_QOP_test.cpp
+Also we need to make sure the operator here matches the operator in (1) in signature so that ToOutVar pass can establish the connection between these two ops. Example [here](https://github.com/pytorch/executorch/blob/main/kernels/quantized/cpu/op_add.cpp).
 
-(3). Implement lowering pass from reference quantized pattern to the functional quantized operator we write in (1), some examples for quantized add can be found in [fbcode/executorch/exir/passes/_quant_patterns_and_replacements.py](https://www.internalfb.com/code/fbsource/fbcode/executorch/exir/passes/_quant_patterns_and_replacements.py)
+(3). Implement lowering pass from reference quantized pattern to the functional quantized operator we write in (1), some examples for quantized add can be found in [//exir/passes/_quant_patterns_and_replacements.py](https://github.com/pytorch/executorch/blob/main/exir/passes/_quant_patterns_and_replacements.py)
 
-Example Code (extracted from [this test](https://www.internalfb.com/code/fbsource/[ea0e2ae0a4a88529f17342e656e820a528ed5bcd]/fbcode/executorch/exir/tests/test_quant_fusion_pass.py?lines=26)):
+Example Code (extracted from [this test](https://github.com/pytorch/executorch/blob/main/exir/tests/test_quant_fusion_pass.py)):
 ```
-m = exir.capture(m, example_inputs).to_edge(EdgeCompileConfig(passes=[QuantFusionPass(), SpecPropPass()]))
+m = exir.capture(m, example_inputs).to_edge().to_executorch(ExecutorchBackendConfig(passes=[QuantFusionPass()]))
 ```
 ### Result
 A fully lowered quantized model, with both delegated quantized modules and functioanl quantized operators

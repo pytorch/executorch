@@ -86,7 +86,9 @@ def _fuse_quantized_cat(model: GraphModule) -> None:
 class QuantFusionPass(ExportPass):
     def call(self, graph_module: GraphModule) -> PassResult:
         """Lower a quantized reference model (with reference quantized operator patterns)
-        to executorch backend, that has a canonical set of quantized operators
+        to executorch backend, that has a canonical set of quantized operators. This pass
+        is a backend pass and should be applied on top of Edge dialect, ideally in
+        `ExecutorchBackendConfig.passes`. See `test_quant_fusion_pass.py` for an example.
         """
         # linear, conv2d
         # dynamic_linear
