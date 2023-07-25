@@ -19,6 +19,7 @@ jobs:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
       fetch-depth: 0
+      submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         WORKSPACE=$(pwd)
@@ -28,6 +29,7 @@ jobs:
         ln -s "${WORKSPACE}" executorch
         # Install executorch
         source executorch/install.sh
+        popd
 
         # Just print out the list of packages for debugging
         pip list

@@ -7,6 +7,8 @@ install_ubuntu() {
 
   apt-get install -y --no-install-recommends clang-"$CLANG_VERSION"
   apt-get install -y --no-install-recommends llvm-"$CLANG_VERSION"
+  # Also require LLD linker from llvm
+  apt-get install -y lld
 
   # Use update-alternatives to make this version the default
   update-alternatives --install /usr/bin/clang clang /usr/bin/clang-"$CLANG_VERSION" 50
