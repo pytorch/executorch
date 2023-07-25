@@ -25,11 +25,11 @@ jobs:
 
         pushd "${HOME}"
         # Create the softlink to the workspace as install.sh requires to run from its parent directory
-        # ln -s "${WORKSPACE}" executorch
+        ln -s "${WORKSPACE}" executorch
         # Install executorch
         # source executorch/install.sh
         # pip3 install --upgrade pip3
-        # pushd executorch
+        pushd executorch
         pip3 install .
 
         # Just print out the list of packages for debugging
