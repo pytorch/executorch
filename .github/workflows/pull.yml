@@ -34,3 +34,5 @@ jobs:
 
         # Just print out the list of packages for debugging
         pip list
+
+        python ./examples/export/export_example.py -m "add"
