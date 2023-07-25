@@ -22,6 +22,8 @@ install_miniconda() {
 
   sed -e 's|PATH="\(.*\)"|PATH="/opt/conda/bin:\1"|g' -i /etc/environment
   export PATH="/opt/conda/bin:$PATH"
+
+  /opt/conda/bin/conda install -y -c conda-forge flatbuffers
 }
 
 install_python() {

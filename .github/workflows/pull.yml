@@ -30,7 +30,7 @@ jobs:
         # source executorch/install.sh
         # pip3 install --upgrade pip3
         pushd executorch
-        conda install -c conda-forge flatbuffers
+        # conda install -c conda-forge flatbuffers
         pip3 install --pre torch -i https://download.pytorch.org/whl/nightly/cpu
         pip3 install .
 
