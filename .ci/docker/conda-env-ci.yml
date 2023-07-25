@@ -1,4 +1,0 @@
-channels:
-  - defaults
-dependencies:
-  - flatbuffers=2.0.0
