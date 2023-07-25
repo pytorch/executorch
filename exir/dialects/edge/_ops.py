@@ -334,7 +334,8 @@ class EdgeOpOverload:
             getattr(torch.ops, self.namespace), self._schema.name.split("::")[1]
         )
         schemas: List[torch._C.FunctionSchema] = [
-            getattr(torch_packet, o)._schema for o in torch_packet.overloads()
+            getattr(torch_packet, o)._schema
+            for o in torch._C._jit_get_operation(self._schema.name)[1]
         ]
         # compare the signature of out variant overload with the signature of the original overload
         signature = dataclasses.replace(native_schema.signature(), returns=())

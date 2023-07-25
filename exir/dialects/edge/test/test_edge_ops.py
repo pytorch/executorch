@@ -432,3 +432,17 @@ class TestEdgeOps(unittest.TestCase):
         op = ops.edge.TEST_ONLY.foo.Tensor
         out = op.to_out_variant()
         self.assertEqual(out, torch.ops.TEST_ONLY.foo.Tensor_out)
+
+    def test_get_new_registered_out_var(
+        self,
+    ) -> None:
+        library = Library("TEST_ONLY", "DEF")
+        library.define("foo.Tensor(Tensor a, Tensor b) -> Tensor")
+        op = ops.edge.TEST_ONLY.foo.Tensor
+
+        self.assertRaises(RuntimeError, op.to_out_variant)
+        library.define(
+            "foo.Tensor_out(Tensor a, Tensor b, *, Tensor(a!) out) -> Tensor(a!)"
+        )
+        out = op.to_out_variant()
+        self.assertEqual(out, torch.ops.TEST_ONLY.foo.Tensor_out)
