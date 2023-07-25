@@ -28,7 +28,9 @@ jobs:
         ln -s "${WORKSPACE}" executorch
         # Install executorch
         # source executorch/install.sh
+        pip install --upgrade pip
         sleep 300
+        pip install executorch
         python3 -m pip install executorch
 
         # Just print out the list of packages for debugging
