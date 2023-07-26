@@ -271,6 +271,7 @@ _ATEN_OPS = (
         name = "op_fill",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:functional_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],

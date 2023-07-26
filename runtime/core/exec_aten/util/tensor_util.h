@@ -315,6 +315,14 @@
         "Tensor must have default or channels last dim order");  \
   })
 
+/**
+ * Convenience macro to extract a scalar tensor into a value
+ */
+#define ET_EXTRACT_SCALAR_TENSOR(scalar_tensor, out_val) \
+  ET_CHECK_MSG(                                          \
+      extract_scalar_tensor(scalar_tensor, &out_val),    \
+      #scalar_tensor " could not be extracted: wrong type or out of range");
+
 namespace torch {
 namespace executor {
 

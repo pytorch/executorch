@@ -1,5 +1,7 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
+
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
+#include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -8,100 +10,77 @@ namespace native {
 
 using Scalar = exec_aten::Scalar;
 using ScalarType = exec_aten::ScalarType;
-
-namespace {
-
-template <class CTYPE>
-void fill_scalar_kernel(const Tensor& self, const Scalar& other, Tensor& out) {
-  // Assert `self` and `out` have the same number of elements.
-  ET_CHECK(self.numel() == out.numel());
-
-  // Assert `other` is a valid scalar.
-  CTYPE other_v = 0;
-  bool ok = utils::extract_scalar(other, &other_v);
-  ET_CHECK_MSG(ok, "Invalid other value: wrong type or out of range");
-
-  // Create pointer over `out` data with `CTYPE`.
-  auto data_out = out.data_ptr<CTYPE>();
-
-  // Set each element of `out` data to `other_v`.
-  for (auto i = 0; i < out.numel(); i++) {
-    data_out[i] = static_cast<CTYPE>(other_v);
-  }
-}
-
-template <class CTYPE>
-void fill_tensor_kernel(const Tensor& self, const Tensor& other, Tensor& out) {
-  // Assert `self` and `out` have the same number of elements.
-  ET_CHECK(self.numel() == out.numel());
-
-  // Assert `other` is a valid scalar.
-  CTYPE other_v = 0;
-  bool ok = extract_scalar_tensor(other, &other_v);
-  ET_CHECK_MSG(ok, "Invalid other value: wrong type or out of range");
-
-  // Create pointer over `other` and `out` data with `CTYPE`.
-  auto data_out = out.data_ptr<CTYPE>();
-
-  // Set each element of `out` data to `other_v`.
-  for (auto i = 0; i < out.numel(); i++) {
-    data_out[i] = static_cast<CTYPE>(other_v);
-  }
-}
-
-} // namespace
+using Tensor = exec_aten::Tensor;
 
 Tensor& fill_scalar_out(
-    RuntimeContext& context,
-    const Tensor& self,
-    const Scalar& other,
+    RuntimeContext& ctx,
+    const Tensor& a,
+    const Scalar& b,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
 
-  // Assert `self` and `out` have the same tensor shape.
-  ET_CHECK_SAME_SHAPE2(self, out);
+  ScalarType a_type = a.scalar_type();
+  ScalarType b_type = utils::get_scalar_dtype(b);
+  ScalarType out_type = out.scalar_type();
 
-#define FILL_SCALAR_OUT(ctype, dtype)            \
-  case ScalarType::dtype:                        \
-    fill_scalar_kernel<ctype>(self, other, out); \
-    break;
+  ET_CHECK(a_type == out_type);
 
-  switch (self.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND(Bool, FILL_SCALAR_OUT)
-    default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd", self.scalar_type());
-  }
+  // Resize for dynamic shape
+  auto error = resize_tensor(out, a.sizes());
+  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
-#undef FILL_SCALAR_OUT
+  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "fill", CTYPE_A, [&] {
+    CTYPE_A b_casted;
+    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "fill", CTYPE_B, [&] {
+      CTYPE_B b_val;
+      ET_EXTRACT_SCALAR(b, b_val);
+      b_casted = static_cast<CTYPE_A>(b_val);
+    });
+
+    apply_unary_map_fn(
+        [b_casted](const CTYPE_A val_a) { return b_casted; },
+        a.const_data_ptr<CTYPE_A>(),
+        out.mutable_data_ptr<CTYPE_A>(),
+        out.numel());
+  });
 
   return out;
 }
 
 Tensor& fill_tensor_out(
-    RuntimeContext& context,
-    const Tensor& self,
-    const Tensor& other,
+    RuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
 
-  // Assert `other` must be a scalar tensor.
-  ET_CHECK(other.dim() == 0 && other.numel() == 1);
+  // Assert `b` must be a scalar tensor.
+  ET_CHECK(b.dim() == 0 && b.numel() == 1);
 
-  // Assert `self`, `other`, and `out` have the same dtype.
-  ET_CHECK_SAME_DTYPE3(self, other, out);
+  ScalarType a_type = a.scalar_type();
+  ScalarType b_type = b.scalar_type();
+  ScalarType out_type = out.scalar_type();
 
-#define FILL_TENSOR_OUT(ctype, dtype)            \
-  case ScalarType::dtype:                        \
-    fill_tensor_kernel<ctype>(self, other, out); \
-    break;
+  ET_CHECK(a_type == out_type);
 
-  switch (self.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND(Bool, FILL_TENSOR_OUT)
-    default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd", self.scalar_type());
-  }
+  // Resize for dynamic shape
+  auto error = resize_tensor(out, a.sizes());
+  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
-#undef FILL_TENSOR_OUT
+  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "fill", CTYPE_A, [&] {
+    CTYPE_A b_casted;
+    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "fill", CTYPE_B, [&] {
+      CTYPE_B b_val;
+      ET_EXTRACT_SCALAR_TENSOR(b, b_val);
+      b_casted = static_cast<CTYPE_A>(b_val);
+    });
+
+    apply_unary_map_fn(
+        [b_casted](const CTYPE_A val_a) { return b_casted; },
+        a.const_data_ptr<CTYPE_A>(),
+        out.mutable_data_ptr<CTYPE_A>(),
+        out.numel());
+  });
 
   return out;
 }
