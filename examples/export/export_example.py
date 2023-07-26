@@ -89,7 +89,7 @@ if __name__ == "__main__":
         )
 
     if args.model_name == "mv3":
-        from executorch.examples.models.mobilenet_v3 import MV3Model
+        from ..models.mobilenet_v3 import MV3Model
 
         # Unfortunately lack of consistent interface on example models in this file
         # and how we obtain oss models result in changes like this.
