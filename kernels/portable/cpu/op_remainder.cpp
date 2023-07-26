@@ -87,14 +87,14 @@ Tensor& remainder_Scalar_out(
   ScalarType common_type = utils::promote_type_with_scalar(a_type, b);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(common_type == out_type);
+  ET_CHECK(canCast(common_type, out_type));
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "remainder", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "remainder", CTYPE_B, [&]() {
+    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "remainder", CTYPE_B, [&]() {
+      CTYPE_B val_b = 0;
+      ET_EXTRACT_SCALAR(b, val_b);
       ET_SWITCH_REAL_TYPES(common_type, ctx, "remainder", CTYPE_IN, [&]() {
         ET_SWITCH_REAL_TYPES(out_type, ctx, "remainder", CTYPE_OUT, [&]() {
-          CTYPE_B val_b = 0;
-          ET_EXTRACT_SCALAR(b, val_b);
           apply_unary_map_fn(
               [val_b](const CTYPE_A val_a) {
                 CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
