@@ -44,6 +44,9 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_alias_copy",
+    ),
+    op_target(
         name = "op_amax",
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",

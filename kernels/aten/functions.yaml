@@ -33,6 +33,8 @@
 
 - op: addmm.out
 
+- op: alias_copy.out
+
 - op: amax.out
 
 - op: amin.out
