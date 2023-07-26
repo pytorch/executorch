@@ -8,12 +8,12 @@ semantics of PyTorch programs that are written in Python. EXIR primarily
 represents computation in a streamlined list of operations, with limited support
 for dynamism such as control flows.
 
-To create an EXIR, a front end can be used that soundly captures a PyTorch
+To create an EXIR, a frontend can be used that soundly captures a PyTorch
 program via a trace-specializing mechanism. The resulting EXIR can then be
 optimized and executed by a backend.
 
  The key concepts that will be covered in this document include:
- - ExportedProgram: the datastructure containing the EXIR program
+ - ExportedProgram: the data structure containing the EXIR program
  - Graph: which consists of a list of nodes.
  - Nodes represent operations, control flow, and metadata stored on this node.
  - Values are produced and consumed by nodes.
@@ -98,7 +98,7 @@ details in the next section):
 * 0 or more nodes of op type `call_function`
 * exactly 1 node of op type `output`
 
-**Collorary:** The smallest valid Graph will be of one Node. i.e. nodes is never empty.
+**Collorary:** The smallest valid Graph will be of one node. i.e. nodes is never empty.
 
 **Definition:**
 The set of `placeholder` nodes of a Graph represents the **inputs** of the Graph of GraphModule.
