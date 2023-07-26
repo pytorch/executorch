@@ -30,10 +30,10 @@ Compared to the legacy Lite Interpreter, there are some major benefits:
 
 ## Quick Links
 
-- [Basics: Terminology](/docs/website/docs/basics/terminology.md)
-- [Exporting to Executorch](/docs/website/docs/tutorials/exported_to_executorch.md)
+- [Basics: Terminology](/docs/website/docs/basics/terminology.md) 
+- [Exporting to Executorch](/docs/website/docs/tutorials/exporting_to_executorch.md))
     - [EXIR Spec](/docs/website/docs/ir_spec/00_exir.md)
-    - [Delegate to a backend](/docs/website/docs/tutorials/backends.md)
+    - [Delegate to a backend](/docs/tutorials/backend_delegate.md)
 - [Wiki (internal-only)](https://www.internalfb.com/intern/wiki/PyTorch/Using_PyTorch/Executorch/)
 - [Static docs website (internal-only)](https://www.internalfb.com/intern/staticdocs/executorch/)
 - [Testing (internal-only)](https://www.internalfb.com/intern/staticdocs/executorch/docs/fb/poc/)
