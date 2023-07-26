@@ -73,7 +73,7 @@ Tensor& add_scalar_out(
   ET_CHECK(common_type == out_type);
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "add", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "add", CTYPE_B, [&]() {
+    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "add", CTYPE_B, [&]() {
       ET_SWITCH_REAL_TYPES_AND(Bool, common_type, ctx, "add", CTYPE_IN, [&]() {
         ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "add", CTYPE_OUT, [&]() {
           CTYPE_B b_val;

@@ -71,7 +71,7 @@ Tensor& pow_Tensor_Scalar_out(
   ET_CHECK(common_type == out_type);
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "pow", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "pow", CTYPE_B, [&]() {
+    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "pow", CTYPE_B, [&]() {
       ET_SWITCH_REAL_TYPES(common_type, ctx, "pow", CTYPE_IN, [&]() {
         ET_SWITCH_REAL_TYPES(out_type, ctx, "pow", CTYPE_OUT, [&]() {
           CTYPE_B val_b = 0;

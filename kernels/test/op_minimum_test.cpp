@@ -19,6 +19,6250 @@ Tensor& _minimum_out(const Tensor& self, const Tensor& other, Tensor& out) {
   return torch::executor::aten::minimum_outf(context, self, other, out);
 }
 
+TEST(OpMinimumOutTest, DtypeTest_float32_float32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected =
+      tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected =
+      tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected =
+      tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected =
+      tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_float64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_uint8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_uint8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_uint8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_uint8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_uint8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_uint8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_uint8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_uint8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int16_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int16_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int16_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int16_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int16_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int16_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int16_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int16_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_int64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_bool_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_bool_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_bool_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_bool_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_bool_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_bool_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_bool_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float32_bool_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected =
+      tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected =
+      tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected =
+      tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected =
+      tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_float64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_uint8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_uint8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_uint8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_uint8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_uint8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_uint8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_uint8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_uint8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int16_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int16_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int16_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int16_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int16_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int16_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int16_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int16_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_int64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_bool_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_bool_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_bool_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_bool_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_bool_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_bool_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_bool_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_float64_bool_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_float64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int16_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int16_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int16_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int16_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int16_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int16_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int16_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int16_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_int64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_bool_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_bool_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_bool_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_bool_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_bool_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_bool_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_bool_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_uint8_bool_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_float64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_uint8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_uint8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_uint8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_uint8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_uint8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_uint8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_uint8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_uint8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int16_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int16_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int16_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int16_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int16_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int16_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int16_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int16_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_int64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_bool_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_bool_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_bool_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_bool_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_bool_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_bool_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_bool_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int8_bool_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_float64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_uint8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_uint8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_uint8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_uint8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_uint8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_uint8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_uint8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_uint8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int16_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int16_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int16_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int16_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int16_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int16_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int16_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int16_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_int64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_bool_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_bool_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_bool_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_bool_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_bool_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_bool_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_bool_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int16_bool_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_float64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_uint8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_uint8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_uint8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_uint8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_uint8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_uint8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_uint8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_uint8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int16_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int16_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int16_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int16_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int16_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int16_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int16_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int16_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_int64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_bool_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_bool_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_bool_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_bool_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_bool_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_bool_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_bool_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int32_bool_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_float64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_uint8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_uint8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_uint8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_uint8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_uint8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_uint8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_uint8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_uint8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int16_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int16_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int16_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int16_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int16_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int16_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int16_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int16_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_int64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_bool_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_bool_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_bool_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_bool_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_bool_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_bool_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_bool_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_int64_bool_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_float64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_uint8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_uint8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_uint8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_uint8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_uint8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_uint8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_uint8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_uint8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int16_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int16_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int16_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int16_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int16_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int16_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int16_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int16_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_int64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_bool_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_bool_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_bool_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_bool_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_bool_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_bool_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_bool_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpMinimumOutTest, DtypeTest_bool_bool_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  exec_aten::Tensor out_expected =
+      tfBool.make({2, 2}, {true, false, false, true});
+  _minimum_out(self, other, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
 // Common testing for minimum operator
 template <ScalarType DTYPE>
 void test_minimum_out_same_size() {
@@ -93,48 +6337,6 @@ TEST(OpMinimumOutKernelTest, LeftScalarTensor) {
   // Case 2: Second argument is singleton
   _minimum_out(b, a, out2);
   EXPECT_TENSOR_EQ(out2, tf.make(sizes_2, {1.0, -1.0, 0.0, 1.0}));
-}
-
-TEST(OpMinimumOutKernelTest, UnhandledDtypeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle bool dtype";
-  }
-  TensorFactory<ScalarType::Bool> tfb;
-
-  Tensor outb = tfb.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(
-      tfb.make({2, 2}, /*data=*/{true, true, false, false}),
-      tfb.make({2, 2}, /*data=*/{true, true, false, false}),
-      outb));
-}
-
-TEST(OpMinimumOutKernelTest, MixedDtypesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched input dtypes";
-  }
-  // Mismatched type between first and second input argument
-
-  TensorFactory<ScalarType::Int> tfi;
-  TensorFactory<ScalarType::Float> tff;
-  const std::vector<int32_t> sizes = {2, 2};
-  Tensor outf = tff.zeros(sizes);
-  ET_EXPECT_KERNEL_FAILURE(
-      _minimum_out(tfi.ones(sizes), tff.ones(sizes), outf));
-}
-
-TEST(OpMinimumOutKernelTest, UnmatchedOutputDtypesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle mismatched output dtype";
-  }
-  // Same type first and second input argument but mismatched
-  // with the output argument.
-  TensorFactory<ScalarType::Int> tfi;
-  TensorFactory<ScalarType::Float> tff;
-
-  const std::vector<int32_t> sizes = {2, 2};
-  Tensor outf = tff.zeros(sizes);
-  ET_EXPECT_KERNEL_FAILURE(
-      _minimum_out(tfi.ones(sizes), tfi.ones(sizes), outf));
 }
 
 TEST(OpMinimumOutKernelTest, MismatchedInputShapesDies) {

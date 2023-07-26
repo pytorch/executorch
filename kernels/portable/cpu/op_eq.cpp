@@ -67,7 +67,7 @@ Tensor& eq_scalar_out(
   ScalarType out_type = out.scalar_type();
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "eq", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "eq", CTYPE_B, [&]() {
+    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "eq", CTYPE_B, [&]() {
       ET_SWITCH_REAL_TYPES_AND(Bool, common_type, ctx, "eq", CTYPE_IN, [&]() {
         ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "eq", CTYPE_OUT, [&]() {
           CTYPE_B val_b = 0;

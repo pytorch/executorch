@@ -24,16 +24,26 @@ Tensor& leaky_relu_out(
   Error err = resize_tensor(out, in.sizes());
   ET_CHECK_MSG(err == Error::Ok, "Could not resize output");
 
-  ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, "leaky_relu", CTYPE, [&]() {
-    CTYPE negative_slope_val = 0;
-    ET_EXTRACT_SCALAR(negative_slope, negative_slope_val);
+  ScalarType in_type = in.scalar_type();
+  ScalarType sc_type = utils::get_scalar_dtype(negative_slope);
+  ScalarType out_type = out.scalar_type();
+
+  ET_CHECK(in_type == out_type);
+
+  ET_SWITCH_FLOAT_TYPES(in_type, ctx, "leaky_relu", CTYPE, [&]() {
+    CTYPE negative_slope_casted;
+    ET_SWITCH_SCALAR_OBJ_TYPES(sc_type, ctx, "leaky_relu", CTYPE_MIN, [&]() {
+      CTYPE_MIN negative_slope_val;
+      ET_EXTRACT_SCALAR(negative_slope, negative_slope_val);
+      negative_slope_casted = static_cast<CTYPE>(negative_slope_val);
+    });
 
     apply_unary_map_fn(
-        [negative_slope_val](const CTYPE val_in) {
+        [negative_slope_casted](const CTYPE val_in) {
           if (val_in >= 0) {
             return val_in;
           } else {
-            return val_in * negative_slope_val;
+            return val_in * negative_slope_casted;
           }
         },
         in.const_data_ptr<CTYPE>(),

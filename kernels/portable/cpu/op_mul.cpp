@@ -65,7 +65,7 @@ Tensor& mul_scalar_out(
   ET_CHECK(common_type == out_type);
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "mul", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "mul", CTYPE_B, [&]() {
+    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "mul", CTYPE_B, [&]() {
       ET_SWITCH_REAL_TYPES_AND(Bool, common_type, ctx, "mul", CTYPE_IN, [&]() {
         ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "mul", CTYPE_OUT, [&]() {
           CTYPE_B b_val;

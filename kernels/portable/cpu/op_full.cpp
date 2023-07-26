@@ -10,57 +10,31 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
-namespace {
-
-/**
- * Fills the `out` with value of `value`.
- */
-template <class CTYPE>
-void full_kernel(const Scalar& value, Tensor& out) {
-  CTYPE value_v;
-  bool ok = utils::extract_scalar(value, &value_v);
-  ET_CHECK_MSG(ok, "Invalid fill value: wrong type or out of range");
-  const size_t n = out.numel();
-  auto data_out = out.data_ptr<CTYPE>();
-  for (size_t i = 0; i < n; ++i) {
-    data_out[i] = value_v;
-  }
-}
-
-inline void full_switch_out(
-    const IntArrayRef sizes,
-    const Scalar& fill_value,
-    Tensor& out) {
-#define FULL_IMPL_SWITCH_OUT_CASE(ctype, dtype) \
-  case ScalarType::dtype:                       \
-    full_kernel<ctype>(fill_value, out);        \
-    break;
-
-  switch (out.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND(Bool, FULL_IMPL_SWITCH_OUT_CASE)
-    default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd", out.scalar_type());
-  }
-
-#undef FULL_IMPL_SWITCH_OUT_CASE
-}
-
-} // namespace
-
-/**
- * Returns a tensor with a size filled with fill_value
- */
 Tensor& full_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const IntArrayRef sizes,
     const Scalar& fill_value,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
+
+  ScalarType val_type = utils::get_scalar_dtype(fill_value);
+  ScalarType out_type = out.scalar_type();
 
   Error err = resize_tensor(out, sizes);
   ET_CHECK_MSG(err == Error::Ok, "Could not resize out");
 
-  full_switch_out(sizes, fill_value, out);
+  ET_SWITCH_REAL_TYPES_AND(Bool, val_type, ctx, "full", CTYPE_VAL, [&] {
+    CTYPE_VAL val;
+    ET_EXTRACT_SCALAR(fill_value, val);
+
+    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "full", CTYPE_OUT, [&] {
+      CTYPE_OUT val_casted = static_cast<CTYPE_OUT>(val);
+      auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
+      for (size_t i = 0; i < out.numel(); ++i) {
+        data_out[i] = val_casted;
+      }
+    });
+  });
 
   return out;
 }

@@ -488,6 +488,10 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_minimum",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            ":scalar_utils",
+        ],
     ),
     op_target(
         name = "op_mm",
@@ -580,6 +584,7 @@ _ATEN_OPS = (
         name = "op_rsub",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:functional_util",
         ],
     ),
     op_target(

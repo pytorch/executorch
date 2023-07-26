@@ -25,9 +25,9 @@ void embedding_kernel(
     const Tensor& indices,
     Tensor& out) {
   int64_t nbytes_per_entry = weight.size(1) * weight.element_size();
-  const char* w_data = weight.data_ptr<char>();
-  char* out_data = out.data_ptr<char>();
-  const CTYPE* indices_ptr = indices.data_ptr<CTYPE>();
+  const char* w_data = weight.const_data_ptr<char>();
+  char* out_data = out.mutable_data_ptr<char>();
+  const CTYPE* indices_ptr = indices.const_data_ptr<CTYPE>();
   ssize_t weight_height = weight.size(0);
   for (int i = 0; i < indices.numel(); i++) {
     // Ensure index is larger than 0 and smaller than weight.size(0)
@@ -87,6 +87,7 @@ Tensor& embedding_out(
   (void)padding_idx;
   (void)scale_grad_by_freq;
   (void)sparse;
+
   // Ensure weight is 2-D. It could be empty.
   ET_CHECK_MSG(weight.dim() == 2, "weight.dim() %zd != 2", weight.dim());
 
@@ -120,21 +121,15 @@ Tensor& embedding_out(
   // Ensure dtype is the same for out and weight
   ET_CHECK_SAME_DTYPE2(weight, out);
 
-#define CHECK_AND_RUN_EMBEDDING(CTYPE, dtype)      \
-  case ScalarType::dtype:                          \
-    embedding_kernel<CTYPE>(weight, indices, out); \
-    break;
+  ScalarType ix_type = indices.scalar_type();
+  ET_CHECK_MSG(
+      ix_type == ScalarType::Long || ix_type == ScalarType::Int,
+      "Expected indices tensor to have Long or Int scalar types");
 
-  switch (indices.scalar_type()) {
-    ET_FORALL_INT_TYPES(CHECK_AND_RUN_EMBEDDING);
-    default:
-      ET_CHECK_MSG(
-          false,
-          "indices.scalar_type() %hhd is not an int type",
-          indices.scalar_type());
-  }
+  ET_SWITCH_TWO_TYPES(Long, Int, ix_type, ctx, __func__, CTYPE, [&]() {
+    embedding_kernel<CTYPE>(weight, indices, out);
+  });
 
-#undef CHECK_AND_RUN_EMBEDDING
   return out;
 }
 

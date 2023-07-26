@@ -5,7 +5,6 @@ import argparse
 import executorch.exir as exir
 
 import torch
-from executorch.examples.models.mobilenet_v3 import MV3Model
 from executorch.examples.utils import _CAPTURE_CONFIG, _EDGE_COMPILE_CONFIG
 
 
@@ -90,6 +89,8 @@ if __name__ == "__main__":
         )
 
     if args.model_name == "mv3":
+        from executorch.examples.models.mobilenet_v3 import MV3Model
+
         # Unfortunately lack of consistent interface on example models in this file
         # and how we obtain oss models result in changes like this.
         # we should probably fix this if all the MVP model's export example

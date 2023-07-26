@@ -92,6 +92,10 @@
 /// Name of the source file without a directory string.
 #define __ET_SHORT_FILENAME (__builtin_strrchr("/" __FILE__, '/') + 1)
 
+#ifndef __has_builtin
+#define __has_builtin(x) (0)
+#endif
+
 #if __has_builtin(__builtin_LINE)
 /// Current line as an integer.
 #define __ET_LINE __builtin_LINE()

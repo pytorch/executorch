@@ -586,7 +586,8 @@ SUPPORTED_QUANT_MODULES = [
     torch.concatenate,
     torch.nn.Linear,
     torch.nn.functional.linear,
-    torch.ao.nn.quantized.reference.modules.linear.Linear,  # TODO
+    # TODO - T158982884
+    # torch.ao.nn.quantized.reference.modules.linear.Linear,
     torch.nn.MaxPool2d,
     torch.nn.Conv1d,
     torch.nn.functional.conv1d,

@@ -10,58 +10,39 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
-namespace {
-/**
- * Fills the `out` with value of `value`.
- */
-template <class CTYPE>
-void full_like_kernel(const Scalar& value, Tensor& out) {
-  CTYPE value_v;
-  bool ok = utils::extract_scalar(value, &value_v);
-  ET_CHECK_MSG(ok, "Invalid fill value: wrong type or out of range");
-  const size_t n = out.numel();
-  auto data_out = out.data_ptr<CTYPE>();
-  for (size_t i = 0; i < n; ++i) {
-    data_out[i] = value_v;
-  }
-}
-} // namespace
-
-/**
- * Returns a tensor with the same size as input filled with fill_value
- */
 Tensor& full_like_out(
-    RuntimeContext& context,
-    const Tensor& self,
+    RuntimeContext& ctx,
+    const Tensor& in,
     const Scalar& fill_value,
     optional<MemoryFormat> memory_format,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
 
-  torch::executor::Error err = resize_tensor(out, self.sizes());
-  ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
-      "Failed to resize out Tensor in full_like_out");
-
-  ET_CHECK_SAME_SHAPE2(self, out);
   if (memory_format.has_value()) {
     ET_CHECK_MSG(
         memory_format.value() == MemoryFormat::Contiguous,
         "memory_format must be contiguous");
   }
 
-#define FULL_LIKE(ctype, dtype)               \
-  case ScalarType::dtype:                     \
-    full_like_kernel<ctype>(fill_value, out); \
-    break;
+  Error err = resize_tensor(out, in.sizes());
+  ET_CHECK_MSG(
+      err == Error::Ok, "Failed to resize out Tensor in full_like_out");
 
-  switch (out.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND(Bool, FULL_LIKE)
-    default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd", self.scalar_type());
-  }
+  ScalarType val_type = utils::get_scalar_dtype(fill_value);
+  ScalarType out_type = out.scalar_type();
 
-#undef FULL_LIKE
+  ET_SWITCH_REAL_TYPES_AND(Bool, val_type, ctx, "full_like", CTYPE_VAL, [&] {
+    CTYPE_VAL val;
+    ET_EXTRACT_SCALAR(fill_value, val);
+
+    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "full_like", CTYPE_OUT, [&] {
+      CTYPE_OUT val_casted = static_cast<CTYPE_OUT>(val);
+      auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
+      for (size_t i = 0; i < out.numel(); ++i) {
+        data_out[i] = val_casted;
+      }
+    });
+  });
 
   return out;
 }

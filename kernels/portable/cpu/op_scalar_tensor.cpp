@@ -1,8 +1,8 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
-#include <executorch/runtime/kernel/kernel_includes.h>
-#include <executorch/runtime/platform/assert.h>
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/runtime/platform/assert.h>
 
 #include <cstdint>
 #include <cstring>
@@ -11,39 +11,22 @@ namespace torch {
 namespace executor {
 namespace native {
 
-using exec_aten::Tensor;
-
-namespace {
-
-template <typename CTYPE>
-void set_tensor_value(const Scalar& s, Tensor& out) {
-  CTYPE value = 0;
-  bool ok = utils::extract_scalar(s, &value);
-  ET_CHECK_MSG(ok, "Invalid other value: wrong type or out of range");
-
-  CTYPE* out_data = out.data_ptr<CTYPE>();
-  out_data[0] = value;
-}
-
-} // namespace
-
 Tensor&
 scalar_tensor_out(RuntimeContext& context, const Scalar& s, Tensor& out) {
   (void)context;
 
   ET_CHECK_MSG(out.numel() == 1, "Output tensor must have only one element");
 
-#define SCALAR_TENSOR(ctype, dtype)  \
-  case ScalarType::dtype:            \
-    set_tensor_value<ctype>(s, out); \
-    break;
+  ScalarType s_type = utils::get_scalar_dtype(s);
+  ScalarType out_type = out.scalar_type();
 
-  switch (out.scalar_type()) {
-    ET_FORALL_REAL_TYPES(SCALAR_TENSOR);
-    default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd", out.scalar_type());
-  }
-#undef SCALAR_TENSOR
+  ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "scalar_tensor", CTYPE, [&]() {
+    ET_SWITCH_SCALAR_OBJ_TYPES(s_type, ctx, "scalar_tensor", CTYPE_S, [&]() {
+      CTYPE_S val_s;
+      ET_EXTRACT_SCALAR(s, val_s);
+      out.mutable_data_ptr<CTYPE>()[0] = val_s;
+    });
+  });
 
   return out;
 }

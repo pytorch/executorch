@@ -634,6 +634,31 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
   ET_INTERNAL_SWITCH_CASE(                                           \
       exec_aten::ScalarType::ComplexDouble, CTYPE_ALIAS, __VA_ARGS__)
 
+#define ET_INTERNAL_SWITCH_CASE_SCALAR_OBJ_TYPES(CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH_CASE(                                         \
+      exec_aten::ScalarType::Bool, CTYPE_ALIAS, __VA_ARGS__)       \
+  ET_INTERNAL_SWITCH_CASE(                                         \
+      exec_aten::ScalarType::Long, CTYPE_ALIAS, __VA_ARGS__)       \
+  ET_INTERNAL_SWITCH_CASE(                                         \
+      exec_aten::ScalarType::Double, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_INTERNAL_SWITCH_CASE_SCALAR_OBJ_REAL_TYPES(CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH_CASE(                                              \
+      exec_aten::ScalarType::Long, CTYPE_ALIAS, __VA_ARGS__)            \
+  ET_INTERNAL_SWITCH_CASE(                                              \
+      exec_aten::ScalarType::Double, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_INTERNAL_SWITCH_CASE_SCALAR_OBJ_INTB_TYPES(CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH_CASE(                                              \
+      exec_aten::ScalarType::Bool, CTYPE_ALIAS, __VA_ARGS__)            \
+  ET_INTERNAL_SWITCH_CASE(exec_aten::ScalarType::Long, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_INTERNAL_SWITCH_CASE_SCALAR_OBJ_FLOATB_TYPES(CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH_CASE(                                                \
+      exec_aten::ScalarType::Bool, CTYPE_ALIAS, __VA_ARGS__)              \
+  ET_INTERNAL_SWITCH_CASE(                                                \
+      exec_aten::ScalarType::Double, CTYPE_ALIAS, __VA_ARGS__)
+
 //
 // Switch case macros
 //
@@ -730,6 +755,46 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
       CONTEXT,                                                         \
       NAME,                                                            \
       ET_INTERNAL_SWITCH_CASE_COMPLEX_TYPES(CTYPE_ALIAS, __VA_ARGS__))
+
+#define ET_SWITCH_SCALAR_OBJ_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH(                                                     \
+      TYPE,                                                               \
+      CONTEXT,                                                            \
+      NAME,                                                               \
+      ET_INTERNAL_SWITCH_CASE_SCALAR_OBJ_TYPES(CTYPE_ALIAS, __VA_ARGS__))
+
+#define ET_SWITCH_SCALAR_OBJ_REAL_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH(                                                          \
+      TYPE,                                                                    \
+      CONTEXT,                                                                 \
+      NAME,                                                                    \
+      ET_INTERNAL_SWITCH_CASE_SCALAR_OBJ_REAL_TYPES(CTYPE_ALIAS, __VA_ARGS__))
+
+#define ET_SWITCH_SCALAR_OBJ_INTB_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH(                                                          \
+      TYPE,                                                                    \
+      CONTEXT,                                                                 \
+      NAME,                                                                    \
+      ET_INTERNAL_SWITCH_CASE_SCALAR_OBJ_INTB_TYPES(CTYPE_ALIAS, __VA_ARGS__))
+
+#define ET_SWITCH_SCALAR_OBJ_FLOATB_TYPES(             \
+    TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...)             \
+  ET_INTERNAL_SWITCH(                                  \
+      TYPE,                                            \
+      CONTEXT,                                         \
+      NAME,                                            \
+      ET_INTERNAL_SWITCH_CASE_SCALAR_OBJ_FLOATB_TYPES( \
+          CTYPE_ALIAS, __VA_ARGS__))
+
+#define ET_SWITCH_TWO_TYPES(T1, T2, TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH(                                                      \
+      TYPE,                                                                \
+      CONTEXT,                                                             \
+      NAME,                                                                \
+      ET_INTERNAL_SWITCH_CASE(                                             \
+          exec_aten::ScalarType::T1, CTYPE_ALIAS, __VA_ARGS__)             \
+          ET_INTERNAL_SWITCH_CASE(                                         \
+              exec_aten::ScalarType::T2, CTYPE_ALIAS, __VA_ARGS__))
 
 } // namespace executor
 } // namespace torch

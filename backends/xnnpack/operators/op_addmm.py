@@ -52,7 +52,11 @@ class AddmmVisitor(NodeVisitor):
 
         flag = (
             0
-            if get_input_node(node, 2).target == exir_ops.edge.aten.t_copy.default
+            if get_input_node(node, 2).target
+            in (
+                exir_ops.edge.aten.permute_copy.default,
+                exir_ops.edge.aten.t_copy.default,
+            )
             else XNN_FLAG_TRANSPOSE_WEIGHTS
         )
 
