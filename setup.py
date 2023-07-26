@@ -6,6 +6,13 @@ from setuptools.command.develop import develop
 from setuptools.command.egg_info import egg_info
 from setuptools.command.install import install
 
+# Dependencies
+required_packages = [
+    "numpy",
+    "zstd",
+    "flatbuffers",
+    # "torch_nightly" # This is not available on PyPI. Please install manually.
+]
 
 def custom_command():
     src_dst_list = [
@@ -53,4 +60,5 @@ setup(
         "develop": CustomDevelopCommand,
         "egg_info": CustomEggInfoCommand,
     },
+    install_requires=required_packages,
 )

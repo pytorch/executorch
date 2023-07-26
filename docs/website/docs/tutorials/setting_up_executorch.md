@@ -30,7 +30,7 @@ git clone git@github.com:pytorch/executorch.git
 # [Runtime requirement] Run the following to get all submodules, only need for runtime setup
 git submodule update --init --recursive
 
-pip install executorch
+pip install .
 
 # cd into a directory that doesn't contain a `./executorch/exir` directory, since
 # otherwise python will try using it for `import executorch.exir...` instead of using the
@@ -53,7 +53,7 @@ Or via python interpreter:
 >>> from executorch.exir.tests.models import Mul
 >>> m = Mul()
 >>> print(exir.capture(m, m.get_random_inputs()).to_edge())
->>> exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer
+>>> open("add.ff", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
 ```
 
 ## Runtime Setup
