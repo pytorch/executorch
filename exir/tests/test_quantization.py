@@ -11,13 +11,13 @@ from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.tracer import ExirDynamoConfig
 from torch.ao.ns.fx.utils import compute_sqnr
 from torch.ao.quantization import get_default_qconfig, QConfigMapping  # @manual
-
-from torch.ao.quantization.pt2e.quantizer import XNNPACKQuantizer
-from torch.ao.quantization.pt2e.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-)
 from torch.ao.quantization.quantize_fx import convert_to_reference_fx, prepare_fx
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+
+from torch.ao.quantization.quantizer import XNNPACKQuantizer
+from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+)
 from torch.testing import FileCheck
 from torch.testing._internal.common_quantization import skipIfNoQNNPACK
 from torch.testing._internal.common_quantized import override_quantized_engine
