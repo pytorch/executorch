@@ -72,16 +72,20 @@ class MyModule(torch.nn.Module):
 
 aten_dialect = exir.capture(MyModule(), (torch.randn(3, 4),))
 
-print(aten_dialect.exported_program)
+print(aten_dialect)
 """
 ExportedProgram:
-  class GraphModule(torch.nn.Module):
-    def forward(self, arg0_1: f32[3, 4], arg1_1: f32[5, 4], arg2_1: f32[5], arg3_1: f32[3, 4]):
-      add: f32[3, 4] = torch.ops.aten.add.Tensor(arg3_1, arg0_1);
-      permute: f32[4, 5] = torch.ops.aten.permute_copy.default(arg1_1, [1, 0]);
-      addmm: f32[3, 5] = torch.ops.aten.addmm.default(arg2_1, add, permute);
-      clamp: f32[3, 5] = torch.ops.aten.clamp.default(addmm, 0.0, 1.0);
-      return (clamp,)
+    class GraphModule(torch.nn.Module):
+        def forward(self, arg0_1: f32[4, 4]):
+            # File: /Users/marksaroufim/Dev/zzz/test3.py:10, code: return self.linear(x)
+            _param_constant0 = self._param_constant0
+            t: f32[4, 4] = torch.ops.aten.t.default(_param_constant0);  _param_constant0 = None
+            _param_constant1 = self._param_constant1
+            addmm: f32[4, 4] = torch.ops.aten.addmm.default(_param_constant1, arg0_1, t);  _param_constant1 = arg0_1 = t = None
+            return [addmm]
+            
+Graph Signature: ExportGraphSignature(parameters=[], buffers=[], user_inputs=[], user_outputs=[], inputs_to_parameters={}, inputs_to_buffers={}, buffers_to_mutate={}, backward_signature=None, assertion_dep_token=None)
+Symbol to range: {}
 """
 ```
 
@@ -106,18 +110,22 @@ This lowering will be done through the `to_edge()` API.
 
 ```python
 aten_dialect = exir.capture(MyModule(), (torch.randn(3, 4),))
-edge_dialect = aten_dialect.to_edge()
+edge_dialect = aten_dialect.to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
 
-print(edge_dialect.exported_program)
+print(edge_dialect)
 """
 ExportedProgram:
-  class GraphModule(torch.nn.Module):
-    def forward(self, arg0_1: f32[3, 4], arg1_1: f32[5, 4], arg2_1: f32[5], arg3_1: f32[3, 4]):
-      add: f32[3, 4] = executorch_exir_dialects_edge__ops_aten_add_Tensor(arg3_1, arg0_1);
-      permute: f32[4, 5] = executorch_exir_dialects_edge__ops_permute_copy_default(arg1_1, [1, 0]);
-      addmm: f32[3, 5] = executorch_exir_dialects_edge__ops_addmm_default(arg2_1, add, permute);
-      clamp: f32[3, 5] = executorch_exir_dialects_edge__ops_clamp_default(addmm, 0.0, 1.0);
-      return (clamp,)
+    class GraphModule(torch.nn.Module):
+        def forward(self, arg0_1: f32[3, 3]):
+            # File: /Users/marksaroufim/Dev/zzz/test3.py:10, code: return self.linear(x)
+            _param_constant0: f32[3, 3] = self._param_constant0
+            t_copy_default: f32[3, 3] = torch.ops.aten.t_copy.default(_param_constant0);  _param_constant0 = None
+            _param_constant1: f32[3] = self._param_constant1
+            addmm_default: f32[3, 3] = torch.ops.aten.addmm.default(_param_constant1, arg0_1, t_copy_default);  _param_constant1 = arg0_1 = t_copy_default = None
+            return [addmm_default]
+            
+Graph Signature: ExportGraphSignature(parameters=[], buffers=[], user_inputs=[], user_outputs=[], inputs_to_parameters={}, inputs_to_buffers={}, buffers_to_mutate={}, backward_signature=None, assertion_dep_token=None)
+Symbol to range: {}
 """
 ```
 
