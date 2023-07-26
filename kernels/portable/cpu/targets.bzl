@@ -411,10 +411,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_logical_and",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:pattern",
         ],
     ),
     op_target(
@@ -427,19 +424,13 @@ _ATEN_OPS = (
     op_target(
         name = "op_logical_or",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:pattern",
         ],
     ),
     op_target(
         name = "op_logical_xor",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/pattern:pattern",
         ],
     ),
     op_target(

@@ -10,6 +10,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "pattern",
         srcs = [
+            "binary_ufunc_realb_realb_to_realb_logical.cpp",
             "unary_ufunc_realb_to_bool.cpp",
             "unary_ufunc_realb_to_float.cpp",
         ],
@@ -18,6 +19,7 @@ def define_common_targets():
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
             "//executorch/runtime/kernel:kernel_includes",
         ],

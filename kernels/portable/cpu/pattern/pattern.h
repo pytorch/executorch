@@ -67,6 +67,19 @@ Tensor& unary_ufunc_realb_to_float(
     const Tensor& in,
     Tensor& out);
 
+/**
+ * Implements an op pattern for ops that take two broadcastable input tensors
+ * of any realb dtye, no additional arguments, performs an element-wise binary
+ * logical operation, and outputs a realb tensor. The function fn specifies the
+ * binary logical operation which is applied to the input tensors element-wise.
+ */
+Tensor& binary_ufunc_realb_realb_to_realb_logical(
+    FunctionRef<bool(bool, bool)> fn,
+    RuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    Tensor& out);
+
 } // namespace internal
 } // namespace native
 } // namespace executor
