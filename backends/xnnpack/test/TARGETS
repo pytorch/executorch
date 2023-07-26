@@ -108,3 +108,16 @@ python_unittest(
         "//executorch/exir:lib",
     ],
 )
+
+python_unittest(
+    name = "test_xnnpack_ops",
+    srcs = [
+        "ops/add.py",
+    ],
+    supports_static_listing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/test/tester:tester",
+    ],
+)
