@@ -52,7 +52,6 @@ Or via python interpreter:
 >>> from executorch.exir.tests.models import Mul
 >>> m = Mul()
 >>> print(exir.capture(m, m.get_random_inputs()).to_edge())
->>> exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer
 >>> open("add.ff", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
 ```
 
