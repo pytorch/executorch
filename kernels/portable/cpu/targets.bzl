@@ -284,6 +284,9 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_floor_divide",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+        ],
     ),
     op_target(
         name = "op_fmod",
