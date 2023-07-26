@@ -14,8 +14,8 @@ conda activate executorch
 conda install -c conda-forge flatbuffers
 
 # Install the nightly builds
-# Note that ff you are behind firewall,
-# appropriate proxy server must be setup for all subsequent steps
+# Note that if you are behind a firewall an appropriate proxy server must
+# be setup for all subsequent steps
 pip install --pre torch -i https://download.pytorch.org/whl/nightly/cpu
 ```
 
@@ -40,13 +40,13 @@ cd executorch
 **Step 3: Try it out**
 
 Via python script:
-```
+```bash
 # Creates the file `add.ff`
 python ~/src/executorch/examples/export/export_example.py -m "add"
 ```
 
 Or via python interpreter:
-```
+```python
 (executorch) ~/  $ python
 >>> import executorch.exir as exir
 >>> from executorch.exir.tests.models import Mul
@@ -73,7 +73,7 @@ You may want to copy the `buck2` binary into your `$PATH` so you can run it as `
 
 `size_test_all_ops` is a binary including all the operators and backends
 
-```
+```bash
 /tmp/buck2 build //test:size_test_all_ops --show-output
 ```
 
@@ -81,13 +81,13 @@ The `--show-output` flag will print the path to the executable if you want to ru
 
 **Step 3: Run a binary**
 
-```
+```bash
 # add.ff is the program generated from export_example.py during AOT Setup Step 3
 /tmp/buck2 run //test:size_test_all_ops  -- add.ff
 ```
 
 or execute the binary directly from the `--show-output` path shown when building.
 
-```
+```bash
 ./buck-out/.../size_test_all_ops add.ff
 ```
