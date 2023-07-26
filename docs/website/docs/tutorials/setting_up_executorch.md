@@ -29,7 +29,7 @@ git clone git@github.com:pytorch/executorch.git
 # [Runtime requirement] Run the following to get all submodules, only need for runtime setup
 git submodule update --init --recursive
 
-pip install executorch
+pip install .
 
 # cd into a directory that doesn't contain a `./executorch/exir` directory, since
 # otherwise python will try using it for `import executorch.exir...` instead of using the
