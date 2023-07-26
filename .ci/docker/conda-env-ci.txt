@@ -1,1 +1,3 @@
+# TODO: We might need to update this to install flatbuffers from the pinned commit
+# in fbcode/executorch/third-party/flatbuffers.submodule.txt
 flatbuffers=2.0.0
