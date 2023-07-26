@@ -5,7 +5,7 @@ import argparse
 import executorch.exir as exir
 
 import torch
-from executorch.examples.utils import _CAPTURE_CONFIG, _EDGE_COMPILE_CONFIG
+from ..utils import _CAPTURE_CONFIG, _EDGE_COMPILE_CONFIG
 
 
 class MulModule(torch.nn.Module):
