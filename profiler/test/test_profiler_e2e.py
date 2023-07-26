@@ -1,3 +1,8 @@
+"""End-to-end profiler tests.
+
+This must be built and run with `buck2 -c executorch.prof_enabled=true`.
+"""
+
 import unittest
 
 import torch
@@ -50,6 +55,9 @@ class TestCustomOps(unittest.TestCase):
         cls.module.run_method("forward", tuple(cls.inputs_flattened))
         # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         prof_dump = _dump_profile_results()
+        assert (
+            len(prof_dump) > 0
+        ), "prof_dump is empty; may need to build with `-c executorch.prof_enabled=true`"
         cls.prof_results, cls.mem_results = deserialize_profile_results(prof_dump)
         cls.expect_ops = ["native_call_add.out", "native_call_mul.out"]
 
@@ -65,6 +73,11 @@ class TestCustomOps(unittest.TestCase):
         self.module.run_method("forward", tuple(self.inputs_flattened))
         # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         prof_dump = _dump_profile_results()
+        self.assertGreater(
+            len(prof_dump),
+            0,
+            "prof_dump is empty; may need to build with `-c executorch.prof_enabled=true`",
+        )
         prof_results, mem_results = deserialize_profile_results(prof_dump)
         for i, (block_name_, _) in enumerate(prof_results.items()):
             self.assertTrue(block_names[i] == block_name_)

@@ -6,7 +6,6 @@ import torch
 from executorch import exir
 from executorch.exir import CaptureConfig, EdgeCompileConfig
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
-from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tracer import ExirDynamoConfig
 from torch.ao.quantization import (  # @manual
@@ -55,13 +54,14 @@ class TestQuantFusionPass(unittest.TestCase):
         )
         m = _convert_to_reference_decomposed_fx(m)
         config = EdgeCompileConfig(
-            passes=[QuantFusionPass(), SpecPropPass()],
             _check_ir_validity=False,
             _use_edge_ops=True,
         )
         m = exir.capture(m, example_inputs, CaptureConfig(pt2_mode=True)).to_edge(
             config=config
         )
+        # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
+        m = m.transform(QuantFusionPass())
         # check that we are using functional variant of q/dq/add
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default"
@@ -98,13 +98,14 @@ class TestQuantFusionPass(unittest.TestCase):
         m(*example_inputs)
         m = _convert_to_reference_decomposed_fx(m)
         config = EdgeCompileConfig(
-            passes=[QuantFusionPass(), SpecPropPass()],
             _check_ir_validity=False,
             _use_edge_ops=True,
         )
         m = exir.capture(m, example_inputs, CaptureConfig(pt2_mode=True)).to_edge(
             config=config
         )
+        # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
+        m = m.transform(QuantFusionPass())
         # check that we are using functional variant of q/dq/add/reshape
         # make sure we only have two quant and one dequant since the q/dq around reshape
         # should be fused
@@ -157,13 +158,14 @@ class TestQuantFusionPass(unittest.TestCase):
         )
         m = _convert_to_reference_decomposed_fx(m)
         config = EdgeCompileConfig(
-            passes=[QuantFusionPass(), SpecPropPass()],
             _check_ir_validity=False,
             _use_edge_ops=True,
         )
         m = exir.capture(m, example_inputs, CaptureConfig(pt2_mode=True)).to_edge(
             config=config
         )
+        # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
+        m = m.transform(QuantFusionPass())
         # check that we are using functional variant of q/dq/add/slice
         # make sure we only have one quant and one dequant since the q/dq around slice
         # should be fused
@@ -208,13 +210,14 @@ class TestQuantFusionPass(unittest.TestCase):
         m(*example_inputs)
         m = _convert_to_reference_decomposed_fx(m)
         config = EdgeCompileConfig(
-            passes=[QuantFusionPass(), SpecPropPass()],
             _check_ir_validity=False,
             _use_edge_ops=True,
         )
         m = exir.capture(m, example_inputs, CaptureConfig(pt2_mode=True)).to_edge(
             config=config
         )
+        # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
+        m = m.transform(QuantFusionPass())
         # check that we are using functional variant of q/dq/cat
         FileCheck().check_count(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default",
@@ -311,7 +314,6 @@ class TestQuantFusionPass(unittest.TestCase):
                 verbose=True,
             )
             compile_config = EdgeCompileConfig(
-                passes=[QuantFusionPass(), SpecPropPass()],
                 _check_ir_validity=False,
                 _use_edge_ops=True,
             )
@@ -319,6 +321,8 @@ class TestQuantFusionPass(unittest.TestCase):
             m = exir.capture(m, example_inputs, config=capture_config).to_edge(
                 config=compile_config
             )
+            # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
+            m = m.transform(QuantFusionPass())
             # check that we are using functional variant of q/dq/cat
             FileCheck().check(
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_channel_default",
@@ -376,7 +380,6 @@ class TestQuantFusionPass(unittest.TestCase):
                 verbose=True,
             )
             compile_config = EdgeCompileConfig(
-                passes=[QuantFusionPass(), SpecPropPass()],
                 _check_ir_validity=False,
                 _use_edge_ops=True,
             )
@@ -384,6 +387,8 @@ class TestQuantFusionPass(unittest.TestCase):
             m = exir.capture(m, example_inputs, config=capture_config).to_edge(
                 config=compile_config
             )
+            # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
+            m = m.transform(QuantFusionPass())
             m(*example_inputs)
             # check that we are using functional variant of q/dq/cat
             FileCheck().check(
