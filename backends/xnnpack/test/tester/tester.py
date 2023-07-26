@@ -56,6 +56,13 @@ class Stage(ABC):
     Interface for a Stage in the PT2.0 lowering pipeline
     """
 
+    @abstractmethod
+    def run(self, artifact, inputs):
+        """
+        Executes this stage, generates the 'artifact', for later stages.
+        """
+        pass
+
     @property
     @abstractmethod
     def artifact(self):
@@ -64,16 +71,12 @@ class Stage(ABC):
         """
         pass
 
+    @property
     @abstractmethod
-    def run(self, artifact, inputs):
+    def graph_module(self):
         """
-        Executes this stage, generates the 'artifact', for later stages.
+        Return the artifact's graph module for this stage
         """
-        pass
-
-    # TODO: use __repr__
-    @abstractmethod
-    def check_str(self):
         pass
 
 
@@ -105,10 +108,6 @@ class Quantize(Stage):
         self.backend_config = backend_config or get_executorch_backend_config()
         self.converted = None
 
-    @property
-    def artifact(self) -> torch.fx.GraphModule:
-        return self.converted
-
     def run(self, artifact: torch.nn.Module, inputs: Tuple[torch.Tensor]) -> None:
         prepared = prepare_fx(
             artifact, self.qconfig_mapping, inputs, backend_config=self.backend_config
@@ -117,8 +116,13 @@ class Quantize(Stage):
             prepared, backend_config=self.backend_config
         )
 
-    def check_str(self) -> str:
-        return self.converted.code
+    @property
+    def artifact(self) -> torch.fx.GraphModule:
+        return self.converted
+
+    @property
+    def graph_module(self) -> str:
+        return self.converted
 
 
 @register_stage
@@ -149,8 +153,9 @@ class Quantize2(Stage):
     def artifact(self) -> ExirExportedProgram:
         return self.converted_program
 
-    def check_str(self) -> str:
-        return self.converted_program.graph_module.code
+    @property
+    def graph_module(self) -> str:
+        return self.converted_program.graph_module
 
 
 @register_stage
@@ -166,8 +171,9 @@ class Export(Stage):
     def artifact(self) -> ExirExportedProgram:
         return self.exir_exported_program
 
-    def check_str(self) -> str:
-        return self.exir_exported_program.graph_module.code
+    @property
+    def graph_module(self) -> str:
+        return self.exir_exported_program.graph_module
 
 
 @register_stage
@@ -185,8 +191,9 @@ class ToEdge(Stage):
     def artifact(self) -> ExirExportedProgram:
         return self.edge_dialect_program
 
-    def check_str(self) -> str:
-        return self.edge_dialect_program.graph_module.code
+    @property
+    def graph_module(self) -> str:
+        return self.edge_dialect_program.graph_module
 
 
 @register_stage
@@ -203,8 +210,9 @@ class Partition(Stage):
     def artifact(self) -> ExirExportedProgram:
         return self.delegate_module
 
-    def check_str(self) -> str:
-        return self.delegate_module.code
+    @property
+    def graph_module(self) -> str:
+        return self.delegate_module.graph_module
 
 
 @register_stage
@@ -225,8 +233,9 @@ class ToExecutorch(Stage):
     def artifact(self) -> ExecutorchProgram:
         return self.exported_program
 
-    def check_str(self) -> str:
-        return self.exported_program.graph_module.code
+    @property
+    def graph_module(self) -> str:
+        return self.exported_program.graph_module
 
 
 @register_stage
@@ -241,8 +250,9 @@ class Serialize(Stage):
     def artifact(self) -> bytes:
         return self.buffer
 
-    def check_str(self) -> str:
-        return ""
+    @property
+    def graph_module(self) -> None:
+        return None
 
 
 class Tester:
@@ -339,19 +349,19 @@ class Tester:
 
     def check(self, input: List[str]):
         for key in input:
-            FileCheck().check(key).run(self.stages[self.cur].check_str())
+            FileCheck().check(key).run(self.stages[self.cur].graph_module.code)
         return self
 
     def check_not(self, input: List[str]):
         for key in input:
-            FileCheck().check_not(key).run(self.stages[self.cur].check_str())
+            FileCheck().check_not(key).run(self.stages[self.cur].graph_module.code)
         return self
 
     def check_count(self, input: Dict[Any, int]):
         # TODO target checks similar to checkGraphModuleNodes()
         for key, count in input.items():
             FileCheck().check_count(key, count, exactly=True).run(
-                self.stages[self.cur].check_str()
+                self.stages[self.cur].graph_module.code
             )
         return self
 
