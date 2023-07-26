@@ -193,8 +193,7 @@ be loaded in the Executorch runtime.
 
 ```python
 edge_dialect = exir.capture(MyModule(), (torch.randn(3, 4),)).to_edge()
-# edge_dialect = to_backend(edge_dialect.exported_program, CustomBackendPartitioner)
-executorch_program = edge_dialect.to_executorch(executorch_backend_config)
+executorch_program = edge_dialect.to_executorch()
 buffer = executorch_program.buffer
 
 # Save it to a file and load it in the Executorch runtime
