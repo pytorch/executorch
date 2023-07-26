@@ -5,7 +5,7 @@ import argparse
 import executorch.exir as exir
 
 import torch
-from ..utils import _CAPTURE_CONFIG, _EDGE_COMPILE_CONFIG
+from executorch.examples.utils import _CAPTURE_CONFIG, _EDGE_COMPILE_CONFIG
 
 
 class MulModule(torch.nn.Module):
@@ -89,7 +89,7 @@ if __name__ == "__main__":
         )
 
     if args.model_name == "mv3":
-        from ..models.mobilenet_v3 import MV3Model
+        from executorch.examples.models.mobilenet_v3 import MV3Model
 
         # Unfortunately lack of consistent interface on example models in this file
         # and how we obtain oss models result in changes like this.
