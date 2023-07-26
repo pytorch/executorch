@@ -254,6 +254,22 @@ class Tester:
         self.module = module
         self.inputs = inputs
         self.stages: Dict[str, Stage] = OrderedDict.fromkeys(list(_stages_.keys()))
+        self.pipeline = {
+            self._stage_name(Quantize): [self._stage_name(Export)],
+            self._stage_name(Export): [
+                self._stage_name(Quantize2),
+                self._stage_name(ToEdge),
+            ],
+            self._stage_name(Quantize2): [self._stage_name(ToEdge)],
+            self._stage_name(ToEdge): [self._stage_name(Partition)],
+            # TODO Make this Stage optional
+            self._stage_name(Partition): [self._stage_name(ToExecutorch)],
+            self._stage_name(ToExecutorch): [self._stage_name(Serialize)],
+            self._stage_name(Serialize): [],
+        }
+        assert all(
+            [stage in self.pipeline for stage in self.stages]
+        ), "Invalid Tester internal state!"
 
         # Current stage name
         self.cur: str = ""
@@ -270,12 +286,15 @@ class Tester:
         return t.__qualname__
 
     def _pre(self, stage):
-        name = self._stage_name(stage)
-        assert name in self.stages and not self.stages[name]
+        name: str = self._stage_name(stage)
+        assert isinstance(name, str) and name in self.stages and not self.stages[name]
 
-        # TODO: do a basic state machine check
-
-        last_artifact = self.get_artifact() if self.cur else self.module
+        last_artifact = self.module
+        if self.cur:
+            assert self.cur in self.pipeline, f"Invalid state: {self.cur}"
+            allowed_next_stages = self.pipeline[self.cur]
+            assert name in allowed_next_stages, f"Invalid next stage: {name}"
+            last_artifact = self.get_artifact()
         self.cur = name
         return last_artifact
 
