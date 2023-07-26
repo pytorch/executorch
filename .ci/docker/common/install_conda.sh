@@ -27,7 +27,7 @@ install_miniconda() {
 install_python() {
   pushd /opt/conda
   # Install the correct Python version
-  as_ci_user conda create -n "py_${PYTHON_VERSION}" -y python="${PYTHON_VERSION}"
+  as_ci_user conda create -n "py_${PYTHON_VERSION}" -y --file /opt/conda/conda-env-ci.txt python="${PYTHON_VERSION}"
   popd
 }
 
