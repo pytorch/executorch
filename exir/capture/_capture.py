@@ -66,9 +66,7 @@ def capture(
 
             # TODO remove this later
             with patch("torch._export.DECOMP_TABLE", _default_decomposition_table()):
-                ep = export(
-                    f, args, _add_runtime_assertions=False, constraints=constraints
-                )
+                ep = export(f, args, constraints=constraints)
             ep = ep.transform(ReplaceViewOpsWithViewCopyOpsPass())
             if not config._unlift:
                 return ep  # pyre-ignore

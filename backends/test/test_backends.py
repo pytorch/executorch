@@ -318,7 +318,7 @@ class TestBackends(unittest.TestCase):
                 return self.lowered_linear_sin(x)
 
         composite_model = CompositeModule()
-        model_inputs = (torch.ones(1),)
+        model_inputs = (torch.zeros(6),)
 
         composite_model(*model_inputs)
 

@@ -292,7 +292,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             ),
             # missing dispatch key
         ).to_edge()
-        self.assertTrue(prog(torch.randn(6, 5)).shape[0], 3)
+        self.assertTrue(prog(torch.randn(4, 5)).shape[0], 3)
 
     def test_input_container_type(self) -> None:
         def f(x: torch.Tensor, y: List[torch.Tensor]) -> Dict[str, torch.Tensor]:
