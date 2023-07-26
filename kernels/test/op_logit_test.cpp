@@ -15,10 +15,770 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& logit_out(const Tensor& self, optional<double> eps, Tensor& out) {
+Tensor& _logit_out(const Tensor& self, optional<double> eps, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::logit_outf(context, self, eps, out);
 }
+
+TEST(OpLogitOutTest, DtypeTest_float32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make(
+      {2, 2},
+      {2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_float32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make(
+      {2, 2},
+      {2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_float32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_float32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_float32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_float32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_float32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_float32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_float64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make(
+      {2, 2},
+      {2.1972246170043945,
+       2.1972246170043945,
+       2.1972246170043945,
+       2.1972246170043945});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_float64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make(
+      {2, 2},
+      {2.1972245773362196,
+       2.1972245773362196,
+       2.1972245773362196,
+       2.1972245773362196});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_float64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_float64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_float64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_float64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_float64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_float64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_uint8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make(
+      {2, 2},
+      {2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_uint8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make(
+      {2, 2},
+      {2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_uint8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_uint8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_uint8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_uint8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_uint8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_uint8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+
+  exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int8_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make(
+      {2, 2},
+      {2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_int8_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make(
+      {2, 2},
+      {2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_int8_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int8_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int8_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int8_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int8_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int8_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int16_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make(
+      {2, 2},
+      {2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_int16_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make(
+      {2, 2},
+      {2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_int16_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int16_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int16_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int16_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int16_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int16_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int32_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make(
+      {2, 2},
+      {2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_int32_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make(
+      {2, 2},
+      {2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_int32_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int32_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int32_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int32_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int32_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int32_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int64_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make(
+      {2, 2},
+      {2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_int64_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make(
+      {2, 2},
+      {2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_int64_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int64_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int64_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int64_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int64_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_int64_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_bool_float32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfFloat.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfFloat.make(
+      {2, 2},
+      {2.1972243785858154,
+       -2.1972246170043945,
+       -2.1972246170043945,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_bool_float64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
+      tfDouble;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfDouble.zeros({2, 2});
+  exec_aten::Tensor out_expected = tfDouble.make(
+      {2, 2},
+      {2.1972243785858154,
+       -2.1972246170043945,
+       -2.1972246170043945,
+       2.1972243785858154});
+  _logit_out(self, eps, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpLogitOutTest, DtypeTest_bool_uint8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Byte> tfByte;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfByte.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_bool_int8) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Char> tfChar;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfChar.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_bool_int16) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Short> tfShort;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfShort.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_bool_int32) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Int> tfInt;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfInt.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_bool_int64) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfLong.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
+TEST(OpLogitOutTest, DtypeTest_bool_bool) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Bool> tfBool;
+
+  exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
+  exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
+  exec_aten::Tensor out = tfBool.zeros({2, 2});
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+}
+
 // Common testing for logit operator
 template <ScalarType DTYPE, ScalarType OUTPUT_DTYPE>
 void test_integer_logit_out() {
@@ -31,7 +791,7 @@ void test_integer_logit_out() {
   Tensor out = tf_out.zeros(sizes);
 
   ET_EXPECT_KERNEL_FAILURE(
-      logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0, out));
+      _logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0, out));
 }
 
 template <>
@@ -45,7 +805,7 @@ void test_integer_logit_out<ScalarType::Float, ScalarType::Float>() {
   Tensor out = tf_out.zeros(sizes);
 
   // Check that it matches (or close to) the expected output.
-  logit_out(tf.make(sizes, /*data=*/{.1, .2, .4, .8}), 0, out);
+  _logit_out(tf.make(sizes, /*data=*/{.1, .2, .4, .8}), 0, out);
   EXPECT_TENSOR_CLOSE(
       out,
       tf_out.make(
@@ -63,7 +823,7 @@ void test_integer_logit_out_eps_set() {
   // Destination for the logit operator.
   Tensor out = tf_out.zeros(sizes);
 
-  logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0.1, out);
+  _logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0.1, out);
 
   // Check that it matches (or close to) the expected output.
   EXPECT_TENSOR_CLOSE(
@@ -104,25 +864,6 @@ TEST(OpLogitOutKernelTest, AllRealInputDoubleOutputSupportEpsSet) {
 #undef TEST_ENTRY
 }
 
-TEST(OpLogitOutKernelTest, UnhandledInputDtypeDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle bool input dtype";
-  }
-  // logit_out() doesn't handle Bool as input.
-  TensorFactory<ScalarType::Bool> tf;
-  TensorFactory<ScalarType::Float> tf_out;
-
-  const std::vector<int32_t> sizes = {2, 2};
-  Tensor a = tf.make(sizes, /*data=*/{false, true, false, true});
-
-  // Destination for the logit
-  Tensor out = tf_out.zeros(sizes);
-
-  // Boolean tensor should cause an assertion and kill the
-  // test process.
-  ET_EXPECT_KERNEL_FAILURE(logit_out(a, 0, out));
-}
-
 // Mismatched shape tests.
 TEST(OpLogitOutKernelTest, MismatchedShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
@@ -134,7 +875,7 @@ TEST(OpLogitOutKernelTest, MismatchedShapesDies) {
   Tensor a = tf.ones(/*sizes=*/{4});
   Tensor out = tf_out.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(logit_out(a, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(a, 0, out));
 }
 
 // Unhandled output dtypes.
@@ -148,7 +889,7 @@ void test_logit_invalid_output_dtype_dies() {
   Tensor in = tf.ones(sizes);
   Tensor out = tf_out.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(logit_out(in, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(_logit_out(in, 0, out));
 }
 
 TEST(OpLogitOutKernelTest, AllNonFloatOutputDTypeDies) {
@@ -208,7 +949,7 @@ TEST(OpLogitOutKernelTest, SimpleGeneratedCase) {
                  2.1972243785858154});
 
   Tensor out = tf.zeros({10, 10});
-  Tensor ret = logit_out(x, 0.1, out);
+  Tensor ret = _logit_out(x, 0.1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -234,7 +975,7 @@ TEST(OpLogitOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = logit_out(x, 0.1, out);
+  Tensor ret = _logit_out(x, 0.1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -260,7 +1001,7 @@ TEST(OpLogitOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = logit_out(x, 0.1, out);
+  Tensor ret = _logit_out(x, 0.1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -287,6 +1028,6 @@ TEST(OpLogitOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = logit_out(x, 0.1, out);
+  Tensor ret = _logit_out(x, 0.1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

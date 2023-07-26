@@ -23,7 +23,7 @@ Tensor& logit_out(
   ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
   ET_CHECK_SAME_SHAPE2(in, out);
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "logit", CTYPE_IN, [&] {
+  ET_SWITCH_REAL_TYPES_AND(Bool, in.scalar_type(), ctx, "logit", CTYPE_IN, [&] {
     ET_SWITCH_FLOAT_TYPES(out.scalar_type(), ctx, "logit", CTYPE_OUT, [&] {
       apply_unary_map_fn(
           [eps](const CTYPE_IN val_in) {
