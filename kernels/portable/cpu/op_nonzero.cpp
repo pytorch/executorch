@@ -85,22 +85,14 @@ void nonzero(const Tensor& input, Tensor& output) {
  * Determines the non zero indices of input.
  * Out is a 2-D tensor where every row is a non zero index of the input.
  */
-Tensor& nonzero_out(RuntimeContext& context, const Tensor& input, Tensor& out) {
-  (void)context;
-  check_preconditions(input, out);
+Tensor& nonzero_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+  (void)ctx;
 
-// helper for generating the cases for different data types
-#define NONZERO(ctype, dtype)   \
-  case ScalarType::dtype:       \
-    nonzero<ctype>(input, out); \
-    break;
+  check_preconditions(in, out);
 
-  switch (input.scalar_type()) {
-    ET_FORALL_REAL_TYPES(NONZERO)
-    default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd", input.scalar_type());
-  }
-#undef NONZERO
+  ET_SWITCH_REAL_TYPES_AND(Bool, in.scalar_type(), ctx, "nonzero", CTYPE, [&] {
+    nonzero<CTYPE>(in, out);
+  });
 
   return out;
 }
