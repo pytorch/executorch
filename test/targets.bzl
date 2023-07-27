@@ -5,7 +5,7 @@ SIZE_TEST_SOURCES = [
 ]
 
 SIZE_TEST_DEPS = [
-    "//executorch/runtime/executor:executor",
+    "//executorch/runtime/executor:program",
     "//executorch/extension/data_loader:file_data_loader",
     "//executorch/util:util",
 ]

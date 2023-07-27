@@ -1,5 +1,5 @@
 #include <executorch/extension/data_loader/file_data_loader.h>
-#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
@@ -53,40 +53,45 @@ int main(int argc, char** argv) {
   EXECUTORCH_END_PROF(prof_tok);
   ET_CHECK_MSG(
       program.ok(), "Program::Load() failed: 0x%" PRIx32, program.error());
+  ET_LOG(Info, "Program file %s loaded.", argv[1]);
 
-  ET_LOG(Info, "Model file %s is loaded.", argv[1]);
+  // Use the first method in the program.
+  const char* method_name = nullptr;
+  {
+    const auto method_name_result = program->get_method_name(0);
+    ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
+    method_name = *method_name_result;
+  }
+  ET_LOG(Info, "Loading method %s", method_name);
 
   prof_tok = EXECUTORCH_BEGIN_PROF("load model");
-  Executor executor(&program.get(), &memory_manager);
-  Error status = executor.init_execution_plan();
+  Result<Method> method = program->load_method(method_name, &memory_manager);
   EXECUTORCH_END_PROF(prof_tok);
-  ET_CHECK(status == Error::Ok);
+  ET_CHECK(method.ok());
 
-  ET_LOG(Info, "Model initialized.");
+  ET_LOG(Info, "Method loaded.");
 
   // Prepare for inputs
   // It assumes the input is one tensor.
-  auto& plan = executor.execution_plan();
-
-  auto inputs = torch::executor::util::PrepareInputTensors(plan);
+  auto inputs = torch::executor::util::PrepareInputTensors(*method);
 
   ET_LOG(Info, "Inputs prepared.");
 
   prof_tok = EXECUTORCH_BEGIN_PROF("run model");
-  status = plan.execute();
+  Error status = method->execute();
   EXECUTORCH_END_PROF(prof_tok);
   ET_CHECK(status == Error::Ok);
   ET_LOG(Info, "Model executed successfully.");
 
   // print output
   auto output_list =
-      runtime_allocator.allocateList<EValue>(plan.outputs_size());
+      runtime_allocator.allocateList<EValue>(method->outputs_size());
 
-  status = plan.get_outputs(output_list, plan.outputs_size());
+  status = method->get_outputs(output_list, method->outputs_size());
   ET_CHECK(status == Error::Ok);
 
   // It assumes the outputs are all tensors.
-  for (size_t i = 0; i < plan.outputs_size(); i++) {
+  for (size_t i = 0; i < method->outputs_size(); i++) {
     auto output_tensor = output_list[i].toTensor();
     auto data_output = output_tensor.const_data_ptr<float>();
     for (size_t j = 0; j < output_list[i].toTensor().numel(); ++j) {
