@@ -15,7 +15,7 @@ class CaptureConfig:
     enable_functionalization: bool = True
     enable_dynamic_shape: bool = False
     enable_aot: bool = False
-    _dynamo_config: "ExirDynamoConfig" = ExirDynamoConfig()
+    _dynamo_config: "ExirDynamoConfig" = field(default_factory=ExirDynamoConfig)
     _unlift: bool = False
     _use_old_decomp_table: bool = False
 
