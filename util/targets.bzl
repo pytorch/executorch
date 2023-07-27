@@ -92,6 +92,8 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
-                "//executorch/runtime/executor:executor" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/executor:program" + aten_suffix,
+                "//executorch/runtime/platform:platform",
             ],
         )

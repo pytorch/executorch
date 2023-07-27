@@ -3,7 +3,7 @@
 #include <algorithm>
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/log.h>
 #ifdef USE_ATEN_LIB
 #include <ATen/ATen.h> // @manual=//caffe2/aten:ATen-core
@@ -46,21 +46,25 @@ inline void FillOnes(Tensor tensor) {
 }
 #endif
 
-// Initialize input tensor from execution plan, returns an array of data
-// pointers that were allocated and need to be freed
-inline exec_aten::ArrayRef<void*> PrepareInputTensors(
-    const ExecutionPlan& plan) {
-  size_t input_size = plan.inputs_size();
+/**
+ * Allocates input tensors for the provided Method, filling them with ones.
+ *
+ * @param[in] method The Method that owns the inputs to prepare.
+ * @returns An array of pointers that must be passed to `FreeInputs()` after
+ *     the Method is no longer needed.
+ */
+inline exec_aten::ArrayRef<void*> PrepareInputTensors(const Method& method) {
+  size_t input_size = method.inputs_size();
   size_t num_allocated = 0;
   void** inputs = (void**)malloc(input_size * sizeof(void*));
 #ifdef USE_ATEN_LIB
   auto deleteByNone = [](void* p) {};
   for (size_t i = 0; i < input_size; i++) {
-    if (!plan.get_input(i).isTensor()) {
+    if (!method.get_input(i).isTensor()) {
       ET_LOG(Info, "input %zu is not a tensor, skipping", i);
       continue;
     }
-    const auto& t = plan.get_input(i).toTensor();
+    const auto& t = method.get_input(i).toTensor();
     at::StorageImpl* storage =
         t.unsafeGetTensorImpl()->unsafe_storage().unsafeGetStorageImpl();
     auto& data_ptr = storage->data_ptr();
@@ -80,11 +84,11 @@ inline exec_aten::ArrayRef<void*> PrepareInputTensors(
   }
 #else
   for (size_t i = 0; i < input_size; i++) {
-    if (!plan.get_input(i).isTensor()) {
+    if (!method.get_input(i).isTensor()) {
       ET_LOG(Info, "input %zu is not a tensor, skipping", i);
       continue;
     }
-    const auto& t = plan.get_input(i).toTensor();
+    const auto& t = method.get_input(i).toTensor();
     if (t.data_ptr() == nullptr) {
       ET_LOG(Info, "input not initialized.");
       inputs[num_allocated++] = malloc(t.nbytes());
@@ -98,7 +102,9 @@ inline exec_aten::ArrayRef<void*> PrepareInputTensors(
   return {inputs, num_allocated};
 }
 
-// Free input pointers
+/**
+ * Frees memory that was allocated by `PrepareInputTensors()`.
+ */
 inline void FreeInputs(exec_aten::ArrayRef<void*> inputs) {
   for (size_t i = 0; i < inputs.size(); i++) {
     free(inputs[i]);
