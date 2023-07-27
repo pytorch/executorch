@@ -197,6 +197,14 @@
     other: T0
     __ret_0: T0
 
+- func: aten::full
+  namespace: edge
+  inherits: aten::full
+  type_alias:
+    T0: [Bool, Byte, Char, Double, Float, Int, Long, Short]
+  type_constraint:
+  - __ret_0: T0
+
 - func: aten::gelu
   namespace: edge
   inherits: aten::gelu
@@ -242,44 +250,6 @@
     __ret_0: T6
   - self: T7
     index: T6
-    __ret_0: T7
-
-- func: aten::masked_fill.Scalar
-  namespace: edge
-  inherits: aten::masked_fill.Scalar
-  type_alias:
-    T0: [Bool]
-    T1: [Byte]
-    T2: [Char]
-    T3: [Double]
-    T4: [Float]
-    T5: [Int]
-    T6: [Long]
-    T7: [Short]
-  type_constraint:
-  - self: T0
-    mask: T0
-    __ret_0: T0
-  - self: T1
-    mask: T0
-    __ret_0: T1
-  - self: T2
-    mask: T0
-    __ret_0: T2
-  - self: T3
-    mask: T0
-    __ret_0: T3
-  - self: T4
-    mask: T0
-    __ret_0: T4
-  - self: T5
-    mask: T0
-    __ret_0: T5
-  - self: T6
-    mask: T0
-    __ret_0: T6
-  - self: T7
-    mask: T0
     __ret_0: T7
 
 - func: aten::mm
@@ -342,14 +312,13 @@
   - self: T0
     __ret_0: T0
 
-- func: aten::rsub.Scalar
+- func: aten::scalar_tensor
   namespace: edge
-  inherits: aten::rsub.Scalar
+  inherits: aten::scalar_tensor
   type_alias:
-    T0: [Byte, Char, Double, Float, Int, Long, Short]
+    T0: [Bool, Byte, Char, Double, Float, Int, Long, Short]
   type_constraint:
-  - self: T0
-    __ret_0: T0
+  - __ret_0: T0
 
 - func: aten::sigmoid
   namespace: edge
@@ -382,15 +351,6 @@
   - self: T0
     __ret_0: T0
 
-- func: aten::stack
-  namespace: edge
-  inherits: aten::stack
-  type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Int, Long, Short]
-  type_constraint:
-  - tensors: T0
-    __ret_0: T0
-
 - func: aten::sub.Tensor
   namespace: edge
   inherits: aten::sub.Tensor
@@ -416,15 +376,6 @@
     T0: [Bool, Byte, Char, Double, Float, Int, Long, Short]
   type_constraint:
   - self: T0
-
-- func: aten::t_copy
-  namespace: edge
-  inherits: aten::t_copy
-  type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Int, Long, Short]
-  type_constraint:
-  - self: T0
-    __ret_0: T0
 
 - func: aten::tanh
   namespace: edge
@@ -466,10 +417,18 @@
   - self: T0
     __ret_0: T0
 
-- func: aten::zeros
+- func: aten::where.self
   namespace: edge
-  inherits: aten::zeros
+  inherits: aten::where.self
   type_alias:
-    T0: [Bool, Byte, Char, Double, Float, Int, Long, Short]
+    T0: [Bool]
+    T1: [Byte]
   type_constraint:
-  - __ret_0: T0
+  - condition: T0
+    self: T0
+    other: T0
+    __ret_0: T0
+  - condition: T1
+    self: T0
+    other: T1
+    __ret_0: T1

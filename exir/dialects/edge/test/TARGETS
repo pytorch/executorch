@@ -14,6 +14,8 @@ python_unittest(
     tags = ["long_running"],
     deps = [
         "fbsource//third-party/pypi/ruamel-yaml:ruamel-yaml",
+        "//caffe2:torch",
+        "//executorch/exir/dialects/edge:support_dtypes",
         "//executorch/exir/dialects/edge:yaml_generator_lib",
         "//pye/model_inventory/asr_models/milan_dictation:milan_dictation_lib",
     ],

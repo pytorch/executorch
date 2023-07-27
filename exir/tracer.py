@@ -38,7 +38,7 @@ from executorch.exir.operator.convert import is_out_variant
 from executorch.exir.types import ValueSpec
 
 from torch._C import _EnableTorchFunction, DisableTorchFunctionSubclass  # @manual
-from torch._decomp import get_decompositions
+from torch._decomp import core_aten_decompositions, get_decompositions
 from torch._dynamo.eval_frame import Constraint
 from torch._dynamo.guards import Guard
 
@@ -625,15 +625,19 @@ def flatten_output(gm: torch.fx.GraphModule) -> None:
     raise RuntimeError(f"Could not find an output node in {gm.graph}")
 
 
-def _default_decomposition_table() -> Dict[torch._ops.OpOverload, Callable[..., Value]]:
-    decomp_opset = [
-        torch.ops.aten.log_sigmoid_forward,
-        torch.ops.aten.ones,
-        torch.ops.aten.arange.default,
-        torch.ops.aten.arange.start,
-        torch.ops.aten.transpose,
-    ]
-    return get_decompositions(decomp_opset)
+def _default_decomposition_table(
+    _use_old_decomp_table=False,
+) -> Dict[torch._ops.OpOverload, Callable[..., Value]]:
+    if _use_old_decomp_table:
+        decomp_opset = [
+            torch.ops.aten.log_sigmoid_forward,
+            torch.ops.aten.ones,
+            torch.ops.aten.arange.default,
+            torch.ops.aten.arange.start,
+            torch.ops.aten.transpose,
+        ]
+        return get_decompositions(decomp_opset)
+    return core_aten_decompositions()
 
 
 def dynamo_trace(
@@ -644,6 +648,7 @@ def dynamo_trace(
     tracing_mode: str = "real",
     dynamo_config: Optional[ExirDynamoConfig] = None,
     constraints: Optional[List[Constraint]] = None,
+    _use_old_decomp_table: bool = False,
 ) -> Tuple[torch.fx.GraphModule, Set[Guard]]:
     """
     TODO: Once we fully migrate to torchdynamo frontend, we will remove
@@ -667,7 +672,7 @@ def dynamo_trace(
                 aten_graph=aten_graph,
                 tracing_mode=tracing_mode,
                 assume_static_by_default=dynamo_config.assume_static_by_default,
-                decomposition_table=_default_decomposition_table()
+                decomposition_table=_default_decomposition_table(_use_old_decomp_table)
                 if aten_graph
                 else None,
                 constraints=constraints,

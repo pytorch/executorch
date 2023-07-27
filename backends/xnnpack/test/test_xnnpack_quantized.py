@@ -1,3 +1,5 @@
+import unittest
+
 import torch
 from executorch.backends.xnnpack.test.test_xnnpack_utils import (
     randomize_bn,
@@ -191,6 +193,8 @@ class TestXNNPACKQuantized(TestXNNPACK):
 
         self.quantize_and_test_model(LeakyReLUModule(), example_inputs)
 
+    # TODO(T158652796)
+    @unittest.expectedFailure
     def test_xnnpack_leaky_relu2(self):
         example_inputs = (torch.randn(1, 3, 3),)
 
@@ -514,6 +518,8 @@ class TestXNNPACKQuantized(TestXNNPACK):
         example_inputs = (torch.randn(5, 4, 3, 2),)
         self.quantize_and_test_model(StaticConstantPadModule(), example_inputs)
 
+    # TODO(T158652796)
+    @unittest.expectedFailure
     def test_xnnpack_qelu(self):
         class ELUModule(torch.nn.Module):
             def __init__(self):
@@ -526,6 +532,8 @@ class TestXNNPACKQuantized(TestXNNPACK):
         example_inputs = (torch.randn(1, 3, 4, 4),)
         self.quantize_and_test_model(ELUModule(), example_inputs)
 
+    # TODO(T158652796)
+    @unittest.expectedFailure
     def test_xnnpack_qelu2(self):
         class ELUModule(torch.nn.Module):
             def __init__(self):

@@ -17,6 +17,7 @@ class CaptureConfig:
     enable_aot: bool = False
     _dynamo_config: "ExirDynamoConfig" = ExirDynamoConfig()
     _unlift: bool = False
+    _use_old_decomp_table: bool = False
 
 
 @compatibility(is_backward_compatible=False)

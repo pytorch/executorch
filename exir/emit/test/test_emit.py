@@ -204,35 +204,6 @@ class TestEmit(unittest.TestCase):
             instructions[1].instr_args.args[3], values, 0, 1, 0
         )
 
-    def test_reshape(self) -> None:
-        def f(x: torch.Tensor) -> torch.Tensor:
-            return torch.ops.aten._reshape_alias(x, [3, 2, 1], [1, 1, 1])
-
-        inputs = (torch.ones((1, 2, 3)),)
-        edge = exir.capture(f, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
-        removed_ops = ["aten::_reshape_alias"]
-        expected_ops = ["aten::_reshape_alias_copy"]
-        for opname in removed_ops:
-            self.assertEqual(
-                self.count_node(edge.exported_program.graph_module, opname), 0
-            )
-        for opname in expected_ops:
-            # TODO(mvz): Figure out why when we use functionalization we get
-            # two reshape nodes in the graph (the first one is a dead code) and
-            # change this check to exact match
-            self.assertTrue(
-                self.count_node(edge.exported_program.graph_module, opname) >= 1
-            )
-        program = edge.to_executorch().program
-        for opname in removed_ops:
-            self.assertTrue(
-                all([op.name != opname for op in program.execution_plan[0].operators])
-            )
-        for opname in expected_ops:
-            self.assertTrue(
-                any([op.name == opname for op in program.execution_plan[0].operators])
-            )
-
     def test_inplace_ops(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:
             y = torch.sin(x)
@@ -593,6 +564,8 @@ class TestEmit(unittest.TestCase):
             len(program.execution_plan[0].chains[0].instructions[0].instr_args.args), 8
         )
 
+    # Non contiguous tensors are not supported in ExecuTorch
+    @unittest.expectedFailure
     def test_emit_layout(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:
             return torch.ones_like(x)
@@ -628,6 +601,7 @@ class TestEmit(unittest.TestCase):
             len(program.execution_plan[0].chains[0].instructions[1].instr_args.args), 4
         )
 
+    # UpsampleNearest is incorrectly decomposed
     @unittest.expectedFailure
     def test_optional_float_list(self) -> None:
         class M(torch.nn.Module):

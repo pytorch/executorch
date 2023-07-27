@@ -85,6 +85,7 @@ def capture(
                 tracing_mode="symbolic",
                 dynamo_config=config._dynamo_config,
                 constraints=constraints,
+                _use_old_decomp_table=config._use_old_decomp_table,
             )
 
         else:
@@ -95,6 +96,7 @@ def capture(
                 tracing_mode="fake",
                 dynamo_config=config._dynamo_config,
                 constraints=None,  # constraints make sense only when dynamic shapes is enabled
+                _use_old_decomp_table=config._use_old_decomp_table,
             )
 
         if out_spec is None:

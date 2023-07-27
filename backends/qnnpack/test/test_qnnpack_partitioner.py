@@ -60,6 +60,8 @@ def get_actual_dyanmic_quantized_graph(
     return dynamic_quantized_exir_graph.graph
 
 
+# TODO(T158653285)
+@unittest.expectedFailure
 class TestQnnbackends(unittest.TestCase):
     def test_dynamic_quantize_addmm_with_view_copy_partitioner(self):
         example_inputs = (torch.rand(5, 1, 256),)

@@ -631,34 +631,6 @@ class TestPasses(unittest.TestCase):
         gm.print_readable()
         self.assertFalse(torch.ops.aten._linalg_check_errors.default in collect_ops(gm))
 
-    def test_normalize_transpose_op(self) -> None:
-        eager_model = MLP(2, output_size=4)
-        inputs = eager_model.get_random_inputs()
-        print(f"eager outputs {eager_model(*inputs)}")
-
-        # Graph: P613059682
-        gm = exir.capture(
-            eager_model,
-            inputs,
-            exir.CaptureConfig(
-                pt2_mode=True,
-                enable_dynamic_shape=False,
-                enable_functionalization=True,
-            ),
-        ).exported_program.graph_module
-        prev_ops = collect_ops(gm)
-        self.assertTrue(torch.ops.aten.t.default in prev_ops)
-        pm = PassManager(
-            passes=[
-                ReplaceSymSizeOpPass(),
-                NormalizeTransposePass(),
-            ],
-        )
-        gm = pm(gm).graph_module
-        next_ops = collect_ops(gm)
-        self.assertFalse(torch.ops.aten.t.default in next_ops)
-        self.assertTrue(torch.ops.aten.t_copy.default in next_ops)
-
     def test_propagate_dynamic_shape(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:
             y = x

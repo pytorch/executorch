@@ -209,6 +209,8 @@ def get_sample_input(key: str, overload_name: str, edge_type: torch.dtype):
             }
         elif opdb_key == "split":
             sample_args[1] = 1
+        elif opdb_key == "scalar_tensor":
+            del sample_kwargs["requires_grad"]
         yield sample_args, sample_kwargs
 
 
@@ -576,7 +578,7 @@ def main():
     )
     parser.add_argument(
         "--regenerate",
-        type=bool,
+        action="store_true",
         help="Whether to regenerate edge.yaml, based on all edge ops used in ASR models. By default we reuses operators in existing edge.yaml file.",
     )
     options = parser.parse_args()

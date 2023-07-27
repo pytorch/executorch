@@ -235,7 +235,8 @@ class TestEdgeYaml(unittest.TestCase):
                 filecmp.cmp(
                     yaml_stream.name,
                     "executorch/exir/dialects/edge/edge.yaml",
-                )
+                ),
+                "Please run `//executorch/exir/dialects/edge:yaml_generator -- --regenerate` to regenerate the file.",
             )
 
     def test_to_copy_sample_input_has_enough_coverage(self) -> None:

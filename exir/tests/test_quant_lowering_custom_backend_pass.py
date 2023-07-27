@@ -691,7 +691,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_tensor"
         ).check(
-            "executorch_exir_dialects_edge__ops_aten_t_copy_default"
+            "executorch_exir_dialects_edge__ops_aten_permute_copy_default"
         ).check(
             "executorch_exir_dialects_edge__ops_aten_addmm"
         ).run(
@@ -826,7 +826,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_tensor"
         ).check(
-            "executorch_exir_dialects_edge__ops_aten_t_copy_default"
+            "executorch_exir_dialects_edge__ops_aten_permute_copy_default"
         ).check(
             "executorch_exir_dialects_edge__ops_aten_addmm"
         ).run(
@@ -890,7 +890,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_tensor"
         ).check(
-            "executorch_exir_dialects_edge__ops_aten_t_copy_default"
+            "executorch_exir_dialects_edge__ops_aten_permute_copy_default"
         ).check(
             "executorch_exir_dialects_edge__ops_aten_addmm"
         ).run(

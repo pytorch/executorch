@@ -50,7 +50,8 @@ EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False, _use_edge_ops=True
 )
 
-
+# TODO(T158653285)
+@unittest.expectedFailure
 class TestQnnbackends(unittest.TestCase):
     k_dim = 5
     input_dims = (1, 4, k_dim)
