@@ -76,10 +76,13 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
-                "//executorch/runtime/executor:executor" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:dim_order_util" + aten_suffix,
-                "//executorch/schema:schema",
                 "//executorch/schema:bundled_program_schema",
+                "//executorch/schema:schema",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:memory_allocator",
+                "//executorch/runtime/executor:program" + aten_suffix,
             ],
         )
 

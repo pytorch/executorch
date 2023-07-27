@@ -9,7 +9,8 @@
 
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
-#include <executorch/runtime/executor/memory_manager.h>
+#include <executorch/runtime/core/memory_allocator.h>
+#include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/schema/bundled_program_schema_generated.h>
 #include <executorch/schema/schema_generated.h>
@@ -69,12 +70,12 @@ TensorImpl impl_like(
 #endif
 } // namespace
 
-// Load testset_idx-th bundled data to execution plan
+// Load testset_idx-th bundled data into the Method
 __ET_NODISCARD Error LoadBundledInput(
-    ExecutionPlan& plan,
+    Method& method,
     serialized_bundled_program* bundled_program_ptr,
     MemoryAllocator* memory_allocator,
-    size_t plan_idx,
+    size_t method_idx,
     size_t testset_idx) {
   ET_CHECK_OR_RETURN_ERROR(
       executorch_flatbuffer::BundledProgramBufferHasIdentifier(
@@ -85,15 +86,15 @@ __ET_NODISCARD Error LoadBundledInput(
   auto bundled_inputs =
       executorch_flatbuffer::GetBundledProgram(bundled_program_ptr)
           ->execution_plan_tests()
-          ->Get(plan_idx)
+          ->Get(method_idx)
           ->test_sets()
           ->Get(testset_idx)
           ->inputs();
 
-  for (size_t input_idx = 0; input_idx < plan.inputs_size(); input_idx++) {
+  for (size_t input_idx = 0; input_idx < method.inputs_size(); input_idx++) {
     auto bundled_input = bundled_inputs->GetMutableObject(input_idx);
 
-    // The EValue variable will contain the info set to input_idx plan input.
+    // The EValue variable will contain the info set to input_idx Method input.
     EValue e_input;
 
     // Status for set_input function in this scope.
@@ -112,32 +113,32 @@ __ET_NODISCARD Error LoadBundledInput(
         TensorImpl impl = impl_like(bundled_input_tensor, memory_allocator);
         Tensor t = Tensor(&impl);
 #endif
-        // Use t to create EValue as plan's input.
+        // Use t to create EValue as Method's input.
         e_input = EValue(t);
         // Setting input like this a bit problematic because
         // tensor that EValue is storing has pointer to tensorIml.
         // This pointer is from the stack of this function whose lifetime
         // is not beyond this function.
         // TODO(T148052964): use runtime allocator to allocate `TensorImpl impl`
-        status = plan.set_input(e_input, input_idx);
+        status = method.set_input(e_input, input_idx);
         break;
       }
       case executorch_flatbuffer::BundledValueUnion::BundledInt: {
         auto bundled_input_int = bundled_input->val_as_BundledInt();
         e_input = EValue(bundled_input_int->int_val());
-        status = plan.set_input(e_input, input_idx);
+        status = method.set_input(e_input, input_idx);
         break;
       }
       case executorch_flatbuffer::BundledValueUnion::BundledDouble: {
         auto bundled_input_int = bundled_input->val_as_BundledDouble();
         e_input = EValue(bundled_input_int->double_val());
-        status = plan.set_input(e_input, input_idx);
+        status = method.set_input(e_input, input_idx);
         break;
       }
       case executorch_flatbuffer::BundledValueUnion::BundledBool: {
         auto bundled_input_int = bundled_input->val_as_BundledBool();
         e_input = EValue(bundled_input_int->bool_val());
-        status = plan.set_input(e_input, input_idx);
+        status = method.set_input(e_input, input_idx);
         break;
       }
       default: {
@@ -161,10 +162,10 @@ __ET_NODISCARD Error LoadBundledInput(
 }
 
 __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
-    ExecutionPlan& plan,
+    Method& method,
     serialized_bundled_program* bundled_program_ptr,
     MemoryAllocator* memory_allocator,
-    size_t plan_idx,
+    size_t method_idx,
     size_t testset_idx,
     double rtol,
     double atol) {
@@ -177,21 +178,22 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
   auto bundled_expected_outputs =
       executorch_flatbuffer::GetBundledProgram(bundled_program_ptr)
           ->execution_plan_tests()
-          ->Get(plan_idx)
+          ->Get(method_idx)
           ->test_sets()
           ->Get(testset_idx)
           ->expected_outputs();
 
-  for (size_t output_idx = 0; output_idx < plan.outputs_size(); output_idx++) {
+  for (size_t output_idx = 0; output_idx < method.outputs_size();
+       output_idx++) {
     auto bundled_expected_output =
         bundled_expected_outputs->GetMutableObject(output_idx);
-    auto plan_output = plan.get_output(output_idx);
+    auto method_output = method.get_output(output_idx);
     switch (bundled_expected_output->val_type()) {
       case executorch_flatbuffer::BundledValueUnion::BundledTensor: {
         auto bundled_expected_output_tensor =
             static_cast<executorch_flatbuffer::BundledTensor*>(
                 bundled_expected_output->mutable_val());
-        const auto plan_output_tensor = plan_output.toTensor();
+        const auto method_output_tensor = method_output.toTensor();
 
 #ifdef USE_ATEN_LIB
         Tensor t = tensor_like(bundled_expected_output_tensor);
@@ -201,9 +203,9 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
         Tensor t = Tensor(&impl);
 #endif
         ET_CHECK_OR_RETURN_ERROR(
-            testing::tensors_are_close(t, plan_output_tensor, rtol, atol),
+            testing::tensors_are_close(t, method_output_tensor, rtol, atol),
             NotFound, // maybe some new error tag?
-            "Plan's output data mismatched the expected one.");
+            "Method's output data mismatched the expected one.");
         break;
       }
       default: {
