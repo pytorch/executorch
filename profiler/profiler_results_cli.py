@@ -14,9 +14,6 @@ from executorch.profiler.parse_profiler_results import (
     ProfileData,
 )
 
-from executorch.profiler.profiler_results_scuba import upload_to_scuba
-
-
 def gen_chrome_traceevents_json(
     profile_results_path: str, model_ff_path: str, json_out_path: str
 ):
