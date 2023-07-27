@@ -1,15 +1,15 @@
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 
-load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-python_library(
+runtime.python_library(
     name = "parse_profiler_library",
     srcs = [
         "parse_profiler_results.py",
+        "profiler_results_cli.py",
     ],
-    visibility = ["PUBLIC"],
+    visibility = ["@EXECUTORCH_CLIENTS"],
     deps = [
         "fbsource//third-party/pypi/prettytable:prettytable",
         "//executorch/exir:schema",
@@ -17,11 +17,12 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "profiler_results_scuba",
     srcs = [
         "profiler_results_scuba.py",
     ],
+    visibility = ["@EXECUTORCH_CLIENTS"],
     deps = [
         ":parse_profiler_library",
         "//executorch/exir:schema",
@@ -32,15 +33,22 @@ python_library(
     ],
 )
 
-python_binary(
-    name = "profiler_results_cli",
+runtime.python_library(
+    name = "profiler_results_cli_lib",
     srcs = [
         "profiler_results_cli.py",
     ],
-    main_module = "executorch.profiler.profiler_results_cli",
     deps = [
         ":parse_profiler_library",
         ":profiler_results_scuba",
         "//executorch/exir/serialize:lib",
+    ],
+)
+
+runtime.python_binary(
+    name = "profiler_results_cli",
+    main_module = "executorch.profiler.profiler_results_cli",
+    deps = [
+        ":profiler_results_cli_lib",
     ],
 )
