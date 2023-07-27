@@ -32,12 +32,6 @@ class EdgeCompileConfig:
 
 @compatibility(is_backward_compatible=False)
 @dataclass
-class ServerCompileConfig:
-    passes: List[PassType] = field(default_factory=list)
-
-
-@compatibility(is_backward_compatible=False)
-@dataclass
 class ExecutorchBackendConfig:
     passes: List[PassType] = field(default_factory=list)
     memory_planning_pass: PassType = MemoryPlanningPass("greedy")

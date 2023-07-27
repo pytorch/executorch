@@ -4,11 +4,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import torch
 import torch._export
-from executorch.exir.capture._config import (
-    EdgeCompileConfig,
-    ExecutorchBackendConfig,
-    ServerCompileConfig,
-)
+from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.error import ExportError
 from executorch.exir.pass_manager import PassManager, PassType
@@ -65,16 +61,6 @@ class ExirExportedProgram:
 
     def dump(self) -> None:
         print(self.exported_program.graph_module.graph)
-
-    def _to_server(
-        self, config: Optional[ServerCompileConfig] = None
-    ) -> torch.nn.Module:
-        config = config or ServerCompileConfig()
-        res = PassManager(config.passes)(self.exported_program.graph_module)
-        assert res is not None
-        # TODO ServerDialectGraphModule
-        # return graph_module now.
-        return res.graph_module
 
     def to_executorch(
         self,

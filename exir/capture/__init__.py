@@ -5,7 +5,6 @@ from executorch.exir.capture._config import (
     CaptureConfig,
     EdgeCompileConfig,
     ExecutorchBackendConfig,
-    ServerCompileConfig,
 )
 from executorch.exir.capture._unlift import unlift_exported_program_lifted_states
 
@@ -14,7 +13,6 @@ __all__ = [
     "capture_multiple",
     "CaptureConfig",
     "EdgeCompileConfig",
-    "ServerCompileConfig",
     "ExecutorchBackendConfig",
     "unlift_exported_program_lifted_states",
 ]

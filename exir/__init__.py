@@ -6,7 +6,6 @@ from executorch.exir.capture import (
     CaptureConfig,
     EdgeCompileConfig,
     ExecutorchBackendConfig,
-    ServerCompileConfig,
 )
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.program import (
@@ -44,7 +43,6 @@ __all__ = [
     "MultiMethodExecutorchProgram",
     "CaptureConfig",
     "EdgeCompileConfig",
-    "ServerCompileConfig",
     "ExecutorchBackendConfig",
     "Value",
     "serialize_to_flatbuffer",
