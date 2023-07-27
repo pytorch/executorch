@@ -194,7 +194,7 @@ const OpFunction& getOpsFn(const char* name, ArrayRef<TensorMeta> kernel_key) {
 const OpFunction& OperatorRegistry::getOpsFn(
     const char* name,
     ArrayRef<TensorMeta> meta_list) {
-  char buf[BUF_SIZE];
+  char buf[BUF_SIZE] = {0};
   make_kernel_key_string(meta_list, buf);
   KernelKey kernel_key = KernelKey(buf);
   for (size_t idx = 0; idx < this->operatorRegSize_; idx++) {
