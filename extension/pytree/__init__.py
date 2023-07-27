@@ -1,6 +1,11 @@
 # flake8: noqa: F401
 
-import warnings
+import logging
+
+# Create a logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.WARNING)
+
 
 try:
     """
@@ -22,7 +27,7 @@ try:
         TreeSpec as TreeSpec,
     )
 except:
-    warnings.warn(
+    logger.info(
         "Unable to import executorch.extension.pytree, using native torch pytree instead."
     )
 

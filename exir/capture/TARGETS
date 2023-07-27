@@ -21,7 +21,6 @@ python_library(
         ":config",
         ":unlift",
         "//caffe2:torch",
-        "//caffe2/functorch:functorch_src",
         "//executorch/exir:error",
         "//executorch/exir:tracer",
         "//executorch/exir/program:lib",

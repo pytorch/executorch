@@ -17,13 +17,13 @@ from executorch.exir.tracer import (
     flatten_output,
     Value,
 )
-from functorch.experimental import functionalize
 from torch import _guards
 from torch._dispatch.python import enable_python_dispatcher
 from torch._dynamo.eval_frame import Constraint
 from torch._export import CallSpec, export, ExportGraphSignature
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
 from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
+from torch.func import functionalize
 from torch.fx._compatibility import compatibility
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch.fx.experimental.symbolic_shapes import ShapeEnv

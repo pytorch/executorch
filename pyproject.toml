@@ -9,6 +9,9 @@ dependencies=[
   "ruamel.yaml",
   "pyyaml",
   "sympy",
+  "numpy",
+  "zstd",
+  "flatbuffers",
 ]
 
 [tool.setuptools.package-data]
