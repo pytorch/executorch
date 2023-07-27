@@ -235,8 +235,8 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
 def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]:
     # pyre-ignore
     passes: List[PassType] = [
-        SpecPropPass(),
         *config.passes,
+        SpecPropPass(),
         EdgeToBackendOpsPass(),
         RemoveAssertAsyncPass(),
         SymShapeEvalPass(),

@@ -641,29 +641,6 @@ class TestEmit(unittest.TestCase):
             program.execution_plan[0].values[4].val, schema.OptionalTensorList
         )
 
-    def test_broken_call_function(self) -> None:
-        def f(x: torch.Tensor) -> torch.Tensor:
-            number = x.argmax()
-            x.add(number)
-            return x.sum()
-
-        module = exir.capture(
-            f, (torch.tensor([1.0]),), exir.CaptureConfig(pt2_mode=True)
-        ).to_edge()
-
-        def bad_pass(module: torch.fx.GraphModule) -> PassResult:
-            for node in module.graph.nodes:
-                if node.op == "call_function":
-                    node.meta["spec"] = f
-            return PassResult(module, True)
-
-        with self.assertRaisesRegex(
-            InternalError, ".*Here is the failing node in the graph module:\ngraph().*"
-        ):
-            module.to_executorch(
-                exir.ExecutorchBackendConfig(passes=[bad_pass])
-            ).program
-
     def test_emit_map(self) -> None:
         def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
             def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
