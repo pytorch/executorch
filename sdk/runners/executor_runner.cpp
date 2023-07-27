@@ -2,7 +2,8 @@
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
-#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/method.h>
+#include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -215,10 +216,10 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "Model file %s is loaded.", FLAGS_model_path.c_str());
 
   // Use the first method in the program.
-  const size_t plan_index = 0;
+  const size_t method_index = 0;
   const char* method_name = nullptr;
   {
-    const auto method_name_result = program->get_method_name(plan_index);
+    const auto method_name_result = program->get_method_name(method_index);
     ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
     method_name = *method_name_result;
   }
@@ -233,7 +234,7 @@ int main(int argc, char** argv) {
 
   // The runtime allocator is used to allocate all dynamic C++ metadata/objects
   // used to represent the loaded program. This allocator is only used during
-  // ExecutionPlan init, which will return an error if there was not enough
+  // Program::load_method(), which will return an error if there was not enough
   // memory.
   //
   // The amount of memory required depends on the loaded program and the runtime
@@ -310,21 +311,19 @@ int main(int argc, char** argv) {
       &temp_allocator);
 
   //
-  // Create an Executor and ExecutionPlan from the program, using the provided
-  // allocators. The ExecutionPlan is what actually runs the model. It is
-  // mutable, so should only be used by a single thread at at time, but it can
-  // be reused.
+  // Load the named method from the Program, using the provided allocators. The
+  // Method is what actually performs the inference. It is mutable and not
+  // locked, so should only used by a single thread at a time. But, it can be
+  // reused for multiple inferences.
   //
 
   prof_tok = EXECUTORCH_BEGIN_PROF("load model");
-  torch::executor::Executor executor(&program.get(), &memory_manager);
-
-  Error status = executor.init_execution_plan(method_name);
+  Result<Method> method = program->load_method(method_name, &memory_manager);
   EXECUTORCH_END_PROF(prof_tok);
   ET_CHECK_MSG(
-      status == Error::Ok,
-      "init_execution_plan() failed with status 0x%" PRIx32,
-      status);
+      method.ok(),
+      "load_method() failed with status 0x%" PRIx32,
+      method.error());
 
   ET_LOG(Info, "Model initialized.");
 
@@ -355,17 +354,17 @@ int main(int argc, char** argv) {
       torch::executorch::threadpool::get_threadpool()->get_thread_count());
 #endif
   // Run the model multiple times if requested.
-  auto& plan = executor.execution_plan();
+  Error status;
   for (size_t i = 0; i < FLAGS_num_iters; i++) {
     // Prepare the inputs.
     exec_aten::ArrayRef<void*> inputs;
     if (FLAGS_bundled_program) {
       // Use the inputs embedded in the bundled program.
       status = torch::executor::util::LoadBundledInput(
-          plan,
+          *method,
           program_data.bundled_program_data(),
           &bundled_input_allocator,
-          plan_index,
+          method_index,
           FLAGS_testset_idx);
       ET_CHECK_MSG(
           status == Error::Ok,
@@ -373,28 +372,28 @@ int main(int argc, char** argv) {
           status);
     } else {
       // Use ones-initialized inputs.
-      inputs = torch::executor::util::PrepareInputTensors(plan);
+      inputs = torch::executor::util::PrepareInputTensors(*method);
     }
     ET_LOG(Info, "Inputs prepared.");
 
     // Run the model.
     EXECUTORCH_PROFILE_CREATE_BLOCK("inference loop");
     prof_tok = EXECUTORCH_BEGIN_PROF("run model");
-    status = plan.execute();
+    status = method->execute();
     EXECUTORCH_END_PROF(prof_tok);
     ET_CHECK_MSG(
         status == Error::Ok,
-        "plan.execute() failed with status 0x%" PRIx32,
+        "method->execute() failed with status 0x%" PRIx32,
         status);
     ET_LOG(Info, "Model executed successfully.");
 
     // Handle the outputs.
     if (FLAGS_bundled_program) {
       status = torch::executor::util::VerifyResultWithBundledExpectedOutput(
-          plan,
+          *method,
           program_data.bundled_program_data(),
           &bundled_input_allocator,
-          plan_index,
+          method_index,
           FLAGS_testset_idx,
           FLAGS_rtol,
           FLAGS_atol);
@@ -410,15 +409,15 @@ int main(int argc, char** argv) {
 
   // Print the outputs if requested.
   if (FLAGS_print_output) {
-    auto output_list = std::make_unique<EValue[]>(plan.outputs_size());
-    status = plan.get_outputs(output_list.get(), plan.outputs_size());
+    auto output_list = std::make_unique<EValue[]>(method->outputs_size());
+    status = method->get_outputs(output_list.get(), method->outputs_size());
     ET_CHECK_MSG(
         status == Error::Ok,
         "get_outputs failed with status 0x%" PRIx32,
         status);
 
     // TODO(T139071931): Don't assume that all outputs are tensors.
-    for (size_t i = 0; i < plan.outputs_size(); i++) {
+    for (size_t i = 0; i < method->outputs_size(); i++) {
       auto output_tensor = output_list[i].toTensor();
       const float* data_output = output_tensor.const_data_ptr<float>();
       for (size_t j = 0; j < output_list[i].toTensor().numel(); ++j) {
