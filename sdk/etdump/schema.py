@@ -80,7 +80,7 @@ class DebugBlock:
 
 # Note the differing value style is a result of ETDump string
 class PROFILE_EVENT_ENUM(Enum):
-    RUN_MODEL = "ExecPlan::execute"
+    RUN_MODEL = "Method::execute"
     OPERATOR_CALL = "OPERATOR_CALL"
     DELEGATE_CALL = "DELEGATE_CALL"
     LOAD_MODEL = "ExecPlan::init_execution_plan"

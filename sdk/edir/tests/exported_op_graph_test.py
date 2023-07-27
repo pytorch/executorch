@@ -95,7 +95,7 @@ class TwoLinearModule(torch.nn.Module):
         for profile_times in samples:
             profile_events = [
                 ProfileEvent(
-                    name="ExecPlan::execute",
+                    name="Method::execute",
                     debug_handle=0,
                     start_time=profile_times[0],
                     end_time=profile_times[-1],
@@ -195,7 +195,7 @@ class MultiOutputNodeModule(nn.Module):
                             allocators=[],
                             profile_events=[
                                 ProfileEvent(
-                                    name="ExecPlan::execute",
+                                    name="Method::execute",
                                     debug_handle=0,
                                     start_time=10000,
                                     end_time=1500000,
@@ -378,7 +378,7 @@ class CompositeDelegateModule(torch.nn.Module):
                             allocators=[],
                             profile_events=[
                                 ProfileEvent(
-                                    name="ExecPlan::execute",
+                                    name="Method::execute",
                                     debug_handle=0,
                                     start_time=10000,
                                     end_time=1500000,
@@ -466,7 +466,7 @@ class SymIntTestModule(torch.nn.Module):
                             allocators=[],
                             profile_events=[
                                 ProfileEvent(
-                                    name="ExecPlan::execute",
+                                    name="Method::execute",
                                     debug_handle=0,
                                     start_time=10000,
                                     end_time=1500000,

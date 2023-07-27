@@ -52,8 +52,8 @@ class Program final {
   };
 
   /**
-   * Index into the program's ExecutionPlan list that corresponds with the
-   * forward function of the captured program.
+   * Index into the program's method list that corresponds to the forward()
+   * function of the captured program.
    */
   constexpr static size_t kForwardMethodIndex = 0;
 
@@ -253,15 +253,15 @@ class Program final {
  private:
   // Let some classes call these private methods.
   friend class BackendDelegate;
-  friend class ExecutionPlan;
   friend class Executor;
+  friend class Method;
   friend class testing::ProgramTestFriend;
 
   const executorch_flatbuffer::Program* get_internal_program() const {
     return internal_program_;
   }
 
-  // Used by ExecutionPlan to look up entries in the delegate data table.
+  // Used by Method to look up entries in the delegate data table.
   Error get_backend_delegate_data(
       size_t index,
       const void** out_data,

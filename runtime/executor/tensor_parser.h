@@ -2,8 +2,7 @@
 
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/memory_allocator.h>
-#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/schema/schema_generated.h>
 

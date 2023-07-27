@@ -34,7 +34,7 @@ def define_common_targets():
             "memory_manager.h",
         ],
         exported_deps = [
-            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:memory_allocator",
         ],
         visibility = [
             "//executorch/...",
@@ -42,54 +42,67 @@ def define_common_targets():
         ],
     )
 
-    runtime.cxx_library(
-        name = "program",
-        srcs = ["program.cpp"],
-        exported_headers = ["program.h"],
-        deps = [
-            "//executorch/runtime/platform:platform",
-            "//executorch/schema:extended_header",
-            "//executorch/schema:schema",
-        ],
-        preprocessor_flags = _program_preprocessor_flags(),
-        exported_deps = ["//executorch/runtime/core:core"],
-        visibility = ["//executorch/runtime/executor/...", "@EXECUTORCH_CLIENTS"],
-    )
-
     for aten_mode in (True, False):
         aten_suffix = "_aten" if aten_mode else ""
+
+        runtime.cxx_library(
+            name = "program" + aten_suffix,
+            srcs = [
+                "method.cpp",
+                "program.cpp",
+                "tensor_parser{}.cpp".format(aten_suffix),
+            ],
+            headers = [
+                "tensor_parser.h",
+            ],
+            exported_headers = [
+                "method.h",
+                "program.h",
+            ],
+            deps = [
+                "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
+                "//executorch/runtime/backend:backend_registry",
+                "//executorch/runtime/core/exec_aten/util:dim_order_util",
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
+                "//executorch/runtime/kernel:operator_registry",
+                "//executorch/runtime/platform:platform",
+                "//executorch/schema:extended_header",
+                "//executorch/schema:schema",
+                ":memory_manager",
+            ],
+            preprocessor_flags = _program_preprocessor_flags(),
+            exported_deps = [
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core:evalue" + aten_suffix,
+                "//executorch/runtime/platform:platform",
+                ":memory_manager",
+            ],
+            visibility = [
+                "//executorch/runtime/executor/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+        )
 
         runtime.cxx_library(
             name = "executor" + aten_suffix,
             srcs = [
                 "executor.cpp",
-                "tensor_parser{}.cpp".format(aten_suffix),
             ],
             deps = [
-                ":memory_manager",
-                "//executorch/runtime/backend:backend_registry",
-                "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
-                "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
+                "//executorch/runtime/core:core",
                 "//executorch/schema:schema",
             ],
             exported_deps = [
                 "//executorch/runtime/platform:platform",
-                "//executorch/runtime/core:core",
-                "//executorch/runtime/kernel:operator_registry",
-                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
-                "//executorch/runtime/core/exec_aten/util:dim_order_util",
-                "//executorch/runtime/core/exec_aten/util:scalar_type_util",
-                "//executorch/runtime/core:evalue",
-                "//executorch/runtime/core:memory_allocator",
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-                ":program",
                 ":memory_manager",
+                ":program" + aten_suffix,
             ],
             exported_headers = [
                 "executor.h",
-            ],
-            headers = [
-                "tensor_parser.h",
             ],
             visibility = [
                 "@EXECUTORCH_CLIENTS",

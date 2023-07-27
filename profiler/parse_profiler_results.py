@@ -457,7 +457,7 @@ def profile_aggregate_framework_tax(
         native_calls_sum = []
 
         for d in prof_data_list:
-            if "ExecPlan::execute" in d.name:
+            if "Method::execute" in d.name:
                 execute_max = max(execute_max, d.duration)
 
             if "native_call" in d.name:

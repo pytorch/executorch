@@ -132,6 +132,7 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:executor",
+                "//executorch/runtime/kernel:operator_registry",
                 "//executorch/util:util",
                 "//executorch/extension/data_loader:file_data_loader",
             ],

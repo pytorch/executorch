@@ -1,9 +1,12 @@
+#include <executorch/runtime/executor/tensor_parser.h>
+
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/program.h>
-#include <executorch/runtime/executor/tensor_parser.h>
 #include <executorch/runtime/platform/profiler.h>
+#include <executorch/schema/schema_generated.h>
 
 namespace torch {
 namespace executor {
