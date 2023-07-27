@@ -15,9 +15,9 @@ interface.
 
 There are three flows for delegation:
 
-1. Lower the whole module.
-1. Lower the whole module and compose it with another module.
-2. After getting the module, lowering the subgraph partitioned by the according partitioner, like XNNPACK partitioner.
+1. Lower the whole module. Good for testing a fully lowereable module.
+1. Lower the whole module and compose it with another module. Good for reusing lowered module exported from other flow.
+2. After getting the module, lowering the subgraph partitioned by the according partitioner, like XNNPACK partitioner. Good for lowering a model including both lowerable and non-lowerable nodes.
 
 ### Flow 1: Lowering the whole module
 
@@ -111,7 +111,7 @@ with open(save_path, "wb") as f:
     f.write(exec_prog.buffer)
 ```
 
-### Flow 2: Partitioning
+### Flow 3: Partitioning
 
 The flow starts from a traced graph module with Edge Dialect representation. To lower
 certain nodes in this graph module, we can use the overloaded `to_backend`
