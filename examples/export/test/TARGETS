@@ -8,7 +8,8 @@ python_unittest(
     supports_static_listing = True,
     deps = [
         "//caffe2:torch",
-        "//executorch/examples:utils",
+        "//executorch/examples/export:utils",
+        "//executorch/examples/models/mobilenet_v2:mv2_export",
         "//executorch/examples/models/mobilenet_v3:mv3_export",
         "//executorch/exir:lib",
     ],
