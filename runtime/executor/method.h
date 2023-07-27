@@ -3,7 +3,6 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/memory_manager.h>
-#include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/compiler.h>
 
 // Forward declare flatbuffer types. This is a public header and must not
@@ -23,6 +22,9 @@ struct EValue;
 namespace torch {
 namespace executor {
 
+// Forward declare Program to avoid a circular reference.
+class Program;
+
 // Forward declare internal types.
 class BackendDelegate;
 struct Chain;
@@ -40,7 +42,7 @@ using InstructionArgs = Span<EValue*>;
  * An executable method of an executorch program. Maps to a python method like
  * `forward()` on the original nn.Module.
  */
-class Method {
+class Method final {
  public:
   Method(const Program* program, MemoryManager* memory_manager)
       : step_state_(),
@@ -55,6 +57,42 @@ class Method {
         chains_(nullptr),
         init_state_(InitializationState::Uninitialized),
         pre_allocated_input_(false) {}
+
+  /**
+   * Move ctor. Takes ownership of resources previously owned by `rhs`,
+   * and leaves `rhs` in an uninitialized state.
+   */
+  Method(Method&& rhs) noexcept
+      : step_state_(rhs.step_state_),
+        program_(rhs.program_),
+        memory_manager_(rhs.memory_manager_),
+        serialization_plan_(rhs.serialization_plan_),
+        n_value_(rhs.n_value_),
+        values_(rhs.values_),
+        n_delegate_(rhs.n_delegate_),
+        delegates_(rhs.delegates_),
+        n_chains_(rhs.n_chains_),
+        chains_(rhs.chains_),
+        init_state_(rhs.init_state_),
+        pre_allocated_input_(rhs.pre_allocated_input_) {
+    // Required: clear out fields that the dtor looks at, so that we don't free
+    // anything twice.
+    rhs.n_value_ = 0;
+    rhs.values_ = nullptr;
+    rhs.n_delegate_ = 0;
+    rhs.delegates_ = nullptr;
+
+    // Helpful: Try to ensure that any other interactions with the old object
+    // result in failures.
+    rhs.init_state_ = InitializationState::Uninitialized;
+    rhs.step_state_ = {};
+    rhs.program_ = nullptr;
+    rhs.memory_manager_ = nullptr;
+    rhs.serialization_plan_ = nullptr;
+    rhs.n_chains_ = 0;
+    rhs.chains_ = nullptr;
+    rhs.pre_allocated_input_ = false;
+  }
 
   /**
    * Initialize the method from its serialized representation.
@@ -150,12 +188,6 @@ class Method {
    */
   __ET_NODISCARD Error experimental_reset_execution();
 
-  // Moveable only as it owns unique_ptrs to tensors_, tensor_lists_
-  Method(const Method&) = delete;
-  Method& operator=(const Method&) = delete;
-  Method(Method&&) = default;
-  Method& operator=(Method&&) = default;
-
   size_t values_size() const;
   const EValue& get_value(size_t i) const;
   EValue& mutable_value(size_t i);
@@ -170,6 +202,14 @@ class Method {
   ~Method();
 
  private:
+  // Delete other rule-of-five methods.
+  Method(const Method&) = delete;
+  Method& operator=(const Method&) noexcept = delete;
+  Method& operator=(Method&&) = delete;
+
+  // Let Program call load().
+  friend class Program;
+
   enum class InitializationState : uint8_t {
     Uninitialized,
     Initialized,
@@ -181,6 +221,12 @@ class Method {
     size_t chain_idx;
     size_t instr_idx;
   };
+
+  /// Static factory used by Program.
+  __ET_NODISCARD static Result<Method> load(
+      executorch_flatbuffer::ExecutionPlan* s_plan,
+      const Program* program,
+      MemoryManager* memory_manager);
 
   /// Returns true if the Method was successfully initialized.
   inline bool initialized() const {

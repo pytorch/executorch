@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <executorch/runtime/executor/memory_manager.h>
+#include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/extended_header.h>
 #include <executorch/schema/schema_generated.h>
@@ -180,6 +182,20 @@ Result<const char*> Program::get_method_name(size_t plan_idx) const {
   auto internal_program =
       static_cast<const executorch_flatbuffer::Program*>(internal_program_);
   return internal_program->execution_plan()->Get(plan_idx)->name()->c_str();
+}
+
+Result<Method> Program::load_method(
+    const char* method_name,
+    MemoryManager* memory_manager) const {
+  EXECUTORCH_SCOPE_PROF("Program::load_method");
+  auto execution_plans = internal_program_->execution_plan();
+  for (size_t i = 0; i < execution_plans->size(); i++) {
+    auto serialization_plan = execution_plans->GetMutableObject(i);
+    if (std::strcmp(serialization_plan->name()->c_str(), method_name) == 0) {
+      return Method::load(serialization_plan, this, memory_manager);
+    }
+  }
+  return Error::InvalidArgument;
 }
 
 const void* Program::get_constant_buffer_data(size_t buffer_idx) const {

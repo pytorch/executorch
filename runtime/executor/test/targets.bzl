@@ -88,7 +88,7 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 ":managed_memory_manager",
-                "//executorch/runtime/executor:executor",
+                "//executorch/runtime/executor:program",
                 "//executorch/kernels/portable:generated_lib",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/util:util",
@@ -104,6 +104,21 @@ def define_common_targets(is_fbcode = False):
             deps = [
                 ":managed_memory_manager",
                 "//executorch/runtime/executor:executor",
+                "//executorch/util:util",
+                "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/kernels/portable:generated_lib",
+            ],
+            env = modules_env,
+        )
+
+        runtime.cxx_test(
+            name = "method_test",
+            srcs = [
+                "method_test.cpp",
+            ],
+            deps = [
+                ":managed_memory_manager",
+                "//executorch/runtime/executor:program",
                 "//executorch/util:util",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/kernels/portable:generated_lib",

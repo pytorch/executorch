@@ -17,10 +17,6 @@ class Executor {
  public:
   // Executes a PyTorch executor program.
   Executor(const Program* program, MemoryManager* memory_manager);
-  Executor(const Executor&) = delete;
-  Executor& operator=(const Executor&) = delete;
-  Executor(Executor&&) = default;
-  Executor& operator=(Executor&&) = default;
 
   /**
    * DEPRECATED: Use init_execution_plan(const char*)
@@ -58,6 +54,11 @@ class Executor {
   ~Executor() = default;
 
  private:
+  Executor(const Executor&) = delete;
+  Executor& operator=(const Executor&) = delete;
+  Executor(Executor&&) = delete;
+  Executor& operator=(Executor&&) = delete;
+
   const Program* program_;
   ExecutionPlan plan_;
 };

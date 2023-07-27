@@ -7,6 +7,8 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/executor/memory_manager.h>
+#include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/compiler.h>
 
 // Forward declare flatbuffer types. This is a public header and must not
@@ -124,6 +126,18 @@ class Program final {
    * Program, and has the same lifetime as the Program.
    */
   Result<const char*> get_method_name(size_t method_idx) const;
+
+  /**
+   * Loads the named method and prepares it for execution.
+   *
+   * @param[in] method_name The name of the method to load.
+   * @param[in] memory_manager The allocators to use during initialization and
+   *     execution of the loaded method.
+   * @returns The loaded method on success, or an error on failure.
+   */
+  Result<Method> load_method(
+      const char* method_name,
+      MemoryManager* memory_manager) const;
 
   /**
    * Get the size of constant buffer

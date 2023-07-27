@@ -135,7 +135,7 @@ class TwoLinearModule(torch.nn.Module):
                 allocators=[],
                 profile_events=[
                     ProfileEvent(
-                        name="ExecPlan::init_execution_plan",
+                        name="Program::load_method",
                         debug_handle=0,
                         start_time=5000,
                         end_time=10000,
@@ -182,7 +182,7 @@ class MultiOutputNodeModule(nn.Module):
                             allocators=[],
                             profile_events=[
                                 ProfileEvent(
-                                    name="ExecPlan::init_execution_plan",
+                                    name="Program::load_method",
                                     debug_handle=0,
                                     start_time=5000,
                                     end_time=10000,
@@ -365,7 +365,7 @@ class CompositeDelegateModule(torch.nn.Module):
                             allocators=[],
                             profile_events=[
                                 ProfileEvent(
-                                    name="ExecPlan::init_execution_plan",
+                                    name="Program::load_method",
                                     debug_handle=0,
                                     start_time=5000,
                                     end_time=10000,
@@ -453,7 +453,7 @@ class SymIntTestModule(torch.nn.Module):
                             allocators=[],
                             profile_events=[
                                 ProfileEvent(
-                                    name="ExecPlan::init_execution_plan",
+                                    name="Program::load_method",
                                     debug_handle=0,
                                     start_time=5000,
                                     end_time=10000,

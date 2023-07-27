@@ -466,6 +466,20 @@ Error Method::resolve_operator(
   }
 }
 
+Result<Method> Method::load(
+    executorch_flatbuffer::ExecutionPlan* s_plan,
+    const Program* program,
+    MemoryManager* memory_manager) {
+  Method method(program, memory_manager);
+  Error err = method.init(s_plan);
+  if (err != Error::Ok) {
+    return err;
+  } else {
+    ET_CHECK(method.initialized());
+    return method;
+  }
+}
+
 Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
   EXECUTORCH_SCOPE_PROF("Method::init");
   ET_CHECK_OR_RETURN_ERROR(

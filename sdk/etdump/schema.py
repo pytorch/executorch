@@ -83,7 +83,7 @@ class PROFILE_EVENT_ENUM(Enum):
     RUN_MODEL = "Method::execute"
     OPERATOR_CALL = "OPERATOR_CALL"
     DELEGATE_CALL = "DELEGATE_CALL"
-    LOAD_MODEL = "ExecPlan::init_execution_plan"
+    LOAD_MODEL = "Program::load_method"
 
 
 @dataclass

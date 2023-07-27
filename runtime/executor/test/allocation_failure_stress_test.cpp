@@ -4,7 +4,8 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/method.h>
+#include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/util.h>
@@ -16,9 +17,9 @@ using exec_aten::ArrayRef;
 using exec_aten::Scalar;
 using exec_aten::Tensor;
 using torch::executor::Error;
-using torch::executor::Executor;
 using torch::executor::MemoryAllocator;
 using torch::executor::MemoryManager;
+using torch::executor::Method;
 using torch::executor::Program;
 using torch::executor::Result;
 using torch::executor::testing::ManagedMemoryManager;
@@ -52,36 +53,35 @@ class AllocationFailureStressTest : public ::testing::Test {
 };
 
 /**
- * Slowly increases the amount of available runtime memory until
- * init_execution_plan() and execute() succeed. This should cause every runtime
- * allocation to fail at some point, exercising every allocation failure path
- * reachable by the test model.
+ * Slowly increases the amount of available runtime memory until load_method()
+ * and execute() succeed. This should cause every runtime allocation to fail at
+ * some point, exercising every allocation failure path reachable by the test
+ * model.
  */
 TEST_F(AllocationFailureStressTest, End2EndIncreaseRuntimeMemUntilSuccess) {
   size_t runtime_mem_bytes = 0;
   Error err = Error::Internal;
-  size_t num_init_failures = 0;
+  size_t num_load_failures = 0;
   while (runtime_mem_bytes < kDefaultRuntimeMemBytes && err != Error::Ok) {
     ManagedMemoryManager mmm(kDefaultNonConstMemBytes, runtime_mem_bytes);
-    Executor executor(program_.get(), &mmm.get());
 
-    // Initialization should fail several times from allocation failures.
-    err = executor.init_execution_plan();
-    if (err != Error::Ok) {
+    // Loading should fail several times from allocation failures.
+    Result<Method> method = program_->load_method("forward", &mmm.get());
+    if (method.error() != Error::Ok) {
       runtime_mem_bytes += sizeof(size_t);
-      num_init_failures++;
+      num_load_failures++;
       continue;
     }
 
     // Execution does not use the runtime allocator, so it should always succeed
-    // once init was successful.
+    // once load was successful.
     exec_aten::ArrayRef<void*> inputs =
-        torch::executor::util::PrepareInputTensors(executor.execution_plan());
-    err = executor.execution_plan().execute();
+        torch::executor::util::PrepareInputTensors(*method);
+    err = method->execute();
     torch::executor::util::FreeInputs(inputs);
     ASSERT_EQ(err, Error::Ok);
   }
-  EXPECT_GT(num_init_failures, 0) << "Expected at least some failures";
+  EXPECT_GT(num_load_failures, 0) << "Expected at least some failures";
   EXPECT_EQ(err, Error::Ok)
       << "Did not succeed after increasing runtime_mem_bytes to "
       << runtime_mem_bytes;
@@ -89,36 +89,35 @@ TEST_F(AllocationFailureStressTest, End2EndIncreaseRuntimeMemUntilSuccess) {
 
 /**
  * Slowly increases the amount of available non-constant memory until
- * init_execution_plan() and execute() succeed. This should cause every
- * non-const allocation to fail at some point, exercising every allocation
- * failure path reachable by the test model.
+ * load_method() and execute() succeed. This should cause every non-const
+ * allocation to fail at some point, exercising every allocation failure path
+ * reachable by the test model.
  */
 TEST_F(AllocationFailureStressTest, End2EndNonConstantMemUntilSuccess) {
   size_t non_constant_mem_bytes = 0;
   Error err = Error::Internal;
-  size_t num_init_failures = 0;
+  size_t num_load_failures = 0;
   while (non_constant_mem_bytes < kDefaultNonConstMemBytes &&
          err != Error::Ok) {
     ManagedMemoryManager mmm(non_constant_mem_bytes, kDefaultRuntimeMemBytes);
-    Executor executor(program_.get(), &mmm.get());
 
-    // Initialization should fail several times from allocation failures.
-    err = executor.init_execution_plan();
-    if (err != Error::Ok) {
+    // Loading should fail several times from allocation failures.
+    Result<Method> method = program_->load_method("forward", &mmm.get());
+    if (method.error() != Error::Ok) {
       non_constant_mem_bytes += sizeof(size_t);
-      num_init_failures++;
+      num_load_failures++;
       continue;
     }
 
     // Execution does not use the runtime allocator, so it should always succeed
-    // once init was successful.
+    // once load was successful.
     exec_aten::ArrayRef<void*> inputs =
-        torch::executor::util::PrepareInputTensors(executor.execution_plan());
-    err = executor.execution_plan().execute();
+        torch::executor::util::PrepareInputTensors(*method);
+    err = method->execute();
     torch::executor::util::FreeInputs(inputs);
     ASSERT_EQ(err, Error::Ok);
   }
-  EXPECT_GT(num_init_failures, 0) << "Expected at least some failures";
+  EXPECT_GT(num_load_failures, 0) << "Expected at least some failures";
   EXPECT_EQ(err, Error::Ok)
       << "Did not succeed after increasing non_constant_mem_bytes to "
       << non_constant_mem_bytes;
