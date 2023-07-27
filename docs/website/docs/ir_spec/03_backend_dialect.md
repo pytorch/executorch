@@ -2,11 +2,7 @@
 
 
 ## Properties
-Backend dialect is the name we gave to the `ExportedProgram` in Edge dialect, after optional target specific passes. The difference between backend dialect and edge dialect is that backend dialect is target-aware and may contain operators or submodules that are only meaningful to the target backend.
-
-Two possible new components we may see in a backend dialect, comparing with Edge dialect, are:
-1. Backend specific operators. Backend specific ops are set of operators the that user specifies, and the target backend will need to implement for the final program to run in that backend
-2. Lowered module from delegate. See details in [delegate tutorial](../tutorials/backend_delegate.md), this doc is focusing more on the backend ops.
+Backend dialect is the name we gave to the `ExportedProgram` in Edge dialect, after optional **target specific** passes. The difference between backend dialect and edge dialect is that backend dialect is target-aware and may contain operators or submodules that are only meaningful to the target backend. Backend specific operators are new components we may see in a backend dialect, comparing with Edge dialect. They are a set of operators for the target backend.
 
 Another property to notice is that the memory formats of the tensor can be any format (this is subject to change in the near future when we introduce dim order to backend dialect).
 
