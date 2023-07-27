@@ -133,7 +133,7 @@ class Method {
    *
    * @retval Error::Ok step succeeded
    * @retval non-Ok step failed
-   * @retval Error::EndOfProgram method finished executing successfully
+   * @retval Error::EndOfMethod method finished executing successfully
    */
   __ET_NODISCARD Error experimental_step();
 

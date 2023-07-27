@@ -34,7 +34,7 @@ enum class Error : error_code_t {
   InvalidState = 0x2,
 
   /// Status indicating there are no more steps of execution to run
-  EndOfProgram = 0x03,
+  EndOfMethod = 0x03,
 
   /*
    * Logical errors.

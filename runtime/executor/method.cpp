@@ -822,7 +822,7 @@ Error Method::experimental_reset_execution() {
   ET_CHECK_OR_RETURN_ERROR(
       step_state_.chain_idx == n_chains_,
       InvalidState,
-      "Cannot reset until EndOfProgram has been reached.");
+      "Cannot reset until EndOfMethod has been reached.");
   step_state_ = StepState{0, 0};
   return Error::Ok;
 }
@@ -839,7 +839,7 @@ Error Method::experimental_step() {
 
   // If chain_step_ is on n_chains_, then we have no instructions run.
   if (step_state_.chain_idx == n_chains_) {
-    return Error::EndOfProgram;
+    return Error::EndOfMethod;
   }
 
   auto num_instructions =
