@@ -125,7 +125,9 @@ class TestBackends(unittest.TestCase):
             sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
         ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
 
-        lowered_sin_module = to_backend("BackendWithCompilerDemo", edgeir_m, [])
+        lowered_sin_module = to_backend(
+            "BackendWithCompilerDemo", edgeir_m.exported_program, []
+        )
         new_res = lowered_sin_module(*model_inputs)
 
         self.assertTrue(torch.allclose(new_res, expected_res))
@@ -152,7 +154,7 @@ class TestBackends(unittest.TestCase):
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m, compile_specs
+            "BackendWithCompilerDemo", edgeir_m.exported_program, compile_specs
         )
 
         class CompositeModule(torch.nn.Module):
@@ -251,7 +253,7 @@ class TestBackends(unittest.TestCase):
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_add_mul = to_backend(
-            "BackendWithCompilerDemo", edge_graph_module, compile_specs
+            "BackendWithCompilerDemo", edge_graph_module.exported_program, compile_specs
         )
 
         class CompositeModule(torch.nn.Module):
@@ -306,7 +308,7 @@ class TestBackends(unittest.TestCase):
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m, compile_specs
+            "BackendWithCompilerDemo", edgeir_m.exported_program, compile_specs
         )
 
         class CompositeModule(torch.nn.Module):
@@ -372,7 +374,7 @@ class TestBackends(unittest.TestCase):
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m, compile_specs
+            "BackendWithCompilerDemo", edgeir_m.exported_program, compile_specs
         )
 
         class CompositeModule(torch.nn.Module):
@@ -471,7 +473,7 @@ class TestBackends(unittest.TestCase):
             RuntimeError,
             error_msg,
         ):
-            _ = to_backend("BackendWithCompilerDemo", edgeir_m, [])
+            _ = to_backend("BackendWithCompilerDemo", edgeir_m.exported_program, [])
 
     def test_backend_with_compiler_backend_not_found_exception(self):
         class SinModule(torch.nn.Module):
@@ -494,7 +496,7 @@ class TestBackends(unittest.TestCase):
             NotImplementedError,
             error_msg,
         ):
-            _ = to_backend("FakeBackendWithCompilerDemo", edgeir_m, [])
+            _ = to_backend("FakeBackendWithCompilerDemo", edgeir_m.exported_program, [])
 
     @vary_segments
     def test_backend_with_compiler_delegate_and_operator_with_two_modules(
@@ -511,18 +513,16 @@ class TestBackends(unittest.TestCase):
         # sin_module is an nn.Module
         to_be_lowered = LowerableSubModel()
         example_input = (torch.ones(1),)
-        to_be_lowered_exir_submodule = (
-            exir.capture(
-                to_be_lowered, example_input, exir.CaptureConfig(pt2_mode=True)
-            )
-            .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
-            .graph_module
-        )
+        to_be_lowered_exir_submodule = exir.capture(
+            to_be_lowered, example_input, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
 
         max_value = example_input[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_module = to_backend(
-            "BackendWithCompilerDemo", to_be_lowered_exir_submodule, compile_specs
+            "BackendWithCompilerDemo",
+            to_be_lowered_exir_submodule.exported_program,
+            compile_specs,
         )
 
         class NonLowerableSubModel(torch.nn.Module):
@@ -541,8 +541,8 @@ class TestBackends(unittest.TestCase):
                 self.lowerable = lowered_module
 
             def forward(self, x):
-                a = self.lowerable(x)[0]
-                b = self.lowerable(a)[0]
+                a = self.lowerable(x)
+                b = self.lowerable(a)
                 ret = self.non_lowerable(a, b)
                 return a, b, ret
 
@@ -633,9 +633,11 @@ class TestBackends(unittest.TestCase):
         )
         # after this step, part of the graph will be lowered to backend, depending on
         # HTAPartitionerDemo's rule.
-        program_with_delegates = to_backend(
-            traced, HTAPartitionerMultiplePatternsDemo
-        ).to_executorch(
+        program_with_delegates = traced
+        program_with_delegates.exported_program = to_backend(
+            traced.exported_program, HTAPartitionerMultiplePatternsDemo
+        )
+        program_with_delegates = program_with_delegates.to_executorch(
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
 
@@ -742,7 +744,10 @@ class TestBackends(unittest.TestCase):
         )
         # after this step, part of the graph will be lowered to backend, depending on
         # HTAPartitionerDemo's rule.
-        traced_with_delegate = to_backend(traced, HTAPartitionerOnePatternDemo)
+        traced_with_delegate = traced
+        traced_with_delegate.exported_program = to_backend(
+            traced.exported_program, HTAPartitionerOnePatternDemo
+        )
 
         new_res = traced_with_delegate(*inputs)
         for t1, t2 in zip(new_res, orig_res):
@@ -836,7 +841,11 @@ class TestBackends(unittest.TestCase):
         ep = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge(
             exir.EdgeCompileConfig(_use_edge_ops=True)
         )
-        executorch_prog = to_backend(ep, AddMulPartitionerDemo).to_executorch(
+        executorch_prog = ep
+        executorch_prog.exported_program = to_backend(
+            ep.exported_program, AddMulPartitionerDemo
+        )
+        executorch_prog = executorch_prog.to_executorch(
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
 
@@ -892,7 +901,11 @@ class TestBackends(unittest.TestCase):
         ep = exir.capture(Model(), inputs, exir.CaptureConfig(pt2_mode=True)).to_edge(
             exir.EdgeCompileConfig(_use_edge_ops=True)
         )
-        executorch_prog = to_backend(ep, AddAttributePartitionerDemo).to_executorch(
+        executorch_prog = ep
+        executorch_prog.exported_program = to_backend(
+            ep.exported_program, AddAttributePartitionerDemo
+        )
+        executorch_prog = executorch_prog.to_executorch(
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
 
@@ -945,7 +958,7 @@ class TestBackends(unittest.TestCase):
             exir.EdgeCompileConfig(_use_edge_ops=True)
         )
         with self.assertRaises(AssertionError):
-            _ = to_backend(ep, BadPartitioner)
+            _ = to_backend(ep.exported_program, BadPartitioner)
 
     def test_quantized_with_delegate(self) -> None:
         torch.ops.load_library(
@@ -978,7 +991,7 @@ class TestBackends(unittest.TestCase):
             ),
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
         FileCheck().check_count("quantize_per_tensor_default", 3).check("addmm").run(
-            converted_linear_gm.code
+            converted_linear_gm.exported_program.graph_module.code
         )
 
     def test_partition_with_control_flow(self) -> None:
@@ -1007,20 +1020,26 @@ class TestBackends(unittest.TestCase):
             inputs,
             exir.CaptureConfig(pt2_mode=True),
         ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
-
-        partitioned = to_backend(orig, AddMulPartitionerDemo)
+        partitioned = orig
+        partitioned.exported_program = to_backend(
+            orig.exported_program, AddMulPartitionerDemo
+        )
 
         new_res = partitioned(*inputs)
         self.assertTrue(torch.allclose(orig_res, new_res[0]))
 
-        toplevel_lowered = get_lowered_submodules(partitioned.graph_module)
+        toplevel_lowered = get_lowered_submodules(
+            partitioned.exported_program.graph_module
+        )
         self.assertEqual(len(toplevel_lowered), 1)
         FileCheck().check("executorch_exir_dialects_edge__ops_aten_add_Tensor").run(
             toplevel_lowered[0][1].original_module.graph_module.code
         )
 
         # Toplevel module only has the cond submodules
-        partitioned_submodules = get_control_flow_submodules(partitioned.graph_module)
+        partitioned_submodules = get_control_flow_submodules(
+            partitioned.exported_program.graph_module
+        )
         self.assertEqual(len(partitioned_submodules), 2)
 
         true_gm = partitioned_submodules[0][1]
@@ -1054,16 +1073,23 @@ class TestBackends(unittest.TestCase):
             inputs,
             exir.CaptureConfig(pt2_mode=True),
         ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
-        partitioned = to_backend(orig, AddMulPartitionerDemo)
+        partitioned = orig
+        partitioned.exported_program = to_backend(
+            orig.exported_program, AddMulPartitionerDemo
+        )
 
-        toplevel_lowered = get_lowered_submodules(partitioned.graph_module)
+        toplevel_lowered = get_lowered_submodules(
+            partitioned.exported_program.graph_module
+        )
         self.assertEqual(len(toplevel_lowered), 1)
         FileCheck().check("executorch_exir_dialects_edge__ops_aten_mm_default").run(
             toplevel_lowered[0][1].original_module.graph_module.code
         )
 
         # Toplevel module only has the map submodule
-        partitioned_submodules = get_control_flow_submodules(partitioned.graph_module)
+        partitioned_submodules = get_control_flow_submodules(
+            partitioned.exported_program.graph_module
+        )
         self.assertEqual(len(partitioned_submodules), 1)
 
         map_fn_gm = partitioned_submodules[0][1]
@@ -1120,20 +1146,26 @@ class TestBackends(unittest.TestCase):
             inputs,
             exir.CaptureConfig(pt2_mode=True),
         ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
-
-        partitioned = to_backend(orig, AddMulPartitionerDemo)
+        partitioned = orig
+        partitioned.exported_program = to_backend(
+            orig.exported_program, AddMulPartitionerDemo
+        )
 
         new_res = partitioned(*inputs)
         self.assertTrue(torch.allclose(orig_res, new_res[0]))
 
-        toplevel_lowered = get_lowered_submodules(partitioned.graph_module)
+        toplevel_lowered = get_lowered_submodules(
+            partitioned.exported_program.graph_module
+        )
         self.assertEqual(len(toplevel_lowered), 1)
         FileCheck().check("executorch_exir_dialects_edge__ops_aten_mm_default").run(
             toplevel_lowered[0][1].original_module.graph_module.code
         )
 
         # Toplevel module only has the map submodule
-        partitioned_submodules = get_control_flow_submodules(partitioned.graph_module)
+        partitioned_submodules = get_control_flow_submodules(
+            partitioned.exported_program.graph_module
+        )
         self.assertEqual(len(partitioned_submodules), 1)
 
         # Map module has the cond submodules
@@ -1179,7 +1211,9 @@ class TestBackends(unittest.TestCase):
         edge_prog = exir.capture(f, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge(
             exir.EdgeCompileConfig(_use_edge_ops=True)
         )
-        lowered_gm = to_backend(BackendWithCompilerDemo.__name__, edge_prog, [])
+        lowered_gm = to_backend(
+            BackendWithCompilerDemo.__name__, edge_prog.exported_program, []
+        )
 
         class ComposedM(torch.nn.Module):
             def __init__(self):
@@ -1203,7 +1237,9 @@ class TestBackends(unittest.TestCase):
         edge_prog = exir.capture(f, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge(
             exir.EdgeCompileConfig(_use_edge_ops=True)
         )
-        lowered_gm = to_backend(BackendWithCompilerDemo.__name__, edge_prog, [])
+        lowered_gm = to_backend(
+            BackendWithCompilerDemo.__name__, edge_prog.exported_program, []
+        )
 
         class ComposedM(torch.nn.Module):
             def __init__(self):
@@ -1252,7 +1288,7 @@ class TestBackends(unittest.TestCase):
         for method_name, args in method_name_to_args.items():
             exported_prog = lowered_multi_method_prog.find_method(method_name)
             self.assertIsNotNone(exported_prog)
-            exported_gm = exported_prog.graph_module
+            exported_gm = exported_prog.exported_program.graph_module
             self.assertIsInstance(exported_gm, fx.GraphModule)
 
             eager_method = getattr(module, method_name)
@@ -1314,7 +1350,7 @@ class TestBackends(unittest.TestCase):
 
             exported_prog = lowered_multi_method_prog.find_method(method_name)
             self.assertIsNotNone(exported_prog)
-            exported_gm = exported_prog.graph_module
+            exported_gm = exported_prog.exported_program.graph_module
             self.assertIsInstance(exported_gm, fx.GraphModule)
 
             eager_method = getattr(module, method_name)
@@ -1336,7 +1372,7 @@ class TestBackends(unittest.TestCase):
         # Check that method2 had nothing lowered
         method2_prog = lowered_multi_method_prog.find_method("method2")
         self.assertIsNotNone(method2_prog)
-        method2_gm = method2_prog.graph_module
+        method2_gm = method2_prog.exported_program.graph_module
         self.assertIsInstance(method2_gm, fx.GraphModule)
         add_nodes = [
             node

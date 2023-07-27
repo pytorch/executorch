@@ -50,7 +50,7 @@ class TestDelegate(unittest.TestCase):
         )
         FileCheck().check("lowered_module_0").check(
             "torch.ops.executorch_call_delegate"
-        ).run(gm.graph_module.code)
+        ).run(gm.exported_program.graph_module.code)
         self.assertTrue(torch.allclose(orig_res, gm(*inputs)))
 
     def test_to_backend(self) -> None:
@@ -86,8 +86,15 @@ class TestDelegate(unittest.TestCase):
                 # Check that the first argument is the lowered backend module
                 # (which we got from a getattr)
                 self.assertEqual(node.args[0].op, "get_attr")
-                self.assertIs(
-                    getattr(graph_module, node.args[0].target), m.lowered_module
+                get_attr_backend = getattr(graph_module, node.args[0].target)
+                self.assertEqual(
+                    get_attr_backend._backend_id, m.lowered_module._backend_id
+                )
+                self.assertEqual(
+                    get_attr_backend._processed_bytes, m.lowered_module._processed_bytes
+                )
+                self.assertEqual(
+                    get_attr_backend._compile_specs, m.lowered_module._compile_specs
                 )
 
         # Check the BackendDelegate object itself
@@ -149,7 +156,7 @@ class TestDelegate(unittest.TestCase):
 
         orig_res = Model()(*inputs)
         prog = exir.capture(Model(), inputs, CaptureConfig(pt2_mode=True)).to_edge()
-        gm = prog.graph_module
+        gm = prog.exported_program.graph_module
 
         node_list = []
         for node in gm.graph.nodes:
@@ -209,7 +216,7 @@ class TestDelegate(unittest.TestCase):
 
         orig_res = Model()(*inputs)
         prog = exir.capture(Model(), inputs, CaptureConfig(pt2_mode=True)).to_edge()
-        gm = prog.graph_module
+        gm = prog.exported_program.graph_module
 
         node_list = []
         for node in gm.graph.nodes:
@@ -268,7 +275,7 @@ class TestDelegate(unittest.TestCase):
 
         orig_res = Model()(*inputs)
         prog = exir.capture(Model(), inputs, CaptureConfig(pt2_mode=True)).to_edge()
-        gm = prog.graph_module
+        gm = prog.exported_program.graph_module
 
         node_list = []
         for node in gm.graph.nodes:

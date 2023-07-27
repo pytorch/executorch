@@ -22,7 +22,7 @@ class TestDynamicShapeProp(TestCase):
 
         new_prog = prog.transform(SpecPropPass(), SymShapeEvalPass())
 
-        gm = new_prog.graph_module
+        gm = new_prog.exported_program.graph_module
 
         DebugPass(show_spec=True)(gm)
         *_, return_node = gm.graph.nodes

@@ -70,12 +70,12 @@ class TestQuantFusionPass(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
         ).run(
-            m.code
+            m.exported_program.graph_module.code
         )
         m = m.to_executorch()
         # check that we are using out variant of q/dq/add
         FileCheck().check("torch.ops.quantized_decomposed.add.out").run(
-            m.dump_graph_module().code
+            m.exported_program.graph_module.code
         )
 
     def test_reshape(self) -> None:
@@ -122,14 +122,14 @@ class TestQuantFusionPass(unittest.TestCase):
             1,
             exactly=True,
         ).run(
-            m.code
+            m.exported_program.graph_module.code
         )
 
         m = m.to_executorch()
         # check that we are using out variant of q/dq/add
         FileCheck().check("torch.ops.quantized_decomposed.add.out").check(
             "torch.ops.aten.view_copy.out"
-        ).run(m.dump_graph_module().code)
+        ).run(m.exported_program.graph_module.code)
 
     def test_slice(self) -> None:
         """We don't proactively quantize slice today, but we'll fuse the dq-slice-q
@@ -182,7 +182,7 @@ class TestQuantFusionPass(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
         ).run(
-            m.code
+            m.exported_program.graph_module.code
         )
 
         m = m.to_executorch()
@@ -228,7 +228,7 @@ class TestQuantFusionPass(unittest.TestCase):
             1,
             exactly=True,
         ).run(
-            m.code
+            m.exported_program.graph_module.code
         )
 
         m = m.to_executorch()
@@ -329,7 +329,7 @@ class TestQuantFusionPass(unittest.TestCase):
             ).check(
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_embedding_byte_default"
             ).run(
-                m.code
+                m.exported_program.graph_module.code
             )
 
             # TODO: enable after the out variants of quantize_per_channel is supported
@@ -396,7 +396,7 @@ class TestQuantFusionPass(unittest.TestCase):
             ).check(
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_embedding_byte_default"
             ).run(
-                m.code
+                m.exported_program.graph_module.code
             )
 
             # TODO: enable after the out variants of quantize_per_channel is supported

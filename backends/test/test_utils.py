@@ -105,7 +105,7 @@ class TestPartitioners(unittest.TestCase):
                 CaptureConfig(pt2_mode=True),
             )
             .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
-            .graph_module
+            .exported_program.graph_module
         )
         graph_module_2: torch.fx.GraphModule = (
             exir.capture(
@@ -114,7 +114,7 @@ class TestPartitioners(unittest.TestCase):
                 CaptureConfig(pt2_mode=True),
             )
             .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
-            .graph_module
+            .exported_program.graph_module
         )
         is_matched = is_identical_graph(graph_module_1, graph_module_2)
         self.assertFalse(is_matched)
@@ -151,7 +151,7 @@ class TestPartitioners(unittest.TestCase):
                 CaptureConfig(pt2_mode=True),
             )
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-            .graph_module
+            .exported_program.graph_module
         )
 
         # Pattern graph:
@@ -166,7 +166,7 @@ class TestPartitioners(unittest.TestCase):
         pattern = (
             exir.capture(torch.nn.Linear(3, 3), inputs, CaptureConfig(pt2_mode=True))
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-            .graph_module.graph
+            .exported_program.graph_module.graph
         )
 
         subgraph_matcher = SubgraphMatcher(pattern)
@@ -203,7 +203,7 @@ class TestPartitioners(unittest.TestCase):
             .to_edge(
                 exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
             )
-            .graph_module
+            .exported_program.graph_module
         )
 
         # Original graph has exactly 3 dequantize ops and 3 quantize ops
@@ -264,7 +264,7 @@ class TestPartitioners(unittest.TestCase):
             AssertionError,
             error_msg,
         ):
-            _ = to_backend(exported_program, InvalidPartitioner)
+            _ = to_backend(exported_program.exported_program, InvalidPartitioner)
 
     test_lib = Library("test_lib", "DEF")
 
@@ -311,7 +311,7 @@ class TestPartitioners(unittest.TestCase):
             .to_edge(
                 exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True),
             )
-            .graph_module
+            .exported_program.graph_module
         )
 
         source_partitions_by_module = get_source_partitions(

@@ -394,12 +394,27 @@ class _Emitter(torch.fx.Interpreter):
                     and typing.cast(torch.UntypedStorage, spec.storage).nbytes()
                     == typing.cast(torch.UntypedStorage, other_spec.storage).nbytes()
                 ):
+                    spec_array_type = (
+                        ctypes.c_char
+                        * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
+                    )
+                    other_spec_array_type = (
+                        ctypes.c_char
+                        * typing.cast(torch.UntypedStorage, other_spec.storage).nbytes()
+                    )
                     # compare data
-                    if (
-                        typing.cast(torch.UntypedStorage, spec.storage).data_ptr()
-                        == typing.cast(
-                            torch.UntypedStorage, other_spec.storage
-                        ).data_ptr()
+                    if bytes(
+                        ctypes.cast(
+                            typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
+                            ctypes.POINTER(spec_array_type),
+                        ).contents
+                    ) == bytes(
+                        ctypes.cast(
+                            typing.cast(
+                                torch.UntypedStorage, other_spec.storage
+                            ).data_ptr(),
+                            ctypes.POINTER(other_spec_array_type),
+                        ).contents
                     ):
                         return i + 1  # +1 because the first buffer location is reserved
             return -1

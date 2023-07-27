@@ -109,6 +109,7 @@ class Backend1Demo(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> bytes:
+        assert isinstance(edge_program, ExportedProgram)
         partitioned_module = to_backend(edge_program, Backend2PartitionerDemo)
 
         def process(gm):
@@ -196,13 +197,18 @@ class TestNestedBackends(unittest.TestCase):
             exir.CaptureConfig(pt2_mode=True),
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
 
-        partitioned = to_backend(orig, Backend1PartitionerDemo)
+        partitioned = orig
+        partitioned.exported_program = to_backend(
+            orig.exported_program, Backend1PartitionerDemo
+        )
 
         new_res = partitioned(*m.get_example_inputs())[0]
         self.assertTrue(torch.allclose(orig_res, new_res))
 
         # The toplevel module should have lowered the cond and add op
-        toplevel_lowered = get_lowered_submodules(partitioned)
+        toplevel_lowered = get_lowered_submodules(
+            partitioned.exported_program.graph_module
+        )
         self.assertEqual(len(toplevel_lowered), 1)
         toplevel_lowered = toplevel_lowered[0][1]
         self.maxDiff = None

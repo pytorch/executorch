@@ -100,7 +100,9 @@ class TestRPCDemos(unittest.TestCase):
             simple_net, simple_net_input, exir.CaptureConfig(pt2_mode=True)
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
         # delegate the whole graph to the client executor
-        lowered_module = to_backend(ExecutorBackend.__name__, exported_program, [])
+        lowered_module = to_backend(
+            ExecutorBackend.__name__, exported_program.exported_program, []
+        )
 
         class CompositeModule(torch.nn.Module):
             def __init__(self):
@@ -158,11 +160,15 @@ class TestRPCDemos(unittest.TestCase):
         ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
 
         # First lower to demo backend
-        demo_backend_lowered = to_backend(exported_program, AddMulPartitionerDemo)
+        demo_backend_lowered = exported_program
+        demo_backend_lowered.exported_program = to_backend(
+            exported_program.exported_program, AddMulPartitionerDemo
+        )
 
         # Then lower to executor backend
-        executor_backend_lowered = to_backend(
-            demo_backend_lowered, ExecutorBackendPartitioner
+        executor_backend_lowered = demo_backend_lowered
+        executor_backend_lowered.exported_program = to_backend(
+            demo_backend_lowered.exported_program, ExecutorBackendPartitioner
         )
 
         prog_buffer = executor_backend_lowered.to_executorch()

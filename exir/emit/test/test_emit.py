@@ -213,12 +213,16 @@ class TestEmit(unittest.TestCase):
         removed_ops = ["aten::_reshape_alias"]
         expected_ops = ["aten::_reshape_alias_copy"]
         for opname in removed_ops:
-            self.assertEqual(self.count_node(edge.graph_module, opname), 0)
+            self.assertEqual(
+                self.count_node(edge.exported_program.graph_module, opname), 0
+            )
         for opname in expected_ops:
             # TODO(mvz): Figure out why when we use functionalization we get
             # two reshape nodes in the graph (the first one is a dead code) and
             # change this check to exact match
-            self.assertTrue(self.count_node(edge.graph_module, opname) >= 1)
+            self.assertTrue(
+                self.count_node(edge.exported_program.graph_module, opname) >= 1
+            )
         program = edge.to_executorch().program
         for opname in removed_ops:
             self.assertTrue(
@@ -243,9 +247,13 @@ class TestEmit(unittest.TestCase):
         expected_ops = ["aten::sin", "aten::relu", "aten::max", "aten::view_copy"]
 
         for opname in removed_ops:
-            self.assertEqual(self.count_node(edge.graph_module, opname), 0)
+            self.assertEqual(
+                self.count_node(edge.exported_program.graph_module, opname), 0
+            )
         for opname in expected_ops:
-            self.assertTrue(self.count_node(edge.graph_module, opname) >= 1)
+            self.assertTrue(
+                self.count_node(edge.exported_program.graph_module, opname) >= 1
+            )
 
         program = edge.to_executorch().program
         for opname in removed_ops:
@@ -981,7 +989,6 @@ class TestEmit(unittest.TestCase):
             "c": program_c.dump_exported_program(),
             "a": program_a.dump_exported_program(),
         }
-        # pyre-ignore
         merged_program = emit_program(exir_input, False).program
         self.assertEqual(len(merged_program.execution_plan), 3)
         self.assertEqual(merged_program.execution_plan[0].name, "a")
@@ -995,7 +1002,6 @@ class TestEmit(unittest.TestCase):
             "b": program_c.dump_exported_program(),
             "c": program_a.dump_exported_program(),
         }
-        # pyre-ignore
         merged_program2 = emit_program(exir_input2, False).program
         self.assertEqual(
             merged_program2.execution_plan[0], merged_program.execution_plan[0]

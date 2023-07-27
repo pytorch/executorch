@@ -240,7 +240,7 @@ class TestCapture(unittest.TestCase):
         self.assertEqual(len(mmep.methods()), 2)
 
         forward_method_prog = mmep.find_method("forward")
-        forward_method_gm = forward_method_prog.graph_module
+        forward_method_gm = forward_method_prog.exported_program.graph_module
         self.assertEqual(mmep.module, forward_method_gm)
         self.assertEqual(mmep.graph, forward_method_gm.graph)
         self.assertEqual(mmep.code, forward_method_gm.code)
@@ -267,7 +267,7 @@ class TestCapture(unittest.TestCase):
         self.assertEqual(len(mmep.methods()), 1)
 
         method1_prog = mmep.find_method("method1")
-        method1_gm = method1_prog.graph_module
+        method1_gm = method1_prog.exported_program.graph_module
         self.assertEqual(mmep.module, method1_gm)
         self.assertEqual(mmep.graph, method1_gm.graph)
         self.assertEqual(mmep.code, method1_gm.code)

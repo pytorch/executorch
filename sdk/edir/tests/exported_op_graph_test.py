@@ -638,12 +638,12 @@ def generate_fx_json_fixture() -> None:
         write_fx_graph_file_contents(
             model_name,
             "aten_dialect",
-            gen_fx_graph_file_contents(et_aten_copy.graph_module),
+            gen_fx_graph_file_contents(et_aten_copy.exported_program.graph_module),
         )
         write_fx_graph_file_contents(
             model_name,
             "edge_dialect",
-            gen_fx_graph_file_contents(et_edge_copy.graph_module),
+            gen_fx_graph_file_contents(et_edge_copy.exported_program.graph_module),
         )
         write_fx_graph_file_contents(
             model_name,
@@ -674,9 +674,13 @@ class ExportedFXGraphTest(unittest.TestCase):
     @parameterized.expand(MODELS)
     def test_gen_from_fx_graph(self, model_name: str, model: torch.nn.Module) -> None:
         et_aten_copy, et_edge_copy, et_program = gen_graphs_from_model(model)
-        op_graph = gen_fx_graph_file_contents(et_aten_copy.graph_module)
+        op_graph = gen_fx_graph_file_contents(
+            et_aten_copy.exported_program.graph_module
+        )
         self.check_graph_equal(op_graph, model_name, "aten_dialect")
-        op_graph = gen_fx_graph_file_contents(et_edge_copy.graph_module)
+        op_graph = gen_fx_graph_file_contents(
+            et_edge_copy.exported_program.graph_module
+        )
         self.check_graph_equal(op_graph, model_name, "edge_dialect")
         op_graph = gen_fx_graph_file_contents(et_program.dump_graph_module())
         self.check_graph_equal(op_graph, model_name, "et_dialect")

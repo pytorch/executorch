@@ -32,11 +32,6 @@ from torch.ao.quantization.backend_config import BackendConfig
 from torch.ao.quantization.backend_config.executorch import (
     get_executorch_backend_config,
 )
-from torch.ao.quantization.pt2e.quantizer import XNNPACKQuantizer
-from torch.ao.quantization.pt2e.quantizer.quantizer import QuantizationConfig, Quantizer
-from torch.ao.quantization.pt2e.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-)
 from torch.ao.quantization.qconfig_mapping import (
     _get_symmetric_qnnpack_qconfig_mapping,
     QConfigMapping,
@@ -47,6 +42,11 @@ from torch.ao.quantization.quantize_fx import (
     prepare_fx,
 )
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantizer import XNNPACKQuantizer
+from torch.ao.quantization.quantizer.quantizer import QuantizationConfig, Quantizer
+from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+)
 from torch.testing import FileCheck
 from torch.utils._pytree import tree_flatten
 
@@ -144,9 +144,9 @@ class Quantize2(Stage):
     def run(
         self, artifact: ExirExportedProgram, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
-        prepared = prepare_pt2e(artifact.graph_module, self.quantizer)
+        prepared = prepare_pt2e(artifact.exported_program.graph_module, self.quantizer)
         converted = convert_pt2e(prepared)
-        artifact.graph_module = converted
+        artifact.exported_program.graph_module = converted
         self.converted_program = artifact
 
     @property
@@ -155,7 +155,7 @@ class Quantize2(Stage):
 
     @property
     def graph_module(self) -> str:
-        return self.converted_program.graph_module
+        return self.converted_program.exported_program.graph_module
 
 
 @register_stage
@@ -173,7 +173,7 @@ class Export(Stage):
 
     @property
     def graph_module(self) -> str:
-        return self.exir_exported_program.graph_module
+        return self.exir_exported_program.exported_program.graph_module
 
 
 @register_stage
@@ -193,7 +193,7 @@ class ToEdge(Stage):
 
     @property
     def graph_module(self) -> str:
-        return self.edge_dialect_program.graph_module
+        return self.edge_dialect_program.exported_program.graph_module
 
 
 @register_stage
@@ -204,7 +204,10 @@ class Partition(Stage):
 
     def run(self, artifact: ExirExportedProgram, inputs=None):
         with validation_disabled():
-            self.delegate_module = to_backend(artifact, self.partitioner)
+            self.delegate_module = artifact
+            self.delegate_module.exported_program = to_backend(
+                artifact.exported_program, self.partitioner
+            )
 
     @property
     def artifact(self) -> ExirExportedProgram:
@@ -212,7 +215,7 @@ class Partition(Stage):
 
     @property
     def graph_module(self) -> str:
-        return self.delegate_module.graph_module
+        return self.delegate_module.exported_program.graph_module
 
 
 @register_stage

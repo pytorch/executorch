@@ -1,8 +1,7 @@
 import copy
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
-import sympy
 import torch
 import torch._export
 from executorch.exir.capture._config import (
@@ -27,59 +26,31 @@ from executorch.exir.verification.verifier import (
     EXIRATenDialectVerifier,
     EXIREdgeDialectVerifier,
 )
-from torch._export import CallSpec, ExportGraphSignature
-from torch._export.exported_program import ExportedProgram
-from torch._export.passes.add_runtime_assertions_for_constraints_pass import (
-    InputDim,
-    RangeConstraint,
-)
+from torch._export import ExportedProgram
 from torch.fx._compatibility import compatibility
 
 Val = Any
 
 
 @compatibility(is_backward_compatible=False)
-class ExirExportedProgram(ExportedProgram):
+class ExirExportedProgram:
     def __init__(
         self,
-        root: Union[torch.nn.Module, Dict[str, Any]],
-        graph: torch.fx.Graph,
-        graph_signature: ExportGraphSignature,
-        call_spec: CallSpec,
-        state_dict: Dict[str, Union[torch.Tensor, torch.nn.Parameter]],
-        range_constraints: Dict[sympy.Symbol, RangeConstraint],
-        equality_constraints: List[Tuple[InputDim, InputDim]],
+        exported_program: ExportedProgram,
         after_to_edge_passes: bool,
     ):
-        super().__init__(
-            root,
-            graph,
-            graph_signature,
-            call_spec,
-            state_dict,
-            range_constraints,
-            equality_constraints,
-        )
+        self.exported_program = exported_program
 
         # Add a flag to denote whehter to_edge is called on this program
         # to detect misusage of directly calling to_executorch without to_edge
         self.after_to_edge_passes = after_to_edge_passes
 
     def transform(self, *passes: PassType) -> "ExirExportedProgram":
-        ep = super().transform(*passes)
-        transformed_ep = ExirExportedProgram(
-            ep.graph_module,
-            ep.graph_module.graph,
-            ep.graph_signature,
-            ep.call_spec,
-            ep.state_dict,
-            ep.range_constraints,
-            ep.equality_constraints,
-            self.after_to_edge_passes,
-        )
-        transformed_ep.graph_module.meta.update(ep.graph_module.meta)
-        transformed_ep.graph_module.meta.update(self.graph_module.meta)
-        return transformed_ep
+        self.exported_program = self.exported_program.transform(*passes)
+        return self
+
+    def __call__(self, *args: Any) -> Any:
+        return self.exported_program(*args)
 
     # TODO(ycao): Change this to a composable function.
     def to_edge(
@@ -87,27 +58,23 @@ class ExirExportedProgram(ExportedProgram):
     ) -> "ExirExportedProgram":
         config = config or EdgeCompileConfig()
         assert isinstance(
-            self.graph_module, torch.fx.GraphModule
-        ), f"type is instead: {type(self.graph_module).__name__}"
+            self.exported_program.graph_module, torch.fx.GraphModule
+        ), f"type is instead: {type(self.exported_program.graph_module).__name__}"
 
         return _to_edge(self, config)
 
     def dump(self) -> None:
-        print(self.graph_module.graph)
+        print(self.exported_program.graph_module.graph)
 
     def _to_server(
         self, config: Optional[ServerCompileConfig] = None
     ) -> torch.nn.Module:
         config = config or ServerCompileConfig()
-        res = PassManager(config.passes)(self.graph_module)
+        res = PassManager(config.passes)(self.exported_program.graph_module)
         assert res is not None
         # TODO ServerDialectGraphModule
         # return graph_module now.
         return res.graph_module
-
-    @property
-    def code(self):
-        return self.graph_module.code
 
     def to_executorch(
         self,
@@ -116,7 +83,9 @@ class ExirExportedProgram(ExportedProgram):
         if not self.after_to_edge_passes:
             raise RuntimeError("Must run to_edge before to_executorch.")
         config = config or ExecutorchBackendConfig()
-        new_prog = self.transform(*edge_to_executorch_passes(config))
+        ep = self.exported_program
+        new_prog = ep.transform(*edge_to_executorch_passes(config))
+        new_prog = ExirExportedProgram(new_prog, self.after_to_edge_passes)
         executorch_prog = ExecutorchProgram(
             new_prog,
             emit_stacktrace=config.emit_stacktrace,
@@ -125,45 +94,41 @@ class ExirExportedProgram(ExportedProgram):
             constant_tensor_alignment=config.constant_tensor_alignment,
             delegate_alignment=config.delegate_alignment,
         )
-        executorch_prog.graph_module.meta.update(new_prog.graph_module.meta)
-        executorch_prog.graph_module.meta.update(self.graph_module.meta)
+        executorch_prog.graph_module.meta.update(
+            new_prog.exported_program.graph_module.meta
+        )
+        executorch_prog.graph_module.meta.update(
+            self.exported_program.graph_module.meta
+        )
         return executorch_prog
 
-    def __deepcopy__(self, memo: Optional[Dict[int, Any]] = None) -> "ExportedProgram":
-        gm = self.graph_module.__deepcopy__(memo)
-        new_ep = ExirExportedProgram(
-            gm,
-            gm.graph,
-            copy.deepcopy(self.graph_signature),
-            copy.deepcopy(self.call_spec),
-            copy.deepcopy(self.state_dict),
-            copy.deepcopy(self.range_constraints),
-            copy.deepcopy(self.equality_constraints),
+    def __deepcopy__(
+        self, memo: Optional[Dict[int, Any]] = None
+    ) -> "ExirExportedProgram":
+
+        new_eep = ExirExportedProgram(
+            copy.deepcopy(self.exported_program, memo),
             self.after_to_edge_passes,
         )
-        new_ep.graph_module.meta.update(self.graph_module.meta)
-        return new_ep
-
-    def get_submodule(self, target: str):
-        return self.graph_module.get_submodule(target)
+        return new_eep
 
 
 @compatibility(is_backward_compatible=False)
 class ExecutorchProgram:
     def __init__(
         self,
-        exported_program: ExirExportedProgram,
+        exir_exported_program: ExirExportedProgram,
         emit_stacktrace: bool,
         extract_segments: bool,
         segment_alignment: int,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
     ) -> None:
-        if not exported_program.after_to_edge_passes:
+        if not exir_exported_program.after_to_edge_passes:
             raise RuntimeError(
                 "Need to call prog.to_edge prior to constructing ExecutorchProgram."
             )
-        self.exported_program = exported_program
+        self.exported_program = exir_exported_program.exported_program
         self._buffer: Optional[bytes] = None
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
@@ -204,16 +169,16 @@ class ExecutorchProgram:
 
     # TODO (zhxchen17) Change this to property.
     def dump_graph_module(self) -> torch.fx.GraphModule:
-        return self.graph_module
+        return self.exported_program.graph_module
 
-    def dump_exported_program(self) -> ExirExportedProgram:
+    def dump_exported_program(self) -> ExportedProgram:
         return self.exported_program
 
 
 def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     if config._check_ir_validity:
         try:
-            EXIRATenDialectVerifier()(ep.graph_module)
+            EXIRATenDialectVerifier()(ep.exported_program.graph_module)
         except ExportError:
             logging.info(
                 "If you'd like to disable IR validation checking, please set _check_ir_validity in EdgeCompileConfig, "
@@ -223,10 +188,10 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
 
     op_replace_pass = [OpReplacePass()] if config._use_edge_ops else []
     passes = aten_to_edge_passes.passes + op_replace_pass + config.passes
-    new_ep = ep.transform(*passes)
+    new_ep = copy.deepcopy(ep).transform(*passes)
     if config._check_ir_validity:
         EXIREdgeDialectVerifier(check_edge_ops=config._use_edge_ops)(
-            new_ep.graph_module
+            new_ep.exported_program.graph_module
         )
     new_ep.after_to_edge_passes = True
     return new_ep
@@ -342,7 +307,7 @@ class MultiMethodExirExportedProgram:
         "is named `forward`, it is impossible to identify the default method. "
         "please look up one of its methods first via `find_method(method_name)` "
         "to access property: {property_name}."""
-        return getattr(default_program.graph_module, property_name)
+        return getattr(default_program.exported_program.graph_module, property_name)
 
     @property
     def graph(self):
@@ -361,7 +326,7 @@ class MultiMethodExirExportedProgram:
         " one methods and none of them is named `forward`,"
         " it is impossible to identify the default method "
         "to fetch GraphModule for."""
-        return default_prog.graph_module
+        return default_prog.exported_program.graph_module
 
     # TODO(ycao): Implement custom __reduce__ to account for lost of
     # meta['val']
@@ -402,8 +367,11 @@ class MultiMethodExecutorchProgram:
         prim_getters: Optional[Dict[str, Any]] = None,
     ) -> None:
         self._buffer: Optional[bytes] = None
+        temp: Dict[str, ExportedProgram] = {}
+        for name, prog in executorch_dialect_program.methods().items():
+            temp[name] = prog.exported_program
         self._emitter_output: EmitterOutput = emit_program(
-            executorch_dialect_program.methods(),  # pyre-ignore
+            temp,
             emit_stacktrace,
             executorch_dialect_program.prim_getters(),
         )

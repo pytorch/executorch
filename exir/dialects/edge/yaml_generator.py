@@ -252,7 +252,7 @@ def get_all_ops(target_model: EagerModelBase) -> List[str]:
         ModelVariant.FP32, methods, CompilationStage.ATEN, export_config
     )
     for _, gm in multi_methods_prog.methods().items():
-        all_aten_ops += target_model._get_operators(gm)
+        all_aten_ops += target_model._get_operators(gm.exported_program.graph_module)
     return list(set(all_aten_ops))
 
 

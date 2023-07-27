@@ -58,7 +58,7 @@ class TestBackends(unittest.TestCase):
         edgeir_m = exir.capture(
             module, sample_inputs, exir.CaptureConfig(pt2_mode=True)
         ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
-        lowered_module = to_backend("VulkanBackend", edgeir_m, [])
+        lowered_module = to_backend("VulkanBackend", edgeir_m.exported_program, [])
 
         class WrappedModule(torch.nn.Module):
             def __init__(self):

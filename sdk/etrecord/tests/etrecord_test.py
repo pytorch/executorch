@@ -56,11 +56,11 @@ class TestETRecord(unittest.TestCase):
             etrecord = parse_etrecord(tmpdirname + "/etrecord.bin")
             self.check_graph_closeness(
                 etrecord.graph_map["aten_dialect_output/forward"],
-                captured_output.graph_module,
+                captured_output.exported_program.graph_module,
             )
             self.check_graph_closeness(
                 etrecord.graph_map["edge_dialect_output/forward"],
-                edge_output.graph_module,
+                edge_output.exported_program.graph_module,
             )
             self.check_graph_closeness(
                 etrecord.graph_map["et_dialect_graph_module/forward"],
@@ -87,5 +87,5 @@ class TestETRecord(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     generate_etrecord(
                         tmpdirname + "/etrecord.bin",
-                        {reserved_name: captured_output.graph_module},
+                        {reserved_name: captured_output.exported_program.graph_module},
                     )

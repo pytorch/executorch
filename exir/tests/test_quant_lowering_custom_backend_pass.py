@@ -228,7 +228,7 @@ class PatternWrapper:
             .to_edge(
                 exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
             )
-            .graph_module
+            .exported_program.graph_module
         )
 
 
@@ -557,7 +557,9 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         #                                                 -> dequant_5 -> add -> quant_3 -> dequant_8 ->
 
         # Step 3.1: Partitioning and delegation using to_backend()
-        delegated_mod = to_backend(captured_program, QuantizedConvAddOpPartitioner)
+        delegated_mod = to_backend(
+            captured_program.exported_program, QuantizedConvAddOpPartitioner
+        )
         lowered_module_0 = delegated_mod.graph_module.lowered_module_0
 
         # The blob in the example backend is a list of ops, examining them to ensure they are replaced correctly.
@@ -675,7 +677,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
             .to_edge(
                 exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
             )
-            .graph_module
+            .exported_program.graph_module
         )
 
         print("captured mod:", captured_mod)
@@ -828,7 +830,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_aten_addmm"
         ).run(
-            captured_mod.code
+            captured_mod.exported_program.graph_module.code
         )
 
     def test_quantized_linear_dynamic_symmetric_act_per_tensor_weight(self) -> None:
@@ -892,7 +894,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_aten_addmm"
         ).run(
-            captured_mod.code
+            captured_mod.exported_program.graph_module.code
         )
 
     def test_quantized_conv_bn_fusion(self) -> None:
@@ -941,7 +943,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
                 "executorch_exir_dialects_edge__ops_aten_native_batch_norm_default",
                 0,
                 exactly=True,
-            ).run(captured_mod.code)
+            ).run(captured_mod.exported_program.graph_module.code)
 
     def test_qat_linear(self) -> None:
         mod = TestFunctionalLinearModel().eval()
@@ -990,10 +992,10 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default",
                 3,
                 exactly=True,
-            ).run(captured_mod.code)
+            ).run(captured_mod.exported_program.graph_module.code)
 
             FileCheck().check_count(
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default",
                 3,
                 exactly=True,
-            ).run(captured_mod.code)
+            ).run(captured_mod.exported_program.graph_module.code)

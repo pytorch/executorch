@@ -155,7 +155,7 @@ class TestVerification(unittest.TestCase):
                 exir.CaptureConfig(pt2_mode=True),
             )
             .to_edge()
-            .graph_module
+            .exported_program.graph_module
         )
         verifier = EXIREdgeDialectVerifier()
         verifier(egm)
@@ -175,7 +175,7 @@ class TestVerification(unittest.TestCase):
             m,
             (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
             exir.CaptureConfig(pt2_mode=True),
-        ).graph_module
+        ).exported_program.graph_module
         verifier = EXIREdgeDialectVerifier()
         with self.assertRaises(SpecViolationError):
             verifier(egm)
@@ -196,7 +196,7 @@ class TestVerification(unittest.TestCase):
                 exir.CaptureConfig(pt2_mode=True),
             )
             .to_edge(EdgeCompileConfig(_use_edge_ops=True))
-            .graph_module
+            .exported_program.graph_module
         )
         verifier = EXIREdgeDialectVerifier()
         verifier(egm)
@@ -213,5 +213,5 @@ class TestVerification(unittest.TestCase):
                     exir.CaptureConfig(pt2_mode=True),
                 )
                 .to_edge(EdgeCompileConfig(_use_edge_ops=True, _check_ir_validity=True))
-                .graph_module
+                .exported_program.graph_module
             )

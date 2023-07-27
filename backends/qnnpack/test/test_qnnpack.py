@@ -91,11 +91,11 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_aten_mm"
         ).run(
-            captured_mod.graph_module.code
+            captured_mod.exported_program.graph_module.code
         )
 
         # Step 3: Lower to QNNPack
-        lowered_module = to_backend("QnnpackBackend", captured_mod, [])
+        lowered_module = to_backend("QnnpackBackend", captured_mod.exported_program, [])
 
         class CompositeModule(torch.nn.Module):
             def __init__(self):
@@ -178,11 +178,11 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "aten_view_copy_default"
         ).run(
-            captured_mod.graph_module.code
+            captured_mod.exported_program.graph_module.code
         )
 
         # Step 3: Lower to QNNPack
-        lowered_module = to_backend("QnnpackBackend", captured_mod, [])
+        lowered_module = to_backend("QnnpackBackend", captured_mod.exported_program, [])
 
         class CompositeModule(torch.nn.Module):
             def __init__(self):
@@ -245,7 +245,7 @@ class TestQnnbackends(unittest.TestCase):
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
         ).to_edge(EDGE_COMPILE_CONFIG)
-        captured_mod.graph.print_tabular()
+        captured_mod.exported_program.graph_module.graph.print_tabular()
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_tensor"
         ).check(
@@ -255,11 +255,11 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_aten_mm"
         ).run(
-            captured_mod.graph_module.code
+            captured_mod.exported_program.graph_module.code
         )
 
         # Step 3: Lower to QNNPack
-        lowered_module = to_backend("QnnpackBackend", captured_mod, [])
+        lowered_module = to_backend("QnnpackBackend", captured_mod.exported_program, [])
 
         class CompositeModule(torch.nn.Module):
             def __init__(self):
@@ -340,11 +340,11 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "aten_view_copy_default"
         ).run(
-            captured_mod.graph_module.code
+            captured_mod.exported_program.graph_module.code
         )
 
         # Step 3: Lower to QNNPack
-        lowered_module = to_backend("QnnpackBackend", captured_mod, [])
+        lowered_module = to_backend("QnnpackBackend", captured_mod.exported_program, [])
 
         class CompositeModule(torch.nn.Module):
             def __init__(self):
@@ -414,11 +414,11 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_aten_mm"
         ).run(
-            captured_mod.graph_module.code
+            captured_mod.exported_program.graph_module.code
         )
 
         # Step 3: Lower to QNNPack
-        lowered_module = to_backend("QnnpackBackend", captured_mod, [])
+        lowered_module = to_backend("QnnpackBackend", captured_mod.exported_program, [])
 
         class CompositeModule(torch.nn.Module):
             def __init__(self):
@@ -502,15 +502,18 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "aten_view_copy_default"
         ).run(
-            captured_mod.graph_module.code
+            captured_mod.exported_program.graph_module.code
         )
 
         with validation_disabled():
-            lowered_module = to_backend(captured_mod, QnnpackPartitioner)
+            lowered_module = captured_mod
+            lowered_module.exported_program = to_backend(
+                captured_mod.exported_program, QnnpackPartitioner
+            )
         FileCheck().check_not(
             "executorch_exir_dialects_edge__ops_aten__to_copy_default"
         ).check_not("executorch_exir_dialects_edge__ops_aten_addmm").run(
-            lowered_module.code
+            lowered_module.exported_program.graph_module.code
         )
 
         program = lowered_module.to_executorch(config=EXECUTORCH_BACKEND_CONFIG).program

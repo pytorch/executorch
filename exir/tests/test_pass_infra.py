@@ -100,7 +100,7 @@ class TestPassInfra(unittest.TestCase):
         f = (
             exir.capture(f, (torch.randn(10),), exir.CaptureConfig(pt2_mode=True))
             .to_edge()
-            .graph_module
+            .exported_program.graph_module
         )
         pm = PassManager(passes=[replace_add_with_mul, replace_mul_with_sub])
         self.assertEqual(len(pm.passes), 2)
@@ -145,7 +145,7 @@ class TestPassInfra(unittest.TestCase):
         traced_f1 = (
             exir.capture(f, (torch.randn(10),), exir.CaptureConfig(pt2_mode=True))
             .to_edge()
-            .graph_module
+            .exported_program.graph_module
         )
         pm1 = PassManager(
             passes=[introduce_call_method], run_checks_after_each_pass=True
@@ -161,7 +161,7 @@ class TestPassInfra(unittest.TestCase):
         sample_inputs = (torch.randn(1, 3), torch.randn(1, 3))
         gm = exir.capture(
             f, sample_inputs, exir.CaptureConfig(pt2_mode=True)
-        ).graph_module
+        ).exported_program.graph_module
 
         pass_result = ScalarToTensorPass()(gm)
         self.assertIsNotNone(pass_result)

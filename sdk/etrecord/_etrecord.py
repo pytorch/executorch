@@ -29,8 +29,9 @@ class ETRecord:
 
 
 def _handle_exported_program(
-    etrecord_zip: ZipFile, module_name: str, method_name: str, ep: ExirExportedProgram
+    etrecord_zip: ZipFile, module_name: str, method_name: str, ep: ExportedProgram
 ) -> None:
+    assert isinstance(ep, ExportedProgram)
     serialized_ep, serialized_state_dict = serialize(ep)
     etrecord_zip.writestr(f"{module_name}/{method_name}", serialized_ep)
     etrecord_zip.writestr(
@@ -44,7 +45,9 @@ def _handle_multi_method_exported_program(
     multi_method: MultiMethodExirExportedProgram,
 ) -> None:
     for method_name, ep in multi_method.methods().items():
-        _handle_exported_program(etrecord_zip, module_name, method_name, ep)
+        _handle_exported_program(
+            etrecord_zip, module_name, method_name, ep.exported_program
+        )
 
 
 def _handle_export_module(
@@ -55,7 +58,9 @@ def _handle_export_module(
     if isinstance(export_module, MultiMethodExirExportedProgram):
         _handle_multi_method_exported_program(etrecord_zip, module_name, export_module)
     elif isinstance(export_module, ExirExportedProgram):
-        _handle_exported_program(etrecord_zip, module_name, "forward", export_module)
+        _handle_exported_program(
+            etrecord_zip, module_name, "forward", export_module.exported_program
+        )
     else:
         raise RuntimeError(f"Unsupported graph module type. {type(export_module)}")
 

@@ -72,7 +72,7 @@ def _capture(module, example_inputs, pt_mode=True) -> torch.fx.GraphModule:
     return (
         exir.capture(module.eval(), example_inputs, config=capture_config)
         .to_edge(config=edge_config)
-        .graph_module
+        .exported_program.graph_module
     )
 
 

@@ -183,7 +183,9 @@ def maketest(
                     exir.CaptureConfig(pt2_mode=True),
                 )
                 # torch._ops.aten.t.default
-                .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False)).graph_module
+                .to_edge(
+                    exir.EdgeCompileConfig(_check_ir_validity=False)
+                ).exported_program.graph_module
             )
 
             graph_module = PassManager(
@@ -426,14 +428,17 @@ class TestMisc(unittest.TestCase):
             )
         )
         with validation_disabled():
-            backend_module = to_backend(edge_program, QnnpackPartitioner)
+            backend_module = to_backend(
+                edge_program.exported_program, QnnpackPartitioner
+            )
 
         debug_pass = DebugPass(show_spec=True)
-        debug_pass(edge_program.graph_module)
+        debug_pass(edge_program.exported_program.graph_module)
         config = exir.ExecutorchBackendConfig(
             passes=[QuantFusionPass(), ConstPropPass(propogate_quant=True)],
         )
-        program = backend_module.to_executorch(config)
+        edge_program.exported_program = backend_module
+        program = edge_program.to_executorch(config)
         gm = program.dump_graph_module()
         gm.print_readable()
         print_program(program.program, mark_dynamic_shape_tensor=True)

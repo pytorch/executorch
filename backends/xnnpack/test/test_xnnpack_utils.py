@@ -185,13 +185,18 @@ class TestXNNPACK(unittest.TestCase):
 
         if use_partitioner:
             with validation_disabled():
-                delegated_program = to_backend(edge_program, partitioner)
+                delegated_program = edge_program
+                delegated_program.exported_program = to_backend(
+                    edge_program.exported_program, partitioner
+                )
 
             program = delegated_program.to_executorch(
                 get_xnnpack_executorch_backend_config([SpecPropPass()]),
             ).program
         else:
-            delegated_program = to_backend("XnnpackBackend", edge_program, [])
+            delegated_program = to_backend(
+                "XnnpackBackend", edge_program.exported_program, []
+            )
 
             exported_program = capture_graph_for_xnnpack(
                 delegated_program, sample_inputs
@@ -305,7 +310,7 @@ class TestXNNPACK(unittest.TestCase):
             pt2_mode=True, enable_functionalization=True
         )
         captured_program = exir.capture(module, example_inputs, config=capture_config)
-        m = captured_program.graph_module
+        m = captured_program.exported_program.graph_module
 
         quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config()
@@ -313,7 +318,7 @@ class TestXNNPACK(unittest.TestCase):
         prepared = prepare_pt2e(m, quantizer)
         converted = convert_pt2e(prepared)
 
-        captured_program.graph_module = converted
+        captured_program.exported_program.graph_module = converted
         edge_program = captured_program.to_edge(get_xnnpack_edge_compile_config())
         delegated_module = self.lower_module_and_test_output(
             module=edge_program,
@@ -330,7 +335,9 @@ class TestXNNPACK(unittest.TestCase):
             "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor",
         }
         for op in supported_ops:
-            FileCheck().check_count(op, 0, exactly=True).run(delegated_module.code)
+            FileCheck().check_count(op, 0, exactly=True).run(
+                delegated_module.exported_program.graph_module.code
+            )
 
     def _test_xnnpack_dqlinear(
         self,
@@ -379,9 +386,11 @@ class TestXNNPACK(unittest.TestCase):
 
         captured_dqlinear = capture_graph_for_xnnpack(converted_linear, example_inputs)
 
-        captured_dqlinear.graph.print_tabular()
+        captured_dqlinear.exported_program.graph_module.graph.print_tabular()
 
-        lowered_module = to_backend("XnnpackBackend", captured_dqlinear, [])
+        lowered_module = to_backend(
+            "XnnpackBackend", captured_dqlinear.exported_program, []
+        )
 
         class CompositeModule(torch.nn.Module):
             def __init__(self):

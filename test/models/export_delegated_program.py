@@ -82,7 +82,7 @@ def export_module_to_program(
         config=capture_config,
     ).to_edge()
 
-    lowered_module = to_backend(backend_id, edge, compile_specs=[])
+    lowered_module = to_backend(backend_id, edge.exported_program, compile_specs=[])
 
     class CompositeModule(nn.Module):
         def __init__(self):

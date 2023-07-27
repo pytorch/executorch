@@ -87,6 +87,8 @@ def _(
         This exception is derived from RuntimeError and should be caught accordingly.
         RuntimeError: The module cannot be processed by the backend.
     """
+    assert isinstance(edge_program, ExportedProgram)
+
     # All backend implementation are final, so we don't need to consider nested subclasses.
     for cls in BackendDetails.__subclasses__():
         if backend_id == cls.__name__:
@@ -300,14 +302,18 @@ def to_backend_multiple(
     for method_name, prog in multi_method_program.methods().items():
         if isinstance(partitioner, dict):
             if method_name in partitioner:
-                method_name_to_delegated_program[method_name] = to_backend(
-                    prog, partitioner[method_name]
+                method_name_to_delegated_program[method_name] = prog
+                method_name_to_delegated_program[
+                    method_name
+                ].exported_program = to_backend(
+                    prog.exported_program, partitioner[method_name]
                 )
             else:
                 method_name_to_delegated_program[method_name] = prog
         else:
-            method_name_to_delegated_program[method_name] = to_backend(
-                prog, partitioner
+            method_name_to_delegated_program[method_name] = prog
+            method_name_to_delegated_program[method_name].exported_program = to_backend(
+                prog.exported_program, partitioner
             )
 
     return MultiMethodExirExportedProgram(method_name_to_delegated_program)

@@ -61,7 +61,7 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
             .to_edge(
                 exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
             )
-            .graph_module
+            .exported_program.graph_module
         )
 
         def sub(x, y):
@@ -74,7 +74,7 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
                 exir.CaptureConfig(pt2_mode=True),
             )
             .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
-            .graph_module
+            .exported_program.graph_module
         )
         self.patterns = [pattern_lstm_conv.graph, pattern_sub.graph]
 
@@ -218,7 +218,7 @@ class HTAPartitionerOnePatternDemo(Partitioner):
             .to_edge(
                 exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
             )
-            .graph_module
+            .exported_program.graph_module
         )
         self.patterns = [pattern_lstm_conv.graph]
         # Only (lstm + conv) pattern is lowerable

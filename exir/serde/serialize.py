@@ -220,8 +220,9 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
 class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
     def serialize(
-        self, exported_program: exir.ExportedProgram
+        self, exported_program: torch._export.ExportedProgram
     ) -> Tuple[schema.ExportedProgram, bytes]:
+        assert isinstance(exported_program, torch._export.ExportedProgram)
         gm_serializer = GraphModuleSerializer(
             exported_program.graph_signature, exported_program.call_spec
         )
@@ -463,7 +464,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
 
 
 def serialize(
-    exported_program: exir.ExportedProgram,
+    exported_program: torch._export.ExportedProgram,
     opset_version: Optional[Dict[str, int]] = None,
 ) -> Tuple[bytes, bytes]:
     serialized_exported_program, serialized_state_dict = ExportedProgramSerializer(

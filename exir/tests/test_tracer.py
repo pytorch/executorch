@@ -35,7 +35,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         f = (
             exir.capture(f, f.get_random_inputs(), exir.CaptureConfig(pt2_mode=True))
             .to_edge()
-            .graph_module
+            .exported_program.graph_module
         )
 
         FileCheck().check("torch.ops.aten.sin").check("torch.ops.aten.max").run(f.code)
@@ -52,7 +52,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         f_true = (
             exir.capture(f, (pred, x), exir.CaptureConfig(pt2_mode=True))
             .to_edge()
-            .graph_module
+            .exported_program.graph_module
         )
 
         FileCheck().check("torch.ops.aten.sin").check("torch.ops.aten.max").run(
@@ -63,7 +63,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         f_false = (
             exir.capture(f, (pred, x), exir.CaptureConfig(pt2_mode=True))
             .to_edge()
-            .graph_module
+            .exported_program.graph_module
         )
         FileCheck().check("torch.ops.aten.sin").check_not("torch.ops.aten.max").run(
             f_false.code
@@ -74,7 +74,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         f = (
             exir.capture(f, f.get_random_inputs(), exir.CaptureConfig(pt2_mode=True))
             .to_edge()
-            .graph_module
+            .exported_program.graph_module
         )
 
         self.assertTrue(isinstance(f, torch.fx.GraphModule))
@@ -88,7 +88,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         traced_f = (
             exir.capture(f, (torch.rand(2, 2),), exir.CaptureConfig(pt2_mode=True))
             .to_edge()
-            .graph_module
+            .exported_program.graph_module
         )
         # Check that stacktrace is populated and retained (by checking twice)
         self.assertTrue(
@@ -128,7 +128,9 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
                 model, model.get_random_inputs(), exir.CaptureConfig(pt2_mode=True)
             )
             # torch._ops.aten.t.default
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False)).graph_module
+            .to_edge(
+                exir.EdgeCompileConfig(_check_ir_validity=False)
+            ).exported_program.graph_module
         )
         num_get_attr_node = 0
         num_get_attr_node_with_tensorspec = 0
@@ -149,7 +151,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         module = (
             exir.capture(f, (torch.zeros(1, 2, 3),), exir.CaptureConfig(pt2_mode=True))
             .to_edge()
-            .graph_module
+            .exported_program.graph_module
         )
         for node in module.graph.nodes:
             if node.target == torch.ops.aten.max.dim:
@@ -172,7 +174,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
                 exir.CaptureConfig(pt2_mode=True),
             )
             .to_edge()
-            .graph_module
+            .exported_program.graph_module
         )
         new_res = module(*inputs)
         for node in module.graph.nodes:
@@ -229,7 +231,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
                 ),
             )
             .to_edge()
-            .graph_module
+            .exported_program.graph_module
         )
 
         print(gm.graph)
@@ -251,7 +253,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
                 # sym_size is not reg op
             )
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-            .graph_module
+            .exported_program.graph_module
         )
 
         for node in gm.graph.nodes:
@@ -366,7 +368,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         )
         captured = exir.capture(
             foo, (torch.ones(6, 2), torch.ones(6, 3)), capture_config
-        ).graph_module
+        ).exported_program.graph_module
         found = False
         for node in captured.graph.nodes:
             # at least one input needs to have concrete dims
@@ -390,7 +392,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         capture_config = exir.CaptureConfig(pt2_mode=True, enable_aot=True)
         captured_gm = exir.capture(
             FooWithBuffer(), (torch.ones(6, 2),), capture_config
-        ).graph_module
+        ).exported_program.graph_module
 
         placeholder_nodes = set()
         print(captured_gm.graph)

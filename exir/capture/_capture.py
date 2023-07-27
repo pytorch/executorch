@@ -20,7 +20,7 @@ from executorch.exir.tracer import (
 from torch import _guards
 from torch._dispatch.python import enable_python_dispatcher
 from torch._dynamo.eval_frame import Constraint
-from torch._export import CallSpec, export, ExportGraphSignature
+from torch._export import CallSpec, export, ExportedProgram, ExportGraphSignature
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
 from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 from torch.func import functionalize
@@ -69,7 +69,7 @@ def capture(
                 ep = export(f, args, constraints=constraints)
             ep = ep.transform(ReplaceViewOpsWithViewCopyOpsPass())
             if not config._unlift:
-                return ep  # pyre-ignore
+                return ExirExportedProgram(ep, False)
             graph_module = unlift_exported_program_lifted_states(ep)
 
         elif config.enable_dynamic_shape:
@@ -192,7 +192,7 @@ def capture(
     _instantiate_missing_placeholder_val_with_real_inputs(graph_module, flat_args)
     graph_module._apply(torch.Tensor.contiguous)
 
-    ep = ExirExportedProgram(
+    ep = ExportedProgram(
         graph_module,
         graph_module.graph,
         ExportGraphSignature([], [], [], [], {}, {}, {}, None),
@@ -200,9 +200,8 @@ def capture(
         {},
         {},
         [],
-        False,
     )
-    return ep
+    return ExirExportedProgram(ep, False)
 
 
 @compatibility(is_backward_compatible=False)

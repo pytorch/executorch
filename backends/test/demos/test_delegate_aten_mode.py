@@ -34,7 +34,9 @@ class TestDelegateAtenMode(unittest.TestCase):
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_add_mul = to_backend(
-            BackendWithCompilerDemo.__name__, edge_graph_module, compile_specs
+            BackendWithCompilerDemo.__name__,
+            edge_graph_module.exported_program,
+            compile_specs,
         )
 
         class CompositeModule(torch.nn.Module):

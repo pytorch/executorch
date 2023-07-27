@@ -30,7 +30,7 @@ class TestArgValidator(unittest.TestCase):
         egm = (
             exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True))
             .to_edge(EdgeCompileConfig(_use_edge_ops=True, _check_ir_validity=False))
-            .graph_module
+            .exported_program.graph_module
         )
         validator = EdgeOpArgValidator(egm)
         validator.run(*inputs)
@@ -50,7 +50,7 @@ class TestArgValidator(unittest.TestCase):
         egm = (
             exir.capture(M(), inputs, exir.CaptureConfig(pt2_mode=True))
             .to_edge(EdgeCompileConfig(_use_edge_ops=True, _check_ir_validity=False))
-            .graph_module
+            .exported_program.graph_module
         )
         validator = EdgeOpArgValidator(egm)
         validator.run(*inputs)

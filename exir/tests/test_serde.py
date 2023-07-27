@@ -39,12 +39,12 @@ class TestSerde(unittest.TestCase):
     # pyre-ignore
     def check_serde(self, m, inputs) -> None:
         aten = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True))
-        aten_new = deserialize(*serialize(aten))
-        self.check_ep(aten, aten_new, inputs)
+        aten_new = deserialize(*serialize(aten.exported_program))
+        self.check_ep(aten.exported_program, aten_new, inputs)
 
         edge = aten.to_edge()
-        edge_new = deserialize(*serialize(edge))
-        self.check_ep(edge, edge_new, inputs)
+        edge_new = deserialize(*serialize(edge.exported_program))
+        self.check_ep(edge.exported_program, edge_new, inputs)
 
         executorch = edge.to_executorch().dump_exported_program()
         executorch_new = deserialize(*serialize(executorch))
@@ -111,7 +111,7 @@ class TestSerde(unittest.TestCase):
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m, compile_specs
+            "BackendWithCompilerDemo", edgeir_m.exported_program, compile_specs
         )
 
         class CompositeModule(torch.nn.Module):
@@ -130,8 +130,8 @@ class TestSerde(unittest.TestCase):
         aten = exir.capture(
             composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
         )
-        aten_new = deserialize(*serialize(aten))
-        self.check_ep(aten, aten_new, model_inputs)
+        aten_new = deserialize(*serialize(aten.exported_program))
+        self.check_ep(aten.exported_program, aten_new, model_inputs)
 
     def test_delegate_partitioner(self) -> None:
         class Model(torch.nn.Module):
@@ -150,6 +150,6 @@ class TestSerde(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
 
         ep = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
-        edge = to_backend(ep, AddMulPartitionerDemo)
+        edge = to_backend(ep.exported_program, AddMulPartitionerDemo)
         edge_new = deserialize(*serialize(edge))
         self.check_ep(edge, edge_new, inputs)
