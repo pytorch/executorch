@@ -371,6 +371,26 @@ inline size_t getTrailingDims(const Tensor& tensor, int64_t dim) {
 }
 
 /**
+ * Given a N-dimensional tensor coordinate, return a linear index that can be
+ * used to access the corresponding element in the tensor's data buffer.
+ *
+ * @param[in] tensor The tensor that will be indexed
+ * @param[in] coordinate A n-dimensional array representing the coordinate to
+ * index. It is assumed that the array has kTensorDimensionLimit elements.
+ * @param[out] index The linear index to element at the specified coordinate in
+ * the tensor.
+ */
+inline size_t coordinateToIndex(
+    const Tensor& tensor,
+    const size_t* const coordinate) {
+  size_t index = 0;
+  for (int d = 0; d < tensor.dim(); ++d) {
+    index += coordinate[d] * getTrailingDims(tensor, d);
+  }
+  return index;
+}
+
+/**
  * Extracts an integer value from a scalar Tensor.
  *
  * @param[in] tensor The source of the value to extract.

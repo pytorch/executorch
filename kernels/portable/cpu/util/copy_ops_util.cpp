@@ -80,6 +80,39 @@ void get_cat_out_target_size(
   }
 }
 
+void check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out) {
+  ET_CHECK(in.dim() == dims.size());
+  ET_CHECK_SAME_DTYPE2(in, out);
+
+  // Make sure no dimensions are duplicated and all in the range [-in.dim(),
+  // in.dim() - 1]. Use gaussian sum to check this.
+  size_t expected_sum = (dims.size() * (dims.size() + 1)) / 2;
+  size_t gauss_sum = 0;
+  for (int i = 0; i < dims.size(); i++) {
+    // Convert dimension to a non-negative number. dim_base is in the range
+    // [0 .. in.dim() - 1].
+    size_t dim = dims[i] > -1 ? dims[i] : in.dim() + dims[i];
+    ET_CHECK(dim >= 0 && dim < in.dim());
+    gauss_sum += dim + 1;
+  }
+
+  ET_CHECK_MSG(
+      gauss_sum == expected_sum,
+      "The dims passed to permute_copy must contain one of each dim!");
+}
+
+void get_permute_copy_out_target_size(
+    const Tensor& in,
+    IntArrayRef dims,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim) {
+  *out_ndim = in.dim();
+
+  for (size_t i = 0; i < in.dim(); ++i) {
+    out_sizes[i] = in.size(dims[i] >= 0 ? dims[i] : dims[i] + in.dim());
+  }
+}
+
 void check_stack_args(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,

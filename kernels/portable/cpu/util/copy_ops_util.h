@@ -16,6 +16,14 @@ void get_cat_out_target_size(
     Tensor::SizesType* out_sizes,
     size_t* out_ndim);
 
+void check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out);
+
+void get_permute_copy_out_target_size(
+    const Tensor& in,
+    IntArrayRef dims,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim);
+
 void check_stack_args(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
