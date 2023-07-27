@@ -80,7 +80,7 @@ def get_hg_root():
         # If we get "not inside a repository" error, try again with $HOME/fbsource,
         # which is the most common hg root
         possible_hg_root = os.path.join(os.environ["HOME"], "fbsource")
-        logging.warn(f"{e}. Trying again with {possible_hg_root}")
+        logging.warning(f"{e}. Trying again with {possible_hg_root}")
 
         with change_directory(possible_hg_root):
             hg_root = _get_hg_root()
