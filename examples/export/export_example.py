@@ -57,13 +57,13 @@ def gen_mobilenet_v3_model_inputs() -> Tuple[torch.nn.Module, Any]:
     # we should probably fix this if all the MVP model's export example
     # wiil be added here.
     # For now, to unblock, not planning to land those changes in the current diff
-    from executorch.examples.models.mobilenet_v3 import MV3Model
+    from ..models.mobilenet_v3 import MV3Model
 
     return MV3Model.get_model(), MV3Model.get_example_inputs()
 
 
 def gen_mobilenet_v2_model_inputs() -> Tuple[torch.nn.Module, Any]:
-    from executorch.examples.models.mobilenet_v2 import MV2Model
+    from ..models.mobilenet_v2 import MV2Model
 
     return MV2Model.get_model(), MV2Model.get_example_inputs()
 
@@ -78,11 +78,11 @@ MODEL_NAME_TO_MODEL = {
 
 
 def export_to_ff(model_name, model, example_inputs):
-    m = model
+    m = model.eval()
     edge = exir.capture(m, example_inputs, _CAPTURE_CONFIG).to_edge(
         _EDGE_COMPILE_CONFIG
     )
-    print("Exported graph:\n", edge.graph)
+    print("Exported graph:\n", edge.exported_program.graph)
 
     exec_prog = edge.to_executorch()
 

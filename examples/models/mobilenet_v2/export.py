@@ -2,6 +2,7 @@ import logging
 
 import torch
 from torchvision import models
+from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
 FORMAT = "[%(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(format=FORMAT)
@@ -14,7 +15,7 @@ class MV2Model:
     @staticmethod
     def get_model():
         logging.info("loading mobilenet_v2 model")
-        mv2 = models.mobilenet_v2(pretrained=True)
+        mv2 = models.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
         logging.info("loaded mobilenet_v2 model")
         return mv2
 
