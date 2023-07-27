@@ -166,10 +166,12 @@ write a memory plnaning pass is here (TODO).
 ```python
 aten_dialect = exir.capture(MyModule(), (torch.randn(3, 4),))
 edge_dialect = aten_dialect.to_edge()
-# edge_dialect = to_backend(edge_dialect.exported_program, CustomBackendPartitioner)
-executorch_program = edge_dialect.to_executorch(executorch_backend_config)
 
+# Play around with the available configs
+from executorch.exir.capture import ExecutorchBackendConfig
+executorch_program = edge_dialect.to_executorch(ExecutorchBackendConfig(memory_planning_pass="greedy"))
 print(executorch_program.dump_exported_program())
+
 """
 ExportedProgram:
   class GraphModule(torch.nn.Module):
