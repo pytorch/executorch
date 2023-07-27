@@ -9,17 +9,19 @@ namespace torch {
 namespace executor {
 
 // TODO(T158932073): Remove this once all clients use the new name/APIs.
-using ExecutionPlan = Method;
+/// DEPRECATED: Use `Method` instead.
+using ExecutionPlan __ET_DEPRECATED = Method;
 
 // TODO(T158932073): Remove this once Program::load_method is available and all
 // clients use it.
-class Executor {
+/// DEPRECATED: Use `Program::load_method()` instead.
+class __ET_DEPRECATED Executor {
  public:
   // Executes a PyTorch executor program.
   Executor(const Program* program, MemoryManager* memory_manager);
 
   /**
-   * DEPRECATED: Use init_execution_plan(const char*)
+   * DEPRECATED: Use `Program::load_method()` instead.
    *
    * Initializes the execution plan to use the specified entry point
    * of the model. `execution_plan()` returns this plan.
@@ -34,6 +36,8 @@ class Executor {
   init_execution_plan(size_t index = Program::kForwardMethodIndex);
 
   /**
+   * DEPRECATED: Use `Program::load_method()` instead.
+   *
    * Initializes the execution plan to use the specified entry point of the
    * model. `execution_plan()` returns this plan.
    *
@@ -42,12 +46,15 @@ class Executor {
    * @param[in] name The name of the entry point to use for this plan.
    * @retval Error::Ok on successful initialization.
    */
-  __ET_NODISCARD Error init_execution_plan(const char* method_name);
+  __ET_DEPRECATED __ET_NODISCARD Error
+  init_execution_plan(const char* method_name);
 
   /**
+   * DEPRECATED: Use `Program::load_method()` instead.
+   *
    * Returns the plan that was initialized by `init_execution_plan()`.
    */
-  ExecutionPlan& execution_plan() {
+  __ET_DEPRECATED ExecutionPlan& execution_plan() {
     return plan_;
   }
 

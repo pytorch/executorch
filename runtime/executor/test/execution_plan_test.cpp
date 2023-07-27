@@ -22,6 +22,8 @@ using torch::executor::util::FileDataLoader;
 constexpr size_t kDefaultNonConstMemBytes = 32 * 1024U;
 constexpr size_t kDefaultRuntimeMemBytes = 32 * 1024U;
 
+// TODO(T158932073): Tests the deprecated Executor APIs. Remove this file when
+// Executor is deleted.
 class ExecutionPlanTest : public ::testing::Test {
  protected:
   void SetUp() override {
