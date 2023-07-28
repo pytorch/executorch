@@ -94,6 +94,11 @@ You may want to copy the `buck2` binary into your `$PATH` so you can run it as `
 
 The `--show-output` flag will print the path to the executable if you want to run it directly.
 
+If you run into `Stderr: clang-14: error: invalid linker name in argument '-fuse-ld=lld'`, do
+```bash
+conda install -c conda-forge lld
+```
+
 **Step 3: Run a binary**
 
 ```bash
