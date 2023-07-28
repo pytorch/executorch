@@ -47,6 +47,9 @@ is supported in the export flow, you can take a look at the examples in
 through registering the custom operator to a torch library and providing a meta
 kernel.
 
+To learn more about exporting a model or if you have trouble exporting,
+you can look at [these docs](../export/00_export_manual.md)
+
 The output of `exir.capture` is a fully flattened graph (meaning the graph does
 not contain any module heirachy, except in the case of control flow operators)
 containing the

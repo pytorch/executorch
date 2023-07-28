@@ -23,7 +23,8 @@ In a nutshell, we need the following steps in order for a custom op to work on E
 1. Register the custom op definition into PyTorch runtime so that they are visible to Executorch compiler.
 2. Implement and register the implementation of it to PyTorch runtime. Do one of the following:
     1. Implement in Python and use [`library.py`](https://github.com/pytorch/pytorch/blob/main/torch/library.py) API to register it
-    2. Implement in C++, use `at::Tensor` or `exec_aten::Tensor` and use [`library.h`](https://github.com/pytorch/pytorch/blob/main/torch/library.h) API to register it
+    2. Implement in C++, use `at::Tensor` or `exec_aten::Tensor` and use [`library.h`](https://github.com/pytorch/pytorch/blob/main/torch/library.h) API to register it.
+    3. You will also need to provide META implementatio for your custom operator, so that export tracer knows how to reason about the input/output of your custom operator. For more instructions, you can refer [here](../export/custom_operators.md)
 3. Define an out variant of the custom op, implement it in C++ using `ETensor`. This step should also be trivial if we used `exec_aten::Tensor` in step 2.ii, since we can share the same logic for the two variants.
 4. Create `custom_ops.yaml` for this operator, both functional and out variant, specify function schema and corresponding kernels. (See Common APIs for more info).
     1. In ATen mode, the C++ kernel implementation using `at::Tensor` will be linked.

@@ -40,6 +40,7 @@ Compared to the legacy Lite Interpreter, there are some major benefits:
 - [Setting up ExecuTorch from GitHub](/docs/website/docs/tutorials/00_setting_up_executorch.md)
 - [Exporting to Executorch](/docs/website/docs/tutorials/exporting_to_executorch.md)
     - [EXIR Spec](/docs/website/docs/ir_spec/00_exir.md)
+    - [Exporting manual](/docs/website/docs/export/00_export_manual.md)
     - [Delegate to a backend](/docs/website/docs/tutorials/backend_delegate.md)
 - [Executorch Google Colab](https://colab.research.google.com/drive/1oJBt3fj_Tr3FE7L9RdUgSKK9XzJfUv4F#scrollTo=fC4CB3kFhHPJ)
 
