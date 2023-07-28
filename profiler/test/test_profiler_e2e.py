@@ -26,11 +26,11 @@ from executorch.extension.pybindings.portable import (
     _reset_profile_results,
 )
 from executorch.extension.pytree import tree_flatten
+from executorch.profiler.fb.parse_profiler_results import profile_table
 from executorch.profiler.parse_profiler_results import (
     deserialize_profile_results,
     profile_aggregate_framework_tax,
     profile_framework_tax_table,
-    profile_table,
 )
 
 

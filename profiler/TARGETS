@@ -9,28 +9,9 @@ runtime.python_library(
         "parse_profiler_results.py",
         "profiler_results_cli.py",
     ],
+    base_module = "executorch.profiler",
     visibility = ["@EXECUTORCH_CLIENTS"],
-    deps = [
-        "fbsource//third-party/pypi/prettytable:prettytable",
-        "//executorch/exir:schema",
-        "//executorch/exir/serialize:lib",
-    ],
-)
-
-runtime.python_library(
-    name = "profiler_results_scuba",
-    srcs = [
-        "profiler_results_scuba.py",
-    ],
-    visibility = ["@EXECUTORCH_CLIENTS"],
-    deps = [
-        ":parse_profiler_library",
-        "//executorch/exir:schema",
-        "//executorch/exir/serialize:lib",
-        "//libfb/py:fburl",
-        "//libfb/py:scuba_url",
-        "//rfe/scubadata:scubadata_py3",
-    ],
+    external_deps = ["prettytable"],
 )
 
 runtime.python_library(
@@ -38,10 +19,9 @@ runtime.python_library(
     srcs = [
         "profiler_results_cli.py",
     ],
+    base_module = "executorch.profiler",
     deps = [
         ":parse_profiler_library",
-        ":profiler_results_scuba",
-        "//executorch/exir/serialize:lib",
     ],
 )
 

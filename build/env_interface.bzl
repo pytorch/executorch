@@ -124,6 +124,10 @@ _EXTERNAL_DEPS_MAP = {
         _FBCODE: "fbcode//caffe2:libtorch",
         _XPLAT: "fbsource//xplat/caffe2:torch_mobile_all_ops",
     },
+    "prettytable": {
+        _FBCODE: "fbsource//third-party/pypi/prettytable:prettytable",
+        _XPLAT: "fbsource//third-party/pypi/prettytable:prettytable",
+    },
     "pybind11": {
         _FBCODE: _EXTERNAL_DEP_FALLTHROUGH,
         _XPLAT: "fbsource//arvr/third-party/pybind11:pybind11",

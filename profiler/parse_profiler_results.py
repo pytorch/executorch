@@ -12,8 +12,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from executorch.exir.schema import Frame, FrameList, Program
-from executorch.exir.serialize import deserialize_from_flatbuffer
 from prettytable import PrettyTable
 
 # This version number should match the one defined in profiler.h
@@ -107,76 +105,6 @@ class ProfileEventFrameworkTax:
 class MemEvent:
     allocator_name: str
     total_allocations_done: int
-
-
-def frame_short_repr(frame: Frame) -> str:
-    return f"{Path(frame.filename).name}:{frame.lineno}:{frame.name}"
-
-
-def frame_list_short_repr(frame_list: FrameList) -> Optional[str]:
-    if frame_list is None:
-        return None
-
-    return frame_short_repr(frame_list.items[-1])
-
-
-def _stacktraces(program: Program, execution_plan_idx: int, chain_idx: int):
-    # The step api executes one instruction more than exists to determine if it has reached the end of the program
-    if chain_idx == len(program.execution_plan[execution_plan_idx].chains):
-        return None
-    chain = program.execution_plan[execution_plan_idx].chains[chain_idx]
-    stacktraces = chain.stacktrace
-
-    if stacktraces is None:
-        return None
-
-    result = []
-    for stacktrace in stacktraces:
-        result.append(stacktrace)
-    return result
-
-
-def fetch_frame_list_short_repr(
-    program: Program,
-    execution_plan_idx: int,
-    chain_idx: int,
-    instruction_idx: int,
-) -> Optional[str]:
-    if chain_idx == CHAIN_IDX_NO_CHAIN:
-        return None
-
-    assert chain_idx >= 0
-
-    frame_lists = _stacktraces(program, execution_plan_idx, chain_idx)
-    if frame_lists is None:
-        return None
-
-    assert instruction_idx < len(frame_lists)
-    frame_list = frame_lists[instruction_idx]
-    return frame_list_short_repr(frame_list)
-
-
-def get_frame_list(program, execution_plan_idx, chain_idx, instruction_idx):
-    if program is None:
-        return None
-
-    if chain_idx == CHAIN_IDX_NO_CHAIN:
-        return None
-
-    frame_lists = _stacktraces(program, execution_plan_idx, chain_idx)
-
-    if frame_lists is None:
-        return None
-
-    assert instruction_idx < len(frame_lists)
-
-    return frame_lists[instruction_idx]
-
-
-def frame_list_normal_vector_short(frame_list: FrameList) -> Optional[List[str]]:
-    if frame_list is None:
-        return None
-    return [frame_short_repr(frame) for frame in frame_list.items]
 
 
 def adjust_time_scale(event: ProfileData, time_scale: TimeScale):
@@ -400,11 +328,7 @@ def profile_table(
 ) -> List[PrettyTable]:
 
     results = []
-    execution_plan_idx = 0
     max_len = 0
-    program = None
-    if model_buffer is not None:
-        program = deserialize_from_flatbuffer(model_buffer)
 
     for name, prof_entries_list in profile_data.items():
         table = PrettyTable()
@@ -415,14 +339,7 @@ def profile_table(
                     entry.name,
                     entry.chain_idx,
                     entry.instruction_idx,
-                    None
-                    if program is None
-                    else fetch_frame_list_short_repr(
-                        program,
-                        execution_plan_idx,
-                        entry.chain_idx,
-                        entry.instruction_idx,
-                    ),
+                    None,
                 )
                 + tuple(val for val in entry.duration)
                 for entry in prof_entries_list
