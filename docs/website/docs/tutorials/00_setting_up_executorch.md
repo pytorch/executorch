@@ -47,6 +47,9 @@ Via python script:
 ```bash
 # Creates the file `add.ff`
 python3 -m examples.export.export_example --model_name="add"
+
+# Creates the delegated program `composite_model.ff`, other options are "whole" and "partition"
+python3 -m examples.export.export_and_delegate --option "composite"
 ```
 
 Or via python interpreter:
@@ -96,6 +99,9 @@ The `--show-output` flag will print the path to the executable if you want to ru
 ```bash
 # add.ff is the program generated from export_example.py during AOT Setup Step 3
 /tmp/buck2 run //test:size_test_all_ops  -- add.ff
+
+# To run a delegated model
+/tmp/buck2 run //test:size_test_all_ops  -- composite_model.ff
 ```
 
 or execute the binary directly from the `--show-output` path shown when building.
