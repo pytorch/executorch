@@ -20,8 +20,10 @@ from typing import (
 )
 
 import torch
-from executorch.exir import delegate, error, memory
-from executorch.exir.delegate import LoweredBackendModule
+from executorch.exir import error, memory
+
+# from executorch.exir.delegate import LoweredBackendModule
+from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
@@ -82,11 +84,7 @@ class ExportTracer(PythonKeyTracer):
     def create_arg(self, a: Argument) -> torch.fx.Node:
         if isinstance(a, torch.nn.Module):
             if a not in self.submodules:
-                prefix = (
-                    "lowered_module"
-                    if isinstance(a, LoweredBackendModule)
-                    else "submodule"
-                )
+                prefix = "lowered_module" if is_lowered_module(a) else "submodule"
                 name_submodule = f"{prefix}_{len(self.submodules)}"
                 self.root.add_module(name_submodule, a)
                 self.submodules[a] = name_submodule
@@ -234,7 +232,7 @@ class ExportPassBase(PassBase):
                     self.callback.interpreter,
                 )
 
-            elif target == delegate.executorch_call_delegate:
+            elif target == executorch_call_delegate:
                 lowered_module = args[0]
                 args = args[1:]
                 return self.callback.call_delegate(
@@ -411,16 +409,16 @@ class ExportPassBase(PassBase):
 
     def call_delegate(
         self,
-        lowered_module: LoweredBackendModule,
+        # pyre-ignore: Undefined or invalid type [11]: Annotation `LoweredBackendModule` is not defined as a type.
+        lowered_module: "LoweredBackendModule",  # noqa
         args: Tuple[ProxyValue, ...],
         kwargs: Dict[str, Argument],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        # pyre-ignore
         args = (lowered_module,) + args
         return self._fx(
             "call_function",
-            delegate.executorch_call_delegate,
+            executorch_call_delegate,
             args,
             kwargs,
             meta,

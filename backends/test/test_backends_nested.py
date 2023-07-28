@@ -17,10 +17,10 @@ from executorch.backends.test.op_partitioner_demo import (
     AddOperatorSupport,
     MatmulOperatorSupport,
 )
+from executorch.exir.delegate import executorch_call_delegate
 
-from executorch.exir.delegate import executorch_call_delegate, get_lowered_submodules
 from executorch.exir.graph_module import _get_submodule, get_control_flow_submodules
-
+from executorch.exir.lowered_backend_module import get_lowered_submodules
 from functorch.experimental import control_flow
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 

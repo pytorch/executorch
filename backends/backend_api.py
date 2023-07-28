@@ -17,13 +17,13 @@ from executorch.exir import (
     MultiMethodExirExportedProgram,
 )
 
-from executorch.exir.delegate import (
+from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
+
+from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.lowered_backend_module import (
     create_submodule_from_nodes,
-    executorch_call_delegate,
-    get_lowered_module_name,
     LoweredBackendModule,
 )
-from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.pass_base import ExportPass
 from torch._export.exported_program import ExportedProgram
 

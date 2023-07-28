@@ -7,9 +7,8 @@ import executorch.exir.tests.models as models
 
 import torch
 from executorch.exir import CaptureConfig
-from executorch.exir.delegate import (
+from executorch.exir.lowered_backend_module import (
     create_submodule_from_nodes,
-    executorch_call_delegate,  # noqa
     LoweredBackendModule,
 )
 from executorch.exir.schema import (

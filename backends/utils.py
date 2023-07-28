@@ -1,9 +1,9 @@
 from typing import Iterable, List, Tuple
 
 import torch
-
-from executorch.exir.delegate import create_submodule_from_nodes
 from executorch.exir.dialects._ops import ops as exir_ops
+
+from executorch.exir.lowered_backend_module import create_submodule_from_nodes
 from torch.fx.passes.utils.source_matcher_utils import SourcePartition
 
 T_QuantPerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default

@@ -9,8 +9,9 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Set, Tuple, Union
 
 import torch
-from executorch.exir import delegate, memory
+from executorch.exir import memory
 from executorch.exir.control_flow import while_loop as exir_while
+from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.error import (
     ExportError,
     ExportErrorType,
@@ -316,7 +317,7 @@ def collect_specs_from_nodes(
                     control_flow.cond,
                     exir_while,
                     torch.ops.map_impl,
-                    delegate.executorch_call_delegate,
+                    executorch_call_delegate,
                 ],
                 f"Unexpected op {node.op}, target {node.target}",
             )

@@ -10,8 +10,9 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import torch
-from executorch.exir import control_flow, delegate, memory, memory_planning
+from executorch.exir import control_flow, memory, memory_planning
 from executorch.exir.common import override_logger
+from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects.backend._ops import BackendOpOverload
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
@@ -235,7 +236,7 @@ to_out_var_skiplist: Set[Callable[[Any], Any]] = {
     # we won't see it in the input graph to the to_out_variant pass, unless
     # it's retraced after running to_out_variant with the first trace.
     memory.alloc,
-    delegate.executorch_call_delegate,
+    executorch_call_delegate,
 }
 to_out_var_skiplist.update(_EXECUTORCH_SYM_OPS)
 

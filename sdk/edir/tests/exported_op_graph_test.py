@@ -11,7 +11,7 @@ from executorch.exir import (
     ExecutorchProgram,
     ExirExportedProgram,
 )
-from executorch.exir.delegate import LoweredBackendModule
+from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.sdk.edir.base_schema import OperatorNode
 from executorch.sdk.edir.et_schema import (
     ExportedETOperatorGraph,

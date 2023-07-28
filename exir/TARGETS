@@ -108,6 +108,17 @@ python_library(
         "delegate.py",
     ],
     deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "lowered_backend_module",
+    srcs = [
+        "lowered_backend_module.py",
+    ],
+    deps = [
+        ":delegate",
         ":graph_module",
         ":tracer",
         "//caffe2:torch",

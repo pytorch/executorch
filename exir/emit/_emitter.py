@@ -35,7 +35,7 @@ import torch
 import torch.fx
 from executorch.exir import delegate
 from executorch.exir.common import add_cursor_to_graph
-from executorch.exir.delegate import LoweredBackendModule
+from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.dialects.backend._ops import BackendOpOverload
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
@@ -877,7 +877,7 @@ class _Emitter(torch.fx.Interpreter):
         """
         # If it's a delegate call, collect the list of debug handles that are consumed by this
         # delegate call and store it in the debug handle map.
-        if target == delegate.executorch_call_delegate:
+        if target == executorch_call_delegate:
             debug_handle_list = []
             for node in self.node.graph.nodes:
                 if (
@@ -912,7 +912,8 @@ class _Emitter(torch.fx.Interpreter):
 
     def _emit_delegate(
         self,
-        lowered_module: LoweredBackendModule,
+        # pyre-ignore: Undefined or invalid type [11]: Annotation `LoweredBackendModule` is not defined as a type.
+        lowered_module: "LoweredBackendModule",  # noqa
         args: Tuple[_Argument, ...],
         kwargs: Dict[str, _Argument],
     ) -> _EmitterValue:
@@ -1201,9 +1202,9 @@ class _Emitter(torch.fx.Interpreter):
         elif target is torch.ops.map_impl:
             return self._emit_control_flow(target, args, kwargs)
 
-        elif target == delegate.executorch_call_delegate:
+        elif target == executorch_call_delegate:
             lowered_module = args[0]
-            assert isinstance(lowered_module, LoweredBackendModule)
+            assert is_lowered_module(lowered_module)
             v = self._emit_delegate(lowered_module, args[1:], kwargs)
             self._add_debug_handle(len(self.chain.instructions) - 1, target)
             return v

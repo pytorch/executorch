@@ -3,7 +3,7 @@
 from typing import Tuple
 
 import torch
-from executorch.exir import delegate
+from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 from executorch.exir.tensor import TensorSpec
 from torch.utils import _pytree as pytree
@@ -82,7 +82,7 @@ class SpecPropPass(ExportPass):
         )
         meta["spec"] = pytree.tree_map(
             make_spec,
-            delegate.executorch_call_delegate(lowered_module, *args_data),
+            executorch_call_delegate(lowered_module, *args_data),
         )
         return super().call_delegate(lowered_module, args, kwargs, meta)
 

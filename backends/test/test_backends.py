@@ -25,9 +25,10 @@ from executorch.backends.test.op_partitioner_demo import (
 from executorch.backends.test.qnn_backend_demo import QnnBackend
 from executorch.exir import EdgeCompileConfig, multi_method_program_to_executorch
 
-from executorch.exir.delegate import executorch_call_delegate, get_lowered_submodules
+from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_control_flow_submodules
+from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.print_program import print_program
 from executorch.exir.schema import (
     BackendDelegate,

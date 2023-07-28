@@ -9,14 +9,20 @@ import operator
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import executorch.exir as exir
-import executorch.exir.delegate as delegate
 import executorch.exir.memory as memory
 import torch
 import torch._export.exported_program as ep
 import torch._export.serde.schema as schema
 import torch._export.serde.serialize as export_serialize
 from executorch.backends.compile_spec_schema import CompileSpec as delegate_CompileSpec
-from executorch.exir.serde.schema import CompileSpec, LoweredBackendModule
+from executorch.exir.delegate import executorch_call_delegate
+from executorch.exir.lowered_backend_module import (
+    LoweredBackendModule as ExirLoweredBackendModule,
+)
+from executorch.exir.serde.schema import (
+    CompileSpec,
+    LoweredBackendModule as SerdeLoweredBackendModule,
+)
 from torch.fx.experimental import symbolic_shapes
 
 
@@ -43,7 +49,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             self.graph_state.nodes.append(ex_node)
             return
 
-        elif node.target is delegate.executorch_call_delegate:
+        elif node.target is executorch_call_delegate:
             ex_node = schema.Node(
                 target=export_serialize.serialize_operator(node.target),
                 inputs=self.serialize_call_delegate_inputs(node.args),
@@ -189,7 +195,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         lowered_module = getattr(
             lowered_module_arg.graph.owning_module, lowered_module_arg.target
         )
-        assert isinstance(lowered_module, delegate.LoweredBackendModule)
+        assert isinstance(lowered_module, ExirLoweredBackendModule)
 
         serialized_compile_spec = [
             CompileSpec(cs.key, serialize_bytes(cs.value))
@@ -203,7 +209,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
         serialized_processed_bytes = serialize_bytes(lowered_module.processed_bytes)
 
-        serialized_lowered_module = LoweredBackendModule(
+        serialized_lowered_module = SerdeLoweredBackendModule(
             original_module=serialized_original_module,
             original_state_dict=serialize_bytes(serialized_original_state_dict),
             processed_bytes=serialized_processed_bytes,
@@ -266,7 +272,7 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             fx_node.meta.update(self.deserialize_metadata(serialized_node.metadata))
             return
 
-        elif target is delegate.executorch_call_delegate:
+        elif target is executorch_call_delegate:
             if (
                 len(serialized_node.outputs) == 1
                 and serialized_node.outputs[0].type == "as_tensor"
@@ -387,7 +393,7 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         lowered_module_str = serialized_lowered_module_arg.arg.value
         json_lowered_module = json.loads(lowered_module_str)
         serialized_lowered_module = export_serialize._dict_to_dataclass(
-            LoweredBackendModule, json_lowered_module
+            SerdeLoweredBackendModule, json_lowered_module
         )
 
         backend_id = serialized_lowered_module.backend_id
@@ -402,7 +408,7 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             base64.b64decode(serialized_lowered_module.original_state_dict),
         )
 
-        lowered_module = delegate.LoweredBackendModule(
+        lowered_module = ExirLoweredBackendModule(
             original_module,
             backend_id,
             processed_bytes,

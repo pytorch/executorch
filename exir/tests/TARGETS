@@ -22,8 +22,8 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/exir:delegate",
         "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
     ],
 )
 
@@ -315,8 +315,8 @@ python_unittest(
         ":lib",
         ":models",
         "//caffe2:torch",
-        "//executorch/exir:delegate",
         "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
         "//executorch/exir:schema",
     ],
 )

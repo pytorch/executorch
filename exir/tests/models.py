@@ -9,7 +9,7 @@ import executorch.exir as exir
 
 import torch  # noqa: F401
 import torch.nn as nn
-from executorch.exir.delegate import LoweredBackendModule
+from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch import Tensor
 
 # TODO: add one more test for data dependent op plus repeat
