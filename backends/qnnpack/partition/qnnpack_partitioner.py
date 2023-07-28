@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 from executorch.backends.qnnpack.partition.support_patterns import (
     get_dynamic_quant_addmm_with_view_copy_graph,
     get_dynamic_quant_addmm_without_view_copy_graph,

@@ -1,4 +1,11 @@
-// Copyright (c) Meta Platforms, Inc. and affiliates.
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/repeat_util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>

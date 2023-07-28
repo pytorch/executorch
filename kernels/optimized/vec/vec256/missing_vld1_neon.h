@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 /* Workaround for missing vld1_*_x2 and vst1_*_x2 intrinsics in gcc-7.  */
 
 __extension__ extern __inline uint8x8x2_t

@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #pragma once
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
 /* GCC or clang-compatible compiler, targeting x86/x86-64 */

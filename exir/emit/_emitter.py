@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 """Takes an ExportedArtifact, or a collection of ExportedArtifacts, in execution dialect, and turns
 them into a single Executorch Program.
 
