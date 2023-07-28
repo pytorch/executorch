@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/build:env_interface.bzl", "env")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 SIZE_TEST_SOURCES = [
@@ -9,6 +10,12 @@ SIZE_TEST_DEPS = [
     "//executorch/extension/data_loader:file_data_loader",
     "//executorch/util:util",
 ]
+
+# this can move to a different location, e.g. runtime_wrapper, in future
+def get_oss_build_kwargs():
+    if env.is_oss:
+        return {"link_style": "static", "linker_flags": "-ldl"}
+    return {}
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -29,6 +36,7 @@ def define_common_targets():
         srcs = SIZE_TEST_SOURCES,
         deps = SIZE_TEST_DEPS,
         define_static_target = True,
+        **get_oss_build_kwargs()
     )
 
     runtime.cxx_binary(
@@ -39,6 +47,7 @@ def define_common_targets():
             "//executorch/runtime/executor/test:test_backend_compiler_lib",
         ],
         define_static_target = True,
+        **get_oss_build_kwargs()
     )
 
     runtime.export_file(
@@ -65,6 +74,7 @@ def define_common_targets():
         external_deps = [
             "gflags",
         ],
+        **get_oss_build_kwargs()
     )
 
     # Test binary that can create relocatable Executor instances.
