@@ -219,10 +219,10 @@ class HTAPartitionerOnePatternDemo(Partitioner):
             exir.capture(
                 LSTMConvPattern(),
                 (input_x, input_h, input_c),
-                exir.CaptureConfig(pt2_mode=True),
+                exir.CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=False),
             )
             .to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True),
             )
             .exported_program.graph_module
         )

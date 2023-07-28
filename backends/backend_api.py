@@ -17,17 +17,14 @@ from executorch.backends.compile_spec_schema import CompileSpec
 
 from executorch.backends.partitioner import Partitioner, TPartitioner
 from executorch.backends.utils import is_identical_graph
-from executorch.exir import (
-    CallSpec,
-    ExportGraphSignature,
-    MultiMethodExirExportedProgram,
-)
+from executorch.exir import MultiMethodExirExportedProgram
 
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
 
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.lowered_backend_module import (
     arrange_graph_placeholders,
+    create_exported_program_from_submodule,
     create_submodule_from_nodes,
     LoweredBackendModule,
 )
@@ -163,19 +160,10 @@ def _partition_and_lower(
             tagged_graph_module, node_list, tag
         )
 
-        # Arrange the submodule's placeholders in order
-        submodule = arrange_graph_placeholders(submodule, owning_program)
         logging.debug(f"Partitioned graph module: {tagged_graph_module}")
 
-        # TODO(T158558782): Update the metadata once we migrate to torch.export
-        submodule_program = ExportedProgram(
-            submodule,
-            submodule.graph,
-            ExportGraphSignature([], [], [], [], {}, {}, {}, None),
-            CallSpec(None, None),
-            {},
-            {},
-            [],
+        submodule_program = create_exported_program_from_submodule(
+            submodule, owning_program
         )
 
         lowered_submodule = to_backend(
@@ -183,6 +171,12 @@ def _partition_and_lower(
             submodule_program,
             delegation_spec.compile_specs,
         )
+
+        # call delegate args should only use user_inputs
+        call_delegate_args = []
+        for inp in call_module_node.all_input_nodes:
+            if inp.name in submodule_program.graph_signature.user_inputs:
+                call_delegate_args.append(inp)
 
         # Replace the partitioned submodule with a lowered submodule
         # Add call_method node with function "forward"
@@ -193,11 +187,31 @@ def _partition_and_lower(
             lowered_node = tagged_graph_module.graph.get_attr(lowered_name)
             call_delegate_node = tagged_graph_module.graph.call_function(
                 executorch_call_delegate,
-                (lowered_node,) + call_module_node.args,
+                (lowered_node,) + tuple(call_delegate_args),
                 call_module_node.kwargs,
             )
             call_module_node.replace_all_uses_with(call_delegate_node)
             tagged_graph_module.graph.erase_node(call_module_node)
+
+        # Delete all parameters/buffers consumed by the created exported program
+        toplevel_signature = owning_program.graph_signature
+        for node in tagged_graph_module.graph.nodes:
+            # Find placeholders consumed by the delegate
+            if node.op != "placeholder" or len(node.users) != 0:
+                continue
+
+            if node.name in toplevel_signature.inputs_to_buffers:
+                # Delete the consumed buffers
+                buffer_name = toplevel_signature.inputs_to_buffers.pop(node.name)
+                toplevel_signature.buffers.remove(buffer_name)
+                owning_program.state_dict.pop(buffer_name)
+                tagged_graph_module.graph.erase_node(node)
+            elif node.name in toplevel_signature.inputs_to_parameters:
+                # Delete the consumed parameters
+                param_name = toplevel_signature.inputs_to_parameters.pop(node.name)
+                toplevel_signature.parameters.remove(param_name)
+                owning_program.state_dict.pop(param_name)
+                tagged_graph_module.graph.erase_node(node)
 
         tagged_graph_module.recompile()
 

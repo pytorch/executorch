@@ -11,6 +11,7 @@ from typing import List, Tuple
 import torch
 import torch.utils._pytree as pytree
 from executorch.backends.compile_spec_schema import CompileSpec
+from executorch.exir import CallSpec, ExportGraphSignature
 from executorch.exir.delegate import executorch_call_delegate
 
 from executorch.exir.graph_module import _get_submodule
@@ -160,6 +161,79 @@ def arrange_graph_placeholders(
     gm.graph = new_graph
 
     return gm
+
+
+def create_exported_program_from_submodule(
+    submodule: torch.fx.GraphModule,
+    owning_program: ExportedProgram,
+) -> ExportedProgram:
+    """
+    Creates an ExportedProgram from the given submodule using the parameters and buffers
+    from the top-level owning program
+
+    Args:
+        submodule: submodule to create and exported program from
+        owning_program: exported program containing the parameters and buffers used within
+                the submodule
+
+    Returns:
+        The ExportedProgram created from submodule
+    """
+    # Arrange the submodule's placeholders in order
+    submodule = arrange_graph_placeholders(submodule, owning_program)
+
+    subgraph_signature = ExportGraphSignature(
+        parameters=[],
+        buffers=[],
+        user_inputs=[],
+        user_outputs=[],
+        inputs_to_parameters={},
+        inputs_to_buffers={},
+        buffers_to_mutate={},
+        backward_signature=None,
+    )
+    toplevel_gs = owning_program.graph_signature
+    subgraph_state_dict = {}
+
+    for node in submodule.graph.nodes:
+        if node.op == "placeholder":
+            if node.name in toplevel_gs.inputs_to_parameters:
+                parameter_name = toplevel_gs.inputs_to_parameters[node.name]
+                # add param to graph signature
+                subgraph_signature.parameters.append(parameter_name)
+                subgraph_signature.inputs_to_parameters[node.name] = parameter_name
+
+                # add param to subgraph_state_dict
+                subgraph_state_dict[parameter_name] = owning_program.state_dict[
+                    parameter_name
+                ]
+            elif node.name in toplevel_gs.inputs_to_buffers:
+                buffer_name = toplevel_gs.inputs_to_buffers[node.name]
+                # add buffer to graph signature
+                subgraph_signature.buffers.append(buffer_name)
+                subgraph_signature.inputs_to_buffers[node.name] = buffer_name
+
+                # add param to subgraph_state_dict
+                subgraph_state_dict[buffer_name] = owning_program.state_dict[
+                    buffer_name
+                ]
+            else:
+                # not param or buffer then user input
+                subgraph_signature.user_inputs.append(node.name)
+        if node.op == "output":
+            for output in node.all_input_nodes:
+                subgraph_signature.user_outputs.append(output.name)
+
+    return ExportedProgram(
+        root=submodule,
+        graph=submodule.graph,
+        graph_signature=subgraph_signature,
+        call_spec=CallSpec(None, None),
+        state_dict=subgraph_state_dict,
+        # TODO(T159524653): fill in range and equality constraints
+        range_constraints={},
+        equality_constraints=[],
+    )
 
 
 def create_submodule_from_nodes(

@@ -733,7 +733,9 @@ class TestBackends(unittest.TestCase):
         orig_res = composite_m(*inputs)
 
         traced = exir.capture(
-            composite_m, inputs, exir.CaptureConfig(pt2_mode=True)
+            composite_m,
+            inputs,
+            exir.CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=False),
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
 
         program_without_delegates = (
