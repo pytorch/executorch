@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -69,7 +75,7 @@ class Conv1dUnsqueezePass(ExportPass):
                         node.args[8],
                     )
 
-                    # (c) Add unsqueeze to input (3d -> 4d) and squeeze to output (4d -> 3d)
+                    # c. Add unsqueeze to input (3d -> 4d) and squeeze to output (4d -> 3d)
                     # unsqueeze -> conv2d -> squeeze
                     with graph.inserting_before(node):
                         input_node = node.args[0]
