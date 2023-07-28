@@ -2,12 +2,17 @@
 
 This is a tutorial for building and installing Executorch from the GitHub repository.
 
-## AOT Setup [(Open on Google Colab](https://colab.research.google.com/drive/1oJBt3fj_Tr3FE7L9RdUgSKK9XzJfUv4F#scrollTo=fC4CB3kFhHPJ))
+## AOT Setup [(Open on Google Colab)](https://colab.research.google.com/drive/1oJBt3fj_Tr3FE7L9RdUgSKK9XzJfUv4F#scrollTo=fC4CB3kFhHPJ)
 
 
-This will install an `executorch` pip package to your conda environment and allow you to export your PyTorch model to a flatbuffer file using ExecuTorch.
+This will install an `executorch` pip package to your conda environment and
+allow you to export your PyTorch model to a flatbuffer file using ExecuTorch.
 
 **Step 1: Set up a conda environment**
+
+To install conda, you can look at the
+[conda installation guide](https://conda.io/projects/conda/en/latest/user-guide/install/index.html).
+
 ```bash
 conda create -yn executorch python=3.10.0
 conda activate executorch
@@ -15,8 +20,9 @@ conda activate executorch
 conda install -c conda-forge flatbuffers
 
 # Install the nightly builds
-# Note that if you are behind a firewall an appropriate proxy server must
-# be setup for all subsequent steps
+# Note: if you are behind a firewall an appropriate proxy server must be setup
+# for all subsequent steps.
+# Note: if you have pytorch installed already you will need to uninstall it first
 pip install --pre torch -i https://download.pytorch.org/whl/nightly/cpu
 ```
 
@@ -29,14 +35,10 @@ git clone git@github.com:pytorch/executorch.git
 
 # [Runtime requirement] Run the following to get all submodules, only need for runtime setup
 cd executorch
-git submodule update --init --recursive
+git submodule update --init
 
 pip install .
 
-# cd into a directory that doesn't contain a `./executorch/exir` directory, since
-# otherwise python will try using it for `import executorch.exir...` instead of using the
-# installed pip package.
-cd executorch
 ```
 
 **Step 3: Try it out**
@@ -44,7 +46,7 @@ cd executorch
 Via python script:
 ```bash
 # Creates the file `add.ff`
-python ~/src/executorch/examples/export/export_example.py -m "add"
+python3 -m examples.export.export_example --model_name="add"
 ```
 
 Or via python interpreter:
@@ -55,6 +57,14 @@ Or via python interpreter:
 >>> m = Mul()
 >>> print(exir.capture(m, m.get_random_inputs()).to_edge())
 >>> open("add.ff", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
+```
+
+If exporting mobilenet v2/v3, run `install_requirements.sh`.
+
+```bash
+bash examples/install_requirements.sh
+
+python3 -m examples.export.export_example --model_name="mv2"
 ```
 
 ## Runtime Setup

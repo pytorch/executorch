@@ -69,7 +69,7 @@ const darkCodeTheme = require('prism-react-renderer/themes/dracula');
         items: [
           {
             type: 'doc',
-            docId: 'tutorials/getting_started',
+            docId: 'tutorials/setting_up_executorch',
             position: 'left',
             label: 'Documentation',
           },
