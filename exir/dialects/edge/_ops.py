@@ -104,7 +104,7 @@ class FunctionDtypeConstraint:
                     + f"but get {type_constraint_names} and {all_tensor_arg_names}"
                 )
 
-    def validate(self, types: Dict[str, torch.dtype]) -> bool:
+    def validate(self, types: Dict[str, Optional[torch.dtype]]) -> bool:
         """Check if the given input type combination a legal one of current function.
 
         Args:
@@ -135,7 +135,11 @@ class FunctionDtypeConstraint:
             valid_type = True
             # Narrow down the type_alias based on contraint and actual input
             for arg_name, arg_type in types.items():
-                if arg_type in self.type_alias[constraint[arg_name]]:
+                if arg_type is None:
+                    # None means the user didn't set dtype for this argment
+                    # (i.e. empty tensorlist), skipping the validation.
+                    continue
+                elif arg_type in self.type_alias[constraint[arg_name]]:
                     self.type_alias[constraint[arg_name]].reduce_to(arg_type)
                 else:
                     valid_type = False

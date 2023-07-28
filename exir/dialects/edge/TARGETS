@@ -10,7 +10,7 @@ python_library(
         "yaml_generator.py",
     ],
     deps = [
-        "fbsource//third-party/pypi/expecttest:expecttest",
+        "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
         "fbsource//third-party/pypi/ruamel-yaml:ruamel-yaml",
         ":support_dtypes",
         ":utils",
@@ -26,6 +26,7 @@ python_binary(
     ],
     main_module = "executorch.exir.dialects.edge.yaml_generator",
     deps = [
+        "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
         "fbsource//third-party/pypi/ruamel-yaml:ruamel-yaml",
         ":support_dtypes",
         ":utils",

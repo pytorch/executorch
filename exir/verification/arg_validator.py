@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from collections import defaultdict
-from typing import Any, Dict, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import torch
 from executorch.exir.dialects.edge._ops import EdgeDialectFunctionSchema, EdgeOpOverload
@@ -37,9 +37,9 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
 
     def __init__(self, graph_module: torch.fx.GraphModule) -> None:
         super().__init__(graph_module)
-        self.violating_ops: Dict[EdgeOpOverload, Dict[str, torch.dtype]] = defaultdict(
-            dict
-        )
+        self.violating_ops: Dict[
+            EdgeOpOverload, Dict[str, Optional[torch.dtype]]
+        ] = defaultdict(dict)
 
     def run_node(self, n: torch.fx.Node) -> None:
         self.node = n
@@ -51,6 +51,16 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
             else:
                 raise InternalError(str(e)) from e
         return ret
+
+    def _get_kernel_arg(self, schema_arg, schema_arg_idx, args, kwargs):
+        if schema_arg.name in kwargs:
+            kernel_arg = kwargs[schema_arg.name]
+        elif not schema_arg.kwarg_only and schema_arg_idx < len(args):
+            kernel_arg = args[schema_arg_idx]
+        else:
+            kernel_arg = schema_arg.default_value
+
+        return kernel_arg
 
     def call_function(
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
@@ -64,19 +74,32 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
             if isinstance(target, HigherOrderOperator):
                 raise RunHigherOrderOperatorError("Can't run delegate")
             return super().call_function(target, args, kwargs)
-        tensor_arg_types: Dict[str, torch.dtype] = {}
+
+        # TODO(gasoonjia): Update Optional[torch.dtype] to a concrete class to support mixed dtypes in tensorlist.
+        tensor_arg_types: Dict[str, Optional[torch.dtype]] = {}
         for i, schema_arg in enumerate(target._schema.arguments):
-            if not isinstance(schema_arg.type, torch.TensorType):
-                continue
-            if schema_arg.name in kwargs:
-                kernel_arg = kwargs[schema_arg.name]
-            elif not schema_arg.kwarg_only and i < len(args):
-                kernel_arg = args[i]
-            else:
-                kernel_arg = schema_arg.default_value
-            if not isinstance(kernel_arg, torch.Tensor):
-                continue
-            tensor_arg_types[schema_arg.name] = kernel_arg.dtype
+            if (
+                isinstance(schema_arg.type, torch.TensorType)
+                or schema_arg.type == torch.OptionalType.ofTensor()
+            ):
+                kernel_arg = self._get_kernel_arg(schema_arg, i, args, kwargs)
+                if not isinstance(kernel_arg, torch.Tensor):
+                    continue
+                tensor_arg_types[schema_arg.name] = kernel_arg.dtype
+            elif schema_arg.type == torch.ListType.ofTensors():
+                kernel_arg = self._get_kernel_arg(schema_arg, i, args, kwargs)
+                if not isinstance(kernel_arg, list) or not all(
+                    isinstance(kernel_arg[i], torch.Tensor)
+                    for i in range(len(kernel_arg))
+                ):
+                    continue
+                if len(kernel_arg):
+                    tensor_arg_types[schema_arg.name] = kernel_arg[0].dtype
+                else:
+                    # If kernel_arg is an empty list, treat its type as None.
+                    # FunctionDtypeConstraint.validate will take None as any legal dtype.
+                    tensor_arg_types[schema_arg.name] = None
+
         ret_index = 0
         kernel_rets = self.node.meta["val"]
         ret_iter = iter(
@@ -85,10 +108,19 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
         for schema_ret in target._schema.returns:
             name = schema_ret.name if schema_ret.name else f"__ret_{ret_index}"
             kernel_ret = next(ret_iter)
+            # Return value should not be in OptionalTensor type, so only check torch.TensorType here.
             if isinstance(schema_ret.type, torch.TensorType) and isinstance(
                 kernel_ret, torch.Tensor
             ):
                 tensor_arg_types[name] = kernel_ret.dtype
+                ret_index += 1
+            elif schema_ret.type == torch.ListType.ofTensors() and all(
+                isinstance(kernel_ret[i], torch.Tensor) for i in range(len(kernel_ret))
+            ):
+                if len(kernel_ret):
+                    tensor_arg_types[name] = kernel_ret[0].dtype
+                else:
+                    tensor_arg_types[name] = None
                 ret_index += 1
 
         valid = target._schema.dtype_constraint.validate(tensor_arg_types)

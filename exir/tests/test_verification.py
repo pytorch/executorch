@@ -151,13 +151,59 @@ class TestVerification(unittest.TestCase):
                 self.register_buffer("a", torch.randn(1, 3, 100, 100))
 
             def forward(self, x):
-                return self.a + x
+                b = self.a + x
+                return torch._to_cpu([b, x])
 
         m = TestModel()
         egm = (
             exir.capture(
                 m,
                 (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
+                exir.CaptureConfig(pt2_mode=True),
+            )
+            .to_edge()
+            .exported_program.graph_module
+        )
+        verifier = EXIREdgeDialectVerifier()
+        verifier(egm)
+        self.assertTrue(verifier.is_valid(egm))
+
+    def test_edge_happy_with_optional_tensor_input(self) -> None:
+        class TestModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, weight, bias):
+                # weight and bias here are optional tensor inputs.
+                return torch.group_norm(x, 4, weight, bias)
+
+        m = TestModel()
+        egm = (
+            exir.capture(
+                m,
+                (torch.rand(16, 8, 32, 32), torch.rand(8), torch.rand(8)),
+                exir.CaptureConfig(pt2_mode=True),
+            )
+            .to_edge()
+            .exported_program.graph_module
+        )
+        verifier = EXIREdgeDialectVerifier()
+        verifier(egm)
+        self.assertTrue(verifier.is_valid(egm))
+
+    def test_edge_happy_with_empty_tensorlist_input(self) -> None:
+        class TestModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch._to_cpu(x)
+
+        m = TestModel()
+        egm = (
+            exir.capture(
+                m,
+                ([],),
                 exir.CaptureConfig(pt2_mode=True),
             )
             .to_edge()
@@ -174,7 +220,8 @@ class TestVerification(unittest.TestCase):
                 self.register_buffer("a", torch.randn(1, 3, 100, 100))
 
             def forward(self, x):
-                return self.a + x
+                b = self.a + x
+                return torch._to_cpu([b, x])
 
         m = TestModel()
         egm = exir.capture(
