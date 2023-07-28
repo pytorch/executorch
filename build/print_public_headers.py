@@ -13,7 +13,7 @@ from typing import Dict, List
 BUCK_CWD: str = os.path.dirname(os.path.realpath(__file__))
 
 # One of the non-executorch entries of clients.bzl
-EXTERNAL_CLIENT_TARGET: str = "fbcode//bolt/nn/..."
+EXTERNAL_CLIENT_TARGET: str = "fbcode//pye/model_inventory/..."
 
 # The buck query covering the targets to examine.
 PROJECT_QUERY: str = "//executorch/..."
