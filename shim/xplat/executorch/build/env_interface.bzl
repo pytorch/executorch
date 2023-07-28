@@ -28,7 +28,7 @@ _EXTERNAL_DEPS = {
     "gen-executorch": "//third-party:gen_executorch",
     "gen-oplist-lib": "//third-party:gen_oplist_lib",
     # Commandline flags library
-    "gflags": [],  # TODO(larryliu0820): Add support
+    "gflags": "//third-party:gflags",
     "gmock": [],  # TODO(larryliu0820): Add support
     "libtorch": [],  # TODO(larryliu0820): Add support
     "prettytable": "//third-party:prettytable",

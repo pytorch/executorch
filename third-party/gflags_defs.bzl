@@ -1,13 +1,8 @@
 # ------------------------------------------------------------------------------
 # Add native rules to configure source files
+# Not tested for building on windows platforms
 def gflags_sources(namespace = ["google", "gflags"]):
     common_preamble = "mkdir -p `dirname $OUT` && "
-
-    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
-    native.cxx_library(
-        name = "config_h",
-        exported_headers = ["gflags/src/config.h"],
-    )
 
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.genrule(
@@ -19,12 +14,6 @@ def gflags_sources(namespace = ["google", "gflags"]):
                "gsub(/@(HAVE_STDINT_H|HAVE_SYS_TYPES_H|HAVE_INTTYPES_H|GFLAGS_INTTYPES_FORMAT_C99)@/, \"1\"); " +
                "gsub(/@([A-Z0-9_]+)@/, \"0\"); " +
                "print; }' $SRCS > $OUT"),
-        cmd_exe = (
-            "powershell " +
-            "$(location :gsub_ps1) '@GFLAGS_NAMESPACE@' '" + namespace[0] + "' ${SRCS} ${TMP}/1.txt ; " +
-            "$(location :gsub_ps1) '@(HAVE_STDINT_H^|HAVE_SYS_TYPES_H^|HAVE_INTTYPES_H^|GFLAGS_INTTYPES_FORMAT_C99)@' 1 ${TMP}/1.txt ${TMP}/2.txt ; " +
-            "$(location :gsub_ps1) '@([A-Z0-9_]+)@' 0 ${TMP}/2.txt ${OUT}"
-        ),
     )
     gflags_ns_h_files = []
     for ns in namespace[1:]:
@@ -39,11 +28,6 @@ def gflags_sources(namespace = ["google", "gflags"]):
                    "gsub(/@ns@/, \"" + ns + "\"); " +
                    "gsub(/@NS@/, \"" + ns.upper() + "\"); " +
                    "print; }' $SRCS > $OUT"),
-            cmd_exe = (
-                "powershell " +
-                "$(location :gsub_ps1) '@ns@' '" + ns + "' ${SRCS} ${TMP}/1.txt ; " +
-                "$(location :gsub_ps1) '@NS@' '" + ns.upper() + "' ${TMP}/1.txt ${OUT} "
-            ),
         )
         gflags_ns_h_files.append(gflags_ns_h_file)
 
@@ -56,11 +40,6 @@ def gflags_sources(namespace = ["google", "gflags"]):
                "gsub(/@GFLAGS_ATTRIBUTE_UNUSED@/, \"\"); " +
                "gsub(/@INCLUDE_GFLAGS_NS_H@/, \"" + "\n".join(["#include \\\"gflags/{}\\\"".format(hdr) for hdr in gflags_ns_h_files]) + "\"); " +
                "print; }' $SRCS > $OUT"),
-        cmd_exe = (
-            "powershell " +
-            "$(location :gsub_ps1) '@GFLAGS_ATTRIBUTE_UNUSED@' '' ${SRCS} ${TMP}/1.txt ; " +
-            "$(location :gsub_ps1) '@INCLUDE_GFLAGS_NS_H@' '" + "\n".join(["#include \\\"gflags/{}\\\"".format(hdr) for hdr in gflags_ns_h_files]) + "' ${TMP}/1.txt ${OUT} "
-        ),
     )
 
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
@@ -69,13 +48,9 @@ def gflags_sources(namespace = ["google", "gflags"]):
         srcs = ["gflags/src/gflags_completions.h.in"],
         out = "gflags/gflags_completions.h",
         cmd = common_preamble + "awk '{ gsub(/@GFLAGS_NAMESPACE@/, \"" + namespace[0] + "\"); print; }' $SRCS > $OUT",
-        cmd_exe = (
-            "powershell " +
-            "$(location :gsub_ps1) '@GFLAGS_NAMESPACE@' '" + namespace[0] + "' ${SRCS} ${OUT}"
-        ),
     )
     headers = {
-        "config.h": ":config_h",
+        "config.h": "gflags/src/config.h",
         "mutex.h": "gflags/src/mutex.h",
         "util.h": "gflags/src/util.h",
         "windows_port.h": "gflags/src/windows_port.h",
@@ -107,6 +82,7 @@ def gflags_library(name, exported_headers = {}, headers = {}, srcs = [], threads
         "-DHAVE_RWLOCK",
         "-DGFLAGS_INTTYPES_FORMAT_C99",
         "-DGFLAGS_IS_A_DLL=0",
+        "-DGFLAGS_BAZEL_BUILD",  # to avoid defines.h include
     ]
 
     copts = copts_common + [
@@ -121,6 +97,8 @@ def gflags_library(name, exported_headers = {}, headers = {}, srcs = [], threads
     native.cxx_library(
         name = name,
         deps = [":_" + name],
+        exported_headers = exported_headers,
+        header_namespace = "",
         visibility = ["PUBLIC"],
     )
 
@@ -138,6 +116,6 @@ def gflags_library(name, exported_headers = {}, headers = {}, srcs = [], threads
         preprocessor_flags = copts,
         deps = deps + pthread_deps,
         # Dependents should use the public rule above.
-        visibility = [],
+        visibility = ["PUBLIC"],
         **kwargs
     )
