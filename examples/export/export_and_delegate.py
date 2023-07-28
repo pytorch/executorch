@@ -67,12 +67,12 @@ def export_compsite_module_with_lower_graph():
     m = AddMulModule().eval()
     m_inputs = m.get_random_inputs()
     edge = exir.capture(m, m_inputs, _CAPTURE_CONFIG).to_edge(_EDGE_COMPILE_CONFIG)
-    print("Exported graph:\n", edge.graph)
+    print("Exported graph:\n", edge.exported_program.graph)
 
     # Lower AddMulModule to the demo backend
     print("Lowering to the demo backend...")
     lowered_graph = to_backend(
-        BackendWithCompilerDemo.__name__, edge, m.get_compile_spec()
+        BackendWithCompilerDemo.__name__, edge.exported_program, m.get_compile_spec()
     )
 
     # Composite the lower graph with other module
@@ -92,9 +92,9 @@ def export_compsite_module_with_lower_graph():
     ).to_edge(_EDGE_COMPILE_CONFIG)
 
     # The graph module is still runnerable
-    composited_edge.graph_module(*m_inputs)
+    composited_edge.exported_program.graph_module(*m_inputs)
 
-    print("Lowered graph:\n", composited_edge.graph)
+    print("Lowered graph:\n", composited_edge.exported_program.graph)
 
     exec_prog = composited_edge.to_executorch()
     buffer = exec_prog.buffer
@@ -139,14 +139,14 @@ def export_and_lower_partitioned_graph():
     edge = exir.capture(m, m.get_random_inputs(), _CAPTURE_CONFIG).to_edge(
         _EDGE_COMPILE_CONFIG
     )
-    print("Exported graph:\n", edge.graph)
+    print("Exported graph:\n", edge.exported_program.graph)
 
     # Lower to backend_with_compiler_demo
     print("Lowering to the demo backend...")
-    lower = to_backend(edge, AddMulPartitionerDemo)
-    print("Lowered graph:\n", edge.graph)
+    edge.exported_program = to_backend(edge.exported_program, AddMulPartitionerDemo)
+    print("Lowered graph:\n", edge.exported_program.graph)
 
-    exec_prog = lower.to_executorch()
+    exec_prog = edge.to_executorch()
     buffer = exec_prog.buffer
 
     model_name = "partition_lowered_model"
@@ -173,11 +173,13 @@ def export_and_lower_the_whole_graph():
     edge = exir.capture(m, m.get_random_inputs(), _CAPTURE_CONFIG).to_edge(
         _EDGE_COMPILE_CONFIG
     )
-    print("Exported graph:\n", edge.graph)
+    print("Exported graph:\n", edge.exported_program.graph)
 
     # Lower AddMulModule to the demo backend
     print("Lowering to the demo backend...")
-    _ = to_backend(BackendWithCompilerDemo.__name__, edge, m.get_compile_spec())
+    _ = to_backend(
+        BackendWithCompilerDemo.__name__, edge.exported_program, m.get_compile_spec()
+    )
 
     # TODO(chenlai): emit the lowered graph
 
