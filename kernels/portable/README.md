@@ -7,8 +7,9 @@ use and contribute to.
   in the YAML files.
   - `kernels/portable/cpu`: Pure C++ implementations of the operators defined in the
     YAML files.
-  - `kernels/<target-name>`: Future location of operator implementations that
-    are optimized for a specific hardware target.
+  - `kernels/optimized/cpu`: Optimized C++ implementations of the operators defined in the
+    YAML files, for specific hardware platforms.
+  - `kernels/aten`: A thin wrapper layer to hookup ATen library into Executorch.
   - `kernels/test`: Tests for all operator implementations. Since all
     implementations should behave identically, the same tests should pass for
     all target types.
@@ -39,10 +40,10 @@ the types defined by PyTorch core in the `at` or `c10` namespaces. To retain
 tigher control over CPU and memory runtime behavior, Executorch reimplements
 compatible but restricted subsets of those types.
 
-[`//executorch/runtime/core/exec_aten/exec_aten.h`](https://www.internalfb.com/code/fbsource/fbcode/executorch/runtime/core/exec_aten/exec_aten.h)
+[`//runtime/core/exec_aten/exec_aten.h`](https://github.com/pytorch/executorch/blob/main/runtime/core/exec_aten/exec_aten.h)
 contains the mapping between ATen/c10 types and the Executorch types. The
 Executorch types are defined in other headers in that same directory,
-[`//executorch/runtime/core/portable_type/`](https://www.internalfb.com/code/fbsource/fbcode/executorch/runtime/core/portable_type/).
+[`//runtime/core/portable_type/`](https://github.com/pytorch/executorch/tree/main/runtime/core/portable_type).
 
 The Executorch types are source-compatible with the ATen/c10 types; if you write
 code that works with the Executorch types, then that same code should work when
@@ -50,7 +51,7 @@ built against ATen/c10. But, there are features of `at::Tensor` and other
 ATen/c10 types that may not be present. In many cases this is intentional, but
 in other cases we can consider adding the missing features.
 
-### Do your initial work in fbcode
+### Do your initial work in fbcode (skip this if in OSS)
 
 Althouth Executorch is mapped into both `xplat` and `fbcode`, we recommend
 setting up the initial targets while working from `fbcode`. Once everything's in
@@ -62,29 +63,23 @@ locally to make sure that both `xplat` and `fbcode` are in sync with each other.
 
 ### Declare the operator in a YAML file
 
+We use yaml files to declare the ATen operators or custom operators being implemented by this kernel library.
+
 Before implementing, the operator must be declared in exactly one of the
 operator YAML files:
-- [`//executorch/kernels/portable/functions.yaml`](https://www.internalfb.com/code/fbsource/fbcode/executorch/kernels/portable/functions.yaml)
-  - Add your entry here if your operator overload (e.g., `func: add.out`)
+- [`//kernels/portable/functions.yaml`](https://github.com/pytorch/executorch/blob/main/kernels/portable/functions.yaml)
+  - Add your entry here if your operator overload (e.g., `op: add.out`)
     appears in the core pytorch file
     [`pytorch/aten/src/ATen/native/native_functions.yaml`](https://github.com/pytorch/pytorch/blob/master/aten/src/ATen/native/native_functions.yaml).
-  - Also add your entry to [`//executorch/kernels/aten/functions.yaml`](https://www.internalfb.com/code/fbsource/fbcode/executorch/kernels/aten/functions.yaml)
-- [`//executorch/kernels/portable/custom_ops.yaml`](https://www.internalfb.com/code/fbsource/fbcode/executorch/kernels/portable/custom_ops.yaml)
-  - Add your entry here if your operator overload does *not* appear in the core
-    pytorch `native_functions.yaml`.
+  - Also add your entry to [`//kernels/aten/functions.yaml`](https://github.com/pytorch/executorch/blob/main/kernels/aten/functions.yaml) for test coverage.
+- [`//kernels/portable/custom_ops.yaml`](https://github.com/pytorch/executorch/blob/main/kernels/portable/custom_ops.yaml)
+  - Add your entry here if your operator overload does *not* appear in the core pytorch `native_functions.yaml`.
 
-The next sections describe how to do this.
+The next sections describe how to add a yaml entry.
 
 #### YAML Schema
 
-See
-https://github.com/pytorch/pytorch/blob/master/aten/src/ATen/native/README.md
-for a description of the YAML schema used by these files. See
-[`pytorch/aten/src/ATen/native/native_functions.yaml`](https://github.com/pytorch/pytorch/blob/master/aten/src/ATen/native/native_functions.yaml)
-for a large number of example entries.
-
-However, note that Executorch only supports a subset of the argument types and
-operator signatures supported by core PyTorch:
+This YAML file schema is a DSL to decribe the operators and the kernels that implement them. This YAML file is a contract between AOT model export and runtime execution, that if followed correctly, can make sure Executorch runtime be able to link the C++ implementation of an operator to the exported model artifact. Here are some rules of writing up your own YAML files.
 
 **Out variants only**
 
@@ -126,27 +121,53 @@ will be ignored.
 
 #### Add your operator entry
 
-The entry itself should look something like
+Some examples of operator entry:
+
+ATen operator with a default kernel
 ```
-- func: add.out(Tensor self, Tensor other, *, Tensor(a!) out) -> Tensor(a!)
-  dispatch:
-    CPU: add_out
+- op: add.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::add_out
 ```
 
-In this example, `add` is the base operator name, `add.out` is the operator
-overload name, and it's followed by the signature for this overload.
+ATen operator with a dtype/dim order specialized kernel (works for `Double` dtype and dim order needs to be (0, 1, 2, 3))
+```
+- op: add.out
+  type_alias:
+    T0: [Double]
+  dim_order_alias:
+    D0: [[0, 1, 2, 3]]
+  kernels:
+    - arg_meta:
+        self: [T0, D0]
+        other: [T0 , D0]
+        out: [T0, D0]
+      kernel_name: torch::executor::add_out
+```
 
-The string after `CPU:` in the `dispatch:` section is the expected name of the
+Custom operator with a default kernel
+```
+- func: allclose.out(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False, bool dummy_param=False, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::allclose_out
+```
+
+Top level attributes:
+* `op` (if the operator appears in `native_functions.yaml`) or `func` for custom operator. The value for this key needs to be the full operator name (including overload name) for `op` key, or a full operator schema (namespace, operator name, operator overload name and schema string). For schema syntax please refer to this [instruction](https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/README.md).
+
+* `kernels`: this entry is used to define the information of kernels. It consists of `arg_meta` and `kernel_name`, they are bound together to describe "for input tensors with these metadata, use this kernel".
+* `type_alias`(optional): we are giving aliases to possible dtype options. `T0: [Double, Float]` means `T0` can be one of `Double` or `Float`.
+* `dim_order_alias`(optional): similar to `type_alias`, we are giving names to possible dim order options.
+
+Attributes under `kernels`:
+* `arg_meta`: a list of "tensor arg name" entries. The value for these keys are dtypes and dim orders alias, that are implemented by the corresponding `kernel_name`. This being `null` means the kernel will be used for all types of input.
+* `kernel_name`: the expected name of the
 C++ function that will implement this operator. You can put whatever you want to
 here, but you should follow the convention of replacing the `.` in the overload
 name with an underscore, and lowercasing all characters. In this example,
-`add.out` uses the C++ function named `add_out`, and places it in the `dispatch:
-CPU:` entry. `add.Scalar` would become `add_scalar`, with a lowercase `S`.
-
-
-The fully-qualified name of the function is
-`::torch::executor::native::<func-name>`, although we have plans to make the
-namespace configurable in the future.
+`add.out` uses the C++ function named `add_out`. `add.Scalar_out` would become `add_scalar_out`, with a lowercase `S`. We support namespace for kernels, but note that we will be inserting a `native::` to the last level of namespace. So `custom::add_out` in the `kernel_name` will point to `custom::native::add_out`.
 
 ### Find operator base name
 
