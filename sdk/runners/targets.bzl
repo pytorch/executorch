@@ -4,7 +4,7 @@ load(
     "CXX",
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/extension/pybindings:targets.bzl", "MODELS_ALL_OPS_ATEN_MODE_GENERATED_LIB", "MODELS_ALL_OPS_LEAN_MODE_GENERATED_LIB")
+load("@fbsource//xplat/executorch/extension/pybindings:targets.bzl", "MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB", "MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -27,9 +27,9 @@ def define_common_targets():
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/util:util" + aten_suffix,
-            ] + (MODELS_ALL_OPS_ATEN_MODE_GENERATED_LIB if aten_mode else [
+            ] + (MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB if aten_mode else [
                 "//executorch/configurations:executor_cpu_optimized",
-            ] + MODELS_ALL_OPS_LEAN_MODE_GENERATED_LIB),
+            ] + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB),
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             external_deps = [
                 "gflags",

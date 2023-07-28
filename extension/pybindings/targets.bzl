@@ -6,14 +6,6 @@ MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB = [
     "//executorch/kernels/portable:generated_lib",
 ]
 
-# Custom ops with portable kernel
-MODELS_CUSTOM_OPS_LEAN_MODE_GENERATED_LIB = [
-    "//executorch/kernels/quantized:generated_lib",
-    "//pye/model_inventory/asr_models/runtime:generated_custom_op_lib_lean",
-]
-
-MODELS_ALL_OPS_LEAN_MODE_GENERATED_LIB = MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB + MODELS_CUSTOM_OPS_LEAN_MODE_GENERATED_LIB
-
 MODULE_DEPS = [
     "//caffe2:ATen",
     "//caffe2:torch",
@@ -37,22 +29,11 @@ MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB = [
     "//executorch/kernels/aten:generated_lib_aten",
 ]
 
-# Generated libs for all ATen ops AND custom ops used by models in //pye/model_inventory
-MODELS_ALL_OPS_ATEN_MODE_GENERATED_LIB = MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB + [
-    "//caffe2/fb/custom_ops/turing:turing_lib_aten",
-    "//pye/model_inventory/asr_models/runtime:generated_lib_aten",
-    "//pye/model_inventory/asr_models/runtime:custom_ops_generated_lib_aten",
-    "//pye/model_inventory/fam_models/runtime:generated_lib_aten",
-    "//pye/model_inventory/ocr_detection_model_non_quantized/runtime:generated_lib_aten",
-    "//caffe2/fb/custom_ops/nimble/et_runtime:generated_lib_aten",
-    "//pye/model_inventory/keyboard_tracking_model/runtime:generated_lib_aten",
-]
-
 def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibility = ["//executorch/..."]):
     runtime.cxx_python_extension(
         name = python_module_name,
         srcs = [
-            "pybindings.cpp",
+            "//executorch/extension/pybindings:pybindings.cpp",
         ] + srcs,
         base_module = "executorch.extension.pybindings",
         preprocessor_flags = [
@@ -77,6 +58,18 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
+
+    # Export these so the internal fb/ subdir can create pybindings with custom internal deps
+    # without forking the pybinding source.
+    runtime.export_file(
+        name = "pybindings.cpp",
+        visibility = ["//executorch/extension/pybindings/..."],
+    )
+
+    runtime.export_file(
+        name = "module.cpp",
+        visibility = ["//executorch/extension/pybindings/..."],
+    )
 
     executorch_pybindings(
         srcs = [
