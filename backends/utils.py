@@ -135,7 +135,7 @@ def replace_quantized_partition_with_op(
     assert len(quant_nodes) >= 1, "Quant nodes missing in node list to be replaced."
 
     # After this, node list will essentially contain all the nodes in the
-    # dq->op->q pattern that we will want to replace with a BoltNN op.
+    # dq->op->q pattern that we will want to replace with a custom backend op.
     node_list = dequant_nodes + partition_nodes + quant_nodes
 
     submodule, call_module_node = create_submodule_from_nodes(
