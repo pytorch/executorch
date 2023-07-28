@@ -27,6 +27,7 @@ from executorch.exir.delegate import executorch_call_delegate, get_lowered_modul
 
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.lowered_backend_module import (
+    arrange_graph_placeholders,
     create_submodule_from_nodes,
     LoweredBackendModule,
 )
@@ -140,7 +141,9 @@ def validation_disabled() -> Generator[None, None, None]:
 
 
 def _partition_and_lower(
-    tagged_graph_module: torch.fx.GraphModule, partitioner_instance: Partitioner
+    tagged_graph_module: torch.fx.GraphModule,
+    partitioner_instance: Partitioner,
+    owning_program: ExportedProgram,
 ) -> torch.fx.GraphModule:
     for tag, delegation_spec in partitioner_instance.partition_tags.items():
         # Create partition with nodes containing this tag. There should only be
@@ -155,9 +158,13 @@ def _partition_and_lower(
             continue
 
         logging.debug(f"For tag {tag}, found nodes {node_list}")
+        # Tag the nodes that are params as buffers, so we can order the submodule as (Parms + Buffers) (User Inputs)
         submodule, call_module_node = create_submodule_from_nodes(
             tagged_graph_module, node_list, tag
         )
+
+        # Arrange the submodule's placeholders in order
+        submodule = arrange_graph_placeholders(submodule, owning_program)
         logging.debug(f"Partitioned graph module: {tagged_graph_module}")
 
         # TODO(T158558782): Update the metadata once we migrate to torch.export
@@ -196,7 +203,9 @@ def _partition_and_lower(
 
     # Recursively partition and lower for submodules
     for name, submod, _node in get_control_flow_submodules(tagged_graph_module):
-        partitioned_submodule = _partition_and_lower(submod, partitioner_instance)
+        partitioned_submodule = _partition_and_lower(
+            submod, partitioner_instance, owning_program
+        )
         tagged_graph_module.add_module(name, partitioned_submodule)
 
     # Run the export pass over the graph module so that the call delegate
@@ -262,7 +271,7 @@ def _(
     ), f"Partitioner {partitioner} needs a `partition_tags` field containing a mapping of tags to delegate spec"
 
     tagged_graph_module = _partition_and_lower(
-        tagged_graph_module, partitioner_instance
+        tagged_graph_module, partitioner_instance, edge_program
     )
 
     edge_program.graph_module = tagged_graph_module

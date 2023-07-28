@@ -106,6 +106,62 @@ def _fixup_output_node(gm: torch.fx.GraphModule) -> None:
             return
 
 
+def arrange_graph_placeholders(
+    gm: torch.fx.GraphModule, owning_program: ExportedProgram
+) -> torch.fx.GraphModule:
+    """
+    Modifies the graph of the given graphmodule with one that contains the same nodes as the original,
+    but with placeholders in order of (Params + Buffers) (User Inputs)
+
+    This is used by the delegate api which disturbs the placeholder ordering when creating a submodule
+    from partitioned nodes
+
+    Args:
+        gm: The graph module that we want arranged
+        owning_program: ExportedProgram that the submodule (gm) belongs to
+
+    Returns:
+        The graph module in-placed arranged
+    """
+    new_graph = torch.fx.Graph()
+
+    node_map = {}  # mapping of nodes from old graph to new graph
+
+    graph_sign = owning_program.graph_signature
+
+    # Add all placeholders into the graph first:
+    for node in gm.graph.nodes:
+        if node.op != "placeholder":
+            continue
+
+        if (
+            node.name in graph_sign.inputs_to_parameters
+            or node.name in graph_sign.inputs_to_buffers
+        ):
+            # Insert place holder at at beginning if it is parameter
+            with new_graph.inserting_before():
+                new_node = new_graph.node_copy(node)
+        else:
+            new_node = new_graph.node_copy(node)
+        node_map[node] = new_node
+
+    # Now add all the other nodes in order
+    for node in gm.graph.nodes:
+        if node.op == "placeholder":
+            continue
+
+        new_node = new_graph.node_copy(node, lambda x: node_map[x])
+        node_map[node] = new_node
+
+    # lint to ensure correctness
+    new_graph.lint()
+
+    new_graph._codegen = gm.graph._codegen
+    gm.graph = new_graph
+
+    return gm
+
+
 def create_submodule_from_nodes(
     gm: torch.fx.GraphModule,
     node_list: NodeList,
