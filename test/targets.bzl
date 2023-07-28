@@ -1,5 +1,4 @@
-load("@fbsource//xplat/executorch/build:env_interface.bzl", "env")
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_oss_build_kwargs", "runtime")
 
 SIZE_TEST_SOURCES = [
     "size_test.cpp",
@@ -10,12 +9,6 @@ SIZE_TEST_DEPS = [
     "//executorch/extension/data_loader:file_data_loader",
     "//executorch/util:util",
 ]
-
-# this can move to a different location, e.g. runtime_wrapper, in future
-def get_oss_build_kwargs():
-    if env.is_oss:
-        return {"link_style": "static", "linker_flags": "-ldl"}
-    return {}
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.

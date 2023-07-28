@@ -107,6 +107,8 @@ def gflags_library(name, exported_headers = {}, headers = {}, srcs = [], threads
         name = "_" + name,
         srcs = srcs,
         headers = headers,
+        # Without header_namespace = "", include requires <third-party/gflags/gflags.h>
+        # this change enables us to do `#include <gflags/gflags.h>
         header_namespace = "",
         soname = "lib{}.$(ext)".format(name),
         exported_headers = exported_headers,
@@ -115,7 +117,6 @@ def gflags_library(name, exported_headers = {}, headers = {}, srcs = [], threads
         ],
         preprocessor_flags = copts,
         deps = deps + pthread_deps,
-        # Dependents should use the public rule above.
         visibility = ["PUBLIC"],
         **kwargs
     )

@@ -307,6 +307,11 @@ def _python_test(*args, **kwargs):
     _patch_kwargs_common(kwargs)
     env.python_test(*args, **kwargs)
 
+def get_oss_build_kwargs():
+    if env.is_oss:
+        return {"link_style": "static", "linker_flags": "-ldl"}
+    return {}
+
 # Names in this struct should match the standard Buck rule names if possible:
 # see the "Build Rules" section in the sidebar of
 # https://buck.build/concept/build_rule.html.

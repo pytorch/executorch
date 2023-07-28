@@ -20,6 +20,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/extension/pybindings/...",
                 "//executorch/sdk/runners/...",
                 "//executorch/test/...",
+                "//executorch/examples/...",
             ],
             # registration of backends is done through a static global
             compiler_flags = ["-Wno-global-constructors"],
