@@ -574,6 +574,54 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
     }                                                \
   }()
 
+#define ET_INTERNAL_SWITCH_CASE_ALL_TYPES(CTYPE_ALIAS, ...)           \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Byte, CTYPE_ALIAS, __VA_ARGS__)          \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Char, CTYPE_ALIAS, __VA_ARGS__)          \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Short, CTYPE_ALIAS, __VA_ARGS__)         \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Int, CTYPE_ALIAS, __VA_ARGS__)           \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Long, CTYPE_ALIAS, __VA_ARGS__)          \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Half, CTYPE_ALIAS, __VA_ARGS__)          \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Float, CTYPE_ALIAS, __VA_ARGS__)         \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Double, CTYPE_ALIAS, __VA_ARGS__)        \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::ComplexHalf, CTYPE_ALIAS, __VA_ARGS__)   \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::ComplexFloat, CTYPE_ALIAS, __VA_ARGS__)  \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::ComplexDouble, CTYPE_ALIAS, __VA_ARGS__) \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Bool, CTYPE_ALIAS, __VA_ARGS__)          \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::QInt8, CTYPE_ALIAS, __VA_ARGS__)         \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::QUInt8, CTYPE_ALIAS, __VA_ARGS__)        \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::QInt32, CTYPE_ALIAS, __VA_ARGS__)        \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::BFloat16, CTYPE_ALIAS, __VA_ARGS__)      \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::QUInt4x2, CTYPE_ALIAS, __VA_ARGS__)      \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::QUInt2x4, CTYPE_ALIAS, __VA_ARGS__)      \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Bits1x8, CTYPE_ALIAS, __VA_ARGS__)       \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Bits2x4, CTYPE_ALIAS, __VA_ARGS__)       \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Bits4x2, CTYPE_ALIAS, __VA_ARGS__)       \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Bits8, CTYPE_ALIAS, __VA_ARGS__)         \
+  ET_INTERNAL_SWITCH_CASE(                                            \
+      exec_aten::ScalarType::Bits16, CTYPE_ALIAS, __VA_ARGS__)
+
 #define ET_INTERNAL_SWITCH_CASE_REAL_TYPES(CTYPE_ALIAS, ...)  \
   ET_INTERNAL_SWITCH_CASE(                                    \
       exec_aten::ScalarType::Byte, CTYPE_ALIAS, __VA_ARGS__)  \
@@ -699,6 +747,13 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
 // difference is that the CTYPE_ALIAS argument is exposed to users, which is
 // used to alias the ctype associated with the ScalarType that is being handled.
 //
+
+#define ET_SWITCH_ALL_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH(                                              \
+      TYPE,                                                        \
+      CONTEXT,                                                     \
+      NAME,                                                        \
+      ET_INTERNAL_SWITCH_CASE_ALL_TYPES(CTYPE_ALIAS, __VA_ARGS__))
 
 #define ET_SWITCH_REAL_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_INTERNAL_SWITCH(                                               \

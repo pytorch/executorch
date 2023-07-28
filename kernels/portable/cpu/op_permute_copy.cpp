@@ -53,7 +53,7 @@ Tensor& permute_copy_out(
 
   const auto in_type = out.scalar_type();
   // in and out must be the same dtype
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "permute_copy", CTYPE, [&] {
+  ET_SWITCH_ALL_TYPES(in_type, ctx, "permute_copy", CTYPE, [&] {
     const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
     CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
