@@ -11,6 +11,7 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <cstring>
+#include <tuple>
 
 namespace torch {
 namespace executor {

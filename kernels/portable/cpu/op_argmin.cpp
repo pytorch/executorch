@@ -7,6 +7,7 @@
  */
 
 #include <cmath>
+#include <tuple>
 
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
