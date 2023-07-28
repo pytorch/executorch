@@ -26,7 +26,8 @@ regular_tensor_str_to_dtypes = {
 
 
 # The following dict is a mapping between the supported quantized tensor dtype to its ScalarType name.
-# These are two quantized dtypes currently used, and it will be removed once Jarvis has updated.
+# These are two quantized dtypes currently used, but support for them is deprecated and will be removed
+# when early internal users are migrated off.
 quantized_tensor_dtypes_to_str = {
     torch.qint8: "QINT8",
     torch.quint8: "QUINT8",

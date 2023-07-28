@@ -93,29 +93,3 @@ python_unittest(
         "//executorch/kernels/portable:custom_ops_generated_lib",
     ],
 )
-
-python_unittest(
-    name = "test_end2end_real_model_dynamo",
-    srcs = [
-        "test_end2end_real_model_dynamo.py",
-    ],
-    preload_deps = [
-        "//pye/model_inventory/asr_models/runtime:custom_ops_generated_lib_aten",
-    ],
-    supports_static_listing = True,
-    deps = [
-        ":register_scratch_meta_fns",
-        "//caffe2:torch",
-        "//caffe2/functorch:functorch",
-        "//executorch/exir:lib",
-        "//executorch/exir:memory",
-        "//executorch/exir:pass_manager",
-        "//executorch/exir:tensor",
-        "//executorch/exir/emit:lib",
-        "//executorch/exir/passes:lib",
-        "//executorch/extension/pybindings:portable",
-        "//executorch/extension/pytree:pybindings",
-        "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//pye/model_inventory/asr_models/milan_dictation:milan_dictation_lib",
-    ],
-)

@@ -793,8 +793,8 @@ def define_common_targets():
         exported_deps = [t + "_aten" for t in custom_op_targets],
     )
 
-    # Only for use by op targets under //executorch. This API was inherited from
-    # Jarvis, and needs to be reevaluated before becoming a public API.
+    # Only for use by op targets under //executorch. This API needs to be
+    # reevaluated before becoming a public API.
     runtime.cxx_library(
         name = "vec_ops",
         srcs = [],

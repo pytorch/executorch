@@ -7,25 +7,17 @@ import torch
 from executorch.exir.dialects.edge.support_dtypes import regular_tensor_dtypes_to_str
 from executorch.exir.dialects.edge.utils import (
     get_tensor_variable_names,
-    group_by_format,
     is_tensor_val,
     type_aggregrate,
-    update_type_alias,
 )
 
 from pye.lib.EagerModelBase import CompilationStage, EagerModelBase, ModelVariant
-
-from pye.model_inventory.asr_models.milan_dictation.MilanDictationModel import (
-    MilanDictationModelGen,
-)
 
 from torch.testing._internal.common_methods_invocations import op_db
 from torch.testing._internal.opinfo.core import (
     BinaryUfuncInfo,
     generate_elementwise_binary_with_scalar_samples,
 )
-
-torch.ops.load_library("//on_device_ai/Assistant/Jarvis/nn/ops:jarvis_nn_ops")
 
 name_to_opinfo = {
     op.aten_name if op.aten_name is not None else op.name: op for op in op_db
@@ -69,19 +61,6 @@ class test_case_generator:
 
 
 preset_test_case_generators: Dict[str, test_case_generator] = {
-    "jarvis_nn_ops::attention_mask": test_case_generator(
-        {
-            k: [
-                k,
-            ]
-            for k in regular_tensor_dtypes_to_str
-        },
-        [
-            [3, 4, 10],
-        ],
-        torch.tensor(0).to(torch.int32),
-        torch.tensor(4).to(torch.int32),
-    ),
     "aten::lift_fresh_copy": test_case_generator(
         {
             k: [
@@ -585,8 +564,9 @@ def main():
 
     yaml_path = "executorch/exir/dialects/edge/edge.yaml"
     if options.regenerate:
-        model = MilanDictationModelGen()
-        op_names: List[str] = get_all_ops(model)
+        # op_names: List[str] = get_all_ops(model)
+        # TODO(T159593834) add aten core dialect here when coverage is better
+        raise Exception("Regenerate is not currently supported")
     else:
         with open(yaml_path, "r") as f:
             obj = yaml.load(f)

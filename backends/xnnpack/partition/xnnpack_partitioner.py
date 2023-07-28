@@ -388,7 +388,7 @@ class _BasePartitioner(Partitioner):
         return graph_module
 
 
-# TODO - Update pye/model_inventory/asr_models/milan_dictation/test_xnnpack_asr.py to use dqlinear
+# TODO - Update pye/.../test_xnnpack_asr.py to use dqlinear
 class XnnpackPartitioner(_BasePartitioner):
     """
     Graph based partitioner base for on XNNPACK backend given patterns

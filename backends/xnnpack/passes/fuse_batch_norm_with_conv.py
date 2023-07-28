@@ -29,8 +29,6 @@ class FuseBatchNormWithConvPass(ExportPass):
     Batch norm is used after convoluution. The 1x1 depthwise convolution can then be fused
     with the previous convolution
 
-    Taken from:
-        fbsource/fbcode/on_device_ai/Assistant/Jarvis/compiler/fuse_ops.py?lines=156
     """
 
     def call(self, graph_module: torch.fx.GraphModule):

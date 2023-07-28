@@ -45,7 +45,7 @@ from torch.nn import functional as F
 
 torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
 
-# The function is copied from pye/model_inventory/asr_models/milan_dictation/MilanDictationModel.py
+
 def swap_modules(
     module: torch.nn.Module,
     condition: Callable[[torch.nn.Module], bool],

@@ -15,7 +15,6 @@ python_library(
         ":utils",
         "//caffe2:torch",
         "//pye/lib:eager_model_base",
-        "//pye/model_inventory/asr_models/milan_dictation:milan_dictation_lib",
     ],
 )
 
@@ -31,7 +30,6 @@ python_binary(
         ":utils",
         "//caffe2:torch",
         "//pye/lib:eager_model_base",
-        "//pye/model_inventory/asr_models/milan_dictation:milan_dictation_lib",
     ],
 )
 

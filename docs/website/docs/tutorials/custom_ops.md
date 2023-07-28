@@ -192,7 +192,7 @@ Example error message:
 [2022-11-14T11:57:40.588-08:00]     self.ensures(graph_module)
 [2022-11-14T11:57:40.588-08:00]   File "/data/sandcastle/boxes/eden-trunk-hg-fbcode-fbsource/buck-out/v2/gen/fbcode/9f23200ddcddc3cb/executorch/test/end2end/__test_end2end_real_model_dynamo__/test_end2end_real_model_dynamo#link-tree/executorch/exir/passes/__init__.py", line 212, in ensures
 [2022-11-14T11:57:40.588-08:00]     raise RuntimeError(f"Missing out variants: {self.missing_out_vars}")
-[2022-11-14T11:57:40.588-08:00] RuntimeError: Missing out variants: {'jarvis_nn_ops::attention_mask'}
+[2022-11-14T11:57:40.588-08:00] RuntimeError: Missing out variants: {'not_a_real_op::fake_op'}
 ```
 This is likely caused by the out variant operator not defined or not linked to the binary/unittest target, so that it's missing from PyTorch runtime. Please follow the [Step by step guide](#step-by-step-guide) step 3 & 4 and [Case Study](#case-study), add the generated lib in the dependency and load the shared library like explained in [Usage of generated lib](#usage-of-generated-lib).
 

@@ -1,6 +1,4 @@
 # pyre-strict
-import filecmp
-import tempfile
 import unittest
 from typing import Any, Dict, List, Set
 
@@ -9,17 +7,9 @@ from executorch.exir.dialects.edge.support_dtypes import regular_tensor_dtypes_t
 
 from executorch.exir.dialects.edge.yaml_generator import (
     EdgeOpYamlInfo,
-    gen_edge_yaml,
     gen_op_yaml,
-    get_all_ops,
     get_sample_input,
 )
-from pye.model_inventory.asr_models.milan_dictation.MilanDictationModel import (
-    MilanDictationModelGen,
-)
-
-# pyre-ignore
-from ruamel.yaml import YAML
 
 
 class TestEdgeYaml(unittest.TestCase):
@@ -196,48 +186,23 @@ class TestEdgeYaml(unittest.TestCase):
         self.assertEqual(ret.type_constraint, [(0, 0)])
         self.assertEqual(ret.tensor_variable_names, ["tensors", "__ret_0"])
 
-    def test_generate_milan_dictation_model_yaml(self) -> None:
-        model = MilanDictationModelGen()
-        # pyre-ignore
-        yaml = YAML(typ="safe")
-
-        with tempfile.TemporaryFile(mode="w+") as yaml_stream:
-            model_edge_dialect_operators: List[str] = get_all_ops(model)
-            unsupported_funcs = gen_edge_yaml(model_edge_dialect_operators, yaml_stream)
-            yaml_stream.seek(0, 0)
-            edge_dialect_info = yaml.load(yaml_stream)
-
-            self.assertEqual(unsupported_funcs, [])  # no unsupported functions
-            self.assertEqual(
-                len(edge_dialect_info),
-                len(model_edge_dialect_operators),
-            )
-
-            # Each edge dialect's inherit op should be one of the aten ops in the model,
-            # and each aten op should be one of the edge ops' inherit op.
-            # TODO(gasoonjia): update it after migrating to edge dialect
-            for edge_op_info in edge_dialect_info:
-                self.assertTrue(
-                    edge_op_info["inherits"] in model_edge_dialect_operators
-                )
-
     # Check if any function updated by comparing the current yaml file with
     # previous one. If anything mismatch, please follow the instructions at the
     # top of //executorch/exir/dialects/edge/edge.yaml.
-    # TODO(gasoonjia): Should be updated after support other models and infer methods.
-    def test_need_update_edge_yaml(self) -> None:
-        model = MilanDictationModelGen()
-        model_edge_dialect_operators: List[str] = get_all_ops(model)
-        with tempfile.NamedTemporaryFile(mode="w+") as yaml_stream:
-            _ = gen_edge_yaml(model_edge_dialect_operators, yaml_stream)
-            yaml_stream.seek(0, 0)
-            self.assertTrue(
-                filecmp.cmp(
-                    yaml_stream.name,
-                    "executorch/exir/dialects/edge/edge.yaml",
-                ),
-                "Please run `//executorch/exir/dialects/edge:yaml_generator -- --regenerate` to regenerate the file.",
-            )
+    # TODO(gasoonjia, T159593834): Should be updated after support other models and infer methods.
+    # def test_need_update_edge_yaml(self) -> None:
+    #     model = <need OSS model example>
+    #     model_edge_dialect_operators: List[str] = get_all_ops(model)
+    #     with tempfile.NamedTemporaryFile(mode="w+") as yaml_stream:
+    #         _ = gen_edge_yaml(model_edge_dialect_operators, yaml_stream)
+    #         yaml_stream.seek(0, 0)
+    #         self.assertTrue(
+    #             filecmp.cmp(
+    #                 yaml_stream.name,
+    #                 "executorch/exir/dialects/edge/edge.yaml",
+    #             ),
+    #             "Please run `//executorch/exir/dialects/edge:yaml_generator -- --regenerate` to regenerate the file.",
+    #         )
 
     def test_to_copy_sample_input_has_enough_coverage(self) -> None:
         """Make sure sample input to _to_copy(Tensor self, *, ScalarType dtype, ...) has enough coverage"""

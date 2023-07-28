@@ -475,7 +475,7 @@ class ExportPassBase(PassBase):
         # After one pass, new_graph_module's placeholders will always hold fake tensors in
         # meta['val'] but sometimes we want to preserve the original meta['val'] of placeholders
         #
-        # For example, Jarvis's quantization flow and certain passes assume no fake_tensor_mode is activated
+        # For example, custom flows and certain passes assume no fake_tensor_mode is activated
         # and it doesn't quite work with fake_tensor_mode. but we don't bother to fix them.
         # So we'll just reset the meta of placeholders to its original value. It's safe because that
         # 1. For models captured with pt2_mode, the meta['val'] of placeholders are fake_tensors already, so
