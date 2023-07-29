@@ -309,7 +309,13 @@ def _python_test(*args, **kwargs):
 
 def get_oss_build_kwargs():
     if env.is_oss:
-        return {"link_style": "static", "linker_flags": "-ldl"}
+        return {
+            "link_style": "static",
+            "linker_flags": [
+                # platform/system.h uses dladdr() on mac and linux
+                "-ldl",
+            ],
+        }
     return {}
 
 # Names in this struct should match the standard Buck rule names if possible:

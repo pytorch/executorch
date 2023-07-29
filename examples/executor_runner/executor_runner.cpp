@@ -34,57 +34,37 @@ static uint8_t runtime_pool[kRuntimeMemorySize];
 DEFINE_string(model_path, "model.ff", "Model serialized in flatbuffer format.");
 
 using namespace torch::executor;
+using torch::executor::util::FileDataLoader;
 
 int main(int argc, char** argv) {
   runtime_init();
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
-    std::string msg = "Extra commandline args: ";
+    std::string msg = "Extra commandline args:";
     for (int i = 1 /* skip argv[0] (program name) */; i < argc; i++) {
-      msg += argv[i];
+      msg += std::string(" ") + argv[i];
     }
     ET_LOG(Error, "%s", msg.c_str());
     return 1;
   }
 
-  // Create a DataLoader that wraps the input file. It may be a plain Program,
-  // or it may be a BundledProgram that contains a Program.
-  Result<util::FileDataLoader> loader =
-      util::FileDataLoader::From(FLAGS_model_path.c_str());
+  // Create a loader to get the data of the program file. There are other
+  // DataLoaders that use mmap() or point to data that's already in memory, and
+  // users can create their own DataLoaders to load from arbitrary sources.
+  const char* model_path = FLAGS_model_path.c_str();
+  Result<FileDataLoader> loader = FileDataLoader::From(model_path);
   ET_CHECK_MSG(
-      loader.ok(),
-      "Could not create loader for file '%s': 0x%x",
-      FLAGS_model_path.c_str(),
-      (unsigned int)loader.error());
-
-  Result<FreeableBuffer> header =
-      loader->Load(/*offset=*/0, Program::kMinHeadBytes);
-  ET_CHECK_MSG(
-      header.ok(),
-      "Could not load header of file '%s': 0x%x",
-      FLAGS_model_path.c_str(),
-      (unsigned int)loader.error());
-  Program::HeaderStatus hs =
-      Program::check_header(header->data(), header->size());
-  if (hs != Program::HeaderStatus::CompatibleVersion) {
-    ET_CHECK_MSG(
-        false,
-        "Failed to load contents of file '%s' "
-        "Expected header status 0x%x but got 0x%x",
-        FLAGS_model_path.c_str(),
-        Program::HeaderStatus::CompatibleVersion,
-        hs);
-  }
+      loader.ok(), "FileDataLoader::From() failed: 0x%" PRIx32, loader.error());
 
   // Parse the program file. This is immutable, and can also be reused between
   // multiple execution invocations across multiple threads.
   Result<Program> program = Program::Load(&loader.get());
   if (!program.ok()) {
-    ET_LOG(Error, "Failed to parse model file %s", FLAGS_model_path.c_str());
+    ET_LOG(Error, "Failed to parse model file %s", model_path);
     return 1;
   }
-  ET_LOG(Info, "Model file %s is loaded.", FLAGS_model_path.c_str());
+  ET_LOG(Info, "Model file %s is loaded.", model_path);
 
   // Use the first method in the program.
   const size_t plan_index = 0;
