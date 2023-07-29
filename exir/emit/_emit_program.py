@@ -149,6 +149,13 @@ def emit_program(
 
     # emit each entry point in order according to name.
     for name, exported_program in sorted(methods.items()):
+        if (
+            exported_program.graph_signature.buffers_to_mutate
+        ):  # see if we are mutating any state
+            raise ExportError(
+                ExportErrorType.INVALID_INPUT_TYPE,
+                "Buffers cannot be modified in executorch.",
+            )
         # create empty state
         emitter_state = _EmitterState(
             values=[],

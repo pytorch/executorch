@@ -15,11 +15,11 @@ import executorch.exir as exir
 import executorch.exir.schema as schema
 import executorch.exir.tests.models as models
 import torch
-from executorch.exir import CaptureConfig, ExecutorchProgram
+from executorch.exir import CaptureConfig, EdgeCompileConfig, ExecutorchProgram
 from executorch.exir.emit import emit_program
 from executorch.exir.error import InternalError
 from executorch.exir.passes.const_prop_pass import ConstPropPass
-from executorch.exir.print_program import print_program  # noqa
+from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
     Bool,
     EValue,
@@ -36,10 +36,19 @@ from executorch.exir.schema import (
     Tensor,
 )
 from executorch.exir.tests.common import register_additional_test_aten_ops
-from executorch.exir.tests.models import Mul
+from executorch.exir.tests.models import (
+    Emformer,
+    FeedForwardBlock,
+    MLP,
+    Mul,
+    ScaledDotProductAttention,
+    ScaledDotProductAttentionModularized,
+)
 from executorch.exir.tracer import ExirDynamoConfig
+from executorch.extension.pybindings.portable import (  # pyre-ignore
+    _load_for_executorch_from_buffer,
+)
 from functorch.experimental import control_flow
-from torch.fx.passes.infra.pass_base import PassResult
 
 
 class TestEmit(unittest.TestCase):
@@ -554,6 +563,39 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(
             len(program.execution_plan[0].chains[0].instructions[0].instr_args.args), 4
         )
+
+    def test_lifted(self) -> None:
+        def test_model(eager_module):
+            inputs = eager_module.get_random_inputs()
+            eager_output = eager_module.forward(*inputs)
+            capture_config = exir.CaptureConfig(
+                pt2_mode=True,
+                enable_functionalization=True,
+                enable_dynamic_shape=True,
+                enable_aot=True,
+                _unlift=False,
+            )
+
+            aten_dialect = exir.capture(
+                eager_module,
+                eager_module.get_random_inputs(),
+                capture_config,
+            )
+
+            edge_dialect = aten_dialect.to_edge()
+
+            executorch_dialect = edge_dialect.to_executorch()
+
+            pretty_print(executorch_dialect.program)
+
+            executorch_module = _load_for_executorch_from_buffer(
+                executorch_dialect.buffer
+            )
+            et_output = executorch_module.forward(inputs)
+            self.assertTrue(torch.allclose(eager_output, et_output[0], atol=1e-04))
+
+        test_model(MLP())
+        # test_model(Emformer()) cannot run without bernoulli.out being added
 
     def test_emit_multiple_out(self) -> None:
         def f(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:

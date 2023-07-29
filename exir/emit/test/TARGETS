@@ -18,5 +18,6 @@ python_unittest(
         "//executorch/exir/passes:const_prop_pass",
         "//executorch/exir/tests:lib",
         "//executorch/exir/tests:models",
+        "//executorch/extension/pybindings:portable",  # @manual
     ],
 )

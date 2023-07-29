@@ -39,7 +39,6 @@ import executorch.exir.memory as memory
 import executorch.extension.pytree as ex_pytree
 import torch
 import torch.fx
-from executorch.exir import delegate
 from executorch.exir.common import add_cursor_to_graph
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.dialects.backend._ops import BackendOpOverload
@@ -1270,6 +1269,7 @@ class _TopLevelEmitter(_Emitter):
     ) -> None:
         super().__init__(exported_program.graph_module, emitter_state, program_state)
         self.name = name
+        self.exported_program = exported_program
 
         self.inputs: List[int] = []
         self.outputs: List[int] = []
@@ -1301,13 +1301,30 @@ class _TopLevelEmitter(_Emitter):
         https://pytorch.org/docs/stable/fx.html#torch.fx.Graph.placeholder
         """
         spec = self.node.meta["spec"]
+        const_tensor = False
+        if isinstance(target, str) and (
+            target in self.exported_program.graph_signature.inputs_to_parameters
+            or target in self.exported_program.graph_signature.inputs_to_buffers
+        ):
+
+            fqn = (
+                self.exported_program.graph_signature.inputs_to_parameters[target]
+                if target in self.exported_program.graph_signature.inputs_to_parameters
+                else self.exported_program.graph_signature.inputs_to_buffers[target]
+            )
+            spec = TensorSpec.from_tensor(
+                self.exported_program.state_dict[fqn], const=True
+            )
+            const_tensor = True
         evalue = (
             self._tensor_spec_to_evalue(spec)
             if isinstance(spec, TensorSpec)
             else self._constant_to_evalue(spec, None)
         )
         value = self._emit_evalue(evalue)
-        self.inputs.append(value.id)
+        if not const_tensor:
+            self.inputs.append(value.id)
+
         return value
 
     def output(
