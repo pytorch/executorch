@@ -233,7 +233,7 @@ void inference_loop(
 
 /*
  * This is an example of how ExecuTorch stack should run on multiple
- * processors setup like Turing where there is a control core for memory
+ * processors setup where there is a control core for memory
  * management and a worker core that runs the actual inference.
  */
 
