@@ -309,6 +309,8 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
 
         inp = (torch.randn(6, 5), [torch.randn(6, 5), torch.randn(6, 5)])
 
+        # pyre-fixme[23]: Unable to unpack `(...) -> Tuple[GraphModule,
+        #  Set[torch._guards.Guard]]` into 2 values.
         gm, _ = torch._dynamo.export(f, *inp, aten_graph=True, tracing_mode="symbolic")
         prog = exir.capture(f, inp, config=exir.CaptureConfig(pt2_mode=True)).to_edge()
 
