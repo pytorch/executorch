@@ -78,7 +78,6 @@ def define_common_targets():
             # output visible to xplat tests. This is an exceptional case, and
             # typically shouldn't be done.
             "fbsource//xplat/executorch/...",
-            "fbsource//arvr/projects/nimble/common/ExecutorchModule/...",
         ],
         # Allow the xplat entry in the visibility list. This is an exceptional
         # case, and typically shouldn't be done.
