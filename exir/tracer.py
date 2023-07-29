@@ -674,7 +674,6 @@ def dynamo_trace(
             # functionalization
             return torchdynamo.export(
                 f,
-                *copy.deepcopy(args),
                 aten_graph=aten_graph,
                 tracing_mode=tracing_mode,
                 assume_static_by_default=dynamo_config.assume_static_by_default,
@@ -682,6 +681,8 @@ def dynamo_trace(
                 if aten_graph
                 else None,
                 constraints=constraints,
+            )(
+                *copy.deepcopy(args),
             )
         except torchdynamo.exc.Unsupported as exc:
             raise ExportError(
