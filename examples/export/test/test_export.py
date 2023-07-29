@@ -7,10 +7,9 @@
 import unittest
 
 import torch
-from executorch.examples.models.mobilenet_v2 import MV2Model
-from executorch.examples.models.mobilenet_v3 import MV3Model
 
-from ..utils import _EDGE_COMPILE_CONFIG
+from executorch.examples.export.utils import _EDGE_COMPILE_CONFIG
+from executorch.examples.models import MODEL_NAME_TO_MODEL
 
 
 class ExportTest(unittest.TestCase):
@@ -34,13 +33,13 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_mv3_export_to_executorch(self):
-        eager_model = MV3Model.get_model().eval()
-        example_inputs = MV3Model.get_example_inputs()
+        eager_model, example_inputs = MODEL_NAME_TO_MODEL["mv3"]()
+        eager_model = eager_model.eval()
 
         self._assert_eager_lowered_same_result(eager_model, example_inputs)
 
     def test_mv2_export_to_executorch(self):
-        eager_model = MV2Model.get_model().eval()
-        example_inputs = MV2Model.get_example_inputs()
+        eager_model, example_inputs = MODEL_NAME_TO_MODEL["mv2"]()
+        eager_model = eager_model.eval()
 
         self._assert_eager_lowered_same_result(eager_model, example_inputs)

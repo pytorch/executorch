@@ -11,9 +11,10 @@ import argparse
 import executorch.exir as exir
 import torch
 from executorch.backends.backend_api import to_backend
-from executorch.backends.compile_spec_schema import CompileSpec
 from executorch.backends.test.backend_with_compiler_demo import BackendWithCompilerDemo
 from executorch.backends.test.op_partitioner_demo import AddMulPartitionerDemo
+
+from ..models import MODEL_NAME_TO_MODEL
 
 from .utils import _CAPTURE_CONFIG, _EDGE_COMPILE_CONFIG
 
@@ -26,23 +27,6 @@ We support three ways:
 2. Lower part of the graph via graph partitioner
 3. Composite a model with lowered module
 """
-
-
-class AddMulModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, a, x, b):
-        y = torch.mm(a, x)
-        z = torch.add(y, b)
-        return z
-
-    def get_random_inputs(self):
-        return (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
-
-    def get_compile_spec(self):
-        max_value = self.get_random_inputs()[0].shape[0]
-        return [CompileSpec("max_value", bytes([max_value]))]
 
 
 def export_compsite_module_with_lower_graph():
@@ -63,9 +47,9 @@ def export_compsite_module_with_lower_graph():
 
     """
     print("Running the example to export a composite module with lowered graph...")
-
-    m = AddMulModule().eval()
-    m_inputs = m.get_random_inputs()
+    m, m_inputs = MODEL_NAME_TO_MODEL.get("add_mul")()
+    m = m.eval()
+    m_inputs = m.get_example_inputs()
     edge = exir.capture(m, m_inputs, _CAPTURE_CONFIG).to_edge(_EDGE_COMPILE_CONFIG)
     print("Exported graph:\n", edge.exported_program.graph)
 
@@ -169,10 +153,10 @@ def export_and_lower_the_whole_graph():
     """
     print("Running the example to export and lower the whole graph...")
 
-    m = AddMulModule()
-    edge = exir.capture(m, m.get_random_inputs(), _CAPTURE_CONFIG).to_edge(
-        _EDGE_COMPILE_CONFIG
-    )
+    m, m_inputs = MODEL_NAME_TO_MODEL.get("add_mul")()
+    m = m.eval()
+    m_inputs = m.get_example_inputs()
+    edge = exir.capture(m, m_inputs, _CAPTURE_CONFIG).to_edge(_EDGE_COMPILE_CONFIG)
     print("Exported graph:\n", edge.exported_program.graph)
 
     # Lower AddMulModule to the demo backend
