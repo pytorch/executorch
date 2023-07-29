@@ -36,7 +36,16 @@ jobs:
         # Install executorch
         pip3 install .
 
-        popd
-
         # Just print out the list of packages for debugging
-        pip list
+        pip3 list
+
+        # Build executorch runtime
+        buck2 build //examples/executor_runner:executor_runner
+
+        # Export a test model
+        python3 -m examples.export.export_example --model_name="linear"
+
+        # Run test model
+        buck2 run //examples/executor_runner:executor_runner -- --model_path ./linear.ff
+
+        popd
