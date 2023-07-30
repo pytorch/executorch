@@ -33,7 +33,7 @@ class EdgeCompileConfig:
     # TODO(qihan): remove ability to opt out
     _check_ir_validity: bool = True
     # TODO(larryliu): remove this
-    _use_edge_ops: bool = False
+    _use_edge_ops: bool = True
 
 
 @compatibility(is_backward_compatible=False)

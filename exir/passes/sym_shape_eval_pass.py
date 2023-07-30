@@ -8,6 +8,7 @@ from typing import Callable, List, Optional
 
 import torch
 import torch.utils._pytree as pytree
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassBase, PassResult
 from executorch.exir.sym_util import eval_expr, eval_shape
 from executorch.exir.tensor import TensorSpec
@@ -25,6 +26,7 @@ def register_upper_bound_inference(fn):
     return inference_deco
 
 
+@register_upper_bound_inference(exir_ops.edge.aten.nonzero.default)
 @register_upper_bound_inference(torch.ops.aten.nonzero.default)
 def nonzero(args, kwargs) -> List[Optional[int]]:
     return [eval_expr(args[0].shape[0]), len(args[0].shape)]

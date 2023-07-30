@@ -19,6 +19,7 @@ import torch
 
 import torch.utils._pytree as pytree
 from executorch.exir import CaptureConfig
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.error import ExportError
 from executorch.exir.passes import DebugPass
 from executorch.exir.tests.common import register_additional_test_aten_ops
@@ -44,7 +45,9 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             .exported_program.graph_module
         )
 
-        FileCheck().check("torch.ops.aten.sin").check("torch.ops.aten.max").run(f.code)
+        FileCheck().check("executorch_exir_dialects_edge__ops_aten_sin").check(
+            "executorch_exir_dialects_edge__ops_aten_max"
+        ).run(f.code)
 
     def test_static_control_flow(self) -> None:
         def f(pred: bool, x: torch.Tensor) -> torch.Tensor:
@@ -61,9 +64,9 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             .exported_program.graph_module
         )
 
-        FileCheck().check("torch.ops.aten.sin").check("torch.ops.aten.max").run(
-            f_true.code
-        )
+        FileCheck().check("executorch_exir_dialects_edge__ops_aten_sin").check(
+            "executorch_exir_dialects_edge__ops_aten_max"
+        ).run(f_true.code)
 
         pred = False
         f_false = (
@@ -71,9 +74,9 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             .to_edge()
             .exported_program.graph_module
         )
-        FileCheck().check("torch.ops.aten.sin").check_not("torch.ops.aten.max").run(
-            f_false.code
-        )
+        FileCheck().check("executorch_exir_dialects_edge__ops_aten_sin").check_not(
+            "executorch_exir_dialects_edge__ops_aten_max"
+        ).run(f_false.code)
 
     def test_copy(self) -> None:
         f = models.BasicSinMax()
@@ -160,7 +163,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             .exported_program.graph_module
         )
         for node in module.graph.nodes:
-            if node.target == torch.ops.aten.max.dim:
+            if node.target == exir_ops.edge.aten.max.dim:
                 cnt += 1
                 self.assertIsInstance(node.meta["val"], tuple)
         self.assertEqual(cnt, 1)

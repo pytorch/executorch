@@ -17,6 +17,7 @@ from executorch.backends.test.backend_with_compiler_demo import (  # noqa
     BackendWithCompilerDemo,
 )
 from executorch.backends.test.op_partitioner_demo import AddMulPartitionerDemo
+from executorch.exir import EdgeCompileConfig
 from executorch.exir.serde.serialize import deserialize, serialize
 from torch._export.exported_program import ExportedProgram as TorchExportedProgram
 from torch.utils import _pytree as pytree
@@ -24,6 +25,10 @@ from torch.utils import _pytree as pytree
 
 # Tests for serializing to json and back
 class TestSerde(unittest.TestCase):
+    def setUp(self) -> None:
+        # TODO(gasoon): Remove this once serde is fully migrated to Edge ops
+        self.edge_complie_config = EdgeCompileConfig(_use_edge_ops=False)
+
     def check_ep(
         self,
         ep1: TorchExportedProgram,
@@ -48,7 +53,7 @@ class TestSerde(unittest.TestCase):
         aten_new = deserialize(*serialize(aten.exported_program))
         self.check_ep(aten.exported_program, aten_new, inputs)
 
-        edge = aten.to_edge()
+        edge = aten.to_edge(self.edge_complie_config)
         edge_new = deserialize(*serialize(edge.exported_program))
         self.check_ep(edge.exported_program, edge_new, inputs)
 
@@ -113,7 +118,7 @@ class TestSerde(unittest.TestCase):
         model_inputs = (torch.ones(1),)
         edgeir_m = exir.capture(
             sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge()
+        ).to_edge(self.edge_complie_config)
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
@@ -155,7 +160,9 @@ class TestSerde(unittest.TestCase):
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
 
-        ep = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
+        ep = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge(
+            self.edge_complie_config
+        )
         edge = to_backend(ep.exported_program, AddMulPartitionerDemo)
         edge_new = deserialize(*serialize(edge))
         self.check_ep(edge, edge_new, inputs)

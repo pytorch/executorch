@@ -90,10 +90,10 @@ class TestPassInfra(unittest.TestCase):
 
         def replace_add_with_mul(gm: torch.fx.GraphModule) -> None:
             for node in gm.graph.nodes:
-                if node.op == "call_function" and str(node.target) == "aten.add.Tensor":
+                if node.op == "call_function" and "aten.add.Tensor" in str(node.target):
                     node.target = torch.mul
 
-        def replace_mul_with_sub(gm: torch.fx.GraphModule) -> None:
+        def replace_mul_with_div(gm: torch.fx.GraphModule) -> None:
             for node in gm.graph.nodes:
                 if node.op == "call_function" and node.target == torch.mul:
                     node.target = torch.div
@@ -108,7 +108,7 @@ class TestPassInfra(unittest.TestCase):
             .to_edge()
             .exported_program.graph_module
         )
-        pm = PassManager(passes=[replace_add_with_mul, replace_mul_with_sub])
+        pm = PassManager(passes=[replace_add_with_mul, replace_mul_with_div])
         self.assertEqual(len(pm.passes), 2)
         pm(f)
 

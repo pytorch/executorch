@@ -85,6 +85,7 @@ python_unittest(
         "//executorch/exir:lib",
         "//executorch/exir:schema",
         "//executorch/exir:tracer",
+        "//executorch/exir/dialects:lib",
         "//executorch/exir/passes:lib",
     ],
 )
@@ -318,6 +319,7 @@ python_unittest(
         "//executorch/exir:lib",
         "//executorch/exir:lowered_backend_module",
         "//executorch/exir:schema",
+        "//executorch/exir/dialects:lib",
     ],
 )
 

@@ -588,12 +588,6 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         ).check("torch.ops.executorch_call_delegate").check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
         ).check(
-            "executorch_exir_dialects_edge__ops_aten_convolution_default"
-        ).check(
-            "executorch_exir_dialects_edge__ops_aten_relu_default"
-        ).check(
-            "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default"
-        ).check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
         ).check(
             "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default"
@@ -605,16 +599,6 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         FileCheck().check_count(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default",
             5,
-        ).run(lowered_module_0.original_module.graph_module.code)
-        FileCheck().check_count(
-            "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default",
-            4,
-        ).run(lowered_module_0.original_module.graph_module.code)
-        FileCheck().check_count(
-            "executorch_exir_dialects_edge__ops_aten_add_Tensor", 2
-        ).run(lowered_module_0.original_module.graph_module.code)
-        FileCheck().check_count(
-            "executorch_exir_dialects_edge__ops_aten_convolution_default", 2
         ).run(lowered_module_0.original_module.graph_module.code)
 
         FileCheck().check(

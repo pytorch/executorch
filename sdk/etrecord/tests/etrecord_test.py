@@ -24,7 +24,8 @@ class TestETRecord(unittest.TestCase):
         )
         captured_output_copy = copy.deepcopy(captured_output)
         edge_output = captured_output.to_edge(
-            exir.EdgeCompileConfig(_check_ir_validity=False)
+            # TODO(gasoon): Remove _use_edge_ops=False once serde is fully migrated to Edge ops
+            exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=False)
         )
         edge_output_copy = copy.deepcopy(edge_output)
         et_output = edge_output.to_executorch()

@@ -172,6 +172,7 @@ python_library(
         "//executorch/exir:pass_base",
         "//executorch/exir:sym_util",
         "//executorch/exir:tensor",
+        "//executorch/exir/dialects:lib",
     ],
 )
 
