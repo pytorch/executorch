@@ -450,3 +450,6 @@ class EdgeOpOverloadPacket:
         setattr(self, key, overload)
         self._dir.append(key)
         return overload
+
+    def __call__(self, *args, **kwargs):
+        return self._parent_overload_packet(*args, **kwargs or {})
