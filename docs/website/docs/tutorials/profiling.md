@@ -209,16 +209,18 @@ This will return a list of instances of `PrettyTable`'s on which `print()` can b
 
 ## Running an example with Buck
 
-Here is an example of what a ExecuTorch run + profile + post-procesing workflow looks like. In fbcode you can try the following:
+Here is an example of what a ExecuTorch run + profile + post-procesing workflow looks like.:
 
 This runs the sample program with profiling enabled
-```
-~/fbsource/fbcode$ buck2 run -c executorch.prof_enabled=true executorch/sdk/runners:executor_runner -- --model_path executorch/test/models/linear_out.ff
+```bash
+cd executorch
+buck2 run -c executorch.prof_enabled=true test:size_test_all_ops  -- add.ff
 ```
 Run the post-processing CLI tool that calls into the same API's listed above and prints out the profiling results in a tabulated format in the terminal.
 
-```
-~/fbsource/fbcode$ buck2 run fbcode//executorch/profiler:profiler_results_cli -- --prof_results_bin prof_result.bin
+```bash
+cd executorch
+buck2 run profiler:profiler_results_cli -- --prof_results_bin prof_result.bin
 ```
 
 [This](https://www.internalfb.com/phabricator/paste/view/P543434004) is what the output of the CLI tools like.
