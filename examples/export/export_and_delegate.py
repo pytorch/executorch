@@ -116,11 +116,11 @@ def export_and_lower_partitioned_graph():
             z = y + b
             return z
 
-        def get_random_inputs(self):
+        def get_example_inputs(self):
             return (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
 
     m = Model()
-    edge = exir.capture(m, m.get_random_inputs(), _CAPTURE_CONFIG).to_edge(
+    edge = exir.capture(m, m.get_example_inputs(), _CAPTURE_CONFIG).to_edge(
         _EDGE_COMPILE_CONFIG
     )
     print("Exported graph:\n", edge.exported_program.graph)

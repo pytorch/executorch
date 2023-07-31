@@ -68,7 +68,7 @@ class AddMulModule(torch.nn.Module):
         return (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
 
     def get_compile_spec(self):
-        max_value = self.get_random_inputs()[0].shape[0]
+        max_value = self.get_example_inputs()[0].shape[0]
         return [CompileSpec("max_value", bytes([max_value]))]
 
 
