@@ -22,8 +22,7 @@ conda install -c conda-forge flatbuffers
 # Install the nightly builds
 # Note: if you are behind a firewall an appropriate proxy server must be setup
 # for all subsequent steps.
-# Note: if you have pytorch installed already you will need to uninstall it first
-pip install --pre torch -i https://download.pytorch.org/whl/nightly/cpu
+pip install --force-reinstall --pre torch -i https://download.pytorch.org/whl/nightly/cpu
 ```
 
 **Step 2: Set up Executorch**. This will install an  `executorch` pip package to your conda environment.
