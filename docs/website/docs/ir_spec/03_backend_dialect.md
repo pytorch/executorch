@@ -38,6 +38,7 @@ Then the operator can be accessed/used from the passes. The `CompositeImplicitAu
 2. Ensures the retracability of `ExportProgram`. Once retraced, the backend operator will be decomposed into the ATen ops used in the pattern.
 
 ## Op Set
+Unlike edge dialect where we have a well defined op set, for backend dialect, since it is target-aware we will be allowing user to use our API to register target-aware ops and they will be grouped by namespaces. Here are some examples: `executorch_prims` are ops that are used by Executorch runtime to perform operation on `SymInt`s. `quantized_decomposed` are ops that fuses edge operators for quantization purpose and are meaningful to targets that support quantization.
 
 * `executorch_prims::add.int(SymInt a, SymInt b) -> SymInt`
   * pattern: builtin.add
