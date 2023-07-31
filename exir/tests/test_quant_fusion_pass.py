@@ -301,7 +301,6 @@ class TestQuantFusionPass(unittest.TestCase):
             m(*example_inputs)
             m = _convert_to_reference_decomposed_fx(m)
             dynamo_config = ExirDynamoConfig(
-                capture_scalar_outputs=True,
                 guard_nn_modules=True,
                 dynamic_shapes=False,
                 specialize_int=True,
@@ -364,7 +363,6 @@ class TestQuantFusionPass(unittest.TestCase):
             m(*example_inputs)
             m = _convert_to_reference_decomposed_fx(m)
             dynamo_config = ExirDynamoConfig(
-                capture_scalar_outputs=True,
                 guard_nn_modules=True,
                 dynamic_shapes=False,
                 specialize_int=True,

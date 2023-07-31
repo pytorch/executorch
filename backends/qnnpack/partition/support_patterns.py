@@ -50,7 +50,6 @@ def get_dynamic_quantized_graph(f, example_inputs, dynamic_shape=False):
     converted_mod = _convert_to_reference_decomposed_fx(prepared_mod)
     if dynamic_shape:
         dynamo_config = ExirDynamoConfig(
-            capture_scalar_outputs=True,
             guard_nn_modules=True,
             dynamic_shapes=True,
             specialize_int=True,

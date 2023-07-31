@@ -49,7 +49,6 @@ class TestQuantization(unittest.TestCase):
             m_copy = copy.deepcopy(m)
             # program capture
             dynamo_config = ExirDynamoConfig(
-                capture_scalar_outputs=True,
                 guard_nn_modules=True,
                 dynamic_shapes=False,
                 specialize_int=True,

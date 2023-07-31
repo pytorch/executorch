@@ -194,27 +194,16 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         self.assertTrue(torch.allclose(orig_res[0], new_res[0]))
         self.assertTrue(torch.allclose(orig_res[1], new_res[1]))
 
-    def test_toggle_dynamo_capture_scalar_outputs(self) -> None:
+    def test_dynamo_capture_scalar_outputs(self) -> None:
         def f(x: torch.Tensor) -> float:
             return x.item()
 
-        with self.assertRaisesRegex(
-            ExportError,
-            "The user code is using a feature we don't support.",
-        ):
-            dynamo_trace(
-                f,
-                (torch.ones(1),),
-                False,
-                "real",
-                ExirDynamoConfig(capture_scalar_outputs=False),
-            )
-        dynamo_trace(
+        gm, guards = dynamo_trace(
             f,
             (torch.ones(1),),
             False,
             "real",
-            ExirDynamoConfig(capture_scalar_outputs=True),
+            ExirDynamoConfig(),
         )
 
     # pyre-ignore
