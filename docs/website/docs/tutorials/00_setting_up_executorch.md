@@ -4,11 +4,12 @@ This is a tutorial for building and installing Executorch from the GitHub reposi
 
 ## AOT Setup [(Open on Google Colab)](https://colab.research.google.com/drive/1m8iU4y7CRVelnnolK3ThS2l2gBo7QnAP#scrollTo=1o2t3LlYJQY5)
 
+[(Open on Google Colab)](https://colab.research.google.com/drive/1oJBt3fj_Tr3FE7L9RdUgSKK9XzJfUv4F#scrollTo=fC4CB3kFhHPJ)
 
 This will install an `executorch` pip package to your conda environment and
 allow you to export your PyTorch model to a flatbuffer file using ExecuTorch.
 
-**Step 1: Set up a conda environment**
+### Step 1: Set up a conda environment
 
 To install conda, you can look at the
 [conda installation guide](https://conda.io/projects/conda/en/latest/user-guide/install/index.html).
@@ -25,22 +26,21 @@ conda install -c conda-forge flatbuffers
 pip install --force-reinstall --pre torch -i https://download.pytorch.org/whl/nightly/cpu
 ```
 
-**Step 2: Set up Executorch**. This will install an  `executorch` pip package to your conda environment.
-```bash
+### Step 2: Install the `executorch` pip package
 
+This will install an  `executorch` pip package to your conda environment.
+
+```bash
 # Do one of these, depending on how your auth is set up
 git clone https://github.com/pytorch/executorch.git
 git clone git@github.com:pytorch/executorch.git
 
-# [Runtime requirement] Run the following to get all submodules, only need for runtime setup
+# Install the pip package
 cd executorch
-git submodule update --init
-
 pip install .
-
 ```
 
-**Step 3: Try it out**
+### Step 3: Generate a program file from an `nn.Module`
 
 Via python script:
 ```bash
@@ -53,7 +53,7 @@ python3 -m examples.export.export_and_delegate --option "composite"
 
 Or via python interpreter:
 ```python
-(executorch) ~/  $ python
+$ python3
 >>> import executorch.exir as exir
 >>> from executorch.exir.tests.models import Mul
 >>> m = Mul()
@@ -63,19 +63,38 @@ Or via python interpreter:
 
 ## Runtime Setup
 
-**Step 1: Install buck2**
+### Step 1: Install buck2
 
 - If you don't have the `zstd` commandline tool, install it with `pip install zstd`
 - Download a prebuilt buck2 archive for your system from https://github.com/facebook/buck2/releases/tag/2023-07-18
-- Decompress with the following command (filename will need to change for non-Linux systems).
+- Decompress with the following command (filename depends on your system)
 
-```
-zstd -cdq buck2-x86_64-unknown-linux-musl.zst > /tmp/buck2 && chmod +x /tmp/buck2
+```bash
+# For example, buck2-x86_64-unknown-linux-musl.zst
+zstd -cdq buck2-DOWNLOADED_FILENAME.zst > /tmp/buck2 && chmod +x /tmp/buck2
 ```
 
 You may want to copy the `buck2` binary into your `$PATH` so you can run it as `buck2`.
 
-**Step 2: Build a binary**
+### Step 2: Clone the `executorch` repo
+
+Clone the repo if you haven't already.
+
+```bash
+# Do one of these, depending on how your auth is set up
+git clone https://github.com/pytorch/executorch.git
+git clone git@github.com:pytorch/executorch.git
+```
+
+Ensure that git has fetched the submodules. This is only necessary after
+cloning.
+
+```bash
+cd executorch
+git submodule update --init
+```
+
+### Step 3: Build a binary
 
 `executor_runner` is an example wrapper around executorch runtime which includes all the operators and backends
 
@@ -90,7 +109,7 @@ If you run into `Stderr: clang-14: error: invalid linker name in argument '-fuse
 conda install -c conda-forge lld
 ```
 
-**Step 3: Run a binary**
+### Step 3: Run a binary
 
 ```bash
 # add.ff is the program generated from export_example.py during AOT Setup Step 3
