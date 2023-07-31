@@ -26,6 +26,27 @@ def preprocess(
 ) -> bytes:
 ```
 
+The demo preprocess is implemented here: executorch/backends/tests/backend_with_compiler_demo.py. The demo loops through the nodes in the graph module of the `edge_program` and serializes the add, mul, and sin instructions into a string, which is later parsed and executed at runtime.
+
+The graph module being preprocessed is a lifted graph, this means that static data like weights and biases are supplied as inputs to the graph. However, we can access the weights and biases ahead-of-time through the exported program. An example of accessing these parameters from a given node looks like this:
+
+```python
+def get_param_from_node(
+    node: torch.fx.Node, edge_program: ExportedProgram
+) -> Optional[torch.nn.Parameter]:
+    """
+    Returns the parameter associated with the given node in the edge program.
+    Returns None if the node is not a parameter within the edge_program
+    """
+    if node.name in edge_program.graph_signature.inputs_to_parameters:
+        parameter_name = edge_program.graph_signature.inputs_to_parameters[node.name]
+        return edge_program.state_dict[parameter_name]
+
+    return None
+```
+
+**Runtime initialization and execution interface**
+
 ```cpp
 // Following apis are defined in backend_registry.h
 // runtime initialization
