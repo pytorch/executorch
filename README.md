@@ -46,6 +46,7 @@ Compared to the legacy Lite Interpreter, there are some major benefits:
 
 ## Directory Structure [WIP]
 
+```
 executorch
 ├── backends                        #  1st party backend implementations.
 |   ├── xnnpack
@@ -58,7 +59,8 @@ executorch
 ├── codegen                         #  Tooling to autogenerate bindings between kernels and the runtime. TODO move to tool
 ├── configurations                  #  TODO delete this
 ├── docs                            #  Static docs tooling
-├── examples                        #  Examples of various user flows, such as model export and delegates.
+├── examples                        #  Examples of various user flows, such as model export, delegates, and runtime execution.
+|   ├── executor_runner
 |   ├── export
 |   ├── models
 ├── exir                            #  Ahead of time library, model capture and lowering apis.
@@ -94,6 +96,7 @@ executorch
 ├── test                            #  Broad scoped end2end tests
 ├── third-party                     #  third-party dependencies
 ├── util                            #  TODO delete this
+```
 
 ## License
 ExecuTorch is BSD licensed, as found in the LICENSE file.
