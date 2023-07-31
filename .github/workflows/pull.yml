@@ -24,14 +24,6 @@ jobs:
       script: |
         WORKSPACE=$(pwd)
 
-        sleep 3000
-
-        pushd "${HOME}"
-        # Create the softlink to the workspace as install.sh requires to run from its parent directory
-        ln -s "${WORKSPACE}" executorch
-        # Install executorch
-        pushd executorch
-
         # Install executorch
         pip3 install .
         # Just print out the list of packages for debugging
@@ -43,5 +35,3 @@ jobs:
         python3 -m examples.export.export_example --model_name="linear"
         # Run test model
         buck2 run //examples/executor_runner:executor_runner -- --model_path ./linear.ff
-
-        popd
