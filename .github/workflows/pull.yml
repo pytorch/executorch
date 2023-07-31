@@ -56,6 +56,8 @@ jobs:
       script: |
         export WORKSPACE=$(pwd)
 
+        sleep 3000
+
         echo "${WORKSPACE}"
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         bash .ci/scripts/setup-macos.sh
