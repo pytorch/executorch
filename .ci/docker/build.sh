@@ -16,7 +16,11 @@ OS=ubuntu
 OS_VERSION=22.04
 CLANG_VERSION=12
 PYTHON_VERSION=3.10
-MINICONDA_VERSION='23.5.1-0'
+MINICONDA_VERSION=23.5.1-0
+
+# TODO: Pin PyTorch version for now until we have the CI in place to update this
+# safely
+TORCH_VERSION=2.1.0.dev20230731
 
 docker build \
   --no-cache \
@@ -25,6 +29,7 @@ docker build \
   --build-arg "CLANG_VERSION=${CLANG_VERSION}" \
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
+  --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
   -f "${OS}"/Dockerfile \
   "$@" \
   .
