@@ -9,7 +9,7 @@ This is a tutorial for building and installing Executorch from the GitHub reposi
 This will install an `executorch` pip package to your conda environment and
 allow you to export your PyTorch model to a flatbuffer file using ExecuTorch.
 
-### Step 1: Set up a conda environment
+### Step 1: Set up a dev environment
 
 To install conda, you can look at the
 [conda installation guide](https://conda.io/projects/conda/en/latest/user-guide/install/index.html).
@@ -19,12 +19,21 @@ conda create -yn executorch python=3.10.0
 conda activate executorch
 
 conda install -c conda-forge flatbuffers
+```
 
+Setting up PyTorch
+```bash
 # Install the nightly builds
 # Note: if you are behind a firewall an appropriate proxy server must be setup
 # for all subsequent steps.
-pip install --force-reinstall --pre torch -i https://download.pytorch.org/whl/nightly/cpu
+TORCH_VERSION=2.1.0.dev20230731
+pip install --force-reinstall --pre torch=="${TORCH_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
 ```
+
+When getting a new version of the executorch repo (via clone, fetch, or pull),
+you may need to re-install a new version the PyTorch nightly pip package. The
+`TORCH_VERSION` value in this document will be the correct version for the
+corresponsing version of the repo.
 
 ### Step 2: Install the `executorch` pip package
 
