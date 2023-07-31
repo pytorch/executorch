@@ -4,8 +4,6 @@ This is a tutorial for building and installing Executorch from the GitHub reposi
 
 ## AOT Setup [(Open on Google Colab)](https://colab.research.google.com/drive/1m8iU4y7CRVelnnolK3ThS2l2gBo7QnAP#scrollTo=1o2t3LlYJQY5)
 
-[(Open on Google Colab)](https://colab.research.google.com/drive/1oJBt3fj_Tr3FE7L9RdUgSKK9XzJfUv4F#scrollTo=fC4CB3kFhHPJ)
-
 This will install an `executorch` pip package to your conda environment and
 allow you to export your PyTorch model to a flatbuffer file using ExecuTorch.
 
