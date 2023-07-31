@@ -432,7 +432,6 @@ class TestMisc(unittest.TestCase):
                     ConstPropPass(),
                 ],
                 _check_ir_validity=False,
-                _use_edge_ops=True,
             )
         )
         with validation_disabled():

@@ -402,7 +402,11 @@ class TestXNNPackPasses(unittest.TestCase):
             converted,
             sample_input,
             get_xnnpack_capture_config(),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+        ).to_edge(
+            exir.EdgeCompileConfig(
+                _check_ir_validity=False,
+            )
+        )
 
         FileCheck().check_count(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default",

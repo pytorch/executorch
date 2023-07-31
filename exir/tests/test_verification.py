@@ -248,7 +248,7 @@ class TestVerification(unittest.TestCase):
                 (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
                 exir.CaptureConfig(pt2_mode=True),
             )
-            .to_edge(EdgeCompileConfig(_use_edge_ops=True))
+            .to_edge(EdgeCompileConfig())
             .exported_program.graph_module
         )
         verifier = EXIREdgeDialectVerifier()
@@ -265,6 +265,6 @@ class TestVerification(unittest.TestCase):
                     (torch.randn(1, 3, 100, 100).to(dtype=torch.bfloat16),),
                     exir.CaptureConfig(pt2_mode=True),
                 )
-                .to_edge(EdgeCompileConfig(_use_edge_ops=True, _check_ir_validity=True))
+                .to_edge()
                 .exported_program.graph_module
             )

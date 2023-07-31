@@ -59,10 +59,7 @@ class TestQuantFusionPass(unittest.TestCase):
             backend_config=get_executorch_backend_config(),
         )
         m = _convert_to_reference_decomposed_fx(m)
-        config = EdgeCompileConfig(
-            _check_ir_validity=False,
-            _use_edge_ops=True,
-        )
+        config = EdgeCompileConfig(_check_ir_validity=False)
         m = exir.capture(m, example_inputs, CaptureConfig(pt2_mode=True)).to_edge(
             config=config
         )
@@ -103,10 +100,7 @@ class TestQuantFusionPass(unittest.TestCase):
         )
         m(*example_inputs)
         m = _convert_to_reference_decomposed_fx(m)
-        config = EdgeCompileConfig(
-            _check_ir_validity=False,
-            _use_edge_ops=True,
-        )
+        config = EdgeCompileConfig(_check_ir_validity=False)
         m = exir.capture(m, example_inputs, CaptureConfig(pt2_mode=True)).to_edge(
             config=config
         )
@@ -163,10 +157,7 @@ class TestQuantFusionPass(unittest.TestCase):
             backend_config=get_executorch_backend_config(),
         )
         m = _convert_to_reference_decomposed_fx(m)
-        config = EdgeCompileConfig(
-            _check_ir_validity=False,
-            _use_edge_ops=True,
-        )
+        config = EdgeCompileConfig(_check_ir_validity=False)
         m = exir.capture(m, example_inputs, CaptureConfig(pt2_mode=True)).to_edge(
             config=config
         )
@@ -215,10 +206,7 @@ class TestQuantFusionPass(unittest.TestCase):
         )
         m(*example_inputs)
         m = _convert_to_reference_decomposed_fx(m)
-        config = EdgeCompileConfig(
-            _check_ir_validity=False,
-            _use_edge_ops=True,
-        )
+        config = EdgeCompileConfig(_check_ir_validity=False)
         m = exir.capture(m, example_inputs, CaptureConfig(pt2_mode=True)).to_edge(
             config=config
         )
@@ -319,10 +307,7 @@ class TestQuantFusionPass(unittest.TestCase):
                 specialize_int=True,
                 verbose=True,
             )
-            compile_config = EdgeCompileConfig(
-                _check_ir_validity=False,
-                _use_edge_ops=True,
-            )
+            compile_config = EdgeCompileConfig(_check_ir_validity=False)
             capture_config = CaptureConfig(pt2_mode=True, _dynamo_config=dynamo_config)
             m = exir.capture(m, example_inputs, config=capture_config).to_edge(
                 config=compile_config
@@ -385,10 +370,7 @@ class TestQuantFusionPass(unittest.TestCase):
                 specialize_int=True,
                 verbose=True,
             )
-            compile_config = EdgeCompileConfig(
-                _check_ir_validity=False,
-                _use_edge_ops=True,
-            )
+            compile_config = EdgeCompileConfig(_check_ir_validity=False)
             capture_config = CaptureConfig(pt2_mode=True, _dynamo_config=dynamo_config)
             m = exir.capture(m, example_inputs, config=capture_config).to_edge(
                 config=compile_config

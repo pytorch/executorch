@@ -43,7 +43,7 @@ How to write a pattern:
             model_inputs,
             config=CaptureConfig(pt2_mode=True, enable_dynamic_shape=True),
         )
-        .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True)).module
+        .to_edge().module
         .graph
     )
 """
@@ -71,7 +71,6 @@ def _capture(module, example_inputs, pt_mode=True) -> torch.fx.GraphModule:
     capture_config = CaptureConfig(pt2_mode=pt_mode, enable_dynamic_shape=False)
     edge_config = exir.EdgeCompileConfig(
         _check_ir_validity=False,
-        _use_edge_ops=True,
         passes=[DuplicateDequantNodePass()],
     )
 

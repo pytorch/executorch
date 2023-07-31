@@ -59,7 +59,9 @@ class TestQuantization(unittest.TestCase):
             exported_program = exir.capture(m, example_inputs, config=capture_config)
             # TODO: probably need to support exported_program.to_aten()
             m = exported_program.to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True),
+                exir.EdgeCompileConfig(
+                    _check_ir_validity=False,
+                ),
             ).graph_module
 
             quantizer = XNNPACKQuantizer()
@@ -77,7 +79,6 @@ class TestQuantization(unittest.TestCase):
             compile_config = EdgeCompileConfig(
                 passes=[QuantFusionPass(), SpecPropPass()],
                 _check_ir_validity=False,
-                _use_edge_ops=True,
             )
             m = exir.capture(m, example_inputs, config=capture_config).to_edge(
                 config=compile_config

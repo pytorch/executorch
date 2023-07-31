@@ -33,7 +33,7 @@ class TestArgValidator(unittest.TestCase):
         inputs = (torch.randn(1, 3, 100, 100).to(dtype=torch.int),)
         egm = (
             exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True))
-            .to_edge(EdgeCompileConfig(_use_edge_ops=True, _check_ir_validity=False))
+            .to_edge(EdgeCompileConfig(_check_ir_validity=False))
             .exported_program.graph_module
         )
         validator = EdgeOpArgValidator(egm)
@@ -53,7 +53,7 @@ class TestArgValidator(unittest.TestCase):
         inputs = (torch.randn(1, 3, 100, 100).to(dtype=torch.bfloat16),)
         egm = (
             exir.capture(M(), inputs, exir.CaptureConfig(pt2_mode=True))
-            .to_edge(EdgeCompileConfig(_use_edge_ops=True, _check_ir_validity=False))
+            .to_edge(EdgeCompileConfig(_check_ir_validity=False))
             .exported_program.graph_module
         )
         validator = EdgeOpArgValidator(egm)

@@ -110,7 +110,7 @@ class TestPartitioners(unittest.TestCase):
                 (torch.rand(3, 4), torch.rand(3, 4)),
                 CaptureConfig(pt2_mode=True),
             )
-            .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+            .to_edge()
             .exported_program.graph_module
         )
         graph_module_2: torch.fx.GraphModule = (
@@ -119,7 +119,7 @@ class TestPartitioners(unittest.TestCase):
                 (torch.rand(3, 4), torch.rand(3, 4)),
                 CaptureConfig(pt2_mode=True),
             )
-            .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+            .to_edge()
             .exported_program.graph_module
         )
         is_matched = is_identical_graph(graph_module_1, graph_module_2)
@@ -207,7 +207,9 @@ class TestPartitioners(unittest.TestCase):
                 ),
             )
             .to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+                exir.EdgeCompileConfig(
+                    _check_ir_validity=False,
+                )
             )
             .exported_program.graph_module
         )
@@ -263,7 +265,11 @@ class TestPartitioners(unittest.TestCase):
             torch.nn.Linear(3, 3),
             (torch.randn(3, 3),),
             CaptureConfig(pt2_mode=True),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+        ).to_edge(
+            exir.EdgeCompileConfig(
+                _check_ir_validity=False,
+            )
+        )
 
         error_msg = r"Partitioner <class 'executorch.backends.test.test_utils.TestPartitioners.test_invalid_partitioner_without_partitioner.<locals>.InvalidPartitioner'> needs a `partition_tags` field containing a mapping of tags to delegate spec"
         with self.assertRaisesRegex(
@@ -315,7 +321,9 @@ class TestPartitioners(unittest.TestCase):
                 ),
             )
             .to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True),
+                exir.EdgeCompileConfig(
+                    _check_ir_validity=False,
+                ),
             )
             .exported_program.graph_module
         )

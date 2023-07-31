@@ -57,7 +57,7 @@ def get_actual_dyanmic_quantized_graph(
     capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=dynamic_shape)
     dynamic_quantized_exir_graph = (
         exir.capture(converted_mod, example_inputs, config=capture_config)
-        .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+        .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         .exported_program.graph_module
     )
     dynamic_quantized_exir_graph.graph = apply_addmm_mm_to_linear_transform(

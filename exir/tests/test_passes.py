@@ -731,7 +731,7 @@ class TestPasses(unittest.TestCase):
 
         gm = (
             exir.capture(f, (x,), exir.CaptureConfig(pt2_mode=True))
-            .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+            .to_edge()
             .exported_program.graph_module
         )
         for node in gm.graph.nodes:

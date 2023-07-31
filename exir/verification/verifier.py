@@ -84,7 +84,7 @@ def _check_tensor_args_matching_op_allowed_dtype(gm: GraphModule) -> None:
     except RunHigherOrderOperatorError:
         # NB: ignore higher order operator in the graph.
         # If we lower a graph module to delegate and then compose it with some other graph module, retrace it,
-        # if we also turn on edge ops and validator (_use_edge_ops=True, _check_ir_validity=True), we will run
+        # if we also turn on edge ops and validator (_check_ir_validity=True), we will run
         # into RunHigherOrderOperatorError. The only thing we can do right now is to ignore this error, since
         # by definition it's still a valid Edge dialect. This is not ideal because it ignores possible invalidity
         # later in the graph.

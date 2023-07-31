@@ -28,7 +28,11 @@ class TestGraphPartition(unittest.TestCase):
         )
         graph_module = (
             exir.capture(module, inputs, capture_config)
-            .to_edge(EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+            .to_edge(
+                EdgeCompileConfig(
+                    _check_ir_validity=False,
+                )
+            )
             .exported_program.graph_module
         )
 

@@ -29,7 +29,7 @@ from executorch.backends.test.op_partitioner_demo import (
     AddMulPartitionerDemo,
 )
 from executorch.backends.test.qnn_backend_demo import QnnBackend
-from executorch.exir import EdgeCompileConfig, multi_method_program_to_executorch
+from executorch.exir import multi_method_program_to_executorch
 
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -130,7 +130,7 @@ class TestBackends(unittest.TestCase):
         expected_res = sin_module(*model_inputs)
         edgeir_m = exir.capture(
             sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
 
         lowered_sin_module = to_backend(
             "BackendWithCompilerDemo", edgeir_m.exported_program, []
@@ -157,7 +157,7 @@ class TestBackends(unittest.TestCase):
         model_inputs = (torch.ones(1),)
         edgeir_m = exir.capture(
             sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
@@ -181,7 +181,7 @@ class TestBackends(unittest.TestCase):
             exir.capture(
                 composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
             )
-            .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+            .to_edge()
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments)
             )
@@ -256,7 +256,7 @@ class TestBackends(unittest.TestCase):
         model_inputs = (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
         edge_graph_module = exir.capture(
             add_mul_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_add_mul = to_backend(
@@ -279,7 +279,7 @@ class TestBackends(unittest.TestCase):
             exir.capture(
                 composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
             )
-            .to_edge(EdgeCompileConfig(_use_edge_ops=True, _check_ir_validity=True))
+            .to_edge()
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments)
             )
@@ -311,7 +311,7 @@ class TestBackends(unittest.TestCase):
         model_inputs = (torch.ones(6),)
         edgeir_m = exir.capture(
             sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
@@ -335,7 +335,7 @@ class TestBackends(unittest.TestCase):
             exir.capture(
                 composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
             )
-            .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+            .to_edge()
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
             )
@@ -377,7 +377,7 @@ class TestBackends(unittest.TestCase):
         model_inputs = (torch.ones(1),)
         edgeir_m = exir.capture(
             sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
@@ -403,7 +403,7 @@ class TestBackends(unittest.TestCase):
             exir.capture(
                 composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
             )
-            .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+            .to_edge()
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
             )
@@ -473,7 +473,7 @@ class TestBackends(unittest.TestCase):
         model_inputs = (torch.ones(1),)
         edgeir_m = exir.capture(
             sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
         error_msg = r"call_function aten.cos.default is not supported in backend BackendWithCompilerDemo"
 
         with self.assertRaisesRegex(
@@ -496,7 +496,7 @@ class TestBackends(unittest.TestCase):
         model_inputs = (torch.ones(1),)
         edgeir_m = exir.capture(
             sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
         error_msg = r"Backend FakeBackendWithCompilerDemo was not found."
 
         with self.assertRaisesRegex(
@@ -522,7 +522,7 @@ class TestBackends(unittest.TestCase):
         example_input = (torch.ones(1),)
         to_be_lowered_exir_submodule = exir.capture(
             to_be_lowered, example_input, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
 
         max_value = example_input[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
@@ -565,7 +565,7 @@ class TestBackends(unittest.TestCase):
             exir.capture(
                 composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
             )
-            .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+            .to_edge()
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
             )
@@ -627,12 +627,18 @@ class TestBackends(unittest.TestCase):
 
         traced = exir.capture(
             composite_m, inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+        ).to_edge(
+            exir.EdgeCompileConfig(
+                _check_ir_validity=False,
+            )
+        )
 
         program_without_delegates = (
             exir.capture(CompositeModel(3), inputs)
             .to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+                exir.EdgeCompileConfig(
+                    _check_ir_validity=False,
+                )
             )
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
@@ -736,7 +742,7 @@ class TestBackends(unittest.TestCase):
             composite_m,
             inputs,
             exir.CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=False),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
 
         program_without_delegates = (
             exir.capture(
@@ -745,7 +751,9 @@ class TestBackends(unittest.TestCase):
                 exir.CaptureConfig(pt2_mode=True),
             )
             .to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+                exir.EdgeCompileConfig(
+                    _check_ir_validity=False,
+                )
             )
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
@@ -847,9 +855,7 @@ class TestBackends(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
         orig_res = m(*inputs)
 
-        ep = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge(
-            exir.EdgeCompileConfig(_use_edge_ops=True)
-        )
+        ep = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
         executorch_prog = ep
         executorch_prog.exported_program = to_backend(
             ep.exported_program, AddMulPartitionerDemo
@@ -907,9 +913,7 @@ class TestBackends(unittest.TestCase):
 
         inputs = (torch.randn(1, 3), torch.randn(1, 3))
         orig_res = Model()(*inputs)
-        ep = exir.capture(Model(), inputs, exir.CaptureConfig(pt2_mode=True)).to_edge(
-            exir.EdgeCompileConfig(_use_edge_ops=True)
-        )
+        ep = exir.capture(Model(), inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
         executorch_prog = ep
         executorch_prog.exported_program = to_backend(
             ep.exported_program, AddAttributePartitionerDemo
@@ -963,9 +967,7 @@ class TestBackends(unittest.TestCase):
                         node.target = exir_ops.edge.aten.mul.Tensor
                 return edge_graph_module
 
-        ep = exir.capture(Model(), inputs, exir.CaptureConfig(pt2_mode=True)).to_edge(
-            exir.EdgeCompileConfig(_use_edge_ops=True)
-        )
+        ep = exir.capture(Model(), inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
         with self.assertRaises(AssertionError):
             _ = to_backend(ep.exported_program, BadPartitioner)
 
@@ -998,7 +1000,11 @@ class TestBackends(unittest.TestCase):
                 enable_aot=True,
                 _unlift=True,
             ),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+        ).to_edge(
+            exir.EdgeCompileConfig(
+                _check_ir_validity=False,
+            )
+        )
         FileCheck().check_count("quantize_per_tensor_default", 3).check("addmm").run(
             converted_linear_gm.exported_program.graph_module.code
         )
@@ -1028,7 +1034,7 @@ class TestBackends(unittest.TestCase):
             f,
             inputs,
             exir.CaptureConfig(pt2_mode=True),
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
         partitioned = orig
         partitioned.exported_program = to_backend(
             orig.exported_program, AddMulPartitionerDemo
@@ -1081,7 +1087,7 @@ class TestBackends(unittest.TestCase):
             f,
             inputs,
             exir.CaptureConfig(pt2_mode=True),
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
         partitioned = orig
         partitioned.exported_program = to_backend(
             orig.exported_program, AddMulPartitionerDemo
@@ -1154,7 +1160,7 @@ class TestBackends(unittest.TestCase):
             f,
             inputs,
             exir.CaptureConfig(pt2_mode=True),
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
         partitioned = orig
         partitioned.exported_program = to_backend(
             orig.exported_program, AddMulPartitionerDemo
@@ -1217,9 +1223,7 @@ class TestBackends(unittest.TestCase):
             return y
 
         inputs = ([torch.randn(2, 2), torch.randn(2, 2)],)
-        edge_prog = exir.capture(f, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge(
-            exir.EdgeCompileConfig(_use_edge_ops=True)
-        )
+        edge_prog = exir.capture(f, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
         lowered_gm = to_backend(
             BackendWithCompilerDemo.__name__, edge_prog.exported_program, []
         )
@@ -1234,7 +1238,7 @@ class TestBackends(unittest.TestCase):
 
         gm = exir.capture(
             ComposedM(), inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
         gm(*inputs)
 
     def test_dict_input(self):
@@ -1243,9 +1247,7 @@ class TestBackends(unittest.TestCase):
             return y
 
         inputs = ({"a": torch.randn(2, 2), "b": torch.randn(2, 2)},)
-        edge_prog = exir.capture(f, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge(
-            exir.EdgeCompileConfig(_use_edge_ops=True)
-        )
+        edge_prog = exir.capture(f, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
         lowered_gm = to_backend(
             BackendWithCompilerDemo.__name__, edge_prog.exported_program, []
         )
@@ -1260,7 +1262,7 @@ class TestBackends(unittest.TestCase):
 
         gm = exir.capture(
             ComposedM(), inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
         gm(*inputs)
 
     def test_lower_multiple(self) -> None:
@@ -1288,7 +1290,7 @@ class TestBackends(unittest.TestCase):
 
         multi_method_prog = exir.capture_multiple(
             module, method_name_to_args, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
 
         lowered_multi_method_prog = to_backend_multiple(
             multi_method_prog, AddMulPartitionerDemo
@@ -1343,7 +1345,7 @@ class TestBackends(unittest.TestCase):
 
         multi_method_prog = exir.capture_multiple(
             module, method_name_to_args, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
 
         method_name_to_partitioners = {
             "forward": AddMulPartitionerDemo,

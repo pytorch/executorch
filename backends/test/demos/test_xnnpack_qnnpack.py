@@ -84,7 +84,11 @@ class TestXnnQnnBackends(unittest.TestCase):
         capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+        ).to_edge(
+            exir.EdgeCompileConfig(
+                _check_ir_validity=False,
+            )
+        )
 
         # Step 3.1: Lower dynamic quant linear to qnnpack
         with validation_disabled():

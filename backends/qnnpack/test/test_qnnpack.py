@@ -52,9 +52,7 @@ EXECUTORCH_BACKEND_CONFIG = exir.ExecutorchBackendConfig(
     extract_segments=True,
 )
 
-EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
-    _check_ir_validity=False, _use_edge_ops=True
-)
+EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(_check_ir_validity=False)
 
 # TODO(T158653285)
 @unittest.expectedFailure

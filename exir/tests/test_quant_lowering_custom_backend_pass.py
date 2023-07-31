@@ -228,7 +228,9 @@ class PatternWrapper:
                 exir.CaptureConfig(pt2_mode=True),
             )
             .to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+                exir.EdgeCompileConfig(
+                    _check_ir_validity=False,
+                )
             )
             .exported_program.graph_module
         )
@@ -545,7 +547,6 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
             exir.EdgeCompileConfig(
                 passes=[DuplicateDequantNodePass()],
                 _check_ir_validity=False,
-                _use_edge_ops=True,
             )
         )
 
@@ -661,7 +662,9 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         captured_mod = (
             exir.capture(converted_mod, example_inputs, config=capture_config)
             .to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+                exir.EdgeCompileConfig(
+                    _check_ir_validity=False,
+                )
             )
             .exported_program.graph_module
         )
@@ -799,7 +802,11 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         capture_config = CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+        ).to_edge(
+            exir.EdgeCompileConfig(
+                _check_ir_validity=False,
+            )
+        )
 
         print("captured mod:", captured_mod)
 
@@ -863,7 +870,11 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         capture_config = CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+        ).to_edge(
+            exir.EdgeCompileConfig(
+                _check_ir_validity=False,
+            )
+        )
 
         print("captured mod:", captured_mod)
 
@@ -916,7 +927,9 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
             captured_mod = exir.capture(
                 converted_mod, example_inputs, config=capture_config
             ).to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+                exir.EdgeCompileConfig(
+                    _check_ir_validity=False,
+                )
             )
 
             print("captured mod:", captured_mod)
@@ -965,7 +978,9 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
             captured_mod = exir.capture(
                 converted_mod, example_inputs, config=capture_config
             ).to_edge(
-                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+                exir.EdgeCompileConfig(
+                    _check_ir_validity=False,
+                )
             )
 
             print("captured mod:", captured_mod)

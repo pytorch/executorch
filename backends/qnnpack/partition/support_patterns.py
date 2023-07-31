@@ -64,7 +64,7 @@ def get_dynamic_quantized_graph(f, example_inputs, dynamic_shape=False):
     # EXIR trace
     gm = (
         exir.capture(converted_mod, example_inputs, capture_config)
-        .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+        .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         .exported_program.graph_module
     )
 

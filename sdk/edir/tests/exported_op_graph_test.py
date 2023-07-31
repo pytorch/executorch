@@ -342,7 +342,7 @@ class CompositeDelegateModule(torch.nn.Module):
             delegated_m,
             delegated_m.get_random_inputs(),
             exir.CaptureConfig(pt2_mode=True),
-        ).to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+        ).to_edge()
         lowered_module = LoweredBackendModule(
             edge_program=edge_ir_m,
             backend_id="backend_demo",
@@ -551,7 +551,11 @@ def generate_op_graph(m: Any, inputs: Any) -> ExportedETOperatorGraph:
     """
     et_program = (
         exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True))
-        .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+        .to_edge(
+            exir.EdgeCompileConfig(
+                _check_ir_validity=False,
+            )
+        )
         .to_executorch(config=ExecutorchBackendConfig())
     )
     program = et_program.program
@@ -624,7 +628,9 @@ def gen_graphs_from_model(
     )
     et_aten_copy = copy.deepcopy(et_aten)
     et_edge = et_aten.to_edge(
-        exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
+        exir.EdgeCompileConfig(
+            _check_ir_validity=False,
+        )
     )
     et_edge_copy = copy.deepcopy(et_edge)
     et_program = et_edge.to_executorch(

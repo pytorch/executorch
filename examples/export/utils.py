@@ -13,5 +13,5 @@ import executorch.exir as exir
 # that contain those variables.
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_dynamic_shape=True)
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
-    _check_ir_validity=False, _use_edge_ops=True
+    _check_ir_validity=False,
 )

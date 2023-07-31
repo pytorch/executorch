@@ -19,7 +19,6 @@ def get_xnnpack_edge_compile_config(additional_passes=None) -> exir.EdgeCompileC
     return exir.EdgeCompileConfig(
         passes=passes,
         _check_ir_validity=False,
-        _use_edge_ops=True,
     )
 
 
