@@ -61,14 +61,6 @@ Or via python interpreter:
 >>> open("add.ff", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
 ```
 
-If exporting mobilenet v2/v3, run `install_requirements.sh`.
-
-```bash
-bash examples/install_requirements.sh
-
-python3 -m examples.export.export_example --model_name="mv2"
-```
-
 ## Runtime Setup
 
 **Step 1: Install buck2**
@@ -85,10 +77,10 @@ You may want to copy the `buck2` binary into your `$PATH` so you can run it as `
 
 **Step 2: Build a binary**
 
-`size_test_all_ops` is a binary including all the operators and backends
+`executor_runner` is an example wrapper around executorch runtime which includes all the operators and backends
 
 ```bash
-/tmp/buck2 build //test:size_test_all_ops --show-output
+/tmp/buck2 build //examples/executor_runner:executor_runner --show-output
 ```
 
 The `--show-output` flag will print the path to the executable if you want to run it directly.
@@ -102,14 +94,19 @@ conda install -c conda-forge lld
 
 ```bash
 # add.ff is the program generated from export_example.py during AOT Setup Step 3
-/tmp/buck2 run //test:size_test_all_ops  -- add.ff
+/tmp/buck2 run //examples/executor_runner:executor_runner -- --model_path add.ff
 
 # To run a delegated model
-/tmp/buck2 run //test:size_test_all_ops  -- composite_model.ff
+/tmp/buck2 run //examples/executor_runner:executor_runner -- --model_path composite_model.ff
 ```
 
 or execute the binary directly from the `--show-output` path shown when building.
 
 ```bash
-./buck-out/.../size_test_all_ops add.ff
+./buck-out/.../executor_runner --model_path add.ff
 ```
+
+## More examples
+
+The `executorch/examples` directory contains useful scripts with a guide to lower and run
+popular models like MobileNetv2 on Executorch.
