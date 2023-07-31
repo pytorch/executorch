@@ -564,9 +564,7 @@ NOTE: The concept of pytree is the same as the one documented here for JAX: [htt
 
 ### Memory formats
 
-Possible memory formats:
-
-We use the term **Pytorch Default Dims Format **describe the memory format represented by `torch.contiguous_format. `In other words, Let N, C, H, W be number of images, channel, height and weight, then `torch.contiguous_format `will tensor dimensions be in NCHW ordering.
+We use the term **Pytorch Default Dims Order** to describe the memory format represented by `torch.contiguous_format`. In other words, Let N, C, H, W be number of images, channel, height and weight, then `torch.contiguous_format `will tensor dimensions be in NCHW ordering.
 
 Other memory formats available in torch are: torch.channels_last: = NHWC
 
@@ -602,6 +600,8 @@ Other permutations of NCHW are allowed but we don’t have explicit names for th
 
 
 See more on channel_last mem format: [https://pytorch.org/tutorials/intermediate/memory_format_tutorial.html](https://pytorch.org/tutorials/intermediate/memory_format_tutorial.html)
+
+For Executorch, we have introduced a concept of dim orders to convey how a dense tensor is laid out in memory. Tensor's memory layout and memory format representation using the dim order in the Executorch the stack is still a WIP. We will update this doc and the IR spec very shortly.
 
 ### Tensor
 A Tensor type describes a mathematical tensor.
