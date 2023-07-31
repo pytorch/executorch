@@ -113,6 +113,37 @@ python_unittest(
 )
 
 python_unittest(
+    name = "test_backends_lifted",
+    srcs = [
+        "test_backends_lifted.py",
+    ],
+    supports_static_listing = True,
+    deps = [
+        ":backend_with_compiler_demo",
+        ":hta_partitioner_demo",
+        ":op_partitioner_demo",
+        ":qnn_backend_demo",
+        "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/backends:backend_api",
+        "//executorch/backends:compile_spec_schema",
+        "//executorch/backends:partitioner",
+        "//executorch/exir:delegate",
+        "//executorch/exir:graph_module",
+        "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/exir:print_program",
+        "//executorch/exir:schema",
+        "//executorch/exir/dialects:lib",
+        "//executorch/extension/pybindings:portable",  # @manual
+        "//executorch/extension/pytree:pylib",
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
+    ],
+)
+
+python_unittest(
     name = "test_graph_partition",
     srcs = [
         "test_graph_partition.py",

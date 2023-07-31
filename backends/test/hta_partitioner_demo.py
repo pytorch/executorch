@@ -58,19 +58,37 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
         input_h = torch.ones([1, 32])
         input_c = torch.ones([1, 32])
 
+        pattern_lstm_conv_lifted = (
+            exir.capture(
+                LSTMConvPattern(),
+                (input_x, input_h, input_c),
+                exir.CaptureConfig(pt2_mode=True, enable_aot=True),
+            )
+            .to_edge()
+            .exported_program.graph_module
+        )
         pattern_lstm_conv = (
             exir.capture(
                 LSTMConvPattern(),
                 (input_x, input_h, input_c),
                 exir.CaptureConfig(pt2_mode=True),
             )
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            .to_edge()
             .exported_program.graph_module
         )
 
         def sub(x, y):
             return torch.sub(x, y)
 
+        pattern_sub_lifted = (
+            exir.capture(
+                sub,
+                (input_x, input_h),
+                exir.CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=False),
+            )
+            .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
+            .exported_program.graph_module
+        )
         pattern_sub = (
             exir.capture(
                 sub,
@@ -80,7 +98,12 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
             .to_edge()
             .exported_program.graph_module
         )
-        self.patterns = [pattern_lstm_conv.graph, pattern_sub.graph]
+        self.patterns = [
+            pattern_lstm_conv_lifted.graph,
+            pattern_lstm_conv.graph,
+            pattern_sub_lifted.graph,
+            pattern_sub.graph,
+        ]
 
         backend_id = QnnBackend.__name__
         self.delegation_spec = DelegationSpec(backend_id, [])
@@ -145,28 +168,18 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
         ]
 
         """
-        partitions_from_all_pattern = [
-            generate_pattern_op_partitions(graph_module, patterns=[pattern])
-            for pattern in self.patterns
-        ]
-
-        # Check if all partitions are exclusive, this partitions don't support inclusive partitions.
-        is_exclusive = self.is_exclusive(partitions_from_all_pattern)
-
-        assert (
-            is_exclusive
-        ), "There exists inclusive partitions. Currently the fuse method only handle exclusive partitions."
+        partitions_from_all_pattern = generate_pattern_op_partitions(
+            graph_module, self.patterns
+        )
 
         # Assign a unique id for each partition
         partition_id = 0
 
-        # If want to support inclusive partitions, the logic can be done here to merge partitions etc.
         flat_proposed_partitions_with_unique_id = []
-        for partitions_from_one_pattern in partitions_from_all_pattern:
-            for partition in partitions_from_one_pattern:
-                partition.id = partition_id
-                flat_proposed_partitions_with_unique_id.append(partition)
-                partition_id += 1
+        for partition in partitions_from_all_pattern:
+            partition.id = partition_id
+            flat_proposed_partitions_with_unique_id.append(partition)
+            partition_id += 1
 
         return flat_proposed_partitions_with_unique_id
 
@@ -213,16 +226,28 @@ class HTAPartitionerOnePatternDemo(Partitioner):
         input_h = torch.ones([1, 32])
         input_c = torch.ones([1, 32])
 
-        pattern_lstm_conv = (
+        pattern_lstm_conv_lifted = (
             exir.capture(
                 LSTMConvPattern(),
                 (input_x, input_h, input_c),
-                exir.CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=False),
+                exir.CaptureConfig(pt2_mode=True, enable_aot=True),
             )
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            .to_edge()
             .exported_program.graph_module
         )
-        self.patterns = [pattern_lstm_conv.graph]
+        pattern_lstm_conv_unlifted = (
+            exir.capture(
+                LSTMConvPattern(),
+                (input_x, input_h, input_c),
+                exir.CaptureConfig(pt2_mode=True),
+            )
+            .to_edge()
+            .exported_program.graph_module
+        )
+        self.patterns = [
+            pattern_lstm_conv_lifted.graph,
+            pattern_lstm_conv_unlifted.graph,
+        ]
         # Only (lstm + conv) pattern is lowerable
 
         backend_id = QnnBackend.__name__

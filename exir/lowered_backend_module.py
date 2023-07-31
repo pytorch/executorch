@@ -320,3 +320,18 @@ def get_lowered_submodules(
             assert isinstance(module, LoweredBackendModule)
             lowered_submodules.append((name, module, node))
     return lowered_submodules
+
+
+def get_lowered_backend_modules(
+    graph_module: torch.fx.GraphModule,
+) -> List[LoweredBackendModule]:
+    """
+    Returns a list of exported programs which were lowered by backen delegates
+    """
+    lowered_programs = []
+    for node in graph_module.graph.nodes:
+        if node.op == "call_function" and node.target == executorch_call_delegate:
+            lowered_backend_module = getattr(graph_module, node.args[0].name)
+            lowered_programs.append(lowered_backend_module)
+
+    return lowered_programs
