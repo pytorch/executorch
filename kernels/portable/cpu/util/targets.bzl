@@ -51,6 +51,19 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "normalization_ops_util",
+        srcs = ["normalization_ops_util.cpp"],
+        exported_headers = [
+            "normalization_ops_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
+
+    runtime.cxx_library(
         name = "transpose_util",
         exported_headers = [
             "transpose_util.h",
