@@ -2,7 +2,7 @@
 
 This is a tutorial for building and installing Executorch from the GitHub repository.
 
-## AOT Setup [(Open on Google Colab)](https://colab.research.google.com/drive/1oJBt3fj_Tr3FE7L9RdUgSKK9XzJfUv4F#scrollTo=fC4CB3kFhHPJ)
+## AOT Setup [(Open on Google Colab)](https://colab.research.google.com/drive/1m8iU4y7CRVelnnolK3ThS2l2gBo7QnAP#scrollTo=1o2t3LlYJQY5)
 
 
 This will install an `executorch` pip package to your conda environment and
