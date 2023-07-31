@@ -25,7 +25,7 @@ jobs:
         PYTHON_VERSION=3.10
         # TODO: Figure out why /opt/conda/envs/py_$PYTHON_VERSION/bin is not in the path
         # here, as it's there in the container
-        export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:/opt/conda/bin:${PATH}"
+        export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:${PATH}"
 
         # Install executorch
         pip3 install .
