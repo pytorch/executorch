@@ -1,0 +1,174 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_library(
+    name = "backend_with_compiler_demo",
+    srcs = [
+        "backend_with_compiler_demo.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "//executorch/test/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends:backend_details",
+        "//executorch/backends:compile_spec_schema",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_library(
+    name = "qnn_backend_demo",
+    srcs = [
+        "qnn_backend_demo.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "//executorch/test/...",
+    ],
+    deps = [
+        "//executorch/backends:backend_details",
+        "//executorch/backends:compile_spec_schema",
+    ],
+)
+
+python_library(
+    name = "hta_partitioner_demo",
+    srcs = [
+        "hta_partitioner_demo.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "//executorch/test/...",
+    ],
+    deps = [
+        ":qnn_backend_demo",
+        "//caffe2:torch",
+        "//executorch/backends:partitioner",
+        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_library(
+    name = "op_partitioner_demo",
+    srcs = [
+        "op_partitioner_demo.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "//executorch/test/...",
+    ],
+    deps = [
+        ":backend_with_compiler_demo",
+        "//caffe2:torch",
+        "//executorch/backends:compile_spec_schema",
+        "//executorch/backends:partitioner",
+        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir:graph_module",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_library(
+    name = "example_backends",
+    deps = [
+        ":backend_with_compiler_demo",
+        ":qnn_backend_demo",
+    ],
+)
+
+python_unittest(
+    name = "test_backends",
+    srcs = [
+        "test_backends.py",
+    ],
+    supports_static_listing = True,
+    deps = [
+        ":backend_with_compiler_demo",
+        ":hta_partitioner_demo",
+        ":op_partitioner_demo",
+        ":qnn_backend_demo",
+        "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/backends:backend_api",
+        "//executorch/backends:compile_spec_schema",
+        "//executorch/backends:partitioner",
+        "//executorch/exir:delegate",
+        "//executorch/exir:graph_module",
+        "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/exir:print_program",
+        "//executorch/exir:schema",
+        "//executorch/exir/dialects:lib",
+        "//executorch/extension/pybindings:portable",  # @manual
+        "//executorch/extension/pytree:pylib",
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
+    ],
+)
+
+python_unittest(
+    name = "test_graph_partition",
+    srcs = [
+        "test_graph_partition.py",
+    ],
+    supports_static_listing = True,
+    visibility = [
+        "//executorch/...",
+        "//executorch/test/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir:lib",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_unittest(
+    name = "test_backends_nested",
+    srcs = [
+        "test_backends_nested.py",
+    ],
+    supports_static_listing = True,
+    deps = [
+        ":op_partitioner_demo",
+        "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/backends:backend_api",
+        "//executorch/backends:backend_details",
+        "//executorch/backends:compile_spec_schema",
+        "//executorch/backends:partitioner",
+        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir:delegate",
+        "//executorch/exir:graph_module",
+        "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
+    ],
+)
+
+python_unittest(
+    name = "test_utils",
+    srcs = [
+        "test_utils.py",
+    ],
+    supports_static_listing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends:backend_api",
+        "//executorch/backends:partitioner",
+        "//executorch/backends:utils",
+        "//executorch/exir:lib",
+        "//executorch/exir/dialects:lib",
+        "//executorch/extension/pybindings:portable",  # @manual
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
+    ],
+)

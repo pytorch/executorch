@@ -1,0 +1,25 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+runtime.python_library(
+    name = "tester",
+    srcs = [
+        "__init__.py",
+        "tester.py",
+    ],
+    base_module = "executorch.backends.xnnpack.test.tester",
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends:backend_api",
+        "//executorch/backends:partitioner",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/utils:xnnpack_utils",
+        "//executorch/exir:lib",
+        "//executorch/exir/passes:spec_prop_pass",
+        "//executorch/exir/serialize:lib",
+        "//executorch/extension/pybindings:portable",  # @manual
+    ],
+)

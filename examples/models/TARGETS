@@ -1,0 +1,15 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "models",
+    srcs = [
+        "__init__.py",
+        "models.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends:compile_spec_schema",
+        "//executorch/examples/models/mobilenet_v2:mv2_export",
+        "//executorch/examples/models/mobilenet_v3:mv3_export",
+    ],
+)

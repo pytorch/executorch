@@ -1,0 +1,60 @@
+# @noautodeps
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load("@fbcode//executorch/extension/pybindings:targets.bzl", "MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB", "MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB", "MODULE_DEPS", "define_common_targets", "executorch_pybindings")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+define_common_targets()
+
+executorch_pybindings(
+    srcs = [
+        "module.cpp",
+    ],
+    cppdeps = MODULE_DEPS,
+    python_module_name = "core",
+    visibility = ["PUBLIC"],
+)
+
+executorch_pybindings(
+    srcs = [
+        "module.cpp",
+    ],
+    cppdeps = MODULE_DEPS + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB,
+    python_module_name = "portable",
+    visibility = ["PUBLIC"],
+)
+
+executorch_pybindings(
+    srcs = [
+        "module.cpp",
+    ],
+    cppdeps = [
+        "//executorch/runtime/kernel:operator_registry",
+        "//executorch/runtime/executor:executor_aten",
+        "//executorch/runtime/core/exec_aten:lib",
+        "//executorch/schema:bundled_program_schema",
+        "//executorch/schema:schema",
+        "//executorch/extension/data_loader:buffer_data_loader",
+        "//executorch/extension/data_loader:mmap_data_loader",
+        "//executorch/util:read_file",
+        "//executorch/util:test_memory_config",
+        "//executorch/util:bundled_program_verification_aten",
+        "//caffe2:torch-cpp",
+        "//executorch/runtime/executor/test:test_backend_compiler_lib_aten",
+    ] + MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB,
+    python_module_name = "aten_mode_lib",
+    visibility = ["PUBLIC"],
+)
+
+python_library(
+    name = "stacktraces",
+    srcs = [
+        "stacktraces.py",
+    ],
+    base_module = "executorch.extension.pybindings",
+    deps = [
+        ":core",
+        "//executorch/exir:schema",
+    ],
+)

@@ -1,0 +1,47 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load(":targets.bzl", "define_common_targets")
+
+define_common_targets()
+
+python_unittest(
+    name = "test_qnnpack",
+    srcs = [
+        "test_qnnpack.py",
+    ],
+    preload_deps = [
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
+    supports_static_listing = True,
+    tags = ["long_running"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends:backend_api",
+        "//executorch/backends/qnnpack:qnnpack_backend",
+        "//executorch/backends/qnnpack:qnnpack_preprocess",
+        "//executorch/backends/qnnpack/partition:qnnpack_partitioner",
+        "//executorch/exir:lib",
+        "//executorch/exir/serialize:lib",
+        "//executorch/extension/pybindings:portable",  # @manual
+        "//executorch/extension/pytree:pylib",
+    ],
+)
+
+python_unittest(
+    name = "test_qnnpack_partitioner",
+    srcs = [
+        "test_qnnpack_partitioner.py",
+    ],
+    preload_deps = [
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
+    supports_static_listing = True,
+    tags = ["long_running"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/qnnpack:qnnpack_backend",
+        "//executorch/backends/qnnpack/partition:support_patterns",
+        "//executorch/backends/transforms:lib",
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings:portable",  # @manual
+    ],
+)

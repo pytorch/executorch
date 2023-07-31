@@ -1,0 +1,51 @@
+name: pull
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  buck-build-test:
+    name: buck-build-test
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      fetch-depth: 0
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        WORKSPACE=$(pwd)
+
+        pushd "${HOME}"
+        # Create the softlink to the workspace as install.sh requires to run from its parent directory
+        ln -s "${WORKSPACE}" executorch
+        # Install executorch
+        pushd executorch
+
+
+        # Install nightly pytorch
+        pip3 install --pre torch -i https://download.pytorch.org/whl/nightly/cpu
+        # Install executorch
+        pip3 install .
+
+        # Just print out the list of packages for debugging
+        pip3 list
+
+        # Build executorch runtime
+        buck2 build //examples/executor_runner:executor_runner
+
+        # Export a test model
+        python3 -m examples.export.export_example --model_name="linear"
+
+        # Run test model
+        buck2 run //examples/executor_runner:executor_runner -- --model_path ./linear.ff
+
+        popd

@@ -1,0 +1,27 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+
+oncall("executorch")
+
+python_binary(
+    # @autodeps-skip
+    name = "sphinx-build",
+    main_module = "sphinx.cmd.build",
+    deps = [
+        "fbsource//third-party/pypi/breathe:breathe",
+        "fbsource//third-party/pypi/exhale:exhale",
+        "fbsource//third-party/pypi/pytorch-sphinx-theme:pytorch-sphinx-theme",
+        "fbsource//third-party/pypi/sphinx:sphinx",
+        "//executorch/backends:backend_lib",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_binary(
+    # @autodeps-skip
+    name = "sphinx-apidoc",
+    main_module = "sphinx.ext.apidoc",
+    deps = [
+        "fbsource//third-party/pypi/pytorch-sphinx-theme:pytorch-sphinx-theme",
+        "fbsource//third-party/pypi/sphinx:sphinx",
+    ],
+)

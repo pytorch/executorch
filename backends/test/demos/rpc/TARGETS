@@ -1,0 +1,58 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+define_common_targets()
+
+runtime.python_library(
+    name = "executor_backend_preprocess",
+    srcs = [
+        "executor_backend_preprocess.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends:backend_details",
+        "//executorch/backends:compile_spec_schema",
+        "//executorch/exir:lib",
+        "//nodeapi/py:base",
+    ],
+)
+
+runtime.python_library(
+    name = "executor_backend_partitioner",
+    srcs = [
+        "executor_backend_partitioner.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends:partitioner",
+        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir:graph_module",
+        "//executorch/exir:lib",
+    ],
+)
+
+python_unittest(
+    name = "test_rpc",
+    srcs = [
+        "test_rpc.py",
+    ],
+    preload_deps = [
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+        # the executor backend is prebuilt and linked when building the unit test binary. When it's linked, it'll register the backend.
+        # It can also be loaded in PyThon runtime via torch.ops.load_library("//executorch/backends/test/demos/rpc:executor_backend")
+        # However, it's a better practice to build/link everything at earlier stage, instead of during runtime
+        "//executorch/backends/test/demos/rpc:executor_backend_register",
+    ],
+    supports_static_listing = True,
+    deps = [
+        ":executor_backend_partitioner",
+        ":executor_backend_preprocess",
+        "//caffe2:torch",
+        "//executorch/backends:backend_api",
+        "//executorch/backends/test:op_partitioner_demo",
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings:portable",  # @manual
+    ],
+)

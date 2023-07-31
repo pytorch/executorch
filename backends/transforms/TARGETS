@@ -1,0 +1,24 @@
+#load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+python_library(
+    name = "lib",
+    srcs = [
+        "__init__.py",
+    ],
+    visibility = [
+        "//executorch/backends/...",
+    ],
+    deps = [
+        ":addmm_mm_to_linear",
+    ],
+)
+
+python_library(
+    name = "addmm_mm_to_linear",
+    srcs = ["addmm_mm_to_linear.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:sym_util",
+    ],
+)

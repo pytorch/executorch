@@ -1,0 +1,55 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "exported_op_graph_test",
+    srcs = [
+        "exported_op_graph_test.py",
+    ],
+    supports_static_listing = False,  # Usage of parameterized
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/sdk/edir:base_schema",
+        "//executorch/sdk/edir:et_schema",
+        "//executorch/sdk/etdump:schema",
+    ],
+)
+
+python_library(
+    name = "exported_op_graph_test_library",
+    srcs = [
+        "exported_op_graph_test.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/sdk/edir:base_schema",
+        "//executorch/sdk/edir:et_schema",
+        "//executorch/sdk/etdump:schema",
+    ],
+)
+
+python_binary(
+    name = "generate_fixtures",
+    srcs = [
+        "exported_op_graph_test.py",
+    ],
+    main_module = "executorch.sdk.edir.tests.exported_op_graph_test",
+    deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:lowered_backend_module",
+        "//executorch/sdk/edir:base_schema",
+        "//executorch/sdk/edir:et_schema",
+        "//executorch/sdk/etdump:schema",
+    ],
+)

@@ -1,0 +1,21 @@
+- namespace: global
+  is_aten:
+    type: bool
+    default: false
+    docstring: True if the kernel is ATen; we have special handling for ATen
+  output_resize:
+    type: bool
+    default: false
+    docstring: True if the kernel supports resizing output; not supported in ET and being deprecated in ATen
+
+- namespace: op_gelu
+  dtype_double:
+    type: bool
+    default: true
+    docstring: True if the kernel supports double dtype
+
+- namespace: op_log_softmax
+  dtype_double:
+    type: bool
+    default: true
+    docstring: True if the kernel supports double dtype

@@ -1,0 +1,29 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+define_common_targets()
+
+runtime.python_library(
+    name = "xnnpack_preprocess",
+    srcs = [
+        "serialization/xnnpack_graph_schema.py",
+        "serialization/xnnpack_graph_serialize.py",
+        "xnnpack_preprocess.py",
+    ],
+    resources = [
+        "serialization/schema.fbs",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//executorch/backends:backend_details",
+        "//executorch/backends/transforms:lib",
+        "//executorch/backends/xnnpack/operators:operators",
+        "//executorch/backends/xnnpack/passes:xnnpack_passes",
+        "//executorch/exir:graph_module",
+        "//executorch/exir/serialize:bindings",
+        "//executorch/exir/serialize:lib",
+    ],
+)
