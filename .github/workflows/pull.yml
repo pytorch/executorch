@@ -22,8 +22,6 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        WORKSPACE=$(pwd)
-
         # Install executorch
         pip3 install .
         # Just print out the list of packages for debugging
