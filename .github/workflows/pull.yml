@@ -22,19 +22,19 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        which pip
-        which pip3
-        which python
-        which python3
+        PYTHON_VERSION=3.10
+        # TODO: Figure out why /opt/conda/envs/py_$PYTHON_VERSION/bin is not in the path
+        # here, as it's there in the container
+        export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:/opt/conda/bin:${PATH}"
 
         # Install executorch
-        pip install .
+        pip3 install .
         # Just print out the list of packages for debugging
-        pip list
+        pip3 list
 
         # Build executorch runtime
         buck2 build //examples/executor_runner:executor_runner
         # Export a test model
-        python -m examples.export.export_example --model_name="linear"
+        python3 -m examples.export.export_example --model_name="linear"
         # Run test model
         buck2 run //examples/executor_runner:executor_runner -- --model_path ./linear.ff
