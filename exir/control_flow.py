@@ -125,67 +125,6 @@ def _make_submodule(
     return gm
 
 
-def cond(
-    pred: bool,
-    true_fn: Callable[..., Tuple[torch.Tensor]],
-    false_fn: Callable[..., Tuple[torch.Tensor]],
-    inputs: pytree.PyTree,
-) -> Union[List[torch.Tensor], Value]:
-    """
-    A higher order function returning result based on passed predicate
-    value and conditionally execute one of true_fn and false_fn.
-
-    Detects whether a tracer is present in the context, and if so will
-    trace_through both true_fn and false_fn with local inputs provided
-    by tracing_context dictionary from the current tracer. When
-    returning, wraps two traced graphs into a cond() call and construct
-    a call_function node in the tracer's graph.
-
-    Checks and enforces that the returning value(s) from both
-    branches has the same Tensor type. For now enforces that both
-    branches have the same number of tensor inputs.
-    """
-    flattened_inputs, _ = pytree.tree_flatten(inputs)
-
-    if not all([isinstance(i, torch.Tensor) for i in flattened_inputs]):
-        raise ExportError(
-            ExportErrorType.INVALID_INPUT_TYPE,
-            f"control_flow.cond() expects all inputs values to be tensors, actual inputs: {inputs}",
-        )
-
-    with using_tracer(None):
-        outputs = true_fn(*inputs) if pred else false_fn(*inputs)
-
-    flattened_outputs, _ = pytree.tree_flatten(outputs)
-
-    if not all([isinstance(r, torch.Tensor) for r in flattened_outputs]):
-        raise ExportError(
-            ExportErrorType.INVALID_OUTPUT_TYPE,
-            f"control_flow.cond() only supports tensors as output, actual output: {outputs}",
-        )
-
-    tracer = DispatchTracer.get()
-
-    if tracer is None:
-        return outputs
-
-    # Once global tracer is present, we need to assume all tensors are
-    # PythonTensor wrapped with FunctionalTensorWrapper.
-
-    gm_true = _make_submodule(true_fn, example_returns=flattened_outputs)
-    gm_false = _make_submodule(false_fn, example_returns=flattened_outputs)
-    proxies = tuple([unwrap_proxy(i) for i in flattened_inputs])
-
-    proxy = tracer.create_proxy(
-        "call_function",
-        cond,
-        (unwrap_proxy(pred), gm_true, gm_false, proxies),
-        {},
-    )
-
-    return tree_return(outputs, proxy, update_with_proxy)
-
-
 def while_loop(
     cond_fn: Callable[..., torch.Tensor],
     body_fn: Callable[..., Tuple[torch.Tensor]],

@@ -236,7 +236,7 @@ class DebugPass(PassBase):
 # pyre-ignore
 to_out_var_skiplist: Set[Callable[[Any], Any]] = {
     _operator.getitem,
-    control_flow.cond,
+    torch.ops.higher_order.cond,
     control_flow.while_loop,
     # memory.alloc will be added after the to_out_variant pass so usually
     # we won't see it in the input graph to the to_out_variant pass, unless
@@ -321,7 +321,7 @@ class ToOutVarPass(PassBase):
                 continue
 
             target = node.target
-            if target == control_flow.cond or target == torch.ops.higher_order.cond:
+            if target == torch.ops.higher_order.cond:
                 self.call(get_submodule(node.args[1]))
                 self.call(get_submodule(node.args[2]))
                 continue

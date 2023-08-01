@@ -56,6 +56,7 @@ from executorch.exir.tests.control_flow_models import (
 from executorch.exir.tests.dynamic_shape_models import BatchNormModel
 
 from executorch.exir.tests.transformer import Transformer
+from functorch.experimental.control_flow import cond
 
 kernel_mode = None  # either aten mode or lean mode
 try:
@@ -245,15 +246,13 @@ class ModuleIfElse(nn.Module):
                 out = out + x
             return out
 
-        @control_flow.tracing_context(inputs=(torch.randn(1), torch.randn(10)))
         def true_branch(c, x):
             return addloop(x, 3)
 
-        @control_flow.tracing_context(inputs=(torch.randn(1), torch.randn(10)))
         def false_branch(c, x):
             return addloop(x, 4)
 
-        y = control_flow.cond(c, true_branch, false_branch, (c, x))
+        y = cond(c, true_branch, false_branch, (c, x))
         return y * y
 
     def get_random_inputs(self):
@@ -273,18 +272,14 @@ class ModuleIfElseWithBoolInput(nn.Module):
                 out = out + x
             return out
 
-        @control_flow.tracing_context(inputs=(torch.randn(1), torch.randn(10)))
         def true_branch(c, x):
             return addloop(x, 3)
 
-        @control_flow.tracing_context(inputs=(torch.randn(1), torch.randn(10)))
         def false_branch(c, x):
             return addloop(x, 4)
 
-        # pyre-fixme[6]: Incompatible parameter type
-        y = control_flow.cond(c, true_branch, false_branch, (c, x))
+        y = cond(c, true_branch, false_branch, (c, x))
 
-        # pyre-fixme[58]: Unsupported operand type for binary operator '*'
         return y * y
 
     def get_random_inputs(self):
@@ -319,7 +314,7 @@ class ModuleWhileIf(nn.Module):
             def false_branch(cnt):
                 return torch.zeros([1], dtype=torch.long)
 
-            accum = accum + control_flow.cond(
+            accum = accum + cond(
                 torch.BoolTensor([True]), true_branch, false_branch, (cnt,)
             )
             # 'cnt - 1' does not work yet since the runtime does not expect
@@ -372,9 +367,9 @@ class ModuleIfWhile(nn.Module):
         def false_branch(accum, cnt):
             return accum, cnt
 
-        return control_flow.cond(
-            torch.BoolTensor([True]), true_branch, false_branch, (accum, cnt)
-        )[0]
+        return cond(torch.BoolTensor([True]), true_branch, false_branch, (accum, cnt))[
+            0
+        ]
 
     def get_random_inputs(self):
         return (torch.zeros([1]).to(dtype=torch.long), torch.randint(10, 100, [1]))
