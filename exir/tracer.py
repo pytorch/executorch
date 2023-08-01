@@ -671,6 +671,8 @@ def dynamo_trace(
         try:
             # TODO merge executorch functionalization with official
             # functionalization
+            # pyre-fixme[7]: Expected `Tuple[GraphModule, Set[Guard]]` but got
+            #  `ExportResult`.
             return torchdynamo.export(
                 f,
                 aten_graph=aten_graph,
