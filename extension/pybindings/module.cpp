@@ -270,12 +270,13 @@ py::object pyFromEValue(const EValue& v, KeepAlive& keep_alive) {
     return py::cast(v.toBool());
   } else if (Tag::Tensor == v.tag) {
 #ifdef USE_ATEN_LIB
-    return py::cast(v.toTensor());
+    return py::cast(v.toTensor().clone());
 #else
-    return py::cast(
-        torch::util::atTensorFromETensor(
-            v.toTensor().unsafeGetTensorImpl(), keep_alive.sizes),
-        py::return_value_policy::reference);
+    // Clone so the outputs in python do not share a lifetime with the module
+    // object
+    return py::cast(torch::util::atTensorFromETensor(
+                        v.toTensor().unsafeGetTensorImpl(), keep_alive.sizes)
+                        .clone());
 #endif
   }
   ET_ASSERT_UNREACHABLE();

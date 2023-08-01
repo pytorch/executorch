@@ -157,3 +157,14 @@ class PybindingsTest(unittest.TestCase):
 
         executorch_output2 = executorch_module.run_method("forward2", inputs)[0]
         self.assertTrue(torch.allclose(executorch_output2, torch.ones(2, 2) * 3))
+
+    def test_output_lifespan(self):
+        def lower_function_call():
+            program, inputs = create_program(ModuleMulti())
+            executorch_module = _load_for_executorch_from_buffer(program.buffer)
+
+            return executorch_module.forward(inputs)
+            # executorch_module is destructed here and all of its memory is freed
+
+        outputs = lower_function_call()
+        self.assertTrue(torch.allclose(outputs[0], torch.ones(2, 2) * 2))
