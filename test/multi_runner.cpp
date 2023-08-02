@@ -13,7 +13,7 @@
  * same process can handle multiple runtimes at once.
  *
  * Usage:
- *   multi_runner --models=<model.ff>[,<m2.ff>[,...]] [--num_instances=<num>]
+ *   multi_runner --models=<model.pte>[,<m2.pte>[,...]] [--num_instances=<num>]
  */
 
 #include <gflags/gflags.h>

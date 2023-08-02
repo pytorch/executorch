@@ -18,11 +18,11 @@ from executorch.backends.backend_details import BackendDetails
 from executorch.backends.test.backend_with_compiler_demo import BackendWithCompilerDemo
 from torch import nn
 
-"""Traces and exports delegated nn.Modules to Executorch .ff program files.
+"""Traces and exports delegated nn.Modules to Executorch .pte program files.
 
 Creates two versions of each file:
-- <module-name>.ff: Delegate data stored in segments outside of the flatbuffer data.
-- <module-name>-nosegments.ff: Delegate data is stored directly in the flatbuffer data.
+- <module-name>.pte: Delegate data stored in segments outside of the flatbuffer data.
+- <module-name>-nosegments.pte: Delegate data is stored directly in the flatbuffer data.
 
 This tool mainly exists to export programs for C++ tests, but can also
 be used to export models manually.
@@ -131,7 +131,7 @@ def main() -> None:
     # when possible.
     parser = argparse.ArgumentParser(
         prog="export_delegated_program",
-        description="Exports delegated nn.Module models to Executorch .ff files",
+        description="Exports delegated nn.Module models to Executorch .pte files",
     )
     parser.add_argument(
         "--modules",
@@ -150,7 +150,7 @@ def main() -> None:
         "--outdir",
         type=str,
         required=True,
-        help="Path to the directory to write <classname>[-<suffix>[...]].ff "
+        help="Path to the directory to write <classname>[-<suffix>[...]].pte "
         + "files to.",
     )
     args = parser.parse_args()
@@ -174,7 +174,7 @@ def main() -> None:
             # the data to accidentally be aligned to it in the default case.
             for delegate_alignment in (None, 1024):
                 suffix += f"-da{delegate_alignment}" if delegate_alignment else ""
-                outfile = os.path.join(args.outdir, f"{module_name}{suffix}.ff")
+                outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
                 with open(outfile, "wb") as fp:
                     fp.write(
                         export_module_to_program(

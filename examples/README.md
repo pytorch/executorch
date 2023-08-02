@@ -36,13 +36,13 @@ bash examples/install_requirements.sh
 
 python3 -m examples.export.export_example --model_name="mv2" # for MobileNetv2
 
-# This should generate ./mv2.ff file, if successful.
+# This should generate ./mv2.pte file, if successful.
 ```
 
 3. Once we have the model binary (ff) file, then let's run it with Executorch runtime using the `executor_runner`.
 
 ```bash
-buck2 run examples/executor_runner:executor_runner -- --model_path mv2.ff
+buck2 run examples/executor_runner:executor_runner -- --model_path mv2.pte
 ```
 
 For MobileNetv3, change the model name and the corrosponding binary filename from "mv2" to "mv3".

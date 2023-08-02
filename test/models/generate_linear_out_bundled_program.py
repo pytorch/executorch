@@ -101,7 +101,7 @@ def main() -> None:
         subprocess.run(["hg", "root"], stdout=subprocess.PIPE).stdout.decode().strip()
     )
     with open(
-        f"{fbsource_base_path}/fbcode/executorch/test/models/linear_out_bundled_program.ff",
+        f"{fbsource_base_path}/fbcode/executorch/test/models/linear_out_bundled_program.pte",
         "wb",
     ) as file:
         file.write(bundled_program_flatbuffer)

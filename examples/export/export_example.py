@@ -26,7 +26,7 @@ def export_to_ff(model_name, model, example_inputs):
 
     buffer = exec_prog.buffer
 
-    filename = f"{model_name}.ff"
+    filename = f"{model_name}.pte"
     print(f"Saving exported program to {filename}")
     with open(filename, "wb") as file:
         file.write(buffer)

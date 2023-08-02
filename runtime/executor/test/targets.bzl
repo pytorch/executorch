@@ -78,8 +78,8 @@ def define_common_targets(is_fbcode = False):
             # The tests use this var to find the program file to load. This uses
             # an fbcode target path because the authoring/export tools
             # intentionally don't work in xplat (since they're host-only tools).
-            "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.ff])",
-            "ET_MODULE_MULTI_ENTRY_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleMultipleEntry.ff])",
+            "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
+            "ET_MODULE_MULTI_ENTRY_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleMultipleEntry.pte])",
         }
 
         runtime.cxx_test(
@@ -173,8 +173,8 @@ def define_common_targets(is_fbcode = False):
                 # Uses an fbcode target path because the authoring/export tools
                 # intentionally don't work in xplat (since they're host-only
                 # tools).
-                "ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH": "$(location fbcode//executorch/test/models:exported_delegated_programs[ModuleAddMul-nosegments-da1024.ff])",
-                "ET_MODULE_ADD_MUL_NOSEGMENTS_PATH": "$(location fbcode//executorch/test/models:exported_delegated_programs[ModuleAddMul-nosegments.ff])",
-                "ET_MODULE_ADD_MUL_PATH": "$(location fbcode//executorch/test/models:exported_delegated_programs[ModuleAddMul.ff])",
+                "ET_MODULE_ADD_MUL_NOSEGMENTS_DA1024_PATH": "$(location fbcode//executorch/test/models:exported_delegated_programs[ModuleAddMul-nosegments-da1024.pte])",
+                "ET_MODULE_ADD_MUL_NOSEGMENTS_PATH": "$(location fbcode//executorch/test/models:exported_delegated_programs[ModuleAddMul-nosegments.pte])",
+                "ET_MODULE_ADD_MUL_PATH": "$(location fbcode//executorch/test/models:exported_delegated_programs[ModuleAddMul.pte])",
             },
         )

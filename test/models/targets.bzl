@@ -65,12 +65,12 @@ def define_common_targets():
         "ModuleMultipleEntry",
     ]
 
-    # Generates Executorch .ff program files for various modules at build time.
-    # To use one, depend on a target like ":exported_programs[ModuleAdd.ff]".
+    # Generates Executorch .pte program files for various modules at build time.
+    # To use one, depend on a target like ":exported_programs[ModuleAdd.pte]".
     runtime.genrule(
         name = "exported_programs",
         cmd = "$(exe :export_program) --modules " + ",".join(MODULES_TO_EXPORT) + " --outdir $OUT",
-        outs = {fname + ".ff": [fname + ".ff"] for fname in MODULES_TO_EXPORT},
+        outs = {fname + ".pte": [fname + ".pte"] for fname in MODULES_TO_EXPORT},
         default_outs = ["."],
         visibility = [
             "//executorch/...",
@@ -121,10 +121,10 @@ def define_common_targets():
     # Name of the backend to use when exporting delegated programs.
     BACKEND_ID = "StubBackend"
 
-    # Generates Executorch .ff program files for various modules at build time.
+    # Generates Executorch .pte program files for various modules at build time.
     # To use one, depend on a target like
-    # ":exported_delegated_programs[ModuleAdd.ff]" or
-    # ":exported_delegated_programs[ModuleAdd-nosegments.ff]" (which does not
+    # ":exported_delegated_programs[ModuleAdd.pte]" or
+    # ":exported_delegated_programs[ModuleAdd-nosegments.pte]" (which does not
     # extract the delegate data blobs into segments).
     runtime.genrule(
         name = "exported_delegated_programs",
@@ -133,7 +133,7 @@ def define_common_targets():
               " --backend_id " + BACKEND_ID +
               " --outdir $OUT",
         outs = {
-            fname + seg_suffix + da_suffix + ".ff": [fname + seg_suffix + da_suffix + ".ff"]
+            fname + seg_suffix + da_suffix + ".pte": [fname + seg_suffix + da_suffix + ".pte"]
             for fname in DELEGATED_MODULES_TO_EXPORT
             for seg_suffix in ["", "-nosegments"]
             # "da" = delegate alignment

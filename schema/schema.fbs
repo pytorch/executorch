@@ -11,7 +11,7 @@ namespace executorch_flatbuffer;
 // Identifier of a valid executor schema.
 file_identifier "ET12";
 // Extension of written files.
-file_extension "extorch";
+file_extension "pte";
 
 // Table that contains the metadata about how
 // to unflatten the flattened input/output from compiler

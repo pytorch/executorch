@@ -24,9 +24,9 @@ def test() -> None:
     with open("boop.pkl", "wb") as f:
         pickle.dump(program, f)
 
-    save_serialized_model("boop.pkl", "moop.ff")
+    save_serialized_model("boop.pkl", "moop.pte")
 
-    with open("moop.ff", "rb") as f:
+    with open("moop.pte", "rb") as f:
         serialized_flatbuffer_loaded = f.read()
 
     assert serialized_flatbuffer_og == serialized_flatbuffer_loaded

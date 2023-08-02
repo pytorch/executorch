@@ -32,7 +32,7 @@ load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library")
 
 fb_native.export_file(
   name = "model_1",
-  src = "model_1.ff", # checked in model
+  src = "model_1.pte", # checked in model
 )
 
 et_operator_library(

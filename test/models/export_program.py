@@ -14,7 +14,7 @@ import torch
 from executorch.test.end2end.exported_module import ExportedModule
 from torch import nn
 
-"""Traces and exports nn.Modules to Executorch .ff program files.
+"""Traces and exports nn.Modules to Executorch .pte program files.
 
 This tool mainly exists to export programs for C++ tests, but can also
 be used to export models manually.
@@ -130,7 +130,7 @@ def main() -> None:
     # when possible.
     parser = argparse.ArgumentParser(
         prog="export_program",
-        description="Exports nn.Module models to Executorch .ff files",
+        description="Exports nn.Module models to Executorch .pte files",
     )
     parser.add_argument(
         "--modules",
@@ -142,7 +142,7 @@ def main() -> None:
         "--outdir",
         type=str,
         required=True,
-        help="Path to the directory to write <classname>.ff files to",
+        help="Path to the directory to write <classname>.pte files to",
     )
     args = parser.parse_args()
 
@@ -158,7 +158,7 @@ def main() -> None:
     # Export and write to the output files.
     os.makedirs(args.outdir, exist_ok=True)
     for module_name, module_class in module_names_to_classes.items():
-        outfile = os.path.join(args.outdir, f"{module_name}.ff")
+        outfile = os.path.join(args.outdir, f"{module_name}.pte")
         with open(outfile, "wb") as fp:
             fp.write(export_module_to_program(module_class))
         print(f"Exported {module_name} and wrote program data to {outfile}")

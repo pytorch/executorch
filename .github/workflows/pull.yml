@@ -37,4 +37,4 @@ jobs:
         # Export a test model
         python3 -m examples.export.export_example --model_name="linear"
         # Run test model
-        buck2 run //examples/executor_runner:executor_runner -- --model_path ./linear.ff
+        buck2 run //examples/executor_runner:executor_runner -- --model_path ./linear.pte

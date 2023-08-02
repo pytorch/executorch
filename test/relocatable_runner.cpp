@@ -47,7 +47,10 @@ static uint8_t shared_local_non_constant_pool[kNonConstantMemorySize];
 #define MAX_INPUTS_PER_MODEL 16
 #define MAX_OUTPUTS_PER_MODEL 8
 
-DEFINE_string(model_path, "model.ff", "Model serialized in flatbuffer format.");
+DEFINE_string(
+    model_path,
+    "model.pte",
+    "Model serialized in flatbuffer format.");
 
 // These functions represent the work done on a worker core.
 namespace worker {

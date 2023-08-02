@@ -84,7 +84,7 @@ def export_compsite_module_with_lower_graph():
     buffer = exec_prog.buffer
 
     model_name = "composite_model"
-    filename = f"{model_name}.ff"
+    filename = f"{model_name}.pte"
     print(f"Saving exported program to {filename}")
     with open(filename, "wb") as file:
         file.write(buffer)
@@ -134,7 +134,7 @@ def export_and_lower_partitioned_graph():
     buffer = exec_prog.buffer
 
     model_name = "partition_lowered_model"
-    filename = f"{model_name}.ff"
+    filename = f"{model_name}.pte"
     print(f"Saving exported program to {filename}")
     with open(filename, "wb") as file:
         file.write(buffer)

@@ -15,7 +15,7 @@ from executorch.codegen.tools.gen_oplist import (
 
 from libfb.py import parutil
 
-MODEL_PATH: Final[str] = parutil.get_file_path("ModuleLinear.ff", pkg=__package__)
+MODEL_PATH: Final[str] = parutil.get_file_path("ModuleLinear.pte", pkg=__package__)
 
 
 class TestGenOplistRealModel(unittest.TestCase):

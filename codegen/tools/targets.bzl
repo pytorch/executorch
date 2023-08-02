@@ -143,7 +143,7 @@ def define_common_targets(is_fbcode = False):
             srcs = ["test/test_gen_oplist_real_model.py"],
             base_module = "",
             resources = {
-                "//executorch/test/models:exported_programs[ModuleLinear.ff]": "test/ModuleLinear.ff",
+                "//executorch/test/models:exported_programs[ModuleLinear.pte]": "test/ModuleLinear.pte",
             },
             visibility = [
                 "//executorch/...",

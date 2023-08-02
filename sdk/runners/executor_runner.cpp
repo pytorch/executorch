@@ -69,7 +69,10 @@ DEFINE_bool(print_output, false, "Prints output of the model.");
 
 DEFINE_int32(num_iters, 1, "Number of inference iterations to run.");
 
-DEFINE_string(model_path, "model.ff", "Model serialized in flatbuffer format.");
+DEFINE_string(
+    model_path,
+    "model.pte",
+    "Model serialized in flatbuffer format.");
 
 DEFINE_int32(num_threads, 1, "Number of threads to use.");
 

@@ -132,7 +132,7 @@ class TestGenOpList(unittest.TestCase):
     ) -> None:
         op_list = ["aten::add", "aten::mul"]
         filename = os.path.join(self.temp_dir.name, "selected_operators.yaml")
-        gen_oplist._dump_yaml(op_list, filename, "model.ff")
+        gen_oplist._dump_yaml(op_list, filename, "model.pte")
         self.assertTrue(os.path.isfile(filename))
         with open(filename) as f:
             es = yaml.safe_load(f)

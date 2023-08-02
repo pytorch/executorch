@@ -116,7 +116,7 @@ def save_bundled_program(representative_inputs, program, ref_output, output_path
     bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
         bundled_program
     )
-    output_path_with_postfix = f"{output_path}_bundled.ff"
+    output_path_with_postfix = f"{output_path}_bundled.pte"
     print(f"saving bundled program to {output_path}...")
 
     with open(output_path_with_postfix, "wb") as file:
@@ -223,7 +223,7 @@ class TestXNNPACK(unittest.TestCase):
 
         ref_output = delegated_program(*sample_inputs)
         if dump_ff:
-            filename = f"/tmp/xnnpack_test_{randint(1, 99999)}.ff"
+            filename = f"/tmp/xnnpack_test_{randint(1, 99999)}.pte"
             print(f"Writing flatbuffer to {filename} ...")
 
             save_bundled_program(

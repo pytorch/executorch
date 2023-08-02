@@ -32,7 +32,10 @@
 static constexpr size_t kRuntimeMemorySize = 4 * 1024U * 1024U; // 4 MB
 static uint8_t runtime_pool[kRuntimeMemorySize];
 
-DEFINE_string(model_path, "model.ff", "Model serialized in flatbuffer format.");
+DEFINE_string(
+    model_path,
+    "model.pte",
+    "Model serialized in flatbuffer format.");
 DEFINE_string(
     prof_result_path,
     "prof_result.bin",

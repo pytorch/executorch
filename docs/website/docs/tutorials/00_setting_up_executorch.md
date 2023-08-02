@@ -51,10 +51,10 @@ pip install .
 
 Via python script:
 ```bash
-# Creates the file `add.ff`
+# Creates the file `add.pte`
 python3 -m examples.export.export_example --model_name="add"
 
-# Creates the delegated program `composite_model.ff`, other options are "whole" and "partition"
+# Creates the delegated program `composite_model.pte`, other options are "whole" and "partition"
 python3 -m examples.export.export_and_delegate --option "composite"
 ```
 
@@ -65,7 +65,7 @@ $ python3
 >>> from executorch.exir.tests.models import Mul
 >>> m = Mul()
 >>> print(exir.capture(m, m.get_random_inputs()).to_edge())
->>> open("add.ff", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
+>>> open("add.pte", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
 ```
 
 ## Runtime Setup
@@ -119,17 +119,17 @@ conda install -c conda-forge lld
 ### Step 3: Run a binary
 
 ```bash
-# add.ff is the program generated from export_example.py during AOT Setup Step 3
-/tmp/buck2 run //examples/executor_runner:executor_runner -- --model_path add.ff
+# add.pte is the program generated from export_example.py during AOT Setup Step 3
+/tmp/buck2 run //examples/executor_runner:executor_runner -- --model_path add.pte
 
 # To run a delegated model
-/tmp/buck2 run //examples/executor_runner:executor_runner -- --model_path composite_model.ff
+/tmp/buck2 run //examples/executor_runner:executor_runner -- --model_path composite_model.pte
 ```
 
 or execute the binary directly from the `--show-output` path shown when building.
 
 ```bash
-./buck-out/.../executor_runner --model_path add.ff
+./buck-out/.../executor_runner --model_path add.pte
 ```
 
 ## More examples

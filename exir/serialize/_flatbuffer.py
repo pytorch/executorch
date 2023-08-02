@@ -265,7 +265,7 @@ def _program_json_to_flatbuffer(
         )
         file_stem = "data"
         json_path = os.path.join(temp_dir, file_stem + ".json")
-        output_path = os.path.join(temp_dir, file_stem + ".extorch")
+        output_path = os.path.join(temp_dir, file_stem + ".pte")
 
         with open(json_path, "wb") as json_file:
             json_file.write(program_json.encode("ascii"))

@@ -196,7 +196,7 @@ executorch_program = edge_dialect.to_executorch(executorch_backend_config)
 buffer = executorch_program.buffer
 
 # Save it to a file and load it in the Executorch runtime
-with open("model.ff", "wb") as file:
+with open("model.pte", "wb") as file:
     file.write(buffer)
 
 # Or you can run the Executorch runtime in python to try it out

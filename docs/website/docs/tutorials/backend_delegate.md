@@ -202,7 +202,7 @@ model_inputs = (torch.ones(1), )
 exec_prog = exir.capture(composite_model, model_inputs).to_edge().to_executorch()
 
 # Save the flatbuffer to a local file
-save_path = "delegate.fft"
+save_path = "delegate.pte"
 with open(save_path, "wb") as f:
     f.write(exec_prog.buffer)
 ```
@@ -257,7 +257,7 @@ exec_prog = to_backend(gm, AddMulPartitionerDemo).to_executorch(
 )
 
 # Save the flatbuffer to a local file
-save_path = "delegate.fft"
+save_path = "delegate.pte"
 with open(save_path, "wb") as f:
     f.write(exec_prog.buffer)
 ```
