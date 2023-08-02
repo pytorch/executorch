@@ -160,3 +160,19 @@ class TestSerde(unittest.TestCase):
         edge = to_backend(ep.exported_program, AddMulPartitionerDemo)
         edge_new = deserialize(*serialize(edge))
         self.check_ep(edge, edge_new, inputs)
+
+    def test_input_list_with_get_attr(self) -> None:
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.a = torch.tensor([1, 1])
+
+            def forward(self, x):
+                return torch.cat([x, self.a])
+
+        m = Model()
+        inputs = (torch.tensor([1, 1]),)
+
+        edge = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
+        edge_new = deserialize(*serialize(edge.exported_program))
+        self.check_ep(edge, edge_new, inputs)

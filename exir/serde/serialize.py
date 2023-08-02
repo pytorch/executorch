@@ -199,14 +199,34 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
     # pyre-ignore
     def serialize_input(self, arg) -> schema.Argument:
-        if isinstance(arg, torch.fx.Node):
+        def handle_input_get_attr(arg: torch.fx.Node) -> bool:
             if arg.op == "get_attr":
                 attr = getattr(self.original_graph_module, arg.target)  # pyre-ignore
                 if isinstance(attr, torch.Tensor):
                     self.state_dict[arg.name] = copy.deepcopy(attr)
-                    return schema.Argument.create(
-                        as_tensor=schema.TensorArgument(name=arg.name)
-                    )
+                    return True
+            return False
+
+        if isinstance(arg, torch.fx.Node):
+            if handle_input_get_attr(arg):
+                return schema.Argument.create(
+                    as_tensor=schema.TensorArgument(name=arg.name)
+                )
+        elif isinstance(arg, (list, tuple)):
+            if all(isinstance(a, torch.fx.Node) for a in arg) and any(
+                (a.op == "get_attr" for a in arg)
+            ):
+                # list of tensors
+                tensors = []
+                for a in arg:
+                    if a.op == "get_attr":
+                        handle_input_get_attr(a)
+                    tensors.append(schema.TensorArgument(name=a.name))
+
+                return schema.Argument.create(
+                    as_tensors=tensors,
+                )
+
         return super().serialize_input(arg)
 
     def serialize_graph(self, graph_module: torch.fx.GraphModule) -> schema.Graph:
@@ -470,6 +490,23 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
                     value.name,
                     name=value.name,
                 )
+        elif isinstance(value, list) and len(value) > 0:
+            if isinstance(value[0], schema.TensorArgument):
+                result = []
+                for arg in value:
+                    if arg.name in self.state_dict:  # TODO(T157676982)
+                        val = self.state_dict[arg.name]
+                        setattr(self.module, arg.name, val)
+                        result.append(
+                            self.graph.create_node(
+                                "get_attr",
+                                arg.name,
+                                name=arg.name,
+                            )
+                        )
+                    else:
+                        result.append(self.serialized_name_to_node[arg.name])
+                return result
 
         return super().deserialize_input(inp)
 
@@ -530,7 +567,6 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             )
             for k, v in serialized_exported_program.range_constraints.items()
         }
-
         state_dict = export_serialize.deserialize_state_dict(serialized_state_dict)
         (
             graph_module,
