@@ -92,6 +92,17 @@ def define_op_library(name, deps):
             "//executorch/runtime/kernel:kernel_includes",
         ] + augmented_deps,
         fbandroid_platform_preprocessor_flags = get_vec_android_preprocessor_flags(),
+        # sleef needs to be added as a direct dependency of the operator target when building for Android,
+        # or a linker error may occur. Not sure why this happens; it seems that fbandroid_platform_deps of
+        # dependencies are not transitive
+        fbandroid_platform_deps = [
+            (
+                "^android-arm64.*$",
+                [
+                    "fbsource//third-party/sleef:sleef_arm",
+                ],
+            ),
+        ],
         # link_whole is necessary because the operators register themselves
         # via static initializers that run at program startup.
         # @lint-ignore BUCKLINT link_whole
