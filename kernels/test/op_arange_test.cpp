@@ -79,13 +79,13 @@ void test_arange_dtype() {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpArangeOutTest, AllRealDtypesSupported) {
+TEST(OpArangeOutTest, AllRealDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_arange_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpArangeOutTest, BoolDtypeSupported) {
+TEST(OpArangeOutTest, BoolDtypeSupported) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel test fails";
   }
@@ -106,7 +106,7 @@ TEST_F(OpArangeOutTest, BoolDtypeSupported) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
+TEST(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel test fails";
   }
@@ -130,7 +130,7 @@ TEST_F(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpArangeOutTest, EndOutTypeMismatchDie) {
+TEST(OpArangeOutTest, EndOutTypeMismatchDie) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle type mismatch";
   }
@@ -144,7 +144,7 @@ TEST_F(OpArangeOutTest, EndOutTypeMismatchDie) {
   ET_EXPECT_KERNEL_FAILURE(op_arange_out(end, out));
 }
 
-TEST_F(OpArangeOutTest, OutDimUnsupportedDie) {
+TEST(OpArangeOutTest, OutDimUnsupportedDie) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched out dim";
   }
@@ -158,7 +158,7 @@ TEST_F(OpArangeOutTest, OutDimUnsupportedDie) {
   ET_EXPECT_KERNEL_FAILURE(op_arange_out(end, out));
 }
 
-TEST_F(OpArangeOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpArangeOutTest, DynamicShapeUpperBoundSameAsExpected) {
   GTEST_SKIP() << "Dynamic shape is not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -170,7 +170,7 @@ TEST_F(OpArangeOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpArangeOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpArangeOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   GTEST_SKIP() << "Dynamic shape is not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -182,7 +182,7 @@ TEST_F(OpArangeOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpArangeOutTest, DynamicShapeUnbound) {
+TEST(OpArangeOutTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape is not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -216,14 +216,14 @@ void test_arange_start_dtype() {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpArangeStartOutTest, AllRealDtypesSupported) {
+TEST(OpArangeStartOutTest, AllRealDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) \
   test_arange_start_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpArangeStartOutTest, BoolDtypeSupported) {
+TEST(OpArangeStartOutTest, BoolDtypeSupported) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel test fails";
   }
@@ -246,7 +246,7 @@ TEST_F(OpArangeStartOutTest, BoolDtypeSupported) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpArangeStartOutTest, FloatNumberNotEqualIntSupport) {
+TEST(OpArangeStartOutTest, FloatNumberNotEqualIntSupport) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel test fails";
   }
@@ -273,7 +273,7 @@ TEST_F(OpArangeStartOutTest, FloatNumberNotEqualIntSupport) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpArangeStartOutTest, EndOutTypeMismatchDie) {
+TEST(OpArangeStartOutTest, EndOutTypeMismatchDie) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle type mismatch";
   }
@@ -289,7 +289,7 @@ TEST_F(OpArangeStartOutTest, EndOutTypeMismatchDie) {
   ET_EXPECT_KERNEL_FAILURE(op_arange_start_out(start, end, step, out));
 }
 
-TEST_F(OpArangeStartOutTest, OutDimUnsupportedDie) {
+TEST(OpArangeStartOutTest, OutDimUnsupportedDie) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched out dim";
   }
@@ -305,7 +305,7 @@ TEST_F(OpArangeStartOutTest, OutDimUnsupportedDie) {
   ET_EXPECT_KERNEL_FAILURE(op_arange_start_out(start, end, step, out));
 }
 
-TEST_F(OpArangeStartOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpArangeStartOutTest, DynamicShapeUpperBoundSameAsExpected) {
   GTEST_SKIP() << "Dynamic shape is not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -317,7 +317,7 @@ TEST_F(OpArangeStartOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpArangeStartOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpArangeStartOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   GTEST_SKIP() << "Dynamic shape is not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -329,7 +329,7 @@ TEST_F(OpArangeStartOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpArangeStartOutTest, DynamicShapeUnbound) {
+TEST(OpArangeStartOutTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape is not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -341,7 +341,7 @@ TEST_F(OpArangeStartOutTest, DynamicShapeUnbound) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpArangeStartOutTest, StartOut) {
+TEST(OpArangeStartOutTest, StartOut) {
   TensorFactory<ScalarType::Float> tf;
 
   Scalar start = Scalar(1.1);
@@ -374,7 +374,7 @@ TEST_F(OpArangeStartOutTest, StartOut) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpArangeStartOutTest, StartOutNegativeStep) {
+TEST(OpArangeStartOutTest, StartOutNegativeStep) {
   TensorFactory<ScalarType::Float> tf;
 
   Scalar start = Scalar(5.5);

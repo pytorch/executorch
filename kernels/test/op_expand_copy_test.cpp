@@ -42,7 +42,7 @@ Tensor& op_expand_copy_out(
       context, self, sizes, implicit, out);
 }
 
-TEST_F(OpExpandOutTest, NoOp) {
+TEST(OpExpandOutTest, NoOp) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.ones({2, 2});
   Tensor out = tf.zeros({2, 2});
@@ -54,7 +54,7 @@ TEST_F(OpExpandOutTest, NoOp) {
   EXPECT_TENSOR_EQ(out, tf.ones({2, 2}));
 }
 
-TEST_F(OpExpandOutTest, PrependDims) {
+TEST(OpExpandOutTest, PrependDims) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.ones({2, 2});
   Tensor out = tf.zeros({3, 3, 3, 2, 2});
@@ -66,7 +66,7 @@ TEST_F(OpExpandOutTest, PrependDims) {
   EXPECT_TENSOR_EQ(out, tf.ones({3, 3, 3, 2, 2}));
 }
 
-TEST_F(OpExpandOutTest, GrowExistingDim) {
+TEST(OpExpandOutTest, GrowExistingDim) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.ones({2, 1});
   Tensor out = tf.zeros({2, 92});
@@ -78,7 +78,7 @@ TEST_F(OpExpandOutTest, GrowExistingDim) {
   EXPECT_TENSOR_EQ(out, tf.ones({2, 92}));
 }
 
-TEST_F(OpExpandOutTest, AllNegativeOnes) {
+TEST(OpExpandOutTest, AllNegativeOnes) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.ones({2, 4, 12});
   Tensor out = tf.zeros({2, 4, 12});
@@ -90,7 +90,7 @@ TEST_F(OpExpandOutTest, AllNegativeOnes) {
   EXPECT_TENSOR_EQ(out, tf.ones({2, 4, 12}));
 }
 
-TEST_F(OpExpandOutTest, EndsNegativeOnes) {
+TEST(OpExpandOutTest, EndsNegativeOnes) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.ones({2, 1, 12});
   Tensor out = tf.zeros({2, 14, 12});
@@ -102,7 +102,7 @@ TEST_F(OpExpandOutTest, EndsNegativeOnes) {
   EXPECT_TENSOR_EQ(out, tf.ones({2, 14, 12}));
 }
 
-TEST_F(OpExpandOutTest, MoreNegativeOnes) {
+TEST(OpExpandOutTest, MoreNegativeOnes) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.ones({2, 14, 1});
   Tensor out = tf.zeros({2, 14, 12});
@@ -114,7 +114,7 @@ TEST_F(OpExpandOutTest, MoreNegativeOnes) {
   EXPECT_TENSOR_EQ(out, tf.ones({2, 14, 12}));
 }
 
-TEST_F(OpExpandOutTest, BadExpandDimsTooSmall) {
+TEST(OpExpandOutTest, BadExpandDimsTooSmall) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.ones({2, 14, 1});
   Tensor out = tf.ones({2, 14}); // undefined
@@ -125,7 +125,7 @@ TEST_F(OpExpandOutTest, BadExpandDimsTooSmall) {
       op_expand_copy_out(a, {dims.data(), dims.size()}, false, out));
 }
 
-TEST_F(OpExpandOutTest, BadLeadingNegativeOnes) {
+TEST(OpExpandOutTest, BadLeadingNegativeOnes) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.ones({2, 14, 1});
   Tensor out = tf.ones({2, 14, 1}); // undefined
@@ -136,7 +136,7 @@ TEST_F(OpExpandOutTest, BadLeadingNegativeOnes) {
       op_expand_copy_out(a, {dims.data(), dims.size()}, false, out));
 }
 
-TEST_F(OpExpandOutTest, ExpandDimsOneToN) {
+TEST(OpExpandOutTest, ExpandDimsOneToN) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.make(/*sizes*/ {2, 1}, /*data=*/{3, 3});
   Tensor out = tf.ones({2, 6});
@@ -150,7 +150,7 @@ TEST_F(OpExpandOutTest, ExpandDimsOneToN) {
       tf.make(/*sizes*/ {2, 6}, /*data=*/{3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3}));
 }
 
-TEST_F(OpExpandOutTest, ExpandOneToNPlusNewDimUniform) {
+TEST(OpExpandOutTest, ExpandOneToNPlusNewDimUniform) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.make(/*sizes*/ {2, 1}, /*data=*/{3, 3});
   Tensor out = tf.ones({2, 2, 6});
@@ -165,7 +165,7 @@ TEST_F(OpExpandOutTest, ExpandOneToNPlusNewDimUniform) {
                                                   3, 3, 3, 3, 3, 3, 3, 3}));
 }
 
-TEST_F(OpExpandOutTest, ExpandOneToNPlusNewDimDifferent) {
+TEST(OpExpandOutTest, ExpandOneToNPlusNewDimDifferent) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.make(/*sizes*/ {2, 1}, /*data=*/{1, 2});
   Tensor out = tf.ones({2, 2, 6});
@@ -180,7 +180,7 @@ TEST_F(OpExpandOutTest, ExpandOneToNPlusNewDimDifferent) {
                                                   1, 1, 2, 2, 2, 2, 2, 2}));
 }
 
-TEST_F(OpExpandOutTest, ExpandOneToNPlusNewDimDifferentTwo) {
+TEST(OpExpandOutTest, ExpandOneToNPlusNewDimDifferentTwo) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.make(/*sizes*/ {1, 2}, /*data=*/{42, 96});
   Tensor out = tf.ones({2, 6, 2});
@@ -196,7 +196,7 @@ TEST_F(OpExpandOutTest, ExpandOneToNPlusNewDimDifferentTwo) {
                                              42, 96, 42, 96, 42, 96, 42, 96}));
 }
 
-TEST_F(OpExpandOutTest, BadOutDataTypeGoodShapeDeath) {
+TEST(OpExpandOutTest, BadOutDataTypeGoodShapeDeath) {
   TensorFactory<ScalarType::Int> tf_int;
   Tensor a = tf_int.make(/*sizes*/ {1, 2}, /*data=*/{42, 96});
 
@@ -209,7 +209,7 @@ TEST_F(OpExpandOutTest, BadOutDataTypeGoodShapeDeath) {
       op_expand_copy_out(a, {dims.data(), dims.size()}, false, out));
 }
 
-TEST_F(OpExpandOutTest, BadOutShapeGoodDataTypeDeath) {
+TEST(OpExpandOutTest, BadOutShapeGoodDataTypeDeath) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle this";
   }
@@ -223,7 +223,7 @@ TEST_F(OpExpandOutTest, BadOutShapeGoodDataTypeDeath) {
       op_expand_copy_out(a, {dims.data(), dims.size()}, false, out));
 }
 
-TEST_F(OpExpandOutTest, SingleToMany) {
+TEST(OpExpandOutTest, SingleToMany) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.make(/*sizes*/ {1}, /*data=*/{42});
   Tensor out = tf.ones({4, 4, 4});
@@ -243,7 +243,7 @@ TEST_F(OpExpandOutTest, SingleToMany) {
                     42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42}));
 }
 
-TEST_F(OpExpandOutTest, ZeroDimInputExpand_1) {
+TEST(OpExpandOutTest, ZeroDimInputExpand_1) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.make(/*sizes*/ {}, /*data=*/{3});
   Tensor out = tf.ones({6});
@@ -255,7 +255,7 @@ TEST_F(OpExpandOutTest, ZeroDimInputExpand_1) {
   EXPECT_TENSOR_EQ(out, tf.make(/*sizes*/ {6}, /*data=*/{3, 3, 3, 3, 3, 3}));
 }
 
-TEST_F(OpExpandOutTest, ZeroDimInputExpand_2) {
+TEST(OpExpandOutTest, ZeroDimInputExpand_2) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.make(/*sizes*/ {}, /*data=*/{3});
   Tensor out = tf.ones({6, 2});
@@ -269,7 +269,7 @@ TEST_F(OpExpandOutTest, ZeroDimInputExpand_2) {
       tf.make(/*sizes*/ {6, 2}, /*data=*/{3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3}));
 }
 
-TEST_F(OpExpandOutTest, ZeroDimInputZeroDimOutputExpand) {
+TEST(OpExpandOutTest, ZeroDimInputZeroDimOutputExpand) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.make(/*sizes*/ {}, /*data=*/{3});
   Tensor out = tf.ones({});
@@ -282,7 +282,7 @@ TEST_F(OpExpandOutTest, ZeroDimInputZeroDimOutputExpand) {
 }
 
 #ifndef USE_ATEN_LIB
-TEST_F(OpExpandOutTest, ResizedOutput) {
+TEST(OpExpandOutTest, ResizedOutput) {
   // In this case, the output starts off with a different shape than is
   // expected. We are checking to see that dynamic shape support is working
   // correctly and that the output will be resized to the correct shape inside
@@ -307,7 +307,7 @@ TEST_F(OpExpandOutTest, ResizedOutput) {
 }
 #endif
 
-TEST_F(OpExpandOutTest, ImplicitTrue) {
+TEST(OpExpandOutTest, ImplicitTrue) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle this";
   }
@@ -334,7 +334,7 @@ opt_extra_params = "sizes_aref, false,"
 dtype = "ScalarType::Float"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST_F(OpExpandOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpExpandOutTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{2, 5, 3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -371,7 +371,7 @@ TEST_F(OpExpandOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpExpandOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpExpandOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }
@@ -411,7 +411,7 @@ TEST_F(OpExpandOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpExpandOutTest, DynamicShapeUnbound) {
+TEST(OpExpandOutTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }

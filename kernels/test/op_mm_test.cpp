@@ -37,7 +37,7 @@ class OpMmOutTest : public ::testing::Test {
   }
 };
 
-TEST_F(OpMmOutTest, OutputDim) {
+TEST(OpMmOutTest, OutputDim) {
   TensorFactory<ScalarType::Int> tf;
 
   // 3 tensors with compatible dimensions: (3, 5), (3, 4) and (4, 5).
@@ -76,7 +76,7 @@ void test_dtype() {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpMmOutTest, AllDtypesSupported) {
+TEST(OpMmOutTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
@@ -85,7 +85,7 @@ TEST_F(OpMmOutTest, AllDtypesSupported) {
   // for those types.
 }
 
-TEST_F(OpMmOutTest, EmptyInputWithEmptyOutTensorPasses) {
+TEST(OpMmOutTest, EmptyInputWithEmptyOutTensorPasses) {
   TensorFactory<ScalarType::Float> tf;
 
   // Empty input matrices
@@ -100,7 +100,7 @@ TEST_F(OpMmOutTest, EmptyInputWithEmptyOutTensorPasses) {
   EXPECT_TENSOR_EQ(op_mm_out(x, y, out), expected);
 }
 
-TEST_F(OpMmOutTest, InfinityTensorPasses) {
+TEST(OpMmOutTest, InfinityTensorPasses) {
   TensorFactory<ScalarType::Float> tff;
 
   Tensor x = tff.full({3, 4}, std::numeric_limits<float>::infinity());
@@ -114,7 +114,7 @@ TEST_F(OpMmOutTest, InfinityTensorPasses) {
   EXPECT_TENSOR_EQ(op_mm_out(x, y, out), expected);
 }
 
-TEST_F(OpMmOutTest, MismatchedDimensionsDies) {
+TEST(OpMmOutTest, MismatchedDimensionsDies) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor x = tf.full({2, 2}, 3);
@@ -131,7 +131,7 @@ TEST_F(OpMmOutTest, MismatchedDimensionsDies) {
   EXPECT_TENSOR_EQ(op_mm_out(x, right_y, out), expected);
 }
 
-TEST_F(OpMmOutTest, MismatchedDimensionSizeDies) {
+TEST(OpMmOutTest, MismatchedDimensionSizeDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched dimension size";
   }
@@ -150,7 +150,7 @@ TEST_F(OpMmOutTest, MismatchedDimensionSizeDies) {
   ET_EXPECT_KERNEL_FAILURE(op_mm_out(x, wrong_y, right_out));
 }
 
-TEST_F(OpMmOutTest, WrongOutShapeDies) {
+TEST(OpMmOutTest, WrongOutShapeDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle wrong out shape";
   }
