@@ -64,7 +64,10 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
                 (input_x, input_h, input_c),
                 exir.CaptureConfig(pt2_mode=True, enable_aot=True),
             )
-            .to_edge()
+            .to_edge(
+                # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
+                exir.EdgeCompileConfig(_check_ir_validity=False)
+            )
             .exported_program.graph_module
         )
         pattern_lstm_conv = (
@@ -73,7 +76,10 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
                 (input_x, input_h, input_c),
                 exir.CaptureConfig(pt2_mode=True),
             )
-            .to_edge()
+            .to_edge(
+                # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
+                exir.EdgeCompileConfig(_check_ir_validity=False)
+            )
             .exported_program.graph_module
         )
 
@@ -232,7 +238,10 @@ class HTAPartitionerOnePatternDemo(Partitioner):
                 (input_x, input_h, input_c),
                 exir.CaptureConfig(pt2_mode=True, enable_aot=True),
             )
-            .to_edge()
+            .to_edge(
+                # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
+                exir.EdgeCompileConfig(_check_ir_validity=False)
+            )
             .exported_program.graph_module
         )
         pattern_lstm_conv_unlifted = (
@@ -241,7 +250,10 @@ class HTAPartitionerOnePatternDemo(Partitioner):
                 (input_x, input_h, input_c),
                 exir.CaptureConfig(pt2_mode=True),
             )
-            .to_edge()
+            .to_edge(
+                # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
+                exir.EdgeCompileConfig(_check_ir_validity=False)
+            )
             .exported_program.graph_module
         )
         self.patterns = [

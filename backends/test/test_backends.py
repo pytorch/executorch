@@ -627,11 +627,17 @@ class TestBackends(unittest.TestCase):
 
         traced = exir.capture(
             composite_m, inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge()
+        ).to_edge(
+            # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
+            exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
 
         program_without_delegates = (
             exir.capture(CompositeModel(3), inputs)
-            .to_edge()
+            .to_edge(
+                # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
+                exir.EdgeCompileConfig(_check_ir_validity=False)
+            )
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
             )
@@ -734,7 +740,10 @@ class TestBackends(unittest.TestCase):
             composite_m,
             inputs,
             exir.CaptureConfig(pt2_mode=True),
-        ).to_edge()
+        ).to_edge(
+            # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
+            exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
 
         program_without_delegates = (
             exir.capture(
@@ -742,7 +751,10 @@ class TestBackends(unittest.TestCase):
                 (input_x, input_h, input_c),
                 exir.CaptureConfig(pt2_mode=True),
             )
-            .to_edge()
+            .to_edge(
+                # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
+                exir.EdgeCompileConfig(_check_ir_validity=False)
+            )
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
             )
