@@ -21,7 +21,12 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& ne_scalar_out(const Tensor& self, Scalar& other, Tensor& out) {
+Tensor& op_ne_scalar_out(const Tensor& self, Scalar& other, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::ne_outf(context, self, other, out);
+}
+
+Tensor& op_ne_tensor_out(const Tensor& self, Tensor& other, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::ne_outf(context, self, other, out);
 }
@@ -38,7 +43,7 @@ void test_ne_scalar_out() {
   Scalar other = 2;
 
   // Valid input should give the expected output
-  ne_scalar_out(tf.make(sizes, /*data=*/{2, 3, 2, 3}), other, out);
+  op_ne_scalar_out(tf.make(sizes, /*data=*/{2, 3, 2, 3}), other, out);
   EXPECT_TENSOR_EQ(
       out, tf_out.make(sizes, /*data=*/{false, true, false, true}));
 }
@@ -57,7 +62,7 @@ TEST(OpNeScalarOutKernelTest, BoolInputDtype) {
   Tensor out = tf_bool.zeros(sizes);
   Scalar other = 1;
 
-  ne_scalar_out(a, other, out);
+  op_ne_scalar_out(a, other, out);
   EXPECT_TENSOR_EQ(
       out, tf_bool.make(sizes, /*data=*/{true, false, true, false}));
 }
@@ -74,7 +79,7 @@ TEST(OpNeScalarOutKernelTest, MismatchedShapesDies) {
   Tensor out = tf_bool.ones(/*sizes=*/{2, 2});
   Scalar other = 3;
 
-  ET_EXPECT_KERNEL_FAILURE(ne_scalar_out(a, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_ne_scalar_out(a, other, out));
 }
 
 // Handle all output dtypes.
@@ -89,7 +94,7 @@ void test_ne_all_output_dtypes() {
   Tensor out = tf_out.zeros(sizes);
   Scalar other = 3;
 
-  ne_scalar_out(in, other, out);
+  op_ne_scalar_out(in, other, out);
   EXPECT_TENSOR_EQ(out, tf_out.ones(sizes));
 }
 
@@ -123,7 +128,7 @@ import torch
 torch.manual_seed(0)
 x = torch.randint(3, (3, 2))
 res = torch.ne(x, 2)
-op = "ne_scalar_out"
+op = "op_ne_scalar_out"
 opt_setup_params = """
   Scalar other = 2;
 """
@@ -147,7 +152,7 @@ TEST(OpNeScalarOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tfOut.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  ne_scalar_out(x, other, out);
+  op_ne_scalar_out(x, other, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -166,7 +171,7 @@ TEST(OpNeScalarOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out = tfOut.zeros(
       {10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  ne_scalar_out(x, other, out);
+  op_ne_scalar_out(x, other, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -188,6 +193,6 @@ TEST(OpNeScalarOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out = tfOut.zeros(
       {1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  ne_scalar_out(x, other, out);
+  op_ne_scalar_out(x, other, out);
   EXPECT_TENSOR_EQ(out, expected);
 }

@@ -23,12 +23,13 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _mul_out(const Tensor& self, const Tensor& other, Tensor& out) {
+Tensor& op_mul_out(const Tensor& self, const Tensor& other, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::mul_outf(context, self, other, out);
 }
 
-Tensor& _mul_scalar_out(const Tensor& self, const Scalar& other, Tensor& out) {
+Tensor&
+op_mul_scalar_out(const Tensor& self, const Scalar& other, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::mul_outf(context, self, other, out);
 }
@@ -50,13 +51,13 @@ void test_mul() {
   Tensor out = tf_out.zeros(sizes);
 
   // Multiply two tensors
-  _mul_out(tf_a.make(sizes, /*data=*/{1, 2, 4, 8}), tf_b.ones(sizes), out);
+  op_mul_out(tf_a.make(sizes, /*data=*/{1, 2, 4, 8}), tf_b.ones(sizes), out);
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{1, 2, 4, 8}));
 
-  _mul_out(tf_a.make(sizes, /*data=*/{1, 2, 4, 8}), tf_b.zeros(sizes), out);
+  op_mul_out(tf_a.make(sizes, /*data=*/{1, 2, 4, 8}), tf_b.zeros(sizes), out);
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{0, 0, 0, 0}));
 
-  _mul_out(
+  op_mul_out(
       tf_a.make(sizes, /*data=*/{1, 2, 4, 8}),
       tf_b.make(sizes, /*data=*/{1, 2, 4, 8}),
       out);
@@ -112,13 +113,15 @@ void test_floating_point_mul_out() {
   Tensor out = tf.zeros(sizes);
 
   // Multiply two tensors
-  _mul_out(tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}), tf.ones(sizes), out);
+  op_mul_out(
+      tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}), tf.ones(sizes), out);
   EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}));
 
-  _mul_out(tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}), tf.zeros(sizes), out);
+  op_mul_out(
+      tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}), tf.zeros(sizes), out);
   EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{0.0, 0.0, 0.0, 0.0}));
 
-  _mul_out(
+  op_mul_out(
       tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
       tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
       out);
@@ -142,15 +145,15 @@ TEST(OpMulOutKernelTest, BoolTensors) {
   Tensor out = tf.zeros(sizes);
 
   // Multiply two tensors
-  _mul_out(
+  op_mul_out(
       tf.make(sizes, /*data=*/{true, false, true, true}), tf.ones(sizes), out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, false, true, true}));
 
-  _mul_out(
+  op_mul_out(
       tf.make(sizes, /*data=*/{true, false, true, true}), tf.zeros(sizes), out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{false, false, false, false}));
 
-  _mul_out(
+  op_mul_out(
       tf.make(sizes, /*data=*/{true, false, true, true}),
       tf.make(sizes, /*data=*/{false, false, true, false}),
       out);
@@ -174,7 +177,7 @@ TEST(OpMulOutKernelTest, MismatchedInputShapesDies) {
 
   // Multiplying the two mismatched tensors should cause an assertion and kill
   // the test process.
-  ET_EXPECT_KERNEL_FAILURE(_mul_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(op_mul_out(a, b, out));
 }
 
 // Broadcast tensor b's size to tensor a's size
@@ -190,7 +193,7 @@ TEST(OpMulOutKernelTest, BroadcastA2BTest) {
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(
-      _mul_out(a, b, out), tf_a.make({2, 2}, /*data=*/{2, 4, 6, 8}));
+      op_mul_out(a, b, out), tf_a.make({2, 2}, /*data=*/{2, 4, 6, 8}));
 }
 
 // Broadcast tensor a's size to tensor b's size
@@ -206,7 +209,7 @@ TEST(OpMulOutKernelTest, BroadcastB2ATest) {
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(
-      _mul_out(a, b, out), tf_a.make({2, 2}, /*data=*/{2, 4, 6, 8}));
+      op_mul_out(a, b, out), tf_a.make({2, 2}, /*data=*/{2, 4, 6, 8}));
 }
 
 // Broadcast tensor a and b's size to a new size c.
@@ -222,7 +225,7 @@ TEST(OpMulOutKernelTest, BroadcastAB2CTest) {
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(
-      _mul_out(a, b, out),
+      op_mul_out(a, b, out),
       tf_a.make({2, 2, 2}, /*data=*/{1, 2, 2, 4, 3, 4, 6, 8}));
 }
 
@@ -238,7 +241,7 @@ TEST(OpMaskedFillTest, ScalarInputBroadcastTest) {
   Tensor expected = tf_a.make({2}, /*data=*/{4, 4});
 
   // Check that it matches the expected output.
-  EXPECT_TENSOR_CLOSE(_mul_out(a, b, out), expected);
+  EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
 }
 
 TEST(OpMulOutKernelTest, MismatchedOutputShapesDies) {
@@ -259,7 +262,7 @@ TEST(OpMulOutKernelTest, MismatchedOutputShapesDies) {
 
   // Multiplying the tensors into a mismatched output should cause an assertion
   // and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(_mul_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(op_mul_out(a, b, out));
 }
 
 TEST(OpMulOutKernelTest, BroadcastDimSizeIsOneAB) {
@@ -284,7 +287,7 @@ TEST(OpMulOutKernelTest, BroadcastDimSizeIsOneAB) {
        0.004466558340936899});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = _mul_out(x, y, out);
+  Tensor ret = op_mul_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -310,7 +313,7 @@ TEST(OpMulOutKernelTest, BroadcastDimSizeMissingAB) {
        0.004466558340936899});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = _mul_out(x, y, out);
+  Tensor ret = op_mul_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -336,7 +339,7 @@ TEST(OpMulOutKernelTest, BroadcastDimSizeIsOneBA) {
        0.004466558340936899});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = _mul_out(x, y, out);
+  Tensor ret = op_mul_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -362,7 +365,7 @@ TEST(OpMulOutKernelTest, BroadcastDimSizeMissingBA) {
        0.004466558340936899});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = _mul_out(x, y, out);
+  Tensor ret = op_mul_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -396,7 +399,7 @@ TEST(OpMulOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _mul_out(x, y, out);
+  Tensor ret = op_mul_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -430,7 +433,7 @@ TEST(OpMulOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _mul_out(x, y, out);
+  Tensor ret = op_mul_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -465,7 +468,7 @@ TEST(OpMulOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = _mul_out(x, y, out);
+  Tensor ret = op_mul_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -477,7 +480,7 @@ TEST(OpMulScalarOutKernelTest, SanityCheck) {
 
   Tensor out = tf_out.zeros(sizes);
 
-  _mul_scalar_out(tf_a.make(sizes, {true, false, true, false}), 2.3, out);
+  op_mul_scalar_out(tf_a.make(sizes, {true, false, true, false}), 2.3, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {2.3, 0.0, 2.3, 0.0}));
@@ -490,7 +493,7 @@ TEST(OpMulScalarOutKernelTest, OptimizedSanityCheck) {
 
   Tensor out = tf.zeros(sizes);
 
-  _mul_scalar_out(tf.make(sizes, {1.3, 2.1, 4.6, 8.2}), 2.0, out);
+  op_mul_scalar_out(tf.make(sizes, {1.3, 2.1, 4.6, 8.2}), 2.0, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {2.6, 4.2, 9.2, 16.4}));

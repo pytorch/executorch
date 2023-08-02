@@ -22,7 +22,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& copy_out(
+Tensor& op_copy_out(
     const Tensor& self,
     const Tensor& src,
     bool non_blocking,
@@ -45,12 +45,12 @@ void test_dtype() {
 
   // we only support contiguous memory, the memory type shall be either nullopt
   // or MemoryFormat::Contiguous.
-  Tensor out_nullopt_ret = copy_out(
+  Tensor out_nullopt_ret = op_copy_out(
       /*self=*/self,
       /*src=*/src,
       /*non_blocking=*/non_blocking,
       /*out=*/out_nullopt);
-  Tensor out_contiguous_ret = copy_out(
+  Tensor out_contiguous_ret = op_copy_out(
       /*self=*/self,
       /*src=*/src,
       /*non_blocking=*/non_blocking,
@@ -81,7 +81,7 @@ void test_empty_input() {
   Tensor src = tf.make(/*sizes=*/{3, 0, 1, 2}, /*data=*/{});
   bool non_blocking = false;
   Tensor out = tf.zeros({3, 0, 1, 2});
-  copy_out(self, src, non_blocking, out);
+  op_copy_out(self, src, non_blocking, out);
   // check a and out share same value, but are different object
   EXPECT_TENSOR_EQ(src, out);
 }
@@ -98,7 +98,7 @@ TEST(OpCopyTest, BroadCastSrcSupported) {
   Tensor src = tf.make(/*sizes=*/{1, 2}, /*data=*/{3, 3});
   bool non_blocking = false;
   Tensor out = tf.zeros({2, 2});
-  copy_out(self, src, non_blocking, out);
+  op_copy_out(self, src, non_blocking, out);
   Tensor out_expected = tf.make(/*sizes=*/{2, 2}, /*data=*/{3, 3, 3, 3});
   EXPECT_TENSOR_EQ(out, out_expected);
 }
@@ -109,7 +109,7 @@ TEST(OpCopyTest, BroadCastSrcMissingDimSupported) {
   Tensor src = tf.make(/*sizes=*/{1, 2}, /*data=*/{3, 3});
   bool non_blocking = false;
   Tensor out = tf.zeros({2, 2});
-  copy_out(self, src, non_blocking, out);
+  op_copy_out(self, src, non_blocking, out);
   Tensor out_expected = tf.make(/*sizes=*/{2, 2}, /*data=*/{3, 3, 3, 3});
   EXPECT_TENSOR_EQ(out, out_expected);
 }
@@ -120,7 +120,7 @@ TEST(OpCopyTest, BroadCastSelfcSupportedDie) {
   Tensor src = tf.make(/*sizes=*/{2, 2}, /*data=*/{1, 2, 3, 4});
   bool non_blocking = false;
   Tensor out = tf.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(copy_out(self, src, non_blocking, out));
+  ET_EXPECT_KERNEL_FAILURE(op_copy_out(self, src, non_blocking, out));
 }
 
 TEST(OpCopyTest, MismatchSelfSrcTypeSupported) {
@@ -131,7 +131,7 @@ TEST(OpCopyTest, MismatchSelfSrcTypeSupported) {
   Tensor src = tf_src.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf_src.zeros({3, 0, 1, 2});
   bool non_blocking = false;
-  ET_EXPECT_KERNEL_FAILURE(copy_out(self, src, non_blocking, out));
+  ET_EXPECT_KERNEL_FAILURE(op_copy_out(self, src, non_blocking, out));
 }
 
 #ifndef USE_ATEN_LIB
@@ -142,7 +142,7 @@ TEST(OpCopyTest, ResizeOutSupported) {
   Tensor out = tf.zeros(
       {4, 2, 2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   bool non_blocking = false;
-  copy_out(self, src, non_blocking, out);
+  op_copy_out(self, src, non_blocking, out);
   Tensor out_expected =
       tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   EXPECT_TENSOR_EQ(out, out_expected);
@@ -157,7 +157,7 @@ TEST(OpCopyTest, ResizeOutDie) {
   Tensor out = tf_src.zeros(
       {3, 2, 0}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   bool non_blocking = false;
-  ET_EXPECT_KERNEL_FAILURE(copy_out(self, src, non_blocking, out));
+  ET_EXPECT_KERNEL_FAILURE(op_copy_out(self, src, non_blocking, out));
 }
 #endif
 
@@ -170,7 +170,7 @@ TEST(OpCopyTest, MismatchedSizesDie) {
   Tensor src = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   bool non_blocking = false;
   Tensor out = tf.zeros({3, 2, 1, 1});
-  ET_EXPECT_KERNEL_FAILURE(copy_out(self, src, non_blocking, out));
+  ET_EXPECT_KERNEL_FAILURE(op_copy_out(self, src, non_blocking, out));
 }
 
 TEST(OpCopyTest, MismatchedSrcOutTypesDie) {
@@ -180,7 +180,7 @@ TEST(OpCopyTest, MismatchedSrcOutTypesDie) {
   Tensor src = tf_in.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   bool non_blocking = false;
   Tensor out = tf_out.zeros({3, 1, 1, 2});
-  ET_EXPECT_KERNEL_FAILURE(copy_out(self, src, non_blocking, out));
+  ET_EXPECT_KERNEL_FAILURE(op_copy_out(self, src, non_blocking, out));
 }
 
 // Only contiguous memory is supported, the memory type other than nullopt or
@@ -196,7 +196,7 @@ TEST(OpCopyTest, BlockingDie) {
   Tensor src = tf_in.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   bool non_blocking = true;
   Tensor out = tf_out.zeros({3, 1, 1, 2});
-  ET_EXPECT_KERNEL_FAILURE(copy_out(self, src, non_blocking, out));
+  ET_EXPECT_KERNEL_FAILURE(op_copy_out(self, src, non_blocking, out));
 }
 
 /* %python
@@ -216,7 +216,7 @@ copy_template = f"""
   {declare_tensor_make_t("expected", "tf")}
   {declare_tensor_zeros("out_shape, dynamism", "tf", "out")}
 
-  copy_out(self, src, $non_blocking$, out);
+  op_copy_out(self, src, $non_blocking$, out);
   EXPECT_TENSOR_EQ(out, expected);""" */
 
 void test_dynamic_shape(
@@ -232,7 +232,7 @@ void test_dynamic_shape(
   Tensor expected = tf.make({3, 4}, {6, 9, 8, 6, 6, 8, 4, 3, 6, 9, 1, 4});
   Tensor out = tf.zeros(out_shape, dynamism);
 
-  copy_out(self, src, false, out);
+  op_copy_out(self, src, false, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 

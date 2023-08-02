@@ -24,7 +24,7 @@ using exec_aten::TensorList;
 using torch::executor::testing::TensorFactory;
 using torch::executor::testing::TensorListFactory;
 
-void unbind_copy_int_out(const Tensor& self, int64_t dim, TensorList out) {
+void op_unbind_copy_int_out(const Tensor& self, int64_t dim, TensorList out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::unbind_copy_outf(context, self, dim, out);
 }
@@ -68,13 +68,13 @@ void test_unbind_dim0() {
   // Output list with the same shapes/dtypes as the expected outputs.
   TensorList out = tlf.zeros_like(expected_out);
 
-  unbind_copy_int_out(input, /*dim=*/0, out);
+  op_unbind_copy_int_out(input, /*dim=*/0, out);
 
   EXPECT_TENSOR_LISTS_EQ(expected_out, out);
 
   // Also show that python negative indexing works for this case.
   TensorList out2 = tlf.zeros_like(expected_out);
-  unbind_copy_int_out(input, /*dim=*/-3, out2);
+  op_unbind_copy_int_out(input, /*dim=*/-3, out2);
   EXPECT_TENSOR_LISTS_EQ(expected_out, out2);
 }
 
@@ -105,13 +105,13 @@ void test_unbind_dim1() {
   // Output list with the same shapes/dtypes as the expected outputs.
   TensorList out = tlf.zeros_like(expected_out);
 
-  unbind_copy_int_out(input, /*dim=*/1, out);
+  op_unbind_copy_int_out(input, /*dim=*/1, out);
 
   EXPECT_TENSOR_LISTS_EQ(expected_out, out);
 
   // Also show that python negative indexing works for this case.
   TensorList out2 = tlf.zeros_like(expected_out);
-  unbind_copy_int_out(input, /*dim=*/-2, out2);
+  op_unbind_copy_int_out(input, /*dim=*/-2, out2);
   EXPECT_TENSOR_LISTS_EQ(expected_out, out2);
 }
 
@@ -154,13 +154,13 @@ void test_unbind_dim2() {
   // Output list with the same shapes/dtypes as the expected outputs.
   TensorList out = tlf.zeros_like(expected_out);
 
-  unbind_copy_int_out(input, /*dim=*/2, out);
+  op_unbind_copy_int_out(input, /*dim=*/2, out);
 
   EXPECT_TENSOR_LISTS_EQ(expected_out, out);
 
   // Also show that python negative indexing works for this case.
   TensorList out2 = tlf.zeros_like(expected_out);
-  unbind_copy_int_out(input, /*dim=*/-1, out2);
+  op_unbind_copy_int_out(input, /*dim=*/-1, out2);
   EXPECT_TENSOR_LISTS_EQ(expected_out, out2);
 }
 
@@ -193,7 +193,7 @@ TEST(OpUnbindCopyIntOutTest, ZeroDimensionalInputTensorDies) {
   // Arbitrary output shape since this input can't be split.
   TensorList out = tlf.zeros_like({input});
 
-  ET_EXPECT_KERNEL_FAILURE(unbind_copy_int_out(input, /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_unbind_copy_int_out(input, /*dim=*/0, out));
 }
 
 TEST(OpUnbindCopyIntOutTest, UnbindWorksWithZeroSizedTensors) {
@@ -208,7 +208,7 @@ TEST(OpUnbindCopyIntOutTest, UnbindWorksWithZeroSizedTensors) {
 
   TensorList out = tlf.zeros_like(expected_out);
 
-  unbind_copy_int_out(input, /*dim=*/0, out);
+  op_unbind_copy_int_out(input, /*dim=*/0, out);
   EXPECT_TENSOR_LISTS_EQ(out, expected_out);
 
   // unbind dim 1
@@ -216,7 +216,7 @@ TEST(OpUnbindCopyIntOutTest, UnbindWorksWithZeroSizedTensors) {
 
   out = tlf.zeros_like(expected_out);
 
-  unbind_copy_int_out(input, /*dim=*/1, out);
+  op_unbind_copy_int_out(input, /*dim=*/1, out);
   EXPECT_TENSOR_LISTS_EQ(out, expected_out);
 
   // unbind dim 2
@@ -224,7 +224,7 @@ TEST(OpUnbindCopyIntOutTest, UnbindWorksWithZeroSizedTensors) {
 
   out = tlf.zeros_like(expected_out);
 
-  unbind_copy_int_out(input, /*dim=*/2, out);
+  op_unbind_copy_int_out(input, /*dim=*/2, out);
   EXPECT_TENSOR_LISTS_EQ(out, expected_out);
 }
 
@@ -240,21 +240,21 @@ TEST(OpUnbindCopyIntOutTest, UnbindFailsWithWronglyAllocatedOutput) {
   TensorList out = tlf.zeros_like(expected_out);
 
   // Die because length of the list should be 2
-  ET_EXPECT_KERNEL_FAILURE(unbind_copy_int_out(input, /*dim=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(op_unbind_copy_int_out(input, /*dim=*/1, out));
 
   expected_out = {tf.ones({1, 4}), tf.ones({1, 4})};
 
   out = tlf.zeros_like(expected_out);
 
   // Die because output tensors in the list should be of correct sizes
-  ET_EXPECT_KERNEL_FAILURE(unbind_copy_int_out(input, /*dim=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(op_unbind_copy_int_out(input, /*dim=*/1, out));
 
   expected_out = {tf.ones({1}), tf.ones({1})};
 
   out = tlf.zeros_like(expected_out);
 
   // Die because output tensors in the list should have correct number of dims
-  ET_EXPECT_KERNEL_FAILURE(unbind_copy_int_out(input, /*dim=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(op_unbind_copy_int_out(input, /*dim=*/1, out));
 }
 
 TEST(OpUnbindCopyIntOutTest, UnbindProduceScalarTensors) {
@@ -273,7 +273,7 @@ TEST(OpUnbindCopyIntOutTest, UnbindProduceScalarTensors) {
 
   TensorList out = tlf.zeros_like(expected_out);
 
-  unbind_copy_int_out(input, /*dim=*/0, out);
+  op_unbind_copy_int_out(input, /*dim=*/0, out);
   EXPECT_TENSOR_LISTS_EQ(out, expected_out);
 }
 
@@ -293,7 +293,7 @@ TEST(OpUnbindCopyIntOutTest, UnbindProduceScalarLikeTensors) {
 
   TensorList out = tlf.zeros_like(expected_out);
 
-  unbind_copy_int_out(input, /*dim=*/0, out);
+  op_unbind_copy_int_out(input, /*dim=*/0, out);
   EXPECT_TENSOR_LISTS_EQ(out, expected_out);
 
   input = tf.make(
@@ -308,7 +308,7 @@ TEST(OpUnbindCopyIntOutTest, UnbindProduceScalarLikeTensors) {
 
   out = tlf.zeros_like(expected_out);
 
-  unbind_copy_int_out(input, /*dim=*/1, out);
+  op_unbind_copy_int_out(input, /*dim=*/1, out);
   EXPECT_TENSOR_LISTS_EQ(out, expected_out);
 }
 
@@ -317,7 +317,7 @@ import torch
 torch.manual_seed(0)
 x = torch.randint(10, (2, 3, 4))
 res = torch.unbind(x, 1)
-op = "unbind_copy_int_out"
+op = "op_unbind_copy_int_out"
 opt_extra_params = "1,"
 out_args = [
   "out_shape, dynamism",
@@ -348,7 +348,7 @@ void test_dynamic_shape(
       tf.zeros(out_shape, dynamism),
       tf.zeros(out_shape, dynamism)};
   TensorList out(outv.data(), outv.size());
-  unbind_copy_int_out(x, 1, out);
+  op_unbind_copy_int_out(x, 1, out);
   EXPECT_TENSOR_LISTS_EQ(out, expected);
 }
 

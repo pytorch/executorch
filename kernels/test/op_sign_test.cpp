@@ -20,7 +20,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _sign_out(const Tensor& self, Tensor& out) {
+Tensor& op_sign_out(const Tensor& self, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::sign_outf(context, self, out);
 }
@@ -35,7 +35,7 @@ TEST(OpSignTest, ETSanityCheckFloat) {
   Tensor out = tf.zeros({1, 7});
   Tensor expected = tf.make({1, 7}, {-1., -1., -1., 0., 1., NAN, 1.});
 
-  Tensor ret = _sign_out(in, out);
+  Tensor ret = op_sign_out(in, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_CLOSE(out, expected);
@@ -51,7 +51,7 @@ TEST(OpSignTest, ATenSanityCheckFloat) {
   Tensor out = tf.zeros({1, 7});
   Tensor expected = tf.make({1, 7}, {-1., -1., -1., 0., 1., 0., 1.});
 
-  Tensor ret = _sign_out(in, out);
+  Tensor ret = op_sign_out(in, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_CLOSE(out, expected);
@@ -66,7 +66,7 @@ TEST(OpSignTest, SanityCheckBool) {
   Tensor expected = tf.make({1, 6}, {false, true, false, false, true, true});
   // clang-format on
 
-  Tensor ret = _sign_out(in, out);
+  Tensor ret = op_sign_out(in, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_CLOSE(out, expected);

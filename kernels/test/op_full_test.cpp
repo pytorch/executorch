@@ -25,7 +25,7 @@ using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 Tensor&
-_full_out(const IntArrayRef sizes, const Scalar& fill_value, Tensor& out) {
+op_full_out(const IntArrayRef sizes, const Scalar& fill_value, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::full_outf(context, sizes, fill_value, out);
 }
@@ -39,7 +39,7 @@ TEST(OpFullOutTest, DtypeTest_bool_float32) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -53,7 +53,7 @@ TEST(OpFullOutTest, DtypeTest_bool_float64) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -66,7 +66,7 @@ TEST(OpFullOutTest, DtypeTest_bool_uint8) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -79,7 +79,7 @@ TEST(OpFullOutTest, DtypeTest_bool_int8) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -92,7 +92,7 @@ TEST(OpFullOutTest, DtypeTest_bool_int16) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -105,7 +105,7 @@ TEST(OpFullOutTest, DtypeTest_bool_int32) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -118,7 +118,7 @@ TEST(OpFullOutTest, DtypeTest_bool_int64) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -132,7 +132,7 @@ TEST(OpFullOutTest, DtypeTest_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -145,7 +145,7 @@ TEST(OpFullOutTest, DtypeTest_int32_float32) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -159,7 +159,7 @@ TEST(OpFullOutTest, DtypeTest_int32_float64) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -172,7 +172,7 @@ TEST(OpFullOutTest, DtypeTest_int32_uint8) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {2, 2, 2, 2});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -185,7 +185,7 @@ TEST(OpFullOutTest, DtypeTest_int32_int8) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {2, 2, 2, 2});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -198,7 +198,7 @@ TEST(OpFullOutTest, DtypeTest_int32_int16) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {2, 2, 2, 2});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -211,7 +211,7 @@ TEST(OpFullOutTest, DtypeTest_int32_int32) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {2, 2, 2, 2});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -224,7 +224,7 @@ TEST(OpFullOutTest, DtypeTest_int32_int64) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {2, 2, 2, 2});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -238,7 +238,7 @@ TEST(OpFullOutTest, DtypeTest_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -251,7 +251,7 @@ TEST(OpFullOutTest, DtypeTest_float32_float32) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -265,7 +265,7 @@ TEST(OpFullOutTest, DtypeTest_float32_float64) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -278,7 +278,7 @@ TEST(OpFullOutTest, DtypeTest_float32_uint8) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {0, 0, 0, 0});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -291,7 +291,7 @@ TEST(OpFullOutTest, DtypeTest_float32_int8) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {0, 0, 0, 0});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -304,7 +304,7 @@ TEST(OpFullOutTest, DtypeTest_float32_int16) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {0, 0, 0, 0});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -317,7 +317,7 @@ TEST(OpFullOutTest, DtypeTest_float32_int32) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {0, 0, 0, 0});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -330,7 +330,7 @@ TEST(OpFullOutTest, DtypeTest_float32_int64) {
   exec_aten::Scalar fill_value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {0, 0, 0, 0});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -344,7 +344,7 @@ TEST(OpFullOutTest, DtypeTest_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_out(size, fill_value, out);
+  op_full_out(size, fill_value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -358,7 +358,7 @@ void test_ones_out(std::vector<int32_t>&& size_int32_t) {
   Tensor out = tf.zeros(size_int32_t);
 
   // After: `out` consists of 1s.
-  _full_out(aref, 1, out);
+  op_full_out(aref, 1, out);
 
   EXPECT_TENSOR_EQ(out, tf.ones(size_int32_t));
 }

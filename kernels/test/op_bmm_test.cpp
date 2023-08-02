@@ -22,7 +22,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _bmm_out(const Tensor& self, const Tensor& mat2, Tensor& out) {
+Tensor& op_bmm_out(const Tensor& self, const Tensor& mat2, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::bmm_outf(context, self, mat2, out);
 }
@@ -37,7 +37,7 @@ TEST(OpBmmOutTest, OutputDim) {
   // Output shape should be (10, 3, 5)
   Tensor out = tf.zeros({10, 3, 5});
 
-  Tensor ret = _bmm_out(x, y, out);
+  Tensor ret = op_bmm_out(x, y, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -88,7 +88,7 @@ TEST(OpBmmOutTest, OutputDimFloat) {
   // Output shape should be (10, 3, 5)
   Tensor out = tf.zeros({2, 4, 3});
 
-  Tensor ret = _bmm_out(x, y, out);
+  Tensor ret = op_bmm_out(x, y, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -123,7 +123,7 @@ void test_dtype() {
   Tensor y = tf.full({10, 4, 5}, 3);
 
   Tensor out = tf.zeros({10, 3, 5});
-  _bmm_out(x, y, out);
+  op_bmm_out(x, y, out);
 
   Tensor expected = tf.full({10, 3, 5}, 24);
 
@@ -150,7 +150,7 @@ TEST(OpBmmOutTest, EmptyInputWithEmptyOutTensorPasses) {
 
   EXPECT_EQ(out.numel(), 0);
 
-  _bmm_out(x, y, out);
+  op_bmm_out(x, y, out);
 
   EXPECT_EQ(out.numel(), 0);
 }
@@ -166,9 +166,9 @@ TEST(OpBmmOutTest, MismatchedDimensionsDies) {
 
   Tensor out = tf.ones({2, 10, 4});
 
-  ET_EXPECT_KERNEL_FAILURE(_bmm_out(x, wrong_y, out));
+  ET_EXPECT_KERNEL_FAILURE(op_bmm_out(x, wrong_y, out));
 
-  EXPECT_TENSOR_EQ(_bmm_out(x, right_y, out), tf.full({2, 10, 4}, 3));
+  EXPECT_TENSOR_EQ(op_bmm_out(x, right_y, out), tf.full({2, 10, 4}, 3));
 }
 
 TEST(OpBmmOutTest, MismatchedDimensionSizeDies) {
@@ -189,8 +189,8 @@ TEST(OpBmmOutTest, MismatchedDimensionSizeDies) {
   Tensor right_out = tf.ones({2, 10, 4});
   Tensor wrong_out = tf.ones({7, 5});
 
-  ET_EXPECT_KERNEL_FAILURE(_bmm_out(x, right_y, wrong_out));
-  ET_EXPECT_KERNEL_FAILURE(_bmm_out(x, wrong_y, right_out));
+  ET_EXPECT_KERNEL_FAILURE(op_bmm_out(x, right_y, wrong_out));
+  ET_EXPECT_KERNEL_FAILURE(op_bmm_out(x, wrong_y, right_out));
 }
 
 TEST(OpBmmOutTest, WrongOutShapeDies) {
@@ -207,9 +207,9 @@ TEST(OpBmmOutTest, WrongOutShapeDies) {
   Tensor right_out = tf.ones({2, 10, 4});
   Tensor wrong_out = tf.ones({3, 7, 5});
 
-  ET_EXPECT_KERNEL_FAILURE(_bmm_out(x, y, wrong_out));
+  ET_EXPECT_KERNEL_FAILURE(op_bmm_out(x, y, wrong_out));
 
-  EXPECT_TENSOR_EQ(_bmm_out(x, y, right_out), tf.full({2, 10, 4}, 3));
+  EXPECT_TENSOR_EQ(op_bmm_out(x, y, right_out), tf.full({2, 10, 4}, 3));
 }
 
 TEST(OpBmmOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
@@ -272,7 +272,7 @@ TEST(OpBmmOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _bmm_out(x, y, out);
+  Tensor ret = op_bmm_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -336,7 +336,7 @@ TEST(OpBmmOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({6, 6, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _bmm_out(x, y, out);
+  Tensor ret = op_bmm_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -401,6 +401,6 @@ TEST(OpBmmOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out = tf.zeros(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = _bmm_out(x, y, out);
+  Tensor ret = op_bmm_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

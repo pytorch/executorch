@@ -20,7 +20,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _round_out(const Tensor& self, Tensor& out) {
+Tensor& op_round_out(const Tensor& self, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::round_outf(context, self, out);
 }
@@ -39,7 +39,7 @@ void test_round_execution_floats() {
   Tensor out = tf.zeros(sizes);
 
   // Run round.
-  _round_out(in, out);
+  op_round_out(in, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(
@@ -62,7 +62,7 @@ void test_round_execution_ints() {
   Tensor out = tf.zeros(sizes);
 
   // Run round.
-  _round_out(in, out);
+  op_round_out(in, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(
@@ -92,7 +92,7 @@ TEST(OpRoundKernelTest, ByteTensors) {
   Tensor out = tf.zeros(sizes);
 
   // Run round.
-  _round_out(in, out);
+  op_round_out(in, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(
@@ -133,7 +133,7 @@ TEST(OpRoundKernelTest, InfAndNanPreserved) {
   Tensor out = tf.zeros(sizes);
 
   // Run full round.
-  _round_out(in, out);
+  op_round_out(in, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(
@@ -161,7 +161,7 @@ TEST(OpRoundKernelTest, UnhandledDtypeDies) {
   // Destination for the round.
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(_round_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_round_out(a, out));
 }
 
 /* %python
@@ -169,7 +169,7 @@ import torch
 torch.manual_seed(0)
 x = torch.rand(3, 2) * 10.0 - 5.0
 res = torch.round(x)
-op = "_round_out"
+op = "op_round_out"
 dtype = "ScalarType::Float"
 check = "EXPECT_TENSOR_EQ" */
 
@@ -192,7 +192,7 @@ TEST(OpRoundKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  _round_out(x, out);
+  op_round_out(x, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -215,7 +215,7 @@ TEST(OpRoundKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  _round_out(x, out);
+  op_round_out(x, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -239,6 +239,6 @@ TEST(OpRoundKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  _round_out(x, out);
+  op_round_out(x, out);
   EXPECT_TENSOR_EQ(out, expected);
 }

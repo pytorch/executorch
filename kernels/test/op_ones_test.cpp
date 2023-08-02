@@ -19,7 +19,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& ones_out(IntArrayRef size, Tensor& out) {
+Tensor& op_ones_out(IntArrayRef size, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::ones_outf(context, size, out);
 }
@@ -34,7 +34,7 @@ void test_ones_out(std::vector<int32_t>&& size_int32_t) {
   Tensor out = tf.zeros(size_int32_t);
 
   // After: `out` consists of 1s.
-  ones_out(aref, out);
+  op_ones_out(aref, out);
 
   EXPECT_TENSOR_EQ(out, tf.ones(size_int32_t));
 }

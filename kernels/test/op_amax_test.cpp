@@ -22,8 +22,11 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor&
-_amax_out(const Tensor& in, ArrayRef<int64_t> dim, bool keepdim, Tensor& out) {
+Tensor& op_amax_out(
+    const Tensor& in,
+    ArrayRef<int64_t> dim,
+    bool keepdim,
+    Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::amax_outf(context, in, dim, keepdim, out);
 }
@@ -50,12 +53,12 @@ void test_amax_out_invalid_dimensions() {
   // out-of-bound dim in dim list
   int64_t dims_1[1] = {3};
   ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims_1, 1}};
-  ET_EXPECT_DEATH(_amax_out(in, dim_list, /*keepdim=*/true, out), "");
+  ET_EXPECT_DEATH(op_amax_out(in, dim_list, /*keepdim=*/true, out), "");
 
   // the same dim appears multiple times in list of dims
   int64_t dims_2[2] = {2, 2};
   dim_list = ArrayRef<int64_t>{dims_2, 2};
-  ET_EXPECT_DEATH(_amax_out(in, dim_list, /*keepdim=*/true, out), "");
+  ET_EXPECT_DEATH(op_amax_out(in, dim_list, /*keepdim=*/true, out), "");
 }
 
 TEST(OpAmaxOutTest, InvalidDimensionListDies) {
@@ -91,11 +94,11 @@ void test_amax_out_invalid_shape() {
 
   int64_t dims_1[1] = {1};
   ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims_1, 1}};
-  ET_EXPECT_DEATH(_amax_out(in, dim_list, /*keepdim=*/true, out), "");
+  ET_EXPECT_DEATH(op_amax_out(in, dim_list, /*keepdim=*/true, out), "");
 
   // dimension size mismatch when keepdim is false
   out = tf.zeros({2, 1, 4});
-  ET_EXPECT_DEATH(_amax_out(in, dim_list, /*keepdim=*/false, out), "");
+  ET_EXPECT_DEATH(op_amax_out(in, dim_list, /*keepdim=*/false, out), "");
 }
 
 TEST(OpAmaxOutTest, InvalidShapeDies) {
@@ -134,7 +137,7 @@ TEST(OpAmaxOutTest, MismatchedDTypesDies) {
   ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims_1, 1}};
 
   // out tensor should be of the same dtype with dtype when dtype is specified
-  ET_EXPECT_DEATH(_amax_out(in, dim_list, /*keepdim=*/true, out), "");
+  ET_EXPECT_DEATH(op_amax_out(in, dim_list, /*keepdim=*/true, out), "");
 }
 
 template <ScalarType DTYPE>
@@ -159,7 +162,7 @@ void test_amax_out_dtype() {
   int64_t dims_1[1] = {2};
   ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims_1, 1}};
 
-  _amax_out(in, dim_list, /*keepdim=*/true, out);
+  op_amax_out(in, dim_list, /*keepdim=*/true, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf.make(
     {2, 3, 1},
@@ -168,7 +171,7 @@ void test_amax_out_dtype() {
 
   // keepdim=false should work
   out = tf.zeros({2, 3});
-  _amax_out(in, dim_list, /*keepdim=*/false, out);
+  op_amax_out(in, dim_list, /*keepdim=*/false, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf.make(
     {2, 3},
@@ -179,18 +182,18 @@ void test_amax_out_dtype() {
   out = tf.zeros({1, 1, 4});
   int64_t dims_2[2] = {0, 1};
   dim_list = ArrayRef<int64_t>{dims_2, 2};
-  _amax_out(in, dim_list, /*keepdim=*/true, out);
+  op_amax_out(in, dim_list, /*keepdim=*/true, out);
   EXPECT_TENSOR_CLOSE(out, tf.make({1, 1, 4}, {7, 5, 4, 4}));
 
   out = tf.zeros({4});
-  _amax_out(in, dim_list, /*keepdim=*/false, out);
+  op_amax_out(in, dim_list, /*keepdim=*/false, out);
   EXPECT_TENSOR_CLOSE(out, tf.make({4}, {7, 5, 4, 4}));
 
   // dim list with negative dimensions should work
   out = tf.zeros({2, 1, 4});
   int64_t dims_3[1] = {-2};
   dim_list = ArrayRef<int64_t>{dims_3, 1};
-  _amax_out(in, dim_list, /*keepdim=*/true, out);
+  op_amax_out(in, dim_list, /*keepdim=*/true, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf.make(
     {2, 1, 4},
@@ -215,18 +218,18 @@ void test_amax_out_dtype() {
   // clang-format on
   out = tf.zeros({1, 1, 1});
   ArrayRef<int64_t> null_dim_list;
-  _amax_out(in, null_dim_list, /*keepdim=*/true, out);
+  op_amax_out(in, null_dim_list, /*keepdim=*/true, out);
   EXPECT_TENSOR_CLOSE(out, tf.make({1, 1, 1}, {9}));
 
   ArrayRef<int64_t> empty_dim_list{ArrayRef<int64_t>{}};
-  _amax_out(in, empty_dim_list, /*keepdim=*/true, out);
+  op_amax_out(in, empty_dim_list, /*keepdim=*/true, out);
   EXPECT_TENSOR_CLOSE(out, tf.make({1, 1, 1}, {9}));
 
   out = tf.zeros({});
-  _amax_out(in, null_dim_list, /*keepdim=*/false, out);
+  op_amax_out(in, null_dim_list, /*keepdim=*/false, out);
   EXPECT_TENSOR_CLOSE(out, tf.make({}, {9}));
 
-  _amax_out(in, empty_dim_list, /*keepdim=*/false, out);
+  op_amax_out(in, empty_dim_list, /*keepdim=*/false, out);
   EXPECT_TENSOR_CLOSE(out, tf.make({}, {9}));
 }
 
@@ -250,7 +253,7 @@ void test_amax_out_dtype<ScalarType::Bool>() {
   Tensor out = tf_bool.zeros({2, 3, 1});
 
   // +/-inf and nan should work
-  _amax_out(in, /*dim=*/-1, /*keepdim=*/true, out);
+  op_amax_out(in, /*dim=*/-1, /*keepdim=*/true, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(
       out, tf_bool.make(
@@ -292,7 +295,7 @@ TEST(OpAmaxOutTest, InfinityAndNANTest) {
   Tensor out = tf_float.zeros({2, 3, 1});
   int64_t dims[1] = {-1};
   ArrayRef<int64_t> dim_list{ArrayRef<int64_t>{dims, 1}};
-  _amax_out(in, dim_list, /*keepdim=*/true, out);
+  op_amax_out(in, dim_list, /*keepdim=*/true, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(
       out, tf_float.make({2, 3, 1}, {INFINITY, INFINITY, NAN, NAN, NAN, NAN}));

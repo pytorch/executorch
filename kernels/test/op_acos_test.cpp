@@ -21,7 +21,7 @@ using exec_aten::Tensor;
 using exec_aten::TensorShapeDynamism;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _acos_out(const Tensor& self, Tensor& out) {
+Tensor& op_acos_out(const Tensor& self, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::acos_outf(context, self, out);
 }
@@ -36,7 +36,7 @@ TEST(OpAcosOutKernelTest, HandleBoolInput) {
   Tensor out = tf_float.zeros(sizes);
   Tensor res = tf_float.make(sizes, /*data=*/{1.570796, 0.000000});
 
-  EXPECT_TENSOR_CLOSE(_acos_out(a, out), res);
+  EXPECT_TENSOR_CLOSE(op_acos_out(a, out), res);
 }
 
 // Common testing for acos operator and all kinds of supported input types
@@ -51,7 +51,7 @@ void test_floating_point_acos_out(
   Tensor out = tf_out.zeros(out_shape, dynamism);
 
   // clang-format off
-  _acos_out(tf_in.make({1, 6}, { 0, 1, 3, 5, 10, 100 }), out);
+  op_acos_out(tf_in.make({1, 6}, { 0, 1, 3, 5, 10, 100 }), out);
 
   // Check that it matches (or close to) the expected output.
   EXPECT_TENSOR_CLOSE(
@@ -123,7 +123,7 @@ void test_acos_invalid_output_dtype_dies() {
   Tensor in = tf.ones(sizes);
   Tensor out = tf_out.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(_acos_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_acos_out(in, out));
 }
 
 TEST(OpAcosOutKernelTest, AllNonFloatOutputDTypeDies) {
@@ -143,5 +143,5 @@ TEST(OpAcosOutKernelTest, MismatchedInputShapesDies) {
   Tensor a = tf.ones(/*sizes=*/{4});
   Tensor out = tf.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(_acos_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_acos_out(a, out));
 }

@@ -26,7 +26,7 @@ using torch::executor::testing::TensorFactory;
 
 namespace {
 
-Tensor& stack_out(TensorList tensors, int64_t dim, Tensor& out) {
+Tensor& op_stack_out(TensorList tensors, int64_t dim, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::stack_outf(context, tensors, dim, out);
 }
@@ -44,11 +44,11 @@ void run_stack_tests(
   Tensor out = tf.zeros(out_size);
 
   // Should always return the provided out Tensor.
-  Tensor ret = stack_out(inputs_array, dim, out);
+  Tensor ret = op_stack_out(inputs_array, dim, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, expected);
 
-  ret = stack_out(inputs_array, /*dim=*/dim - out.dim(), out);
+  ret = op_stack_out(inputs_array, /*dim=*/dim - out.dim(), out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, expected);
 }
@@ -244,7 +244,7 @@ void test_dtype() {
   std::vector<Tensor> inputs = {x, y};
 
   Tensor out = tf.ones({3, 2, 4});
-  stack_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
+  op_stack_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
 
   // The two tensors x and y  are stacked along the 1st dimension with the order
   // [x, y], so the x and y should be equal to expected[:, 0, :] and expected[:,
@@ -290,7 +290,7 @@ TEST(OpStackOutTest, NoInputTensorsWithEmptyOutTensorFails) {
   EXPECT_EQ(out.numel(), 0);
 
   // Pass an empty list of input tensors.
-  ET_EXPECT_KERNEL_FAILURE(stack_out(ArrayRef<Tensor>(), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_stack_out(ArrayRef<Tensor>(), /*dim=*/0, out));
 }
 
 TEST(OpStackOutTest, AllEmptyInputTensors) {
@@ -307,8 +307,8 @@ TEST(OpStackOutTest, AllEmptyInputTensors) {
   Tensor out = tf.make({3, 0, 10, 3}, {});
   EXPECT_EQ(out.numel(), 0);
 
-  Tensor ret =
-      stack_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out);
+  Tensor ret = op_stack_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out);
   EXPECT_EQ(ret.numel(), 0);
   // Success if it doesn't assert on the weird-shaped empty input and the
   // empty_out is still a empty array
@@ -327,7 +327,7 @@ TEST(OpStackOutTest, DimOutOfBoundDies) {
   // Some invalid dim values.
   const std::vector<int64_t> invalid_dims = {3, 4, 5, -4, -5, -6};
   for (int64_t dim : invalid_dims) {
-    ET_EXPECT_KERNEL_FAILURE(stack_out(inputs, dim, out));
+    ET_EXPECT_KERNEL_FAILURE(op_stack_out(inputs, dim, out));
   }
 }
 
@@ -339,7 +339,7 @@ TEST(OpStackOutTest, MismatchedDtypesDies) {
   // Size is compatible to the output, but a mismatched dtype.
   std::vector<Tensor> inputs = {tf_float.ones({2, 2})};
 
-  ET_EXPECT_KERNEL_FAILURE(stack_out(
+  ET_EXPECT_KERNEL_FAILURE(op_stack_out(
       ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
@@ -354,7 +354,7 @@ TEST(OpStackOutTest, OutMatchNumelWithExtraDimAtEndDies) {
   // should always one greater than input.dim())
   std::vector<Tensor> inputs = {tf.ones({2, 2})};
 
-  ET_EXPECT_KERNEL_FAILURE(stack_out(
+  ET_EXPECT_KERNEL_FAILURE(op_stack_out(
       ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
@@ -369,7 +369,7 @@ TEST(OpStackOutTest, OutMatchNumelLackDimAtFrontDies) {
   // should always one greater than input.dim())
   std::vector<Tensor> inputs = {tf.ones({2, 2})};
 
-  ET_EXPECT_KERNEL_FAILURE(stack_out(
+  ET_EXPECT_KERNEL_FAILURE(op_stack_out(
       ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
@@ -387,7 +387,7 @@ TEST(OpStackOutTest, OutRegularMismatchDimDies) {
       tf.ones({2, 3}),
   };
 
-  ET_EXPECT_KERNEL_FAILURE(stack_out(
+  ET_EXPECT_KERNEL_FAILURE(op_stack_out(
       ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
@@ -399,7 +399,7 @@ x = [torch.randint(10, (2, 3)),
      torch.randint(10, (2, 3)),
      torch.randint(10, (2, 3))]
 res = torch.stack(x, 0)
-op = "stack_out"
+op = "op_stack_out"
 opt_extra_params = "0,"
 dtype = "ScalarType::Int"
 check = "EXPECT_TENSOR_EQ" */
@@ -422,7 +422,7 @@ TEST(OpStackOutTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({4, 2, 3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  stack_out(x, 0, out);
+  op_stack_out(x, 0, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -447,7 +447,7 @@ TEST(OpStackOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({5, 5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  stack_out(x, 0, out);
+  op_stack_out(x, 0, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -472,6 +472,6 @@ TEST(OpStackOutTest, DynamicShapeUnbound) {
 
   Tensor out = tf.zeros(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  stack_out(x, 0, out);
+  op_stack_out(x, 0, out);
   EXPECT_TENSOR_EQ(out, expected);
 }

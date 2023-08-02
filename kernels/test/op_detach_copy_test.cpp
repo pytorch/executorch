@@ -22,7 +22,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _detach_copy_out(const Tensor& self, Tensor& out) {
+Tensor& op_detach_copy_out(const Tensor& self, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::detach_copy_outf(context, self, out);
 }
@@ -37,7 +37,7 @@ void test_detach_copy_out() {
   Tensor out = tf.zeros(sizes);
 
   // Valid input should give the expected output
-  _detach_copy_out(in, out);
+  op_detach_copy_out(in, out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {1, 2, 3, 4}));
 }
 
@@ -48,7 +48,7 @@ void test_detach_copy_out<ScalarType::Bool>() {
   Tensor out = tf.zeros(sizes);
 
   // Valid input should give the expected output
-  _detach_copy_out(tf.make(sizes, /*data=*/{true, false, true, false}), out);
+  op_detach_copy_out(tf.make(sizes, /*data=*/{true, false, true, false}), out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, false, true, false}));
 }
 
@@ -59,7 +59,7 @@ void test_detach_copy_out<ScalarType::Float>() {
   Tensor out = tf.zeros(sizes);
 
   // Valid input should give the expected output
-  _detach_copy_out(
+  op_detach_copy_out(
       tf.make(sizes, /*data=*/{3.14, INFINITY, -INFINITY, NAN}), out);
   EXPECT_TENSOR_EQ(
       out, tf.make(sizes, /*data=*/{3.14, INFINITY, -INFINITY, NAN}));
@@ -81,7 +81,7 @@ void test_detach_copy_out_invalid_shape() {
   Tensor in = tf.ones(in_sizes);
   Tensor out = tf.zeros(out_sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(_detach_copy_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_detach_copy_out(in, out));
 }
 
 // Mismatched shape tests.
@@ -104,7 +104,7 @@ TEST(OpDetachCopyOutKernelTest, MismatchedInputDtypesDies) {
   Tensor in = tf_byte.ones(sizes);
   Tensor out = tf_char.ones(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(_detach_copy_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_detach_copy_out(in, out));
 }
 
 TEST(OpDetachCopyOutKernelTest, SimpleGeneratedCase) {
@@ -132,7 +132,7 @@ TEST(OpDetachCopyOutKernelTest, SimpleGeneratedCase) {
        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
 
   Tensor out = tf.zeros({10, 10});
-  Tensor ret = _detach_copy_out(x, out);
+  Tensor ret = op_detach_copy_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -158,7 +158,7 @@ TEST(OpDetachCopyOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _detach_copy_out(x, out);
+  Tensor ret = op_detach_copy_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -184,7 +184,7 @@ TEST(OpDetachCopyOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _detach_copy_out(x, out);
+  Tensor ret = op_detach_copy_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -211,6 +211,6 @@ TEST(OpDetachCopyOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = _detach_copy_out(x, out);
+  Tensor ret = op_detach_copy_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

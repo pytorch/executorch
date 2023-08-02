@@ -23,7 +23,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _full_like_out(
+Tensor& op_full_like_out(
     const Tensor& self,
     const Scalar& fill_value,
     optional<MemoryFormat> memory_format,
@@ -41,7 +41,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_bool_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -55,7 +55,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_bool_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -68,7 +68,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_bool_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -81,7 +81,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_bool_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -94,7 +94,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_bool_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -107,7 +107,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_bool_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -120,7 +120,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_bool_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -134,7 +134,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -146,7 +146,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_int32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -160,7 +160,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_int32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -173,7 +173,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_int32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -186,7 +186,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_int32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -199,7 +199,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_int32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -212,7 +212,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_int32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -225,7 +225,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_int32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -239,7 +239,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -251,7 +251,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_float32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -265,7 +265,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_float32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -278,7 +278,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_float32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -291,7 +291,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_float32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -304,7 +304,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_float32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -317,7 +317,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_float32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -330,7 +330,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_float32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -344,7 +344,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float32_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -358,7 +358,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_bool_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -371,7 +371,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_bool_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -385,7 +385,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_bool_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -399,7 +399,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_bool_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -413,7 +413,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_bool_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -427,7 +427,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_bool_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -441,7 +441,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_bool_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -456,7 +456,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -470,7 +470,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_int32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -483,7 +483,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_int32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -497,7 +497,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_int32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -511,7 +511,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_int32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -525,7 +525,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_int32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -539,7 +539,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_int32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -553,7 +553,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_int32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -568,7 +568,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -582,7 +582,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_float32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -595,7 +595,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_float32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -609,7 +609,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_float32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -623,7 +623,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_float32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -637,7 +637,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_float32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -651,7 +651,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_float32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -665,7 +665,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_float32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -680,7 +680,7 @@ TEST(OpFullLikeOutTest, DtypeTest_float64_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -693,7 +693,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_bool_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -707,7 +707,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_bool_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -719,7 +719,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_bool_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -732,7 +732,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_bool_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -745,7 +745,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_bool_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -758,7 +758,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_bool_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -771,7 +771,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_bool_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -785,7 +785,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -798,7 +798,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_int32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -812,7 +812,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_int32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -824,7 +824,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_int32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -837,7 +837,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_int32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -850,7 +850,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_int32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -863,7 +863,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_int32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -876,7 +876,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_int32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -890,7 +890,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -903,7 +903,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_float32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -917,7 +917,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_float32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -929,7 +929,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_float32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -942,7 +942,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_float32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -955,7 +955,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_float32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -968,7 +968,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_float32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -981,7 +981,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_float32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -995,7 +995,7 @@ TEST(OpFullLikeOutTest, DtypeTest_uint8_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1008,7 +1008,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_bool_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1022,7 +1022,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_bool_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1035,7 +1035,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_bool_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1047,7 +1047,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_bool_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1060,7 +1060,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_bool_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1073,7 +1073,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_bool_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1086,7 +1086,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_bool_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1100,7 +1100,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1113,7 +1113,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_int32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1127,7 +1127,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_int32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1140,7 +1140,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_int32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1152,7 +1152,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_int32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1165,7 +1165,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_int32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1178,7 +1178,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_int32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1191,7 +1191,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_int32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1205,7 +1205,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1218,7 +1218,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_float32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1232,7 +1232,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_float32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1245,7 +1245,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_float32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1257,7 +1257,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_float32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1270,7 +1270,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_float32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1283,7 +1283,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_float32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1296,7 +1296,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_float32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1310,7 +1310,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int8_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1323,7 +1323,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_bool_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1337,7 +1337,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_bool_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1350,7 +1350,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_bool_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1363,7 +1363,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_bool_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1375,7 +1375,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_bool_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1388,7 +1388,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_bool_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1401,7 +1401,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_bool_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1415,7 +1415,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1428,7 +1428,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_int32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1442,7 +1442,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_int32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1455,7 +1455,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_int32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1468,7 +1468,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_int32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1480,7 +1480,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_int32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1493,7 +1493,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_int32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1506,7 +1506,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_int32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1520,7 +1520,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1533,7 +1533,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_float32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1547,7 +1547,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_float32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1560,7 +1560,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_float32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1573,7 +1573,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_float32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1585,7 +1585,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_float32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1598,7 +1598,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_float32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1611,7 +1611,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_float32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1625,7 +1625,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int16_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1638,7 +1638,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_bool_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1652,7 +1652,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_bool_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1665,7 +1665,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_bool_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1678,7 +1678,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_bool_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1691,7 +1691,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_bool_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1703,7 +1703,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_bool_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1716,7 +1716,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_bool_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1730,7 +1730,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1743,7 +1743,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_int32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1757,7 +1757,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_int32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1770,7 +1770,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_int32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1783,7 +1783,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_int32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1796,7 +1796,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_int32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1808,7 +1808,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_int32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1821,7 +1821,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_int32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1835,7 +1835,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1848,7 +1848,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_float32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1862,7 +1862,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_float32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1875,7 +1875,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_float32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1888,7 +1888,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_float32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1901,7 +1901,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_float32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1913,7 +1913,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_float32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1926,7 +1926,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_float32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1940,7 +1940,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int32_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1953,7 +1953,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_bool_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1967,7 +1967,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_bool_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1980,7 +1980,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_bool_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1993,7 +1993,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_bool_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2006,7 +2006,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_bool_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2019,7 +2019,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_bool_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2031,7 +2031,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_bool_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2045,7 +2045,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2058,7 +2058,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_int32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2072,7 +2072,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_int32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2085,7 +2085,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_int32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2098,7 +2098,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_int32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2111,7 +2111,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_int32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2124,7 +2124,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_int32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2136,7 +2136,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_int32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2150,7 +2150,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2163,7 +2163,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_float32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2177,7 +2177,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_float32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2190,7 +2190,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_float32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2203,7 +2203,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_float32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2216,7 +2216,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_float32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2229,7 +2229,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_float32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2241,7 +2241,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_float32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2255,7 +2255,7 @@ TEST(OpFullLikeOutTest, DtypeTest_int64_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2268,7 +2268,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_bool_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2282,7 +2282,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_bool_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2295,7 +2295,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_bool_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2308,7 +2308,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_bool_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2321,7 +2321,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_bool_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2334,7 +2334,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_bool_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2347,7 +2347,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_bool_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2360,7 +2360,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2373,7 +2373,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_int32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2387,7 +2387,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_int32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2400,7 +2400,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_int32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2413,7 +2413,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_int32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2426,7 +2426,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_int32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2439,7 +2439,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_int32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2452,7 +2452,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_int32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {2, 2, 2, 2});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2465,7 +2465,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2478,7 +2478,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_float32_float32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2492,7 +2492,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_float32_float64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {0.5, 0.5, 0.5, 0.5});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2505,7 +2505,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_float32_uint8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2518,7 +2518,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_float32_int8) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2531,7 +2531,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_float32_int16) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2544,7 +2544,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_float32_int32) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2557,7 +2557,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_float32_int64) {
   exec_aten::optional<exec_aten::MemoryFormat> memory_format;
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {0, 0, 0, 0});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2570,7 +2570,7 @@ TEST(OpFullLikeOutTest, DtypeTest_bool_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _full_like_out(self, fill_value, memory_format, out);
+  op_full_like_out(self, fill_value, memory_format, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2584,11 +2584,11 @@ void test_full_like_out() {
   MemoryFormat memory_format = MemoryFormat::Contiguous;
 
   // Check that it matches the expected output.
-  _full_like_out(in, value, memory_format, out);
+  op_full_like_out(in, value, memory_format, out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{42, 42, 42, 42}));
 
   value = 1;
-  _full_like_out(in, value, memory_format, out);
+  op_full_like_out(in, value, memory_format, out);
   EXPECT_TENSOR_EQ(out, tf.ones(sizes));
 }
 
@@ -2602,11 +2602,11 @@ void test_full_like_out<ScalarType::Bool>() {
   MemoryFormat memory_format = MemoryFormat::Contiguous;
 
   // Check that it matches the expected output.
-  _full_like_out(in, value, memory_format, out);
+  op_full_like_out(in, value, memory_format, out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, true, true, true}));
 
   value = false;
-  _full_like_out(in, value, memory_format, out);
+  op_full_like_out(in, value, memory_format, out);
   EXPECT_TENSOR_EQ(out, tf.zeros(sizes));
 }
 
@@ -2625,7 +2625,7 @@ void test_full_like_out_mismatched_shape() {
   Scalar value = 42;
   MemoryFormat memory_format;
 
-  ET_EXPECT_DEATH(_full_like_out(in, value, memory_format, out), "");
+  ET_EXPECT_DEATH(op_full_like_out(in, value, memory_format, out), "");
 }
 
 TEST(OpFullLikeTest, MismatchedShapeDies) {
@@ -2663,7 +2663,7 @@ TEST(OpFullLikeTest, SimpleGeneratedCase) {
        3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0});
 
   Tensor out = tf.zeros({10, 10});
-  Tensor ret = _full_like_out(x, Scalar(3.0), MemoryFormat::Contiguous, out);
+  Tensor ret = op_full_like_out(x, Scalar(3.0), MemoryFormat::Contiguous, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -2682,7 +2682,7 @@ TEST(OpFullLikeTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _full_like_out(x, Scalar(3.0), MemoryFormat::Contiguous, out);
+  Tensor ret = op_full_like_out(x, Scalar(3.0), MemoryFormat::Contiguous, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -2701,7 +2701,7 @@ TEST(OpFullLikeTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _full_like_out(x, Scalar(3.0), MemoryFormat::Contiguous, out);
+  Tensor ret = op_full_like_out(x, Scalar(3.0), MemoryFormat::Contiguous, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -2721,6 +2721,6 @@ TEST(OpFullLikeTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = _full_like_out(x, Scalar(3.0), MemoryFormat::Contiguous, out);
+  Tensor ret = op_full_like_out(x, Scalar(3.0), MemoryFormat::Contiguous, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

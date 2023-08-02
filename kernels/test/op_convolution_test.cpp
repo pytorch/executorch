@@ -22,7 +22,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& convolution_out(
+Tensor& op_convolution_out(
     const Tensor& input,
     const Tensor& weight,
     const optional<Tensor>& bias,
@@ -64,7 +64,7 @@ correctness_test_template = f"""
   {declare_array_ref_t("dilation", "int64_t")}
   {declare_array_ref_t("output_padding", "int64_t")}
 
-  convolution_out(
+  op_convolution_out(
       input,
       weight,
       bias,
@@ -98,7 +98,7 @@ TEST(OpConvCorrectnessTest, GenericSmokeTest) {
   int64_t dilation[1] = {1};
   int64_t output_padding[1] = {0};
 
-  convolution_out(
+  op_convolution_out(
       input,
       weight,
       exec_aten::optional<Tensor>(bias),
@@ -169,7 +169,7 @@ TEST(OpConvCorrectnessTest, NonZeroPadding) {
   int64_t dilation[] = {1};
   int64_t output_padding[] = {0};
 
-  convolution_out(
+  op_convolution_out(
       input,
       weight,
       bias,
@@ -231,7 +231,7 @@ TEST(OpConvCorrectnessTest, MultipleInputBatches) {
   int64_t dilation[] = {1};
   int64_t output_padding[] = {0};
 
-  convolution_out(
+  op_convolution_out(
       input,
       weight,
       bias,
@@ -314,7 +314,7 @@ TEST(OpConvCorrectnessTest, 2DSanityCheck) {
   int64_t dilation[] = {1, 1};
   int64_t output_padding[] = {0};
 
-  convolution_out(
+  op_convolution_out(
       input,
       weight,
       bias,
@@ -377,7 +377,7 @@ TEST(OpConvCorrectnessTest, 2DSanityCheckChannelsLast) {
   int64_t dilation[] = {1, 1};
   int64_t output_padding[] = {0};
 
-  convolution_out(
+  op_convolution_out(
       input,
       weight,
       bias,
@@ -436,7 +436,7 @@ void test_dynamic_shape(
   int64_t dilation[] = {1};
   int64_t output_padding[] = {0};
 
-  convolution_out(
+  op_convolution_out(
       input,
       weight,
       bias,

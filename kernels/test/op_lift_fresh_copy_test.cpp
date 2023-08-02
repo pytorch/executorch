@@ -22,7 +22,7 @@ using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 namespace {
-Tensor& lift_fresh_copy_out(const Tensor& self, Tensor& out) {
+Tensor& op_lift_fresh_copy_out(const Tensor& self, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::lift_fresh_copy_outf(context, self, out);
 }
@@ -36,13 +36,13 @@ void test_dtype() {
   Tensor self = tf.ones(/*sizes=*/{2, 4});
   Tensor out = tf.zeros(/*sizes=*/{2, 4});
 
-  ::lift_fresh_copy_out(self, out);
+  ::op_lift_fresh_copy_out(self, out);
   EXPECT_TENSOR_EQ(self, out);
 
   Tensor self_empty = tf.make(/*sizes=*/{}, /*data=*/{1});
   Tensor out_empty = tf.make(/*sizes=*/{}, /*data=*/{0});
 
-  ::lift_fresh_copy_out(self_empty, out_empty);
+  ::op_lift_fresh_copy_out(self_empty, out_empty);
   EXPECT_TENSOR_EQ(self_empty, out_empty);
 }
 
@@ -57,7 +57,7 @@ void test_empty_input() {
   TensorFactory<DTYPE> tf;
   Tensor self = tf.make(/*sizes=*/{3, 0, 1, 2}, /*data=*/{});
   Tensor out = tf.zeros({3, 0, 1, 2});
-  ::lift_fresh_copy_out(self, out);
+  ::op_lift_fresh_copy_out(self, out);
   EXPECT_TENSOR_EQ(self, out);
 }
 
@@ -74,7 +74,7 @@ TEST(OpLiftFreshCopyTest, MismatchedSizesDie) {
   TensorFactory<ScalarType::Int> tf;
   Tensor self = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros({3, 2, 1, 1});
-  ET_EXPECT_KERNEL_FAILURE(::lift_fresh_copy_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(::op_lift_fresh_copy_out(self, out));
 }
 
 TEST(OpLiftFreshCopyTest, MismatchedDTypeDie) {
@@ -82,5 +82,5 @@ TEST(OpLiftFreshCopyTest, MismatchedDTypeDie) {
   TensorFactory<ScalarType::Float> tf_out;
   Tensor self = tf_in.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf_out.zeros({3, 1, 1, 2});
-  ET_EXPECT_KERNEL_FAILURE(::lift_fresh_copy_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(::op_lift_fresh_copy_out(self, out));
 }

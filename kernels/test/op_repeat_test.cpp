@@ -21,7 +21,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& repeat_out(const Tensor& self, IntArrayRef repeats, Tensor& out) {
+Tensor& op_repeat_out(const Tensor& self, IntArrayRef repeats, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::repeat_outf(context, self, repeats, out);
 }
@@ -79,7 +79,7 @@ void run_dtype_tests() {
       });
   // clang-format on
 
-  Tensor ret = repeat_out(x, repeats, out);
+  Tensor ret = op_repeat_out(x, repeats, out);
   EXPECT_TENSOR_EQ(ret, out);
   EXPECT_TENSOR_EQ(ret, expected);
 }
@@ -106,7 +106,7 @@ TEST(OpRepeatOutTest, EmptyInputSupported) {
   Tensor out = tf.ones(/*sizes=*/{3, 12, 0, 12});
   Tensor expected = tf.make(/*sizes=*/{3, 12, 0, 12}, /*data=*/{});
 
-  Tensor ret = repeat_out(x, repeats, out);
+  Tensor ret = op_repeat_out(x, repeats, out);
   EXPECT_TENSOR_EQ(ret, out);
   EXPECT_TENSOR_EQ(ret, expected);
 }
@@ -134,7 +134,7 @@ TEST(OpRepeatOutTest, ZeroDimInputSupported) {
     });
   // clang-format on
 
-  Tensor ret = repeat_out(x, repeats, out);
+  Tensor ret = op_repeat_out(x, repeats, out);
   EXPECT_TENSOR_EQ(ret, out);
   EXPECT_TENSOR_EQ(ret, expected);
 }
@@ -151,7 +151,7 @@ TEST(OpRepeatOutTest, ZeroRepeatRegularInputSupported) {
   Tensor out = tf.ones(/*sizes=*/{3, 0, 12});
   Tensor expected = tf.make(/*sizes=*/{3, 0, 12}, /*data=*/{});
 
-  Tensor ret = repeat_out(x, repeats, out);
+  Tensor ret = op_repeat_out(x, repeats, out);
   EXPECT_TENSOR_EQ(ret, out);
   EXPECT_TENSOR_EQ(ret, expected);
 }
@@ -169,7 +169,7 @@ TEST(OpRepeatOutTest, ZeroRepeatZeroDimInputSupported) {
   Tensor out = tf.ones(/*sizes=*/{3, 0, 6});
   Tensor expected = tf.make(/*sizes=*/{3, 0, 6}, /*data=*/{});
 
-  Tensor ret = repeat_out(x, repeats, out);
+  Tensor ret = op_repeat_out(x, repeats, out);
   EXPECT_TENSOR_EQ(ret, out);
   EXPECT_TENSOR_EQ(ret, expected);
 }
@@ -187,7 +187,7 @@ TEST(OpRepeatOutTest, RepeatTooShortDie) {
 
   Tensor out = tf.ones(/*sizes=*/{3, 0, 12});
 
-  ET_EXPECT_KERNEL_FAILURE(repeat_out(x, repeats, out));
+  ET_EXPECT_KERNEL_FAILURE(op_repeat_out(x, repeats, out));
 }
 
 TEST(OpRepeatOutTest, NegativeRepeatDie) {
@@ -203,7 +203,7 @@ TEST(OpRepeatOutTest, NegativeRepeatDie) {
 
   Tensor out = tf.ones(/*sizes=*/{3, 1});
 
-  ET_EXPECT_KERNEL_FAILURE(repeat_out(x, repeats, out));
+  ET_EXPECT_KERNEL_FAILURE(op_repeat_out(x, repeats, out));
 }
 
 TEST(OpRepeatOutTest, WrongOutputShapeDie) {
@@ -222,7 +222,7 @@ TEST(OpRepeatOutTest, WrongOutputShapeDie) {
   // The size of output shall be [3, 15, 12].
   Tensor out = tf.ones(/*sizes=*/{3, 5, 12});
 
-  ET_EXPECT_KERNEL_FAILURE(repeat_out(x, repeats, out));
+  ET_EXPECT_KERNEL_FAILURE(op_repeat_out(x, repeats, out));
 }
 
 TEST(OpRepeatOutTest, OutputDtypeMismatchedDie) {
@@ -238,7 +238,7 @@ TEST(OpRepeatOutTest, OutputDtypeMismatchedDie) {
 
   Tensor out = tf_out.ones(/*sizes=*/{7, 15, 18});
 
-  ET_EXPECT_KERNEL_FAILURE(repeat_out(x, repeats, out));
+  ET_EXPECT_KERNEL_FAILURE(op_repeat_out(x, repeats, out));
 }
 
 // Right now we only support the dimension of input and output no larger
@@ -262,7 +262,7 @@ TEST(OpRepeatOutTest, TooManyDimensionsDies) {
   output_shape.push_back(2);
   Tensor out = tf.ones(/*sizes=*/output_shape);
 
-  ET_EXPECT_KERNEL_FAILURE(repeat_out(x, repeats, out));
+  ET_EXPECT_KERNEL_FAILURE(op_repeat_out(x, repeats, out));
 }
 
 #if !defined(USE_ATEN_LIB)
@@ -319,7 +319,7 @@ TEST(OpRepeatOutTest, UpperBoundOutTensor) {
       });
   // clang-format on
 
-  Tensor ret = repeat_out(x, repeats, out);
+  Tensor ret = op_repeat_out(x, repeats, out);
   EXPECT_TENSOR_EQ(ret, out);
   EXPECT_TENSOR_EQ(ret, expected);
 }
@@ -330,7 +330,7 @@ import torch
 torch.manual_seed(0)
 x = torch.randint(10, (1, 2))
 res = x.repeat(4, 2)
-op = "repeat_out"
+op = "op_repeat_out"
 opt_setup_params = f"""
   {declare_array_ref([4, 2], "int64_t", "repeats")}
 """
@@ -354,7 +354,7 @@ TEST(OpRepeatOutTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({4, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  repeat_out(x, repeats, out);
+  op_repeat_out(x, repeats, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -377,7 +377,7 @@ TEST(OpRepeatOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  repeat_out(x, repeats, out);
+  op_repeat_out(x, repeats, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -400,6 +400,6 @@ TEST(OpRepeatOutTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  repeat_out(x, repeats, out);
+  op_repeat_out(x, repeats, out);
   EXPECT_TENSOR_EQ(out, expected);
 }

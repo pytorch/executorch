@@ -22,7 +22,7 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _log_out(const Tensor& a, Tensor& out) {
+Tensor& op_log_out(const Tensor& a, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::log_outf(context, a, out);
 }
@@ -38,7 +38,7 @@ void test__log_out() {
   Tensor out = tf_out.zeros(sizes);
 
   // Valid input should give the expected output
-  _log_out(tf.make(sizes, /*data=*/{0, 1, 2, 4}), out);
+  op_log_out(tf.make(sizes, /*data=*/{0, 1, 2, 4}), out);
   EXPECT_TENSOR_CLOSE(
       out, tf_out.make(sizes, /*data=*/{-INFINITY, 0, 0.693147, 1.386294}));
 }
@@ -58,7 +58,7 @@ TEST(OpLogOutKernelTest, AllRealInputDoubleOutputSupport) {
 }
 
 TEST(OpLogOutKernelTest, HandleBoolInput) {
-  // _log_out() handles Bool as input.
+  // op_log_out() handles Bool as input.
   TensorFactory<ScalarType::Bool> tf_bool;
   TensorFactory<ScalarType::Float> tf_float;
 
@@ -68,7 +68,7 @@ TEST(OpLogOutKernelTest, HandleBoolInput) {
   Tensor out = tf_float.zeros(sizes);
   Tensor res = tf_float.make(sizes, /*data=*/{0, -INFINITY});
 
-  EXPECT_TENSOR_EQ(_log_out(a, out), res);
+  EXPECT_TENSOR_EQ(op_log_out(a, out), res);
 }
 
 // Mismatched shape tests.
@@ -83,7 +83,7 @@ TEST(OpLogOutKernelTest, MismatchedShapesDies) {
   Tensor a = tf_int.ones(/*sizes=*/{4});
   Tensor out = tf_float.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(_log_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_log_out(a, out));
 }
 
 // Unhandled output dtypes.
@@ -97,7 +97,7 @@ void test_log_invalid_output_dtype_dies() {
   Tensor in = tf_float.ones(sizes);
   Tensor out = tf_out.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(_log_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_log_out(in, out));
 }
 
 TEST(OpLogOutKernelTest, AllNonFloatOutputDTypeDies) {
@@ -132,7 +132,7 @@ TEST(OpLogOutKernelTest, SimpleGeneratedCase) {
        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
 
   Tensor out = tf.zeros({10, 10});
-  Tensor ret = _log_out(x, out);
+  Tensor ret = op_log_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -158,7 +158,7 @@ TEST(OpLogOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _log_out(x, out);
+  Tensor ret = op_log_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -184,7 +184,7 @@ TEST(OpLogOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _log_out(x, out);
+  Tensor ret = op_log_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -211,6 +211,6 @@ TEST(OpLogOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = _log_out(x, out);
+  Tensor ret = op_log_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

@@ -21,7 +21,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _argmin_out(
+Tensor& op_argmin_out(
     const Tensor& in,
     optional<int64_t> dim,
     bool keepdim,
@@ -48,7 +48,7 @@ TEST(OpArgminTest, SanityCheckLong) {
   Tensor expected = tf.make({2, 4}, {
     0, 2, 0, 2,
     0, 1, 0, 2 });
-  Tensor ret = _argmin_out(in, 1, false, out);
+  Tensor ret = op_argmin_out(in, 1, false, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, expected);
@@ -74,7 +74,7 @@ TEST(OpArgminTest, SanityCheckShort) {
   Tensor expected = tfl.make({2, 4}, {
     0, 2, 0, 2,
     0, 1, 0, 2 });
-  Tensor ret = _argmin_out(in, 1, false, out);
+  Tensor ret = op_argmin_out(in, 1, false, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, expected);
@@ -99,7 +99,7 @@ TEST(OpArgminTest, SanityCheckNullDim) {
   Tensor expected = tf.make({}, {2});
 
   optional<int64_t> dim;
-  Tensor ret = _argmin_out(in, dim, false, out);
+  Tensor ret = op_argmin_out(in, dim, false, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, expected);

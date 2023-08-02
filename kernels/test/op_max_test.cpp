@@ -22,7 +22,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-std::tuple<Tensor&, Tensor&> max_out(
+std::tuple<Tensor&, Tensor&> op_max_dim_max(
     const Tensor& self,
     int64_t dim,
     bool keepdim,
@@ -44,25 +44,26 @@ void test_max_out_invalid_dimensions() {
 
   // output tensor dim mismatch
   ET_EXPECT_DEATH(
-      max_out(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices), "");
+      op_max_dim_max(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices), "");
 
   // output tensor shape incorrect: size of dimension: dim should be 1
   max = tf_in.zeros({2, 3, 2});
   max_indices = tf_in.zeros({2, 3, 2});
   ET_EXPECT_DEATH(
-      max_out(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices), "");
+      op_max_dim_max(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices), "");
 
   // output tensor shape should be squeezed when keepdim is false
   max = tf_in.zeros({2, 3, 1});
   max_indices = tf_in.zeros({2, 3, 1});
   ET_EXPECT_DEATH(
-      max_out(self, /*dim=*/-1, /*keepdim=*/false, max, max_indices), "");
+      op_max_dim_max(self, /*dim=*/-1, /*keepdim=*/false, max, max_indices),
+      "");
 
   // invalid dim
   max = tf_in.zeros({2, 3, 1});
   max_indices = tf_in.zeros({2, 3, 1});
   ET_EXPECT_DEATH(
-      max_out(self, /*dim=*/3, /*keepdim=*/true, max, max_indices), "");
+      op_max_dim_max(self, /*dim=*/3, /*keepdim=*/true, max, max_indices), "");
 }
 
 TEST(OpMaxOutTest, MismatchedDimensionsDies) {
@@ -88,13 +89,13 @@ TEST(OpMaxOutTest, MismatchedDTypesDies) {
 
   // dtype of self and max should match
   ET_EXPECT_DEATH(
-      max_out(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices), "");
+      op_max_dim_max(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices), "");
 
   // max_value tensor should have long as dtype
   max = tf_float.zeros({2, 3, 1});
   max_indices = tf_float.zeros({2, 3, 1});
   ET_EXPECT_DEATH(
-      max_out(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices), "");
+      op_max_dim_max(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices), "");
 }
 
 template <ScalarType IN_DTYPE>
@@ -117,7 +118,7 @@ void test_max_out_dtype() {
 
   Tensor max = tf_in.zeros({2, 4});
   Tensor max_indices = tf_long.zeros({2, 4});
-  max_out(self, /*dim=*/1, /*keepdim=*/false, max, max_indices);
+  op_max_dim_max(self, /*dim=*/1, /*keepdim=*/false, max, max_indices);
   // clang-format off
   EXPECT_TENSOR_CLOSE(max, tf_in.make(
     {2, 4},
@@ -135,7 +136,7 @@ void test_max_out_dtype() {
   // clang-format on
 
   // negative dim should work
-  max_out(self, /*dim=*/-2, /*keepdim=*/false, max, max_indices);
+  op_max_dim_max(self, /*dim=*/-2, /*keepdim=*/false, max, max_indices);
   // clang-format off
   EXPECT_TENSOR_CLOSE(max, tf_in.make(
     {2, 4},
@@ -154,7 +155,7 @@ void test_max_out_dtype() {
   // keepdim should work
   max = tf_in.zeros({2, 3, 1});
   max_indices = tf_long.zeros({2, 3, 1});
-  max_out(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices);
+  op_max_dim_max(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices);
   EXPECT_TENSOR_CLOSE(max, tf_in.make({2, 3, 1}, {4, 4, 4, 4, 4, 4}));
   EXPECT_TENSOR_EQ(max_indices, tf_long.make({2, 3, 1}, {3, 0, 2, 0, 3, 2}));
 }
@@ -181,7 +182,7 @@ void test_max_out_dtype<ScalarType::Bool>() {
   Tensor max_indices = tf_long.zeros({2, 3, 1});
 
   // +/-inf and nan should work
-  max_out(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices);
+  op_max_dim_max(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices);
   // clang-format off
   EXPECT_TENSOR_CLOSE(
       max, tf_bool.make(
@@ -236,7 +237,7 @@ TEST(OpMaxOutTest, InfinityAndNANTest) {
   Tensor max_indices = tf_long.zeros({2, 3, 1});
 
   // +/-inf and nan should work
-  max_out(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices);
+  op_max_dim_max(self, /*dim=*/-1, /*keepdim=*/true, max, max_indices);
   EXPECT_TENSOR_CLOSE(
       max, tf_float.make({2, 3, 1}, {INFINITY, INFINITY, NAN, NAN, NAN, NAN}));
   // clang-format off
@@ -272,7 +273,7 @@ max_template = f"""
   {declare_tensor_zeros("out_shape, dynamism", "tf", "max")}
   {declare_tensor_zeros("out_shape, dynamism", "tfl", "max_indices")}
 
-  max_out(input, $dim$, $keepdim$, max, max_indices);
+  op_max_dim_max(input, $dim$, $keepdim$, max, max_indices);
   EXPECT_TENSOR_EQ(max, expected_max);
   EXPECT_TENSOR_EQ(max_indices, expected_max_indices);""" */
 
@@ -309,7 +310,7 @@ void test_dynamic_shape(
   Tensor max = tf.zeros(out_shape, dynamism);
   Tensor max_indices = tfl.zeros(out_shape, dynamism);
 
-  max_out(input, 1, false, max, max_indices);
+  op_max_dim_max(input, 1, false, max, max_indices);
   EXPECT_TENSOR_EQ(max, expected_max);
   EXPECT_TENSOR_EQ(max_indices, expected_max_indices);
 }

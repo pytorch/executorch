@@ -21,7 +21,7 @@ using exec_aten::Tensor;
 using exec_aten::TensorShapeDynamism;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _cosh_out(const Tensor& self, Tensor& out) {
+Tensor& op_cosh_out(const Tensor& self, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::cosh_outf(context, self, out);
 }
@@ -36,7 +36,7 @@ TEST(OpCoshOutKernelTest, HandleBoolInput) {
   Tensor out = tf_float.zeros(sizes);
   Tensor res = tf_float.make(sizes, /*data=*/{1.000000, 1.543081});
 
-  EXPECT_TENSOR_CLOSE(_cosh_out(a, out), res);
+  EXPECT_TENSOR_CLOSE(op_cosh_out(a, out), res);
 }
 
 // Common testing for cosh operator and all kinds of supported input types
@@ -51,7 +51,7 @@ void test_floating_point_cosh_out(
   Tensor out = tf_out.zeros(out_shape, dynamism);
 
   // clang-format off
-  _cosh_out(tf_in.make({1, 5}, { 0, 1, 3, 5, 10 }), out);
+  op_cosh_out(tf_in.make({1, 5}, { 0, 1, 3, 5, 10 }), out);
 
   // Check that it matches (or close to) the expected output.
   EXPECT_TENSOR_CLOSE(
@@ -123,7 +123,7 @@ void test_cosh_invalid_output_dtype_dies() {
   Tensor in = tf.ones(sizes);
   Tensor out = tf_out.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(_cosh_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cosh_out(in, out));
 }
 
 TEST(OpCoshOutKernelTest, AllNonFloatOutputDTypeDies) {
@@ -143,5 +143,5 @@ TEST(OpCoshOutKernelTest, MismatchedInputShapesDies) {
   Tensor a = tf.ones(/*sizes=*/{4});
   Tensor out = tf.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(_cosh_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cosh_out(a, out));
 }

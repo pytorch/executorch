@@ -23,7 +23,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& index_select_out(
+Tensor& op_index_select_out(
     const Tensor& self,
     int64_t dim,
     const Tensor& index,
@@ -49,7 +49,7 @@ void run_test_cases(
       expected.sizes().begin(), expected.sizes().end());
   Tensor out = tf.ones(out_size);
 
-  Tensor ret = index_select_out(x, dim, index, out);
+  Tensor ret = op_index_select_out(x, dim, index, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(ret, expected);
 }
@@ -214,8 +214,8 @@ void test_dtype() {
   Tensor out_1 = tf.ones({3, 1, 4});
   Tensor index_0 = tfl.make({1}, {0});
   Tensor index_1 = tfl.make({1}, {1});
-  Tensor ret_0 = index_select_out(x, /*dim=*/1, /*index=*/index_0, out_0);
-  Tensor ret_1 = index_select_out(x, /*dim=*/1, /*index=*/index_1, out_1);
+  Tensor ret_0 = op_index_select_out(x, /*dim=*/1, /*index=*/index_0, out_0);
+  Tensor ret_1 = op_index_select_out(x, /*dim=*/1, /*index=*/index_1, out_1);
 
   EXPECT_TENSOR_EQ(ret_0, out_0);
   EXPECT_TENSOR_EQ(ret_1, out_1);
@@ -258,7 +258,7 @@ TEST(OpIndexSelectOutTest, NonEmptyInputEmptyOutputWithMismatchDimDies) {
   // pass the empty-size tensor to the function,
   Tensor expect = tf.make({}, {5});
   ET_EXPECT_KERNEL_FAILURE(
-      index_select_out(x, /*dim=*/0, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
 }
 
 // This test focuses on the support for empty tensor (dim() > 0) input and empty
@@ -277,7 +277,7 @@ TEST(OpIndexSelectOutTest, EmptyInputEmptyOutputWithMatchingDimSupported) {
   Tensor out = tf.make({3, 0, 1, 3}, {});
   EXPECT_EQ(out.numel(), 0);
 
-  Tensor ret = index_select_out(x, /*dim=*/2, /*index=*/index, out);
+  Tensor ret = op_index_select_out(x, /*dim=*/2, /*index=*/index, out);
   EXPECT_EQ(ret.numel(), 0);
   // Success if it doesn't assert on the weird-shaped empty input and the
   // ret is still a empty array
@@ -296,7 +296,7 @@ TEST(OpIndexSelectOutTest, DimOutOfBoundDies) {
   // Some invalid dim values.
   const std::vector<int32_t> invalid_dims = {3, 4, 5, -4, -5, -6};
   for (ssize_t dim : invalid_dims) {
-    ET_EXPECT_KERNEL_FAILURE(index_select_out(x, dim, /*index=*/index, out));
+    ET_EXPECT_KERNEL_FAILURE(op_index_select_out(x, dim, /*index=*/index, out));
   }
 }
 
@@ -312,7 +312,7 @@ TEST(OpIndexSelectOutTest, MismatchedDtypesDies) {
   Tensor index = tf_long.make({1}, {0});
 
   ET_EXPECT_KERNEL_FAILURE(
-      index_select_out(x, /*dim=*/0, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
 }
 
 TEST(OpIndexSelectOutTest, OutMatchNumelLackDimAtEndDies) {
@@ -330,7 +330,7 @@ TEST(OpIndexSelectOutTest, OutMatchNumelLackDimAtEndDies) {
   Tensor out = tf.ones({1, 2, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
-      index_select_out(x, /*dim=*/0, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
 }
 
 TEST(OpIndexSelectOutTest, OutMatchNumelExtraDimAtFrontDies) {
@@ -348,7 +348,7 @@ TEST(OpIndexSelectOutTest, OutMatchNumelExtraDimAtFrontDies) {
   Tensor out = tf.ones({1, 1, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
-      index_select_out(x, /*dim=*/0, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
 }
 
 TEST(OpIndexSelectOutTest, OutSizeMismatchDimDies) {
@@ -366,7 +366,7 @@ TEST(OpIndexSelectOutTest, OutSizeMismatchDimDies) {
   Tensor out = tf.zeros({2, 4, 7});
 
   ET_EXPECT_KERNEL_FAILURE(
-      index_select_out(x, /*dim=*/2, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/2, /*index=*/index, out));
 }
 
 TEST(OpIndexSelectOutTest, IndexWithInvalidDtypeDies) {
@@ -379,7 +379,7 @@ TEST(OpIndexSelectOutTest, IndexWithInvalidDtypeDies) {
   Tensor out = tf.zeros({2, 1, 7, 5});
 
   ET_EXPECT_KERNEL_FAILURE(
-      index_select_out(x, /*dim=*/1, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/1, /*index=*/index, out));
 }
 
 TEST(OpIndexSelectOutTest, IndexWithInvalidDimDies) {
@@ -393,7 +393,7 @@ TEST(OpIndexSelectOutTest, IndexWithInvalidDimDies) {
   Tensor out = tf.zeros({2, 1, 7, 5});
 
   ET_EXPECT_KERNEL_FAILURE(
-      index_select_out(x, /*dim=*/1, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/1, /*index=*/index, out));
 }
 
 #if !defined(USE_ATEN_LIB)
@@ -433,7 +433,7 @@ TEST(OpIndexSelectOutTest, UpperBoundOutTensor) {
   );
   // clang-format on
 
-  Tensor ret = index_select_out(x, 0, index, out);
+  Tensor ret = op_index_select_out(x, 0, index, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(ret, expected);
 }
@@ -456,7 +456,7 @@ index_select_template = f"""
   {declare_tensor_make_t("expected", "tf")}
   {declare_tensor_zeros("out_shape, dynamism", "tf", "out")}
 
-  index_select_out(input, $dim$, index, out);
+  op_index_select_out(input, $dim$, index, out);
   EXPECT_TENSOR_CLOSE(out, expected);""" */
 
 void test_dynamic_shape(
@@ -495,7 +495,7 @@ void test_dynamic_shape(
        0.39709991216659546});
   Tensor out = tf.zeros(out_shape, dynamism);
 
-  index_select_out(input, 2, index, out);
+  op_index_select_out(input, 2, index, out);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 

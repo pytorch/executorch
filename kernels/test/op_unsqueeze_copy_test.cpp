@@ -23,7 +23,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& unsqueeze_copy_out(const Tensor& self, int64_t dim, Tensor& out) {
+Tensor& op_unsqueeze_copy_out(const Tensor& self, int64_t dim, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::unsqueeze_copy_outf(context, self, dim, out);
 }
@@ -70,7 +70,7 @@ void run_unsqueeze_test_cases(
   for (int64_t dim : dims) {
     std::vector<int32_t> size_out = generate_size_out(input.sizes(), dim);
     Tensor out = tf.ones(size_out);
-    Tensor ret = unsqueeze_copy_out(input, dim, out);
+    Tensor ret = op_unsqueeze_copy_out(input, dim, out);
 
     // The following is just a check against itself.
     EXPECT_TENSOR_EQ(out, ret);
@@ -80,8 +80,8 @@ void run_unsqueeze_test_cases(
 
 } // namespace
 
-// regular test for unsqueeze_copy_out
-// test if unsqueeze_copy_out works well under all kinds of legal input type.
+// regular test for op_unsqueeze_copy_out
+// test if op_unsqueeze_copy_out works well under all kinds of legal input type.
 template <class CTYPE, ScalarType DTYPE>
 void test_dtype() {
   TensorFactory<DTYPE> tf;
@@ -131,9 +131,9 @@ TEST(OpUnsqueezeTest, InputOutputMismatchedSizesDie) {
 
   // unsqueese input on dim 1 should get tensor(3, 1, 1, 2)
   Tensor out = tf.ones(/*sizes=*/{3, 1, 1, 1});
-  ET_EXPECT_KERNEL_FAILURE(unsqueeze_copy_out(input, dim, out));
+  ET_EXPECT_KERNEL_FAILURE(op_unsqueeze_copy_out(input, dim, out));
   out = tf.ones(/*sizes=*/{3, 1, 1, 2, 1});
-  ET_EXPECT_KERNEL_FAILURE(unsqueeze_copy_out(input, dim, out));
+  ET_EXPECT_KERNEL_FAILURE(op_unsqueeze_copy_out(input, dim, out));
 }
 
 TEST(OpUnsqueezeTest, DimOutputMismatchedSizesDie) {
@@ -146,7 +146,7 @@ TEST(OpUnsqueezeTest, DimOutputMismatchedSizesDie) {
   int64_t dim = 2;
 
   // The size of output should be [3,1,1,2], not [3,1,2,1], since dim=2 not 3
-  ET_EXPECT_KERNEL_FAILURE(unsqueeze_copy_out(input, dim, out));
+  ET_EXPECT_KERNEL_FAILURE(op_unsqueeze_copy_out(input, dim, out));
 }
 
 TEST(OpUnsqueezeTest, MismatchedTypesDie) {
@@ -156,7 +156,7 @@ TEST(OpUnsqueezeTest, MismatchedTypesDie) {
   Tensor out = tf_out.ones(/*sizes=*/{3, 1, 2, 1});
   int64_t dim = 3;
 
-  ET_EXPECT_KERNEL_FAILURE(unsqueeze_copy_out(input, dim, out));
+  ET_EXPECT_KERNEL_FAILURE(op_unsqueeze_copy_out(input, dim, out));
 }
 
 TEST(OpUnsqueezeTest, DimOutOfRangeDies) {
@@ -171,11 +171,11 @@ TEST(OpUnsqueezeTest, DimOutOfRangeDies) {
   std::vector<int64_t> legal_dims = {-4, -3, -2, -1, 0, 1, 2, 3};
 
   for (auto dim : legal_dims) {
-    unsqueeze_copy_out(input, dim, out);
+    op_unsqueeze_copy_out(input, dim, out);
   }
 
   for (auto dim : illegal_dims) {
-    ET_EXPECT_KERNEL_FAILURE(unsqueeze_copy_out(input, dim, out));
+    ET_EXPECT_KERNEL_FAILURE(op_unsqueeze_copy_out(input, dim, out));
   }
 }
 
@@ -191,27 +191,27 @@ TEST(OpUnsqueezeTest, UpperBoundOutTensor) {
   // Here input.dim == 2, so the range of legal dim for unsqueeze is [-3, 2]
   Tensor ref_out =
       tf.make(/*sizes=*/{1, 2, 4}, /*data=*/{0, 1, 1, 1, 0, 1, 0, 1});
-  unsqueeze_copy_out(input, -3, out);
+  op_unsqueeze_copy_out(input, -3, out);
   EXPECT_TENSOR_EQ(out, ref_out);
 
   ref_out = tf.make(/*sizes=*/{2, 1, 4}, /*data=*/{0, 1, 1, 1, 0, 1, 0, 1});
-  unsqueeze_copy_out(input, -2, out);
+  op_unsqueeze_copy_out(input, -2, out);
   EXPECT_TENSOR_EQ(out, ref_out);
 
   ref_out = tf.make(/*sizes=*/{2, 4, 1}, /*data=*/{0, 1, 1, 1, 0, 1, 0, 1});
-  unsqueeze_copy_out(input, -1, out);
+  op_unsqueeze_copy_out(input, -1, out);
   EXPECT_TENSOR_EQ(out, ref_out);
 
   ref_out = tf.make(/*sizes=*/{1, 2, 4}, /*data=*/{0, 1, 1, 1, 0, 1, 0, 1});
-  unsqueeze_copy_out(input, 0, out);
+  op_unsqueeze_copy_out(input, 0, out);
   EXPECT_TENSOR_EQ(out, ref_out);
 
   ref_out = tf.make(/*sizes=*/{2, 1, 4}, /*data=*/{0, 1, 1, 1, 0, 1, 0, 1});
-  unsqueeze_copy_out(input, 1, out);
+  op_unsqueeze_copy_out(input, 1, out);
   EXPECT_TENSOR_EQ(out, ref_out);
 
   ref_out = tf.make(/*sizes=*/{2, 4, 1}, /*data=*/{0, 1, 1, 1, 0, 1, 0, 1});
-  unsqueeze_copy_out(input, 2, out);
+  op_unsqueeze_copy_out(input, 2, out);
   EXPECT_TENSOR_EQ(out, ref_out);
 }
 #endif
@@ -221,7 +221,7 @@ import torch
 torch.manual_seed(0)
 x = torch.rand(2, 4)
 res = torch.unsqueeze(x, 1)
-op = "unsqueeze_copy_out"
+op = "op_unsqueeze_copy_out"
 opt_extra_params = "1,"
 dtype = "ScalarType::Float"
 check = "EXPECT_TENSOR_EQ" */
@@ -256,7 +256,7 @@ TEST(OpUnsqueezeTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({2, 1, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  unsqueeze_copy_out(x, 1, out);
+  op_unsqueeze_copy_out(x, 1, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -293,7 +293,7 @@ TEST(OpUnsqueezeTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({5, 5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  unsqueeze_copy_out(x, 1, out);
+  op_unsqueeze_copy_out(x, 1, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -330,6 +330,6 @@ TEST(OpUnsqueezeTest, DynamicShapeUnbound) {
 
   Tensor out = tf.zeros(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  unsqueeze_copy_out(x, 1, out);
+  op_unsqueeze_copy_out(x, 1, out);
   EXPECT_TENSOR_EQ(out, expected);
 }

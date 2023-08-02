@@ -24,7 +24,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& addmm_out(
+Tensor& op_addmm_out(
     const Tensor& self,
     const Tensor& mat1,
     const Tensor& mat2,
@@ -50,7 +50,7 @@ TEST(OpAddmmOutTest, OutputDim) {
   Scalar alpha = Scalar(1);
   Scalar beta = Scalar(1);
 
-  Tensor ret = addmm_out(self, x, y, beta, alpha, out);
+  Tensor ret = op_addmm_out(self, x, y, beta, alpha, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -78,7 +78,7 @@ void test_dtype() {
   Scalar alpha = Scalar(2.0);
   Scalar beta = Scalar(3.0);
 
-  addmm_out(self, x, y, beta, alpha, out);
+  op_addmm_out(self, x, y, beta, alpha, out);
 
   Tensor expected = tf.full({3, 5}, 51);
 
@@ -107,7 +107,8 @@ TEST(OpAddmmOutTest, EmptyInputWithEmptyOutTensorPasses) {
 
   Tensor expected = tf.make({0, 0}, {});
 
-  EXPECT_TENSOR_EQ(addmm_out(self, x, y, Scalar(2), Scalar(3), out), expected);
+  EXPECT_TENSOR_EQ(
+      op_addmm_out(self, x, y, Scalar(2), Scalar(3), out), expected);
 }
 
 TEST(OpAddmmOutTest, FloatTensorDtypeAndIntScalarTypePasses) {
@@ -123,7 +124,8 @@ TEST(OpAddmmOutTest, FloatTensorDtypeAndIntScalarTypePasses) {
 
   Tensor expected = tff.full({3, 5}, 74);
 
-  EXPECT_TENSOR_EQ(addmm_out(self, x, y, Scalar(2), Scalar(3), out), expected);
+  EXPECT_TENSOR_EQ(
+      op_addmm_out(self, x, y, Scalar(2), Scalar(3), out), expected);
 }
 
 TEST(OpAddmmOutTest, IntTensorDtypeAndFloatScalarTypePasses) {
@@ -140,7 +142,7 @@ TEST(OpAddmmOutTest, IntTensorDtypeAndFloatScalarTypePasses) {
   Tensor expected = tfi.full({3, 5}, 74);
 
   EXPECT_TENSOR_EQ(
-      addmm_out(self, x, y, Scalar(2.0), Scalar(3.0), out), expected);
+      op_addmm_out(self, x, y, Scalar(2.0), Scalar(3.0), out), expected);
 }
 
 TEST(OpAddmmOutTest, InfinityTensorAndFloatScalarTypePasses) {
@@ -156,7 +158,8 @@ TEST(OpAddmmOutTest, InfinityTensorAndFloatScalarTypePasses) {
 
   Tensor expected = tff.full({3, 5}, std::numeric_limits<float>::infinity());
 
-  EXPECT_TENSOR_EQ(addmm_out(self, x, y, Scalar(2), Scalar(3), out), expected);
+  EXPECT_TENSOR_EQ(
+      op_addmm_out(self, x, y, Scalar(2), Scalar(3), out), expected);
 }
 
 TEST(OpAddmmOutTest, MismatchedDimensionsDies) {
@@ -173,10 +176,10 @@ TEST(OpAddmmOutTest, MismatchedDimensionsDies) {
 
   Tensor expected = tf.full({2, 2}, 9);
   ET_EXPECT_KERNEL_FAILURE(
-      addmm_out(self, x, wrong_y, Scalar(1), Scalar(1), out));
+      op_addmm_out(self, x, wrong_y, Scalar(1), Scalar(1), out));
 
   EXPECT_TENSOR_EQ(
-      addmm_out(self, x, right_y, Scalar(1), Scalar(1), out), expected);
+      op_addmm_out(self, x, right_y, Scalar(1), Scalar(1), out), expected);
 }
 
 TEST(OpAddmmOutTest, MismatchedDimensionSizeDies) {
@@ -197,9 +200,9 @@ TEST(OpAddmmOutTest, MismatchedDimensionSizeDies) {
   }
 
   ET_EXPECT_KERNEL_FAILURE(
-      addmm_out(self, x, right_y, Scalar(1), Scalar(1), wrong_out));
+      op_addmm_out(self, x, right_y, Scalar(1), Scalar(1), wrong_out));
   ET_EXPECT_KERNEL_FAILURE(
-      addmm_out(self, x, wrong_y, Scalar(1), Scalar(1), right_out));
+      op_addmm_out(self, x, wrong_y, Scalar(1), Scalar(1), right_out));
 }
 
 TEST(OpAddmmOutTest, WrongOutShapeDies) {
@@ -218,10 +221,10 @@ TEST(OpAddmmOutTest, WrongOutShapeDies) {
   }
 
   ET_EXPECT_KERNEL_FAILURE(
-      addmm_out(self, x, y, Scalar(1), Scalar(1), wrong_out));
+      op_addmm_out(self, x, y, Scalar(1), Scalar(1), wrong_out));
 
   EXPECT_TENSOR_EQ(
-      addmm_out(self, x, y, Scalar(1), Scalar(1), right_out),
+      op_addmm_out(self, x, y, Scalar(1), Scalar(1), right_out),
       tf.full({10, 4}, 4));
 }
 
@@ -235,7 +238,7 @@ TEST(OpAddmmOutTest, BroadcastTest) {
   Tensor out = tf.make({2, 2}, {0, 0, 0, 0});
 
   EXPECT_TENSOR_EQ(
-      addmm_out(self, x, y, Scalar(1), Scalar(1), out),
+      op_addmm_out(self, x, y, Scalar(1), Scalar(1), out),
       tf.make({2, 2}, {8, 11, 16, 23}));
 }
 TEST(OpAddmmOutKernelTest, BroadcastDimSize1) {
@@ -286,7 +289,7 @@ TEST(OpAddmmOutKernelTest, BroadcastDimSize1) {
        2.107893466949463});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = addmm_out(x, y, z, Scalar(1), Scalar(1), out);
+  Tensor ret = op_addmm_out(x, y, z, Scalar(1), Scalar(1), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -338,7 +341,7 @@ TEST(OpAddmmOutKernelTest, BroadcastDimSizeMissing) {
        2.107893466949463});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = addmm_out(x, y, z, Scalar(1), Scalar(1), out);
+  Tensor ret = op_addmm_out(x, y, z, Scalar(1), Scalar(1), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -390,7 +393,7 @@ TEST(OpAddmmOutKernelTest, BroadcastDimSizeIsOne) {
        1.6570236682891846});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = addmm_out(x, y, z, Scalar(1), Scalar(1), out);
+  Tensor ret = op_addmm_out(x, y, z, Scalar(1), Scalar(1), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -450,7 +453,7 @@ TEST(OpAddmmOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = addmm_out(x, y, z, Scalar(1), Scalar(1), out);
+  Tensor ret = op_addmm_out(x, y, z, Scalar(1), Scalar(1), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -510,7 +513,7 @@ TEST(OpAddmmOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = addmm_out(x, y, z, Scalar(1), Scalar(1), out);
+  Tensor ret = op_addmm_out(x, y, z, Scalar(1), Scalar(1), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -571,6 +574,6 @@ TEST(OpAddmmOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = addmm_out(x, y, z, Scalar(1), Scalar(1), out);
+  Tensor ret = op_addmm_out(x, y, z, Scalar(1), Scalar(1), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

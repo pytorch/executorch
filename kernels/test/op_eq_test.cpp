@@ -21,7 +21,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& eq_scalar_out(const Tensor& self, Scalar& other, Tensor& out) {
+Tensor& op_eq_scalar_out(const Tensor& self, Scalar& other, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::eq_outf(context, self, other, out);
 }
@@ -38,7 +38,7 @@ void test_eq_scalar_out() {
   Scalar other = 3;
 
   // Valid input should give the expected output
-  eq_scalar_out(tf.make(sizes, /*data=*/{2, 3, 3, 3}), other, out);
+  op_eq_scalar_out(tf.make(sizes, /*data=*/{2, 3, 3, 3}), other, out);
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{false, true, true, true}));
 }
 
@@ -56,7 +56,7 @@ TEST(OpEqScalarOutKernelTest, BoolInputDtype) {
   Tensor out = tf_bool.zeros(sizes);
   Scalar other = 1;
 
-  eq_scalar_out(a, other, out);
+  op_eq_scalar_out(a, other, out);
   EXPECT_TENSOR_EQ(
       out, tf_bool.make(sizes, /*data=*/{false, true, false, true}));
 }
@@ -73,7 +73,7 @@ TEST(OpEqScalarOutKernelTest, MismatchedShapesDies) {
   Tensor out = tf_bool.ones(/*sizes=*/{2, 2});
   Scalar other = 3;
 
-  ET_EXPECT_KERNEL_FAILURE(eq_scalar_out(a, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_eq_scalar_out(a, other, out));
 }
 
 // Handle all output dtypes.
@@ -88,7 +88,7 @@ void test_eq_all_output_dtypes() {
   Tensor out = tf_out.zeros(sizes);
   Scalar other = 1;
 
-  eq_scalar_out(in, other, out);
+  op_eq_scalar_out(in, other, out);
   EXPECT_TENSOR_EQ(out, tf_out.ones(sizes));
 }
 
@@ -106,7 +106,7 @@ import torch
 torch.manual_seed(0)
 x = torch.randint(3, (3, 2))
 res = torch.eq(x, 2)
-op = "eq_scalar_out"
+op = "op_eq_scalar_out"
 opt_setup_params = """
   Scalar other = 2;
 """
@@ -131,7 +131,7 @@ TEST(OpEqScalarOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tfOut.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  eq_scalar_out(x, other, out);
+  op_eq_scalar_out(x, other, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -151,7 +151,7 @@ TEST(OpEqScalarOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out = tfOut.zeros(
       {10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  eq_scalar_out(x, other, out);
+  op_eq_scalar_out(x, other, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -174,6 +174,6 @@ TEST(OpEqScalarOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out = tfOut.zeros(
       {1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  eq_scalar_out(x, other, out);
+  op_eq_scalar_out(x, other, out);
   EXPECT_TENSOR_EQ(out, expected);
 }

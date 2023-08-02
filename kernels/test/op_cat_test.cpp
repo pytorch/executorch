@@ -23,7 +23,7 @@ using exec_aten::Tensor;
 using exec_aten::TensorList;
 using torch::executor::testing::TensorFactory;
 
-Tensor& cat_out(TensorList tensors, int64_t dim, Tensor& out) {
+Tensor& op_cat_out(TensorList tensors, int64_t dim, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::cat_outf(context, tensors, dim, out);
 }
@@ -60,8 +60,8 @@ TEST(OpCatOutTest, SmokeDim1) {
   Tensor out = tf.zeros({2, 4});
 
   // Concatenate along dim[1].
-  Tensor ret =
-      cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
+  Tensor ret = op_cat_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -101,19 +101,21 @@ TEST(OpCatOutTest, NegativeDims) {
 
   // Cat along dim[-1], which should be the same as dim[1].
   Tensor out_neg1 = tf.zeros({2, 4});
-  cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/-1, out_neg1);
+  op_cat_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/-1, out_neg1);
 
   Tensor out_1 = tf.zeros({2, 4});
-  cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out_1);
+  op_cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out_1);
 
   EXPECT_TENSOR_EQ(out_neg1, out_1);
 
   // Cat along dim[-2], which should be the same as dim[0].
   Tensor out_neg2 = tf.zeros({4, 2});
-  cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/-2, out_neg2);
+  op_cat_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/-2, out_neg2);
 
   Tensor out_0 = tf.zeros({4, 2});
-  cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out_0);
+  op_cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out_0);
 
   EXPECT_TENSOR_EQ(out_neg2, out_0);
 }
@@ -131,7 +133,7 @@ void test_dtype() {
   std::vector<Tensor> inputs = {x, y};
 
   Tensor out = tf.ones({2, 2});
-  cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
+  op_cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
 
   // clang-format off
   Tensor expected = tf.make(
@@ -171,7 +173,7 @@ TEST(OpCatOutTest, EmptyInputTensorShapeIgnored) {
   // Output whose shape is appropriate for concatenating along dim[0].
   Tensor out = tf.zeros({4, 2});
 
-  cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out);
+  op_cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out);
   // Success if it doesn't assert on the weird-shaped empty input.
 }
 
@@ -190,14 +192,14 @@ TEST(OpCatOutTest, DimBounds) {
   // -2 the second-from-rightmost, etc.
   const std::vector<int64_t> valid_dims = {0, 1, -1, -2};
   for (int64_t dim : valid_dims) {
-    cat_out(inputs, dim, out);
+    op_cat_out(inputs, dim, out);
     // Success if it doesn't assert.
   }
 
   // Some invalid dim values.
   const std::vector<int64_t> invalid_dims = {2, -3};
   for (int64_t dim : invalid_dims) {
-    ET_EXPECT_KERNEL_FAILURE(cat_out(inputs, dim, out));
+    ET_EXPECT_KERNEL_FAILURE(op_cat_out(inputs, dim, out));
   }
 }
 
@@ -207,7 +209,7 @@ TEST(OpCatOutTest, NoInputTensorsWithNonEmptyOutputDies) {
 
   // Providing an empty list of input tensors should
   // cause an assertion and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(cat_out(ArrayRef<Tensor>(), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cat_out(ArrayRef<Tensor>(), /*dim=*/0, out));
 }
 
 TEST(OpCatOutTest, NoInputTensorsWithEmptyOutputDies) {
@@ -219,7 +221,7 @@ TEST(OpCatOutTest, NoInputTensorsWithEmptyOutputDies) {
 
   // Providing an empty list of input tensors should
   // cause an assertion and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(cat_out(ArrayRef<Tensor>(), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cat_out(ArrayRef<Tensor>(), /*dim=*/0, out));
 }
 
 TEST(OpCatOutTest, MismatchedDtypesDies) {
@@ -230,8 +232,8 @@ TEST(OpCatOutTest, MismatchedDtypesDies) {
   // Same shape as the output, but a different dtype.
   std::vector<Tensor> inputs = {tf_float.ones({2, 2})};
 
-  ET_EXPECT_KERNEL_FAILURE(
-      cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cat_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
 TEST(OpCatOutTest, MismatchedDimensionsDies) {
@@ -244,8 +246,8 @@ TEST(OpCatOutTest, MismatchedDimensionsDies) {
   // Same dtype and numel as the output, but a different number of dimensions.
   std::vector<Tensor> inputs = {tf.ones({1, 1, 1, 1})};
 
-  ET_EXPECT_KERNEL_FAILURE(
-      cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cat_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
 TEST(OpCatOutTest, MismatchedDimensionSizeDies) {
@@ -259,8 +261,8 @@ TEST(OpCatOutTest, MismatchedDimensionSizeDies) {
   // dimension.
   std::vector<Tensor> inputs = {tf.ones({2, 3})};
 
-  ET_EXPECT_KERNEL_FAILURE(
-      cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cat_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
 TEST(OpCatOutTest, WrongOutShapeDies) {
@@ -277,8 +279,8 @@ TEST(OpCatOutTest, WrongOutShapeDies) {
       tf.ones({2, 3}),
   };
 
-  ET_EXPECT_KERNEL_FAILURE(
-      cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cat_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
 /* %python
@@ -289,7 +291,7 @@ x = [torch.randint(10, (2, 3)),
      torch.randint(10, (2, 3)),
      torch.randint(10, (2, 3))]
 res = torch.cat(x, 0)
-op = "cat_out"
+op = "op_cat_out"
 opt_extra_params = "0,"
 dtype = "ScalarType::Int"
 check = "EXPECT_TENSOR_EQ" */
@@ -312,7 +314,7 @@ TEST(OpCatOutTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({8, 3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  cat_out(x, 0, out);
+  op_cat_out(x, 0, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -334,7 +336,7 @@ TEST(OpCatOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  cat_out(x, 0, out);
+  op_cat_out(x, 0, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -359,6 +361,6 @@ TEST(OpCatOutTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  cat_out(x, 0, out);
+  op_cat_out(x, 0, out);
   EXPECT_TENSOR_EQ(out, expected);
 }

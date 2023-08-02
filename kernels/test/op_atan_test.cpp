@@ -21,7 +21,7 @@ using exec_aten::Tensor;
 using exec_aten::TensorShapeDynamism;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _atan_out(const Tensor& self, Tensor& out) {
+Tensor& op_atan_out(const Tensor& self, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::atan_outf(context, self, out);
 }
@@ -36,7 +36,7 @@ TEST(OpAtanOutKernelTest, HandleBoolInput) {
   Tensor out = tf_float.zeros(sizes);
   Tensor res = tf_float.make(sizes, /*data=*/{0.000000, 0.785398});
 
-  EXPECT_TENSOR_CLOSE(_atan_out(a, out), res);
+  EXPECT_TENSOR_CLOSE(op_atan_out(a, out), res);
 }
 
 // Common testing for atan operator and all kinds of supported input types
@@ -51,7 +51,7 @@ void test_floating_point_atan_out(
   Tensor out = tf_out.zeros(out_shape, dynamism);
 
   // clang-format off
-  _atan_out(tf_in.make({1, 6}, { 0, 1, 3, 5, 10, 100 }), out);
+  op_atan_out(tf_in.make({1, 6}, { 0, 1, 3, 5, 10, 100 }), out);
 
   // Check that it matches (or close to) the expected output.
   EXPECT_TENSOR_CLOSE(
@@ -123,7 +123,7 @@ void test_atan_invalid_output_dtype_dies() {
   Tensor in = tf.ones(sizes);
   Tensor out = tf_out.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(_atan_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_atan_out(in, out));
 }
 
 TEST(OpAtanOutKernelTest, AllNonFloatOutputDTypeDies) {
@@ -143,5 +143,5 @@ TEST(OpAtanOutKernelTest, MismatchedInputShapesDies) {
   Tensor a = tf.ones(/*sizes=*/{4});
   Tensor out = tf.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(_atan_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_atan_out(a, out));
 }

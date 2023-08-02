@@ -25,7 +25,7 @@ using torch::executor::testing::TensorFactory;
 
 using OptTensorArrayRef = ArrayRef<optional<Tensor>>;
 
-Tensor& index_put_out(
+Tensor& op_index_put_out(
     const Tensor& input,
     OptTensorArrayRef indices,
     const Tensor& values,
@@ -58,13 +58,13 @@ void run_test_cases(
       expected.sizes().begin(), expected.sizes().end());
   Tensor out = tf.ones(out_size);
 
-  Tensor ret = index_put_out(x, indices, values, /*accumulate=*/false, out);
+  Tensor ret = op_index_put_out(x, indices, values, /*accumulate=*/false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(ret, expected);
 
   Tensor out_accum = tf.ones(out_size);
   Tensor ret_accum =
-      index_put_out(x, indices, values, /*accumulate=*/true, out_accum);
+      op_index_put_out(x, indices, values, /*accumulate=*/true, out_accum);
   EXPECT_TENSOR_EQ(out_accum, ret_accum);
   EXPECT_TENSOR_EQ(ret_accum, expected_accum);
 }
@@ -593,14 +593,14 @@ void test_dtype() {
   std::vector<int32_t> out_size{3, 2, 4};
 
   Tensor out = tf.zeros(out_size);
-  Tensor ret = index_put_out(x, indices, values, /*accumulate=*/false, out);
+  Tensor ret = op_index_put_out(x, indices, values, /*accumulate=*/false, out);
 
   EXPECT_TENSOR_EQ(ret, out);
   EXPECT_TENSOR_EQ(ret, tf.ones(out_size));
 
   // Repeat the test with bool indices
   Tensor out_with_bool = tf.zeros(out_size);
-  Tensor ret_with_bool = index_put_out(
+  Tensor ret_with_bool = op_index_put_out(
       x, indices_bool, values, /*accumulate=*/false, out_with_bool);
 
   EXPECT_TENSOR_EQ(ret_with_bool, out_with_bool);
@@ -622,15 +622,15 @@ void test_dtype() {
   Tensor values_alt = tf.zeros({3, 4});
 
   Tensor out_alt = tf.ones(out_size);
-  Tensor ret_alt =
-      index_put_out(x, indices_alt, values_alt, /*accumulate=*/false, out_alt);
+  Tensor ret_alt = op_index_put_out(
+      x, indices_alt, values_alt, /*accumulate=*/false, out_alt);
 
   EXPECT_TENSOR_EQ(ret_alt, out_alt);
   EXPECT_TENSOR_EQ(ret_alt, tf.zeros(out_size));
 
   // Repeat the test with bool indices
   Tensor out_alt_with_bool = tf.ones(out_size);
-  Tensor ret_alt_with_bool = index_put_out(
+  Tensor ret_alt_with_bool = op_index_put_out(
       x, indices_alt_bool, values_alt, /*accumulate=*/false, out_alt_with_bool);
 
   EXPECT_TENSOR_EQ(ret_alt_with_bool, out_alt_with_bool);
@@ -671,7 +671,8 @@ TEST(OpIndexPutOutTest, IndexOutOfBoundDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_put_out(x, /*indices=*/{index}, values, /*accumulate=*/false, out),
+      op_index_put_out(
+          x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
@@ -691,7 +692,8 @@ TEST(OpIndexPutOutTest, NegativeIndexOutOfBoundDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_put_out(x, /*indices=*/{index}, values, /*accumulate=*/false, out),
+      op_index_put_out(
+          x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
@@ -711,7 +713,8 @@ TEST(OpIndexPutOutTest, TooManyBooleanIndexCountDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_put_out(x, /*indices=*/{index}, values, /*accumulate=*/false, out),
+      op_index_put_out(
+          x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
@@ -732,7 +735,8 @@ TEST(OpIndexPutOutTest, TooFewBooleanIndexCountDies) {
 
   // ATen kernel will throw exception instead of death
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_put_out(x, /*indices=*/{index}, values, /*accumulate=*/false, out),
+      op_index_put_out(
+          x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
@@ -753,7 +757,8 @@ TEST(OpIndexPutOutTest, MismatchedIndexMaskDies) {
 
   // ATen kernel will throw exception instead of death
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_put_out(x, /*indices=*/{index}, values, /*accumulate=*/false, out),
+      op_index_put_out(
+          x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
@@ -776,7 +781,8 @@ TEST(OpIndexPutOutTest, MismatchedOutputDtypesDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_put_out(x, /*indices=*/{index}, values, /*accumulate=*/false, out),
+      op_index_put_out(
+          x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
@@ -799,7 +805,8 @@ TEST(OpIndexPutOutTest, MismatchedValuesDtypesDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_put_out(x, /*indices=*/{index}, values, /*accumulate=*/false, out),
+      op_index_put_out(
+          x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
@@ -820,7 +827,8 @@ TEST(OpIndexPutOutTest, ValuesSizeMismatchDimDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_put_out(x, /*indices=*/{index}, values, /*accumulate=*/false, out),
+      op_index_put_out(
+          x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
@@ -845,7 +853,7 @@ TEST(OpIndexPutOutTest, InvalidIndicesDtypeDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_put_out(x, indices, values, /*accumulate=*/false, out), "");
+      op_index_put_out(x, indices, values, /*accumulate=*/false, out), "");
 }
 
 TEST(OpIndexPutOutTest, InvalidIndicesShapesDies) {
@@ -869,7 +877,7 @@ TEST(OpIndexPutOutTest, InvalidIndicesShapesDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_put_out(x, indices, values, /*accumulate=*/false, out), "");
+      op_index_put_out(x, indices, values, /*accumulate=*/false, out), "");
 }
 
 TEST(OpIndexPutOutTest, InvalidIndicesShapeDies2) {
@@ -896,7 +904,7 @@ TEST(OpIndexPutOutTest, InvalidIndicesShapeDies2) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_put_out(x, indices, values, /*accumulate=*/false, out), "");
+      op_index_put_out(x, indices, values, /*accumulate=*/false, out), "");
 }
 
 //
@@ -922,7 +930,7 @@ index_put_template = f"""
   {declare_tensor_make_t("expected", "tf")}
   {declare_tensor_zeros("out_shape, dynamism", "tf", "out")}
 
-  index_put_out(input, indices, values, $accumulate$, out);
+  op_index_put_out(input, indices, values, $accumulate$, out);
   EXPECT_TENSOR_EQ(out, expected);"""
 */
 
@@ -962,7 +970,7 @@ void test_dynamic_shape(
        0.9151939749717712,   0.39709991216659546, 0.8741558790206909});
   Tensor out = tf.zeros(out_shape, dynamism);
 
-  index_put_out(input, indices, values, false, out);
+  op_index_put_out(input, indices, values, false, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 

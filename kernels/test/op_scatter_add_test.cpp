@@ -22,7 +22,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& scatter_add_out(
+Tensor& op_scatter_add_out(
     const Tensor& self,
     int64_t dim,
     const Tensor& index,
@@ -59,7 +59,7 @@ void test_scatter_add_out() {
   // clang-format on
 
   // Valid input should give the expected output
-  scatter_add_out(self, 0, index, src, out);
+  op_scatter_add_out(self, 0, index, src, out);
   // clang-format off
   EXPECT_TENSOR_EQ(
       out, tf_data.make(
@@ -72,7 +72,7 @@ void test_scatter_add_out() {
   // clang-format on
 
   // Valid input should give the expected output
-  scatter_add_out(self, 1, index, src, out);
+  op_scatter_add_out(self, 1, index, src, out);
   // clang-format off
   EXPECT_TENSOR_EQ(
       out, tf_data.make(sizes,
@@ -108,7 +108,7 @@ void test_scatter_add_out() {
     });
   // clang-format on
 
-  scatter_add_out(self, 1, index, src, out);
+  op_scatter_add_out(self, 1, index, src, out);
   // clang-format off
   EXPECT_TENSOR_EQ(
       out,
@@ -128,7 +128,7 @@ void test_scatter_add_out() {
   // clang-format on
 
   out = tf_data.zeros(/*sizes=*/{2, 3, 3});
-  scatter_add_out(self, 2, index, src, out);
+  op_scatter_add_out(self, 2, index, src, out);
   // clang-format off
   EXPECT_TENSOR_EQ(
       out,
@@ -172,7 +172,7 @@ TEST(OpScatterAddOutKernelTest, InfinityAndNANTest) {
   Tensor index = tf_index.make(/*sizes=*/{2, 3}, {0, 1, 2, 0, 1, 2});
 
   // Valid input should give the expected output
-  scatter_add_out(self, 0, index, src, out);
+  op_scatter_add_out(self, 0, index, src, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(
       out,
@@ -207,30 +207,30 @@ void test_scatter_add_out_invalid_dim() {
   Tensor out = tf_data.zeros(sizes);
 
   // Invalid dim should die
-  ET_EXPECT_KERNEL_FAILURE(scatter_add_out(self, -3, index, src, out));
-  ET_EXPECT_KERNEL_FAILURE(scatter_add_out(self, 2, index, src, out));
+  ET_EXPECT_KERNEL_FAILURE(op_scatter_add_out(self, -3, index, src, out));
+  ET_EXPECT_KERNEL_FAILURE(op_scatter_add_out(self, 2, index, src, out));
 
   // Self, index and src hsould have same number of dimensions
   src = tf_data.zeros(/*sizes=*/{2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(scatter_add_out(self, 0, index, src, out));
+  ET_EXPECT_KERNEL_FAILURE(op_scatter_add_out(self, 0, index, src, out));
 
   src = tf_data.zeros(/*sizes=*/{5, 5});
   index = tf_index.zeros(/*sizes=*/{2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(scatter_add_out(self, 0, index, src, out));
+  ET_EXPECT_KERNEL_FAILURE(op_scatter_add_out(self, 0, index, src, out));
 
   // Size of dimension of index should be smaller than the size of that
   // dimension of src
   index = tf_index.zeros(/*sizes=*/{4, 6});
-  ET_EXPECT_KERNEL_FAILURE(scatter_add_out(self, 0, index, src, out));
+  ET_EXPECT_KERNEL_FAILURE(op_scatter_add_out(self, 0, index, src, out));
 
   // Size of dimension of index should be smaller than the size of that
   // dimension of self if dimension != dim
   index = tf_index.zeros(/*sizes=*/{4, 5});
-  ET_EXPECT_KERNEL_FAILURE(scatter_add_out(self, 1, index, src, out));
+  ET_EXPECT_KERNEL_FAILURE(op_scatter_add_out(self, 1, index, src, out));
 
   // Index out of bound for self in dim
   index = tf_index.make(/*sizes=*/{2, 3}, {0, 1, 3, 0, 1, 3});
-  ET_EXPECT_KERNEL_FAILURE(scatter_add_out(self, 0, index, src, out));
+  ET_EXPECT_KERNEL_FAILURE(op_scatter_add_out(self, 0, index, src, out));
 }
 
 TEST(OpScatterAddOutKernelTest, InvalidDimensionsDies) {
@@ -262,7 +262,7 @@ void test_scatter_add_out_mismatched_shape() {
   Tensor out = tf_data.zeros(/*sizes=*/{2, 5});
 
   // self and out should be of the same shape
-  ET_EXPECT_KERNEL_FAILURE(scatter_add_out(self, 0, index, src, out));
+  ET_EXPECT_KERNEL_FAILURE(op_scatter_add_out(self, 0, index, src, out));
 }
 
 TEST(OpScatterAddOutKernelTest, MismatchedShapeDies) {
@@ -296,7 +296,7 @@ TEST(OpScatterAddOutKernelTest, MismatchedInputDtypesDies) {
   Tensor out = tf_char.zeros(sizes);
 
   // Types other than long for index should die
-  ET_EXPECT_KERNEL_FAILURE(scatter_add_out(self, 0, index, src, out));
+  ET_EXPECT_KERNEL_FAILURE(op_scatter_add_out(self, 0, index, src, out));
 
   // Mismatched dtype of src and self should die
   // clang-format off
@@ -306,7 +306,7 @@ TEST(OpScatterAddOutKernelTest, MismatchedInputDtypesDies) {
       6, 7, 8, 9, 10
     });
   // clang-format on
-  ET_EXPECT_KERNEL_FAILURE(scatter_add_out(self, 0, index, src, out));
+  ET_EXPECT_KERNEL_FAILURE(op_scatter_add_out(self, 0, index, src, out));
   // clang-format off
   src = tf_byte.make(/*sizes=*/{2, 5},
     {
@@ -318,7 +318,7 @@ TEST(OpScatterAddOutKernelTest, MismatchedInputDtypesDies) {
   out = tf_char.zeros(sizes);
 
   // Mismatched dtype of self and out should die
-  ET_EXPECT_KERNEL_FAILURE(scatter_add_out(self, 0, index, src, out));
+  ET_EXPECT_KERNEL_FAILURE(op_scatter_add_out(self, 0, index, src, out));
 }
 
 /* %python
@@ -341,7 +341,7 @@ scatter_add_template = f"""
   {declare_tensor_make_t("expected", "tf")}
   {declare_tensor_zeros("out_shape, dynamism", "tf", "out")}
 
-  scatter_add_out(input, $dim$, index, src, out);
+  op_scatter_add_out(input, $dim$, index, src, out);
   EXPECT_TENSOR_EQ(out, expected);""" */
 
 void test_dynamic_shape(
@@ -364,7 +364,7 @@ void test_dynamic_shape(
                           10, 9,  17, 15, 14, 10, 9, 3, 6,  11, 1, 24});
   Tensor out = tf.zeros(out_shape, dynamism);
 
-  scatter_add_out(input, 2, index, src, out);
+  op_scatter_add_out(input, 2, index, src, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 

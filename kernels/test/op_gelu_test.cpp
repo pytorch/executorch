@@ -22,7 +22,7 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-Tensor& gelu_out(const Tensor& self, string_view approximate, Tensor& out) {
+Tensor& op_gelu_out(const Tensor& self, string_view approximate, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::gelu_outf(context, self, approximate, out);
 }
@@ -41,7 +41,7 @@ void test_gelu_execution() {
   Tensor out = tf.zeros(sizes);
 
   // Run full gelu.
-  gelu_out(in, "none", out);
+  op_gelu_out(in, "none", out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(
@@ -52,7 +52,7 @@ void test_gelu_execution() {
           {-0.15113, 0.181575, -0.137515, 1.81141, -0.13877, -0.152183}));
 
   // Run tanh gelu appx.
-  gelu_out(in, "tanh", out);
+  op_gelu_out(in, "tanh", out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(
@@ -94,7 +94,7 @@ TEST(OpGeluKernelTest, InfAndNanPreserved) {
   Tensor out = tf.zeros(sizes);
 
   // Run full gelu.
-  gelu_out(in, "none", out);
+  op_gelu_out(in, "none", out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(
@@ -110,7 +110,7 @@ TEST(OpGeluKernelTest, InfAndNanPreserved) {
            -0.152183}));
 
   // Run tanh gelu appx.
-  gelu_out(in, "tanh", out);
+  op_gelu_out(in, "tanh", out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(
@@ -137,7 +137,7 @@ TEST(OpGeluKernelTest, UnhandledDtypeDies) {
   // Destination for the gelu.
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(gelu_out(a, "none", out));
+  ET_EXPECT_KERNEL_FAILURE(op_gelu_out(a, "none", out));
 }
 
 // The output tensor may not have a dtype different from the inputs even if it
@@ -158,7 +158,7 @@ TEST(OpGeluKernelTest, MismatchedOutputDtypeDies) {
 
   // Running Gelu on an input into an output of a different dtype should kill
   // the program
-  ET_EXPECT_KERNEL_FAILURE(gelu_out(a, "none", out));
+  ET_EXPECT_KERNEL_FAILURE(op_gelu_out(a, "none", out));
 }
 
 TEST(OpGeluKernelTest, InvalidAppxStringDies) {
@@ -170,7 +170,7 @@ TEST(OpGeluKernelTest, InvalidAppxStringDies) {
   Tensor out = tf.zeros(/*sizes=*/{4});
 
   // Running Gelu with an invalid appx method should kill the program.
-  ET_EXPECT_KERNEL_FAILURE(gelu_out(a, "foo", out));
+  ET_EXPECT_KERNEL_FAILURE(op_gelu_out(a, "foo", out));
 }
 
 TEST(OpGeluKernelTest, SimpleGeneratedCase) {
@@ -223,7 +223,7 @@ TEST(OpGeluKernelTest, SimpleGeneratedCase) {
                  0.8411920070648193});
 
   Tensor out = tf.zeros({10, 10});
-  Tensor ret = gelu_out(x, "tanh", out);
+  Tensor ret = op_gelu_out(x, "tanh", out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -249,7 +249,7 @@ TEST(OpGeluKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = gelu_out(x, "tanh", out);
+  Tensor ret = op_gelu_out(x, "tanh", out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -276,7 +276,7 @@ TEST(OpGeluKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = gelu_out(x, "tanh", out);
+  Tensor ret = op_gelu_out(x, "tanh", out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -303,6 +303,6 @@ TEST(OpGeluKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = gelu_out(x, "tanh", out);
+  Tensor ret = op_gelu_out(x, "tanh", out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

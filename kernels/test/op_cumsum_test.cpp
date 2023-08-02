@@ -23,7 +23,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& cumsum_out(
+Tensor& op_cumsum_out(
     const Tensor& self,
     int64_t dim,
     optional<ScalarType> enforced_dtype,
@@ -47,7 +47,7 @@ TEST(OpCumSumOutTest, EmptyInputOrEmptyOutTensorDies) {
   EXPECT_EQ(out.numel(), 0);
 
   optional<ScalarType> enforced_dtype;
-  ET_EXPECT_KERNEL_FAILURE(cumsum_out(in, /*dim=*/1, enforced_dtype, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cumsum_out(in, /*dim=*/1, enforced_dtype, out));
 }
 
 TEST(OpCumSumOutTest, MismatchedDimensionsDies) {
@@ -63,12 +63,12 @@ TEST(OpCumSumOutTest, MismatchedDimensionsDies) {
 
   // Dim out of bounds
   optional<ScalarType> enforced_dtype;
-  ET_EXPECT_KERNEL_FAILURE(cumsum_out(in, /*dim=*/3, enforced_dtype, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cumsum_out(in, /*dim=*/3, enforced_dtype, out));
 
   // wrong_out has incompatible dim
   Tensor wrong_out = tff.zeros({2, 10, 4});
   ET_EXPECT_KERNEL_FAILURE(
-      cumsum_out(in, /*dim=*/1, enforced_dtype, wrong_out));
+      op_cumsum_out(in, /*dim=*/1, enforced_dtype, wrong_out));
 }
 
 /* A generic smoke test that works for the supported dtypes with
@@ -89,7 +89,7 @@ void test_cumsum_out_dtype() {
 
   Tensor out = tf_out.zeros({2, 4});
   optional<ScalarType> enforced_dtype = OUT_DTYPE;
-  cumsum_out(in, /*dim=*/1, enforced_dtype, out);
+  op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
 
   // clang-format off
   Tensor expected = tf_out.make(
@@ -103,10 +103,10 @@ void test_cumsum_out_dtype() {
   EXPECT_TENSOR_CLOSE(out, expected);
 
   // negative dim should work
-  cumsum_out(in, /*dim=*/-1, enforced_dtype, out);
+  op_cumsum_out(in, /*dim=*/-1, enforced_dtype, out);
   EXPECT_TENSOR_CLOSE(out, expected);
 
-  cumsum_out(in, /*dim=*/0, enforced_dtype, out);
+  op_cumsum_out(in, /*dim=*/0, enforced_dtype, out);
   // clang-format off
   expected = tf_out.make(
     {2, 4},
@@ -140,21 +140,21 @@ TEST(OpCumSumOutTest, TypeCastCornerCases) {
   Tensor in = tf_float.make({1, 2}, {1.1, 2.2});
   Tensor out = tf_int.zeros({1, 2});
   optional<ScalarType> enforced_dtype = ScalarType::Int;
-  cumsum_out(in, /*dim=*/1, enforced_dtype, out);
+  op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_int.make({1, 2}, {1, 3}));
 
   // Cast negative values to unsigned type
   in = tf_int.make({1, 2}, {-1, -2});
   out = tf_byte.zeros({1, 2});
   enforced_dtype = ScalarType::Byte;
-  cumsum_out(in, /*dim=*/1, enforced_dtype, out);
+  op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_byte.make({1, 2}, {255, 253}));
 
   // Cast negative float values to int, float should rounding toward zero
   in = tf_float.make({1, 2}, {-1.9, -2.9});
   out = tf_int.zeros({1, 2});
   enforced_dtype = ScalarType::Int;
-  cumsum_out(in, /*dim=*/1, enforced_dtype, out);
+  op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_int.make({1, 2}, {-1, -3}));
 }
 
@@ -169,19 +169,19 @@ void test_cumsum_out_float() {
   Tensor in = tf_float.make({1, 2}, {1, INFINITY});
   Tensor out = tf_out.zeros({1, 2});
   optional<ScalarType> enforced_dtype = OUT_DTYPE;
-  cumsum_out(in, /*dim=*/1, enforced_dtype, out);
+  op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 2}, {1, INFINITY}));
 
   in = tf_float.make({1, 2}, {1, -INFINITY});
-  cumsum_out(in, /*dim=*/1, enforced_dtype, out);
+  op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 2}, {1, -INFINITY}));
 
   in = tf_float.make({1, 2}, {1, NAN});
-  cumsum_out(in, /*dim=*/1, enforced_dtype, out);
+  op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 2}, {1, NAN}));
 
   in = tf_float.make({1, 2}, {-INFINITY, INFINITY});
-  cumsum_out(in, /*dim=*/1, enforced_dtype, out);
+  op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 2}, {-INFINITY, NAN}));
 }
 
@@ -218,7 +218,7 @@ TEST(OpCumSumOutTest, SimpleGeneratedCase) {
        2.0,  3.0,  4.0, 5.0,  6.0,  7.0, 8.0,  9.0,  10.0});
 
   Tensor out = tf.zeros({10, 10});
-  Tensor ret = cumsum_out(x, 1, ScalarType::Float, out);
+  Tensor ret = op_cumsum_out(x, 1, ScalarType::Float, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -244,7 +244,7 @@ TEST(OpCumSumOutTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = cumsum_out(x, 1, ScalarType::Float, out);
+  Tensor ret = op_cumsum_out(x, 1, ScalarType::Float, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -270,7 +270,7 @@ TEST(OpCumSumOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = cumsum_out(x, 1, ScalarType::Float, out);
+  Tensor ret = op_cumsum_out(x, 1, ScalarType::Float, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -297,6 +297,6 @@ TEST(OpCumSumOutTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = cumsum_out(x, 1, ScalarType::Float, out);
+  Tensor ret = op_cumsum_out(x, 1, ScalarType::Float, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

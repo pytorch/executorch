@@ -19,7 +19,8 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _logical_or_out(const Tensor& self, const Tensor& other, Tensor& out) {
+Tensor&
+op_logical_or_out(const Tensor& self, const Tensor& other, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::logical_or_outf(context, self, other, out);
 }
@@ -31,7 +32,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -44,7 +45,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -56,7 +57,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float32_uint8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -68,7 +69,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float32_int8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -80,7 +81,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float32_int16) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -92,7 +93,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float32_int32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -104,7 +105,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float32_int64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -117,7 +118,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -130,7 +131,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -143,7 +144,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -157,7 +158,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float64_uint8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -171,7 +172,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float64_int8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -185,7 +186,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float64_int16) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -199,7 +200,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float64_int32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -213,7 +214,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float64_int64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -228,7 +229,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_float64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -240,7 +241,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -254,7 +255,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -266,7 +267,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -279,7 +280,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -292,7 +293,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -305,7 +306,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -318,7 +319,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -332,7 +333,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_uint8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -344,7 +345,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -358,7 +359,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -371,7 +372,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -383,7 +384,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -396,7 +397,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -409,7 +410,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -422,7 +423,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -436,7 +437,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -448,7 +449,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -462,7 +463,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -475,7 +476,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -488,7 +489,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -500,7 +501,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -513,7 +514,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -526,7 +527,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -540,7 +541,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int16_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -552,7 +553,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -566,7 +567,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -579,7 +580,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -592,7 +593,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -605,7 +606,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -617,7 +618,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -630,7 +631,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -644,7 +645,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -656,7 +657,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -670,7 +671,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -683,7 +684,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -696,7 +697,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -709,7 +710,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -722,7 +723,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -734,7 +735,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -748,7 +749,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_int64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -760,7 +761,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -774,7 +775,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -787,7 +788,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -800,7 +801,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -813,7 +814,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -826,7 +827,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -839,7 +840,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -852,7 +853,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float32_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -865,7 +866,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -878,7 +879,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -892,7 +893,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float32_uint8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -906,7 +907,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float32_int8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -920,7 +921,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float32_int16) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -934,7 +935,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float32_int32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -948,7 +949,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float32_int64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -963,7 +964,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -976,7 +977,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -988,7 +989,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1001,7 +1002,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float64_uint8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1014,7 +1015,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float64_int8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1027,7 +1028,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float64_int16) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1040,7 +1041,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float64_int32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1053,7 +1054,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float64_int64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1067,7 +1068,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_float64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1081,7 +1082,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1094,7 +1095,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1107,7 +1108,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1121,7 +1122,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1135,7 +1136,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1149,7 +1150,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1163,7 +1164,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1178,7 +1179,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_uint8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1192,7 +1193,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1205,7 +1206,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1219,7 +1220,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1232,7 +1233,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1246,7 +1247,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1260,7 +1261,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1274,7 +1275,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1289,7 +1290,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1303,7 +1304,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1316,7 +1317,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1330,7 +1331,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1344,7 +1345,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1357,7 +1358,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1371,7 +1372,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1385,7 +1386,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1400,7 +1401,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int16_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1414,7 +1415,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1427,7 +1428,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1441,7 +1442,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1455,7 +1456,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1469,7 +1470,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1482,7 +1483,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1496,7 +1497,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1511,7 +1512,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1525,7 +1526,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1538,7 +1539,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1552,7 +1553,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1566,7 +1567,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1580,7 +1581,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1594,7 +1595,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1607,7 +1608,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1622,7 +1623,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_int64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1636,7 +1637,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1649,7 +1650,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1663,7 +1664,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1677,7 +1678,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1691,7 +1692,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1705,7 +1706,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1719,7 +1720,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1733,7 +1734,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_float64_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1745,7 +1746,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1759,7 +1760,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1771,7 +1772,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float32_uint8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1784,7 +1785,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float32_int8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1797,7 +1798,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float32_int16) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1810,7 +1811,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float32_int32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1823,7 +1824,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float32_int64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1837,7 +1838,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1851,7 +1852,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1864,7 +1865,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1877,7 +1878,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float64_uint8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1891,7 +1892,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float64_int8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1905,7 +1906,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float64_int16) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1919,7 +1920,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float64_int32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1933,7 +1934,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float64_int64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1948,7 +1949,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_float64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1960,7 +1961,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1973,7 +1974,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1984,7 +1985,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1996,7 +1997,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2008,7 +2009,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2020,7 +2021,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2032,7 +2033,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2045,7 +2046,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_uint8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2058,7 +2059,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2072,7 +2073,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2084,7 +2085,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2096,7 +2097,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2109,7 +2110,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2122,7 +2123,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2135,7 +2136,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2149,7 +2150,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2162,7 +2163,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2176,7 +2177,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2188,7 +2189,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2201,7 +2202,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2213,7 +2214,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2226,7 +2227,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2239,7 +2240,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2253,7 +2254,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int16_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2266,7 +2267,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2280,7 +2281,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2292,7 +2293,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2305,7 +2306,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2318,7 +2319,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2330,7 +2331,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2343,7 +2344,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2357,7 +2358,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2370,7 +2371,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2384,7 +2385,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2396,7 +2397,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2409,7 +2410,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2422,7 +2423,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2435,7 +2436,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2447,7 +2448,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2461,7 +2462,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_int64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2474,7 +2475,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2488,7 +2489,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2500,7 +2501,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2513,7 +2514,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2526,7 +2527,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2539,7 +2540,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2552,7 +2553,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2565,7 +2566,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_uint8_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2577,7 +2578,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2591,7 +2592,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2604,7 +2605,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float32_uint8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2616,7 +2617,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float32_int8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2629,7 +2630,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float32_int16) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2642,7 +2643,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float32_int32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2655,7 +2656,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float32_int64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2669,7 +2670,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2683,7 +2684,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2696,7 +2697,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2710,7 +2711,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float64_uint8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2723,7 +2724,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float64_int8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2737,7 +2738,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float64_int16) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2751,7 +2752,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float64_int32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2765,7 +2766,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float64_int64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2780,7 +2781,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_float64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2793,7 +2794,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2807,7 +2808,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2819,7 +2820,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2831,7 +2832,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2844,7 +2845,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2857,7 +2858,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2870,7 +2871,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2884,7 +2885,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_uint8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2896,7 +2897,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2909,7 +2910,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2921,7 +2922,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2932,7 +2933,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2944,7 +2945,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2956,7 +2957,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2968,7 +2969,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2981,7 +2982,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2994,7 +2995,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3008,7 +3009,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3021,7 +3022,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3033,7 +3034,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3045,7 +3046,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3058,7 +3059,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3071,7 +3072,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3085,7 +3086,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int16_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3098,7 +3099,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3112,7 +3113,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3125,7 +3126,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3137,7 +3138,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3150,7 +3151,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3162,7 +3163,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3175,7 +3176,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3189,7 +3190,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3202,7 +3203,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3216,7 +3217,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3229,7 +3230,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3241,7 +3242,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3254,7 +3255,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3267,7 +3268,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3279,7 +3280,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3293,7 +3294,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_int64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3306,7 +3307,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3320,7 +3321,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3333,7 +3334,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3345,7 +3346,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3358,7 +3359,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3371,7 +3372,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3384,7 +3385,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3397,7 +3398,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int8_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3409,7 +3410,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3423,7 +3424,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3436,7 +3437,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float32_uint8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3449,7 +3450,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float32_int8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3461,7 +3462,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float32_int16) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3474,7 +3475,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float32_int32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3487,7 +3488,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float32_int64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3501,7 +3502,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3515,7 +3516,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3528,7 +3529,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3542,7 +3543,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float64_uint8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3556,7 +3557,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float64_int8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3569,7 +3570,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float64_int16) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3583,7 +3584,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float64_int32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3597,7 +3598,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float64_int64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3612,7 +3613,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_float64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3625,7 +3626,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3639,7 +3640,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3651,7 +3652,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3664,7 +3665,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3676,7 +3677,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3689,7 +3690,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3702,7 +3703,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3716,7 +3717,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_uint8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3729,7 +3730,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3743,7 +3744,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3756,7 +3757,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3768,7 +3769,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3780,7 +3781,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3793,7 +3794,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3806,7 +3807,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3820,7 +3821,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3832,7 +3833,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3845,7 +3846,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3857,7 +3858,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3869,7 +3870,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3880,7 +3881,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3892,7 +3893,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3904,7 +3905,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3917,7 +3918,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int16_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3930,7 +3931,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3944,7 +3945,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3957,7 +3958,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3970,7 +3971,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3982,7 +3983,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3994,7 +3995,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4007,7 +4008,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4021,7 +4022,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4034,7 +4035,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4048,7 +4049,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4061,7 +4062,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4074,7 +4075,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4086,7 +4087,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4099,7 +4100,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4111,7 +4112,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4125,7 +4126,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_int64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4138,7 +4139,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4152,7 +4153,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4165,7 +4166,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4178,7 +4179,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4190,7 +4191,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4203,7 +4204,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4216,7 +4217,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4229,7 +4230,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int16_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4241,7 +4242,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4255,7 +4256,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4268,7 +4269,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float32_uint8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4281,7 +4282,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float32_int8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4294,7 +4295,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float32_int16) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4306,7 +4307,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float32_int32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4319,7 +4320,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float32_int64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4333,7 +4334,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4347,7 +4348,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4360,7 +4361,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4374,7 +4375,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float64_uint8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4388,7 +4389,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float64_int8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4402,7 +4403,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float64_int16) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4415,7 +4416,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float64_int32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4429,7 +4430,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float64_int64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4444,7 +4445,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_float64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4457,7 +4458,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4471,7 +4472,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4483,7 +4484,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4496,7 +4497,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4509,7 +4510,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4521,7 +4522,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4534,7 +4535,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4548,7 +4549,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_uint8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4561,7 +4562,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4575,7 +4576,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4588,7 +4589,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4600,7 +4601,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4613,7 +4614,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4625,7 +4626,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4638,7 +4639,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4652,7 +4653,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4665,7 +4666,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4679,7 +4680,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4692,7 +4693,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4705,7 +4706,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4717,7 +4718,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4729,7 +4730,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4742,7 +4743,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4756,7 +4757,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int16_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4768,7 +4769,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4781,7 +4782,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4793,7 +4794,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4805,7 +4806,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4817,7 +4818,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4828,7 +4829,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4840,7 +4841,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4853,7 +4854,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4866,7 +4867,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4880,7 +4881,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4893,7 +4894,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4906,7 +4907,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4919,7 +4920,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4931,7 +4932,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4943,7 +4944,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4957,7 +4958,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_int64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4970,7 +4971,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4984,7 +4985,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4997,7 +4998,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5010,7 +5011,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5023,7 +5024,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5035,7 +5036,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5048,7 +5049,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5061,7 +5062,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int32_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5073,7 +5074,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5087,7 +5088,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5100,7 +5101,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float32_uint8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5113,7 +5114,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float32_int8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5126,7 +5127,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float32_int16) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5139,7 +5140,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float32_int32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5151,7 +5152,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float32_int64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5165,7 +5166,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5179,7 +5180,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5192,7 +5193,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5206,7 +5207,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float64_uint8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5220,7 +5221,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float64_int8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5234,7 +5235,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float64_int16) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5248,7 +5249,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float64_int32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5261,7 +5262,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float64_int64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5276,7 +5277,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_float64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5289,7 +5290,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5303,7 +5304,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5315,7 +5316,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5328,7 +5329,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5341,7 +5342,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5354,7 +5355,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5366,7 +5367,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5380,7 +5381,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_uint8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5393,7 +5394,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5407,7 +5408,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5420,7 +5421,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5432,7 +5433,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5445,7 +5446,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5458,7 +5459,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5470,7 +5471,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5484,7 +5485,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5497,7 +5498,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5511,7 +5512,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5524,7 +5525,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5537,7 +5538,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5549,7 +5550,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5562,7 +5563,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5574,7 +5575,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5588,7 +5589,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int16_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5601,7 +5602,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5615,7 +5616,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5628,7 +5629,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5641,7 +5642,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5654,7 +5655,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5666,7 +5667,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5678,7 +5679,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5692,7 +5693,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5704,7 +5705,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5717,7 +5718,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5729,7 +5730,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5741,7 +5742,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5753,7 +5754,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5765,7 +5766,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5776,7 +5777,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5789,7 +5790,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_int64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5802,7 +5803,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5816,7 +5817,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5829,7 +5830,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5842,7 +5843,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5855,7 +5856,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5868,7 +5869,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5880,7 +5881,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5893,7 +5894,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_int64_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5905,7 +5906,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5919,7 +5920,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5932,7 +5933,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float32_uint8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5945,7 +5946,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float32_int8) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5958,7 +5959,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float32_int16) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5971,7 +5972,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float32_int32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5984,7 +5985,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float32_int64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5997,7 +5998,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6011,7 +6012,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6024,7 +6025,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6038,7 +6039,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float64_uint8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6052,7 +6053,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float64_int8) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6066,7 +6067,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float64_int16) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6080,7 +6081,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float64_int32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6094,7 +6095,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float64_int64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6108,7 +6109,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_float64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6121,7 +6122,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6135,7 +6136,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6147,7 +6148,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6160,7 +6161,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6173,7 +6174,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6186,7 +6187,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6199,7 +6200,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6212,7 +6213,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_uint8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6225,7 +6226,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6239,7 +6240,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6252,7 +6253,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6264,7 +6265,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6277,7 +6278,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6290,7 +6291,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6303,7 +6304,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6316,7 +6317,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int8_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6329,7 +6330,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6343,7 +6344,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6356,7 +6357,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6369,7 +6370,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6381,7 +6382,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6394,7 +6395,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6407,7 +6408,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6420,7 +6421,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int16_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6433,7 +6434,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6447,7 +6448,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6460,7 +6461,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6473,7 +6474,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6486,7 +6487,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6498,7 +6499,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6511,7 +6512,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6524,7 +6525,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6537,7 +6538,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6551,7 +6552,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6564,7 +6565,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6577,7 +6578,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6590,7 +6591,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6603,7 +6604,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6615,7 +6616,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 1, 1, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6628,7 +6629,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_int64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, true, true, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6640,7 +6641,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6653,7 +6654,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6665,7 +6666,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6677,7 +6678,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6689,7 +6690,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6701,7 +6702,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6713,7 +6714,7 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6725,6 +6726,6 @@ TEST(OpLogicalOrOutTest, DtypeTest_bool_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, false, false, true});
-  _logical_or_out(self, other, out);
+  op_logical_or_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }

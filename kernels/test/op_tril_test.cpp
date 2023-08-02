@@ -20,7 +20,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& tril_out(const Tensor& self, int64_t diagonal, Tensor& out) {
+Tensor& op_tril_out(const Tensor& self, int64_t diagonal, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::tril_outf(context, self, diagonal, out);
 }
@@ -44,7 +44,7 @@ void test_tril_out_zeros() {
 
   Tensor out = tf.zeros({3, 3});
 
-  tril_out(self, 0, out);
+  op_tril_out(self, 0, out);
 
   // clang-format off
   Tensor result = tf.make(
@@ -80,7 +80,7 @@ void test_tril_out_ones() {
 
   Tensor out = tf.ones({3, 3});
 
-  tril_out(self, 0, out);
+  op_tril_out(self, 0, out);
 
   // clang-format off
   Tensor result = tf.make(
@@ -106,7 +106,7 @@ void test_tril_out_empty_dims() {
   // tensor([[[[1]]]])
   Tensor self = tf.ones({1, 1, 1, 1});
 
-  tril_out(self, 0, out);
+  op_tril_out(self, 0, out);
 
   // tensor([[[[1]]]])
   Tensor result = tf.ones({1, 1, 1, 1});
@@ -133,7 +133,7 @@ void test_tril_out_square() {
 
   Tensor out = tf.zeros({3, 3});
 
-  tril_out(self, 0, out);
+  op_tril_out(self, 0, out);
 
   // clang-format off
   Tensor result = tf.make(
@@ -169,7 +169,7 @@ void test_tril_out_rectangle() {
 
   Tensor out = tf.zeros({3, 5});
 
-  tril_out(self, 0, out);
+  op_tril_out(self, 0, out);
 
   // clang-format off
   Tensor result = tf.make(
@@ -205,7 +205,7 @@ void test_tril_out_pos_diag() {
 
   Tensor out = tf.zeros({3, 3});
 
-  tril_out(self, 1, out);
+  op_tril_out(self, 1, out);
 
   // clang-format off
   Tensor result = tf.make(
@@ -241,7 +241,7 @@ void test_tril_out_neg_diag() {
 
   Tensor out = tf.zeros({3, 3});
 
-  tril_out(self, -1, out);
+  op_tril_out(self, -1, out);
 
   // clang-format off
   Tensor result = tf.make(
@@ -285,7 +285,7 @@ void test_tril_out_multi_equal_dim() {
 
   Tensor out = tf.zeros({3, 3, 3});
 
-  tril_out(self, 0, out);
+  op_tril_out(self, 0, out);
 
   // clang-format off
   Tensor result = tf.make(
@@ -334,7 +334,7 @@ void test_tril_out_multi_unequal_dim() {
 
   Tensor out = tf.zeros({3, 2, 3});
 
-  tril_out(self, 0, out);
+  op_tril_out(self, 0, out);
 
   // clang-format off
   Tensor result = tf.make(
@@ -375,7 +375,7 @@ void test_tril_out_arange_reg_diag() {
 
   Tensor out = tf.zeros({3, 3});
 
-  tril_out(self, 0, out);
+  op_tril_out(self, 0, out);
 
   // clang-format off
   Tensor result = tf.make(
@@ -414,7 +414,7 @@ void test_tril_out_arange_pos_diag() {
 
   Tensor out1 = tf.zeros({3, 3});
 
-  tril_out(self, 1, out1);
+  op_tril_out(self, 1, out1);
 
   // clang-format off
   Tensor result1 = tf.make(
@@ -433,13 +433,13 @@ void test_tril_out_arange_pos_diag() {
   // Case: diag = 2
 
   Tensor out2 = tf.zeros({3, 3});
-  tril_out(self, 2, out2);
+  op_tril_out(self, 2, out2);
   EXPECT_TENSOR_EQ(out2, self);
 
   // Case: diag = 10
 
   Tensor out3 = tf.zeros({3, 3});
-  tril_out(self, 10, out3);
+  op_tril_out(self, 10, out3);
   EXPECT_TENSOR_EQ(out3, self);
 }
 
@@ -465,7 +465,7 @@ void test_tril_out_arange_neg_diag() {
 
   Tensor out1 = tf.zeros({3, 3});
 
-  tril_out(self, -1, out1);
+  op_tril_out(self, -1, out1);
 
   // clang-format off
   Tensor result1 = tf.make(
@@ -485,7 +485,7 @@ void test_tril_out_arange_neg_diag() {
 
   Tensor out2 = tf.zeros({3, 3});
 
-  tril_out(self, -2, out2);
+  op_tril_out(self, -2, out2);
 
   // clang-format off
   Tensor result2 = tf.make(
@@ -505,7 +505,7 @@ void test_tril_out_arange_neg_diag() {
 
   Tensor out3 = tf.zeros({3, 3});
 
-  tril_out(self, -10, out3);
+  op_tril_out(self, -10, out3);
 
   // clang-format off
   Tensor result3 = tf.make(
@@ -574,7 +574,7 @@ void test_tril_out_randint_multi_equal() {
 
   Tensor out = tf.zeros({3, 3, 3, 3});
 
-  tril_out(self, 0, out);
+  op_tril_out(self, 0, out);
 
   // clang-format off
   Tensor result = tf.make(
@@ -663,7 +663,7 @@ void test_tril_out_randint_multi_unequal() {
 
   Tensor out = tf.zeros({3, 2, 3, 2});
 
-  tril_out(self, 0, out);
+  op_tril_out(self, 0, out);
 
   // clang-format off
   Tensor result = tf.make(
@@ -735,14 +735,14 @@ TEST(OpTrilTest, InvalidInputShapesDies) {
   Tensor out1 = tf.zeros({});
 
   // Assert `out` can't be filled due to incompatible shapes.
-  ET_EXPECT_KERNEL_FAILURE(tril_out(self1, 0, out1));
+  ET_EXPECT_KERNEL_FAILURE(op_tril_out(self1, 0, out1));
 
   // `self` and `out` invalid shapes: ndims = 1 is <2.
   Tensor self2 = tf.zeros({1});
   Tensor out2 = tf.zeros({1});
 
   // Assert `out` can't be filled due to incompatible shapes.
-  ET_EXPECT_KERNEL_FAILURE(tril_out(self2, 0, out2));
+  ET_EXPECT_KERNEL_FAILURE(op_tril_out(self2, 0, out2));
 }
 
 TEST(OpTrilTest, MismatchedOutputShapesDies) {
@@ -758,7 +758,7 @@ TEST(OpTrilTest, MismatchedOutputShapesDies) {
   Tensor out = tf.zeros({2, 2});
 
   // Assert `out` can't be filled due to incompatible shapes.
-  ET_EXPECT_KERNEL_FAILURE(tril_out(self, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_tril_out(self, 0, out));
 }
 
 TEST(OpTrilTest, MismatchedOutputDtypeDies) {
@@ -770,7 +770,7 @@ TEST(OpTrilTest, MismatchedOutputDtypeDies) {
   Tensor out = tf_float.zeros({2, 2});
 
   // Assert `out` can't be filled due to incompatible dtype.
-  ET_EXPECT_KERNEL_FAILURE(tril_out(self, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_tril_out(self, 0, out));
 }
 
 TEST(OpTrilTest, InvalidTensorDims) {
@@ -787,5 +787,5 @@ TEST(OpTrilTest, InvalidTensorDims) {
   Tensor out = tf.zeros(sizes);
 
   // Assert `out` can't be filled due to too many tensor dims.
-  ET_EXPECT_KERNEL_FAILURE(tril_out(self, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_tril_out(self, 0, out));
 }

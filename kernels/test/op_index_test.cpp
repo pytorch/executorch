@@ -26,8 +26,10 @@ using torch::executor::testing::TensorFactory;
 
 using OptTensorArrayRef = ArrayRef<optional<Tensor>>;
 
-Tensor&
-index_Tensor_out(const Tensor& input, OptTensorArrayRef indices, Tensor& out) {
+Tensor& op_index_tensor_out(
+    const Tensor& input,
+    OptTensorArrayRef indices,
+    Tensor& out) {
   exec_aten::RuntimeContext context{};
 #ifdef USE_ATEN_LIB
   c10::List<c10::optional<at::Tensor>> indices_list(indices);
@@ -51,7 +53,7 @@ void run_test_cases(
       expected.sizes().begin(), expected.sizes().end());
   Tensor out = tf.ones(out_size);
 
-  Tensor ret = index_Tensor_out(x, indices, out);
+  Tensor ret = op_index_tensor_out(x, indices, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(ret, expected);
 }
@@ -271,7 +273,7 @@ TEST(OpIndexTensorOutTest, EmptyIndicesSupported) {
 
   Tensor out = tf.zeros({2});
 
-  index_Tensor_out(x, /*indices=*/{}, out);
+  op_index_tensor_out(x, /*indices=*/{}, out);
   EXPECT_TENSOR_EQ(out, x);
   // Success if it doesn't assert on the weird-shaped empty input and the
   // ret is still a empty array
@@ -328,7 +330,7 @@ void test_dtype() {
   std::vector<int32_t> out_size{2};
 
   Tensor out_0 = tfo.zeros(out_size);
-  Tensor ret_0 = index_Tensor_out(x, /*indices=*/indices, out_0);
+  Tensor ret_0 = op_index_tensor_out(x, /*indices=*/indices, out_0);
 
   EXPECT_TENSOR_EQ(ret_0, out_0);
   EXPECT_TENSOR_EQ(ret_0, tfo.make(out_size, {0, 1}));
@@ -337,7 +339,7 @@ void test_dtype() {
 
   Tensor out_0_with_mixed = tfo.zeros(out_size);
   Tensor ret_0_with_mixed =
-      index_Tensor_out(x, /*indices=*/indices, out_0_with_mixed);
+      op_index_tensor_out(x, /*indices=*/indices, out_0_with_mixed);
 
   EXPECT_TENSOR_EQ(ret_0_with_mixed, out_0_with_mixed);
   EXPECT_TENSOR_EQ(ret_0_with_mixed, tfo.make(out_size, {0, 1}));
@@ -374,7 +376,7 @@ TEST(OpIndexTensorOutTest, IndexOutOfBoundDies) {
   Tensor index = tfl.make({1}, {5});
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_Tensor_out(x, /*indices=*/{index}, out), "");
+      op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
 TEST(OpIndexTensorOutTest, NegativeIndexOutOfBoundDies) {
@@ -386,7 +388,7 @@ TEST(OpIndexTensorOutTest, NegativeIndexOutOfBoundDies) {
   Tensor index = tfl.make({1}, {-5});
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_Tensor_out(x, /*indices=*/{index}, out), "");
+      op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
 TEST(OpIndexTensorOutTest, TooManyBooleanIndexCountDies) {
@@ -398,7 +400,7 @@ TEST(OpIndexTensorOutTest, TooManyBooleanIndexCountDies) {
   Tensor index = tfb.make({3}, {true, false, false});
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_Tensor_out(x, /*indices=*/{index}, out), "");
+      op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
 TEST(OpIndexTensorOutTest, TooFewBooleanIndexCountDies) {
@@ -411,7 +413,7 @@ TEST(OpIndexTensorOutTest, TooFewBooleanIndexCountDies) {
 
   // ATen kernel will throw exception instead of death
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_Tensor_out(x, /*indices=*/{index}, out), "");
+      op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
 TEST(OpIndexTensorOutTest, MismatchedIndexMaskDies) {
@@ -424,7 +426,7 @@ TEST(OpIndexTensorOutTest, MismatchedIndexMaskDies) {
 
   // ATen kernel will throw exception instead of death
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_Tensor_out(x, /*indices=*/{index}, out), "");
+      op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
 TEST(OpIndexTensorOutTest, MismatchedOutputDimDies) {
@@ -438,7 +440,7 @@ TEST(OpIndexTensorOutTest, MismatchedOutputDimDies) {
   Tensor out = tf.zeros({2, 4});
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_Tensor_out(x, /*indices=*/{index}, out), "");
+      op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
 TEST(OpIndexTensorOutTest, InvalidIndicesDtypeDies) {
@@ -451,7 +453,7 @@ TEST(OpIndexTensorOutTest, InvalidIndicesDtypeDies) {
   Tensor out = tf.zeros({1, 4, 7, 5});
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      index_Tensor_out(x, /*indices=*/{index}, out), "");
+      op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
 TEST(OpIndexTensorOutTest, InvalidIndicesShapesDies) {
@@ -467,7 +469,7 @@ TEST(OpIndexTensorOutTest, InvalidIndicesShapesDies) {
   Tensor out = tf.ones({3, 7, 5});
   // clang-format on
 
-  ET_EXPECT_KERNEL_FAILURE_WITH_MSG(index_Tensor_out(x, indices, out), "");
+  ET_EXPECT_KERNEL_FAILURE_WITH_MSG(op_index_tensor_out(x, indices, out), "");
 }
 
 TEST(OpIndexTensorOutTest, InvalidIndicesShapeDies2) {
@@ -486,7 +488,7 @@ TEST(OpIndexTensorOutTest, InvalidIndicesShapeDies2) {
   Tensor out = tf.ones({4});
   // clang-format on
 
-  ET_EXPECT_KERNEL_FAILURE_WITH_MSG(index_Tensor_out(x, indices, out), "");
+  ET_EXPECT_KERNEL_FAILURE_WITH_MSG(op_index_tensor_out(x, indices, out), "");
 }
 
 //
@@ -533,7 +535,7 @@ TEST(OpIndexTensorOutTest, UpperBoundOutTensor) {
   );
   // clang-format on
 
-  Tensor ret = index_Tensor_out(x, indices, out);
+  Tensor ret = op_index_tensor_out(x, indices, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(ret, expected);
 }

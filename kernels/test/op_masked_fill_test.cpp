@@ -21,7 +21,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& masked_fill_scalar_out(
+Tensor& op_masked_fill_scalar_out(
     const Tensor& self,
     const Tensor& mask,
     const Scalar& value,
@@ -42,7 +42,7 @@ void test_integer_masked_fill_scalar_out() {
   Tensor out = tf.zeros(sizes);
 
   // Masked fill half of the tensor.
-  masked_fill_scalar_out(
+  op_masked_fill_scalar_out(
       tf.make(sizes, /*data=*/{23, 29, 31, 37}),
       tf_bool.make(sizes, /*data=*/{false, true, true, false}),
       /*value=*/71,
@@ -83,7 +83,7 @@ TEST(OpMaskedFillTest, IntTensorFloatAlphaDies) {
 
   // Elementwise add operation on two integral tensor with floating alpha
   // should cause an assertion and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(masked_fill_scalar_out(
+  ET_EXPECT_KERNEL_FAILURE(op_masked_fill_scalar_out(
       tf.ones(sizes), tf.ones(sizes), /*alpha=*/.7, out));
 }
 
@@ -99,7 +99,7 @@ void test_floating_point_masked_fill_scalar_out() {
   Tensor out = tf.zeros(sizes);
 
   // Masked fill half of the tensor.
-  masked_fill_scalar_out(
+  op_masked_fill_scalar_out(
       tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
       tf_bool.make(sizes, /*data=*/{true, false, false, true}),
       /*value=*/3.3,
@@ -129,7 +129,7 @@ TEST(OpMaskedFillTest, BoolTensors) {
   // Destination for the masked_fill.
   Tensor out = tf.zeros(sizes);
 
-  masked_fill_scalar_out(self, mask, /*value=*/true, out);
+  op_masked_fill_scalar_out(self, mask, /*value=*/true, out);
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(out, tf.ones(sizes));
 }
@@ -151,7 +151,7 @@ TEST(OpMaskedFillTest, MismatchedInputAndValueDtypesDies) {
   // Filling tensor with mismatched scalar should cause an assertion and kill
   // the test process.
   ET_EXPECT_KERNEL_FAILURE(
-      masked_fill_scalar_out(self, mask, /*value=*/1.3, out));
+      op_masked_fill_scalar_out(self, mask, /*value=*/1.3, out));
 }
 
 // The output tensor may not have a dtype different from the inputs even if it
@@ -175,7 +175,8 @@ TEST(OpMaskedFillTest, MismatchedOutputDtypeDies) {
 
   // Filling the tensor into a mismatched output should cause an assertion and
   // kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(masked_fill_scalar_out(self, mask, /*fill=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      op_masked_fill_scalar_out(self, mask, /*fill=*/0, out));
 }
 // The mask tensor type must be bool, even if shapes are the same
 TEST(OpMaskedFillTest, MismatchedMaskDtypeDies) {
@@ -192,7 +193,8 @@ TEST(OpMaskedFillTest, MismatchedMaskDtypeDies) {
 
   // Filling the tensor using non boolean mask should cause an assertion and
   // kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(masked_fill_scalar_out(self, mask, /*fill=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      op_masked_fill_scalar_out(self, mask, /*fill=*/0, out));
 }
 
 // Mismatched shape tests.
@@ -210,7 +212,7 @@ TEST(OpMaskedFillTest, MismatchedInputShapesDies) {
   // Masked fill with mismatch input and mask shapes should cause an assertion
   // and kill the test process.
   ET_EXPECT_KERNEL_FAILURE(
-      masked_fill_scalar_out(self, mask, /*value=*/0, out));
+      op_masked_fill_scalar_out(self, mask, /*value=*/0, out));
 }
 
 TEST(OpMaskedFillTest, BroadcastTest) {
@@ -225,7 +227,7 @@ TEST(OpMaskedFillTest, BroadcastTest) {
   Tensor out = tf.zeros({2, 2});
 
   // Masked fill half of the tensor.
-  masked_fill_scalar_out(
+  op_masked_fill_scalar_out(
       self,
       mask,
       /*value=*/3,
@@ -253,7 +255,7 @@ TEST(OpMaskedFillTest, MismatchedOutputShapesDies) {
 
   // Mask filling the tensor into a mismatched output should cause an assertion
   // and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(masked_fill_scalar_out(a, b, /*value=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_masked_fill_scalar_out(a, b, /*value=*/0, out));
 }
 
 TEST(OpMaskedFillTest, BroadcastDimSizeIsOneAB) {
@@ -279,7 +281,7 @@ TEST(OpMaskedFillTest, BroadcastDimSizeIsOneAB) {
        0.3167606592178345});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = masked_fill_scalar_out(x, y, Scalar(3.0), out);
+  Tensor ret = op_masked_fill_scalar_out(x, y, Scalar(3.0), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -306,7 +308,7 @@ TEST(OpMaskedFillTest, BroadcastDimSizeMissingAB) {
        0.3167606592178345});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = masked_fill_scalar_out(x, y, Scalar(3.0), out);
+  Tensor ret = op_masked_fill_scalar_out(x, y, Scalar(3.0), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -334,7 +336,7 @@ TEST(OpMaskedFillTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = masked_fill_scalar_out(x, y, Scalar(3.0), out);
+  Tensor ret = op_masked_fill_scalar_out(x, y, Scalar(3.0), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -362,7 +364,7 @@ TEST(OpMaskedFillTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({6, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = masked_fill_scalar_out(x, y, Scalar(3.0), out);
+  Tensor ret = op_masked_fill_scalar_out(x, y, Scalar(3.0), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -391,7 +393,7 @@ TEST(OpMaskedFillTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = masked_fill_scalar_out(x, y, Scalar(3.0), out);
+  Tensor ret = op_masked_fill_scalar_out(x, y, Scalar(3.0), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -419,7 +421,7 @@ TEST(OpMaskedFillTest, BroadcastDimSizeIsOneBA) {
        0.48968571424484253});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = masked_fill_scalar_out(x, y, z, out);
+  Tensor ret = op_masked_fill_scalar_out(x, y, z, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -447,6 +449,6 @@ TEST(OpMaskedFillTest, BroadcastDimSizeMissingBA) {
        0.48968571424484253});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = masked_fill_scalar_out(x, y, z, out);
+  Tensor ret = op_masked_fill_scalar_out(x, y, z, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

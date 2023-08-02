@@ -21,7 +21,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _logit_out(const Tensor& self, optional<double> eps, Tensor& out) {
+Tensor& op_logit_out(const Tensor& self, optional<double> eps, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::logit_outf(context, self, eps, out);
 }
@@ -38,7 +38,7 @@ TEST(OpLogitOutTest, DtypeTest_float32_float32) {
        2.1972243785858154,
        2.1972243785858154,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -56,7 +56,7 @@ TEST(OpLogitOutTest, DtypeTest_float32_float64) {
        2.1972243785858154,
        2.1972243785858154,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -67,7 +67,7 @@ TEST(OpLogitOutTest, DtypeTest_float32_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_float32_int8) {
@@ -77,7 +77,7 @@ TEST(OpLogitOutTest, DtypeTest_float32_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_float32_int16) {
@@ -87,7 +87,7 @@ TEST(OpLogitOutTest, DtypeTest_float32_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_float32_int32) {
@@ -97,7 +97,7 @@ TEST(OpLogitOutTest, DtypeTest_float32_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_float32_int64) {
@@ -107,7 +107,7 @@ TEST(OpLogitOutTest, DtypeTest_float32_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_float32_bool) {
@@ -117,7 +117,7 @@ TEST(OpLogitOutTest, DtypeTest_float32_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_float64_float32) {
@@ -134,7 +134,7 @@ TEST(OpLogitOutTest, DtypeTest_float64_float32) {
        2.1972246170043945,
        2.1972246170043945,
        2.1972246170043945});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -151,7 +151,7 @@ TEST(OpLogitOutTest, DtypeTest_float64_float64) {
        2.1972245773362196,
        2.1972245773362196,
        2.1972245773362196});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -163,7 +163,7 @@ TEST(OpLogitOutTest, DtypeTest_float64_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_float64_int8) {
@@ -174,7 +174,7 @@ TEST(OpLogitOutTest, DtypeTest_float64_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_float64_int16) {
@@ -185,7 +185,7 @@ TEST(OpLogitOutTest, DtypeTest_float64_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_float64_int32) {
@@ -196,7 +196,7 @@ TEST(OpLogitOutTest, DtypeTest_float64_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_float64_int64) {
@@ -207,7 +207,7 @@ TEST(OpLogitOutTest, DtypeTest_float64_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_float64_bool) {
@@ -218,7 +218,7 @@ TEST(OpLogitOutTest, DtypeTest_float64_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_uint8_float32) {
@@ -234,7 +234,7 @@ TEST(OpLogitOutTest, DtypeTest_uint8_float32) {
        2.1972243785858154,
        2.1972243785858154,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -252,7 +252,7 @@ TEST(OpLogitOutTest, DtypeTest_uint8_float64) {
        2.1972243785858154,
        2.1972243785858154,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -262,7 +262,7 @@ TEST(OpLogitOutTest, DtypeTest_uint8_uint8) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_uint8_int8) {
@@ -272,7 +272,7 @@ TEST(OpLogitOutTest, DtypeTest_uint8_int8) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_uint8_int16) {
@@ -282,7 +282,7 @@ TEST(OpLogitOutTest, DtypeTest_uint8_int16) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_uint8_int32) {
@@ -292,7 +292,7 @@ TEST(OpLogitOutTest, DtypeTest_uint8_int32) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_uint8_int64) {
@@ -302,7 +302,7 @@ TEST(OpLogitOutTest, DtypeTest_uint8_int64) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_uint8_bool) {
@@ -312,7 +312,7 @@ TEST(OpLogitOutTest, DtypeTest_uint8_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int8_float32) {
@@ -328,7 +328,7 @@ TEST(OpLogitOutTest, DtypeTest_int8_float32) {
        2.1972243785858154,
        2.1972243785858154,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -346,7 +346,7 @@ TEST(OpLogitOutTest, DtypeTest_int8_float64) {
        2.1972243785858154,
        2.1972243785858154,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -357,7 +357,7 @@ TEST(OpLogitOutTest, DtypeTest_int8_uint8) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int8_int8) {
@@ -366,7 +366,7 @@ TEST(OpLogitOutTest, DtypeTest_int8_int8) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int8_int16) {
@@ -376,7 +376,7 @@ TEST(OpLogitOutTest, DtypeTest_int8_int16) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int8_int32) {
@@ -386,7 +386,7 @@ TEST(OpLogitOutTest, DtypeTest_int8_int32) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int8_int64) {
@@ -396,7 +396,7 @@ TEST(OpLogitOutTest, DtypeTest_int8_int64) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int8_bool) {
@@ -406,7 +406,7 @@ TEST(OpLogitOutTest, DtypeTest_int8_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int16_float32) {
@@ -422,7 +422,7 @@ TEST(OpLogitOutTest, DtypeTest_int16_float32) {
        2.1972243785858154,
        2.1972243785858154,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -440,7 +440,7 @@ TEST(OpLogitOutTest, DtypeTest_int16_float64) {
        2.1972243785858154,
        2.1972243785858154,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -451,7 +451,7 @@ TEST(OpLogitOutTest, DtypeTest_int16_uint8) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int16_int8) {
@@ -461,7 +461,7 @@ TEST(OpLogitOutTest, DtypeTest_int16_int8) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int16_int16) {
@@ -470,7 +470,7 @@ TEST(OpLogitOutTest, DtypeTest_int16_int16) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int16_int32) {
@@ -480,7 +480,7 @@ TEST(OpLogitOutTest, DtypeTest_int16_int32) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int16_int64) {
@@ -490,7 +490,7 @@ TEST(OpLogitOutTest, DtypeTest_int16_int64) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int16_bool) {
@@ -500,7 +500,7 @@ TEST(OpLogitOutTest, DtypeTest_int16_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int32_float32) {
@@ -516,7 +516,7 @@ TEST(OpLogitOutTest, DtypeTest_int32_float32) {
        2.1972243785858154,
        2.1972243785858154,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -534,7 +534,7 @@ TEST(OpLogitOutTest, DtypeTest_int32_float64) {
        2.1972243785858154,
        2.1972243785858154,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -545,7 +545,7 @@ TEST(OpLogitOutTest, DtypeTest_int32_uint8) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int32_int8) {
@@ -555,7 +555,7 @@ TEST(OpLogitOutTest, DtypeTest_int32_int8) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int32_int16) {
@@ -565,7 +565,7 @@ TEST(OpLogitOutTest, DtypeTest_int32_int16) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int32_int32) {
@@ -574,7 +574,7 @@ TEST(OpLogitOutTest, DtypeTest_int32_int32) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int32_int64) {
@@ -584,7 +584,7 @@ TEST(OpLogitOutTest, DtypeTest_int32_int64) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int32_bool) {
@@ -594,7 +594,7 @@ TEST(OpLogitOutTest, DtypeTest_int32_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int64_float32) {
@@ -610,7 +610,7 @@ TEST(OpLogitOutTest, DtypeTest_int64_float32) {
        2.1972243785858154,
        2.1972243785858154,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -628,7 +628,7 @@ TEST(OpLogitOutTest, DtypeTest_int64_float64) {
        2.1972243785858154,
        2.1972243785858154,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -639,7 +639,7 @@ TEST(OpLogitOutTest, DtypeTest_int64_uint8) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int64_int8) {
@@ -649,7 +649,7 @@ TEST(OpLogitOutTest, DtypeTest_int64_int8) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int64_int16) {
@@ -659,7 +659,7 @@ TEST(OpLogitOutTest, DtypeTest_int64_int16) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int64_int32) {
@@ -669,7 +669,7 @@ TEST(OpLogitOutTest, DtypeTest_int64_int32) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int64_int64) {
@@ -678,7 +678,7 @@ TEST(OpLogitOutTest, DtypeTest_int64_int64) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_int64_bool) {
@@ -688,7 +688,7 @@ TEST(OpLogitOutTest, DtypeTest_int64_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_bool_float32) {
@@ -704,7 +704,7 @@ TEST(OpLogitOutTest, DtypeTest_bool_float32) {
        -2.1972246170043945,
        -2.1972246170043945,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -722,7 +722,7 @@ TEST(OpLogitOutTest, DtypeTest_bool_float64) {
        -2.1972246170043945,
        -2.1972246170043945,
        2.1972243785858154});
-  _logit_out(self, eps, out);
+  op_logit_out(self, eps, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -733,7 +733,7 @@ TEST(OpLogitOutTest, DtypeTest_bool_uint8) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_bool_int8) {
@@ -743,7 +743,7 @@ TEST(OpLogitOutTest, DtypeTest_bool_int8) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_bool_int16) {
@@ -753,7 +753,7 @@ TEST(OpLogitOutTest, DtypeTest_bool_int16) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_bool_int32) {
@@ -763,7 +763,7 @@ TEST(OpLogitOutTest, DtypeTest_bool_int32) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_bool_int64) {
@@ -773,7 +773,7 @@ TEST(OpLogitOutTest, DtypeTest_bool_int64) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 TEST(OpLogitOutTest, DtypeTest_bool_bool) {
@@ -782,7 +782,7 @@ TEST(OpLogitOutTest, DtypeTest_bool_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::optional<double> eps = exec_aten::optional<double>(0.1);
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(self, eps, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(self, eps, out));
 }
 
 // Common testing for logit operator
@@ -797,7 +797,7 @@ void test_integer_logit_out() {
   Tensor out = tf_out.zeros(sizes);
 
   ET_EXPECT_KERNEL_FAILURE(
-      _logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0, out));
+      op_logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0, out));
 }
 
 template <>
@@ -811,7 +811,7 @@ void test_integer_logit_out<ScalarType::Float, ScalarType::Float>() {
   Tensor out = tf_out.zeros(sizes);
 
   // Check that it matches (or close to) the expected output.
-  _logit_out(tf.make(sizes, /*data=*/{.1, .2, .4, .8}), 0, out);
+  op_logit_out(tf.make(sizes, /*data=*/{.1, .2, .4, .8}), 0, out);
   EXPECT_TENSOR_CLOSE(
       out,
       tf_out.make(
@@ -829,7 +829,7 @@ void test_integer_logit_out_eps_set() {
   // Destination for the logit operator.
   Tensor out = tf_out.zeros(sizes);
 
-  _logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0.1, out);
+  op_logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0.1, out);
 
   // Check that it matches (or close to) the expected output.
   EXPECT_TENSOR_CLOSE(
@@ -881,7 +881,7 @@ TEST(OpLogitOutKernelTest, MismatchedShapesDies) {
   Tensor a = tf.ones(/*sizes=*/{4});
   Tensor out = tf_out.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(a, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(a, 0, out));
 }
 
 // Unhandled output dtypes.
@@ -895,7 +895,7 @@ void test_logit_invalid_output_dtype_dies() {
   Tensor in = tf.ones(sizes);
   Tensor out = tf_out.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(_logit_out(in, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(in, 0, out));
 }
 
 TEST(OpLogitOutKernelTest, AllNonFloatOutputDTypeDies) {
@@ -955,7 +955,7 @@ TEST(OpLogitOutKernelTest, SimpleGeneratedCase) {
                  2.1972243785858154});
 
   Tensor out = tf.zeros({10, 10});
-  Tensor ret = _logit_out(x, 0.1, out);
+  Tensor ret = op_logit_out(x, 0.1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -981,7 +981,7 @@ TEST(OpLogitOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _logit_out(x, 0.1, out);
+  Tensor ret = op_logit_out(x, 0.1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -1007,7 +1007,7 @@ TEST(OpLogitOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _logit_out(x, 0.1, out);
+  Tensor ret = op_logit_out(x, 0.1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -1034,6 +1034,6 @@ TEST(OpLogitOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = _logit_out(x, 0.1, out);
+  Tensor ret = op_logit_out(x, 0.1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

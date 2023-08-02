@@ -23,7 +23,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& select_scatter_out(
+Tensor& op_select_scatter_out(
     const Tensor& self,
     const Tensor& src,
     int64_t dim,
@@ -53,11 +53,11 @@ void run_test_cases(
   for (ssize_t idx = 0; idx < x.size(dim); idx++) {
     // Should always return the provided out Tensor.
     // The ret shall meet the expectation.
-    Tensor ret = select_scatter_out(x, src, dim, idx, out);
+    Tensor ret = op_select_scatter_out(x, src, dim, idx, out);
     EXPECT_TENSOR_EQ(out, ret);
     EXPECT_TENSOR_EQ(out, expected[idx]);
 
-    ret = select_scatter_out(x, src, dim, /*index=*/idx - x.size(dim), out);
+    ret = op_select_scatter_out(x, src, dim, /*index=*/idx - x.size(dim), out);
     EXPECT_TENSOR_EQ(out, ret);
     EXPECT_TENSOR_EQ(out, expected[idx]);
   }
@@ -394,7 +394,7 @@ TEST(OpSelectScatterOutTest, OutputDynamicShape) {
     });
   // clang-format on
 
-  Tensor ret = select_scatter_out(x, src, 2, 0, out);
+  Tensor ret = op_select_scatter_out(x, src, 2, 0, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, expected_ret);
 }
@@ -458,8 +458,9 @@ void test_dtype() {
   Tensor out_0 = tf.zeros({3, 2, 4});
   Tensor out_1 = tf.ones({3, 2, 4});
   Tensor ret_0 =
-      select_scatter_out(x, src_zeros, /*dim=*/1, /*index=*/0, out_0);
-  Tensor ret_1 = select_scatter_out(x, src_ones, /*dim=*/1, /*index=*/1, out_1);
+      op_select_scatter_out(x, src_zeros, /*dim=*/1, /*index=*/0, out_0);
+  Tensor ret_1 =
+      op_select_scatter_out(x, src_ones, /*dim=*/1, /*index=*/1, out_1);
 
   EXPECT_TENSOR_EQ(ret_0, out_0);
   EXPECT_TENSOR_EQ(ret_1, out_1);
@@ -500,7 +501,7 @@ TEST(OpSelectScatterOutTest, EmptyTensorNonZeroNDimsInputSupported) {
   Tensor out = tf.make({3, 0, 10, 3}, {});
   EXPECT_EQ(out.numel(), 0);
 
-  Tensor ret = select_scatter_out(x, src, /*dim=*/2, /*index=*/3, out);
+  Tensor ret = op_select_scatter_out(x, src, /*dim=*/2, /*index=*/3, out);
   EXPECT_EQ(ret.numel(), 0);
   // Success if it doesn't assert on the weird-shaped empty input and the
   // ret is still a empty array
@@ -525,7 +526,7 @@ TEST(OpSelectScatterOutTest, EmptyTensorZeroNDimsInputDies) {
   // Expected failure when slicing on the dimension with length 0 since no space
   // on the dimension could be sliced. (out of bound error)
   ET_EXPECT_KERNEL_FAILURE(
-      select_scatter_out(x, src, /*dim=*/0, /*index=*/0, out));
+      op_select_scatter_out(x, src, /*dim=*/0, /*index=*/0, out));
 }
 ///////////////////////////////////////////////////////////////////////
 
@@ -540,7 +541,8 @@ TEST(OpSelectScatterOutTest, DimOutOfBoundDies) {
   // Some invalid dim values.
   const std::vector<int32_t> invalid_dims = {3, 4, 5, -4, -5, -6};
   for (ssize_t dim : invalid_dims) {
-    ET_EXPECT_KERNEL_FAILURE(select_scatter_out(x, src, dim, /*index=*/0, out));
+    ET_EXPECT_KERNEL_FAILURE(
+        op_select_scatter_out(x, src, dim, /*index=*/0, out));
   }
 }
 
@@ -555,7 +557,8 @@ TEST(OpSelectScatterOutTest, IndexOutOfBoundDies) {
   // Some invalid dim values.
   const std::vector<int32_t> invalid_indices = {3, 4, 5, -4, -5, -6};
   for (ssize_t idx : invalid_indices) {
-    ET_EXPECT_KERNEL_FAILURE(select_scatter_out(x, src, /*dim=*/0, idx, out));
+    ET_EXPECT_KERNEL_FAILURE(
+        op_select_scatter_out(x, src, /*dim=*/0, idx, out));
   }
 }
 
@@ -569,7 +572,7 @@ TEST(OpSelectScatterOutTest, MismatchedDtypesDies) {
   Tensor out = tf_float.ones({1, 2, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
-      select_scatter_out(x, src, /*dim=*/0, /*index=*/0, out));
+      op_select_scatter_out(x, src, /*dim=*/0, /*index=*/0, out));
 }
 
 TEST(OpSelectScatterOutTest, SrcMatchNumelLackDimAtEndDies) {
@@ -582,7 +585,7 @@ TEST(OpSelectScatterOutTest, SrcMatchNumelLackDimAtEndDies) {
   Tensor out = tf.ones({1, 2, 2, 1});
 
   ET_EXPECT_KERNEL_FAILURE(
-      select_scatter_out(x, src, /*dim=*/0, /*index=*/0, out));
+      op_select_scatter_out(x, src, /*dim=*/0, /*index=*/0, out));
 }
 
 TEST(OpSelectScatterOutTest, SrcMatchNumelExtraDimAtFrontDies) {
@@ -595,7 +598,7 @@ TEST(OpSelectScatterOutTest, SrcMatchNumelExtraDimAtFrontDies) {
   Tensor out = tf.ones({2, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
-      select_scatter_out(x, src, /*dim=*/0, /*index=*/0, out));
+      op_select_scatter_out(x, src, /*dim=*/0, /*index=*/0, out));
 }
 
 TEST(OpSelectScatterOutTest, SrcSizeMismatchDimDies) {
@@ -609,7 +612,7 @@ TEST(OpSelectScatterOutTest, SrcSizeMismatchDimDies) {
   Tensor out = tf.zeros({2, 4, 7, 5});
 
   ET_EXPECT_KERNEL_FAILURE(
-      select_scatter_out(x, src, /*dim=*/2, /*index=*/3, out));
+      op_select_scatter_out(x, src, /*dim=*/2, /*index=*/3, out));
 }
 
 /* %python
@@ -620,7 +623,7 @@ y = torch.randint(10, (3, 2))
 dim = 0
 index = 1
 res = torch.select_scatter(x, y, dim, index)
-op = "select_scatter_out"
+op = "op_select_scatter_out"
 opt_extra_params = f"""{dim}, {index},"""
 out_args = "out_shape, dynamism"
 dtype = "ScalarType::Int"
@@ -639,7 +642,7 @@ void test_dynamic_shape(
   Tensor expected = tf.make({2, 3, 2}, {4, 9, 3, 0, 3, 9, 6, 9, 8, 6, 6, 8});
 
   Tensor out = tf.zeros(out_shape, dynamism);
-  select_scatter_out(x, y, 0, 1, out);
+  op_select_scatter_out(x, y, 0, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 

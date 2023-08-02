@@ -24,7 +24,7 @@ using exec_aten::TensorList;
 using torch::executor::testing::TensorFactory;
 using torch::executor::testing::TensorListFactory;
 
-void split_copy_Tensor_out(
+void op_split_copy_tensor_out(
     const Tensor& self,
     int64_t split_size,
     int64_t dim,
@@ -97,13 +97,13 @@ TEST(OpSplitCopyTensorOutTest, Split3x3x3OnDim0) {
   // Output list with the same shapes/dtypes as the expected outputs.
   TensorList out = tlf.zeros_like(expected_out);
 
-  split_copy_Tensor_out(input, /*split_size=*/2, /*dim=*/0, out);
+  op_split_copy_tensor_out(input, /*split_size=*/2, /*dim=*/0, out);
 
   EXPECT_TENSOR_LISTS_EQ(expected_out, out);
 
   // Also show that python negative indexing works for this case.
   TensorList out2 = tlf.zeros_like(expected_out);
-  split_copy_Tensor_out(input, /*split_size=*/2, /*dim=*/-3, out2);
+  op_split_copy_tensor_out(input, /*split_size=*/2, /*dim=*/-3, out2);
   EXPECT_TENSOR_LISTS_EQ(expected_out, out2);
 }
 
@@ -147,13 +147,13 @@ TEST(OpSplitCopyTensorOutTest, Split3x3x3OnDim1) {
   // Output list with the same shapes/dtypes as the expected outputs.
   TensorList out = tlf.zeros_like(expected_out);
 
-  split_copy_Tensor_out(input, /*split_size=*/2, /*dim=*/1, out);
+  op_split_copy_tensor_out(input, /*split_size=*/2, /*dim=*/1, out);
 
   EXPECT_TENSOR_LISTS_EQ(expected_out, out);
 
   // Also show that python negative indexing works for this case.
   TensorList out2 = tlf.zeros_like(expected_out);
-  split_copy_Tensor_out(input, /*split_size=*/2, /*dim=*/-2, out2);
+  op_split_copy_tensor_out(input, /*split_size=*/2, /*dim=*/-2, out2);
   EXPECT_TENSOR_LISTS_EQ(expected_out, out2);
 }
 
@@ -206,13 +206,13 @@ TEST(OpSplitCopyTensorOutTest, Split3x3x3OnDim2) {
   // Output list with the same shapes/dtypes as the expected outputs.
   TensorList out = tlf.zeros_like(expected_out);
 
-  split_copy_Tensor_out(input, /*split_size=*/2, /*dim=*/2, out);
+  op_split_copy_tensor_out(input, /*split_size=*/2, /*dim=*/2, out);
 
   EXPECT_TENSOR_LISTS_EQ(expected_out, out);
 
   // Also show that python negative indexing works for this case.
   TensorList out2 = tlf.zeros_like(expected_out);
-  split_copy_Tensor_out(input, /*split_size=*/2, /*dim=*/-1, out2);
+  op_split_copy_tensor_out(input, /*split_size=*/2, /*dim=*/-1, out2);
   EXPECT_TENSOR_LISTS_EQ(expected_out, out2);
 }
 
@@ -229,7 +229,7 @@ TEST(OpSplitCopyTensorOutTest, LargerSplitSizeDoesNothing) {
   for (int64_t split_size = 3; split_size < 6; ++split_size) {
     for (size_t dim = 0; dim < input.dim(); ++dim) {
       TensorList out = tlf.zeros_like({input});
-      split_copy_Tensor_out(input, split_size, dim, out);
+      op_split_copy_tensor_out(input, split_size, dim, out);
       EXPECT_TENSOR_LISTS_EQ(out, expected_out);
     }
   }
@@ -249,7 +249,7 @@ void test_dtype() {
   };
   TensorList out = tlf.zeros_like(expected_out);
 
-  split_copy_Tensor_out(input, /*split_size=*/1, /*dim=*/0, out);
+  op_split_copy_tensor_out(input, /*split_size=*/1, /*dim=*/0, out);
 
   EXPECT_TENSOR_LISTS_EQ(out, expected_out);
 }
@@ -275,7 +275,7 @@ TEST(OpSplitCopyTensorOutTest, EmptyInputTensor) {
   // Splitting a zero-size tensor succeeds, even for split_size zero.
   TensorList out = tlf.zeros_like({input});
   for (int64_t split_size = 0; split_size < 3; ++split_size) {
-    split_copy_Tensor_out(input, split_size, /*dim=*/0, out);
+    op_split_copy_tensor_out(input, split_size, /*dim=*/0, out);
     EXPECT_TENSOR_LISTS_EQ(out, expected_out);
   }
 }
@@ -289,7 +289,7 @@ TEST(OpSplitCopyTensorOutTest, ZeroDimensionalInputTensorDies) {
   TensorList out = tlf.zeros_like({input});
 
   ET_EXPECT_KERNEL_FAILURE(
-      split_copy_Tensor_out(input, /*split_size=*/1, /*dim=*/0, out));
+      op_split_copy_tensor_out(input, /*split_size=*/1, /*dim=*/0, out));
 }
 
 TEST(OpSplitCopyTensorOutTest, ZeroSplitSizeOnlyWorksForZeroSizeDims) {
@@ -305,15 +305,15 @@ TEST(OpSplitCopyTensorOutTest, ZeroSplitSizeOnlyWorksForZeroSizeDims) {
 
   // Fails when trying to split with size zero on a dim with size > 0.
   ET_EXPECT_KERNEL_FAILURE(
-      split_copy_Tensor_out(input, /*split_size=*/0, /*dim=*/0, out));
+      op_split_copy_tensor_out(input, /*split_size=*/0, /*dim=*/0, out));
 
   // Successfully splits with size zero on a dim with size == 0.
-  split_copy_Tensor_out(input, /*split_size=*/0, /*dim=*/1, out);
+  op_split_copy_tensor_out(input, /*split_size=*/0, /*dim=*/1, out);
   EXPECT_TENSOR_LISTS_EQ(out, expected_out);
 
   // Fails again when trying to split with size zero on a dim with size > 0.
   ET_EXPECT_KERNEL_FAILURE(
-      split_copy_Tensor_out(input, /*split_size=*/0, /*dim=*/2, out));
+      op_split_copy_tensor_out(input, /*split_size=*/0, /*dim=*/2, out));
 }
 
 TEST(OpSplitCopyTensorOutTest, NegativeSplitSizeFails) {
@@ -325,7 +325,7 @@ TEST(OpSplitCopyTensorOutTest, NegativeSplitSizeFails) {
   TensorList out = tlf.zeros_like({input});
 
   ET_EXPECT_KERNEL_FAILURE(
-      split_copy_Tensor_out(input, /*split_size=*/-1, /*dim=*/0, out));
+      op_split_copy_tensor_out(input, /*split_size=*/-1, /*dim=*/0, out));
 }
 
 TEST(OpSplitCopyTensorOutTest, OutOfRangeDimsDie) {
@@ -344,14 +344,14 @@ TEST(OpSplitCopyTensorOutTest, OutOfRangeDimsDie) {
 
   for (auto dim : good_dims) {
     TensorList out = tlf.zeros_like({input});
-    split_copy_Tensor_out(input, split_size, dim, out);
+    op_split_copy_tensor_out(input, split_size, dim, out);
     EXPECT_TENSOR_LISTS_EQ(out, expected_out);
   }
 
   for (auto dim : bad_dims) {
     TensorList out = tlf.zeros_like({input});
     ET_EXPECT_KERNEL_FAILURE(
-        split_copy_Tensor_out(input, split_size, dim, out));
+        op_split_copy_tensor_out(input, split_size, dim, out));
   }
 }
 
@@ -372,7 +372,7 @@ TEST(OpSplitCopyTensorOutTest, DtypeMismatchDies) {
   // Demonstrate that this setup works when the dtypes are the same.
   {
     TensorList out = tlf_int.zeros_like({input});
-    split_copy_Tensor_out(input, split_size, dim, out);
+    op_split_copy_tensor_out(input, split_size, dim, out);
     EXPECT_TENSOR_LISTS_EQ(out, std::vector<Tensor>({input}));
   }
 
@@ -380,7 +380,7 @@ TEST(OpSplitCopyTensorOutTest, DtypeMismatchDies) {
   {
     TensorList out = tlf_float.zeros_like({input});
     ET_EXPECT_KERNEL_FAILURE(
-        split_copy_Tensor_out(input, split_size, dim, out));
+        op_split_copy_tensor_out(input, split_size, dim, out));
   }
 }
 
@@ -401,7 +401,7 @@ TEST(OpSplitCopyTensorOutTest, WrongNumOutputEntriesDies) {
         tf.ones(/*sizes=*/{1}),
     };
     TensorList out = tlf.zeros_like(expected_out);
-    split_copy_Tensor_out(input, split_size, dim, out);
+    op_split_copy_tensor_out(input, split_size, dim, out);
     EXPECT_TENSOR_LISTS_EQ(out, expected_out);
   }
 
@@ -413,7 +413,7 @@ TEST(OpSplitCopyTensorOutTest, WrongNumOutputEntriesDies) {
     };
     TensorList out = tlf.zeros_like(incorrect_out);
     ET_EXPECT_KERNEL_FAILURE(
-        split_copy_Tensor_out(input, split_size, dim, out));
+        op_split_copy_tensor_out(input, split_size, dim, out));
   }
 
   // Dies with the same setup but the output has one more entry than it should.
@@ -425,7 +425,7 @@ TEST(OpSplitCopyTensorOutTest, WrongNumOutputEntriesDies) {
     };
     TensorList out = tlf.zeros_like(incorrect_out);
     ET_EXPECT_KERNEL_FAILURE(
-        split_copy_Tensor_out(input, split_size, dim, out));
+        op_split_copy_tensor_out(input, split_size, dim, out));
   }
 }
 
@@ -449,7 +449,7 @@ TEST(OpSplitCopyTensorOutTest, WrongOutputShapeDies) {
         tf.ones(/*sizes=*/{5, 1, 4}),
     };
     TensorList out = tlf.zeros_like(expected_out);
-    split_copy_Tensor_out(input, split_size, dim, out);
+    op_split_copy_tensor_out(input, split_size, dim, out);
     EXPECT_TENSOR_LISTS_EQ(out, expected_out);
   }
 
@@ -461,7 +461,7 @@ TEST(OpSplitCopyTensorOutTest, WrongOutputShapeDies) {
     };
     TensorList out = tlf.zeros_like(incorrect_out);
     ET_EXPECT_KERNEL_FAILURE(
-        split_copy_Tensor_out(input, split_size, dim, out));
+        op_split_copy_tensor_out(input, split_size, dim, out));
   }
   {
     std::vector<Tensor> incorrect_out = {
@@ -470,7 +470,7 @@ TEST(OpSplitCopyTensorOutTest, WrongOutputShapeDies) {
     };
     TensorList out = tlf.zeros_like(incorrect_out);
     ET_EXPECT_KERNEL_FAILURE(
-        split_copy_Tensor_out(input, split_size, dim, out));
+        op_split_copy_tensor_out(input, split_size, dim, out));
   }
   {
     std::vector<Tensor> incorrect_out = {
@@ -479,7 +479,7 @@ TEST(OpSplitCopyTensorOutTest, WrongOutputShapeDies) {
     };
     TensorList out = tlf.zeros_like(incorrect_out);
     ET_EXPECT_KERNEL_FAILURE(
-        split_copy_Tensor_out(input, split_size, dim, out));
+        op_split_copy_tensor_out(input, split_size, dim, out));
   }
 
   // Wrong size of the split dimension for the non-last output element.
@@ -490,7 +490,7 @@ TEST(OpSplitCopyTensorOutTest, WrongOutputShapeDies) {
     };
     TensorList out = tlf.zeros_like(incorrect_out);
     ET_EXPECT_KERNEL_FAILURE(
-        split_copy_Tensor_out(input, split_size, dim, out));
+        op_split_copy_tensor_out(input, split_size, dim, out));
   }
 
   // Wrong number of output dimensions.
@@ -501,7 +501,7 @@ TEST(OpSplitCopyTensorOutTest, WrongOutputShapeDies) {
     };
     TensorList out = tlf.zeros_like(incorrect_out);
     ET_EXPECT_KERNEL_FAILURE(
-        split_copy_Tensor_out(input, split_size, dim, out));
+        op_split_copy_tensor_out(input, split_size, dim, out));
   }
   {
     std::vector<Tensor> incorrect_out = {
@@ -510,7 +510,7 @@ TEST(OpSplitCopyTensorOutTest, WrongOutputShapeDies) {
     };
     TensorList out = tlf.zeros_like(incorrect_out);
     ET_EXPECT_KERNEL_FAILURE(
-        split_copy_Tensor_out(input, split_size, dim, out));
+        op_split_copy_tensor_out(input, split_size, dim, out));
   }
 }
 
@@ -519,7 +519,7 @@ import torch
 torch.manual_seed(0)
 x = torch.randint(10, (2, 9))
 res = torch.split(x, 3, 1)
-op = "split_copy_Tensor_out"
+op = "op_split_copy_tensor_out"
 opt_extra_params = "3, 1,"
 out_args = [
   "out_shape, dynamism",
@@ -550,7 +550,7 @@ void test_dynamic_shape(
       tf.zeros(out_shape, dynamism),
       tf.zeros(out_shape, dynamism)};
   TensorList out(outv.data(), outv.size());
-  split_copy_Tensor_out(x, 3, 1, out);
+  op_split_copy_tensor_out(x, 3, 1, out);
   EXPECT_TENSOR_LISTS_EQ(out, expected);
 }
 

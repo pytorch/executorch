@@ -19,7 +19,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _relu_out(const Tensor& self, Tensor& out) {
+Tensor& op_relu_out(const Tensor& self, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::relu_outf(context, self, out);
 }
@@ -38,7 +38,7 @@ void test_relu_execution_floats() {
   Tensor out = tf.zeros(sizes);
 
   // Run relu.
-  _relu_out(in, out);
+  op_relu_out(in, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(
@@ -61,7 +61,7 @@ void test_relu_execution_ints() {
   Tensor out = tf.zeros(sizes);
 
   // Run relu.
-  _relu_out(in, out);
+  op_relu_out(in, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(
@@ -91,7 +91,7 @@ TEST(OpReluKernelTest, ByteTensors) {
   Tensor out = tf.zeros(sizes);
 
   // Run relu.
-  _relu_out(in, out);
+  op_relu_out(in, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(
@@ -139,7 +139,7 @@ TEST(OpReluKernelTest, InfAndNanPreserved) {
   Tensor out = tf.zeros(sizes);
 
   // Run full relu.
-  _relu_out(in, out);
+  op_relu_out(in, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(
@@ -168,7 +168,7 @@ TEST(OpReluKernelTest, UnhandledDtypeDies) {
   // Destination for the relu.
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(_relu_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_relu_out(a, out));
 }
 
 #if !defined(USE_ATEN_LIB)
@@ -185,7 +185,7 @@ TEST(OpReluKernelTest, UpperBoundOutTensor) {
       tf.zeros({5, 7}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 
   // Run relu.
-  _relu_out(in, out);
+  op_relu_out(in, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(
@@ -222,7 +222,7 @@ TEST(OpReluOutKernelTest, SimpleGeneratedCase) {
        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
 
   Tensor out = tf.zeros({10, 10});
-  Tensor ret = _relu_out(x, out);
+  Tensor ret = op_relu_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -248,7 +248,7 @@ TEST(OpReluOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _relu_out(x, out);
+  Tensor ret = op_relu_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -274,7 +274,7 @@ TEST(OpReluOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _relu_out(x, out);
+  Tensor ret = op_relu_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -301,6 +301,6 @@ TEST(OpReluOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = _relu_out(x, out);
+  Tensor ret = op_relu_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

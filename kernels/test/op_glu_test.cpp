@@ -22,7 +22,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& glu_out(const Tensor& self, int64_t dim, Tensor& out) {
+Tensor& op_glu_out(const Tensor& self, int64_t dim, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::glu_outf(context, self, dim, out);
 }
@@ -39,14 +39,14 @@ void test_glu_out() {
   // Valid input should give the expected output
   Tensor in = tf.ones(sizes);
   Tensor out = tf_out.zeros(out_sizes_1);
-  glu_out(in, 0, out);
+  op_glu_out(in, 0, out);
   EXPECT_TENSOR_CLOSE(
       out,
       tf_out.make(
           out_sizes_1, /*data=*/{0.731059, 0.731059, 0.731059, 0.731059}));
   const std::vector<int32_t> out_sizes_2 = {4, 1};
   out = tf_out.zeros(out_sizes_2);
-  glu_out(in, 1, out);
+  op_glu_out(in, 1, out);
   EXPECT_TENSOR_CLOSE(
       out,
       tf_out.make(
@@ -74,7 +74,7 @@ TEST(OpGluOutKernelTest, InfinityAndNANTest) {
   Tensor in = tf.make(
       sizes, /*data=*/{INFINITY, 1, -INFINITY, 1, INFINITY, -INFINITY, NAN, 1});
   Tensor out = tf.zeros(out_sizes);
-  glu_out(in, 1, out);
+  op_glu_out(in, 1, out);
   EXPECT_TENSOR_CLOSE(
       out,
       tf.make(
@@ -90,10 +90,10 @@ void test_glu_out_mismatched_shape() {
   Tensor in = tf_in.zeros(/*sizes=*/{4, 4, 4});
   Tensor out = tf_in.zeros(/*sizes=*/{2, 4, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(glu_out(in, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_glu_out(in, 0, out));
 
   out = tf_in.zeros(/*sizes=*/{4, 4, 4});
-  ET_EXPECT_KERNEL_FAILURE(glu_out(in, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_glu_out(in, 0, out));
 }
 
 // Invalid dimensions tests.
@@ -105,11 +105,11 @@ void test_glu_out_invalid_dim() {
   Tensor out = tf_in.zeros(out_sizes);
 
   // Dim is not valid
-  ET_EXPECT_KERNEL_FAILURE(glu_out(in, 3, out));
+  ET_EXPECT_KERNEL_FAILURE(op_glu_out(in, 3, out));
 
   // Dim size is not even
   in = tf_in.zeros(/*sizes=*/{3, 2});
-  ET_EXPECT_KERNEL_FAILURE(glu_out(in, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_glu_out(in, 0, out));
 }
 
 TEST(OpGluOutKernelTest, MismatchedShapesDies) {
@@ -139,7 +139,7 @@ void test_div_invalid_input_dtype_dies() {
   Tensor in = tf_in.ones(sizes);
   Tensor out = tf_float.zeros(out_sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(glu_out(in, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_glu_out(in, 0, out));
 }
 
 TEST(OpGluOutKernelTest, AllNonFloatInputDTypeDies) {
@@ -160,7 +160,7 @@ void test_div_invalid_output_dtype_dies() {
   Tensor in = tf_float.ones(sizes);
   Tensor out = tf_out.zeros(out_sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(glu_out(in, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_glu_out(in, 0, out));
 }
 
 TEST(OpGluOutKernelTest, AllNonFloatOutputDTypeDies) {
@@ -193,7 +193,7 @@ TEST(OpGluOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({4, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = glu_out(x, 0, out);
+  Tensor ret = op_glu_out(x, 0, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -219,7 +219,7 @@ TEST(OpGluOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = glu_out(x, 0, out);
+  Tensor ret = op_glu_out(x, 0, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -246,6 +246,6 @@ TEST(OpGluOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = glu_out(x, 0, out);
+  Tensor ret = op_glu_out(x, 0, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

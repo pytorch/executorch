@@ -22,8 +22,11 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor&
-softmax_out(const Tensor& self, int64_t dim, bool half_to_float, Tensor& out) {
+Tensor& op_softmax_out(
+    const Tensor& self,
+    int64_t dim,
+    bool half_to_float,
+    Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::_softmax_outf(
       context, self, dim, half_to_float, out);
@@ -35,7 +38,7 @@ TEST(OpSoftmaxOutTest, Smoke) {
   Tensor in = tff.make(sizes, {0, 1, 2});
   Tensor out = tff.zeros(sizes);
 
-  Tensor ret = softmax_out(in, /*dim=*/1, /*half_to_float=*/false, out);
+  Tensor ret = op_softmax_out(in, /*dim=*/1, /*half_to_float=*/false, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -63,7 +66,7 @@ void test_dtype() {
 
   Tensor out = tf.zeros({2, 3});
 
-  softmax_out(x, /*dim=*/1, /*half_to_float*/ false, out);
+  op_softmax_out(x, /*dim=*/1, /*half_to_float*/ false, out);
 
   // clang-format off
   Tensor expected = tf.make(
@@ -99,7 +102,7 @@ TEST(OpSoftmaxOutTest, EmptyInputOrEmptyOutTensorDies) {
   EXPECT_EQ(out.numel(), 0);
 
   ET_EXPECT_KERNEL_FAILURE(
-      softmax_out(x, /*dim=*/1, /*half_to_float*/ false, out));
+      op_softmax_out(x, /*dim=*/1, /*half_to_float*/ false, out));
 }
 
 TEST(OpSoftmaxOutTest, MismatchedDimensionsDies) {
@@ -113,7 +116,7 @@ TEST(OpSoftmaxOutTest, MismatchedDimensionsDies) {
 
   // Dim out of bounds
   ET_EXPECT_KERNEL_FAILURE(
-      softmax_out(x, /*dim=*/3, /*half_to_float*/ false, out));
+      op_softmax_out(x, /*dim=*/3, /*half_to_float*/ false, out));
 }
 
 TEST(OpSoftmaxOutTest, MismatchedDimensionSizeDies) {
@@ -128,7 +131,7 @@ TEST(OpSoftmaxOutTest, MismatchedDimensionSizeDies) {
   Tensor wrong_out = tf.zeros({2, 10, 4});
 
   ET_EXPECT_KERNEL_FAILURE(
-      softmax_out(x, /*dim=*/1, /*half_to_float*/ false, wrong_out));
+      op_softmax_out(x, /*dim=*/1, /*half_to_float*/ false, wrong_out));
 }
 
 TEST(OpSoftmaxOutTest, NegativeDim) {
@@ -150,8 +153,8 @@ TEST(OpSoftmaxOutTest, NegativeDim) {
   Tensor out = tf.zeros({2, 3});
   Tensor out_negative_dim = tf.zeros({2, 3});
 
-  softmax_out(x, /*dim=*/1, /*half_to_float=*/false, out);
-  softmax_out(x, /*dim=*/-1, /*half_to_float=*/false, out_negative_dim);
+  op_softmax_out(x, /*dim=*/1, /*half_to_float=*/false, out);
+  op_softmax_out(x, /*dim=*/-1, /*half_to_float=*/false, out_negative_dim);
 
   // clang-format off
   Tensor expected = tf.make(
@@ -165,8 +168,8 @@ TEST(OpSoftmaxOutTest, NegativeDim) {
   EXPECT_TENSOR_CLOSE(out, expected);
   EXPECT_TENSOR_CLOSE(out_negative_dim, expected);
 
-  softmax_out(x, /*dim=*/0, /*half_to_float=*/false, out);
-  softmax_out(x, /*dim=*/-2, /*half_to_float=*/false, out_negative_dim);
+  op_softmax_out(x, /*dim=*/0, /*half_to_float=*/false, out);
+  op_softmax_out(x, /*dim=*/-2, /*half_to_float=*/false, out_negative_dim);
 
   // clang-format off
   expected = tf.make(
@@ -231,7 +234,7 @@ TEST(OpSoftmaxOutTest, SimpleGeneratedCase) {
                  0.10000000149011612});
 
   Tensor out = tf.zeros({10, 10});
-  Tensor ret = softmax_out(x, 1, false, out);
+  Tensor ret = op_softmax_out(x, 1, false, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -257,7 +260,7 @@ TEST(OpSoftmaxOutTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = softmax_out(x, 1, false, out);
+  Tensor ret = op_softmax_out(x, 1, false, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -283,7 +286,7 @@ TEST(OpSoftmaxOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = softmax_out(x, 1, false, out);
+  Tensor ret = op_softmax_out(x, 1, false, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -310,6 +313,6 @@ TEST(OpSoftmaxOutTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = softmax_out(x, 1, false, out);
+  Tensor ret = op_softmax_out(x, 1, false, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

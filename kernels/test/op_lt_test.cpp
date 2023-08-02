@@ -21,12 +21,12 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& lt_scalar_out(const Tensor& self, Scalar& other, Tensor& out) {
+Tensor& op_lt_scalar_out(const Tensor& self, Scalar& other, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::lt_outf(context, self, other, out);
 }
 
-Tensor& lt_tensor_out(const Tensor& self, const Tensor& other, Tensor& out) {
+Tensor& op_lt_tensor_out(const Tensor& self, const Tensor& other, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::lt_outf(context, self, other, out);
 }
@@ -41,7 +41,7 @@ void test_lt_scalar_out() {
   Scalar other = 2;
 
   // Valid input should give the expected output
-  lt_scalar_out(tf.make(sizes, /*data=*/{3, 1, 2, 4}), other, out);
+  op_lt_scalar_out(tf.make(sizes, /*data=*/{3, 1, 2, 4}), other, out);
   EXPECT_TENSOR_EQ(
       out, tf_out.make(sizes, /*data=*/{false, true, false, false}));
 }
@@ -68,7 +68,7 @@ TEST(OpLtScalarOutKernelTest, BoolInputDtype) {
   Tensor out = tf_bool.zeros(sizes);
   Scalar other = 0.5;
 
-  lt_scalar_out(a, other, out);
+  op_lt_scalar_out(a, other, out);
   EXPECT_TENSOR_EQ(
       out, tf_bool.make(sizes, /*data=*/{true, false, true, false}));
 }
@@ -85,7 +85,7 @@ TEST(OpLtScalarOutKernelTest, MismatchedInOutShapesDies) {
   Tensor out = tf_bool.ones(/*sizes=*/{2, 2});
   Scalar other = 3;
 
-  ET_EXPECT_KERNEL_FAILURE(lt_scalar_out(a, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_lt_scalar_out(a, other, out));
 }
 
 TEST(OpLtScalarOutKernelTest, DynamicOutShapeTest) {
@@ -99,7 +99,7 @@ TEST(OpLtScalarOutKernelTest, DynamicOutShapeTest) {
   Scalar other = 2;
 
   // Valid input should give the expected output
-  lt_scalar_out(tf.make(sizes, /*data=*/{3, 1, 2, 4}), other, out);
+  op_lt_scalar_out(tf.make(sizes, /*data=*/{3, 1, 2, 4}), other, out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{false, true, false, false}));
 }
 
@@ -111,7 +111,7 @@ void test_dtype() {
   Tensor b = tf_input.make({2, 2}, {1, 4, 2, 3});
   Tensor out = tf_out.zeros({2, 2});
 
-  lt_tensor_out(a, b, out);
+  op_lt_tensor_out(a, b, out);
   EXPECT_TENSOR_EQ(out, tf_out.make({2, 2}, {false, true, false, false}));
 }
 
@@ -140,7 +140,7 @@ TEST(OpLtTensorOutKernelTest, MismatchedInShapesDies) {
   Tensor b = tf_int.ones(/*sizes=*/{2, 2});
   Tensor out = tf_bool.ones(/*sizes=*/{4});
 
-  ET_EXPECT_KERNEL_FAILURE(lt_tensor_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(op_lt_tensor_out(a, b, out));
 }
 
 TEST(OpLtTensorOutKernelTest, MismatchedInOutShapesDies) {
@@ -154,7 +154,7 @@ TEST(OpLtTensorOutKernelTest, MismatchedInOutShapesDies) {
   Tensor b = tf_int.ones(/*sizes=*/{4});
   Tensor out = tf_bool.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(lt_tensor_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(op_lt_tensor_out(a, b, out));
 }
 
 TEST(OpLtTensorOutKernelTest, DynamicOutShapeTest) {
@@ -166,6 +166,6 @@ TEST(OpLtTensorOutKernelTest, DynamicOutShapeTest) {
   Tensor out =
       tf.zeros({1, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 
-  lt_tensor_out(a, b, out);
+  op_lt_tensor_out(a, b, out);
   EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {false, true, false, false}));
 }

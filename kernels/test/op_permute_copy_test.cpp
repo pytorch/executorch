@@ -22,7 +22,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& permute_copy_out(const Tensor& self, IntArrayRef dims, Tensor& out) {
+Tensor& op_permute_copy_out(const Tensor& self, IntArrayRef dims, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::permute_copy_outf(context, self, dims, out);
 }
@@ -37,7 +37,7 @@ TEST(OpPermuteCopyKernelTest, OneDPermute) {
 
   Tensor out = tf.zeros(sizes);
 
-  permute_copy_out(
+  op_permute_copy_out(
       t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {1, 2}));
 }
@@ -58,7 +58,7 @@ TEST(OpPermuteCopyKernelTest, PermuteWithNoDataReorder) {
   const std::vector<int32_t> new_sizes = {4, 1, 5};
   Tensor out = tf.zeros(new_sizes);
 
-  permute_copy_out(
+  op_permute_copy_out(
       t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out);
   // clang-format off
   EXPECT_TENSOR_EQ(out, tf.make(new_sizes, {
@@ -85,7 +85,7 @@ TEST(OpPermuteCopyKernelTest, TwoDPermute) {
   const std::vector<int32_t> new_sizes = {3, 2};
   Tensor out = tf.zeros(new_sizes);
 
-  permute_copy_out(
+  op_permute_copy_out(
       t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out);
   // clang-format off
   EXPECT_TENSOR_EQ(out, tf.make(new_sizes, {
@@ -114,7 +114,7 @@ TEST(OpPermuteCopyKernelTest, ThreeDPermute) {
   const std::vector<int32_t> new_sizes = {3, 2, 1};
   Tensor out = tf.zeros(new_sizes);
 
-  permute_copy_out(
+  op_permute_copy_out(
       t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out);
   // clang-format off
   EXPECT_TENSOR_EQ(out, tf.make(new_sizes, {
@@ -176,7 +176,7 @@ TEST(OpPermuteCopyKernelTest, FourDPermute) {
   //   print(x.flatten().contiguous())
   //   z = torch.permute(x, (0, 3, 2, 1))
   //   print(z.flatten().contiguous())
-  permute_copy_out(
+  op_permute_copy_out(
       t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out);
   EXPECT_TENSOR_EQ(
       out,
@@ -257,7 +257,7 @@ TEST(OpPermuteCopyKernelTest, FiveDPermute) {
 
   Tensor out = tf.zeros(sizes);
 
-  permute_copy_out(
+  op_permute_copy_out(
       t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out);
   // Long results like this are gotten by running torch.permute in a notebook
   // and copy pasting the result. Ex:
@@ -308,7 +308,7 @@ TEST(OpPermuteCopyKernelTest, AllDimensionsSizeOne) {
 
   Tensor out = tf.zeros(sizes);
 
-  permute_copy_out(
+  op_permute_copy_out(
       t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {1}));
 }
@@ -323,7 +323,7 @@ TEST(OpPermuteCopyKernelTest, DupeDimensionPos) {
 
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(
       t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
 }
 
@@ -337,7 +337,7 @@ TEST(OpPermuteCopyKernelTest, DupeDimensionNeg) {
 
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(
       t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
 }
 
@@ -351,7 +351,7 @@ TEST(OpPermuteCopyKernelTest, MismatchDim) {
 
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(
       t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
 }
 
@@ -360,7 +360,7 @@ import torch
 torch.manual_seed(0)
 x = torch.randint(10, (2, 3, 4))
 res = torch.permute(x, (2, 0, 1))
-op = "permute_copy_out"
+op = "op_permute_copy_out"
 opt_setup_params = f"""
   {declare_array_ref([2, 0, 1], "int64_t", "perm_aref")}
 """
@@ -385,7 +385,7 @@ TEST(OpPermuteCopyKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({4, 2, 3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  permute_copy_out(x, perm_aref, out);
+  op_permute_copy_out(x, perm_aref, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -406,7 +406,7 @@ TEST(OpPermuteCopyKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({5, 5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  permute_copy_out(x, perm_aref, out);
+  op_permute_copy_out(x, perm_aref, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -430,7 +430,7 @@ TEST(OpPermuteCopyKernelTest, DynamicShapeUnbound) {
 
   Tensor out = tf.zeros(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  permute_copy_out(x, perm_aref, out);
+  op_permute_copy_out(x, perm_aref, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -444,7 +444,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float32_float32) {
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfFloat.make({2, 2}, {1.3125, 3.5, 2.625, 4.875});
-  permute_copy_out(self, dims, out);
+  op_permute_copy_out(self, dims, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -458,7 +458,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float32_float64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_float32_uint8) {
@@ -470,7 +470,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float32_uint8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_float32_int8) {
@@ -482,7 +482,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float32_int8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_float32_int16) {
@@ -494,7 +494,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float32_int16) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_float32_int32) {
@@ -506,7 +506,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float32_int32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_float32_int64) {
@@ -518,7 +518,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float32_int64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_float32_bool) {
@@ -530,7 +530,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float32_bool) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_float64_float32) {
@@ -543,7 +543,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float64_float32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_float64_float64) {
@@ -557,7 +557,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float64_float64) {
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfDouble.make({2, 2}, {1.3125, 3.5, 2.625, 4.875});
-  permute_copy_out(self, dims, out);
+  op_permute_copy_out(self, dims, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -571,7 +571,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float64_uint8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_float64_int8) {
@@ -584,7 +584,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float64_int8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_float64_int16) {
@@ -597,7 +597,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float64_int16) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_float64_int32) {
@@ -610,7 +610,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float64_int32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_float64_int64) {
@@ -623,7 +623,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float64_int64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_float64_bool) {
@@ -636,7 +636,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_float64_bool) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_uint8_float32) {
@@ -648,7 +648,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_uint8_float32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_uint8_float64) {
@@ -661,7 +661,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_uint8_float64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_uint8_uint8) {
@@ -673,7 +673,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_uint8_uint8) {
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 3, 2, 4});
-  permute_copy_out(self, dims, out);
+  op_permute_copy_out(self, dims, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -686,7 +686,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_uint8_int8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_uint8_int16) {
@@ -698,7 +698,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_uint8_int16) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_uint8_int32) {
@@ -710,7 +710,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_uint8_int32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_uint8_int64) {
@@ -722,7 +722,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_uint8_int64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_uint8_bool) {
@@ -734,7 +734,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_uint8_bool) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int8_float32) {
@@ -746,7 +746,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int8_float32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int8_float64) {
@@ -759,7 +759,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int8_float64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int8_uint8) {
@@ -771,7 +771,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int8_uint8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int8_int8) {
@@ -783,7 +783,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int8_int8) {
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 3, 2, 4});
-  permute_copy_out(self, dims, out);
+  op_permute_copy_out(self, dims, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -796,7 +796,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int8_int16) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int8_int32) {
@@ -808,7 +808,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int8_int32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int8_int64) {
@@ -820,7 +820,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int8_int64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int8_bool) {
@@ -832,7 +832,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int8_bool) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int16_float32) {
@@ -844,7 +844,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int16_float32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int16_float64) {
@@ -857,7 +857,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int16_float64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int16_uint8) {
@@ -869,7 +869,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int16_uint8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int16_int8) {
@@ -881,7 +881,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int16_int8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int16_int16) {
@@ -893,7 +893,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int16_int16) {
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 3, 2, 4});
-  permute_copy_out(self, dims, out);
+  op_permute_copy_out(self, dims, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -906,7 +906,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int16_int32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int16_int64) {
@@ -918,7 +918,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int16_int64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int16_bool) {
@@ -930,7 +930,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int16_bool) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int32_float32) {
@@ -942,7 +942,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int32_float32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int32_float64) {
@@ -955,7 +955,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int32_float64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int32_uint8) {
@@ -967,7 +967,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int32_uint8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int32_int8) {
@@ -979,7 +979,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int32_int8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int32_int16) {
@@ -991,7 +991,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int32_int16) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int32_int32) {
@@ -1003,7 +1003,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int32_int32) {
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 3, 2, 4});
-  permute_copy_out(self, dims, out);
+  op_permute_copy_out(self, dims, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1016,7 +1016,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int32_int64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int32_bool) {
@@ -1028,7 +1028,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int32_bool) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int64_float32) {
@@ -1040,7 +1040,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int64_float32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int64_float64) {
@@ -1053,7 +1053,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int64_float64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int64_uint8) {
@@ -1065,7 +1065,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int64_uint8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int64_int8) {
@@ -1077,7 +1077,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int64_int8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int64_int16) {
@@ -1089,7 +1089,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int64_int16) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int64_int32) {
@@ -1101,7 +1101,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int64_int32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_int64_int64) {
@@ -1113,7 +1113,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int64_int64) {
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 3, 2, 4});
-  permute_copy_out(self, dims, out);
+  op_permute_copy_out(self, dims, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1126,7 +1126,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_int64_bool) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_bool_float32) {
@@ -1138,7 +1138,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_bool_float32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_bool_float64) {
@@ -1151,7 +1151,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_bool_float64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_bool_uint8) {
@@ -1163,7 +1163,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_bool_uint8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_bool_int8) {
@@ -1175,7 +1175,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_bool_int8) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_bool_int16) {
@@ -1187,7 +1187,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_bool_int16) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_bool_int32) {
@@ -1199,7 +1199,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_bool_int32) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_bool_int64) {
@@ -1211,7 +1211,7 @@ TEST(OpPermuteCopyOutTest, DtypeTest_bool_int64) {
   exec_aten::ArrayRef<int64_t> dims =
       exec_aten::ArrayRef<int64_t>(dims_vec.data(), dims_vec.size());
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(permute_copy_out(self, dims, out));
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(self, dims, out));
 }
 
 TEST(OpPermuteCopyOutTest, DtypeTest_bool_bool) {
@@ -1224,6 +1224,6 @@ TEST(OpPermuteCopyOutTest, DtypeTest_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, false, false, true});
-  permute_copy_out(self, dims, out);
+  op_permute_copy_out(self, dims, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }

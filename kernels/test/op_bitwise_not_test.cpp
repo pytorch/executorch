@@ -21,7 +21,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _bitwise_not_out(const Tensor& a, Tensor& out) {
+Tensor& op_bitwise_not_out(const Tensor& a, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::bitwise_not_outf(context, a, out);
 }
@@ -37,7 +37,7 @@ void test_bitwise_not_out() {
   Tensor out = tf.zeros(sizes);
 
   // Check that it matches the expected output.
-  _bitwise_not_out(tf.make(sizes, /*data=*/{0, -1, -2, 3}), out);
+  op_bitwise_not_out(tf.make(sizes, /*data=*/{0, -1, -2, 3}), out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{-1, 0, 1, -4}));
 }
 
@@ -51,7 +51,7 @@ void test_bitwise_not_out<ScalarType::Byte>() {
   Tensor out = tf.zeros(sizes);
 
   // Check that it matches the expected output.
-  _bitwise_not_out(tf.make(sizes, /*data=*/{0, 1, 2, 3}), out);
+  op_bitwise_not_out(tf.make(sizes, /*data=*/{0, 1, 2, 3}), out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{255, 254, 253, 252}));
 }
 
@@ -65,7 +65,7 @@ void test_bitwise_not_out<ScalarType::Bool>() {
   Tensor out = tf.zeros(sizes);
 
   // Check that it matches the expected output.
-  _bitwise_not_out(tf.make(sizes, /*data=*/{true, false, true, false}), out);
+  op_bitwise_not_out(tf.make(sizes, /*data=*/{true, false, true, false}), out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{false, true, false, true}));
 }
 
@@ -89,7 +89,7 @@ TEST(OpBitwiseNotOutKernelTest, MismatchedShapesDies) {
   Tensor a = tf.ones(/*sizes=*/{4});
   Tensor out = tf.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(_bitwise_not_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_bitwise_not_out(a, out));
 }
 
 // Unhandled output dtypes.
@@ -102,7 +102,7 @@ void test_bitwise_not_invalid_dtype_dies() {
   Tensor in = tf.ones(sizes);
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(_bitwise_not_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_bitwise_not_out(in, out));
 }
 
 TEST(OpBitwiseNotOutKernelTest, AllFloatInputDTypeDies) {
@@ -117,7 +117,7 @@ import torch
 torch.manual_seed(0)
 x = torch.randint(10, (3, 2))
 res = torch.bitwise_not(x)
-op = "_bitwise_not_out"
+op = "op_bitwise_not_out"
 dtype = "ScalarType::Int"
 check = "EXPECT_TENSOR_EQ" */
 
@@ -133,7 +133,7 @@ TEST(OpBitwiseNotOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  _bitwise_not_out(x, out);
+  op_bitwise_not_out(x, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -149,7 +149,7 @@ TEST(OpBitwiseNotOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  _bitwise_not_out(x, out);
+  op_bitwise_not_out(x, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -166,6 +166,6 @@ TEST(OpBitwiseNotOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  _bitwise_not_out(x, out);
+  op_bitwise_not_out(x, out);
   EXPECT_TENSOR_EQ(out, expected);
 }

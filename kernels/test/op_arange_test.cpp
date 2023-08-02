@@ -27,12 +27,12 @@ using exec_aten::Tensor;
 
 using torch::executor::testing::TensorFactory;
 
-Tensor& arange_out(const Scalar& end, Tensor& out) {
+Tensor& op_arange_out(const Scalar& end, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::arange_outf(context, end, out);
 }
 
-Tensor& arange_start_out(
+Tensor& op_arange_start_out(
     const Scalar& start,
     const Scalar& end,
     const Scalar& step,
@@ -68,7 +68,7 @@ void test_arange_dtype() {
 
   Tensor out = tf.zeros({10});
 
-  Tensor ret = arange_out(end, out);
+  Tensor ret = op_arange_out(end, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -95,7 +95,7 @@ TEST_F(OpArangeOutTest, BoolDtypeSupported) {
 
   Tensor out = tf.make({2}, {true, false});
 
-  Tensor ret = arange_out(end, out);
+  Tensor ret = op_arange_out(end, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -119,7 +119,7 @@ TEST_F(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
 
   Tensor out = tf.zeros({5});
 
-  Tensor ret = arange_out(end, out);
+  Tensor ret = op_arange_out(end, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -141,7 +141,7 @@ TEST_F(OpArangeOutTest, EndOutTypeMismatchDie) {
   Tensor out = tf.zeros({5});
 
   // Scalar end and Tensor out type mismatch: one is int another is float.
-  ET_EXPECT_KERNEL_FAILURE(arange_out(end, out));
+  ET_EXPECT_KERNEL_FAILURE(op_arange_out(end, out));
 }
 
 TEST_F(OpArangeOutTest, OutDimUnsupportedDie) {
@@ -155,7 +155,7 @@ TEST_F(OpArangeOutTest, OutDimUnsupportedDie) {
   Tensor out = tf.zeros({5, 1});
 
   // out.dim() should be 1, not 2
-  ET_EXPECT_KERNEL_FAILURE(arange_out(end, out));
+  ET_EXPECT_KERNEL_FAILURE(op_arange_out(end, out));
 }
 
 TEST_F(OpArangeOutTest, DynamicShapeUpperBoundSameAsExpected) {
@@ -166,7 +166,7 @@ TEST_F(OpArangeOutTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({5, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = arange_out(Scalar(5), out);
+  Tensor ret = op_arange_out(Scalar(5), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -178,7 +178,7 @@ TEST_F(OpArangeOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = arange_out(Scalar(5), out);
+  Tensor ret = op_arange_out(Scalar(5), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -190,7 +190,7 @@ TEST_F(OpArangeOutTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = arange_out(Scalar(5), out);
+  Tensor ret = op_arange_out(Scalar(5), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -205,7 +205,7 @@ void test_arange_start_dtype() {
 
   Tensor out = tf.zeros({10});
 
-  Tensor ret = arange_start_out(start, end, step, out);
+  Tensor ret = op_arange_start_out(start, end, step, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -235,7 +235,7 @@ TEST_F(OpArangeStartOutTest, BoolDtypeSupported) {
 
   Tensor out = tf.make({2}, {true, false});
 
-  Tensor ret = arange_start_out(start, end, step, out);
+  Tensor ret = op_arange_start_out(start, end, step, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -262,7 +262,7 @@ TEST_F(OpArangeStartOutTest, FloatNumberNotEqualIntSupport) {
 
   Tensor out = tf.zeros({6});
 
-  Tensor ret = arange_start_out(start, end, step, out);
+  Tensor ret = op_arange_start_out(start, end, step, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -286,7 +286,7 @@ TEST_F(OpArangeStartOutTest, EndOutTypeMismatchDie) {
   Tensor out = tf.zeros({5});
 
   // Scalar end and Tensor out type mismatch: one is int another is float.
-  ET_EXPECT_KERNEL_FAILURE(arange_start_out(start, end, step, out));
+  ET_EXPECT_KERNEL_FAILURE(op_arange_start_out(start, end, step, out));
 }
 
 TEST_F(OpArangeStartOutTest, OutDimUnsupportedDie) {
@@ -302,7 +302,7 @@ TEST_F(OpArangeStartOutTest, OutDimUnsupportedDie) {
   Tensor out = tf.zeros({5, 1});
 
   // out.dim() should be 1, not 2
-  ET_EXPECT_KERNEL_FAILURE(arange_start_out(start, end, step, out));
+  ET_EXPECT_KERNEL_FAILURE(op_arange_start_out(start, end, step, out));
 }
 
 TEST_F(OpArangeStartOutTest, DynamicShapeUpperBoundSameAsExpected) {
@@ -313,7 +313,7 @@ TEST_F(OpArangeStartOutTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({5, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = arange_start_out(Scalar(0), Scalar(5), Scalar(1), out);
+  Tensor ret = op_arange_start_out(Scalar(0), Scalar(5), Scalar(1), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -325,7 +325,7 @@ TEST_F(OpArangeStartOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = arange_start_out(Scalar(0), Scalar(5), Scalar(1), out);
+  Tensor ret = op_arange_start_out(Scalar(0), Scalar(5), Scalar(1), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -337,7 +337,7 @@ TEST_F(OpArangeStartOutTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = arange_start_out(Scalar(0), Scalar(5), Scalar(1), out);
+  Tensor ret = op_arange_start_out(Scalar(0), Scalar(5), Scalar(1), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -350,7 +350,7 @@ TEST_F(OpArangeStartOutTest, StartOut) {
 
   Tensor out = tf.zeros({4});
 
-  Tensor ret = arange_start_out(start, end, step, out);
+  Tensor ret = op_arange_start_out(start, end, step, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -363,7 +363,7 @@ TEST_F(OpArangeStartOutTest, StartOut) {
   end = Scalar(5.51);
   out = tf.zeros({5});
 
-  ret = arange_start_out(start, end, step, out);
+  ret = op_arange_start_out(start, end, step, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -383,7 +383,7 @@ TEST_F(OpArangeStartOutTest, StartOutNegativeStep) {
 
   Tensor out = tf.zeros({4});
 
-  Tensor ret = arange_start_out(start, end, step, out);
+  Tensor ret = op_arange_start_out(start, end, step, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);
@@ -396,7 +396,7 @@ TEST_F(OpArangeStartOutTest, StartOutNegativeStep) {
   end = Scalar(1.09);
   out = tf.zeros({5});
 
-  ret = arange_start_out(start, end, step, out);
+  ret = op_arange_start_out(start, end, step, out);
 
   // Should always return the provided out Tensor.
   EXPECT_TENSOR_EQ(ret, out);

@@ -23,7 +23,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& sum_dim_out(
+Tensor& op_sum_intlist_out(
     const Tensor& self,
     optional<ArrayRef<int64_t>> dim,
     bool keepdim,
@@ -59,13 +59,15 @@ void test_sum_dim_out_invalid_dimensions() {
   int64_t dims_1[1] = {3};
   optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
   ET_EXPECT_DEATH(
-      sum_dim_out(self, optional_dim_list, /*keepdim=*/true, dtype, out), "");
+      op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out),
+      "");
 
   // the same dim appears multiple times in list of dims
   int64_t dims_2[2] = {2, 2};
   optional_dim_list = ArrayRef<int64_t>{dims_2, 2};
   ET_EXPECT_DEATH(
-      sum_dim_out(self, optional_dim_list, /*keepdim=*/true, dtype, out), "");
+      op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out),
+      "");
 }
 
 TEST(OpSumOutTest, InvalidDimensionListDies) {
@@ -111,12 +113,15 @@ void test_sum_dim_out_invalid_shape() {
   int64_t dims_1[1] = {1};
   optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
   ET_EXPECT_DEATH(
-      sum_dim_out(self, optional_dim_list, /*keepdim=*/true, dtype, out), "");
+      op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out),
+      "");
 
   // dimension size mismatch when keepdim is false
   out = tf_out.zeros({2, 1, 4});
   ET_EXPECT_DEATH(
-      sum_dim_out(self, optional_dim_list, /*keepdim=*/false, dtype, out), "");
+      op_sum_intlist_out(
+          self, optional_dim_list, /*keepdim=*/false, dtype, out),
+      "");
 }
 
 TEST(OpSumOutTest, InvalidShapeDies) {
@@ -165,7 +170,8 @@ TEST(OpSumOutTest, MismatchedDTypesDies) {
 
   // out tensor should be of the same dtype with dtype when dtype is specified
   ET_EXPECT_DEATH(
-      sum_dim_out(self, optional_dim_list, /*keepdim=*/true, dtype, out), "");
+      op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out),
+      "");
 }
 
 template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
@@ -191,7 +197,7 @@ void test_sum_dim_out_dtype() {
   int64_t dims_1[1] = {2};
   optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
   optional<ScalarType> dtype = OUT_DTYPE;
-  sum_dim_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
+  op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_out.make(
     {2, 3, 1},
@@ -208,7 +214,7 @@ void test_sum_dim_out_dtype() {
 
   // keepdim=false should work
   out = tf_out.zeros({2, 3});
-  sum_dim_out(self, optional_dim_list, /*keepdim=*/false, dtype, out);
+  op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/false, dtype, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_out.make(
     {2, 3},
@@ -222,28 +228,28 @@ void test_sum_dim_out_dtype() {
   out = tf_out.zeros({1, 1, 4});
   int64_t dims_01[2] = {0, 1};
   optional_dim_list = ArrayRef<int64_t>{dims_01, 2};
-  sum_dim_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
+  op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 1, 4}, {60, 66, 72, 78}));
 
   out = tf_out.zeros({4});
-  sum_dim_out(self, optional_dim_list, /*keepdim=*/false, dtype, out);
+  op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/false, dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({4}, {60, 66, 72, 78}));
 
   out = tf_out.zeros({1, 3, 1});
   int64_t dims_02[2] = {0, 2};
   optional_dim_list = ArrayRef<int64_t>{dims_02, 2};
-  sum_dim_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
+  op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 3, 1}, {60, 92, 124}));
 
   out = tf_out.zeros({3});
-  sum_dim_out(self, optional_dim_list, /*keepdim=*/false, dtype, out);
+  op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/false, dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({3}, {60, 92, 124}));
 
   // dim list with negative dimensions should work
   out = tf_out.zeros({2, 1, 4});
   int64_t dims_3[1] = {-2};
   optional_dim_list = ArrayRef<int64_t>{dims_3, 1};
-  sum_dim_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
+  op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_out.make(
     {2, 1, 4},
@@ -268,18 +274,18 @@ void test_sum_dim_out_dtype() {
   // clang-format on
   out = tf_out.zeros({1, 1, 1});
   optional<ArrayRef<int64_t>> null_dim_list;
-  sum_dim_out(self, null_dim_list, /*keepdim=*/true, dtype, out);
+  op_sum_intlist_out(self, null_dim_list, /*keepdim=*/true, dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 1, 1}, {56}));
 
   optional<ArrayRef<int64_t>> empty_dim_list{ArrayRef<int64_t>{}};
-  sum_dim_out(self, empty_dim_list, /*keepdim=*/true, dtype, out);
+  op_sum_intlist_out(self, empty_dim_list, /*keepdim=*/true, dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 1, 1}, {56}));
 
   out = tf_out.zeros({});
-  sum_dim_out(self, null_dim_list, /*keepdim=*/false, dtype, out);
+  op_sum_intlist_out(self, null_dim_list, /*keepdim=*/false, dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({}, {56}));
 
-  sum_dim_out(self, empty_dim_list, /*keepdim=*/false, dtype, out);
+  op_sum_intlist_out(self, empty_dim_list, /*keepdim=*/false, dtype, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({}, {56}));
 }
 
@@ -320,7 +326,7 @@ TEST(OpSumOutTest, TypeConversionTest) {
 
   // int -> bool conversion should work
   Tensor out = tf_bool.zeros({2, 3, 1});
-  sum_dim_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
+  op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_bool.make(
     {2, 3, 1},
@@ -337,7 +343,7 @@ TEST(OpSumOutTest, TypeConversionTest) {
 
   // int -> byte conversion should work
   out = tf_byte.zeros({2, 3, 1});
-  sum_dim_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
+  op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_byte.make(
     {2, 3, 1},
@@ -373,7 +379,7 @@ TEST(OpSumOutTest, InfinityAndNANTest) {
   int64_t dims[1] = {-1};
   optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims, 1}};
   optional<ScalarType> dtype;
-  sum_dim_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
+  op_sum_intlist_out(self, optional_dim_list, /*keepdim=*/true, dtype, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_float.make(
     {2, 3, 1},

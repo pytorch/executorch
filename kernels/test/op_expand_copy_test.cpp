@@ -32,8 +32,11 @@ class OpExpandOutTest : public ::testing::Test {
   }
 };
 
-Tensor&
-expand_out(const Tensor& self, IntArrayRef sizes, bool implicit, Tensor& out) {
+Tensor& op_expand_copy_out(
+    const Tensor& self,
+    IntArrayRef sizes,
+    bool implicit,
+    Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::expand_copy_outf(
       context, self, sizes, implicit, out);
@@ -45,7 +48,7 @@ TEST_F(OpExpandOutTest, NoOp) {
   Tensor out = tf.zeros({2, 2});
   const std::vector<int64_t> dims{2, 2};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, tf.ones({2, 2}));
@@ -57,7 +60,7 @@ TEST_F(OpExpandOutTest, PrependDims) {
   Tensor out = tf.zeros({3, 3, 3, 2, 2});
   const std::vector<int64_t> dims{3, 3, 3, 2, 2};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, tf.ones({3, 3, 3, 2, 2}));
@@ -70,7 +73,7 @@ TEST_F(OpExpandOutTest, GrowExistingDim) {
 
   const std::vector<int64_t> dims{2, 92};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, tf.ones({2, 92}));
 }
@@ -82,7 +85,7 @@ TEST_F(OpExpandOutTest, AllNegativeOnes) {
 
   const std::vector<int64_t> dims{-1, -1, -1};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, tf.ones({2, 4, 12}));
 }
@@ -94,7 +97,7 @@ TEST_F(OpExpandOutTest, EndsNegativeOnes) {
 
   const std::vector<int64_t> dims{-1, 14, -1};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, tf.ones({2, 14, 12}));
 }
@@ -106,7 +109,7 @@ TEST_F(OpExpandOutTest, MoreNegativeOnes) {
 
   const std::vector<int64_t> dims{-1, -1, 12};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, tf.ones({2, 14, 12}));
 }
@@ -119,7 +122,7 @@ TEST_F(OpExpandOutTest, BadExpandDimsTooSmall) {
   const std::vector<int64_t> dims{2};
 
   ET_EXPECT_KERNEL_FAILURE(
-      expand_out(a, {dims.data(), dims.size()}, false, out));
+      op_expand_copy_out(a, {dims.data(), dims.size()}, false, out));
 }
 
 TEST_F(OpExpandOutTest, BadLeadingNegativeOnes) {
@@ -130,7 +133,7 @@ TEST_F(OpExpandOutTest, BadLeadingNegativeOnes) {
   const std::vector<int64_t> dims{-1, -1, -1, -1, 2, 14, 1};
 
   ET_EXPECT_KERNEL_FAILURE(
-      expand_out(a, {dims.data(), dims.size()}, false, out));
+      op_expand_copy_out(a, {dims.data(), dims.size()}, false, out));
 }
 
 TEST_F(OpExpandOutTest, ExpandDimsOneToN) {
@@ -140,7 +143,7 @@ TEST_F(OpExpandOutTest, ExpandDimsOneToN) {
 
   const std::vector<int64_t> dims{2, 6};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(
       out,
@@ -154,7 +157,7 @@ TEST_F(OpExpandOutTest, ExpandOneToNPlusNewDimUniform) {
 
   const std::vector<int64_t> dims{2, 2, 6};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(
       out, tf.make(/*sizes*/ {2, 2, 6}, /*data=*/{3, 3, 3, 3, 3, 3, 3, 3,
@@ -169,7 +172,7 @@ TEST_F(OpExpandOutTest, ExpandOneToNPlusNewDimDifferent) {
 
   const std::vector<int64_t> dims{2, 2, 6};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(
       out, tf.make(/*sizes*/ {2, 2, 6}, /*data=*/{1, 1, 1, 1, 1, 1, 2, 2,
@@ -184,7 +187,7 @@ TEST_F(OpExpandOutTest, ExpandOneToNPlusNewDimDifferentTwo) {
 
   const std::vector<int64_t> dims{2, 6, 2};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(
       out,
@@ -203,7 +206,7 @@ TEST_F(OpExpandOutTest, BadOutDataTypeGoodShapeDeath) {
   const std::vector<int64_t> dims{2, 6, 2};
 
   ET_EXPECT_KERNEL_FAILURE(
-      expand_out(a, {dims.data(), dims.size()}, false, out));
+      op_expand_copy_out(a, {dims.data(), dims.size()}, false, out));
 }
 
 TEST_F(OpExpandOutTest, BadOutShapeGoodDataTypeDeath) {
@@ -217,7 +220,7 @@ TEST_F(OpExpandOutTest, BadOutShapeGoodDataTypeDeath) {
   const std::vector<int64_t> dims{2, 6, 2};
 
   ET_EXPECT_KERNEL_FAILURE(
-      expand_out(a, {dims.data(), dims.size()}, false, out));
+      op_expand_copy_out(a, {dims.data(), dims.size()}, false, out));
 }
 
 TEST_F(OpExpandOutTest, SingleToMany) {
@@ -227,7 +230,7 @@ TEST_F(OpExpandOutTest, SingleToMany) {
 
   const std::vector<int64_t> dims{4, 4, 4};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(
       out,
@@ -247,7 +250,7 @@ TEST_F(OpExpandOutTest, ZeroDimInputExpand_1) {
 
   const std::vector<int64_t> dims{6};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, tf.make(/*sizes*/ {6}, /*data=*/{3, 3, 3, 3, 3, 3}));
 }
@@ -259,7 +262,7 @@ TEST_F(OpExpandOutTest, ZeroDimInputExpand_2) {
 
   const std::vector<int64_t> dims{6, 2};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(
       out,
@@ -273,7 +276,7 @@ TEST_F(OpExpandOutTest, ZeroDimInputZeroDimOutputExpand) {
 
   const std::vector<int64_t> dims{};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, tf.make(/*sizes*/ {}, /*data=*/{3}));
 }
@@ -293,7 +296,7 @@ TEST_F(OpExpandOutTest, ResizedOutput) {
 
   const std::vector<int64_t> dims{2, 3, 4};
 
-  auto ret = expand_out(a, {dims.data(), dims.size()}, false, out);
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(
       out,
@@ -314,7 +317,7 @@ TEST_F(OpExpandOutTest, ImplicitTrue) {
   const std::vector<int64_t> dims{2, 2};
 
   ET_EXPECT_KERNEL_FAILURE(
-      expand_out(a, {dims.data(), dims.size()}, true, out));
+      op_expand_copy_out(a, {dims.data(), dims.size()}, true, out));
 }
 
 /* %python
@@ -322,7 +325,7 @@ import torch
 torch.manual_seed(0)
 x = torch.rand(2, 1, 3)
 res = x.expand(2, 5, 3)
-op = "expand_out"
+op = "op_expand_copy_out"
 opt_setup_params = """
   int64_t sizes[3] = {2, 5, 3};
   auto sizes_aref = IntArrayRef{sizes, 3};
@@ -364,7 +367,7 @@ TEST_F(OpExpandOutTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({2, 5, 3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  expand_out(x, sizes_aref, false, out);
+  op_expand_copy_out(x, sizes_aref, false, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -404,7 +407,7 @@ TEST_F(OpExpandOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out = tf.zeros(
       {10, 10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  expand_out(x, sizes_aref, false, out);
+  op_expand_copy_out(x, sizes_aref, false, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -444,6 +447,6 @@ TEST_F(OpExpandOutTest, DynamicShapeUnbound) {
 
   Tensor out = tf.zeros(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  expand_out(x, sizes_aref, false, out);
+  op_expand_copy_out(x, sizes_aref, false, out);
   EXPECT_TENSOR_EQ(out, expected);
 }

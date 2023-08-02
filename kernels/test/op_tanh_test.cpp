@@ -20,7 +20,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _tanh_out(const Tensor& self, Tensor& out) {
+Tensor& op_tanh_out(const Tensor& self, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::tanh_outf(context, self, out);
 }
@@ -35,7 +35,7 @@ TEST(OpTanhOutKernelTest, HandleBoolInput) {
   Tensor out = tf_float.zeros(sizes);
   Tensor res = tf_float.make(sizes, /*data=*/{0.000000, 0.761594});
 
-  EXPECT_TENSOR_CLOSE(_tanh_out(a, out), res);
+  EXPECT_TENSOR_CLOSE(op_tanh_out(a, out), res);
 }
 
 // Common testing for tanh operator and all kinds of supported input types
@@ -50,7 +50,7 @@ void test_floating_point_tanh_out() {
   Tensor out = tf_out.zeros(sizes);
 
   // clang-format off
-  _tanh_out(
+  op_tanh_out(
       tf_in.make(sizes, /*data=*/{ 0,  1,  2,  3,   4,  5,
                                    6,  7,  8,  9,  10,  100}),
       out);
@@ -91,7 +91,7 @@ void test_tanh_invalid_output_dtype_dies() {
   Tensor in = tf.ones(sizes);
   Tensor out = tf_out.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(_tanh_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_tanh_out(in, out));
 }
 
 TEST(OpTanhOutKernelTest, AllNonFloatOutputDTypeDies) {
@@ -111,7 +111,7 @@ TEST(OpTanhOutKernelTest, MismatchedInputShapesDies) {
   Tensor a = tf.ones(/*sizes=*/{4});
   Tensor out = tf.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(_tanh_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_tanh_out(a, out));
 }
 
 TEST(OpTanhOutKernelTest, SimpleGeneratedCase) {
@@ -164,7 +164,7 @@ TEST(OpTanhOutKernelTest, SimpleGeneratedCase) {
                  0.7615941762924194});
 
   Tensor out = tf.zeros({10, 10});
-  Tensor ret = _tanh_out(x, out);
+  Tensor ret = op_tanh_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -190,7 +190,7 @@ TEST(OpTanhOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _tanh_out(x, out);
+  Tensor ret = op_tanh_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -216,7 +216,7 @@ TEST(OpTanhOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _tanh_out(x, out);
+  Tensor ret = op_tanh_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -243,6 +243,6 @@ TEST(OpTanhOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = _tanh_out(x, out);
+  Tensor ret = op_tanh_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

@@ -19,7 +19,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _abs_out(const Tensor& self, Tensor& out) {
+Tensor& op_abs_out(const Tensor& self, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::abs_outf(context, self, out);
 }
@@ -31,7 +31,7 @@ TEST(OpAbsTest, SanityCheck) {
   Tensor out = tf.zeros({1, 7});
   Tensor expected = tf.make({1, 7}, {3.0, 2.5, 1.01, 0.0, 1.01, 2.5, 3.0});
 
-  Tensor ret = _abs_out(in, out);
+  Tensor ret = op_abs_out(in, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, expected);

@@ -24,7 +24,7 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-Tensor& add_out(
+Tensor& op_add_out(
     const Tensor& self,
     const Tensor& other,
     const Scalar& alpha,
@@ -33,7 +33,7 @@ Tensor& add_out(
   return torch::executor::aten::add_outf(context, self, other, alpha, out);
 }
 
-Tensor& add_scalar_out(
+Tensor& op_add_scalar_out(
     const Tensor& self,
     const Scalar& other,
     const Scalar& alpha,
@@ -54,7 +54,7 @@ void test_add() {
   Tensor out = tf_out.zeros(sizes);
 
   // Add two tensors.
-  add_out(
+  op_add_out(
       tf_a.make(sizes, /*data=*/{1, 2, 4, 8}),
       tf_b.ones(sizes),
       /*alpha=*/1,
@@ -113,7 +113,7 @@ void test_floating_point_add_out() {
   Tensor out = tf.zeros(sizes);
 
   // Add two tensors.
-  add_out(
+  op_add_out(
       tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
       tf.ones(sizes),
       /*alpha=*/1.1,
@@ -142,7 +142,7 @@ TEST(OpAddOutKernelTest, BoolAndIntInputTensor) {
 
   Tensor out = tfi.zeros(sizes);
 
-  add_out(a, b, /*alpha=*/1, out);
+  op_add_out(a, b, /*alpha=*/1, out);
   EXPECT_TENSOR_EQ(out, tfi.make(sizes, {2, 5, 3, 4}));
 }
 
@@ -156,7 +156,7 @@ TEST(OpAddOutKernelTest, BoolAndBoolInputTensor) {
 
   Tensor out = tf.zeros(sizes);
 
-  add_out(a, b, /*alpha=*/1, out);
+  op_add_out(a, b, /*alpha=*/1, out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {false, true, true, true}));
 }
 
@@ -182,7 +182,7 @@ TEST(OpAddOutKernelTest, BroadcastDimSizeIsOneAB) {
        1.191988468170166});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = add_out(x, y, 1, out);
+  Tensor ret = op_add_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -208,7 +208,7 @@ TEST(OpAddOutKernelTest, BroadcastDimSizeMissingAB) {
        1.191988468170166});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = add_out(x, y, 1, out);
+  Tensor ret = op_add_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -234,7 +234,7 @@ TEST(OpAddOutKernelTest, BroadcastDimSizeIsOneBA) {
        1.191988468170166});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = add_out(x, y, 1, out);
+  Tensor ret = op_add_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -260,7 +260,7 @@ TEST(OpAddOutKernelTest, BroadcastDimSizeMissingBA) {
        1.191988468170166});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = add_out(x, y, 1, out);
+  Tensor ret = op_add_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -276,7 +276,7 @@ TEST(OpAddOutKernelTest, BroadcastSupported) {
   // https://fburl.com/n9wl4d0o
   Tensor out = tf.zeros({5, 2, 3, 4});
 
-  Tensor ret = add_out(a, b, 1, out);
+  Tensor ret = op_add_out(a, b, 1, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, tf.ones({5, 2, 3, 4}));
@@ -287,7 +287,7 @@ TEST(OpAddOutKernelTest, BroadcastSupported) {
 //
 
 TEST(OpAddOutKernelTest, IntInputsFloatAlphaDies) {
-  // add_out() doesn't handle floating alpha for intergal inputs
+  // op_add_out() doesn't handle floating alpha for intergal inputs
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -298,11 +298,11 @@ TEST(OpAddOutKernelTest, IntInputsFloatAlphaDies) {
   // Elementwise add operation on two integral tensor with floating alpha
   // should cause an assertion and kill the test process.
   ET_EXPECT_KERNEL_FAILURE(
-      add_out(tf.ones(sizes), tf.ones(sizes), /*alpha=*/.7, out));
+      op_add_out(tf.ones(sizes), tf.ones(sizes), /*alpha=*/.7, out));
 }
 
 TEST(OpAddOutKernelTest, BoolInputsFloatAlphaDies) {
-  // add_out() doesn't handle floating alpha for intergal inputs
+  // op_add_out() doesn't handle floating alpha for intergal inputs
   TensorFactory<ScalarType::Bool> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -313,7 +313,7 @@ TEST(OpAddOutKernelTest, BoolInputsFloatAlphaDies) {
   // Elementwise add operation on two integral tensor with floating alpha
   // should cause an assertion and kill the test process.
   ET_EXPECT_KERNEL_FAILURE(
-      add_out(tf.ones(sizes), tf.ones(sizes), /*alpha=*/.7, out));
+      op_add_out(tf.ones(sizes), tf.ones(sizes), /*alpha=*/.7, out));
 }
 
 TEST(OpAddOutKernelTest, IntOutputWithFloatInputDies) {
@@ -329,11 +329,11 @@ TEST(OpAddOutKernelTest, IntOutputWithFloatInputDies) {
   // Destination for the sum.
   Tensor out = tfi.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(add_out(a, b, /*alpha=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(op_add_out(a, b, /*alpha=*/1, out));
 }
 
 TEST(OpAddOutKernelTest, BoolOutputWithIntegralInput) {
-  // add_out() doesn't handle Bool.
+  // op_add_out() doesn't handle Bool.
   TensorFactory<ScalarType::Bool> tf;
   TensorFactory<ScalarType::Int> tfi;
 
@@ -346,7 +346,7 @@ TEST(OpAddOutKernelTest, BoolOutputWithIntegralInput) {
   // Destination for the sum.
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(add_out(a, b, /*alpha=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(op_add_out(a, b, /*alpha=*/1, out));
 }
 
 TEST(OpAddOutKernelTest, MismatchedInputShapesDies) {
@@ -361,7 +361,7 @@ TEST(OpAddOutKernelTest, MismatchedInputShapesDies) {
 
   // Adding the two mismatched tensors should cause an assertion and kill the
   // test process.
-  ET_EXPECT_KERNEL_FAILURE(add_out(a, b, /*unused=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_add_out(a, b, /*unused=*/0, out));
 }
 
 TEST(OpAddOutKernelTest, MismatchedOutputShapesDies) {
@@ -383,7 +383,7 @@ TEST(OpAddOutKernelTest, MismatchedOutputShapesDies) {
 
   // Adding the tensors into a mismatched output should cause an assertion and
   // kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(add_out(a, b, /*unused=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_add_out(a, b, /*unused=*/0, out));
 }
 
 TEST(OpAddOutKernelTest, SimpleGeneratedCase) {
@@ -421,7 +421,7 @@ TEST(OpAddOutKernelTest, SimpleGeneratedCase) {
        2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0});
 
   Tensor out = tf.zeros({10, 10});
-  Tensor ret = add_out(x, y, 1, out);
+  Tensor ret = op_add_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -455,7 +455,7 @@ TEST(OpAddOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = add_out(x, y, 1, out);
+  Tensor ret = op_add_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -489,7 +489,7 @@ TEST(OpAddOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = add_out(x, y, 1, out);
+  Tensor ret = op_add_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -524,7 +524,7 @@ TEST(OpAddOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = add_out(x, y, 1, out);
+  Tensor ret = op_add_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -535,7 +535,7 @@ TEST(OpAddScalarOutKernelTest, SanityCheck) {
 
   Tensor out = tf.zeros(sizes);
 
-  add_scalar_out(tf.make(sizes, {1, 2, 4, 8}), true, /*alpha=*/2, out);
+  op_add_scalar_out(tf.make(sizes, {1, 2, 4, 8}), true, /*alpha=*/2, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {3, 4, 6, 10}));
@@ -548,7 +548,8 @@ TEST(OpAddScalarOutKernelTest, OptimizedSanityCheck) {
 
   Tensor out = tf.zeros(sizes);
 
-  add_scalar_out(tf.make(sizes, {1.3, 2.1, 4.6, 8.2}), 1.9, /*alpha=*/2.8, out);
+  op_add_scalar_out(
+      tf.make(sizes, {1.3, 2.1, 4.6, 8.2}), 1.9, /*alpha=*/2.8, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {6.62, 7.42, 9.92, 13.52}));

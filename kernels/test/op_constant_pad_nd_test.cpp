@@ -23,7 +23,7 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _constant_pad_nd_out(
+Tensor& op_constant_pad_nd_out(
     const Tensor& self,
     const IntArrayRef padding,
     const Scalar& value,
@@ -44,7 +44,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_float32) {
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
   exec_aten::Tensor out_expected = tfFloat.make(
       {3, 3}, {1.0, 1.3125, 2.625, 1.0, 3.5, 4.875, 1.0, 1.0, 1.0});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -59,7 +59,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_uint8) {
@@ -72,7 +72,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_int8) {
@@ -85,7 +85,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_int16) {
@@ -98,7 +98,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_int32) {
@@ -111,7 +111,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_int64) {
@@ -124,7 +124,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_bool) {
@@ -137,7 +137,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_bool_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_float32) {
@@ -151,7 +151,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_float32) {
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
   exec_aten::Tensor out_expected = tfFloat.make(
       {3, 3}, {2.0, 1.3125, 2.625, 2.0, 3.5, 4.875, 2.0, 2.0, 2.0});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -166,7 +166,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_uint8) {
@@ -179,7 +179,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_int8) {
@@ -192,7 +192,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_int16) {
@@ -205,7 +205,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_int32) {
@@ -218,7 +218,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_int64) {
@@ -231,7 +231,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_bool) {
@@ -244,7 +244,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_int32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_float32) {
@@ -258,7 +258,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_float32) {
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
   exec_aten::Tensor out_expected = tfFloat.make(
       {3, 3}, {0.5, 1.3125, 2.625, 0.5, 3.5, 4.875, 0.5, 0.5, 0.5});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -273,7 +273,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_uint8) {
@@ -286,7 +286,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_int8) {
@@ -299,7 +299,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_int16) {
@@ -312,7 +312,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_int32) {
@@ -325,7 +325,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_int64) {
@@ -338,7 +338,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_bool) {
@@ -351,7 +351,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float32_float32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_float32) {
@@ -365,7 +365,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_float64) {
@@ -380,7 +380,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_float64) {
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
   exec_aten::Tensor out_expected = tfDouble.make(
       {3, 3}, {1.0, 1.3125, 2.625, 1.0, 3.5, 4.875, 1.0, 1.0, 1.0});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -395,7 +395,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_int8) {
@@ -409,7 +409,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_int16) {
@@ -423,7 +423,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_int32) {
@@ -437,7 +437,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_int64) {
@@ -451,7 +451,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_bool) {
@@ -465,7 +465,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_bool_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_float32) {
@@ -479,7 +479,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_float64) {
@@ -494,7 +494,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_float64) {
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
   exec_aten::Tensor out_expected = tfDouble.make(
       {3, 3}, {2.0, 1.3125, 2.625, 2.0, 3.5, 4.875, 2.0, 2.0, 2.0});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -509,7 +509,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_int8) {
@@ -523,7 +523,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_int16) {
@@ -537,7 +537,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_int32) {
@@ -551,7 +551,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_int64) {
@@ -565,7 +565,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_bool) {
@@ -579,7 +579,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_int32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_float32) {
@@ -593,7 +593,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_float64) {
@@ -608,7 +608,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_float64) {
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
   exec_aten::Tensor out_expected = tfDouble.make(
       {3, 3}, {0.5, 1.3125, 2.625, 0.5, 3.5, 4.875, 0.5, 0.5, 0.5});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -623,7 +623,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_int8) {
@@ -637,7 +637,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_int16) {
@@ -651,7 +651,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_int32) {
@@ -665,7 +665,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_int64) {
@@ -679,7 +679,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_bool) {
@@ -693,7 +693,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_float64_float32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_float32) {
@@ -706,7 +706,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_float64) {
@@ -720,7 +720,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_uint8) {
@@ -734,7 +734,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_uint8) {
   exec_aten::Tensor out = tfByte.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfByte.make({3, 3}, {1, 1, 2, 1, 3, 4, 1, 1, 1});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -748,7 +748,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_int16) {
@@ -761,7 +761,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_int32) {
@@ -774,7 +774,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_int64) {
@@ -787,7 +787,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_bool) {
@@ -800,7 +800,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_bool_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_float32) {
@@ -813,7 +813,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_float64) {
@@ -827,7 +827,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_uint8) {
@@ -841,7 +841,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_uint8) {
   exec_aten::Tensor out = tfByte.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfByte.make({3, 3}, {2, 1, 2, 2, 3, 4, 2, 2, 2});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -855,7 +855,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_int16) {
@@ -868,7 +868,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_int32) {
@@ -881,7 +881,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_int64) {
@@ -894,7 +894,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_bool) {
@@ -907,7 +907,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_int32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_float32) {
@@ -920,7 +920,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_float64) {
@@ -934,7 +934,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_uint8) {
@@ -948,7 +948,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_uint8) {
   exec_aten::Tensor out = tfByte.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfByte.make({3, 3}, {0, 1, 2, 0, 3, 4, 0, 0, 0});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -962,7 +962,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_int16) {
@@ -975,7 +975,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_int32) {
@@ -988,7 +988,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_int64) {
@@ -1001,7 +1001,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_bool) {
@@ -1014,7 +1014,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_uint8_float32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_float32) {
@@ -1027,7 +1027,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_float64) {
@@ -1041,7 +1041,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_uint8) {
@@ -1054,7 +1054,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_int8) {
@@ -1068,7 +1068,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_int8) {
   exec_aten::Tensor out = tfChar.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfChar.make({3, 3}, {1, 1, 2, 1, 3, 4, 1, 1, 1});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1082,7 +1082,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_int32) {
@@ -1095,7 +1095,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_int64) {
@@ -1108,7 +1108,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_bool) {
@@ -1121,7 +1121,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_bool_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_float32) {
@@ -1134,7 +1134,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_float64) {
@@ -1148,7 +1148,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_uint8) {
@@ -1161,7 +1161,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_int8) {
@@ -1175,7 +1175,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_int8) {
   exec_aten::Tensor out = tfChar.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfChar.make({3, 3}, {2, 1, 2, 2, 3, 4, 2, 2, 2});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1189,7 +1189,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_int32) {
@@ -1202,7 +1202,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_int64) {
@@ -1215,7 +1215,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_bool) {
@@ -1228,7 +1228,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_int32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_float32) {
@@ -1241,7 +1241,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_float64) {
@@ -1255,7 +1255,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_uint8) {
@@ -1268,7 +1268,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_int8) {
@@ -1282,7 +1282,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_int8) {
   exec_aten::Tensor out = tfChar.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfChar.make({3, 3}, {0, 1, 2, 0, 3, 4, 0, 0, 0});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1296,7 +1296,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_int32) {
@@ -1309,7 +1309,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_int64) {
@@ -1322,7 +1322,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_bool) {
@@ -1335,7 +1335,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int8_float32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_float32) {
@@ -1348,7 +1348,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_float64) {
@@ -1362,7 +1362,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_uint8) {
@@ -1375,7 +1375,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_int8) {
@@ -1388,7 +1388,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_int16) {
@@ -1402,7 +1402,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_int16) {
   exec_aten::Tensor out = tfShort.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfShort.make({3, 3}, {1, 1, 2, 1, 3, 4, 1, 1, 1});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1416,7 +1416,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_int64) {
@@ -1429,7 +1429,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_bool) {
@@ -1442,7 +1442,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_bool_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_float32) {
@@ -1455,7 +1455,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_float64) {
@@ -1469,7 +1469,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_uint8) {
@@ -1482,7 +1482,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_int8) {
@@ -1495,7 +1495,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_int16) {
@@ -1509,7 +1509,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_int16) {
   exec_aten::Tensor out = tfShort.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfShort.make({3, 3}, {2, 1, 2, 2, 3, 4, 2, 2, 2});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1523,7 +1523,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_int64) {
@@ -1536,7 +1536,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_bool) {
@@ -1549,7 +1549,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_int32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_float32) {
@@ -1562,7 +1562,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_float64) {
@@ -1576,7 +1576,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_uint8) {
@@ -1589,7 +1589,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_int8) {
@@ -1602,7 +1602,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_int16) {
@@ -1616,7 +1616,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_int16) {
   exec_aten::Tensor out = tfShort.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfShort.make({3, 3}, {0, 1, 2, 0, 3, 4, 0, 0, 0});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1630,7 +1630,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_int64) {
@@ -1643,7 +1643,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_bool) {
@@ -1656,7 +1656,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int16_float32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_float32) {
@@ -1669,7 +1669,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_float64) {
@@ -1683,7 +1683,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_uint8) {
@@ -1696,7 +1696,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_int8) {
@@ -1709,7 +1709,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_int16) {
@@ -1722,7 +1722,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_int32) {
@@ -1736,7 +1736,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_int32) {
   exec_aten::Tensor out = tfInt.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfInt.make({3, 3}, {1, 1, 2, 1, 3, 4, 1, 1, 1});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1750,7 +1750,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_bool) {
@@ -1763,7 +1763,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_bool_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_float32) {
@@ -1776,7 +1776,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_float64) {
@@ -1790,7 +1790,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_uint8) {
@@ -1803,7 +1803,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_int8) {
@@ -1816,7 +1816,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_int16) {
@@ -1829,7 +1829,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_int32) {
@@ -1843,7 +1843,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_int32) {
   exec_aten::Tensor out = tfInt.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfInt.make({3, 3}, {2, 1, 2, 2, 3, 4, 2, 2, 2});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1857,7 +1857,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_bool) {
@@ -1870,7 +1870,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_int32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_float32) {
@@ -1883,7 +1883,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_float64) {
@@ -1897,7 +1897,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_uint8) {
@@ -1910,7 +1910,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_int8) {
@@ -1923,7 +1923,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_int16) {
@@ -1936,7 +1936,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_int32) {
@@ -1950,7 +1950,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_int32) {
   exec_aten::Tensor out = tfInt.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfInt.make({3, 3}, {0, 1, 2, 0, 3, 4, 0, 0, 0});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1964,7 +1964,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_bool) {
@@ -1977,7 +1977,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int32_float32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_float32) {
@@ -1990,7 +1990,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_float64) {
@@ -2004,7 +2004,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_uint8) {
@@ -2017,7 +2017,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_int8) {
@@ -2030,7 +2030,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_int16) {
@@ -2043,7 +2043,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_int32) {
@@ -2056,7 +2056,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_int64) {
@@ -2070,7 +2070,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_int64) {
   exec_aten::Tensor out = tfLong.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfLong.make({3, 3}, {1, 1, 2, 1, 3, 4, 1, 1, 1});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2084,7 +2084,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_bool_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_float32) {
@@ -2097,7 +2097,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_float64) {
@@ -2111,7 +2111,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_uint8) {
@@ -2124,7 +2124,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_int8) {
@@ -2137,7 +2137,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_int16) {
@@ -2150,7 +2150,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_int32) {
@@ -2163,7 +2163,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_int64) {
@@ -2177,7 +2177,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_int64) {
   exec_aten::Tensor out = tfLong.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfLong.make({3, 3}, {2, 1, 2, 2, 3, 4, 2, 2, 2});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2191,7 +2191,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_int32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_float32) {
@@ -2204,7 +2204,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_float64) {
@@ -2218,7 +2218,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_uint8) {
@@ -2231,7 +2231,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_int8) {
@@ -2244,7 +2244,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_int16) {
@@ -2257,7 +2257,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_int32) {
@@ -2270,7 +2270,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_int64) {
@@ -2284,7 +2284,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_int64) {
   exec_aten::Tensor out = tfLong.zeros({3, 3});
   exec_aten::Tensor out_expected =
       tfLong.make({3, 3}, {0, 1, 2, 0, 3, 4, 0, 0, 0});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2298,7 +2298,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_int64_float32_bool) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfBool.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_float32) {
@@ -2311,7 +2311,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_float64) {
@@ -2325,7 +2325,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_uint8) {
@@ -2338,7 +2338,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_int8) {
@@ -2351,7 +2351,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_int16) {
@@ -2364,7 +2364,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_int32) {
@@ -2377,7 +2377,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_int64) {
@@ -2390,7 +2390,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(true);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_bool) {
@@ -2404,7 +2404,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({3, 3});
   exec_aten::Tensor out_expected = tfBool.make(
       {3, 3}, {true, true, false, true, false, true, true, true, true});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2418,7 +2418,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_float64) {
@@ -2432,7 +2432,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_uint8) {
@@ -2445,7 +2445,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_int8) {
@@ -2458,7 +2458,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_int16) {
@@ -2471,7 +2471,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_int32) {
@@ -2484,7 +2484,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_int64) {
@@ -2497,7 +2497,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(2);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_bool) {
@@ -2511,7 +2511,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({3, 3});
   exec_aten::Tensor out_expected = tfBool.make(
       {3, 3}, {true, true, false, true, false, true, true, true, true});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2525,7 +2525,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_float32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfFloat.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_float64) {
@@ -2539,7 +2539,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_float64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfDouble.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_uint8) {
@@ -2552,7 +2552,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_uint8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfByte.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_int8) {
@@ -2565,7 +2565,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_int8) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfChar.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_int16) {
@@ -2578,7 +2578,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_int16) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfShort.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_int32) {
@@ -2591,7 +2591,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_int32) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfInt.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_int64) {
@@ -2604,7 +2604,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_int64) {
       exec_aten::ArrayRef<int64_t>(pad_vec.data(), pad_vec.size());
   exec_aten::Scalar value = exec_aten::Scalar(0.5);
   exec_aten::Tensor out = tfLong.zeros({3, 3});
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, pad, value, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, pad, value, out));
 }
 
 TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_bool) {
@@ -2618,7 +2618,7 @@ TEST(OpConstantPadNdOutTest, DtypeTest_bool_float32_bool) {
   exec_aten::Tensor out = tfBool.zeros({3, 3});
   exec_aten::Tensor out_expected = tfBool.make(
       {3, 3}, {true, true, false, true, false, true, true, true, true});
-  _constant_pad_nd_out(self, pad, value, out);
+  op_constant_pad_nd_out(self, pad, value, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2666,7 +2666,7 @@ void test_constant_pad_nd_out_dim2() {
   Tensor out = tf.zeros(sizes_out);
 
   // Valid input should give the expected output
-  _constant_pad_nd_out(self, padding_ref, 7, out);
+  op_constant_pad_nd_out(self, padding_ref, 7, out);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
@@ -2718,7 +2718,7 @@ void test_constant_pad_nd_out_dim1() {
   Tensor out = tf.zeros(sizes_out);
 
   // Valid input should give the expected output
-  _constant_pad_nd_out(self, padding_ref, 7, out);
+  op_constant_pad_nd_out(self, padding_ref, 7, out);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
@@ -2771,7 +2771,7 @@ void test_constant_pad_nd_out_dim0() {
   Tensor out = tf.zeros(sizes_out);
 
   // Valid input should give the expected output
-  _constant_pad_nd_out(self, padding_ref, 7, out);
+  op_constant_pad_nd_out(self, padding_ref, 7, out);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
@@ -2823,7 +2823,7 @@ void test_constant_pad_nd_out_dim12() {
   Tensor out = tf.zeros(sizes_out);
 
   // Valid input should give the expected output
-  _constant_pad_nd_out(self, padding_ref, 7, out);
+  op_constant_pad_nd_out(self, padding_ref, 7, out);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
@@ -2876,7 +2876,7 @@ void test_constant_pad_nd_out_dim02() {
   Tensor out = tf.zeros(sizes_out);
 
   // Valid input should give the expected output
-  _constant_pad_nd_out(self, padding_ref, 7, out);
+  op_constant_pad_nd_out(self, padding_ref, 7, out);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
@@ -2932,7 +2932,7 @@ void test_constant_pad_nd_out_dim012() {
   Tensor out = tf.zeros(sizes_out);
 
   // Valid input should give the expected output
-  _constant_pad_nd_out(self, padding_ref, 7, out);
+  op_constant_pad_nd_out(self, padding_ref, 7, out);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
@@ -2997,7 +2997,7 @@ TEST(OpConstantPadNDOutKernelTest, DifferentInputOutputTypesFail) {
   Tensor self = tf.ones(sizes);
   Tensor out = tf_out.zeros(sizes_out);
 
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, padding_ref, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, padding_ref, 0, out));
 }
 
 TEST(OpConstantPadNDOutKernelTest, OddNumberOfPaddingElementsFail) {
@@ -3012,7 +3012,7 @@ TEST(OpConstantPadNDOutKernelTest, OddNumberOfPaddingElementsFail) {
   Tensor self = tf.ones(sizes);
   Tensor out = tf.zeros(sizes_out);
 
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, padding_ref, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, padding_ref, 0, out));
 }
 
 TEST(OpConstantPadNDOutKernelTest, TooManyPaddingElementsFail) {
@@ -3027,7 +3027,7 @@ TEST(OpConstantPadNDOutKernelTest, TooManyPaddingElementsFail) {
   Tensor self = tf.ones(sizes);
   Tensor out = tf.zeros(sizes_out);
 
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, padding_ref, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, padding_ref, 0, out));
 }
 
 TEST(OpConstantPadNDOutKernelTest, IncorrectOutputShapeFail) {
@@ -3046,5 +3046,5 @@ TEST(OpConstantPadNDOutKernelTest, IncorrectOutputShapeFail) {
   Tensor self = tf.ones(sizes);
   Tensor out = tf.zeros(sizes_out);
 
-  ET_EXPECT_KERNEL_FAILURE(_constant_pad_nd_out(self, padding_ref, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, padding_ref, 0, out));
 }

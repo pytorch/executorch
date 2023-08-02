@@ -22,7 +22,7 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-Tensor& sub_out(
+Tensor& op_sub_out(
     const Tensor& self,
     const Tensor& other,
     const Scalar& alpha,
@@ -31,7 +31,7 @@ Tensor& sub_out(
   return torch::executor::aten::sub_outf(context, self, other, alpha, out);
 }
 
-Tensor& sub_scalar_out(
+Tensor& op_sub_scalar_out(
     const Tensor& self,
     const Scalar& other,
     const Scalar& alpha,
@@ -52,7 +52,7 @@ void test_sub() {
   Tensor out = tf_out.zeros(sizes);
 
   // sub two tensors.
-  sub_out(
+  op_sub_out(
       tf_a.make(sizes, /*data=*/{1, 2, 4, 8}),
       tf_b.ones(sizes),
       /*alpha=*/1,
@@ -111,7 +111,7 @@ void test_floating_point_sub_out() {
   Tensor out = tf.zeros(sizes);
 
   // Performs substraction on two tensors.
-  sub_out(
+  op_sub_out(
       tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
       tf.ones(sizes),
       /*alpha=*/1,
@@ -142,7 +142,7 @@ TEST(OpSubOutKernelTest, BroadcastSupported) {
   // https://fburl.com/n9wl4d0o
   Tensor out = tf.zeros({2, 2, 2, 4});
 
-  sub_out(a, b, 1, out);
+  op_sub_out(a, b, 1, out);
 
   EXPECT_TENSOR_EQ(out, ref);
 }
@@ -157,7 +157,7 @@ TEST(OpSubOutKernelTest, BroadcastSupported2) {
   // https://fburl.com/n9wl4d0o
   Tensor out = tf.zeros({3, 2, 1});
 
-  sub_out(a, b, 1, out);
+  op_sub_out(a, b, 1, out);
 
   Tensor ret = tf.make({3, 2, 1}, {0, 0, 2, 2, 4, 4});
   EXPECT_TENSOR_EQ(out, ret);
@@ -173,7 +173,7 @@ TEST(OpSubOutKernelTest, BroadcastScalarSupported1) {
   // https://fburl.com/n9wl4d0o
   Tensor out = tf.zeros({2, 1, 3});
 
-  sub_out(a, b, 1, out);
+  op_sub_out(a, b, 1, out);
 
   Tensor ret = tf.make({2, 1, 3}, {0, 1, 2, 3, 4, 5});
   EXPECT_TENSOR_EQ(out, ret);
@@ -189,7 +189,7 @@ TEST(OpSubOutKernelTest, BroadcastScalarSupported2) {
   // https://fburl.com/n9wl4d0o
   Tensor out = tf.zeros({3, 1, 1});
 
-  sub_out(a, b, 1, out);
+  op_sub_out(a, b, 1, out);
 
   Tensor ret = tf.make({3, 1, 1}, {6, 4, 0});
   EXPECT_TENSOR_EQ(out, ret);
@@ -200,7 +200,7 @@ TEST(OpSubOutKernelTest, BroadcastScalarSupported2) {
 //
 
 TEST(OpSubOutKernelTest, IntTensorFloatAlphaDies) {
-  // sub_out() doesn't handle floating alpha for intergal inputs
+  // op_sub_out() doesn't handle floating alpha for intergal inputs
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -211,7 +211,7 @@ TEST(OpSubOutKernelTest, IntTensorFloatAlphaDies) {
   // Subtraction operation on two integral tensor with floating alpha
   // should cause an assertion and kill the test process.
   ET_EXPECT_KERNEL_FAILURE(
-      sub_out(tf.ones(sizes), tf.ones(sizes), /*alpha=*/.7, out));
+      op_sub_out(tf.ones(sizes), tf.ones(sizes), /*alpha=*/.7, out));
 }
 
 TEST(OpSubOutKernelTest, BoolInputTensorsFail) {
@@ -224,7 +224,7 @@ TEST(OpSubOutKernelTest, BoolInputTensorsFail) {
 
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(sub_out(a, b, /*alpha=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(op_sub_out(a, b, /*alpha=*/1, out));
 }
 
 TEST(OpSubOutKernelTest, IntOutputWithFloatInputDies) {
@@ -240,7 +240,7 @@ TEST(OpSubOutKernelTest, IntOutputWithFloatInputDies) {
   // Destination for the sum.
   Tensor out = tfi.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(sub_out(a, b, /*alpha=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(op_sub_out(a, b, /*alpha=*/1, out));
 }
 
 TEST(OpSubOutKernelTest, BoolOutputWithIntegralInput) {
@@ -257,7 +257,7 @@ TEST(OpSubOutKernelTest, BoolOutputWithIntegralInput) {
   // Destination for the sum.
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(sub_out(a, b, /*alpha=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(op_sub_out(a, b, /*alpha=*/1, out));
 }
 
 TEST(OpSubOutKernelTest, MismatchedInputShapesDies) {
@@ -272,7 +272,7 @@ TEST(OpSubOutKernelTest, MismatchedInputShapesDies) {
 
   // Performing substraction on two mismatched tensors should cause an assertion
   // and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(sub_out(a, b, /*alpha=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_sub_out(a, b, /*alpha=*/0, out));
 }
 
 TEST(OpSubOutKernelTest, MismatchedOutputShapesDies) {
@@ -294,7 +294,7 @@ TEST(OpSubOutKernelTest, MismatchedOutputShapesDies) {
 
   // Performing substraction two tensors into a mismatched output should cause
   // an assertion and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(sub_out(a, b, /*alpha=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_sub_out(a, b, /*alpha=*/0, out));
 }
 
 TEST(OpSubOutKernelTest, BroadcastDimSizeIsOneAB) {
@@ -319,7 +319,7 @@ TEST(OpSubOutKernelTest, BroadcastDimSizeIsOneAB) {
        0.4443374276161194});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = sub_out(x, y, 1, out);
+  Tensor ret = op_sub_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -345,7 +345,7 @@ TEST(OpSubOutKernelTest, BroadcastDimSizeMissingAB) {
        0.4443374276161194});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = sub_out(x, y, 1, out);
+  Tensor ret = op_sub_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -371,7 +371,7 @@ TEST(OpSubOutKernelTest, BroadcastDimSizeIsOneBA) {
        -0.4443374276161194});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = sub_out(x, y, 1, out);
+  Tensor ret = op_sub_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -397,7 +397,7 @@ TEST(OpSubOutKernelTest, BroadcastDimSizeMissingBA) {
        -0.4443374276161194});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = sub_out(x, y, 1, out);
+  Tensor ret = op_sub_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -431,7 +431,7 @@ TEST(OpSubOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = sub_out(x, y, 1, out);
+  Tensor ret = op_sub_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -465,7 +465,7 @@ TEST(OpSubOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = sub_out(x, y, 1, out);
+  Tensor ret = op_sub_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -500,7 +500,7 @@ TEST(OpSubOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = sub_out(x, y, 1, out);
+  Tensor ret = op_sub_out(x, y, 1, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -512,7 +512,7 @@ TEST(OpSubScalarOutKernelTest, SanityCheck) {
 
   Tensor out = tf_out.zeros(sizes);
 
-  sub_scalar_out(tf_a.make(sizes, {1, 2, 4, 8}), 0.5, /*alpha=*/1.5, out);
+  op_sub_scalar_out(tf_a.make(sizes, {1, 2, 4, 8}), 0.5, /*alpha=*/1.5, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.25, 1.25, 3.25, 7.25}));
@@ -525,7 +525,8 @@ TEST(OpSubScalarOutKernelTest, OptimizedSanityCheck) {
 
   Tensor out = tf.zeros(sizes);
 
-  sub_scalar_out(tf.make(sizes, {6.3, 2.1, 5.6, 8.2}), 1.9, /*alpha=*/2.8, out);
+  op_sub_scalar_out(
+      tf.make(sizes, {6.3, 2.1, 5.6, 8.2}), 1.9, /*alpha=*/2.8, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {0.98, -3.22, 0.28, 2.88}));

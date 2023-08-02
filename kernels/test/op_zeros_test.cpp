@@ -21,7 +21,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& zeros_out(IntArrayRef size, Tensor& out) {
+Tensor& op_zeros_out(IntArrayRef size, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::zeros_outf(context, size, out);
 }
@@ -33,7 +33,7 @@ void test_zeros_out(std::vector<int32_t>&& size_int32_t) {
   auto aref = exec_aten::ArrayRef<int64_t>(sizes.data(), sizes.size());
   Tensor out = tf.ones(size_int32_t);
 
-  zeros_out(aref, out);
+  op_zeros_out(aref, out);
 
   EXPECT_TENSOR_EQ(out, tf.zeros(size_int32_t));
 }
@@ -55,7 +55,7 @@ TEST(OpZerosOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
   Tensor out =
       tf.ones({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  zeros_out(sizes_aref, out);
+  op_zeros_out(sizes_aref, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -67,7 +67,7 @@ TEST(OpZerosOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
   Tensor out =
       tf.ones({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  zeros_out(sizes_aref, out);
+  op_zeros_out(sizes_aref, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -82,6 +82,6 @@ TEST(OpZerosOutKernelTest, DynamicShapeUnbound) {
   auto sizes_aref = exec_aten::ArrayRef<int64_t>(sizes);
   Tensor out =
       tf.ones({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  zeros_out(sizes_aref, out);
+  op_zeros_out(sizes_aref, out);
   EXPECT_TENSOR_EQ(out, expected);
 }

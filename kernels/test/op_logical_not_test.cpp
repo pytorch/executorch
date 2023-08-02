@@ -23,7 +23,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _logical_not_out(const Tensor& input, Tensor& out) {
+Tensor& op_logical_not_out(const Tensor& input, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::logical_not_outf(context, input, out);
 }
@@ -38,7 +38,7 @@ TEST(OpLogicalNotOutTest, MismatchedDimensionsDies) {
   Tensor in = tff.make(size, {0, 0, 1, 0});
   Tensor out = tff.zeros(/*size=*/{4, 1});
 
-  ET_EXPECT_KERNEL_FAILURE(_logical_not_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logical_not_out(in, out));
 }
 
 template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
@@ -64,7 +64,7 @@ void test_logical_not_out() {
   Tensor out = tf_out.zeros({2, 4});
   Tensor bool_out = tf_out.zeros({2, 4});
 
-  _logical_not_out(in, out);
+  op_logical_not_out(in, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_out.make(
     {2, 4},
@@ -74,7 +74,7 @@ void test_logical_not_out() {
     }));
   // clang-format on
 
-  _logical_not_out(bool_in, out);
+  op_logical_not_out(bool_in, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_out.make(
     {2, 4},
@@ -84,7 +84,7 @@ void test_logical_not_out() {
     }));
   // clang-format on
 
-  _logical_not_out(in, bool_out);
+  op_logical_not_out(in, bool_out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(bool_out, tf_out.make(
     {2, 4},
@@ -123,7 +123,7 @@ void test_logical_not_out_float() {
       });
   Tensor out = tf_out.zeros(/*size=*/{1, 4});
 
-  _logical_not_out(in, out);
+  op_logical_not_out(in, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make(/*size=*/{1, 4}, {0, 0, 0, 1}));
 }
 

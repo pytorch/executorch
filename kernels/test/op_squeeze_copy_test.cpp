@@ -21,7 +21,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& squeeze_copy_dim_out(const Tensor& self, int64_t dim, Tensor& out) {
+Tensor& op_squeeze_copy_dim_out(const Tensor& self, int64_t dim, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::squeeze_copy_outf(context, self, dim, out);
 }
@@ -35,7 +35,7 @@ TEST(OpSqueezeKernelTest, DTypesMismatchDies) {
   Tensor t_out = tf_d.ones({2});
   int64_t dim = 0;
 
-  ET_EXPECT_KERNEL_FAILURE(squeeze_copy_dim_out(t_in, dim, t_out));
+  ET_EXPECT_KERNEL_FAILURE(op_squeeze_copy_dim_out(t_in, dim, t_out));
 }
 
 TEST(OpSqueezeKernelTest, 0DTensorSqueeze) {
@@ -45,7 +45,7 @@ TEST(OpSqueezeKernelTest, 0DTensorSqueeze) {
   Tensor t_expected = tf.ones({});
   int64_t dim = 0;
 
-  squeeze_copy_dim_out(t_in, dim, t_out);
+  op_squeeze_copy_dim_out(t_in, dim, t_out);
   EXPECT_TENSOR_EQ(t_expected, t_out);
   EXPECT_TENSOR_DATA_EQ(t_expected, t_out);
 }
@@ -56,7 +56,7 @@ TEST(OpSqueezeKernelTest, 0DTensorSqueezeInvalidDim1Dies) {
   Tensor t_out = tf.ones({});
   int64_t dim = 1;
 
-  ET_EXPECT_KERNEL_FAILURE(squeeze_copy_dim_out(t_in, dim, t_out));
+  ET_EXPECT_KERNEL_FAILURE(op_squeeze_copy_dim_out(t_in, dim, t_out));
 }
 
 TEST(OpSqueezeKernelTest, 1DTensorSqueezeTo0D) {
@@ -66,7 +66,7 @@ TEST(OpSqueezeKernelTest, 1DTensorSqueezeTo0D) {
   Tensor t_expected = tf.make({}, {1});
   int64_t dim = 0;
 
-  squeeze_copy_dim_out(t_in, dim, t_out);
+  op_squeeze_copy_dim_out(t_in, dim, t_out);
   EXPECT_TENSOR_EQ(t_expected, t_out);
   EXPECT_TENSOR_DATA_EQ(t_expected, t_out);
 }
@@ -78,7 +78,7 @@ TEST(OpSqueezeKernelTest, 2DTensorSqueezeUnchange) {
   Tensor t_expected = t_in;
   int64_t dim = 0;
 
-  squeeze_copy_dim_out(t_in, dim, t_out);
+  op_squeeze_copy_dim_out(t_in, dim, t_out);
   EXPECT_TENSOR_EQ(t_expected, t_out);
   EXPECT_TENSOR_DATA_EQ(t_expected, t_out);
 }
@@ -90,7 +90,7 @@ TEST(OpSqueezeKernelTest, 2DTensorSqueezeTo1D) {
   Tensor t_expected = tf.ones({2});
   int64_t dim = 1;
 
-  squeeze_copy_dim_out(t_in, dim, t_out);
+  op_squeeze_copy_dim_out(t_in, dim, t_out);
   EXPECT_TENSOR_EQ(t_expected, t_out);
   EXPECT_TENSOR_DATA_EQ(t_expected, t_out);
 }
@@ -106,7 +106,7 @@ TEST(OpSqueezeKernelTest, 2DTensorSqueezeDownwardDimResizeOut) {
   Tensor t_expected = tf.ones({2, 1});
   int64_t dim = 0;
 
-  squeeze_copy_dim_out(t_in, dim, t_out);
+  op_squeeze_copy_dim_out(t_in, dim, t_out);
   EXPECT_TENSOR_EQ(t_expected, t_out);
   EXPECT_TENSOR_DATA_EQ(t_expected, t_out);
 }
@@ -121,7 +121,7 @@ TEST(OpSqueezeKernelTest, 2DTensorSqueezeUpwardDimResizeOutDie) {
   Tensor t_expected = tf.ones({2, 1});
   int64_t dim = 0;
 
-  ET_EXPECT_KERNEL_FAILURE(squeeze_copy_dim_out(t_in, dim, t_out));
+  ET_EXPECT_KERNEL_FAILURE(op_squeeze_copy_dim_out(t_in, dim, t_out));
 }
 
 TEST(OpSqueezeKernelTest, 2DTensorSqueezeRemoveADimResizeOutDie) {
@@ -134,7 +134,7 @@ TEST(OpSqueezeKernelTest, 2DTensorSqueezeRemoveADimResizeOutDie) {
   Tensor t_expected = tf.ones({2, 1});
   int64_t dim = 0;
 
-  ET_EXPECT_KERNEL_FAILURE(squeeze_copy_dim_out(t_in, dim, t_out));
+  ET_EXPECT_KERNEL_FAILURE(op_squeeze_copy_dim_out(t_in, dim, t_out));
 }
 
 TEST(OpSqueezeKernelTest, 2DTensorSqueezeAddDimsResizeOutDie) {
@@ -147,7 +147,7 @@ TEST(OpSqueezeKernelTest, 2DTensorSqueezeAddDimsResizeOutDie) {
   Tensor t_expected = tf.ones({2, 1});
   int64_t dim = 0;
 
-  ET_EXPECT_KERNEL_FAILURE(squeeze_copy_dim_out(t_in, dim, t_out));
+  ET_EXPECT_KERNEL_FAILURE(op_squeeze_copy_dim_out(t_in, dim, t_out));
 }
 #endif
 
@@ -158,7 +158,7 @@ TEST(OpSqueezeKernelTest, TensorSqueeze) {
   Tensor t_expected = tf.make({3, 2, 1}, {1, 2, 3, 4, 5, 6});
   int64_t dim = 1;
 
-  squeeze_copy_dim_out(t_in, dim, t_out);
+  op_squeeze_copy_dim_out(t_in, dim, t_out);
   EXPECT_TENSOR_EQ(t_expected, t_out);
   EXPECT_TENSOR_DATA_EQ(t_expected, t_out);
 }
@@ -170,7 +170,7 @@ TEST(OpSqueezeKernelTest, TensorSqueezeNegativeDim) {
   Tensor t_expected = tf.make({3, 2, 1}, {1, 2, 3, 4, 5, 6});
   int64_t dim = -3;
 
-  squeeze_copy_dim_out(t_in, dim, t_out);
+  op_squeeze_copy_dim_out(t_in, dim, t_out);
   EXPECT_TENSOR_EQ(t_expected, t_out);
   EXPECT_TENSOR_DATA_EQ(t_expected, t_out);
 }
@@ -183,7 +183,7 @@ TEST(OpSqueezeKernelTest, TensorSqueezeInvaidDim) {
   std::vector<int64_t> invalid_dims = {t_in.dim(), -t_in.dim() - 1};
 
   for (const auto dim : invalid_dims) {
-    ET_EXPECT_KERNEL_FAILURE(squeeze_copy_dim_out(t_in, dim, t_out));
+    ET_EXPECT_KERNEL_FAILURE(op_squeeze_copy_dim_out(t_in, dim, t_out));
   }
 }
 
@@ -192,7 +192,7 @@ import torch
 torch.manual_seed(0)
 x = torch.rand(2, 1, 4)
 res = torch.squeeze(x, 1)
-op = "squeeze_copy_dim_out"
+op = "op_squeeze_copy_dim_out"
 opt_extra_params = "1,"
 dtype = "ScalarType::Float"
 check = "EXPECT_TENSOR_EQ" */
@@ -227,7 +227,7 @@ TEST(OpSqueezeKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({2, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  squeeze_copy_dim_out(x, 1, out);
+  op_squeeze_copy_dim_out(x, 1, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -264,7 +264,7 @@ TEST(OpSqueezeKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  squeeze_copy_dim_out(x, 1, out);
+  op_squeeze_copy_dim_out(x, 1, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -301,7 +301,7 @@ TEST(OpSqueezeKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  squeeze_copy_dim_out(x, 1, out);
+  op_squeeze_copy_dim_out(x, 1, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 

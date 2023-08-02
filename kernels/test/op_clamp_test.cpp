@@ -31,7 +31,7 @@ using torch::executor::testing::TensorFactory;
 
 using OptScalar = exec_aten::optional<Scalar>;
 
-Tensor& clamp_out(
+Tensor& op_clamp_out(
     const Tensor& self,
     const optional<Scalar>& min,
     const optional<Scalar>& max,
@@ -68,7 +68,7 @@ void run_test_cases(std::vector<ClampTestCase<DTYPE>> test_cases) {
 
     Tensor in = tf.make(test_case.sizes, test_case.input_data);
     Tensor out = tf.zeros(test_case.sizes);
-    Tensor ret = clamp_out(in, test_case.min, test_case.max, out);
+    Tensor ret = op_clamp_out(in, test_case.min, test_case.max, out);
     EXPECT_TENSOR_EQ(out, ret);
 
     Tensor expected = tf.make(test_case.sizes, test_case.expected_data);
@@ -271,11 +271,11 @@ void expect_bad_clamp_value_dies(Scalar bad_value) {
   Tensor out = tf.zeros({2, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
-      clamp_out(in, /*min=*/bad_value, /*max=*/nullopt, out));
+      op_clamp_out(in, /*min=*/bad_value, /*max=*/nullopt, out));
   ET_EXPECT_KERNEL_FAILURE(
-      clamp_out(in, /*min=*/nullopt, /*max=*/bad_value, out));
+      op_clamp_out(in, /*min=*/nullopt, /*max=*/bad_value, out));
   ET_EXPECT_KERNEL_FAILURE(
-      clamp_out(in, /*min=*/bad_value, /*max=*/bad_value, out));
+      op_clamp_out(in, /*min=*/bad_value, /*max=*/bad_value, out));
 }
 
 //
@@ -335,7 +335,7 @@ void expect_both_min_max_null_die() {
   Tensor out = tf.zeros({2, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
-      clamp_out(in, /*min=*/nullopt, /*max=*/nullopt, out));
+      op_clamp_out(in, /*min=*/nullopt, /*max=*/nullopt, out));
 }
 
 TEST(OpClampOutTest, SimpleGeneratedCase) {
@@ -365,7 +365,7 @@ TEST(OpClampOutTest, SimpleGeneratedCase) {
        0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5});
 
   Tensor out = tf.zeros({10, 10});
-  Tensor ret = clamp_out(x, y, z, out);
+  Tensor ret = op_clamp_out(x, y, z, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -387,7 +387,7 @@ TEST(OpClampOutTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = clamp_out(x, y, z, out);
+  Tensor ret = op_clamp_out(x, y, z, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -410,7 +410,7 @@ TEST(OpClampOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({6, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = clamp_out(x, y, z, out);
+  Tensor ret = op_clamp_out(x, y, z, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -433,6 +433,6 @@ TEST(OpClampOutTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = clamp_out(x, y, z, out);
+  Tensor ret = op_clamp_out(x, y, z, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

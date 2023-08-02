@@ -19,7 +19,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _isnan_out(const Tensor& self, Tensor& out) {
+Tensor& op_isnan_out(const Tensor& self, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::isnan_outf(context, self, out);
 }
@@ -33,7 +33,7 @@ TEST(OpIsNanTest, SanityCheckFloat) {
   Tensor out = tfb.zeros({1, 5});
   Tensor expected = tfb.make({1, 5}, {false, false, false, true, false});
 
-  Tensor ret = _isnan_out(in, out);
+  Tensor ret = op_isnan_out(in, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, expected);
@@ -47,7 +47,7 @@ TEST(OpIsNanTest, SanityCheckByte) {
   Tensor out = tfb.zeros({1, 5});
   Tensor expected = tfb.make({1, 5}, {false, false, false, false, false});
 
-  Tensor ret = _isnan_out(in, out);
+  Tensor ret = op_isnan_out(in, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, expected);
@@ -60,7 +60,7 @@ TEST(OpIsNanTest, SanityCheckBool) {
   Tensor out = tfb.zeros({1, 5});
   Tensor expected = tfb.make({1, 5}, {false, false, false, false, false});
 
-  Tensor ret = _isnan_out(in, out);
+  Tensor ret = op_isnan_out(in, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, expected);
@@ -72,5 +72,5 @@ TEST(OpIsNanTest, SanityCheckOutDtype) {
   Tensor in = tf.make({1, 5}, {1, 2, 3, 4, 5});
   Tensor out = tf.zeros({1, 5});
 
-  ET_EXPECT_KERNEL_FAILURE(_isnan_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_isnan_out(in, out));
 }

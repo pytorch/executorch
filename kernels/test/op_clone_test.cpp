@@ -22,7 +22,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& clone_out(
+Tensor& op_clone_out(
     const Tensor& self,
     optional<MemoryFormat> memory_format,
     Tensor& out) {
@@ -41,11 +41,11 @@ void test_dtype() {
 
   // we only support contiguous memory, the memory type shall be either nullopt
   // or MemoryFormat::Contiguous.
-  Tensor out_nullopt_ret = clone_out(
+  Tensor out_nullopt_ret = op_clone_out(
       /*self=*/input,
       /*memory_format=*/exec_aten::nullopt,
       /*out=*/out_nullopt);
-  Tensor out_contiguous_ret = clone_out(
+  Tensor out_contiguous_ret = op_clone_out(
       /*self=*/input,
       /*memory_format=*/exec_aten::MemoryFormat::Contiguous,
       /*out=*/out_contiguous);
@@ -73,7 +73,7 @@ void test_empty_input() {
   TensorFactory<DTYPE> tf;
   Tensor input = tf.make(/*sizes=*/{3, 0, 1, 2}, /*data=*/{});
   Tensor out = tf.zeros({3, 0, 1, 2});
-  clone_out(input, /*memory_format=*/exec_aten::nullopt, out);
+  op_clone_out(input, /*memory_format=*/exec_aten::nullopt, out);
   // check a and out share same value, but are different object
   EXPECT_TENSOR_EQ(input, out);
 }
@@ -92,7 +92,7 @@ TEST(OpCloneTest, MismatchedSizesDie) {
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros({3, 2, 1, 1});
   ET_EXPECT_KERNEL_FAILURE(
-      clone_out(input, /*memory_format=*/exec_aten::nullopt, out));
+      op_clone_out(input, /*memory_format=*/exec_aten::nullopt, out));
 }
 
 TEST(OpCloneTest, MismatchedTypesDie) {
@@ -102,7 +102,7 @@ TEST(OpCloneTest, MismatchedTypesDie) {
       tf_in.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf_out.zeros({3, 1, 1, 2});
   ET_EXPECT_KERNEL_FAILURE(
-      clone_out(input, /*memory_format=*/exec_aten::nullopt, out));
+      op_clone_out(input, /*memory_format=*/exec_aten::nullopt, out));
 }
 
 // Only contiguous memory is supported, the memory type other than nullopt or
@@ -118,7 +118,7 @@ TEST(OpCloneTest, MismatchedMemoryFormatDie) {
       tf_in.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf_out.zeros({3, 1, 1, 2});
   ET_EXPECT_KERNEL_FAILURE(
-      clone_out(input, static_cast<exec_aten::MemoryFormat>(55), out));
+      op_clone_out(input, static_cast<exec_aten::MemoryFormat>(55), out));
 }
 
 TEST(OpCloneTest, SimpleGeneratedCase) {
@@ -146,7 +146,7 @@ TEST(OpCloneTest, SimpleGeneratedCase) {
        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
 
   Tensor out = tf.zeros({10, 10});
-  Tensor ret = clone_out(x, exec_aten::MemoryFormat::Contiguous, out);
+  Tensor ret = op_clone_out(x, exec_aten::MemoryFormat::Contiguous, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -172,7 +172,7 @@ TEST(OpCloneTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = clone_out(x, exec_aten::MemoryFormat::Contiguous, out);
+  Tensor ret = op_clone_out(x, exec_aten::MemoryFormat::Contiguous, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -198,7 +198,7 @@ TEST(OpCloneTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = clone_out(x, exec_aten::MemoryFormat::Contiguous, out);
+  Tensor ret = op_clone_out(x, exec_aten::MemoryFormat::Contiguous, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -225,6 +225,6 @@ TEST(OpCloneTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = clone_out(x, exec_aten::MemoryFormat::Contiguous, out);
+  Tensor ret = op_clone_out(x, exec_aten::MemoryFormat::Contiguous, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

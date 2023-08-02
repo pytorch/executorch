@@ -23,7 +23,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& select_copy_int_out(
+Tensor& op_select_copy_int_out(
     const Tensor& self,
     int64_t dim,
     int64_t index,
@@ -51,11 +51,11 @@ void run_test_cases(
   for (ssize_t idx = 0; idx < x.size(dim); idx++) {
     // Should always return the provided out Tensor.
     // The ret shall meet the expectation.
-    Tensor ret = select_copy_int_out(x, dim, idx, out);
+    Tensor ret = op_select_copy_int_out(x, dim, idx, out);
     EXPECT_TENSOR_EQ(out, ret);
     EXPECT_TENSOR_EQ(out, expected[idx]);
 
-    ret = select_copy_int_out(x, dim, /*index=*/idx - x.size(dim), out);
+    ret = op_select_copy_int_out(x, dim, /*index=*/idx - x.size(dim), out);
     EXPECT_TENSOR_EQ(out, ret);
 
     EXPECT_TENSOR_EQ(out, expected[idx]);
@@ -286,8 +286,8 @@ void test_dtype() {
 
   Tensor out_0 = tf.zeros({3, 4});
   Tensor out_1 = tf.ones({3, 4});
-  Tensor ret_0 = select_copy_int_out(x, /*dim=*/1, /*index=*/0, out_0);
-  Tensor ret_1 = select_copy_int_out(x, /*dim=*/1, /*index=*/1, out_1);
+  Tensor ret_0 = op_select_copy_int_out(x, /*dim=*/1, /*index=*/0, out_0);
+  Tensor ret_1 = op_select_copy_int_out(x, /*dim=*/1, /*index=*/1, out_1);
 
   EXPECT_TENSOR_EQ(ret_0, out_0);
   EXPECT_TENSOR_EQ(ret_1, out_1);
@@ -326,7 +326,7 @@ TEST(OpSelectCopyIntOutTest, VectorInputSupported) {
 
   // pass the empty-size tensor to the function,
   Tensor expect = tf.make({}, {5});
-  select_copy_int_out(x, /*dim=*/0, /*index=*/5, out);
+  op_select_copy_int_out(x, /*dim=*/0, /*index=*/5, out);
   EXPECT_TENSOR_EQ(out, expect);
 }
 
@@ -343,7 +343,7 @@ TEST(OpSelectCopyIntOutTest, EmptyTensorNonZeroNDimsInputSupported) {
   Tensor out = tf.make({3, 0, 3}, {});
   EXPECT_EQ(out.numel(), 0);
 
-  Tensor ret = select_copy_int_out(x, /*dim=*/2, /*index=*/3, out);
+  Tensor ret = op_select_copy_int_out(x, /*dim=*/2, /*index=*/3, out);
   EXPECT_EQ(ret.numel(), 0);
   // Success if it doesn't assert on the weird-shaped empty input and the
   // ret is still a empty array
@@ -363,7 +363,8 @@ TEST(OpSelectCopyIntOutTest, EmptyTensorZeroNDimsInputDies) {
 
   // Expected failure when slicing on the dimension with length 0 since no space
   // on the dimension could be sliced. (out of bound error)
-  ET_EXPECT_KERNEL_FAILURE(select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
 }
 ///////////////////////////////////////////////////////////////////////
 
@@ -376,7 +377,7 @@ TEST(OpSelectCopyIntOutTest, DimOutOfBoundDies) {
   // Some invalid dim values.
   const std::vector<int32_t> invalid_dims = {3, 4, 5, -4, -5, -6};
   for (ssize_t dim : invalid_dims) {
-    ET_EXPECT_KERNEL_FAILURE(select_copy_int_out(x, dim, /*index=*/0, out));
+    ET_EXPECT_KERNEL_FAILURE(op_select_copy_int_out(x, dim, /*index=*/0, out));
   }
 }
 
@@ -388,7 +389,8 @@ TEST(OpSelectCopyIntOutTest, MismatchedDtypesDies) {
   // Size is compatible to the output, but a mismatched dtype.
   Tensor out = tf_float.ones({2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
 }
 
 TEST(OpSelectCopyIntOutTest, OutMatchNumelLackDimAtEndDies) {
@@ -402,7 +404,8 @@ TEST(OpSelectCopyIntOutTest, OutMatchNumelLackDimAtEndDies) {
   // mixmatched size (out.dim() should always one lower than x.dim())
   Tensor out = tf.ones({2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
 }
 
 TEST(OpSelectCopyIntOutTest, OutMatchNumelExtraDimAtFrontDies) {
@@ -416,7 +419,8 @@ TEST(OpSelectCopyIntOutTest, OutMatchNumelExtraDimAtFrontDies) {
   // mixmatched size (out.dim() should always one lower than x.dim())
   Tensor out = tf.ones({1, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
 }
 
 TEST(OpSelectCopyIntOutTest, OutSizeMismatchDimDies) {
@@ -430,7 +434,8 @@ TEST(OpSelectCopyIntOutTest, OutSizeMismatchDimDies) {
   // Should be {2, 4, 5} to match the x when calling select() with dim 2.
   Tensor out = tf.zeros({2, 4, 7});
 
-  ET_EXPECT_KERNEL_FAILURE(select_copy_int_out(x, /*dim=*/2, /*index=*/3, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      op_select_copy_int_out(x, /*dim=*/2, /*index=*/3, out));
 }
 
 /* %python
@@ -438,7 +443,7 @@ import torch
 torch.manual_seed(0)
 x = torch.rand(2, 3, 4)
 res = torch.select(x, 1, 2)
-op = "select_copy_int_out"
+op = "op_select_copy_int_out"
 opt_extra_params = "1, 2,"
 dtype = "ScalarType::Float"
 check = "EXPECT_TENSOR_EQ" */
@@ -473,7 +478,7 @@ TEST(OpSelectCopyIntOutTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({2, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  select_copy_int_out(x, 1, 2, out);
+  op_select_copy_int_out(x, 1, 2, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -510,7 +515,7 @@ TEST(OpSelectCopyIntOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  select_copy_int_out(x, 1, 2, out);
+  op_select_copy_int_out(x, 1, 2, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -547,6 +552,6 @@ TEST(OpSelectCopyIntOutTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  select_copy_int_out(x, 1, 2, out);
+  op_select_copy_int_out(x, 1, 2, out);
   EXPECT_TENSOR_EQ(out, expected);
 }

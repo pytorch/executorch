@@ -22,7 +22,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& view_copy_out(const Tensor& self, IntArrayRef size, Tensor& out) {
+Tensor& op_view_copy_out(const Tensor& self, IntArrayRef size, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::view_copy_outf(context, self, size, out);
 }
@@ -36,16 +36,16 @@ void run_view_test_cases(
   for (std::vector<int32_t> size : out_shapes) {
     Tensor out = tf.ones(size);
 
-    // The interface of view_copy_out should use int64_t as int, while tensor
+    // The interface of op_view_copy_out should use int64_t as int, while tensor
     // size needs int32_t so we need to transfrom from int32_t to int64_t to
-    // pass the size to view_copy_out function
+    // pass the size to op_view_copy_out function
     std::vector<int64_t> size_int64_t(size.size());
     std::transform(
         size.begin(), size.end(), size_int64_t.begin(), [](int32_t x) {
           return (int64_t)x;
         });
 
-    Tensor ret = view_copy_out(
+    Tensor ret = op_view_copy_out(
         input,
         exec_aten::ArrayRef<int64_t>(size_int64_t.data(), size_int64_t.size()),
         out);
@@ -65,8 +65,8 @@ std::vector<int64_t> vector_32_to_64(std::vector<int32_t> vector_32) {
 
 } // namespace
 
-// Regular test for view_copy_out.
-// Test if view_copy_out works well under all kinds of legal input type.
+// Regular test for op_view_copy_out.
+// Test if op_view_copy_out works well under all kinds of legal input type.
 template <class CTYPE, exec_aten::ScalarType DTYPE>
 void test_dtype() {
   TensorFactory<DTYPE> tf;
@@ -118,13 +118,13 @@ TEST(OpViewTest, InputOutputMismatchedSizesDie) {
   Tensor input = tf.make(size_in, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.ones(size_out);
 
-  // The interface of view_copy_out should use int64_t as int, while tensor size
-  // needs int32_t so we need to transfrom from int32_t to int64_t to pass the
-  // size to view_copy_out function
+  // The interface of op_view_copy_out should use int64_t as int, while tensor
+  // size needs int32_t so we need to transfrom from int32_t to int64_t to pass
+  // the size to op_view_copy_out function
   std::vector<int64_t> size_int64_t = vector_32_to_64(size_out);
 
   // The numel of input and output tensor should be same
-  ET_EXPECT_KERNEL_FAILURE(view_copy_out(
+  ET_EXPECT_KERNEL_FAILURE(op_view_copy_out(
       input,
       exec_aten::ArrayRef<int64_t>(size_int64_t.data(), size_int64_t.size()),
       out));
@@ -137,13 +137,13 @@ TEST(OpViewTest, SizeOutputMismatchedSizesDie) {
   Tensor input = tf.make(size, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.ones(size);
 
-  // The interface of view_copy_out should use int64_t as int, while tensor size
-  // needs int32_t. So we need to transfrom from int32_t to int64_t to pass the
-  // size to view_copy_out function
+  // The interface of op_view_copy_out should use int64_t as int, while tensor
+  // size needs int32_t. So we need to transfrom from int32_t to int64_t to pass
+  // the size to op_view_copy_out function
   std::vector<int64_t> size_int64_t = vector_32_to_64(size_target);
 
   // The target size and out.size() should be same
-  ET_EXPECT_KERNEL_FAILURE(view_copy_out(
+  ET_EXPECT_KERNEL_FAILURE(op_view_copy_out(
       input,
       exec_aten::ArrayRef<int64_t>(size_int64_t.data(), size_int64_t.size()),
       out));
@@ -157,13 +157,13 @@ TEST(OpViewTest, MismatchedTypesDie) {
   Tensor input = tf_in.make(size, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf_out.ones(size);
 
-  // The interface of view_copy_out should use int64_t as int, while tensor size
-  // needs int32_t. So we need to transfrom from int32_t to int64_t to pass the
-  // size to view_copy_out function
+  // The interface of op_view_copy_out should use int64_t as int, while tensor
+  // size needs int32_t. So we need to transfrom from int32_t to int64_t to pass
+  // the size to op_view_copy_out function
   std::vector<int64_t> size_int64_t = vector_32_to_64(size);
 
   // DTYPE of input and output should be same.
-  ET_EXPECT_KERNEL_FAILURE(view_copy_out(
+  ET_EXPECT_KERNEL_FAILURE(op_view_copy_out(
       input,
       exec_aten::ArrayRef<int64_t>(size_int64_t.data(), size_int64_t.size()),
       out));
@@ -180,21 +180,21 @@ TEST(OpViewTest, SizeInfer) {
   Tensor input = tf_in.make(in_size, /*data=*/{1, 2, 3, 4, 5, 6, 7, 8});
   Tensor out = tf_out_valid.ones(out_size_view);
 
-  // The interface of view_copy_out should use int64_t as int, while tensor size
-  // needs int32_t. So we need to transfrom from int32_t to int64_t to pass the
-  // size to view_copy_out function
+  // The interface of op_view_copy_out should use int64_t as int, while tensor
+  // size needs int32_t. So we need to transfrom from int32_t to int64_t to pass
+  // the size to op_view_copy_out function
   std::vector<int64_t> valid_size_int64_t = vector_32_to_64(out_size_valid);
   std::vector<int64_t> invalid_size_int64_t = vector_32_to_64(out_size_invalid);
 
   // Inferring one dimension is valid.
-  view_copy_out(
+  op_view_copy_out(
       input,
       exec_aten::ArrayRef<int64_t>(
           valid_size_int64_t.data(), valid_size_int64_t.size()),
       out);
   EXPECT_TENSOR_DATA_EQ(input, out);
   // Inferring two dimensions is invalid.
-  ET_EXPECT_KERNEL_FAILURE(view_copy_out(
+  ET_EXPECT_KERNEL_FAILURE(op_view_copy_out(
       input,
       exec_aten::ArrayRef<int64_t>(
           invalid_size_int64_t.data(), invalid_size_int64_t.size()),
@@ -215,7 +215,7 @@ TEST(OpViewTest, UpperBoundOutTensor) {
     return (int64_t)x;
   });
 
-  view_copy_out(
+  op_view_copy_out(
       input,
       exec_aten::ArrayRef<int64_t>(size_int64_t.data(), size_int64_t.size()),
       output);
@@ -231,7 +231,7 @@ TEST(OpViewTest, UpperBoundOutTensor) {
   });
   size_int64_t[1] = -1;
 
-  view_copy_out(
+  op_view_copy_out(
       input,
       exec_aten::ArrayRef<int64_t>(size_int64_t.data(), size_int64_t.size()),
       output);
@@ -244,7 +244,7 @@ import torch
 torch.manual_seed(0)
 x = torch.randint(10, (3, 4))
 res = x.view(2, 6)
-op = "view_copy_out"
+op = "op_view_copy_out"
 opt_setup_params = """
   int64_t size[] = {2, 6};
 """
@@ -267,7 +267,7 @@ void test_dynamic_shape(
   int64_t size[] = {2, 6};
 
   Tensor out = tf.zeros(out_shape, dynamism);
-  view_copy_out(x, size, out);
+  op_view_copy_out(x, size, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 

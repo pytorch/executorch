@@ -22,7 +22,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _embedding_out(
+Tensor& op_embedding_out(
     const Tensor& weight,
     const Tensor& indices,
     int64_t padding_idx,
@@ -43,7 +43,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -58,7 +58,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -72,7 +72,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -86,7 +86,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -100,7 +100,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -114,7 +114,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -128,7 +128,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -142,7 +142,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -157,7 +157,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -172,7 +172,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -188,7 +188,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -204,7 +204,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -220,7 +220,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -236,7 +236,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -252,7 +252,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -268,7 +268,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_float64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -282,7 +282,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_uint8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -298,7 +298,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_uint8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -312,7 +312,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_uint8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -327,7 +327,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_uint8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -342,7 +342,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_uint8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -357,7 +357,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_uint8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -372,7 +372,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_uint8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -387,7 +387,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_uint8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -401,7 +401,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -417,7 +417,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -432,7 +432,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -446,7 +446,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -461,7 +461,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -476,7 +476,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -491,7 +491,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -506,7 +506,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -520,7 +520,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int16_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -536,7 +536,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int16_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -551,7 +551,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int16_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -566,7 +566,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int16_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -580,7 +580,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int16_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -595,7 +595,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int16_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -610,7 +610,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int16_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -625,7 +625,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int16_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -641,7 +641,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int32_float32) {
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
   exec_aten::Tensor out_expected = tfFloat.make(
       {2, 2, 2}, {1.3125, 2.625, 3.5, 4.875, 3.5, 4.875, 1.3125, 2.625});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -657,7 +658,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -672,7 +673,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -687,7 +688,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -702,7 +703,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -716,7 +717,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -731,7 +732,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -746,7 +747,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -762,7 +763,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int64_float32) {
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
   exec_aten::Tensor out_expected = tfFloat.make(
       {2, 2, 2}, {1.3125, 2.625, 3.5, 4.875, 3.5, 4.875, 1.3125, 2.625});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -778,7 +780,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -793,7 +795,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -808,7 +810,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -823,7 +825,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -838,7 +840,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -852,7 +854,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -867,7 +869,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_int64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -881,7 +883,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_bool_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -897,7 +899,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_bool_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -912,7 +914,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_bool_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -927,7 +929,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_bool_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -942,7 +944,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_bool_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -957,7 +959,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_bool_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -972,7 +974,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_bool_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -986,7 +988,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float32_bool_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1001,7 +1003,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1016,7 +1018,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1032,7 +1034,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1048,7 +1050,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1064,7 +1066,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1080,7 +1082,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1096,7 +1098,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1112,7 +1114,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1127,7 +1129,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1141,7 +1143,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1156,7 +1158,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1171,7 +1173,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1186,7 +1188,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1201,7 +1203,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1216,7 +1218,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1231,7 +1233,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_float64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1247,7 +1249,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_uint8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1262,7 +1264,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_uint8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1277,7 +1279,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_uint8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1293,7 +1295,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_uint8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1309,7 +1311,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_uint8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1325,7 +1327,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_uint8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1341,7 +1343,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_uint8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1357,7 +1359,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_uint8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1373,7 +1375,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1388,7 +1390,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1404,7 +1406,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1419,7 +1421,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1435,7 +1437,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1451,7 +1453,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1467,7 +1469,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1483,7 +1485,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1499,7 +1501,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int16_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1514,7 +1516,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int16_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1530,7 +1532,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int16_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1546,7 +1548,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int16_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1561,7 +1563,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int16_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1577,7 +1579,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int16_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1593,7 +1595,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int16_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1609,7 +1611,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int16_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1625,7 +1627,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1642,7 +1644,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int32_float64) {
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
   exec_aten::Tensor out_expected = tfDouble.make(
       {2, 2, 2}, {1.3125, 2.625, 3.5, 4.875, 3.5, 4.875, 1.3125, 2.625});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1658,7 +1661,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1674,7 +1677,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1690,7 +1693,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1705,7 +1708,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1721,7 +1724,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1737,7 +1740,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1753,7 +1756,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1770,7 +1773,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int64_float64) {
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
   exec_aten::Tensor out_expected = tfDouble.make(
       {2, 2, 2}, {1.3125, 2.625, 3.5, 4.875, 3.5, 4.875, 1.3125, 2.625});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1786,7 +1790,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1802,7 +1806,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1818,7 +1822,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1834,7 +1838,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1849,7 +1853,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1865,7 +1869,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_int64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1881,7 +1885,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_bool_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1896,7 +1900,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_bool_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1912,7 +1916,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_bool_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1928,7 +1932,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_bool_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1944,7 +1948,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_bool_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1960,7 +1964,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_bool_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1976,7 +1980,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_bool_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -1991,7 +1995,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_float64_bool_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2005,7 +2009,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2021,7 +2025,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2035,7 +2039,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2050,7 +2054,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2065,7 +2069,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2080,7 +2084,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2095,7 +2099,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2110,7 +2114,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2126,7 +2130,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2141,7 +2145,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2156,7 +2160,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2172,7 +2176,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2188,7 +2192,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2204,7 +2208,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2220,7 +2224,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2236,7 +2240,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_float64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2250,7 +2254,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_uint8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2265,7 +2269,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_uint8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2278,7 +2282,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_uint8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2292,7 +2296,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_uint8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2306,7 +2310,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_uint8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2320,7 +2324,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_uint8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2334,7 +2338,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_uint8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2348,7 +2352,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_uint8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2363,7 +2367,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2379,7 +2383,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2393,7 +2397,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2407,7 +2411,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2422,7 +2426,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2437,7 +2441,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2452,7 +2456,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2467,7 +2471,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2482,7 +2486,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int16_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2498,7 +2502,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int16_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2512,7 +2516,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int16_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2527,7 +2531,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int16_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2541,7 +2545,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int16_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2556,7 +2560,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int16_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2571,7 +2575,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int16_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2586,7 +2590,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int16_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2601,7 +2605,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2617,7 +2621,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2633,7 +2637,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int32_uint8) {
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
   exec_aten::Tensor out_expected =
       tfByte.make({2, 2, 2}, {1, 2, 3, 4, 3, 4, 1, 2});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2648,7 +2653,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2663,7 +2668,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2677,7 +2682,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2692,7 +2697,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2707,7 +2712,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2722,7 +2727,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2738,7 +2743,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2754,7 +2759,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int64_uint8) {
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
   exec_aten::Tensor out_expected =
       tfByte.make({2, 2, 2}, {1, 2, 3, 4, 3, 4, 1, 2});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2769,7 +2775,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2784,7 +2790,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2799,7 +2805,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2813,7 +2819,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2828,7 +2834,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_int64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2843,7 +2849,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_bool_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2859,7 +2865,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_bool_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2873,7 +2879,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_bool_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2888,7 +2894,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_bool_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2903,7 +2909,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_bool_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2918,7 +2924,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_bool_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2933,7 +2939,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_bool_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2947,7 +2953,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_uint8_bool_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2961,7 +2967,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2977,7 +2983,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -2992,7 +2998,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3006,7 +3012,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3021,7 +3027,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3036,7 +3042,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3051,7 +3057,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3066,7 +3072,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3082,7 +3088,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3097,7 +3103,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3113,7 +3119,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3128,7 +3134,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3144,7 +3150,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3160,7 +3166,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3176,7 +3182,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3192,7 +3198,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_float64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3207,7 +3213,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_uint8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3223,7 +3229,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_uint8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3237,7 +3243,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_uint8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3251,7 +3257,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_uint8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3266,7 +3272,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_uint8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3281,7 +3287,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_uint8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3296,7 +3302,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_uint8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3311,7 +3317,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_uint8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3325,7 +3331,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3340,7 +3346,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3354,7 +3360,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3367,7 +3373,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3381,7 +3387,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3395,7 +3401,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3409,7 +3415,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3423,7 +3429,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3438,7 +3444,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int16_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3454,7 +3460,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int16_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3469,7 +3475,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int16_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3483,7 +3489,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int16_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3497,7 +3503,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int16_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3512,7 +3518,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int16_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3527,7 +3533,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int16_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3542,7 +3548,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int16_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3557,7 +3563,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3573,7 +3579,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3588,7 +3594,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3604,7 +3610,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int32_int8) {
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
   exec_aten::Tensor out_expected =
       tfChar.make({2, 2, 2}, {1, 2, 3, 4, 3, 4, 1, 2});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3619,7 +3626,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3633,7 +3640,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3648,7 +3655,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3663,7 +3670,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3678,7 +3685,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3694,7 +3701,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3709,7 +3716,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3725,7 +3732,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int64_int8) {
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
   exec_aten::Tensor out_expected =
       tfChar.make({2, 2, 2}, {1, 2, 3, 4, 3, 4, 1, 2});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3740,7 +3748,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3755,7 +3763,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3769,7 +3777,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3784,7 +3792,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_int64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3799,7 +3807,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_bool_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3815,7 +3823,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_bool_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3830,7 +3838,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_bool_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3844,7 +3852,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_bool_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3859,7 +3867,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_bool_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3874,7 +3882,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_bool_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3889,7 +3897,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_bool_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3903,7 +3911,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int8_bool_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3917,7 +3925,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3933,7 +3941,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3948,7 +3956,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3963,7 +3971,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3977,7 +3985,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -3992,7 +4000,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4007,7 +4015,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4022,7 +4030,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4038,7 +4046,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4053,7 +4061,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4069,7 +4077,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4085,7 +4093,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4100,7 +4108,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4116,7 +4124,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4132,7 +4140,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4148,7 +4156,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_float64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4163,7 +4171,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_uint8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4179,7 +4187,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_uint8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4193,7 +4201,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_uint8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4208,7 +4216,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_uint8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4222,7 +4230,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_uint8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4237,7 +4245,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_uint8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4252,7 +4260,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_uint8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4267,7 +4275,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_uint8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4282,7 +4290,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4298,7 +4306,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4313,7 +4321,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4327,7 +4335,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4341,7 +4349,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4356,7 +4364,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4371,7 +4379,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4386,7 +4394,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4400,7 +4408,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int16_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4415,7 +4423,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int16_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4429,7 +4437,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int16_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4443,7 +4451,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int16_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4456,7 +4464,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int16_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4470,7 +4478,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int16_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4484,7 +4492,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int16_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4498,7 +4506,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int16_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4513,7 +4521,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4529,7 +4537,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4544,7 +4552,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4559,7 +4567,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4575,7 +4583,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int32_int16) {
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
   exec_aten::Tensor out_expected =
       tfShort.make({2, 2, 2}, {1, 2, 3, 4, 3, 4, 1, 2});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4589,7 +4598,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4604,7 +4613,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4619,7 +4628,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4634,7 +4643,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4650,7 +4659,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4665,7 +4674,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4680,7 +4689,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4696,7 +4705,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int64_int16) {
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
   exec_aten::Tensor out_expected =
       tfShort.make({2, 2, 2}, {1, 2, 3, 4, 3, 4, 1, 2});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4711,7 +4721,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4725,7 +4735,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4740,7 +4750,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_int64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4755,7 +4765,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_bool_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4771,7 +4781,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_bool_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4786,7 +4796,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_bool_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4801,7 +4811,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_bool_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4815,7 +4825,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_bool_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4830,7 +4840,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_bool_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4845,7 +4855,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_bool_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4859,7 +4869,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int16_bool_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4873,7 +4883,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4889,7 +4899,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4904,7 +4914,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4919,7 +4929,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4934,7 +4944,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4948,7 +4958,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4963,7 +4973,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4978,7 +4988,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -4994,7 +5004,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5009,7 +5019,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5025,7 +5035,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5041,7 +5051,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5057,7 +5067,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5072,7 +5082,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5088,7 +5098,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5104,7 +5114,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_float64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5119,7 +5129,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_uint8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5135,7 +5145,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_uint8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5149,7 +5159,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_uint8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5164,7 +5174,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_uint8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5179,7 +5189,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_uint8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5193,7 +5203,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_uint8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5208,7 +5218,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_uint8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5223,7 +5233,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_uint8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5238,7 +5248,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5254,7 +5264,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5269,7 +5279,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5283,7 +5293,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5298,7 +5308,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5312,7 +5322,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5327,7 +5337,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5342,7 +5352,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5357,7 +5367,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int16_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5373,7 +5383,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int16_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5388,7 +5398,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int16_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5403,7 +5413,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int16_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5417,7 +5427,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int16_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5431,7 +5441,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int16_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5446,7 +5456,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int16_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5461,7 +5471,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int16_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5475,7 +5485,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5490,7 +5500,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5504,7 +5514,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5518,7 +5528,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5532,7 +5542,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5547,7 +5557,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int32_int32) {
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
   exec_aten::Tensor out_expected =
       tfInt.make({2, 2, 2}, {1, 2, 3, 4, 3, 4, 1, 2});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5561,7 +5572,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5575,7 +5586,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5590,7 +5601,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5606,7 +5617,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5621,7 +5632,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5636,7 +5647,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5651,7 +5662,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5667,7 +5678,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int64_int32) {
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
   exec_aten::Tensor out_expected =
       tfInt.make({2, 2, 2}, {1, 2, 3, 4, 3, 4, 1, 2});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5681,7 +5693,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5696,7 +5708,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_int64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5711,7 +5723,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_bool_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5727,7 +5739,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_bool_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5742,7 +5754,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_bool_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5757,7 +5769,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_bool_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5772,7 +5784,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_bool_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5786,7 +5798,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_bool_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5801,7 +5813,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_bool_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5815,7 +5827,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int32_bool_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5829,7 +5841,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5845,7 +5857,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5860,7 +5872,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5875,7 +5887,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5890,7 +5902,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5905,7 +5917,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5919,7 +5931,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5934,7 +5946,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5950,7 +5962,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5965,7 +5977,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5981,7 +5993,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -5997,7 +6009,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6013,7 +6025,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6029,7 +6041,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6044,7 +6056,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6060,7 +6072,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_float64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6075,7 +6087,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_uint8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6091,7 +6103,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_uint8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6105,7 +6117,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_uint8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6120,7 +6132,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_uint8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6135,7 +6147,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_uint8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6150,7 +6162,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_uint8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6164,7 +6176,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_uint8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6179,7 +6191,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_uint8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6194,7 +6206,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6210,7 +6222,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6225,7 +6237,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6239,7 +6251,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6254,7 +6266,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6269,7 +6281,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6283,7 +6295,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6298,7 +6310,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6313,7 +6325,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int16_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6329,7 +6341,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int16_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6344,7 +6356,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int16_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6359,7 +6371,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int16_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6373,7 +6385,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int16_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6388,7 +6400,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int16_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6402,7 +6414,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int16_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6417,7 +6429,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int16_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6432,7 +6444,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6448,7 +6460,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6463,7 +6475,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6478,7 +6490,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6493,7 +6505,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6507,7 +6519,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6523,7 +6535,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int32_int64) {
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
   exec_aten::Tensor out_expected =
       tfLong.make({2, 2, 2}, {1, 2, 3, 4, 3, 4, 1, 2});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6538,7 +6551,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6552,7 +6565,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6567,7 +6580,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6581,7 +6594,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6595,7 +6608,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6609,7 +6622,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6623,7 +6636,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6638,7 +6651,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int64_int64) {
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
   exec_aten::Tensor out_expected =
       tfLong.make({2, 2, 2}, {1, 2, 3, 4, 3, 4, 1, 2});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6652,7 +6666,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_int64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6667,7 +6681,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_bool_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6683,7 +6697,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_bool_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6698,7 +6712,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_bool_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6713,7 +6727,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_bool_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6728,7 +6742,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_bool_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6743,7 +6757,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_bool_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6757,7 +6771,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_bool_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6771,7 +6785,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_int64_bool_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6785,7 +6799,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6801,7 +6815,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6816,7 +6830,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6831,7 +6845,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6846,7 +6860,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6861,7 +6875,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6876,7 +6890,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6890,7 +6904,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float32_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6906,7 +6920,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6921,7 +6935,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6937,7 +6951,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6953,7 +6967,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6969,7 +6983,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -6985,7 +6999,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7001,7 +7015,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7016,7 +7030,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_float64_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7031,7 +7045,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_uint8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7047,7 +7061,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_uint8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7061,7 +7075,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_uint8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7076,7 +7090,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_uint8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7091,7 +7105,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_uint8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7106,7 +7120,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_uint8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7121,7 +7135,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_uint8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7135,7 +7149,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_uint8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7150,7 +7164,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int8_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7166,7 +7180,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int8_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7181,7 +7195,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int8_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7195,7 +7209,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int8_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7210,7 +7224,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int8_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7225,7 +7239,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int8_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7240,7 +7254,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int8_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7254,7 +7268,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int8_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7269,7 +7283,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int16_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7285,7 +7299,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int16_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7300,7 +7314,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int16_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7315,7 +7329,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int16_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7329,7 +7343,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int16_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7344,7 +7358,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int16_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7359,7 +7373,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int16_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7373,7 +7387,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int16_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7388,7 +7402,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int32_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7404,7 +7418,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int32_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7419,7 +7433,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int32_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7434,7 +7448,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int32_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7449,7 +7463,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int32_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7463,7 +7477,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int32_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7478,7 +7492,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int32_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7494,7 +7508,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int32_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
   exec_aten::Tensor out_expected = tfBool.make(
       {2, 2, 2}, {true, false, false, true, false, true, true, false});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -7509,7 +7524,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int64_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7525,7 +7540,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int64_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7540,7 +7555,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int64_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7555,7 +7570,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int64_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7570,7 +7585,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int64_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7585,7 +7600,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int64_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7599,7 +7614,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int64_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7615,7 +7630,8 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_int64_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
   exec_aten::Tensor out_expected = tfBool.make(
       {2, 2, 2}, {true, false, false, true, false, true, true, false});
-  _embedding_out(weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
+  op_embedding_out(
+      weight, indices, padding_idx, scale_grad_by_freq, sparse, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -7629,7 +7645,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_bool_float32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfFloat.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7644,7 +7660,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_bool_float64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfDouble.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7658,7 +7674,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_bool_uint8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfByte.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7672,7 +7688,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_bool_int8) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfChar.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7686,7 +7702,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_bool_int16) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfShort.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7700,7 +7716,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_bool_int32) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfInt.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7714,7 +7730,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_bool_int64) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfLong.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7727,7 +7743,7 @@ TEST(OpEmbeddingOutTest, DtypeTest_bool_bool_bool) {
   bool scale_grad_by_freq = false;
   bool sparse = false;
   exec_aten::Tensor out = tfBool.zeros({2, 2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight, indices, padding_idx, scale_grad_by_freq, sparse, out));
 }
 
@@ -7746,7 +7762,7 @@ TEST(OpEmbeddingOutTest, Smoke) {
   // clang-format off
   Tensor indices = tfl.make({1}, {1});
   // clang-format on
-  Tensor actual = _embedding_out(
+  Tensor actual = op_embedding_out(
       weight,
       indices,
       /*padding_idx=*/0,
@@ -7779,7 +7795,7 @@ void test_dtype() {
   );
   // clang-format on
   Tensor out = tf.zeros({1, 2, 2});
-  Tensor actual = _embedding_out(
+  Tensor actual = op_embedding_out(
       weight,
       indices,
       /*padding_idx=*/0,
@@ -7820,7 +7836,7 @@ TEST(OpEmbeddingOutTest, IndicesMultiDims) {
   // clang-format off
   Tensor indices = tfl.make({1, 2, 3}, {1, 0, 2, 3, 4, 0});
   // clang-format on
-  Tensor actual = _embedding_out(
+  Tensor actual = op_embedding_out(
       weight,
       indices,
       /*padding_idx=*/0,
@@ -7857,7 +7873,7 @@ TEST(OpEmbeddingOutTest, WeightWrongDimensionsDies) {
   // clang-format off
   Tensor indices = tfl.make({2, 2}, {1, 0, 2, 3});
   // clang-format on
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight,
       indices,
       /*padding_idx=*/0,
@@ -7891,7 +7907,7 @@ TEST(OpEmbeddingOutTest, WrongOutShapeDies) {
 
   for (auto wrong_out: wrong_outs) {
     // clang-format on
-    ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+    ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
         weight,
         indices,
         /*padding_idx=*/0,
@@ -7919,7 +7935,7 @@ TEST(OpEmbeddingOutTest, UnmatchedOutTypeDie) {
   Tensor indices = tfl.make({2, 2}, {1, 0, 2, 3});
   // clang-format on
 
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight,
       indices,
       /*padding_idx=*/0,
@@ -7947,7 +7963,7 @@ TEST(OpEmbeddingOutTest, OutOfBoundIndicesDies) {
   Tensor neg_indices = tfl.make({2, 2}, {-1, 0, 2, 4});
   Tensor overflow_indices = tfl.make({2, 2}, {1, 0, 2, 8});
 
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight,
       neg_indices,
       /*padding_idx=*/0,
@@ -7955,7 +7971,7 @@ TEST(OpEmbeddingOutTest, OutOfBoundIndicesDies) {
       /*sparse=*/false,
       out));
 
-  ET_EXPECT_KERNEL_FAILURE(_embedding_out(
+  ET_EXPECT_KERNEL_FAILURE(op_embedding_out(
       weight,
       overflow_indices,
       /*padding_idx=*/0,
@@ -7976,7 +7992,7 @@ TEST(OpEmbeddingOutTest, EmptyWeightSupported) {
 
   Tensor indices = tfl.make({2, 2}, {2, 0, 2, 4});
 
-  Tensor actual = _embedding_out(
+  Tensor actual = op_embedding_out(
       weight,
       indices,
       /*padding_idx=*/0,
@@ -8013,7 +8029,7 @@ TEST(OpEmbeddingOutTest, ZeroDimIndicesSupported) {
   );
   // clang-format on
 
-  Tensor actual = _embedding_out(
+  Tensor actual = op_embedding_out(
       weight,
       indices,
       /*padding_idx=*/0,
@@ -8050,7 +8066,7 @@ TEST(OpEmbeddingOutTest, EmptyDimIndicesSupported) {
   );
   // clang-format on
 
-  Tensor actual = _embedding_out(
+  Tensor actual = op_embedding_out(
       weight,
       indices,
       /*padding_idx=*/0,
@@ -8082,7 +8098,7 @@ embedding_template = f"""
   {declare_tensor_make_t("expected", "tf_weight")}
   {declare_tensor_zeros("out_shape, dynamism", "tf_weight", "out")}
 
-  _embedding_out(weight, indices, $padding$, $scale$, $sparse$, out);
+  op_embedding_out(weight, indices, $padding$, $scale$, $sparse$, out);
   EXPECT_TENSOR_CLOSE(out, expected);""" */
 
 void test_dynamic_shape(
@@ -8119,7 +8135,7 @@ void test_dynamic_shape(
        0.036164820194244385, 0.1852310299873352,  0.37341737747192383});
   Tensor out = tf_weight.zeros(out_shape, dynamism);
 
-  _embedding_out(weight, indices, 0, false, false, out);
+  op_embedding_out(weight, indices, 0, false, false, out);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 

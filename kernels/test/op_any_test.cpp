@@ -21,7 +21,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _any_all_out(const Tensor& input, Tensor& out) {
+Tensor& op_any_all_out(const Tensor& input, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::any_outf(context, input, out);
 }
@@ -31,7 +31,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float32_float32) {
 
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_float32_float64) {
@@ -41,7 +41,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float32_float64) {
 
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_float32_uint8) {
@@ -51,7 +51,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float32_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({});
   exec_aten::Tensor out_expected = tfByte.make({}, {1});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -61,7 +61,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float32_int8) {
 
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_float32_int16) {
@@ -70,7 +70,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float32_int16) {
 
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_float32_int32) {
@@ -79,7 +79,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float32_int32) {
 
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_float32_int64) {
@@ -88,7 +88,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float32_int64) {
 
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_float32_bool) {
@@ -98,7 +98,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float32_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({});
   exec_aten::Tensor out_expected = tfBool.make({}, {true});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -109,7 +109,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float64_float32) {
 
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_float64_float64) {
@@ -118,7 +118,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float64_float64) {
 
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_float64_uint8) {
@@ -129,7 +129,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float64_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({});
   exec_aten::Tensor out_expected = tfByte.make({}, {1});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -140,7 +140,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float64_int8) {
 
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_float64_int16) {
@@ -150,7 +150,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float64_int16) {
 
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_float64_int32) {
@@ -160,7 +160,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float64_int32) {
 
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_float64_int64) {
@@ -170,7 +170,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float64_int64) {
 
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_float64_bool) {
@@ -181,7 +181,7 @@ TEST(OpAnyAllOutTest, DtypeTest_float64_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({});
   exec_aten::Tensor out_expected = tfBool.make({}, {true});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -191,7 +191,7 @@ TEST(OpAnyAllOutTest, DtypeTest_uint8_float32) {
 
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_uint8_float64) {
@@ -201,7 +201,7 @@ TEST(OpAnyAllOutTest, DtypeTest_uint8_float64) {
 
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_uint8_uint8) {
@@ -210,7 +210,7 @@ TEST(OpAnyAllOutTest, DtypeTest_uint8_uint8) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({});
   exec_aten::Tensor out_expected = tfByte.make({}, {1});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -220,7 +220,7 @@ TEST(OpAnyAllOutTest, DtypeTest_uint8_int8) {
 
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_uint8_int16) {
@@ -229,7 +229,7 @@ TEST(OpAnyAllOutTest, DtypeTest_uint8_int16) {
 
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_uint8_int32) {
@@ -238,7 +238,7 @@ TEST(OpAnyAllOutTest, DtypeTest_uint8_int32) {
 
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_uint8_int64) {
@@ -247,7 +247,7 @@ TEST(OpAnyAllOutTest, DtypeTest_uint8_int64) {
 
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_uint8_bool) {
@@ -257,7 +257,7 @@ TEST(OpAnyAllOutTest, DtypeTest_uint8_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({});
   exec_aten::Tensor out_expected = tfBool.make({}, {true});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -267,7 +267,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int8_float32) {
 
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int8_float64) {
@@ -277,7 +277,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int8_float64) {
 
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int8_uint8) {
@@ -287,7 +287,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int8_uint8) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({});
   exec_aten::Tensor out_expected = tfByte.make({}, {1});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -296,7 +296,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int8_int8) {
 
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int8_int16) {
@@ -305,7 +305,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int8_int16) {
 
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int8_int32) {
@@ -314,7 +314,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int8_int32) {
 
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int8_int64) {
@@ -323,7 +323,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int8_int64) {
 
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int8_bool) {
@@ -333,7 +333,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int8_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({});
   exec_aten::Tensor out_expected = tfBool.make({}, {true});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -343,7 +343,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int16_float32) {
 
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int16_float64) {
@@ -353,7 +353,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int16_float64) {
 
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int16_uint8) {
@@ -363,7 +363,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int16_uint8) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({});
   exec_aten::Tensor out_expected = tfByte.make({}, {1});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -373,7 +373,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int16_int8) {
 
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int16_int16) {
@@ -381,7 +381,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int16_int16) {
 
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int16_int32) {
@@ -390,7 +390,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int16_int32) {
 
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int16_int64) {
@@ -399,7 +399,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int16_int64) {
 
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int16_bool) {
@@ -409,7 +409,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int16_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({});
   exec_aten::Tensor out_expected = tfBool.make({}, {true});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -419,7 +419,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int32_float32) {
 
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int32_float64) {
@@ -429,7 +429,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int32_float64) {
 
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int32_uint8) {
@@ -439,7 +439,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int32_uint8) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({});
   exec_aten::Tensor out_expected = tfByte.make({}, {1});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -449,7 +449,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int32_int8) {
 
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int32_int16) {
@@ -458,7 +458,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int32_int16) {
 
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int32_int32) {
@@ -466,7 +466,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int32_int32) {
 
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int32_int64) {
@@ -475,7 +475,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int32_int64) {
 
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int32_bool) {
@@ -485,7 +485,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int32_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({});
   exec_aten::Tensor out_expected = tfBool.make({}, {true});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -495,7 +495,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int64_float32) {
 
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int64_float64) {
@@ -505,7 +505,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int64_float64) {
 
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int64_uint8) {
@@ -515,7 +515,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int64_uint8) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({});
   exec_aten::Tensor out_expected = tfByte.make({}, {1});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -525,7 +525,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int64_int8) {
 
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int64_int16) {
@@ -534,7 +534,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int64_int16) {
 
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int64_int32) {
@@ -543,7 +543,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int64_int32) {
 
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int64_int64) {
@@ -551,7 +551,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int64_int64) {
 
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_int64_bool) {
@@ -561,7 +561,7 @@ TEST(OpAnyAllOutTest, DtypeTest_int64_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({});
   exec_aten::Tensor out_expected = tfBool.make({}, {true});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -571,7 +571,7 @@ TEST(OpAnyAllOutTest, DtypeTest_bool_float32) {
 
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_bool_float64) {
@@ -581,7 +581,7 @@ TEST(OpAnyAllOutTest, DtypeTest_bool_float64) {
 
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_bool_uint8) {
@@ -591,7 +591,7 @@ TEST(OpAnyAllOutTest, DtypeTest_bool_uint8) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({});
   exec_aten::Tensor out_expected = tfByte.make({}, {1});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -601,7 +601,7 @@ TEST(OpAnyAllOutTest, DtypeTest_bool_int8) {
 
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_bool_int16) {
@@ -610,7 +610,7 @@ TEST(OpAnyAllOutTest, DtypeTest_bool_int16) {
 
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_bool_int32) {
@@ -619,7 +619,7 @@ TEST(OpAnyAllOutTest, DtypeTest_bool_int32) {
 
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_bool_int64) {
@@ -628,7 +628,7 @@ TEST(OpAnyAllOutTest, DtypeTest_bool_int64) {
 
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({});
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(self, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(self, out));
 }
 
 TEST(OpAnyAllOutTest, DtypeTest_bool_bool) {
@@ -637,7 +637,7 @@ TEST(OpAnyAllOutTest, DtypeTest_bool_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfBool.zeros({});
   exec_aten::Tensor out_expected = tfBool.make({}, {true});
-  _any_all_out(self, out);
+  op_any_all_out(self, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -651,7 +651,7 @@ TEST(OpAnyOutTest, MismatchedDimensionsDies) {
   Tensor in = tff.make(size, {0, 0, 1, 0});
   Tensor out = tff.ones(/*size=*/{1, 1});
 
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(in, out));
 }
 
 template <ScalarType OUT_DTYPE>
@@ -669,7 +669,7 @@ void test_any_all_out_invalid_type() {
       });
   Tensor out = tf_out.zeros(/*size=*/{0});
 
-  ET_EXPECT_KERNEL_FAILURE(_any_all_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(in, out));
 }
 
 TEST(OpAnyOutTest, InvalidDtypeDies) {
@@ -706,13 +706,13 @@ void test_any_all_out() {
 
   Tensor out = tf_bool.make({}, {false});
 
-  _any_all_out(in, out);
+  op_any_all_out(in, out);
   EXPECT_TENSOR_EQ(out, tf_bool.make({}, {true}));
 
-  _any_all_out(bool_false_in, out);
+  op_any_all_out(bool_false_in, out);
   EXPECT_TENSOR_EQ(out, tf_bool.make({}, {false}));
 
-  _any_all_out(bool_true_in, out);
+  op_any_all_out(bool_true_in, out);
   EXPECT_TENSOR_EQ(out, tf_bool.make({}, {true}));
 }
 

@@ -19,7 +19,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _rsqrt_out(const Tensor& self, Tensor& out) {
+Tensor& op_rsqrt_out(const Tensor& self, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::rsqrt_outf(context, self, out);
 }
@@ -33,7 +33,7 @@ TEST(OpRsqrtTest, SanityCheck) {
   Tensor expected = tf.make({1, 7}, {NAN, NAN, NAN, std::numeric_limits<float>::infinity(), 0.995037, 0.578315, 0.577350});
   // clang-format on
 
-  Tensor ret = _rsqrt_out(in, out);
+  Tensor ret = op_rsqrt_out(in, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_CLOSE(out, expected);
@@ -49,5 +49,5 @@ TEST(OpRsqrtTest, HandleBoolInput) {
   Tensor out = tf_float.zeros(sizes);
   Tensor res = tf_float.make(sizes, /*data=*/{INFINITY, 1.0});
 
-  EXPECT_TENSOR_CLOSE(_rsqrt_out(a, out), res);
+  EXPECT_TENSOR_CLOSE(op_rsqrt_out(a, out), res);
 }

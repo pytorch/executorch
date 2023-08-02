@@ -20,7 +20,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _minimum_out(const Tensor& self, const Tensor& other, Tensor& out) {
+Tensor& op_minimum_out(const Tensor& self, const Tensor& other, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::minimum_outf(context, self, other, out);
 }
@@ -33,7 +33,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float32_float32) {
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -47,7 +47,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float32_float64) {
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -58,7 +58,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float32_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_float32_int8) {
@@ -68,7 +68,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float32_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_float32_int16) {
@@ -78,7 +78,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float32_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_float32_int32) {
@@ -88,7 +88,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float32_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_float32_int64) {
@@ -98,7 +98,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float32_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_float32_bool) {
@@ -108,7 +108,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float32_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_float64_float32) {
@@ -121,7 +121,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float64_float32) {
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -135,7 +135,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float64_float64) {
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -148,7 +148,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float64_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_float64_int8) {
@@ -160,7 +160,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float64_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_float64_int16) {
@@ -172,7 +172,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float64_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_float64_int32) {
@@ -184,7 +184,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float64_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_float64_int64) {
@@ -196,7 +196,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float64_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_float64_bool) {
@@ -208,7 +208,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_float64_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_uint8_float32) {
@@ -219,7 +219,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -233,7 +233,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -244,7 +244,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_uint8_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_uint8_int8) {
@@ -255,7 +255,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_uint8_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_uint8_int16) {
@@ -266,7 +266,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_uint8_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_uint8_int32) {
@@ -277,7 +277,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_uint8_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_uint8_int64) {
@@ -288,7 +288,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_uint8_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_uint8_bool) {
@@ -299,7 +299,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_uint8_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int8_float32) {
@@ -310,7 +310,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -324,7 +324,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -336,7 +336,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int8_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int8_int8) {
@@ -346,7 +346,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int8_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int8_int16) {
@@ -357,7 +357,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int8_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int8_int32) {
@@ -368,7 +368,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int8_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int8_int64) {
@@ -379,7 +379,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int8_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int8_bool) {
@@ -390,7 +390,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int8_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int16_float32) {
@@ -401,7 +401,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -415,7 +415,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -427,7 +427,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int16_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int16_int8) {
@@ -438,7 +438,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int16_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int16_int16) {
@@ -448,7 +448,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int16_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int16_int32) {
@@ -459,7 +459,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int16_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int16_int64) {
@@ -470,7 +470,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int16_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int16_bool) {
@@ -481,7 +481,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int16_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int32_float32) {
@@ -492,7 +492,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -506,7 +506,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -518,7 +518,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int32_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int32_int8) {
@@ -529,7 +529,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int32_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int32_int16) {
@@ -540,7 +540,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int32_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int32_int32) {
@@ -550,7 +550,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int32_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int32_int64) {
@@ -561,7 +561,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int32_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int32_bool) {
@@ -572,7 +572,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int32_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int64_float32) {
@@ -583,7 +583,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -597,7 +597,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -609,7 +609,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int64_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int64_int8) {
@@ -620,7 +620,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int64_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int64_int16) {
@@ -631,7 +631,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int64_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int64_int32) {
@@ -642,7 +642,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int64_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int64_int64) {
@@ -652,7 +652,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int64_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_int64_bool) {
@@ -663,7 +663,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_int64_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_bool_float32) {
@@ -674,7 +674,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -688,7 +688,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -700,7 +700,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_bool_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_bool_int8) {
@@ -711,7 +711,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_bool_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_bool_int16) {
@@ -722,7 +722,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_bool_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_bool_int32) {
@@ -733,7 +733,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_bool_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_bool_int64) {
@@ -744,7 +744,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_bool_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float32_bool_bool) {
@@ -754,7 +754,7 @@ TEST(OpMinimumOutTest, DtypeTest_float32_bool_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_float32_float32) {
@@ -767,7 +767,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float32_float32) {
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -781,7 +781,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float32_float64) {
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -794,7 +794,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float32_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_float32_int8) {
@@ -806,7 +806,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float32_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_float32_int16) {
@@ -818,7 +818,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float32_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_float32_int32) {
@@ -830,7 +830,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float32_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_float32_int64) {
@@ -842,7 +842,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float32_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_float32_bool) {
@@ -854,7 +854,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float32_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_float64_float32) {
@@ -867,7 +867,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float64_float32) {
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -880,7 +880,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float64_float64) {
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -892,7 +892,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float64_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_float64_int8) {
@@ -903,7 +903,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float64_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_float64_int16) {
@@ -914,7 +914,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float64_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_float64_int32) {
@@ -925,7 +925,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float64_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_float64_int64) {
@@ -936,7 +936,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float64_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_float64_bool) {
@@ -947,7 +947,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_float64_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_uint8_float32) {
@@ -960,7 +960,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -973,7 +973,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -985,7 +985,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_uint8_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_uint8_int8) {
@@ -997,7 +997,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_uint8_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_uint8_int16) {
@@ -1009,7 +1009,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_uint8_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_uint8_int32) {
@@ -1021,7 +1021,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_uint8_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_uint8_int64) {
@@ -1033,7 +1033,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_uint8_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_uint8_bool) {
@@ -1045,7 +1045,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_uint8_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int8_float32) {
@@ -1058,7 +1058,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1071,7 +1071,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1084,7 +1084,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int8_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int8_int8) {
@@ -1095,7 +1095,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int8_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int8_int16) {
@@ -1107,7 +1107,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int8_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int8_int32) {
@@ -1119,7 +1119,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int8_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int8_int64) {
@@ -1131,7 +1131,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int8_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int8_bool) {
@@ -1143,7 +1143,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int8_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int16_float32) {
@@ -1156,7 +1156,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1169,7 +1169,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1182,7 +1182,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int16_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int16_int8) {
@@ -1194,7 +1194,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int16_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int16_int16) {
@@ -1205,7 +1205,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int16_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int16_int32) {
@@ -1217,7 +1217,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int16_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int16_int64) {
@@ -1229,7 +1229,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int16_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int16_bool) {
@@ -1241,7 +1241,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int16_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int32_float32) {
@@ -1254,7 +1254,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1267,7 +1267,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1280,7 +1280,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int32_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int32_int8) {
@@ -1292,7 +1292,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int32_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int32_int16) {
@@ -1304,7 +1304,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int32_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int32_int32) {
@@ -1315,7 +1315,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int32_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int32_int64) {
@@ -1327,7 +1327,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int32_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int32_bool) {
@@ -1339,7 +1339,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int32_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int64_float32) {
@@ -1352,7 +1352,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1365,7 +1365,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1378,7 +1378,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int64_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int64_int8) {
@@ -1390,7 +1390,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int64_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int64_int16) {
@@ -1402,7 +1402,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int64_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int64_int32) {
@@ -1414,7 +1414,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int64_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int64_int64) {
@@ -1425,7 +1425,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int64_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_int64_bool) {
@@ -1437,7 +1437,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_int64_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_bool_float32) {
@@ -1450,7 +1450,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1463,7 +1463,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1476,7 +1476,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_bool_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_bool_int8) {
@@ -1488,7 +1488,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_bool_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_bool_int16) {
@@ -1500,7 +1500,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_bool_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_bool_int32) {
@@ -1512,7 +1512,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_bool_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_bool_int64) {
@@ -1524,7 +1524,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_bool_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_float64_bool_bool) {
@@ -1535,7 +1535,7 @@ TEST(OpMinimumOutTest, DtypeTest_float64_bool_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_float32_float32) {
@@ -1546,7 +1546,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1560,7 +1560,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1571,7 +1571,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float32_uint8) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_float32_int8) {
@@ -1582,7 +1582,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float32_int8) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_float32_int16) {
@@ -1593,7 +1593,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float32_int16) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_float32_int32) {
@@ -1604,7 +1604,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float32_int32) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_float32_int64) {
@@ -1615,7 +1615,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float32_int64) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_float32_bool) {
@@ -1626,7 +1626,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float32_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_float64_float32) {
@@ -1639,7 +1639,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1652,7 +1652,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1664,7 +1664,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float64_uint8) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_float64_int8) {
@@ -1676,7 +1676,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float64_int8) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_float64_int16) {
@@ -1688,7 +1688,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float64_int16) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_float64_int32) {
@@ -1700,7 +1700,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float64_int32) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_float64_int64) {
@@ -1712,7 +1712,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float64_int64) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_float64_bool) {
@@ -1724,7 +1724,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_float64_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_float32) {
@@ -1735,7 +1735,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1748,7 +1748,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1759,7 +1759,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1771,7 +1771,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1783,7 +1783,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1795,7 +1795,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1807,7 +1807,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1818,7 +1818,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_uint8_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_int8_float32) {
@@ -1830,7 +1830,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1844,7 +1844,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1856,7 +1856,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1868,7 +1868,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1881,7 +1881,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1894,7 +1894,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1907,7 +1907,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1919,7 +1919,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int8_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_int16_float32) {
@@ -1931,7 +1931,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1945,7 +1945,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1957,7 +1957,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1970,7 +1970,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1982,7 +1982,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1995,7 +1995,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2008,7 +2008,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2020,7 +2020,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int16_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_int32_float32) {
@@ -2032,7 +2032,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2046,7 +2046,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2058,7 +2058,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2071,7 +2071,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2084,7 +2084,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2096,7 +2096,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2109,7 +2109,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2121,7 +2121,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int32_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_int64_float32) {
@@ -2133,7 +2133,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2147,7 +2147,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2159,7 +2159,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2172,7 +2172,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2185,7 +2185,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2198,7 +2198,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2210,7 +2210,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2222,7 +2222,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_int64_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_uint8_bool_float32) {
@@ -2234,7 +2234,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2248,7 +2248,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2260,7 +2260,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2273,7 +2273,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2286,7 +2286,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2299,7 +2299,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2312,7 +2312,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2323,7 +2323,7 @@ TEST(OpMinimumOutTest, DtypeTest_uint8_bool_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_float32_float32) {
@@ -2334,7 +2334,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2348,7 +2348,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2360,7 +2360,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float32_uint8) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_float32_int8) {
@@ -2370,7 +2370,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float32_int8) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_float32_int16) {
@@ -2381,7 +2381,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float32_int16) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_float32_int32) {
@@ -2392,7 +2392,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float32_int32) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_float32_int64) {
@@ -2403,7 +2403,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float32_int64) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_float32_bool) {
@@ -2414,7 +2414,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float32_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_float64_float32) {
@@ -2427,7 +2427,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2440,7 +2440,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2453,7 +2453,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float64_uint8) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_float64_int8) {
@@ -2464,7 +2464,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float64_int8) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_float64_int16) {
@@ -2476,7 +2476,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float64_int16) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_float64_int32) {
@@ -2488,7 +2488,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float64_int32) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_float64_int64) {
@@ -2500,7 +2500,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float64_int64) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_float64_bool) {
@@ -2512,7 +2512,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_float64_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_uint8_float32) {
@@ -2524,7 +2524,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2538,7 +2538,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2550,7 +2550,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2562,7 +2562,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2575,7 +2575,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2588,7 +2588,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2601,7 +2601,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2613,7 +2613,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_uint8_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_int8_float32) {
@@ -2624,7 +2624,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2637,7 +2637,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2649,7 +2649,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2660,7 +2660,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2672,7 +2672,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2684,7 +2684,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2696,7 +2696,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2707,7 +2707,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int8_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_int16_float32) {
@@ -2719,7 +2719,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2733,7 +2733,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2746,7 +2746,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2758,7 +2758,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2770,7 +2770,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2783,7 +2783,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2796,7 +2796,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2808,7 +2808,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int16_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_int32_float32) {
@@ -2820,7 +2820,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2834,7 +2834,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2847,7 +2847,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2859,7 +2859,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2872,7 +2872,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2884,7 +2884,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2897,7 +2897,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2909,7 +2909,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int32_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_int64_float32) {
@@ -2921,7 +2921,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2935,7 +2935,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2948,7 +2948,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2960,7 +2960,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2973,7 +2973,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2986,7 +2986,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2998,7 +2998,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3010,7 +3010,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_int64_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int8_bool_float32) {
@@ -3022,7 +3022,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3036,7 +3036,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3049,7 +3049,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3061,7 +3061,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3074,7 +3074,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3087,7 +3087,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3100,7 +3100,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3111,7 +3111,7 @@ TEST(OpMinimumOutTest, DtypeTest_int8_bool_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_float32_float32) {
@@ -3122,7 +3122,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3136,7 +3136,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3148,7 +3148,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float32_uint8) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_float32_int8) {
@@ -3159,7 +3159,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float32_int8) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_float32_int16) {
@@ -3169,7 +3169,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float32_int16) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_float32_int32) {
@@ -3180,7 +3180,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float32_int32) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_float32_int64) {
@@ -3191,7 +3191,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float32_int64) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_float32_bool) {
@@ -3202,7 +3202,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float32_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_float64_float32) {
@@ -3215,7 +3215,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3228,7 +3228,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3241,7 +3241,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float64_uint8) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_float64_int8) {
@@ -3253,7 +3253,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float64_int8) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_float64_int16) {
@@ -3264,7 +3264,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float64_int16) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_float64_int32) {
@@ -3276,7 +3276,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float64_int32) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_float64_int64) {
@@ -3288,7 +3288,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float64_int64) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_float64_bool) {
@@ -3300,7 +3300,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_float64_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_uint8_float32) {
@@ -3312,7 +3312,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3326,7 +3326,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3338,7 +3338,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3351,7 +3351,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3363,7 +3363,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3376,7 +3376,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3389,7 +3389,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3401,7 +3401,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_uint8_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_int8_float32) {
@@ -3413,7 +3413,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3427,7 +3427,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3440,7 +3440,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3452,7 +3452,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3464,7 +3464,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3477,7 +3477,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3490,7 +3490,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3502,7 +3502,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int8_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_int16_float32) {
@@ -3513,7 +3513,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3526,7 +3526,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3538,7 +3538,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3550,7 +3550,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3561,7 +3561,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3573,7 +3573,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3585,7 +3585,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3596,7 +3596,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int16_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_int32_float32) {
@@ -3608,7 +3608,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3622,7 +3622,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3635,7 +3635,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3648,7 +3648,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3660,7 +3660,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3672,7 +3672,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3685,7 +3685,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3697,7 +3697,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int32_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_int64_float32) {
@@ -3709,7 +3709,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3723,7 +3723,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3736,7 +3736,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3749,7 +3749,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3761,7 +3761,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3774,7 +3774,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3786,7 +3786,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3798,7 +3798,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_int64_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int16_bool_float32) {
@@ -3810,7 +3810,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3824,7 +3824,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3837,7 +3837,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3850,7 +3850,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3862,7 +3862,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3875,7 +3875,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3888,7 +3888,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3899,7 +3899,7 @@ TEST(OpMinimumOutTest, DtypeTest_int16_bool_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_float32_float32) {
@@ -3910,7 +3910,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3924,7 +3924,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3936,7 +3936,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float32_uint8) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_float32_int8) {
@@ -3947,7 +3947,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float32_int8) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_float32_int16) {
@@ -3958,7 +3958,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float32_int16) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_float32_int32) {
@@ -3968,7 +3968,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float32_int32) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_float32_int64) {
@@ -3979,7 +3979,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float32_int64) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_float32_bool) {
@@ -3990,7 +3990,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float32_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_float64_float32) {
@@ -4003,7 +4003,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4016,7 +4016,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4029,7 +4029,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float64_uint8) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_float64_int8) {
@@ -4041,7 +4041,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float64_int8) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_float64_int16) {
@@ -4053,7 +4053,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float64_int16) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_float64_int32) {
@@ -4064,7 +4064,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float64_int32) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_float64_int64) {
@@ -4076,7 +4076,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float64_int64) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_float64_bool) {
@@ -4088,7 +4088,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_float64_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_uint8_float32) {
@@ -4100,7 +4100,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4114,7 +4114,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4126,7 +4126,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4139,7 +4139,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4152,7 +4152,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4164,7 +4164,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4177,7 +4177,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4189,7 +4189,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_uint8_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_int8_float32) {
@@ -4201,7 +4201,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4215,7 +4215,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4228,7 +4228,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4240,7 +4240,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4253,7 +4253,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4265,7 +4265,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4278,7 +4278,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4290,7 +4290,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int8_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_int16_float32) {
@@ -4302,7 +4302,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4316,7 +4316,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4329,7 +4329,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4342,7 +4342,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4354,7 +4354,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4366,7 +4366,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4379,7 +4379,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4391,7 +4391,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int16_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_int32_float32) {
@@ -4402,7 +4402,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4415,7 +4415,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4427,7 +4427,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4439,7 +4439,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4451,7 +4451,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4462,7 +4462,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4474,7 +4474,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4485,7 +4485,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int32_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_int64_float32) {
@@ -4497,7 +4497,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4511,7 +4511,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4524,7 +4524,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4537,7 +4537,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4550,7 +4550,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4562,7 +4562,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4574,7 +4574,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4586,7 +4586,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_int64_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int32_bool_float32) {
@@ -4598,7 +4598,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4612,7 +4612,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4625,7 +4625,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4638,7 +4638,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4651,7 +4651,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4663,7 +4663,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4676,7 +4676,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4687,7 +4687,7 @@ TEST(OpMinimumOutTest, DtypeTest_int32_bool_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_float32_float32) {
@@ -4698,7 +4698,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4712,7 +4712,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4724,7 +4724,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float32_uint8) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_float32_int8) {
@@ -4735,7 +4735,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float32_int8) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_float32_int16) {
@@ -4746,7 +4746,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float32_int16) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_float32_int32) {
@@ -4757,7 +4757,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float32_int32) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_float32_int64) {
@@ -4767,7 +4767,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float32_int64) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_float32_bool) {
@@ -4778,7 +4778,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float32_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_float64_float32) {
@@ -4791,7 +4791,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4804,7 +4804,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4817,7 +4817,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float64_uint8) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_float64_int8) {
@@ -4829,7 +4829,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float64_int8) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_float64_int16) {
@@ -4841,7 +4841,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float64_int16) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_float64_int32) {
@@ -4853,7 +4853,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float64_int32) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_float64_int64) {
@@ -4864,7 +4864,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float64_int64) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_float64_bool) {
@@ -4876,7 +4876,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_float64_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_uint8_float32) {
@@ -4888,7 +4888,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4902,7 +4902,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4914,7 +4914,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4927,7 +4927,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4940,7 +4940,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4953,7 +4953,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4965,7 +4965,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4977,7 +4977,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_uint8_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_int8_float32) {
@@ -4989,7 +4989,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5003,7 +5003,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5016,7 +5016,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5028,7 +5028,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5041,7 +5041,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5054,7 +5054,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5066,7 +5066,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5078,7 +5078,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int8_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_int16_float32) {
@@ -5090,7 +5090,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5104,7 +5104,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5117,7 +5117,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5130,7 +5130,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5142,7 +5142,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5155,7 +5155,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5167,7 +5167,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5179,7 +5179,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int16_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_int32_float32) {
@@ -5191,7 +5191,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5205,7 +5205,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5218,7 +5218,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5231,7 +5231,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5244,7 +5244,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5256,7 +5256,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5268,7 +5268,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5280,7 +5280,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int32_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_int64_float32) {
@@ -5291,7 +5291,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5304,7 +5304,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5316,7 +5316,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5328,7 +5328,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5340,7 +5340,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5352,7 +5352,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5363,7 +5363,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5374,7 +5374,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_int64_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_int64_bool_float32) {
@@ -5386,7 +5386,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5400,7 +5400,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5413,7 +5413,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5426,7 +5426,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5439,7 +5439,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5452,7 +5452,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5464,7 +5464,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5475,7 +5475,7 @@ TEST(OpMinimumOutTest, DtypeTest_int64_bool_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_float32_float32) {
@@ -5486,7 +5486,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5500,7 +5500,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5512,7 +5512,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float32_uint8) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_float32_int8) {
@@ -5523,7 +5523,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float32_int8) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_float32_int16) {
@@ -5534,7 +5534,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float32_int16) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_float32_int32) {
@@ -5545,7 +5545,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float32_int32) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_float32_int64) {
@@ -5556,7 +5556,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float32_int64) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_float32_bool) {
@@ -5566,7 +5566,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float32_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_float64_float32) {
@@ -5579,7 +5579,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5592,7 +5592,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5605,7 +5605,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float64_uint8) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_float64_int8) {
@@ -5617,7 +5617,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float64_int8) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_float64_int16) {
@@ -5629,7 +5629,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float64_int16) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_float64_int32) {
@@ -5641,7 +5641,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float64_int32) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_float64_int64) {
@@ -5653,7 +5653,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float64_int64) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_float64_bool) {
@@ -5664,7 +5664,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_float64_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_uint8_float32) {
@@ -5676,7 +5676,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5690,7 +5690,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5702,7 +5702,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5715,7 +5715,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5728,7 +5728,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5741,7 +5741,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5754,7 +5754,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5765,7 +5765,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_uint8_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_int8_float32) {
@@ -5777,7 +5777,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5791,7 +5791,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5804,7 +5804,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5816,7 +5816,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5829,7 +5829,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5842,7 +5842,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5855,7 +5855,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5866,7 +5866,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int8_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_int16_float32) {
@@ -5878,7 +5878,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5892,7 +5892,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5905,7 +5905,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5918,7 +5918,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5930,7 +5930,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5943,7 +5943,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5956,7 +5956,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5967,7 +5967,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int16_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_int32_float32) {
@@ -5979,7 +5979,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5993,7 +5993,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6006,7 +6006,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6019,7 +6019,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6032,7 +6032,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6044,7 +6044,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6057,7 +6057,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6068,7 +6068,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int32_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_int64_float32) {
@@ -6080,7 +6080,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6094,7 +6094,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6107,7 +6107,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6120,7 +6120,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6133,7 +6133,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6146,7 +6146,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6158,7 +6158,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6169,7 +6169,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_int64_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_minimum_out(self, other, out));
 }
 
 TEST(OpMinimumOutTest, DtypeTest_bool_bool_float32) {
@@ -6180,7 +6180,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6193,7 +6193,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6205,7 +6205,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6217,7 +6217,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6229,7 +6229,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6241,7 +6241,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6253,7 +6253,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6265,7 +6265,7 @@ TEST(OpMinimumOutTest, DtypeTest_bool_bool_bool) {
   exec_aten::Tensor out = tfBool.zeros({2, 2});
   exec_aten::Tensor out_expected =
       tfBool.make({2, 2}, {true, false, false, true});
-  _minimum_out(self, other, out);
+  op_minimum_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6278,7 +6278,7 @@ void test_minimum_out_same_size() {
   // Destination for the minimum operator.
   Tensor out = tf.zeros(sizes);
 
-  _minimum_out(
+  op_minimum_out(
       tf.make(sizes, /*data=*/{1, 2, 4, 8}),
       tf.make(sizes, /*data=*/{3, 0, 4, 9}),
       out);
@@ -6320,7 +6320,7 @@ TEST(OpMinimumOutKernelTest, BothScalarTensors) {
   TensorFactory<ScalarType::Float> tf;
   const std::vector<int32_t> sizes = {1, 1};
   Tensor out = tf.zeros(sizes);
-  _minimum_out(tf.make(sizes, {1.2}), tf.make(sizes, {3.5}), out);
+  op_minimum_out(tf.make(sizes, {1.2}), tf.make(sizes, {3.5}), out);
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {1.2}));
 }
 
@@ -6337,11 +6337,11 @@ TEST(OpMinimumOutKernelTest, LeftScalarTensor) {
   auto b = tf.make(sizes_2, /*data=*/{3.5, -1.0, 0.0, 5.5});
 
   // Case 1 : First argument is singleton.
-  _minimum_out(a, b, out1);
+  op_minimum_out(a, b, out1);
   EXPECT_TENSOR_EQ(out1, tf.make(sizes_2, {1.0, -1.0, 0.0, 1.0}));
 
   // Case 2: Second argument is singleton
-  _minimum_out(b, a, out2);
+  op_minimum_out(b, a, out2);
   EXPECT_TENSOR_EQ(out2, tf.make(sizes_2, {1.0, -1.0, 0.0, 1.0}));
 }
 
@@ -6350,7 +6350,8 @@ TEST(OpMinimumOutKernelTest, MismatchedInputShapesDies) {
   TensorFactory<ScalarType::Float> tf;
   Tensor out = tf.zeros({2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(tf.ones({2, 2}), tf.ones({3, 3}), out));
+  ET_EXPECT_KERNEL_FAILURE(
+      op_minimum_out(tf.ones({2, 2}), tf.ones({3, 3}), out));
 }
 
 TEST(OpMinimumOutKernelTest, MismatchedOutputShapesDies) {
@@ -6358,7 +6359,8 @@ TEST(OpMinimumOutKernelTest, MismatchedOutputShapesDies) {
   TensorFactory<ScalarType::Float> tf;
   Tensor out = tf.zeros({3, 3});
 
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(tf.ones({2, 2}), tf.ones({3, 3}), out));
+  ET_EXPECT_KERNEL_FAILURE(
+      op_minimum_out(tf.ones({2, 2}), tf.ones({3, 3}), out));
 }
 
 TEST(OpMinimumOutKernelTest, MismatchedOutputShapeWithSingletonDies) {
@@ -6369,7 +6371,8 @@ TEST(OpMinimumOutKernelTest, MismatchedOutputShapeWithSingletonDies) {
   TensorFactory<ScalarType::Float> tf;
   Tensor out = tf.zeros({4, 4});
 
-  ET_EXPECT_KERNEL_FAILURE(_minimum_out(tf.ones({1, 1}), tf.ones({3, 3}), out));
+  ET_EXPECT_KERNEL_FAILURE(
+      op_minimum_out(tf.ones({1, 1}), tf.ones({3, 3}), out));
 }
 
 /* %python
@@ -6378,7 +6381,7 @@ torch.manual_seed(0)
 x = torch.rand(3, 2)
 y = torch.rand(3, 2)
 res = torch.minimum(x, y)
-op = "_minimum_out"
+op = "op_minimum_out"
 dtype = "ScalarType::Float"
 check = "EXPECT_TENSOR_EQ" */
 
@@ -6416,7 +6419,7 @@ TEST(OpMinimumOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  _minimum_out(x, y, out);
+  op_minimum_out(x, y, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -6457,7 +6460,7 @@ TEST(OpMinimumOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  _minimum_out(x, y, out);
+  op_minimum_out(x, y, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 
@@ -6498,6 +6501,6 @@ TEST(OpMinimumOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  _minimum_out(x, y, out);
+  op_minimum_out(x, y, out);
   EXPECT_TENSOR_EQ(out, expected);
 }

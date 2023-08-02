@@ -24,12 +24,12 @@ using torch::executor::testing::TensorFactory;
 
 namespace {
 
-Tensor& _div_out(const Tensor& a, const Tensor& b, Tensor& out) {
+Tensor& op_div_out(const Tensor& a, const Tensor& b, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::div_outf(context, a, b, out);
 }
 
-Tensor& _div_scalar_out(const Tensor& a, const Scalar& b, Tensor& out) {
+Tensor& op_div_scalar_out(const Tensor& a, const Scalar& b, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::div_outf(context, a, b, out);
 }
@@ -54,7 +54,7 @@ void test_div() {
   Tensor out = tf_out.zeros(sizes);
 
   // Valid input should give the expected output
-  _div_out(
+  op_div_out(
       tf_a.make(sizes, /*data=*/{1, 2, 4, 8}),
       tf_b.make(sizes, /*data=*/{8, 4, 2, 1}),
       out);
@@ -72,7 +72,7 @@ void test_div<ScalarType::Float, ScalarType::Float, ScalarType::Float>() {
   Tensor out = tf.zeros(sizes);
 
   // Valid input should give the expected output
-  _div_out(
+  op_div_out(
       tf.make(sizes, /*data=*/{1, 2, 4, 8, INFINITY, -INFINITY, NAN, 1, 1, 1}),
       tf.make(
           sizes,
@@ -96,7 +96,7 @@ void test_div<ScalarType::Bool, ScalarType::Float, ScalarType::Float>() {
   Tensor out = tf.zeros(sizes);
 
   // Valid input should give the expected output
-  _div_out(
+  op_div_out(
       tf_b.make(sizes, /*data=*/{1, 1, 1, 1}),
       tf.make(sizes, /*data=*/{4, 4, 2, 1}),
       out);
@@ -153,7 +153,7 @@ TEST(OpDivOutKernelTest, BroadcastSupported1) {
   // https://fburl.com/n9wl4d0o
   Tensor out = tf.zeros({2, 2, 2, 4});
 
-  _div_out(a, b, out);
+  op_div_out(a, b, out);
 
   Tensor ret = tf.make(
       {2, 2, 2, 4}, {4,  4,  4,  4,  8,  8,  8,  8,  2, 2, 2, 2, 4, 4, 4, 4,
@@ -171,7 +171,7 @@ TEST(OpDivOutKernelTest, BroadcastSupported2) {
   // https://fburl.com/n9wl4d0o
   Tensor out = tf.zeros({3, 2, 1});
 
-  _div_out(a, b, out);
+  op_div_out(a, b, out);
 
   Tensor ret = tf.make({3, 2, 1}, {1, 1.5, 2, 2.5, 3, 3.5});
   EXPECT_TENSOR_EQ(out, ret);
@@ -187,7 +187,7 @@ TEST(OpDivOutKernelTest, BroadcastScalarSupported1) {
   // https://fburl.com/n9wl4d0o
   Tensor out = tf.zeros({2, 1, 3});
 
-  _div_out(a, b, out);
+  op_div_out(a, b, out);
 
   Tensor ret = tf.make({2, 1, 3}, {1, 1.5, 2, 2.5, 3, 3.5});
   EXPECT_TENSOR_EQ(out, ret);
@@ -203,7 +203,7 @@ TEST(OpDivOutKernelTest, BroadcastScalarSupported2) {
   // https://fburl.com/n9wl4d0o
   Tensor out = tf.zeros({3, 1, 1});
 
-  _div_out(a, b, out);
+  op_div_out(a, b, out);
 
   Tensor ret = tf.make({3, 1, 1}, {4, 2, 1});
   EXPECT_TENSOR_EQ(out, ret);
@@ -231,7 +231,7 @@ TEST(OpDivOutKernelTest, BroadcastDimSizeIsOneAB) {
        11.769137382507324});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = _div_out(x, y, out);
+  Tensor ret = op_div_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -257,7 +257,7 @@ TEST(OpDivOutKernelTest, BroadcastDimSizeMissingAB) {
        11.769137382507324});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = _div_out(x, y, out);
+  Tensor ret = op_div_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -283,7 +283,7 @@ TEST(OpDivOutKernelTest, BroadcastDimSizeIsOneBA) {
        0.08496799319982529});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = _div_out(x, y, out);
+  Tensor ret = op_div_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -309,7 +309,7 @@ TEST(OpDivOutKernelTest, BroadcastDimSizeMissingBA) {
        0.08496799319982529});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = _div_out(x, y, out);
+  Tensor ret = op_div_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -328,7 +328,7 @@ TEST(OpDivOutKernelTest, MismatchedShapesDies) {
   Tensor b = tf_int.ones(/*sizes=*/{4});
   Tensor out = tf_float.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(_div_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(op_div_out(a, b, out));
 }
 
 template <ScalarType OUTPUT_DTYPE>
@@ -342,7 +342,7 @@ void test_div_invalid_output_dtype_dies() {
   Tensor b = tf_float.ones(sizes);
   Tensor out = tf_out.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(_div_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(op_div_out(a, b, out));
 }
 
 TEST(OpDivOutKernelTest, AllNonFloatOutputDTypeDies) {
@@ -386,7 +386,7 @@ TEST(OpDivOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _div_out(x, y, out);
+  Tensor ret = op_div_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -420,7 +420,7 @@ TEST(OpDivOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _div_out(x, y, out);
+  Tensor ret = op_div_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -455,7 +455,7 @@ TEST(OpDivOutKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = _div_out(x, y, out);
+  Tensor ret = op_div_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -467,7 +467,7 @@ TEST(OpDivScalarOutKernelTest, SanityCheckIntScalar) {
 
   Tensor out = tf_out.zeros(sizes);
 
-  _div_scalar_out(tf_a.make(sizes, {1, 2, 4, -9}), 2, out);
+  op_div_scalar_out(tf_a.make(sizes, {1, 2, 4, -9}), 2, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.5, 1.0, 2.0, -4.5}));
@@ -481,7 +481,7 @@ TEST(OpDivScalarOutKernelTest, SanityCheckFloatScalar) {
 
   Tensor out = tf_out.zeros(sizes);
 
-  _div_scalar_out(tf_a.make(sizes, {1, 2, 4, -9}), 2.0, out);
+  op_div_scalar_out(tf_a.make(sizes, {1, 2, 4, -9}), 2.0, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.5, 1.0, 2.0, -4.5}));
@@ -494,7 +494,7 @@ TEST(OpDivScalarOutKernelTest, OptimizedSanityCheck) {
 
   Tensor out = tf.zeros(sizes);
 
-  _div_scalar_out(tf.make(sizes, {1.3, 2.1, 4.6, 8.2}), 2.0, out);
+  op_div_scalar_out(tf.make(sizes, {1.3, 2.1, 4.6, 8.2}), 2.0, out);
 
   // Check that it matches the expected output.
   EXPECT_TENSOR_CLOSE(out, tf.make(sizes, {0.65, 1.05, 2.3, 4.1}));

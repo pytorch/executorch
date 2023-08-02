@@ -22,7 +22,7 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _exp_out(const Tensor& a, Tensor& out) {
+Tensor& op_exp_out(const Tensor& a, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::exp_outf(context, a, out);
 }
@@ -60,7 +60,7 @@ void test__exp_out() {
 
   Tensor out = tf_out.zeros(sizes);
 
-  _exp_out(x, out);
+  op_exp_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
@@ -79,7 +79,7 @@ TEST(OpExpOutKernelTest, AllFloatInputDoubleOutputSupport) {
 }
 
 TEST(OpExpOutKernelTest, HandleBoolInput) {
-  // _exp_out() handles Bool as input.
+  // op_exp_out() handles Bool as input.
   TensorFactory<ScalarType::Bool> tf_bool;
   TensorFactory<ScalarType::Float> tf_float;
 
@@ -89,7 +89,7 @@ TEST(OpExpOutKernelTest, HandleBoolInput) {
   Tensor out = tf_float.zeros(sizes);
   Tensor res = tf_float.make(sizes, /*data=*/{2.718282, 1});
 
-  EXPECT_TENSOR_CLOSE(_exp_out(a, out), res);
+  EXPECT_TENSOR_CLOSE(op_exp_out(a, out), res);
 }
 
 // Mismatched shape tests.
@@ -104,7 +104,7 @@ TEST(OpExpOutKernelTest, MismatchedShapesDies) {
   Tensor a = tf_int.ones(/*sizes=*/{4});
   Tensor out = tf_float.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(_exp_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_exp_out(a, out));
 }
 
 // Unhandled output dtypes.
@@ -118,7 +118,7 @@ void test_exp_invalid_output_dtype_dies() {
   Tensor in = tf_float.ones(sizes);
   Tensor out = tf_out.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(_exp_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_exp_out(in, out));
 }
 
 TEST(OpExpOutKernelTest, AllNonFloatOutputDTypeDies) {
@@ -161,7 +161,7 @@ TEST(OpExpOutKernelTest, DynamicOutputShape) {
   Tensor out =
       tf.zeros(out_size, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 
-  _exp_out(x, out);
+  op_exp_out(x, out);
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 #endif

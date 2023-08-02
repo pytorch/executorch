@@ -21,7 +21,7 @@ using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
 Tensor&
-_floor_divide_out(const Tensor& self, const Tensor& other, Tensor& out) {
+op_floor_divide_out(const Tensor& self, const Tensor& other, Tensor& out) {
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::floor_divide_outf(context, self, other, out);
 }
@@ -33,7 +33,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -46,7 +46,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -57,7 +57,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float32_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_float32_int8) {
@@ -67,7 +67,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float32_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_float32_int16) {
@@ -77,7 +77,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float32_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_float32_int32) {
@@ -87,7 +87,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float32_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_float32_int64) {
@@ -97,7 +97,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float32_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_float32_bool) {
@@ -107,7 +107,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float32_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_float32) {
@@ -119,7 +119,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -132,7 +132,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -145,7 +145,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_int8) {
@@ -157,7 +157,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_int16) {
@@ -169,7 +169,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_int32) {
@@ -181,7 +181,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_int64) {
@@ -193,7 +193,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_bool) {
@@ -205,7 +205,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_float64_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_float32) {
@@ -216,7 +216,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -230,7 +230,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -241,7 +241,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_int8) {
@@ -252,7 +252,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_int16) {
@@ -263,7 +263,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_int32) {
@@ -274,7 +274,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_int64) {
@@ -285,7 +285,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_bool) {
@@ -296,7 +296,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_uint8_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_float32) {
@@ -307,7 +307,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -321,7 +321,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -333,7 +333,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_int8) {
@@ -343,7 +343,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_int16) {
@@ -354,7 +354,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_int32) {
@@ -365,7 +365,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_int64) {
@@ -376,7 +376,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_bool) {
@@ -387,7 +387,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int8_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_float32) {
@@ -398,7 +398,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -412,7 +412,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -424,7 +424,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_int8) {
@@ -435,7 +435,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_int16) {
@@ -445,7 +445,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_int32) {
@@ -456,7 +456,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_int64) {
@@ -467,7 +467,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_bool) {
@@ -478,7 +478,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int16_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_float32) {
@@ -489,7 +489,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -503,7 +503,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -515,7 +515,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_int8) {
@@ -526,7 +526,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_int16) {
@@ -537,7 +537,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_int32) {
@@ -547,7 +547,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_int64) {
@@ -558,7 +558,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_bool) {
@@ -569,7 +569,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int32_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_float32) {
@@ -580,7 +580,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -594,7 +594,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -606,7 +606,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_int8) {
@@ -617,7 +617,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_int16) {
@@ -628,7 +628,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_int32) {
@@ -639,7 +639,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_int64) {
@@ -649,7 +649,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_bool) {
@@ -660,7 +660,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_int64_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_float32) {
@@ -671,7 +671,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -685,7 +685,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -697,7 +697,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_uint8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_int8) {
@@ -708,7 +708,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_int8) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_int16) {
@@ -719,7 +719,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_int16) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_int32) {
@@ -730,7 +730,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_int32) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_int64) {
@@ -741,7 +741,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_int64) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_bool) {
@@ -751,7 +751,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float32_bool_bool) {
   exec_aten::Tensor self = tfFloat.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_float32) {
@@ -763,7 +763,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -776,7 +776,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -789,7 +789,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_int8) {
@@ -801,7 +801,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_int16) {
@@ -813,7 +813,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_int32) {
@@ -825,7 +825,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_int64) {
@@ -837,7 +837,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_bool) {
@@ -849,7 +849,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float32_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_float32) {
@@ -861,7 +861,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -873,7 +873,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -885,7 +885,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_int8) {
@@ -896,7 +896,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_int16) {
@@ -907,7 +907,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_int32) {
@@ -918,7 +918,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_int64) {
@@ -929,7 +929,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_bool) {
@@ -940,7 +940,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_float64_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_float32) {
@@ -953,7 +953,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -966,7 +966,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -978,7 +978,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_int8) {
@@ -990,7 +990,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_int16) {
@@ -1002,7 +1002,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_int32) {
@@ -1014,7 +1014,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_int64) {
@@ -1026,7 +1026,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_bool) {
@@ -1038,7 +1038,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_uint8_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_float32) {
@@ -1051,7 +1051,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1064,7 +1064,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1077,7 +1077,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_int8) {
@@ -1088,7 +1088,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_int16) {
@@ -1100,7 +1100,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_int32) {
@@ -1112,7 +1112,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_int64) {
@@ -1124,7 +1124,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_bool) {
@@ -1136,7 +1136,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int8_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_float32) {
@@ -1149,7 +1149,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1162,7 +1162,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1175,7 +1175,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_int8) {
@@ -1187,7 +1187,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_int16) {
@@ -1198,7 +1198,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_int32) {
@@ -1210,7 +1210,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_int64) {
@@ -1222,7 +1222,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_bool) {
@@ -1234,7 +1234,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int16_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_float32) {
@@ -1247,7 +1247,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1260,7 +1260,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1273,7 +1273,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_int8) {
@@ -1285,7 +1285,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_int16) {
@@ -1297,7 +1297,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_int32) {
@@ -1308,7 +1308,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_int64) {
@@ -1320,7 +1320,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_bool) {
@@ -1332,7 +1332,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int32_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_float32) {
@@ -1345,7 +1345,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1358,7 +1358,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1371,7 +1371,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_int8) {
@@ -1383,7 +1383,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_int16) {
@@ -1395,7 +1395,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_int32) {
@@ -1407,7 +1407,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_int64) {
@@ -1418,7 +1418,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_bool) {
@@ -1430,7 +1430,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_int64_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_float32) {
@@ -1443,7 +1443,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1456,7 +1456,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1469,7 +1469,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_uint8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_int8) {
@@ -1481,7 +1481,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_int8) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_int16) {
@@ -1493,7 +1493,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_int16) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_int32) {
@@ -1505,7 +1505,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_int32) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_int64) {
@@ -1517,7 +1517,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_int64) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_bool) {
@@ -1528,7 +1528,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_float64_bool_bool) {
   exec_aten::Tensor self = tfDouble.make({2, 2}, {1.3125, 2.625, 3.5, 4.875});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_float32) {
@@ -1539,7 +1539,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1553,7 +1553,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1564,7 +1564,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_uint8) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_int8) {
@@ -1575,7 +1575,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_int8) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_int16) {
@@ -1586,7 +1586,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_int16) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_int32) {
@@ -1597,7 +1597,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_int32) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_int64) {
@@ -1608,7 +1608,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_int64) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_bool) {
@@ -1619,7 +1619,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float32_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_float32) {
@@ -1632,7 +1632,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1645,7 +1645,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1657,7 +1657,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_uint8) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_int8) {
@@ -1669,7 +1669,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_int8) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_int16) {
@@ -1681,7 +1681,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_int16) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_int32) {
@@ -1693,7 +1693,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_int32) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_int64) {
@@ -1705,7 +1705,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_int64) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_bool) {
@@ -1717,7 +1717,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_float64_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_uint8_float32) {
@@ -1728,7 +1728,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1741,7 +1741,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1752,7 +1752,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1764,7 +1764,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1776,7 +1776,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1788,7 +1788,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1800,7 +1800,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1811,7 +1811,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_uint8_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_int8_float32) {
@@ -1823,7 +1823,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1837,7 +1837,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1849,7 +1849,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1861,7 +1861,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1874,7 +1874,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1887,7 +1887,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1900,7 +1900,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1912,7 +1912,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int8_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_int16_float32) {
@@ -1924,7 +1924,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1938,7 +1938,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1950,7 +1950,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1963,7 +1963,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1975,7 +1975,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -1988,7 +1988,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2001,7 +2001,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2013,7 +2013,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int16_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_int32_float32) {
@@ -2025,7 +2025,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2039,7 +2039,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2051,7 +2051,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2064,7 +2064,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2077,7 +2077,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2089,7 +2089,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2102,7 +2102,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2114,7 +2114,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int32_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_int64_float32) {
@@ -2126,7 +2126,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2140,7 +2140,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2152,7 +2152,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2165,7 +2165,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2178,7 +2178,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2191,7 +2191,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2203,7 +2203,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2215,7 +2215,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_int64_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_uint8_bool_float32) {
@@ -2227,7 +2227,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2241,7 +2241,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2253,7 +2253,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2266,7 +2266,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2279,7 +2279,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2292,7 +2292,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2305,7 +2305,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2316,7 +2316,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_uint8_bool_bool) {
   exec_aten::Tensor self = tfByte.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_float32) {
@@ -2327,7 +2327,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2341,7 +2341,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2353,7 +2353,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_uint8) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_int8) {
@@ -2363,7 +2363,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_int8) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_int16) {
@@ -2374,7 +2374,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_int16) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_int32) {
@@ -2385,7 +2385,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_int32) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_int64) {
@@ -2396,7 +2396,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_int64) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_bool) {
@@ -2407,7 +2407,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float32_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_float32) {
@@ -2420,7 +2420,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2433,7 +2433,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2446,7 +2446,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_uint8) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_int8) {
@@ -2457,7 +2457,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_int8) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_int16) {
@@ -2469,7 +2469,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_int16) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_int32) {
@@ -2481,7 +2481,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_int32) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_int64) {
@@ -2493,7 +2493,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_int64) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_bool) {
@@ -2505,7 +2505,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_float64_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_uint8_float32) {
@@ -2517,7 +2517,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2531,7 +2531,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2543,7 +2543,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2555,7 +2555,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2568,7 +2568,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2581,7 +2581,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2594,7 +2594,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2606,7 +2606,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_uint8_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_int8_float32) {
@@ -2617,7 +2617,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2630,7 +2630,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2642,7 +2642,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2653,7 +2653,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2665,7 +2665,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2677,7 +2677,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2689,7 +2689,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2700,7 +2700,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int8_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_int16_float32) {
@@ -2712,7 +2712,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2726,7 +2726,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2739,7 +2739,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2751,7 +2751,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2763,7 +2763,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2776,7 +2776,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2789,7 +2789,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2801,7 +2801,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int16_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_int32_float32) {
@@ -2813,7 +2813,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2827,7 +2827,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2840,7 +2840,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2852,7 +2852,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2865,7 +2865,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2877,7 +2877,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2890,7 +2890,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2902,7 +2902,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int32_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_int64_float32) {
@@ -2914,7 +2914,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2928,7 +2928,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2941,7 +2941,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2953,7 +2953,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2966,7 +2966,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2979,7 +2979,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -2991,7 +2991,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3003,7 +3003,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_int64_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int8_bool_float32) {
@@ -3015,7 +3015,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3029,7 +3029,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3042,7 +3042,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3054,7 +3054,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3067,7 +3067,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3080,7 +3080,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3093,7 +3093,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3104,7 +3104,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int8_bool_bool) {
   exec_aten::Tensor self = tfChar.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_float32) {
@@ -3115,7 +3115,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3129,7 +3129,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3141,7 +3141,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_uint8) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_int8) {
@@ -3152,7 +3152,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_int8) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_int16) {
@@ -3162,7 +3162,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_int16) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_int32) {
@@ -3173,7 +3173,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_int32) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_int64) {
@@ -3184,7 +3184,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_int64) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_bool) {
@@ -3195,7 +3195,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float32_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_float32) {
@@ -3208,7 +3208,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3221,7 +3221,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3234,7 +3234,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_uint8) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_int8) {
@@ -3246,7 +3246,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_int8) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_int16) {
@@ -3257,7 +3257,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_int16) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_int32) {
@@ -3269,7 +3269,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_int32) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_int64) {
@@ -3281,7 +3281,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_int64) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_bool) {
@@ -3293,7 +3293,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_float64_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_uint8_float32) {
@@ -3305,7 +3305,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3319,7 +3319,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3331,7 +3331,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3344,7 +3344,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3356,7 +3356,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3369,7 +3369,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3382,7 +3382,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3394,7 +3394,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_uint8_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_int8_float32) {
@@ -3406,7 +3406,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3420,7 +3420,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3433,7 +3433,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3445,7 +3445,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3457,7 +3457,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3470,7 +3470,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3483,7 +3483,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3495,7 +3495,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int8_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_int16_float32) {
@@ -3506,7 +3506,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3519,7 +3519,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3531,7 +3531,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3543,7 +3543,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3554,7 +3554,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3566,7 +3566,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3578,7 +3578,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3589,7 +3589,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int16_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_int32_float32) {
@@ -3601,7 +3601,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3615,7 +3615,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3628,7 +3628,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3641,7 +3641,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3653,7 +3653,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3665,7 +3665,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3678,7 +3678,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3690,7 +3690,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int32_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_int64_float32) {
@@ -3702,7 +3702,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3716,7 +3716,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3729,7 +3729,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3742,7 +3742,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3754,7 +3754,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3767,7 +3767,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3779,7 +3779,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3791,7 +3791,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_int64_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int16_bool_float32) {
@@ -3803,7 +3803,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3817,7 +3817,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3830,7 +3830,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3843,7 +3843,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3855,7 +3855,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3868,7 +3868,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3881,7 +3881,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3892,7 +3892,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int16_bool_bool) {
   exec_aten::Tensor self = tfShort.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_float32) {
@@ -3903,7 +3903,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3917,7 +3917,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -3929,7 +3929,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_uint8) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_int8) {
@@ -3940,7 +3940,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_int8) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_int16) {
@@ -3951,7 +3951,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_int16) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_int32) {
@@ -3961,7 +3961,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_int32) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_int64) {
@@ -3972,7 +3972,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_int64) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_bool) {
@@ -3983,7 +3983,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float32_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_float32) {
@@ -3996,7 +3996,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4009,7 +4009,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4022,7 +4022,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_uint8) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_int8) {
@@ -4034,7 +4034,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_int8) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_int16) {
@@ -4046,7 +4046,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_int16) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_int32) {
@@ -4057,7 +4057,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_int32) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_int64) {
@@ -4069,7 +4069,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_int64) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_bool) {
@@ -4081,7 +4081,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_float64_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_uint8_float32) {
@@ -4093,7 +4093,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4107,7 +4107,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4119,7 +4119,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4132,7 +4132,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4145,7 +4145,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4157,7 +4157,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4170,7 +4170,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4182,7 +4182,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_uint8_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_int8_float32) {
@@ -4194,7 +4194,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4208,7 +4208,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4221,7 +4221,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4233,7 +4233,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4246,7 +4246,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4258,7 +4258,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4271,7 +4271,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4283,7 +4283,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int8_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_int16_float32) {
@@ -4295,7 +4295,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4309,7 +4309,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4322,7 +4322,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4335,7 +4335,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4347,7 +4347,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4359,7 +4359,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4372,7 +4372,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4384,7 +4384,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int16_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_int32_float32) {
@@ -4395,7 +4395,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4408,7 +4408,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4420,7 +4420,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4432,7 +4432,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4444,7 +4444,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4455,7 +4455,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4467,7 +4467,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4478,7 +4478,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int32_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_int64_float32) {
@@ -4490,7 +4490,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4504,7 +4504,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4517,7 +4517,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4530,7 +4530,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4543,7 +4543,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4555,7 +4555,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4567,7 +4567,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4579,7 +4579,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_int64_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int32_bool_float32) {
@@ -4591,7 +4591,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4605,7 +4605,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4618,7 +4618,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4631,7 +4631,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4644,7 +4644,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4656,7 +4656,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4669,7 +4669,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4680,7 +4680,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int32_bool_bool) {
   exec_aten::Tensor self = tfInt.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_float32) {
@@ -4691,7 +4691,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4705,7 +4705,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4717,7 +4717,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_uint8) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_int8) {
@@ -4728,7 +4728,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_int8) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_int16) {
@@ -4739,7 +4739,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_int16) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_int32) {
@@ -4750,7 +4750,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_int32) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_int64) {
@@ -4760,7 +4760,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_int64) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_bool) {
@@ -4771,7 +4771,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float32_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_float32) {
@@ -4784,7 +4784,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4797,7 +4797,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4810,7 +4810,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_uint8) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_int8) {
@@ -4822,7 +4822,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_int8) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_int16) {
@@ -4834,7 +4834,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_int16) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_int32) {
@@ -4846,7 +4846,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_int32) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_int64) {
@@ -4857,7 +4857,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_int64) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_bool) {
@@ -4869,7 +4869,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_float64_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_uint8_float32) {
@@ -4881,7 +4881,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4895,7 +4895,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4907,7 +4907,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4920,7 +4920,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4933,7 +4933,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4946,7 +4946,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4958,7 +4958,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4970,7 +4970,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_uint8_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_int8_float32) {
@@ -4982,7 +4982,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -4996,7 +4996,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5009,7 +5009,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5021,7 +5021,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5034,7 +5034,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5047,7 +5047,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5059,7 +5059,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5071,7 +5071,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int8_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_int16_float32) {
@@ -5083,7 +5083,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5097,7 +5097,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5110,7 +5110,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5123,7 +5123,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5135,7 +5135,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5148,7 +5148,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5160,7 +5160,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5172,7 +5172,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int16_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_int32_float32) {
@@ -5184,7 +5184,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5198,7 +5198,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5211,7 +5211,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5224,7 +5224,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5237,7 +5237,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5249,7 +5249,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5261,7 +5261,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5273,7 +5273,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int32_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_int64_float32) {
@@ -5284,7 +5284,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5297,7 +5297,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5309,7 +5309,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5321,7 +5321,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5333,7 +5333,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5345,7 +5345,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5356,7 +5356,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5367,7 +5367,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_int64_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_int64_bool_float32) {
@@ -5379,7 +5379,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_bool_float32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5393,7 +5393,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_bool_float64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 2.0, 3.0, 4.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5406,7 +5406,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_bool_uint8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5419,7 +5419,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_bool_int8) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5432,7 +5432,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_bool_int16) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5445,7 +5445,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_bool_int32) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5457,7 +5457,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_bool_int64) {
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 2, 3, 4});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5468,7 +5468,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_int64_bool_bool) {
   exec_aten::Tensor self = tfLong.make({2, 2}, {1, 2, 3, 4});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_float32) {
@@ -5479,7 +5479,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_float32) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5493,7 +5493,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_float64) {
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5505,7 +5505,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_uint8) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_int8) {
@@ -5516,7 +5516,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_int8) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_int16) {
@@ -5527,7 +5527,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_int16) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_int32) {
@@ -5538,7 +5538,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_int32) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_int64) {
@@ -5549,7 +5549,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_int64) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_bool) {
@@ -5559,7 +5559,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float32_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfFloat.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_float32) {
@@ -5572,7 +5572,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_float32) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5585,7 +5585,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_float64) {
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5598,7 +5598,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_uint8) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_int8) {
@@ -5610,7 +5610,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_int8) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_int16) {
@@ -5622,7 +5622,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_int16) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_int32) {
@@ -5634,7 +5634,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_int32) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_int64) {
@@ -5646,7 +5646,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_int64) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_bool) {
@@ -5657,7 +5657,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_float64_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfDouble.make({2, 2}, {1.0, 1.0, 1.0, 1.0});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_uint8_float32) {
@@ -5669,7 +5669,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_uint8_float32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5683,7 +5683,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_uint8_float64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5695,7 +5695,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_uint8_uint8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5708,7 +5708,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_uint8_int8) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5721,7 +5721,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_uint8_int16) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5734,7 +5734,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_uint8_int32) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5747,7 +5747,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_uint8_int64) {
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5758,7 +5758,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_uint8_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfByte.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_int8_float32) {
@@ -5770,7 +5770,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int8_float32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5784,7 +5784,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int8_float64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5797,7 +5797,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int8_uint8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5809,7 +5809,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int8_int8) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5822,7 +5822,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int8_int16) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5835,7 +5835,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int8_int32) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5848,7 +5848,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int8_int64) {
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5859,7 +5859,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int8_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfChar.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_int16_float32) {
@@ -5871,7 +5871,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int16_float32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5885,7 +5885,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int16_float64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5898,7 +5898,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int16_uint8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5911,7 +5911,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int16_int8) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5923,7 +5923,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int16_int16) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5936,7 +5936,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int16_int32) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5949,7 +5949,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int16_int64) {
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5960,7 +5960,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int16_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfShort.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_int32_float32) {
@@ -5972,7 +5972,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int32_float32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5986,7 +5986,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int32_float64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -5999,7 +5999,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int32_uint8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6012,7 +6012,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int32_int8) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6025,7 +6025,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int32_int16) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6037,7 +6037,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int32_int32) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6050,7 +6050,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int32_int64) {
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6061,7 +6061,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int32_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfInt.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_int64_float32) {
@@ -6073,7 +6073,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int64_float32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
   exec_aten::Tensor out_expected = tfFloat.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6087,7 +6087,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int64_float64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
   exec_aten::Tensor out_expected = tfDouble.make({2, 2}, {1.0, 0.0, 0.0, 1.0});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6100,7 +6100,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int64_uint8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
   exec_aten::Tensor out_expected = tfByte.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6113,7 +6113,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int64_int8) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
   exec_aten::Tensor out_expected = tfChar.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6126,7 +6126,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int64_int16) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
   exec_aten::Tensor out_expected = tfShort.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6139,7 +6139,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int64_int32) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
   exec_aten::Tensor out_expected = tfInt.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6151,7 +6151,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int64_int64) {
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
   exec_aten::Tensor out_expected = tfLong.make({2, 2}, {1, 0, 0, 1});
-  _floor_divide_out(self, other, out);
+  op_floor_divide_out(self, other, out);
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
@@ -6162,7 +6162,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_int64_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfLong.make({2, 2}, {1, 1, 1, 1});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_float32) {
@@ -6172,7 +6172,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_float32) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfFloat.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_float64) {
@@ -6183,7 +6183,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_float64) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfDouble.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_uint8) {
@@ -6193,7 +6193,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_uint8) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfByte.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_int8) {
@@ -6203,7 +6203,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_int8) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfChar.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_int16) {
@@ -6213,7 +6213,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_int16) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfShort.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_int32) {
@@ -6223,7 +6223,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_int32) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfInt.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_int64) {
@@ -6233,7 +6233,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_int64) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfLong.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_bool) {
@@ -6242,7 +6242,7 @@ TEST(OpFloorDivideOutTest, DtypeTest_bool_bool_bool) {
   exec_aten::Tensor self = tfBool.make({2, 2}, {true, false, false, true});
   exec_aten::Tensor other = tfBool.make({2, 2}, {true, true, true, true});
   exec_aten::Tensor out = tfBool.zeros({2, 2});
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(self, other, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(self, other, out));
 }
 
 // Common testing for floor-dividing two integer Tensors.
@@ -6257,7 +6257,7 @@ void test_integer_floor_divide() {
 
   // floor_divide two tensors.
   // Integer division of -8 / 6 return -1, but -8 // 6 is -2
-  _floor_divide_out(
+  op_floor_divide_out(
       tf.make(sizes, /*data=*/{-8, 1, 2, 4, 8, 3}),
       tf.make(sizes, /*data=*/{6, 2, 2, 2, 2, -5}),
       out);
@@ -6275,7 +6275,7 @@ TEST(OpFloorDivideKernelTest, ByteTensors) {
   Tensor out = tf.zeros(sizes);
 
   // floor_divide two tensors.
-  _floor_divide_out(
+  op_floor_divide_out(
       tf.make(sizes, /*data=*/{1, 2, 4, 8}),
       tf.make(sizes, /*data=*/{2, 2, 2, 2}),
       out);
@@ -6312,7 +6312,7 @@ void test_floating_point_floor_divide() {
 
   // floor_divide two tensors.
   // std::floor(-0.5 / -0.1) == 5.0, but -0.5 // -0.1 yeilds 4.0
-  _floor_divide_out(
+  op_floor_divide_out(
       tf.make(sizes, /*data=*/{-5.3, 1.1, 2.2, 4.4, 6.8, -0.5}),
       tf.make(sizes, /*data=*/{2.7, 2.0, 2.0, 2.0, 2.0, -0.1}),
       out);
@@ -6345,7 +6345,7 @@ TEST(OpFloorDivideKernelTest, UnhandledDtypeDies) {
 
   // Dividing the two boolean tensors should cause an assertion and kill the
   // test process.
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(a, b, out));
 }
 
 // Mismatched shape tests.
@@ -6362,7 +6362,7 @@ TEST(OpFloorDivideKernelTest, MismatchedInputShapesDies) {
 
   // Adding the two mismatched tensors should cause an assertion and kill the
   // test process.
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(a, b, out));
 }
 
 TEST(OpFloorDivideKernelTest, MismatchedOutputShapesDies) {
@@ -6382,7 +6382,7 @@ TEST(OpFloorDivideKernelTest, MismatchedOutputShapesDies) {
 
   // Adding the tensors into a mismatched output should cause an assertion and
   // kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(_floor_divide_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(a, b, out));
 }
 
 TEST(OpFloorDivideKernelTest, BroadcastDimSizeIsOneAB) {
@@ -6401,7 +6401,7 @@ TEST(OpFloorDivideKernelTest, BroadcastDimSizeIsOneAB) {
   Tensor expected_result = tf.make({3, 2}, {1.0, 0.0, 0.0, 0.0, 1.0, 0.0});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = _floor_divide_out(x, y, out);
+  Tensor ret = op_floor_divide_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -6421,7 +6421,7 @@ TEST(OpFloorDivideKernelTest, BroadcastDimSizeMissingAB) {
   Tensor expected_result = tf.make({3, 2}, {1.0, 0.0, 0.0, 0.0, 1.0, 0.0});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = _floor_divide_out(x, y, out);
+  Tensor ret = op_floor_divide_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -6441,7 +6441,7 @@ TEST(OpFloorDivideKernelTest, BroadcastDimSizeIsOneBA) {
   Tensor expected_result = tf.make({3, 2}, {0.0, 1.0, 3.0, 1.0, 0.0, 1.0});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = _floor_divide_out(x, y, out);
+  Tensor ret = op_floor_divide_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -6461,7 +6461,7 @@ TEST(OpFloorDivideKernelTest, BroadcastDimSizeMissingBA) {
   Tensor expected_result = tf.make({3, 2}, {0.0, 1.0, 3.0, 1.0, 0.0, 1.0});
 
   Tensor out = tf.zeros({3, 2});
-  Tensor ret = _floor_divide_out(x, y, out);
+  Tensor ret = op_floor_divide_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -6489,7 +6489,7 @@ TEST(OpFloorDivideKernelTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _floor_divide_out(x, y, out);
+  Tensor ret = op_floor_divide_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -6517,7 +6517,7 @@ TEST(OpFloorDivideKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _floor_divide_out(x, y, out);
+  Tensor ret = op_floor_divide_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
@@ -6545,6 +6545,6 @@ TEST(OpFloorDivideKernelTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = _floor_divide_out(x, y, out);
+  Tensor ret = op_floor_divide_out(x, y, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

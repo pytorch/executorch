@@ -23,7 +23,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& _var_out(
+Tensor& op_var_out(
     const Tensor& self,
     optional<ArrayRef<int64_t>> dim,
     bool unbiased,
@@ -59,7 +59,7 @@ void test_var_out_invalid_dimensions() {
   int64_t dims_1[1] = {3};
   optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
   ET_EXPECT_DEATH(
-      _var_out(
+      op_var_out(
           self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out),
       "");
 
@@ -67,7 +67,7 @@ void test_var_out_invalid_dimensions() {
   int64_t dims_2[2] = {2, 2};
   optional_dim_list = ArrayRef<int64_t>{dims_2, 2};
   ET_EXPECT_DEATH(
-      _var_out(
+      op_var_out(
           self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out),
       "");
 }
@@ -115,14 +115,14 @@ void test_var_out_invalid_shape() {
   int64_t dims_1[1] = {1};
   optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
   ET_EXPECT_DEATH(
-      _var_out(
+      op_var_out(
           self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out),
       "");
 
   // dimension size mismatch when keepdim is false
   out = tf_out.zeros({2, 1, 4});
   ET_EXPECT_DEATH(
-      _var_out(
+      op_var_out(
           self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/false, out),
       "");
 }
@@ -172,7 +172,7 @@ TEST(OpVarOutTest, InvalidDTypeDies) {
   optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
 
   ET_EXPECT_DEATH(
-      _var_out(
+      op_var_out(
           self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out),
       "");
 }
@@ -200,7 +200,7 @@ void test_var_out_dtype() {
   int64_t dims_1[1] = {2};
   optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims_1, 1}};
   optional<ScalarType> dtype = OUT_DTYPE;
-  _var_out(self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
+  op_var_out(self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_out.make(
     {2, 3, 1},
@@ -217,7 +217,8 @@ void test_var_out_dtype() {
 
   // keepdim=false should work
   out = tf_out.zeros({2, 3});
-  _var_out(self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/false, out);
+  op_var_out(
+      self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/false, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_out.make(
     {2, 3},
@@ -231,18 +232,20 @@ void test_var_out_dtype() {
   out = tf_out.zeros({1, 1, 4});
   int64_t dims_2[2] = {0, 1};
   optional_dim_list = ArrayRef<int64_t>{dims_2, 2};
-  _var_out(self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
+  op_var_out(self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 1, 4}, {56.0, 56.0, 56.0, 56.0}));
 
   out = tf_out.zeros({4});
-  _var_out(self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/false, out);
+  op_var_out(
+      self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/false, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({4}, {56.0, 56.0, 56.0, 56.0}));
 
   // dim list with negative dimensions should work
   out = tf_out.zeros({2, 1, 4});
   int64_t dims_3[1] = {-2};
   optional_dim_list = ArrayRef<int64_t>{dims_3, 1};
-  _var_out(self, optional_dim_list, /*unbiased=*/false, /*keepdim=*/true, out);
+  op_var_out(
+      self, optional_dim_list, /*unbiased=*/false, /*keepdim=*/true, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_out.make(
     {2, 1, 4},
@@ -256,18 +259,18 @@ void test_var_out_dtype() {
   // empty/null dim list should work
   out = tf_out.zeros({1, 1, 1});
   optional<ArrayRef<int64_t>> null_dim_list;
-  _var_out(self, null_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
+  op_var_out(self, null_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 1, 1}, {50.0}));
 
   optional<ArrayRef<int64_t>> empty_dim_list{ArrayRef<int64_t>{}};
-  _var_out(self, empty_dim_list, /*unbiased=*/false, /*keepdim=*/true, out);
+  op_var_out(self, empty_dim_list, /*unbiased=*/false, /*keepdim=*/true, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 1, 1}, {47.916668}));
 
   out = tf_out.zeros({});
-  _var_out(self, null_dim_list, /*unbiased=*/false, /*keepdim=*/false, out);
+  op_var_out(self, null_dim_list, /*unbiased=*/false, /*keepdim=*/false, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({}, {47.916668}));
 
-  _var_out(self, empty_dim_list, /*unbiased=*/true, /*keepdim=*/false, out);
+  op_var_out(self, empty_dim_list, /*unbiased=*/true, /*keepdim=*/false, out);
   EXPECT_TENSOR_CLOSE(out, tf_out.make({}, {50.0}));
 }
 
@@ -304,7 +307,7 @@ TEST(OpVarOutTest, InfinityAndNANTest) {
   int64_t dims[1] = {-1};
   optional<ArrayRef<int64_t>> optional_dim_list{ArrayRef<int64_t>{dims, 1}};
   optional<ScalarType> dtype;
-  _var_out(self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
+  op_var_out(self, optional_dim_list, /*unbiased=*/true, /*keepdim=*/true, out);
   // clang-format off
   EXPECT_TENSOR_CLOSE(out, tf_float.make(
     {2, 3, 1},
@@ -328,7 +331,7 @@ TEST(OpVarOutTest, DynamicShapeUpperBoundSameAsExpected) {
 
   Tensor out =
       tf.zeros({3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _var_out(
+  Tensor ret = op_var_out(
       x, ArrayRef<int64_t>{1}, /*unbiased=*/true, /*keepdim=*/false, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
@@ -341,7 +344,7 @@ TEST(OpVarOutTest, DynamicShapeUpperBoundLargerThanExpected) {
 
   Tensor out =
       tf.zeros({10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
-  Tensor ret = _var_out(
+  Tensor ret = op_var_out(
       x, ArrayRef<int64_t>{1}, /*unbiased=*/true, /*keepdim=*/false, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
@@ -355,7 +358,7 @@ TEST(OpVarOutTest, DynamicShapeUnbound) {
 
   Tensor out =
       tf.zeros({1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
-  Tensor ret = _var_out(
+  Tensor ret = op_var_out(
       x, ArrayRef<int64_t>{1}, /*unbiased=*/true, /*keepdim=*/false, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }

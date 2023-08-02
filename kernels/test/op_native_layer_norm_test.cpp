@@ -32,7 +32,7 @@ using torch::executor::testing::TensorFactory;
 
 using OptScalar = exec_aten::optional<Scalar>;
 
-::std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
+::std::tuple<Tensor&, Tensor&, Tensor&> op_native_layer_norm_out(
     const Tensor& input,
     IntArrayRef normalized_shape,
     const optional<Tensor>& weight,
@@ -97,7 +97,7 @@ void run_test_cases(std::vector<NativeLayerNormTestCase<DTYPE>> test_cases) {
         test_case.normalized_shape.begin(), test_case.normalized_shape.end());
     auto normalized_shape = exec_aten::ArrayRef<int64_t>(
         normalized_shape_vec.data(), normalized_shape_vec.size());
-    auto result = native_layer_norm_out(
+    auto result = op_native_layer_norm_out(
         in, normalized_shape, weight, bias, test_case.eps, out0, out1, out2);
     EXPECT_TENSOR_CLOSE(out0, std::get<0>(result));
 
@@ -247,7 +247,7 @@ void run_death_test_cases(
         test_case.normalized_shape.begin(), test_case.normalized_shape.end());
     auto normalized_shape = exec_aten::ArrayRef<int64_t>(
         normalized_shape_vec.data(), normalized_shape_vec.size());
-    ET_EXPECT_KERNEL_FAILURE(native_layer_norm_out(
+    ET_EXPECT_KERNEL_FAILURE(op_native_layer_norm_out(
         in, normalized_shape, weight, bias, test_case.eps, out0, out1, out2));
   }
 }
@@ -334,7 +334,7 @@ native_layer_norm_template = f"""
 
   int64_t normalized_shape[] = $normalized_shape$;
 
-  native_layer_norm_out(
+  op_native_layer_norm_out(
     input, normalized_shape, weight, bias, $eps$, out0, out1, out2);
   EXPECT_TENSOR_CLOSE(out0, expected);""" */
 
@@ -370,7 +370,7 @@ void test_dynamic_shape(
 
   int64_t normalized_shape[] = {3};
 
-  native_layer_norm_out(
+  op_native_layer_norm_out(
       input, normalized_shape, weight, bias, 1e-05, out0, out1, out2);
   EXPECT_TENSOR_CLOSE(out0, expected);
 }

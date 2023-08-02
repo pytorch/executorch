@@ -23,7 +23,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& slice_scatter_out(
+Tensor& op_slice_scatter_out(
     const Tensor& self,
     const Tensor& src,
     int64_t dim,
@@ -61,7 +61,7 @@ TEST(OpSliceCopyTensorOutTest, LegalDimSupported) {
   // - src.size(i) shall equal num_values if i == dim
   //   The definition of num_values could be found at https://fburl.com/code/mnnxkowm
 
-  // slice_scatter_out(input, src, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out),
+  // op_slice_scatter_out(input, src, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out),
   // src shape should equal to input[0:1:1，:, :]
   Tensor src_dim_0 = tf.make(
     /*sizes=*/{1, 3, 4},
@@ -83,7 +83,7 @@ TEST(OpSliceCopyTensorOutTest, LegalDimSupported) {
       -5.,  -6.,  -7.,  -8., // [1, 1, :]
       -9., -10., -11., -12., // [1, 2, :]
     });
-  // slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/1, /*step=*/1, out),
+  // op_slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/1, /*step=*/1, out),
   // src shape should equal to input[:，0:1:1, :]
   Tensor src_dim_1 = tf.make(
     /*sizes=*/{2, 1, 4},
@@ -104,7 +104,7 @@ TEST(OpSliceCopyTensorOutTest, LegalDimSupported) {
       -5.,  -6.,  -7.,  -8., // [1, 1, :]
       -9., -10., -11., -12., // [1, 2, :]
     });
-  // slice_scatter_out(input, src, /*dim=*/2, /*start=*/0, /*end=*/1, /*step=*/1, out),
+  // op_slice_scatter_out(input, src, /*dim=*/2, /*start=*/0, /*end=*/1, /*step=*/1, out),
   // src shape should equal to input[:，:, 0:1:1]
   Tensor src_dim_2 = tf.make(
     /*sizes=*/{2, 3, 1},
@@ -165,7 +165,7 @@ TEST(OpSliceCopyTensorOutTest, LegalDimSupported) {
     // Slice input on dim with start=0, end = 0 and step = 1
     // Should always return the provided out Tensor.
     // The ret shall meet the expectation.
-    Tensor ret = slice_scatter_out(
+    Tensor ret = op_slice_scatter_out(
         input, src, dim, /*start=*/0, /*end=*/1, /*step=*/1, out);
     EXPECT_TENSOR_EQ(out, ret);
     EXPECT_TENSOR_EQ(ret, expected_rets[testcase_idx]);
@@ -199,7 +199,7 @@ TEST(OpSliceCopyTensorOutTest, AllStartValsSupported) {
   // - src.size(i) shall equal num_values if i == dim
   //   The definition of num_values could be found at https://fburl.com/code/mnnxkowm
 
-  // slice_scatter_out(input, src, /*dim=*/1, /*start=*/ <= 0, /*end=*/10, /*step=*/1, out),
+  // op_slice_scatter_out(input, src, /*dim=*/1, /*start=*/ <= 0, /*end=*/10, /*step=*/1, out),
   // src shape shall equal to input[:，0:3:1, :]
   Tensor src_start_0_or_below = tf.make(
     /*sizes=*/{2, 3, 4},
@@ -227,7 +227,7 @@ TEST(OpSliceCopyTensorOutTest, AllStartValsSupported) {
        5.,   6.,   7.,   8., // [1, 1, :]
        9.,  10.,  11.,  12., // [1, 2, :]
     });
-  // slice_scatter_out(input, src, /*dim=*/1, /*start=*/1, /*end=*/10, /*step=*/1, out),
+  // op_slice_scatter_out(input, src, /*dim=*/1, /*start=*/1, /*end=*/10, /*step=*/1, out),
   // src shape shall equal to input[:，1:3:1, :]
   Tensor src_start_1 = tf.make(
     /*sizes=*/{2, 2, 4},
@@ -253,7 +253,7 @@ TEST(OpSliceCopyTensorOutTest, AllStartValsSupported) {
        9.,  10.,  11.,  12., // [1, 1, :]
        5.,   6.,   7.,   8., // [1, 0, :]
     });
-  // slice_scatter_out(input, src, /*dim=*/1, /*start=*/2, /*end=*/10, /*step=*/1, out),
+  // op_slice_scatter_out(input, src, /*dim=*/1, /*start=*/2, /*end=*/10, /*step=*/1, out),
   // src shape shall equal to input[:，2:3:1, :] = input
   Tensor src_start_2 = tf.make(
     /*sizes=*/{2, 1, 4},
@@ -274,7 +274,7 @@ TEST(OpSliceCopyTensorOutTest, AllStartValsSupported) {
       -5.,  -6.,  -7.,  -8., // [1, 1, :]
       -1., -19., -18., -17., // [1, 2, :]
     });
-  // slice_scatter_out(input, src, /*dim=*/1, /*start=*/ > input.size(1) = 2, /*end=*/10, /*step=*/1, out),
+  // op_slice_scatter_out(input, src, /*dim=*/1, /*start=*/ > input.size(1) = 2, /*end=*/10, /*step=*/1, out),
   // src_shape shall equal to input[:, 3:3:1, :], which is an empty tensor
   Tensor src_start_3_or_above = tf.make({2, 0, 4}, {});
   Tensor expected_start_3_or_above = tf.make(
@@ -334,7 +334,7 @@ TEST(OpSliceCopyTensorOutTest, AllStartValsSupported) {
 
     // Should always return the provided out Tensor.
     // The ret shall meet the expectation.
-    Tensor ret = slice_scatter_out(input, src, dim, start, end, step, out);
+    Tensor ret = op_slice_scatter_out(input, src, dim, start, end, step, out);
     EXPECT_TENSOR_EQ(out, ret);
     EXPECT_TENSOR_EQ(ret, expected_ret);
   }
@@ -363,7 +363,7 @@ TEST(OpSliceCopyTensorOutTest, AllEndValsSupported) {
   // - output.size(i) shall equal num_values if i == dim
   //   The definition of num_values could be found at https://fburl.com/code/mnnxkowm
 
-  // slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/ <= 0, /*step=*/1, out),
+  // op_slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/ <= 0, /*step=*/1, out),
   // src shape should equal input[:，0:0:1, :], which should be an empty tensor
   Tensor src_end_0_or_below = tf.make({2, 0, 4}, {});
   Tensor expected_end_0_or_below = tf.make(
@@ -380,7 +380,7 @@ TEST(OpSliceCopyTensorOutTest, AllEndValsSupported) {
       -9., -10., -11., -12., // [1, 2, :]
     });
 
-  // slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/1, /*step=*/1, out),
+  // op_slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/1, /*step=*/1, out),
   // src shape should equal to input[:，0:1:1, :]
   Tensor src_end_1 = tf.make(
     /*sizes=*/{2, 1, 4},
@@ -402,7 +402,7 @@ TEST(OpSliceCopyTensorOutTest, AllEndValsSupported) {
       -9., -10., -11., -12., // [1, 2, :]
     });
 
-  // slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/2, /*step=*/1, out),
+  // op_slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/2, /*step=*/1, out),
   // src shape should equal input[:，0:2:1, :]
   Tensor src_end_2 = tf.make(
     /*sizes=*/{2, 2, 4},
@@ -428,7 +428,7 @@ TEST(OpSliceCopyTensorOutTest, AllEndValsSupported) {
        4.,   3.,   2.,   1., // [1, 1, :]
       -9., -10., -11., -12., // [1, 2, :]
     });
-  // slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/ >= 3, /*step=*/1, out),
+  // op_slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/ >= 3, /*step=*/1, out),
   // src shape should equal input[:，0:3:1, :] = input for any end >= 3
   Tensor src_end_3_or_above = tf.make(
     /*sizes=*/{2, 3, 4},
@@ -500,7 +500,7 @@ TEST(OpSliceCopyTensorOutTest, AllEndValsSupported) {
 
     // Should always return the provided out Tensor.
     // The ret shall meet the expectation.
-    Tensor ret = slice_scatter_out(input, src, dim, start, end, step, out);
+    Tensor ret = op_slice_scatter_out(input, src, dim, start, end, step, out);
     EXPECT_TENSOR_EQ(out, ret);
     EXPECT_TENSOR_EQ(ret, expected_ret);
   }
@@ -526,7 +526,7 @@ TEST(OpSliceCopyTensorOutTest, LegalStepsSupported) {
 
   // Set the end large enough to hold any step
 
-  // Expected ret for slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/10, /*step=*/1, out),
+  // Expected ret for op_slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/10, /*step=*/1, out),
   // src shape should equal to input[:，0:3:1, :]
   Tensor src_0 = tf.make(
     /*sizes=*/{2, 3, 4},
@@ -554,7 +554,7 @@ TEST(OpSliceCopyTensorOutTest, LegalStepsSupported) {
        5.,   6.,   7.,   8., // [1, 1, :]
        9.,  10.,  11.,  12., // [1, 2, :]
     });
-  // Expected ret for slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/10, /*step=*/2, out),
+  // Expected ret for op_slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/10, /*step=*/2, out),
   // src shape should equal to input[:，0:3:2, :]
   Tensor src_1 = tf.make(
     /*sizes=*/{2, 2, 4},
@@ -580,7 +580,7 @@ TEST(OpSliceCopyTensorOutTest, LegalStepsSupported) {
       -5.,  -6.,  -7.,  -8., // [1, 1, :]
        9.,  10.,  11.,  12., // [1, 2, :]
     });
-  // Expected ret for slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/10, /*step=*/3, out),
+  // Expected ret for op_slice_scatter_out(input, src, /*dim=*/1, /*start=*/0, /*end=*/10, /*step=*/3, out),
   // src shape should equal to input[:，0:3:3, :] = input
   Tensor src_2 = tf.make(
     /*sizes=*/{2, 1, 4},
@@ -620,7 +620,7 @@ TEST(OpSliceCopyTensorOutTest, LegalStepsSupported) {
 
     // Should always return the provided out Tensor.
     // The ret shall meet the expectation.
-    Tensor ret = slice_scatter_out(input, src, dim, start, end, step, out);
+    Tensor ret = op_slice_scatter_out(input, src, dim, start, end, step, out);
     EXPECT_TENSOR_EQ(out, ret);
     EXPECT_TENSOR_EQ(ret, expected_ret);
   }
@@ -641,7 +641,7 @@ void test_dtype() {
       9,  10,  11,  12, // [2, :]
     });
 
-  // slice_scatter_out(input, src, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out),
+  // op_slice_scatter_out(input, src, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out),
   // src shape should equal to input[0:2:1, :]
   Tensor src = tf.make(
     /*sizes=*/{2, 4},
@@ -659,7 +659,7 @@ void test_dtype() {
   // clang-format on
 
   Tensor out = tf.zeros({3, 4});
-  Tensor ret = slice_scatter_out(
+  Tensor ret = op_slice_scatter_out(
       input, src, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out);
 
   EXPECT_TENSOR_EQ(out, ret);
@@ -689,7 +689,7 @@ TEST(OpSliceCopyTensorOutTest, EmptyInputSupported) {
 
   // Some invalid dim values.
   for (int64_t dim = 0; dim > input.dim(); dim++) {
-    Tensor ret = slice_scatter_out(
+    Tensor ret = op_slice_scatter_out(
         input, src, dim, /*start=*/0, /*end=*/1, /*step=*/1, out);
     EXPECT_TENSOR_EQ(ret, out);
 
@@ -706,9 +706,9 @@ TEST(OpSliceCopyTensorOutTest, EmptySizeInputDies) {
   Tensor out = tf.ones({});
 
   // The operation shall die whatever the end is.
-  ET_EXPECT_KERNEL_FAILURE(slice_scatter_out(
+  ET_EXPECT_KERNEL_FAILURE(op_slice_scatter_out(
       input, src, /*dim=*/0, /*start=*/0, /*end=*/0, /*step=*/1, out));
-  ET_EXPECT_KERNEL_FAILURE(slice_scatter_out(
+  ET_EXPECT_KERNEL_FAILURE(op_slice_scatter_out(
       input, src, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));
 }
 
@@ -722,7 +722,7 @@ TEST(OpSliceCopyTensorOutTest, NonPostiveStepsDies) {
   // Some invalid step values.
   const std::vector<int64_t> invalid_steps = {-2, -1, 0};
   for (int64_t step : invalid_steps) {
-    ET_EXPECT_KERNEL_FAILURE(slice_scatter_out(
+    ET_EXPECT_KERNEL_FAILURE(op_slice_scatter_out(
         input, src, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/step, out));
   }
 }
@@ -737,7 +737,7 @@ TEST(OpSliceCopyTensorOutTest, DimOutOfBoundDies) {
   // Some invalid dim values.
   const std::vector<int64_t> invalid_dims = {3, 4, 5, -4, -5, -6};
   for (int64_t dim : invalid_dims) {
-    ET_EXPECT_KERNEL_FAILURE(slice_scatter_out(
+    ET_EXPECT_KERNEL_FAILURE(op_slice_scatter_out(
         input, src, dim, /*start=*/0, /*end=*/1, /*step=*/1, out));
   }
 }
@@ -751,7 +751,7 @@ TEST(OpSliceCopyTensorOutTest, MismatchedOutDtypesDies) {
   // Size is compatible to the output, but a mismatched dtype.
   Tensor out = tf_float.ones({1, 2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(slice_scatter_out(
+  ET_EXPECT_KERNEL_FAILURE(op_slice_scatter_out(
       input, src, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));
 }
 
@@ -767,7 +767,7 @@ TEST(OpSliceCopyTensorOutTest, MismatchedSrcDtypesDies) {
   // Size is compatible to the output, but a mismatched dtype.
   Tensor out = tf_int.ones({1, 2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(slice_scatter_out(
+  ET_EXPECT_KERNEL_FAILURE(op_slice_scatter_out(
       input, src, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));
 }
 
@@ -783,7 +783,7 @@ TEST(OpSliceCopyTensorOutTest, OutSizeMismatchDimDies) {
   // Should be {2, 4, 7, 5}
   Tensor out = tf.zeros({2, 4, 7});
 
-  ET_EXPECT_KERNEL_FAILURE(slice_scatter_out(
+  ET_EXPECT_KERNEL_FAILURE(op_slice_scatter_out(
       input, src, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out));
 }
 
@@ -799,7 +799,7 @@ TEST(OpSliceCopyTensorOutTest, SrcSizeMismatchDimDies) {
   // Should be {2, 4, 7, 5}
   Tensor out = tf.zeros({2, 4, 7, 5});
 
-  ET_EXPECT_KERNEL_FAILURE(slice_scatter_out(
+  ET_EXPECT_KERNEL_FAILURE(op_slice_scatter_out(
       input, src, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out));
 }
 
@@ -812,7 +812,7 @@ TEST(OpSliceCopyTensorOutTest, DefaultStartValSupported) {
   Tensor out = tf.zeros({2, 4, 7, 5});
   Tensor expected = tf.ones({2, 4, 7, 5});
 
-  Tensor ret_default_start = slice_scatter_out(
+  Tensor ret_default_start = op_slice_scatter_out(
       input,
       src,
       /*dim=*/0,
@@ -833,7 +833,7 @@ TEST(OpSliceCopyTensorOutTest, DefaultEndValSupported) {
   Tensor out = tf.zeros({2, 4, 7, 5});
   Tensor expected = tf.ones({2, 4, 7, 5});
 
-  Tensor ret_default_end = slice_scatter_out(
+  Tensor ret_default_end = op_slice_scatter_out(
       input,
       src,
       /*dim=*/0,
@@ -855,7 +855,7 @@ TEST(OpSliceCopyTensorOutTest, DynamicShapeTest) {
       tf.zeros({1, 2, 8}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   Tensor expected = tf.ones({1, 4, 4});
 
-  Tensor ret_default_end = slice_scatter_out(
+  Tensor ret_default_end = op_slice_scatter_out(
       input,
       src,
       /*dim=*/0,

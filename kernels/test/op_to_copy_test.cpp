@@ -27,7 +27,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& to_copy_out(
+Tensor& op_to_copy_out(
     const Tensor& self,
     bool non_blocking,
     optional<MemoryFormat> memory_format,
@@ -97,7 +97,7 @@ void test_runner_static_cast(
     Tensor input = tf_in.make(test_case.sizes, data_in);
     Tensor output = tf_out.zeros_like(input);
 
-    Tensor ret = to_copy_out(
+    Tensor ret = op_to_copy_out(
         /*self=*/input,
         /*non_blocking=*/false,
         exec_aten::MemoryFormat::Contiguous,
@@ -162,7 +162,7 @@ void test_runner_to_bool(
   Tensor input = tf_in.make({(int)test_case.size()}, data_in);
   Tensor output = tf_out.zeros_like(input);
 
-  Tensor ret = to_copy_out(
+  Tensor ret = op_to_copy_out(
       /*self=*/input,
       /*non_blocking=*/false,
       exec_aten::MemoryFormat::Contiguous,
@@ -170,10 +170,10 @@ void test_runner_to_bool(
 
   Tensor expected = tf_out.make({(int)data_out.size()}, data_out);
 
-  // The return value of to_copy_out and the values written to output
+  // The return value of op_to_copy_out and the values written to output
   // should be the same.
   EXPECT_TENSOR_EQ(ret, output);
-  // The return value of to_copy_out and the values in expected which are
+  // The return value of op_to_copy_out and the values in expected which are
   // the reference values should be the same.
   EXPECT_TENSOR_EQ(ret, expected);
 }
@@ -190,7 +190,7 @@ void test_runner_from_bool(
   Tensor input = tf_in.make({(int)test_case.size()}, test_case);
   Tensor output = tf_out.zeros_like(input);
 
-  Tensor ret = to_copy_out(
+  Tensor ret = op_to_copy_out(
       /*self=*/input,
       /*non_blocking=*/false,
       exec_aten::MemoryFormat::Contiguous,
@@ -198,10 +198,10 @@ void test_runner_from_bool(
 
   Tensor expected = tf_out.make({(int)data_out.size()}, data_out);
 
-  // The return value of to_copy_out and the values written to output
+  // The return value of op_to_copy_out and the values written to output
   // should be the same.
   EXPECT_TENSOR_EQ(ret, output);
-  // The return value of to_copy_out and the values in expected which are
+  // The return value of op_to_copy_out and the values in expected which are
   // the reference values should be the same.
   EXPECT_TENSOR_EQ(ret, expected);
 }
@@ -295,7 +295,7 @@ void test_runner_hardcode_data(
   Tensor input = tf_in.make(test_case.sizes, test_case.data_in);
   Tensor output = tf_out.zeros_like(input);
 
-  Tensor ret = to_copy_out(
+  Tensor ret = op_to_copy_out(
       /*self=*/input,
       /*non_blocking=*/false,
       exec_aten::MemoryFormat::Contiguous,
@@ -374,7 +374,7 @@ TEST(OpToTest, MismatchedSizesDie) {
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros({3, 2, 1, 1});
-  ET_EXPECT_KERNEL_FAILURE(to_copy_out(
+  ET_EXPECT_KERNEL_FAILURE(op_to_copy_out(
       input,
       /*non_blocking=*/false,
       exec_aten::MemoryFormat::Contiguous,
@@ -394,14 +394,14 @@ TEST(OpToTest, MismatchedMemoryFormatDies) {
       tf_in.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf_out.zeros({3, 1, 1, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(to_copy_out(
+  ET_EXPECT_KERNEL_FAILURE(op_to_copy_out(
       input,
       /*non_blocking=*/false,
       static_cast<exec_aten::MemoryFormat>(55),
       out));
   // memory format can be null
   EXPECT_TENSOR_EQ(
-      to_copy_out(
+      op_to_copy_out(
           input,
           /*non_blocking=*/false,
           /*memory_format=*/exec_aten::nullopt,
@@ -417,7 +417,7 @@ TEST(OpToTest, MismatchedBlockingDie) {
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{3, 1, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf.zeros(/*sizes=*/{3, 1, 1, 2});
-  ET_EXPECT_KERNEL_FAILURE(to_copy_out(
+  ET_EXPECT_KERNEL_FAILURE(op_to_copy_out(
       input,
       /*non_blocking=*/true,
       exec_aten::MemoryFormat::Contiguous,
@@ -429,7 +429,7 @@ import torch
 torch.manual_seed(0)
 x = torch.rand(2, 3)
 res = x.to(non_blocking = False, memory_format = torch.preserve_format)
-op = "to_copy_out"
+op = "op_to_copy_out"
 opt_setup_params = """
   bool non_blocking = false;
   optional<MemoryFormat> memory_format;
@@ -468,7 +468,7 @@ void test_dynamic_shape(
   optional<MemoryFormat> memory_format;
 
   Tensor out = tf.zeros(out_shape, dynamism);
-  to_copy_out(x, non_blocking, memory_format, out);
+  op_to_copy_out(x, non_blocking, memory_format, out);
   EXPECT_TENSOR_EQ(out, expected);
 }
 

@@ -22,7 +22,7 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-std::tuple<Tensor&, Tensor&> _min_out(
+std::tuple<Tensor&, Tensor&> op_min_dim_min(
     const Tensor& in,
     int64_t dim,
     bool keepdim,
@@ -44,25 +44,25 @@ void test_min_out_invalid_dimensions() {
 
   // output tensor dim mismatch
   ET_EXPECT_DEATH(
-      _min_out(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices), "");
+      op_min_dim_min(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices), "");
 
   // output tensor shape incorrect: size of dimension: dim should be 1
   min = tf_in.zeros({2, 3, 2});
   min_indices = tf_in.zeros({2, 3, 2});
   ET_EXPECT_DEATH(
-      _min_out(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices), "");
+      op_min_dim_min(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices), "");
 
   // output tensor shape should be squeezed when keepdim is false
   min = tf_in.zeros({2, 3, 1});
   min_indices = tf_in.zeros({2, 3, 1});
   ET_EXPECT_DEATH(
-      _min_out(in, /*dim=*/-1, /*keepdim=*/false, min, min_indices), "");
+      op_min_dim_min(in, /*dim=*/-1, /*keepdim=*/false, min, min_indices), "");
 
   // invalid dim
   min = tf_in.zeros({2, 3, 1});
   min_indices = tf_in.zeros({2, 3, 1});
   ET_EXPECT_DEATH(
-      _min_out(in, /*dim=*/3, /*keepdim=*/true, min, min_indices), "");
+      op_min_dim_min(in, /*dim=*/3, /*keepdim=*/true, min, min_indices), "");
 }
 
 TEST(OpMinOutTest, MismatchedDimensionsDies) {
@@ -88,13 +88,13 @@ TEST(OpMinOutTest, MismatchedDTypesDies) {
 
   // dtype of in and min should match
   ET_EXPECT_DEATH(
-      _min_out(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices), "");
+      op_min_dim_min(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices), "");
 
   // min_value tensor should have long as dtype
   min = tf_float.zeros({2, 3, 1});
   min_indices = tf_float.zeros({2, 3, 1});
   ET_EXPECT_DEATH(
-      _min_out(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices), "");
+      op_min_dim_min(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices), "");
 }
 
 template <ScalarType IN_DTYPE>
@@ -117,7 +117,7 @@ void test_min_out_dtype() {
 
   Tensor min = tf_in.zeros({2, 4});
   Tensor min_indices = tf_long.zeros({2, 4});
-  _min_out(in, /*dim=*/1, /*keepdim=*/false, min, min_indices);
+  op_min_dim_min(in, /*dim=*/1, /*keepdim=*/false, min, min_indices);
   // clang-format off
   EXPECT_TENSOR_CLOSE(min, tf_in.make(
     {2, 4},
@@ -135,7 +135,7 @@ void test_min_out_dtype() {
   // clang-format on
 
   // negative dim should work
-  _min_out(in, /*dim=*/-2, /*keepdim=*/false, min, min_indices);
+  op_min_dim_min(in, /*dim=*/-2, /*keepdim=*/false, min, min_indices);
   // clang-format off
   EXPECT_TENSOR_CLOSE(min, tf_in.make(
     {2, 4},
@@ -154,7 +154,7 @@ void test_min_out_dtype() {
   // keepdim should work
   min = tf_in.zeros({2, 3, 1});
   min_indices = tf_long.zeros({2, 3, 1});
-  _min_out(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices);
+  op_min_dim_min(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices);
   EXPECT_TENSOR_CLOSE(min, tf_in.make({2, 3, 1}, {0, 0, 0, 0, 0, 0}));
   EXPECT_TENSOR_EQ(min_indices, tf_long.make({2, 3, 1}, {0, 3, 1, 3, 0, 1}));
 }
@@ -181,7 +181,7 @@ void test_min_out_dtype<ScalarType::Bool>() {
   Tensor min_indices = tf_long.zeros({2, 3, 1});
 
   // +/-inf and nan should work
-  _min_out(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices);
+  op_min_dim_min(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices);
   // clang-format off
   EXPECT_TENSOR_CLOSE(
       min, tf_bool.make(
@@ -236,7 +236,7 @@ TEST(OpMinOutTest, InfinityAndNANTest) {
   Tensor min_indices = tf_long.zeros({2, 3, 1});
 
   // +/-inf and nan should work
-  _min_out(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices);
+  op_min_dim_min(in, /*dim=*/-1, /*keepdim=*/true, min, min_indices);
   EXPECT_TENSOR_CLOSE(
       min, tf_float.make({2, 3, 1}, {0, -INFINITY, NAN, NAN, NAN, NAN}));
   // clang-format off
@@ -283,7 +283,7 @@ void test_dynamic_shape(
   Tensor min = tf.zeros(out_shape, dynamism);
   Tensor min_indices = tfl.zeros(out_shape, dynamism);
 
-  _min_out(input, 1, false, min, min_indices);
+  op_min_dim_min(input, 1, false, min, min_indices);
   EXPECT_TENSOR_EQ(min, expected_min);
   EXPECT_TENSOR_EQ(min_indices, expected_min_indices);
 }
