@@ -25,10 +25,6 @@ from torch.utils import _pytree as pytree
 
 # Tests for serializing to json and back
 class TestSerde(unittest.TestCase):
-    def setUp(self) -> None:
-        # TODO(gasoon): Remove this once serde is fully migrated to Edge ops
-        self.edge_complie_config = EdgeCompileConfig(_use_edge_ops=False)
-
     def check_ep(
         self,
         ep1: TorchExportedProgram,
@@ -53,7 +49,7 @@ class TestSerde(unittest.TestCase):
         aten_new = deserialize(*serialize(aten.exported_program))
         self.check_ep(aten.exported_program, aten_new, inputs)
 
-        edge = aten.to_edge(self.edge_complie_config)
+        edge = aten.to_edge()
         edge_new = deserialize(*serialize(edge.exported_program))
         self.check_ep(edge.exported_program, edge_new, inputs)
 
@@ -118,7 +114,7 @@ class TestSerde(unittest.TestCase):
         model_inputs = (torch.ones(1),)
         edgeir_m = exir.capture(
             sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(self.edge_complie_config)
+        ).to_edge()
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
@@ -160,9 +156,7 @@ class TestSerde(unittest.TestCase):
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
 
-        ep = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge(
-            self.edge_complie_config
-        )
+        ep = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
         edge = to_backend(ep.exported_program, AddMulPartitionerDemo)
         edge_new = deserialize(*serialize(edge))
         self.check_ep(edge, edge_new, inputs)

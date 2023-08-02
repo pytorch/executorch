@@ -12,7 +12,7 @@ import dataclasses
 import json
 import logging
 import operator
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import executorch.exir as exir
 import executorch.exir.memory as memory
@@ -21,7 +21,9 @@ import torch._export.exported_program as ep
 import torch._export.serde.schema as schema
 import torch._export.serde.serialize as export_serialize
 from executorch.backends.compile_spec_schema import CompileSpec as delegate_CompileSpec
-from executorch.exir.delegate import executorch_call_delegate
+from executorch.exir import delegate
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.lowered_backend_module import (
     LoweredBackendModule as ExirLoweredBackendModule,
 )
@@ -30,7 +32,6 @@ from executorch.exir.serde.schema import (
     LoweredBackendModule as SerdeLoweredBackendModule,
 )
 from torch.fx.experimental import symbolic_shapes
-
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -41,6 +42,28 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
     ) -> None:
         super().__init__(graph_signature, call_spec)
         self.state_dict: Dict[str, torch.Tensor] = {}  # TODO(T157676982)
+
+    def serialize_operator(
+        self,
+        target: Union[
+            str,
+            EdgeOpOverload,
+            torch._ops.OpOverload,
+            torch._ops.HigherOrderOperator,
+        ],
+    ) -> str:
+        if isinstance(target, str):
+            return target
+        elif target.__module__.startswith("executorch.exir.dialects"):
+            # TODO(zhxchen17) Maybe provide a function name helper in FX.
+            # From torch.fx.node._get_qualified_name
+            module = target.__module__.replace(
+                "executorch.exir.dialects.edge._ops",
+                "executorch.exir.dialects.edge.ops",
+            )
+            return f"{module}.{target.__name__}"
+
+        return super().serialize_operator(target)
 
     def handle_call_function(self, node: torch.fx.Node) -> None:
         assert node.op == "call_function"
@@ -54,10 +77,22 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             )
             self.graph_state.nodes.append(ex_node)
             return
-
-        elif node.target is executorch_call_delegate:
+        elif isinstance(node.target, EdgeOpOverload):
+            assert node.target._op is not None
             ex_node = schema.Node(
-                target=export_serialize.serialize_operator(node.target),
+                target=self.serialize_operator(node.target),
+                # pyre-ignore Undefined attribute [16]: Item `typing.Callable` of
+                # `typing.Union[typing.Callable[..., typing.Any], str]` has no attribute `_op`.
+                inputs=self.serialize_inputs(node.target._op, node.args, node.kwargs),
+                outputs=self.serialize_outputs(node),
+                # TODO: create a new tensor_values here, meta might have faketensor info
+                metadata=self.serialize_metadata(node),
+            )
+            self.graph_state.nodes.append(ex_node)
+            return
+        elif node.target is delegate.executorch_call_delegate:
+            ex_node = schema.Node(
+                target=self.serialize_operator(node.target),
                 inputs=self.serialize_call_delegate_inputs(node.args),
                 outputs=self.serialize_arbitrary_outputs(node),
                 metadata=self.serialize_metadata(node),
@@ -66,6 +101,20 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
             return
 
         super().handle_call_function(node)
+
+    def serialize_outputs(self, node: torch.fx.Node) -> List[schema.Argument]:
+        if isinstance(node.target, EdgeOpOverload):
+            # Store the original edge op
+            edge_op = node.target
+            # Replace the edge op with the original ATen op so that we can just call into
+            # the serialize_outputs implementation present in the parent class.
+            node.target = edge_op._op
+            ret = super().serialize_outputs(node)
+            # Replace the edge op back.
+            node.target = edge_op
+        else:
+            ret = super().serialize_outputs(node)
+        return ret
 
     def serialize_metadata(self, node: torch.fx.Node) -> Dict[str, str]:
         meta = super().serialize_metadata(node)
@@ -265,6 +314,21 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         super().__init__()
         self.state_dict: Dict[str, Any] = state_dict  # TODO(T157676982)
 
+    def deserialize_operator(self, serialized_target: str) -> str:
+        if serialized_target.startswith("executorch.exir.dialects.edge.ops"):
+            module = exir_ops.edge
+            serialized_target_names = serialized_target.split(".")[5:]
+
+            target = module
+            for name in serialized_target_names:
+                if not hasattr(target, name):
+                    return serialized_target
+                else:
+                    target = getattr(target, name)
+            return target
+
+        return super().deserialize_operator(serialized_target)
+
     # pyre-ignore
     def deserialize_node(self, serialized_node: schema.Node, target: Callable) -> None:
         if target == "memory.alloc":
@@ -278,7 +342,7 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             fx_node.meta.update(self.deserialize_metadata(serialized_node.metadata))
             return
 
-        elif target is executorch_call_delegate:
+        elif target is delegate.executorch_call_delegate:
             if (
                 len(serialized_node.outputs) == 1
                 and serialized_node.outputs[0].type == "as_tensor"
@@ -298,7 +362,21 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
 
             fx_node.meta.update(self.deserialize_metadata(serialized_node.metadata))
             return
-
+        elif isinstance(target, EdgeOpOverload):
+            # For convenience: if this node returns a single tensor, name the
+            # newly-created node after it. This ensures that these tensor values
+            # have names that are consistent with serialized.
+            name = (
+                serialized_node.outputs[0].value.name
+                if export_serialize._is_single_tensor_return(target._op)
+                else None  # FX will generate a name for us.
+            )
+            args, kwargs = self.deserialize_inputs(target._op, serialized_node)
+            fx_node = self.graph.create_node(
+                "call_function", target, args, kwargs, name
+            )
+            self.deserialize_outputs(serialized_node, fx_node)
+            return
         elif isinstance(target, str):
             # Create a dummy fake op if the target does not exist
             # because we cannot create a call_function node w/o a
@@ -316,6 +394,21 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             return
 
         super().deserialize_node(serialized_node, target)
+
+    def deserialize_outputs(
+        self, serialized_node: schema.Node, fx_node: torch.fx.Node
+    ) -> None:
+        if isinstance(fx_node.target, EdgeOpOverload):
+            # Store the original edge op
+            edge_op = fx_node.target
+            # Replace the edge op with the original ATen op so that we can just call into
+            # node deserialize_outputs implementation present in the parent class.
+            fx_node.target = edge_op._op
+            super().deserialize_outputs(serialized_node, fx_node)
+            # Replace the edge op back.
+            fx_node.target = edge_op
+        else:
+            super().deserialize_outputs(serialized_node, fx_node)
 
     def deserialize_metadata(self, metadata: Dict[str, str]) -> Dict[str, Any]:
         res = super().deserialize_metadata(metadata)
