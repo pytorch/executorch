@@ -34,8 +34,8 @@ runtime.python_library(
         "_program.py",
     ],
     resources = {
+        "//executorch/schema:program.fbs": "program.fbs",
         "//executorch/schema:scalar_type.fbs": "scalar_type.fbs",
-        "//executorch/schema:schema.fbs": "schema.fbs",
         "fbsource//third-party/flatbuffers:flatc-host": "flatbuffers-flatc",
     },
     # Currently serialization API should only be used in some dedicated targets,

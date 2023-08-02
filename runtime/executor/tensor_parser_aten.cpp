@@ -12,7 +12,7 @@
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/profiler.h>
-#include <executorch/schema/schema_generated.h>
+#include <executorch/schema/program_generated.h>
 
 #include <ATen/ATen.h> // @manual=//caffe2/aten:ATen-core
 

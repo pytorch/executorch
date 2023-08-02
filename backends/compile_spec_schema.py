@@ -7,7 +7,7 @@
 from dataclasses import dataclass
 
 """
-Please refer to executorch/schema/schema.fbs for source of truth.
+Please refer to executorch/schema/program.fbs for source of truth.
 """
 
 

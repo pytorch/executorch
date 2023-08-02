@@ -70,7 +70,7 @@ def define_common_targets():
                 "//executorch/runtime/kernel:operator_registry",
                 "//executorch/runtime/platform:platform",
                 "//executorch/schema:extended_header",
-                "//executorch/schema:schema",
+                "//executorch/schema:program",
                 ":memory_manager",
             ],
             preprocessor_flags = _program_preprocessor_flags(),
@@ -94,7 +94,7 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/runtime/core:core",
-                "//executorch/schema:schema",
+                "//executorch/schema:program",
             ],
             exported_deps = [
                 "//executorch/runtime/platform:platform",

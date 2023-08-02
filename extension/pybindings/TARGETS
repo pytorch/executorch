@@ -34,7 +34,7 @@ executorch_pybindings(
         "//executorch/runtime/executor:executor_aten",
         "//executorch/runtime/core/exec_aten:lib",
         "//executorch/schema:bundled_program_schema",
-        "//executorch/schema:schema",
+        "//executorch/schema:program",
         "//executorch/extension/data_loader:buffer_data_loader",
         "//executorch/extension/data_loader:mmap_data_loader",
         "//executorch/util:read_file",

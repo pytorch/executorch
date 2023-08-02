@@ -25,7 +25,7 @@
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
-#include <executorch/schema/schema_generated.h>
+#include <executorch/schema/program_generated.h>
 
 namespace torch {
 namespace executor {
@@ -379,7 +379,7 @@ Error Method::parse_values(
         ET_CHECK_MSG(
             false,
             "Enum KernelTypes type: %" PRIu32
-            " not supported. Please look in executorch/schema/schema.fbs "
+            " not supported. Please look in executorch/schema/program.fbs "
             "to see which type this is.",
             static_cast<uint32_t>(serialization_value->val_type()) - 1);
     }

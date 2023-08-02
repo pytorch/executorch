@@ -21,7 +21,7 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/schema/bundled_program_schema_generated.h>
-#include <executorch/schema/schema_generated.h>
+#include <executorch/schema/program_generated.h>
 
 namespace torch {
 namespace executor {

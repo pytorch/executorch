@@ -84,7 +84,7 @@ Example:
 
 ## Program data
 
-See `//executorch/schema/schema.fbs` for the Program flatbuffer schema.
+See `//executorch/schema/program.fbs` for the Program flatbuffer schema.
 
 The flatbuffer-encoded program data follows the headers. By embedding the size
 of this region in the extended header, clients can read only the program data

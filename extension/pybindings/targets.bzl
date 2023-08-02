@@ -13,7 +13,7 @@ MODULE_DEPS = [
     "//executorch/runtime/kernel:operator_registry",
     "//executorch/runtime/executor:executor",
     "//executorch/schema:bundled_program_schema",
-    "//executorch/schema:schema",
+    "//executorch/schema:program",
     "//executorch/extension/aten_util:aten_bridge",
     "//executorch/util:bundled_program_verification",
     "//executorch/extension/data_loader:buffer_data_loader",
@@ -41,7 +41,7 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
         ],
         deps = [
             "//executorch/runtime/core:core",
-            "//executorch/schema:schema",
+            "//executorch/schema:program",
             "//executorch/util:read_file",
         ] + cppdeps,
         external_deps = [

@@ -135,7 +135,7 @@ def _prepare_schema(
     into out_dir. May patch the schema contents depending on the parameters to
     this function.
     """
-    program_schema = "schema.fbs"
+    program_schema = "program.fbs"
     # Included by the root program schema; must also be present.
     deps = ["scalar_type.fbs"]
 
@@ -247,7 +247,7 @@ def _program_json_to_flatbuffer(
 
     Args:
         program_json: The JSON to convert. Must be compatible with the root
-            table type of //executorch/schema/schema.fbs.
+            table type of //executorch/schema/program.fbs.
         constant_tensor_alignment: If provided, the alignment to use for tensor
             data embedded in the output flatbuffer data. If not provided, uses
             the alignment in the schema.
@@ -280,7 +280,7 @@ def _program_json_to_flatbuffer(
 def _program_flatbuffer_to_json(program_flatbuffer: bytes) -> bytes:
     """Converts binary flatbuffer data into Program-compatible JSON.
 
-    The binary is parsed using the schema in //executorch/schema/schema.fbs.
+    The binary is parsed using the schema in //executorch/schema/program.fbs.
     """
     with tempfile.TemporaryDirectory() as temp_dir:
         # No need to patch the alignment when reading. "force_align" is only

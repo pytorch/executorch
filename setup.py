@@ -16,7 +16,7 @@ from setuptools.command.install import install
 def custom_command():
     src_dst_list = [
         ("schema/scalar_type.fbs", "exir/serialize/scalar_type.fbs"),
-        ("schema/schema.fbs", "exir/serialize/schema.fbs"),
+        ("schema/schema.fbs", "exir/serialize/program.fbs"),
     ]
     for src, dst in src_dst_list:
         print(f"copying from {src} to {dst}")

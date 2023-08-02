@@ -15,7 +15,7 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/extended_header.h>
-#include <executorch/schema/schema_generated.h>
+#include <executorch/schema/program_generated.h>
 
 /*
  * Program verification can increase code size by ~30k. Targets that need to

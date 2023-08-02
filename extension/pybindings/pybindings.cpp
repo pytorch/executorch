@@ -10,7 +10,7 @@
 #include <pybind11/stl.h>
 
 #include <executorch/runtime/platform/assert.h>
-#include <executorch/schema/schema_generated.h>
+#include <executorch/schema/program_generated.h>
 #include <executorch/util/read_file.h>
 
 namespace py = pybind11;

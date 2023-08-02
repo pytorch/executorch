@@ -1,7 +1,7 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 # Construct the input and output file names. All input and output files rely on scalar_type file.
-PROGRAM_STEM = "schema"
+PROGRAM_STEM = "program"
 BUNLDED_STEM = "bundled_program_schema"
 SCALAR_TYPE_STEM = "scalar_type"
 

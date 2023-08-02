@@ -68,7 +68,7 @@ class TestResourceFiles(unittest.TestCase):
 
 # Fake resource files to use when testing alignment-patching.
 SCHEMA_FILES: Dict[str, bytes] = {
-    "schema.fbs": b"\n".join(
+    "program.fbs": b"\n".join(
         [
             b"table Program {",
             # Space after the colon.
@@ -122,7 +122,7 @@ class TestPrepareSchema(unittest.TestCase):
     def test_unmodified(self) -> None:
         with tempfile.TemporaryDirectory() as out_dir:
             info: _SchemaInfo = self.call_prepare_schema(SCHEMA_FILES, out_dir)
-            self.assertEqual(info.root_path, os.path.join(out_dir, "schema.fbs"))
+            self.assertEqual(info.root_path, os.path.join(out_dir, "program.fbs"))
             # Files should not have been modified.
             for fname in SCHEMA_FILES.keys():
                 self.assertEqual(read_file(out_dir, fname), SCHEMA_FILES[fname])
@@ -134,10 +134,10 @@ class TestPrepareSchema(unittest.TestCase):
             info: _SchemaInfo = self.call_prepare_schema(
                 SCHEMA_FILES, out_dir, constant_tensor_alignment=128
             )
-            self.assertEqual(info.root_path, os.path.join(out_dir, "schema.fbs"))
+            self.assertEqual(info.root_path, os.path.join(out_dir, "program.fbs"))
             # Only the tensor alignment lines should have been modified.
             self.assertEqual(
-                read_file(out_dir, "schema.fbs"),
+                read_file(out_dir, "program.fbs"),
                 b"\n".join(
                     [
                         b"table Program {",
@@ -170,10 +170,10 @@ class TestPrepareSchema(unittest.TestCase):
             info: _SchemaInfo = self.call_prepare_schema(
                 SCHEMA_FILES, out_dir, delegate_alignment=256
             )
-            self.assertEqual(info.root_path, os.path.join(out_dir, "schema.fbs"))
+            self.assertEqual(info.root_path, os.path.join(out_dir, "program.fbs"))
             # Only the delegate alignment lines should have been modified.
             self.assertEqual(
-                read_file(out_dir, "schema.fbs"),
+                read_file(out_dir, "program.fbs"),
                 b"\n".join(
                     [
                         b"table Program {",
@@ -209,10 +209,10 @@ class TestPrepareSchema(unittest.TestCase):
                 constant_tensor_alignment=1,
                 delegate_alignment=2,
             )
-            self.assertEqual(info.root_path, os.path.join(out_dir, "schema.fbs"))
+            self.assertEqual(info.root_path, os.path.join(out_dir, "program.fbs"))
             # Only the delegate alignment lines should have been modified.
             self.assertEqual(
-                read_file(out_dir, "schema.fbs"),
+                read_file(out_dir, "program.fbs"),
                 b"\n".join(
                     [
                         b"table Program {",

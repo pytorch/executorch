@@ -55,7 +55,7 @@ class TensorImpl {
    * The type used for elements of `sizes()`.
    *
    * This must match the size/signedness of the type used for `Tensor.sizes` in
-   * //executorch/schema/schema.fbs.
+   * //executorch/schema/program.fbs.
    *
    * Note that at::TensorImpl uses `int64_t` for this type. Executorch uses
    * `int32_t` to save memory, since no single size value will ever be larger
@@ -67,7 +67,7 @@ class TensorImpl {
    * The type used for elements of `dim_order()`.
    *
    * This must match the size/signedness of the type used for `Tensor.dim_order`
-   * in //executorch/schema/schema.fbs.
+   * in //executorch/schema/program.fbs.
    */
   using DimOrderType = uint8_t;
 
@@ -75,7 +75,7 @@ class TensorImpl {
    * The type used for elements of `strides()`.
    *
    * This must match the size/signedness of the type used for `Tensor.strides`
-   * in //executorch/schema/schema.fbs.
+   * in //executorch/schema/program.fbs.
    *
    * Note that at::TensorImpl uses `int64_t` for this type. Executorch uses
    * `int32_t` to save memory, since no single stride value will ever be larger

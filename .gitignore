@@ -3,4 +3,4 @@ executorch.egg-info
 __pycache__/
 build/lib/
 exir/serialize/scalar_type.fbs
-exir/serialize/schema.fbs
+exir/serialize/program.fbs
