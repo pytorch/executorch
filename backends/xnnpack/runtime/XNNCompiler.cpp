@@ -8,7 +8,6 @@
 
 #include <executorch/backends/xnnpack/runtime/XNNCompiler.h>
 #include <executorch/backends/xnnpack/xnnpack_schema_generated.h>
-#include <executorch/extension/fb/threadpool/threadpool.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <unordered_map>
 
@@ -1489,7 +1488,7 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
   xnn_runtime_t runtime_ptr = nullptr;
   status = xnn_create_runtime_v2(
       subgraph.get(),
-      torch::executorch::threadpool::get_pthreadpool(),
+      nullptr,
       0,
       &runtime_ptr);
   ET_CHECK_OR_RETURN_ERROR(
