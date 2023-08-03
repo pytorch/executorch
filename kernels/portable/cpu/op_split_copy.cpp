@@ -174,7 +174,7 @@ void split_copy_Tensor_out(
   const size_t element_size = input.element_size();
   const size_t step = input.size(dim) * trailing_dims * element_size;
 
-  const char* input_data = input.data_ptr<char>();
+  const char* input_data = input.const_data_ptr<char>();
   for (size_t i = 0, e = out.size(); i < e; ++i) {
     size_t num_bytes = out[i].size(dim) * trailing_dims * element_size;
     if (num_bytes == 0) {
@@ -182,7 +182,7 @@ void split_copy_Tensor_out(
     }
 
     const char* src = input_data;
-    char* dest = out[i].data_ptr<char>();
+    char* dest = out[i].mutable_data_ptr<char>();
     for (size_t j = 0; j < leading_dims; ++j) {
       memcpy(dest, src, num_bytes);
       src += step;

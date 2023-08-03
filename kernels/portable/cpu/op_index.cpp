@@ -44,11 +44,11 @@ void index_out_impl_mask(
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
     Tensor& out) {
   // Data pointers
-  const CTYPE_IN* const in_data = input.data_ptr<CTYPE_IN>();
-  CTYPE_OUT* const out_data = out.data_ptr<CTYPE_OUT>();
+  const CTYPE_IN* const in_data = input.const_data_ptr<CTYPE_IN>();
+  CTYPE_OUT* const out_data = out.mutable_data_ptr<CTYPE_OUT>();
 
   const Tensor& mask = indices[0].value();
-  const bool* const mask_ptr = mask.data_ptr<bool>();
+  const bool* const mask_ptr = mask.const_data_ptr<bool>();
   size_t count = 0;
   for (int i = 0; i < mask.numel(); ++i) {
     if (mask_ptr[i]) {
@@ -64,8 +64,8 @@ void index_out_impl_list(
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
     Tensor& out) {
   // Data pointers
-  const CTYPE_IN* const in_data = input.data_ptr<CTYPE_IN>();
-  CTYPE_OUT* dst = out.data_ptr<CTYPE_OUT>();
+  const CTYPE_IN* const in_data = input.const_data_ptr<CTYPE_IN>();
+  CTYPE_OUT* dst = out.mutable_data_ptr<CTYPE_OUT>();
 
   size_t num_idx_queries = get_indices_broadcast_len(indices);
   for (size_t idx = 0; idx < num_idx_queries; idx++) {
@@ -171,7 +171,10 @@ Tensor& index_Tensor_out(
   if (indices.empty()) {
     auto error = resize_tensor(out, input.sizes());
     ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
-    memcpy(out.data_ptr<char>(), input.data_ptr<char>(), input.nbytes());
+    memcpy(
+        out.mutable_data_ptr<char>(),
+        input.const_data_ptr<char>(),
+        input.nbytes());
     return out;
   }
 

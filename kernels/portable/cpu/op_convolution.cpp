@@ -286,11 +286,11 @@ void convolution_wrapper(
           out_sizes.size(),
           out_strides) == Error::Ok);
 
-  CTYPE* const out_ptr = out.data_ptr<CTYPE>();
-  const CTYPE* const in_ptr = in.data_ptr<CTYPE>();
-  const CTYPE* const w_ptr = weight.data_ptr<CTYPE>();
+  CTYPE* const out_ptr = out.mutable_data_ptr<CTYPE>();
+  const CTYPE* const in_ptr = in.const_data_ptr<CTYPE>();
+  const CTYPE* const w_ptr = weight.const_data_ptr<CTYPE>();
   const CTYPE* const bias_ptr =
-      bias.has_value() ? bias.value().data_ptr<CTYPE>() : nullptr;
+      bias.has_value() ? bias.value().const_data_ptr<CTYPE>() : nullptr;
 
   for (size_t batch = 0; batch < out_N; ++batch) {
     for (size_t group = 0; group < groups; ++group) {

@@ -64,7 +64,7 @@ void check_index_select_args(
       index.scalar_type() == ScalarType::Long, "index scalar_type not long");
   ET_CHECK_MSG(index.dim() == 1, "index.dim() %zd != 1", index.dim());
 
-  const int64_t* src = index.data_ptr<int64_t>();
+  const int64_t* src = index.mutable_data_ptr<int64_t>();
   for (auto i = 1; i < index.numel(); i++) {
     ET_CHECK_MSG(
         src[i] >= 0 && src[i] < input.size(dim),
@@ -129,9 +129,9 @@ Tensor& index_select_out(
 
   size_t length_per_step = trailing_dims * input.element_size();
 
-  const char* input_data = input.data_ptr<char>();
-  char* out_data = out.data_ptr<char>();
-  const int64_t* index_arr = index.data_ptr<int64_t>();
+  const char* input_data = input.const_data_ptr<char>();
+  char* out_data = out.mutable_data_ptr<char>();
+  const int64_t* index_arr = index.mutable_data_ptr<int64_t>();
   for (int i = 0; i < leading_dims; i++) {
     const char* src = input_data + i * in_dim_length * length_per_step;
     char* dest = out_data + i * out_dim_length * length_per_step;

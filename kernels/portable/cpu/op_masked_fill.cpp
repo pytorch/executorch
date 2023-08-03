@@ -38,9 +38,9 @@ void masked_fill_kernel(
   bool ok = utils::extract_scalar(value, &value_v);
   ET_CHECK_MSG(ok, "Invalid fill value: wrong type or out of range");
   const size_t n = self.numel();
-  const auto data_self = self.data_ptr<CTYPE>();
-  const auto data_mask = mask.data_ptr<bool>();
-  auto data_out = out.data_ptr<CTYPE>();
+  const auto data_self = self.const_data_ptr<CTYPE>();
+  const auto data_mask = mask.const_data_ptr<bool>();
+  auto data_out = out.mutable_data_ptr<CTYPE>();
   for (size_t i = 0; i < n; ++i) {
     data_out[i] = data_mask[i] ? value_v : data_self[i];
   }

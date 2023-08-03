@@ -35,8 +35,8 @@ namespace {
  */
 template <typename CTYPE_IN, typename CTYPE_OUT>
 void cumsum_tensors(const Tensor& self, int64_t dim, Tensor& out) {
-  const CTYPE_IN* __restrict__ input_data_base = self.data_ptr<CTYPE_IN>();
-  CTYPE_OUT* __restrict__ output_data_base = out.data_ptr<CTYPE_OUT>();
+  const CTYPE_IN* input_data_base = self.const_data_ptr<CTYPE_IN>();
+  CTYPE_OUT* output_data_base = out.mutable_data_ptr<CTYPE_OUT>();
 
   const size_t dim_size = static_cast<size_t>(self.size(dim));
   const size_t leading_dims = getLeadingDims(self, dim);

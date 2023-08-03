@@ -136,7 +136,7 @@ Tensor& select_scatter_out(
 
   // To start, copy the input into the output. Input will not be empty due to
   // the checks performed above.
-  memcpy(out.data_ptr(), input.data_ptr(), input.nbytes());
+  memcpy(out.mutable_data_ptr(), input.const_data_ptr(), input.nbytes());
 
   // Strides to help with memory address arithmetic
   size_t leading_dims = getLeadingDims(input, dim);
@@ -152,9 +152,9 @@ Tensor& select_scatter_out(
 
   // Position data pointers at the starting point
   size_t start_offset = index * trailing_stride * out.element_size();
-  char* out_data = out.data_ptr<char>() + start_offset;
+  char* out_data = out.mutable_data_ptr<char>() + start_offset;
 
-  const char* src_data = src.data_ptr<char>();
+  const char* src_data = src.const_data_ptr<char>();
 
   for (size_t step = 0; step < leading_dims; ++step) {
     memcpy(out_data, src_data, copy_nbytes);

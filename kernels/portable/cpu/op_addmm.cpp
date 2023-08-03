@@ -97,10 +97,10 @@ Tensor& addmm_out_kernel(
     const Scalar& beta,
     const Scalar& alpha,
     Tensor& out) {
-  const T* __restrict__ self_data = self.data_ptr<T>();
-  const T* __restrict__ mat1_data = mat1.data_ptr<T>();
-  const T* __restrict__ mat2_data = mat2.data_ptr<T>();
-  T* __restrict__ out_data = out.data_ptr<T>();
+  const T* self_data = self.const_data_ptr<T>();
+  const T* mat1_data = mat1.const_data_ptr<T>();
+  const T* mat2_data = mat2.const_data_ptr<T>();
+  T* out_data = out.mutable_data_ptr<T>();
 
   size_t m = mat1.size(0);
   size_t n = mat1.size(1);

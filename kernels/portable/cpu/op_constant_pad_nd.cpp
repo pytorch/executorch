@@ -139,8 +139,8 @@ void constant_pad_nd_out_impl(
     IntArrayRef pad,
     CTYPE value_v,
     Tensor& out) {
-  const CTYPE* self_data = self.data_ptr<CTYPE>();
-  CTYPE* out_data = out.data_ptr<CTYPE>();
+  const CTYPE* self_data = self.const_data_ptr<CTYPE>();
+  CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
   size_t ndim = self.dim();
 

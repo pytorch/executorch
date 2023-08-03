@@ -63,13 +63,16 @@ Tensor& linear_scratch_example(
     using scalar_t = float;
     for (size_t i = 0; i < M; ++i) {
       for (size_t j = 0; j < K; ++j) {
-        scalar_t* scratch_ptr = scratch.data_ptr<scalar_t>() + (i * K + j);
+        scalar_t* scratch_ptr =
+            scratch.mutable_data_ptr<scalar_t>() + (i * K + j);
         *scratch_ptr = 0;
         for (size_t k = 0; k < N; ++k) {
-          scalar_t* input_ptr = input.data_ptr<scalar_t>() + (i * N + k);
+          const scalar_t* const input_ptr =
+              input.const_data_ptr<scalar_t>() + (i * N + k);
           // note it's transposed
           // (j,k) element in the (K, N) array
-          scalar_t* weight_ptr = weight.data_ptr<scalar_t>() + (j * N + k);
+          const scalar_t* const weight_ptr =
+              weight.const_data_ptr<scalar_t>() + (j * N + k);
           *scratch_ptr += *input_ptr * *weight_ptr;
         }
       }
@@ -80,9 +83,10 @@ Tensor& linear_scratch_example(
       ET_CHECK_MSG(K == bias.value().numel(), "Unexpected numel for bias");
       for (size_t i = 0; i < M; ++i) {
         for (size_t j = 0; j < K; ++j) {
-          scalar_t* scratch_ptr = scratch.data_ptr<scalar_t>() + (i * K + j);
-          scalar_t* out_ptr = out.data_ptr<scalar_t>() + (i * K + j);
-          scalar_t* bias_ptr = bias.value().data_ptr<scalar_t>() + j;
+          scalar_t* scratch_ptr =
+              scratch.mutable_data_ptr<scalar_t>() + (i * K + j);
+          scalar_t* out_ptr = out.mutable_data_ptr<scalar_t>() + (i * K + j);
+          scalar_t* bias_ptr = bias.value().mutable_data_ptr<scalar_t>() + j;
           *out_ptr = *scratch_ptr + *bias_ptr;
         }
       }

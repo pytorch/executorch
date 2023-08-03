@@ -45,7 +45,7 @@ Tensor& zeros_out(RuntimeContext& context, IntArrayRef size, Tensor& out) {
       "Failed to resize out Tensor in zeros_out");
 
   size_check(size, out.sizes());
-  void* out_data = out.data_ptr();
+  void* out_data = out.mutable_data_ptr();
   if (out_data != nullptr) {
     /*
      * Assuming storage is contiguous and zero tensor is indeed a string of

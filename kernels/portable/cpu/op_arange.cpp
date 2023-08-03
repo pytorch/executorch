@@ -190,7 +190,7 @@ void check_precondition(const Scalar end, Tensor& out) {
 
 template <class CTYPE>
 Tensor& set_arange_value(const size_t out_length, Tensor& out) {
-  auto out_data = out.data_ptr<CTYPE>();
+  auto out_data = out.mutable_data_ptr<CTYPE>();
   for (size_t i = 0; i < out_length; i++) {
     out_data[i] = static_cast<CTYPE>(i);
   }
@@ -203,7 +203,7 @@ Tensor& set_arange_value(
     const int64_t out_length,
     const double step,
     Tensor& out) {
-  auto out_data = out.data_ptr<CTYPE>();
+  auto out_data = out.mutable_data_ptr<CTYPE>();
   for (int64_t i = 0; i < out_length; i++) {
     out_data[i] = start + i * step;
   }

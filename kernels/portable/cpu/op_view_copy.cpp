@@ -72,7 +72,7 @@ Tensor& view_copy_out(
   size_compare(size_int64_t, out.sizes());
 
   if (self.nbytes() > 0) {
-    memcpy(out.data_ptr(), self.data_ptr(), self.nbytes());
+    memcpy(out.mutable_data_ptr(), self.const_data_ptr(), self.nbytes());
   }
   return out;
 }

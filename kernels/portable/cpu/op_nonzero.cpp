@@ -52,7 +52,7 @@ void check_preconditions(const Tensor& input, const Tensor& output) {
  */
 template <typename CTYPE>
 void nonzero(const Tensor& input, Tensor& output) {
-  const CTYPE* in_data = input.data_ptr<CTYPE>();
+  const CTYPE* in_data = input.const_data_ptr<CTYPE>();
   size_t lim = input.numel();
   int32_t num_nonzero = 0;
 
@@ -71,7 +71,7 @@ void nonzero(const Tensor& input, Tensor& output) {
   size_t index[kTensorDimensionLimit];
   memset(index, 0, sizeof(index));
 
-  int64_t* out_data = output.data_ptr<int64_t>();
+  int64_t* out_data = output.mutable_data_ptr<int64_t>();
   size_t out_idx = 0;
 
   // Loop again and this time write the proper indices into out

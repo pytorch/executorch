@@ -72,10 +72,18 @@ bool tensors_are_close(
 
   if (a.scalar_type() == ScalarType::Float) {
     return data_is_close<float>(
-        a.data_ptr<float>(), b.data_ptr<float>(), a.numel(), rtol, atol);
+        a.const_data_ptr<float>(),
+        b.const_data_ptr<float>(),
+        a.numel(),
+        rtol,
+        atol);
   } else if (a.scalar_type() == ScalarType::Double) {
     return data_is_close<double>(
-        a.data_ptr<double>(), b.data_ptr<double>(), a.numel(), rtol, atol);
+        a.const_data_ptr<double>(),
+        b.const_data_ptr<double>(),
+        a.numel(),
+        rtol,
+        atol);
   } else {
     // Non-floating-point types can be compared bitwise.
     return memcmp(a.data_ptr(), b.data_ptr(), a.nbytes()) == 0;
@@ -100,7 +108,7 @@ Tensor& allclose_out(
       out.numel() == 1,
       "Out tensor must be a single element; saw %zu elements",
       (size_t)out.numel());
-  auto out_data = out.data_ptr<bool>();
+  auto out_data = out.mutable_data_ptr<bool>();
   out_data[0] = tensors_are_close(self, other, rtol, atol);
   return out;
 }

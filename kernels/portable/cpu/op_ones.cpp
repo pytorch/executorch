@@ -38,7 +38,7 @@ void size_check(
 template <class CTYPE>
 void ones_kernel(Tensor& out) {
   // Create pointer over `out` data with `CTYPE`.
-  auto data_out = out.data_ptr<CTYPE>();
+  auto data_out = out.mutable_data_ptr<CTYPE>();
 
   // Set each element of the tensor to the "1" value for the type.
   for (size_t i = 0; i < out.numel(); i++) {

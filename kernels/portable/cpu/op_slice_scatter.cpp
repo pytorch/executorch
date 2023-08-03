@@ -164,10 +164,10 @@ Tensor& slice_scatter_out(
 
   size_t length_per_step = trailing_dims * input.element_size();
 
-  const char* in_data = input.data_ptr<char>();
-  const char* src_data = src.data_ptr<char>();
+  const char* in_data = input.const_data_ptr<char>();
+  const char* src_data = src.const_data_ptr<char>();
 
-  char* out_data = out.data_ptr<char>();
+  char* out_data = out.mutable_data_ptr<char>();
 
   // To start, copy the input into the output
   memcpy(out_data, in_data, input.nbytes());

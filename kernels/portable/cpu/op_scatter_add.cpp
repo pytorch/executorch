@@ -80,7 +80,7 @@ void scatter_add(
     const Tensor& index,
     const Tensor& src,
     Tensor& out) {
-  long* index_data = index.data_ptr<long>();
+  long* index_data = index.mutable_data_ptr<long>();
   for (size_t i = 0; i < index.numel(); ++i) {
     ET_CHECK_MSG(
         index_data[i] < self.size(dim),
@@ -88,9 +88,9 @@ void scatter_add(
         (size_t)dim,
         self.size(dim));
   }
-  CTYPE_DATA* self_data = self.data_ptr<CTYPE_DATA>();
-  CTYPE_DATA* src_data = src.data_ptr<CTYPE_DATA>();
-  CTYPE_DATA* out_data = out.data_ptr<CTYPE_DATA>();
+  CTYPE_DATA* self_data = self.mutable_data_ptr<CTYPE_DATA>();
+  CTYPE_DATA* src_data = src.mutable_data_ptr<CTYPE_DATA>();
+  CTYPE_DATA* out_data = out.mutable_data_ptr<CTYPE_DATA>();
   memcpy(out_data, self_data, self.nbytes());
   scatter_add_helper<CTYPE_DATA>(
       src_data, index_data, out_data, src, index, out, dim, 0, 0);

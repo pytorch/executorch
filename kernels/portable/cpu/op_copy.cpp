@@ -66,7 +66,9 @@ Tensor& copy_out(
     // to have a null data pointer, but in some environments it's invalid to
     // pass a null pointer to memcpy() even when the size is zero.
     memcpy(
-        out.data_ptr(), broadcasted_src.data_ptr(), broadcasted_src.nbytes());
+        out.mutable_data_ptr(),
+        broadcasted_src.const_data_ptr(),
+        broadcasted_src.nbytes());
   }
   if (to_be_broadcasted_src) {
     free_broadcast_tensor(broadcasted_src);

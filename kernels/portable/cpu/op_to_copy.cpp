@@ -16,8 +16,8 @@ using Tensor = exec_aten::Tensor;
 
 template <typename SELF_CTYPE, typename OUT_CTYPE>
 void _to_impl(const Tensor& self, Tensor& out) {
-  auto self_data = self.data_ptr<SELF_CTYPE>();
-  auto out_data = out.data_ptr<OUT_CTYPE>();
+  auto self_data = self.mutable_data_ptr<SELF_CTYPE>();
+  auto out_data = out.mutable_data_ptr<OUT_CTYPE>();
 
   for (int i = 0; i < self.numel(); i++) {
     out_data[i] = static_cast<OUT_CTYPE>(self_data[i]);

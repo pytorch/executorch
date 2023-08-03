@@ -26,7 +26,7 @@ lift_fresh_copy_out(RuntimeContext& context, const Tensor& self, Tensor& out) {
     // Note that this check is important. It's valid for a tensor with numel 0
     // to have a null data pointer, but in some environments it's invalid to
     // pass a null pointer to memcpy() even when the size is zero.
-    memcpy(out.data_ptr(), self.data_ptr(), self.nbytes());
+    memcpy(out.mutable_data_ptr(), self.const_data_ptr(), self.nbytes());
   }
   return out;
 }

@@ -54,16 +54,16 @@ void index_put_out_impl_mask(
     const bool accum,
     Tensor& out) {
   // Data pointers
-  const CTYPE* const in_data = input.data_ptr<CTYPE>();
-  CTYPE* const out_data = out.data_ptr<CTYPE>();
+  const CTYPE* const in_data = input.const_data_ptr<CTYPE>();
+  CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
-  const CTYPE* val_data = values.data_ptr<CTYPE>();
+  const CTYPE* val_data = values.const_data_ptr<CTYPE>();
 
   // To start, copy the input into the output
   memcpy(out_data, in_data, input.nbytes());
 
   const Tensor& mask = indices[0].value();
-  const bool* const mask_ptr = mask.data_ptr<bool>();
+  const bool* const mask_ptr = mask.const_data_ptr<bool>();
   size_t count = 0;
   for (int i = 0; i < mask.numel(); ++i) {
     if (mask_ptr[i]) {
@@ -87,10 +87,10 @@ void index_put_out_impl_list(
     const bool accum,
     Tensor& out) {
   // Data pointers
-  const CTYPE* const in_data = input.data_ptr<CTYPE>();
-  CTYPE* const out_data = out.data_ptr<CTYPE>();
+  const CTYPE* const in_data = input.const_data_ptr<CTYPE>();
+  CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
-  const CTYPE* val = values.data_ptr<CTYPE>();
+  const CTYPE* val = values.const_data_ptr<CTYPE>();
 
   // To start, copy the input into the output
   memcpy(out_data, in_data, input.nbytes());
@@ -204,7 +204,10 @@ Tensor& index_put_out(
   if (indices.empty()) {
     auto error = resize_tensor(out, input.sizes());
     ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
-    memcpy(out.data_ptr<char>(), input.data_ptr<char>(), input.nbytes());
+    memcpy(
+        out.mutable_data_ptr<char>(),
+        input.const_data_ptr<char>(),
+        input.nbytes());
     return out;
   }
 

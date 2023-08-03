@@ -23,7 +23,7 @@ namespace {
  * Clears `out` by setting all elements to 0.
  */
 Tensor& clear_out(Tensor& out) {
-  uint8_t* out_data = out.data_ptr<uint8_t>();
+  uint8_t* out_data = out.mutable_data_ptr<uint8_t>();
   if (out_data != nullptr) {
     memset(out_data, 0, out.nbytes());
   }
@@ -89,8 +89,8 @@ void tril_kernel(const Tensor& self, int64_t diagonal, const Tensor& out) {
   int64_t self_stride =
       (self.dim() > 2 && strides_ref[ndim - 3] > 0) ? strides_ref[ndim - 3] : 1;
 
-  auto data_self = self.data_ptr<CTYPE>();
-  auto data_out = out.data_ptr<CTYPE>();
+  auto data_self = self.mutable_data_ptr<CTYPE>();
+  auto data_out = out.mutable_data_ptr<CTYPE>();
 
   int64_t row_stride = strides_ref[ndim - 2];
   int64_t col_stride = strides_ref[ndim - 1];

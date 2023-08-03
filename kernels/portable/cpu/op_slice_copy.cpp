@@ -146,8 +146,8 @@ Tensor& slice_copy_Tensor_out(
 
   size_t length_per_step = trailing_dims * input.element_size();
 
-  const char* input_data = input.data_ptr<char>();
-  char* dest = out.data_ptr<char>();
+  const char* input_data = input.const_data_ptr<char>();
+  char* dest = out.mutable_data_ptr<char>();
 
   for (int i = 0; i < leading_dims; i++) {
     const char* src = input_data + (i * dim_length + start) * length_per_step;

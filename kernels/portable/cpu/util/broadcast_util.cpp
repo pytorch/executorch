@@ -20,7 +20,7 @@ using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
 void free_broadcast_tensor(const Tensor& broadcast_tensor) {
-  free((void*)broadcast_tensor.data_ptr());
+  free((void*)broadcast_tensor.const_data_ptr());
   free((void*)broadcast_tensor.sizes().data());
   free((void*)broadcast_tensor.dim_order().data());
   free((void*)broadcast_tensor.strides().data());

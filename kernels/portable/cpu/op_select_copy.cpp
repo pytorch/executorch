@@ -135,12 +135,12 @@ Tensor& select_copy_int_out(
   // the start point of data need to be copied is the start point of overall
   // data chunk plus the offset between the overall start point and the first
   // data to be copied.
-  char* input_data = input.data_ptr<char>();
+  char* input_data = input.mutable_data_ptr<char>();
 
   size_t start_offset = index * trailing_dims * input.element_size();
   char* src = input_data + start_offset;
 
-  char* dest = output.data_ptr<char>();
+  char* dest = output.mutable_data_ptr<char>();
 
   for (size_t j = 0; j < leading_dims; ++j) {
     memcpy(dest, src, copy_size_per_op);

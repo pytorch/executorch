@@ -131,15 +131,15 @@ Tensor& as_strided_copy_out(
   check_preconditions(self, size, stride, storage_offset, out);
   size_t offset = storage_offset.has_value() ? storage_offset.value() : 0;
 
-#define AS_STRIDED_COPY_TENSOR(ctype, dtype)            \
-  case ScalarType::dtype:                               \
-    as_strided_copy<ctype>(                             \
-        /*input_data=*/self.data_ptr<ctype>() + offset, \
-        /*output_data=*/out.data_ptr<ctype>(),          \
-        out,                                            \
-        size,                                           \
-        stride,                                         \
-        /*dim=*/0);                                     \
+#define AS_STRIDED_COPY_TENSOR(ctype, dtype)                    \
+  case ScalarType::dtype:                                       \
+    as_strided_copy<ctype>(                                     \
+        /*input_data=*/self.mutable_data_ptr<ctype>() + offset, \
+        /*output_data=*/out.mutable_data_ptr<ctype>(),          \
+        out,                                                    \
+        size,                                                   \
+        stride,                                                 \
+        /*dim=*/0);                                             \
     break;
 
   switch (self.scalar_type()) {

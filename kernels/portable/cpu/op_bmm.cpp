@@ -72,9 +72,9 @@ void bmm_kernel(const Tensor& self, const Tensor& mat2, Tensor& out) {
   if (self.numel() == 0 || mat2.numel() == 0 || out.numel() == 0) {
     return;
   }
-  const CTYPE* x_data = self.data_ptr<CTYPE>();
-  const CTYPE* y_data = mat2.data_ptr<CTYPE>();
-  CTYPE* z_data = out.data_ptr<CTYPE>();
+  const CTYPE* x_data = self.const_data_ptr<CTYPE>();
+  const CTYPE* y_data = mat2.const_data_ptr<CTYPE>();
+  CTYPE* z_data = out.mutable_data_ptr<CTYPE>();
 
   int64_t batch_size = self.size(0);
   int64_t m = self.size(1);

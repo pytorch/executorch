@@ -28,7 +28,7 @@ Tensor& sign_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_CHECK_SAME_SHAPE_AND_DTYPE2(in, out);
 
   if (in.scalar_type() == exec_aten::ScalarType::Bool) {
-    memcpy(out.data_ptr(), in.data_ptr(), in.nbytes());
+    memcpy(out.mutable_data_ptr(), in.const_data_ptr(), in.nbytes());
   } else {
     ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "sign", CTYPE, [&] {
       apply_unary_map_fn(

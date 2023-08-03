@@ -27,10 +27,10 @@ void layer_norm(
     Tensor& output,
     Tensor& mean,
     Tensor& rstd) {
-  const CTYPE* __restrict__ input_data = input.data_ptr<CTYPE>();
-  CTYPE* __restrict__ output_data = output.data_ptr<CTYPE>();
-  const CTYPE* __restrict__ weight_data = weight.data_ptr<CTYPE>();
-  const CTYPE* __restrict__ bias_data = bias.data_ptr<CTYPE>();
+  const CTYPE* input_data = input.const_data_ptr<CTYPE>();
+  CTYPE* output_data = output.mutable_data_ptr<CTYPE>();
+  const CTYPE* weight_data = weight.const_data_ptr<CTYPE>();
+  const CTYPE* bias_data = bias.const_data_ptr<CTYPE>();
 
   size_t dim = input.size(input.dim() - 1);
 
@@ -55,8 +55,8 @@ void layer_norm(
 
   // Assign NAN to mean and rstd. They are not used in seen examples.
   // Use NAN to make the error more obvious in case they are used.
-  mean.data_ptr<CTYPE>()[0] = NAN;
-  rstd.data_ptr<CTYPE>()[0] = NAN;
+  mean.mutable_data_ptr<CTYPE>()[0] = NAN;
+  rstd.mutable_data_ptr<CTYPE>()[0] = NAN;
 }
 } // namespace
 

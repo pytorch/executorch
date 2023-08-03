@@ -35,7 +35,7 @@ float exp_overload(float f) {
 // TODO: T146333648, refactor this as a common helper function
 template <typename CTYPE_OUT>
 void sigmoid_tensor(Tensor& out) {
-  CTYPE_OUT* out_data = out.data_ptr<CTYPE_OUT>();
+  CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
   for (size_t i = 0; i < out.numel(); i++) {
     out_data[i] = 1.0 / (1.0 + exp_overload(-out_data[i]));
   }
@@ -53,8 +53,8 @@ void mul_tensors(const Tensor& in, int64_t dim, Tensor& out) {
   size_t leading_dims = getLeadingDims(in, dim);
   size_t trailing_dims = getTrailingDims(in, dim);
 
-  const CTYPE_IN* input_data_base = in.data_ptr<CTYPE_IN>();
-  CTYPE_OUT* output_data_base = out.data_ptr<CTYPE_OUT>();
+  const CTYPE_IN* input_data_base = in.const_data_ptr<CTYPE_IN>();
+  CTYPE_OUT* output_data_base = out.mutable_data_ptr<CTYPE_OUT>();
 
   for (size_t i = 0; i < leading_dims; i++) {
     const CTYPE_IN* input_data =
@@ -90,8 +90,8 @@ void slice_tensor(
   size_t leading_dims = getLeadingDims(in, dim);
   size_t trailing_dims = getTrailingDims(in, dim);
 
-  const CTYPE_IN* input_data_base = in.data_ptr<CTYPE_IN>();
-  CTYPE_OUT* output_data_base = out.data_ptr<CTYPE_OUT>();
+  const CTYPE_IN* input_data_base = in.const_data_ptr<CTYPE_IN>();
+  CTYPE_OUT* output_data_base = out.mutable_data_ptr<CTYPE_OUT>();
 
   for (size_t i = 0; i < leading_dims; i++) {
     const CTYPE_IN* input_data = input_data_base +
