@@ -45,6 +45,180 @@ static Operator prim_ops[] = {
           int64_t numel = self_tensor.numel();
           out = EValue(numel);
         }),
+    // executorch_prim::add.Scalar(Scalar, Scalar) -> Scalar
+    Operator(
+        "executorch_prim::add.Scalar",
+        [](RuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(a.toInt() + b.toInt());
+          } else if (a.isDouble() && b.isDouble()) {
+            out = EValue(a.toDouble() + b.toDouble());
+          } else {
+            // TODO Fail using runtime context
+            ET_CHECK(false);
+          }
+        }),
+
+    // executorch_prim::sub.Scalar(Scalar, Scalar) -> Scalar
+    Operator(
+        "executorch_prim::sub.Scalar",
+        [](RuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(a.toInt() - b.toInt());
+          } else if (a.isDouble() && b.isDouble()) {
+            out = EValue(a.toDouble() - b.toDouble());
+          } else {
+            // TODO Fail using runtime context
+            ET_CHECK(false);
+          }
+        }),
+
+    // executorch_prim::mul.Scalar(Scalar, Scalar) -> Scalar
+    Operator(
+        "executorch_prim::mul.Scalar",
+        [](RuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(a.toInt() * b.toInt());
+          } else if (a.isDouble() && b.isDouble()) {
+            out = EValue(a.toDouble() * b.toDouble());
+          } else {
+            // TODO Fail using runtime context
+            ET_CHECK(false);
+          }
+        }),
+
+    // executorch_prim::floordiv.Scalar(Scalar, Scalar) -> Scalar
+    Operator(
+        "executorch_prim::floordiv.Scalar",
+        [](RuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(a.toInt() / b.toInt());
+          } else if (a.isDouble() && b.isDouble()) {
+            out = EValue(a.toDouble() / b.toDouble());
+          } else {
+            // TODO Fail using runtime context
+            ET_CHECK(false);
+          }
+        }),
+
+    // executorch_prim::eq.Scalar(Scalar, Scalar) -> bool
+    Operator(
+        "executorch_prim::eq.Scalar",
+        [](RuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(a.toInt() == b.toInt());
+          } else if (a.isDouble() && b.isDouble()) {
+            out = EValue(a.toDouble() == b.toDouble());
+          } else if (a.isBool() && b.isBool()) {
+            out = EValue(a.toBool() == b.toBool());
+          } else {
+            // TODO Fail using runtime context
+            ET_CHECK(false);
+          }
+        }),
+
+    // executorch_prim::gt.Scalar(Scalar, Scalar) -> bool
+    Operator(
+        "executorch_prim::gt.Scalar",
+        [](RuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(a.toInt() > b.toInt());
+          } else if (a.isDouble() && b.isDouble()) {
+            out = EValue(a.toDouble() > b.toDouble());
+          } else if (a.isBool() && b.isBool()) {
+            out = EValue(a.toBool() > b.toBool());
+          } else {
+            // TODO Fail using runtime context
+            ET_CHECK(false);
+          }
+        }),
+
+    // executorch_prim::lt.Scalar(Scalar, Scalar) -> bool
+    Operator(
+        "executorch_prim::lt.Scalar",
+        [](RuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(a.toInt() < b.toInt());
+          } else if (a.isDouble() && b.isDouble()) {
+            out = EValue(a.toDouble() < b.toDouble());
+          } else if (a.isBool() && b.isBool()) {
+            out = EValue(a.toBool() < b.toBool());
+          } else {
+            // TODO Fail using runtime context
+            ET_CHECK(false);
+          }
+        }),
+
+    // executorch_prim::ge.Scalar(Scalar, Scalar) -> bool
+    Operator(
+        "executorch_prim::ge.Scalar",
+        [](RuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(a.toInt() >= b.toInt());
+          } else if (a.isDouble() && b.isDouble()) {
+            out = EValue(a.toDouble() >= b.toDouble());
+          } else if (a.isBool() && b.isBool()) {
+            out = EValue(a.toBool() >= b.toBool());
+          } else {
+            // TODO Fail using runtime context
+            ET_CHECK(false);
+          }
+        }),
+
+    // executorch_prim::le.Scalar(Scalar, Scalar) -> bool
+    Operator(
+        "executorch_prim::le.Scalar",
+        [](RuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          if (a.isInt() && b.isInt()) {
+            out = EValue(a.toInt() <= b.toInt());
+          } else if (a.isDouble() && b.isDouble()) {
+            out = EValue(a.toDouble() <= b.toDouble());
+          } else if (a.isBool() && b.isBool()) {
+            out = EValue(a.toBool() <= b.toBool());
+          } else {
+            // TODO Fail using runtime context
+            ET_CHECK(false);
+          }
+        }),
+
+    // TODO(T159977211): wait a little bit so older models with these ops are
+    // regenerated and then delete them
     // executorch_prim::add.int(int, int) -> int
     Operator(
         "executorch_prim::add.int",

@@ -580,7 +580,7 @@ class TestPasses(unittest.TestCase):
         converted_gm = new_prog.exported_program.graph_module
 
         FileCheck().check("torch.ops.aten.sym_size.int").check(
-            "executorch_exir_dialects_backend__ops_executorch_prim_sub_int"
+            "executorch_exir_dialects_backend__ops_executorch_prim_sub_Scalar"
         ).check_not("operator.sub").run(converted_gm.code)
 
     def test_alloc_node_spec(self) -> None:

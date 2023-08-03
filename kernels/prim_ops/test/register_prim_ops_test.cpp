@@ -96,16 +96,16 @@ TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("executorch_prim::add.int")(context, stack);
+  getOpsFn("executorch_prim::add.Scalar")(context, stack);
   ASSERT_EQ(stack[2]->toInt(), 7);
 
-  getOpsFn("executorch_prim::sub.int")(context, stack);
+  getOpsFn("executorch_prim::sub.Scalar")(context, stack);
   ASSERT_EQ(stack[2]->toInt(), -1);
 
-  getOpsFn("executorch_prim::mul.int")(context, stack);
+  getOpsFn("executorch_prim::mul.Scalar")(context, stack);
   ASSERT_EQ(stack[2]->toInt(), 12);
 
-  getOpsFn("executorch_prim::floordiv.int")(context, stack);
+  getOpsFn("executorch_prim::floordiv.Scalar")(context, stack);
   ASSERT_EQ(stack[2]->toInt(), 0);
 }
 
@@ -221,8 +221,8 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndexStaticShape) {
 
 TEST_F(RegisterPrimOpsTest, TestBooleanOps) {
   EValue values[3];
-  int64_t a = 3;
-  int64_t b = 4;
+  double a = 3;
+  double b = 4;
   bool out = false;
   values[0] = EValue(a);
   values[1] = EValue(b);
@@ -233,19 +233,19 @@ TEST_F(RegisterPrimOpsTest, TestBooleanOps) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("executorch_prim::ge.int")(context, stack);
+  getOpsFn("executorch_prim::ge.Scalar")(context, stack);
   ASSERT_EQ(stack[2]->toBool(), false);
 
-  getOpsFn("executorch_prim::gt.int")(context, stack);
+  getOpsFn("executorch_prim::gt.Scalar")(context, stack);
   ASSERT_EQ(stack[2]->toBool(), false);
 
-  getOpsFn("executorch_prim::le.int")(context, stack);
+  getOpsFn("executorch_prim::le.Scalar")(context, stack);
   ASSERT_EQ(stack[2]->toBool(), true);
 
-  getOpsFn("executorch_prim::lt.int")(context, stack);
+  getOpsFn("executorch_prim::lt.Scalar")(context, stack);
   ASSERT_EQ(stack[2]->toBool(), true);
 
-  getOpsFn("executorch_prim::eq.int")(context, stack);
+  getOpsFn("executorch_prim::eq.Scalar")(context, stack);
   ASSERT_EQ(stack[2]->toBool(), false);
 }
 

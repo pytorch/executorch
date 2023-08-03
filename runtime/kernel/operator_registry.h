@@ -182,7 +182,7 @@ struct Kernel {
   Kernel() {}
 };
 
-constexpr uint32_t kOperatorTableMaxSize = 200;
+constexpr uint32_t kOperatorTableMaxSize = 250;
 constexpr uint32_t kMaxNumOfKernelPerOp = 8;
 constexpr uint32_t kMaxNumOfKernels =
     kOperatorTableMaxSize * kMaxNumOfKernelPerOp;

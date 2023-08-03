@@ -1038,12 +1038,23 @@ class _Emitter(torch.fx.Interpreter):
         elif is_sym_op(target):
             assert (
                 len(target._schema.returns) == 1
-            ), "Only returning a single SymInt from symbolic ops is supported currently."
+            ), "Only returning a single Sym from symbolic ops is supported currently."
             assert type(target._schema.returns[0].type) in (
                 torch.IntType,
+                torch.FloatType,
                 torch.BoolType,
-            ), "Only symbolic ops that return a SymInt are supported currently."
-            ret = self._emit_evalue(EValue(Int(0)))
+                torch.NumberType,
+            ), f"Only symbolic ops that return a Int Bool Float are supported currently got {type(target._schema.returns[0].type)}."
+            if type(target._schema.returns[0].type) == torch.IntType:
+                ret = self._emit_evalue(EValue(Int(0)))
+            elif type(target._schema.returns[0].type) == torch.BoolType:
+                ret = self._emit_evalue(EValue(Bool(False)))
+            elif type(target._schema.returns[0].type) == torch.FloatType:
+                ret = self._emit_evalue(EValue(Double(0)))
+            else:  # type(target._schema.returns[0].type) == torch.NumberType:
+                # Cant definitively say what type this is, the runtime operator just overrides the EValue completely
+                # though so we can just serialize whatever as a placeholder.
+                ret = self._emit_evalue(EValue(Int(0)))
         else:
             ret = self._emit_spec(self.node.meta["spec"])
 

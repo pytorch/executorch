@@ -18,5 +18,5 @@ class TestCustomOps(unittest.TestCase):
         self.y = 2
 
     def test_add_registered(self) -> None:
-        out_1 = torch.ops.executorch_prim.add.int(self.x, self.y)
+        out_1 = torch.ops.executorch_prim.add.Scalar(self.x, self.y)
         self.assertEqual(out_1, 3)
