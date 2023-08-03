@@ -157,11 +157,13 @@ python_unittest(
     srcs = [
         "test_op_convert.py",
     ],
-    deps = [
+    preload_deps = [
+        "//executorch/kernels/portable:custom_ops_generated_lib",
         ":test_lib",  # @manual
+    ],
+    deps = [
         "//caffe2:torch",
         "//executorch/exir/operator:convert",
-        "//executorch/kernels/portable:custom_ops_generated_lib",
     ],
 )
 
@@ -169,6 +171,9 @@ python_unittest(
     name = "memory_planning",
     srcs = [
         "test_memory_planning.py",
+    ],
+    preload_deps = [
+        "//executorch/kernels/portable:custom_ops_generated_lib",
     ],
     deps = [
         ":asr_joiner",
@@ -181,7 +186,6 @@ python_unittest(
         "//executorch/exir:print_program",
         "//executorch/exir:schema",
         "//executorch/exir/passes:lib",
-        "//executorch/kernels/portable:custom_ops_generated_lib",
     ],
 )
 
@@ -316,13 +320,15 @@ python_unittest(
     srcs = [
         "test_quant_fusion_pass.py",
     ],
+    preload_deps = [
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
     deps = [
         ":lib",
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir:tracer",
         "//executorch/exir/passes:quant_fusion_pass",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
     ],
 )
 
@@ -331,13 +337,15 @@ python_unittest(
     srcs = [
         "test_quantization.py",
     ],
+    preload_deps = [
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
     deps = [
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir:tracer",
         "//executorch/exir/passes:quant_fusion_pass",
         "//executorch/exir/passes:spec_prop_pass",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
         "//pytorch/vision:torchvision",
     ],
 )

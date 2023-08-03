@@ -13,9 +13,6 @@ from executorch.exir.operator import convert as op_convert
 from executorch.exir.operator.convert import to_out_variant
 from torch._ops import OpOverload
 
-torch.ops.load_library("//executorch/exir/tests:test_lib")
-torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
-
 
 class TestToOutVariant(unittest.TestCase):
     def test_already_out_var(self) -> None:

@@ -31,9 +31,6 @@ from torch.nn import functional as F
 
 from torch.testing import FileCheck
 
-# load executorch out variant ops
-torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
-
 
 class TestQuantFusionPass(unittest.TestCase):
     @classmethod

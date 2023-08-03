@@ -62,9 +62,6 @@ from torch.ao.quantization.quantize_fx import (
 from torch.testing import FileCheck
 
 
-torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
-
-
 def vary_segments(test_method):
     """A decorator that calls the test method with `extract_segments` set to
     True and False.

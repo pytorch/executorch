@@ -8,6 +8,7 @@ python_unittest(
     preload_deps = [
         "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
         "//executorch/backends/vulkan:vulkan_backend_lib",
+        "//executorch/kernels/portable:custom_ops_generated_lib",
     ],
     deps = [
         "//caffe2:torch",
@@ -17,7 +18,6 @@ python_unittest(
         "//executorch/exir/serialize:lib",
         "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/extension/pytree:pylib",
-        "//executorch/kernels/portable:custom_ops_generated_lib",
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )

@@ -86,6 +86,10 @@ python_unittest(
     srcs = [
         "test_backends.py",
     ],
+    preload_deps = [
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
     deps = [
         ":backend_with_compiler_demo",
         ":hta_partitioner_demo",
@@ -105,8 +109,6 @@ python_unittest(
         "//executorch/exir/dialects:lib",
         "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/extension/pytree:pylib",
-        "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )
@@ -116,6 +118,10 @@ python_unittest(
     srcs = [
         "test_backends_lifted.py",
     ],
+    preload_deps = [
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
     deps = [
         ":backend_with_compiler_demo",
         ":hta_partitioner_demo",
@@ -135,8 +141,6 @@ python_unittest(
         "//executorch/exir/dialects:lib",
         "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/extension/pytree:pylib",
-        "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )
@@ -163,6 +167,10 @@ python_unittest(
     srcs = [
         "test_backends_nested.py",
     ],
+    preload_deps = [
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/kernels/quantized:custom_ops_generated_lib",
+    ],
     deps = [
         ":op_partitioner_demo",
         "//caffe2:torch",
@@ -176,8 +184,6 @@ python_unittest(
         "//executorch/exir:graph_module",
         "//executorch/exir:lib",
         "//executorch/exir:lowered_backend_module",
-        "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )

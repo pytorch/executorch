@@ -65,9 +65,6 @@ from torch.ao.quantization.quantize_fx import (
 from torch.testing import FileCheck
 
 
-torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
-
-
 def get_testing_capture_config():
     return exir.CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=False)
 
