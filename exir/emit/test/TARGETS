@@ -5,7 +5,6 @@ python_unittest(
     srcs = [
         "test_emit.py",
     ],
-    supports_static_listing = True,
     deps = [
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",

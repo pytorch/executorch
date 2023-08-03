@@ -5,7 +5,6 @@ python_unittest(
     srcs = [
         "test_exir_dialect_ops.py",
     ],
-    supports_static_listing = True,
     deps = [
         "//executorch/exir/dialects:lib",
     ],

@@ -23,7 +23,6 @@ python_unittest(
     srcs = [
         "test_bundle_data.py",
     ],
-    supports_static_listing = True,
     deps = [
         ":lib",
         "//caffe2:torch",
@@ -39,7 +38,6 @@ python_unittest(
     srcs = [
         "test_serialize.py",
     ],
-    supports_static_listing = True,
     deps = [
         ":lib",
         "//executorch/bundled_program:core",
@@ -53,7 +51,6 @@ python_unittest(
     srcs = [
         "test_config.py",
     ],
-    supports_static_listing = True,
     deps = [
         ":lib",
         "//caffe2:torch",

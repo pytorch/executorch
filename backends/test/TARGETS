@@ -86,7 +86,6 @@ python_unittest(
     srcs = [
         "test_backends.py",
     ],
-    supports_static_listing = True,
     deps = [
         ":backend_with_compiler_demo",
         ":hta_partitioner_demo",
@@ -117,7 +116,6 @@ python_unittest(
     srcs = [
         "test_backends_lifted.py",
     ],
-    supports_static_listing = True,
     deps = [
         ":backend_with_compiler_demo",
         ":hta_partitioner_demo",
@@ -148,7 +146,6 @@ python_unittest(
     srcs = [
         "test_graph_partition.py",
     ],
-    supports_static_listing = True,
     visibility = [
         "//executorch/...",
         "//executorch/test/...",
@@ -166,7 +163,6 @@ python_unittest(
     srcs = [
         "test_backends_nested.py",
     ],
-    supports_static_listing = True,
     deps = [
         ":op_partitioner_demo",
         "//caffe2:torch",
@@ -191,7 +187,6 @@ python_unittest(
     srcs = [
         "test_utils.py",
     ],
-    supports_static_listing = True,
     deps = [
         "//caffe2:torch",
         "//executorch/backends:backend_api",

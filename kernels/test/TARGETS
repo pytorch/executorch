@@ -12,7 +12,6 @@ define_common_targets()
 python_unittest(
     name = "gen_supported_features_test",
     srcs = ["gen_supported_features_test.py"],
-    supports_static_listing = True,
     deps = [
         "fbsource//third-party/pypi/pyyaml:pyyaml",
         ":gen_supported_features_lib",

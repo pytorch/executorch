@@ -16,7 +16,6 @@ python_unittest(
     srcs = [
         "test.py",
     ],
-    supports_static_listing = True,
     deps = [
         "//caffe2:torch",
         "//executorch/extension/pytree:pybindings",

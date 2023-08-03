@@ -9,7 +9,6 @@ python_unittest(
         "//executorch/kernels/portable:custom_ops_generated_lib",
         "//executorch/kernels/quantized:custom_ops_generated_lib",
     ],
-    supports_static_listing = True,
     deps = [
         "//caffe2:torch",
         "//executorch/backends:backend_api",
@@ -34,7 +33,6 @@ python_unittest(
     preload_deps = [
         "//executorch/kernels/portable:custom_ops_generated_lib_aten",
     ],
-    supports_static_listing = True,
     deps = [
         "//caffe2:torch",
         "//executorch/backends:backend_api",

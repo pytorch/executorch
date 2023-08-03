@@ -35,7 +35,6 @@ python_unittest(
     srcs = [
         "test_end2end.py",
     ],
-    supports_static_listing = True,
     deps = [
         ":exported_module",
         ":register_scratch_meta_fns",
@@ -67,7 +66,6 @@ python_unittest(
     srcs = [
         "test_end2end.py",
     ],
-    supports_static_listing = True,
     deps = [
         ":exported_module",
         ":register_scratch_meta_fns",

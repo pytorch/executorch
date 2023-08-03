@@ -45,7 +45,6 @@ python_unittest(
         # However, it's a better practice to build/link everything at earlier stage, instead of during runtime
         "//executorch/backends/test/demos/rpc:executor_backend_register",
     ],
-    supports_static_listing = True,
     deps = [
         ":executor_backend_partitioner",
         ":executor_backend_preprocess",

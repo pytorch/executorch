@@ -8,7 +8,6 @@ python_unittest(
     srcs = [
         "serialize_test.py",
     ],
-    supports_static_listing = True,
     deps = [
         "//executorch/sdk/etdump:schema",
         "//executorch/sdk/etdump:serialize",

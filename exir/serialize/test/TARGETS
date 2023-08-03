@@ -5,7 +5,6 @@ python_unittest(
     srcs = [
         "test_program.py",
     ],
-    supports_static_listing = True,
     deps = [
         "//executorch/exir:schema",
         "//executorch/exir/serialize:lib",
@@ -18,7 +17,6 @@ python_unittest(
     srcs = [
         "test_flatbuffer.py",
     ],
-    supports_static_listing = True,
     deps = [
         "//executorch/exir/serialize:lib",
     ],

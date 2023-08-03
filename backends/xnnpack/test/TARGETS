@@ -11,7 +11,6 @@ python_unittest(
         "//executorch/kernels/portable:custom_ops_generated_lib",
         "//executorch/kernels/quantized:custom_ops_generated_lib",
     ],
-    supports_static_listing = True,
     tags = ["long_running"],
     deps = [
         "//caffe2:torch",
@@ -41,7 +40,6 @@ python_unittest(
         "//executorch/kernels/portable:custom_ops_generated_lib",
         "//executorch/kernels/quantized:custom_ops_generated_lib",
     ],
-    supports_static_listing = True,
     tags = ["long_running"],
     deps = [
         "//caffe2:torch",
@@ -72,7 +70,6 @@ python_unittest(
         "//executorch/kernels/portable:custom_ops_generated_lib",
         "//executorch/kernels/quantized:custom_ops_generated_lib",
     ],
-    supports_static_listing = True,
     tags = ["long_running"],
     deps = [
         "//caffe2:torch",
@@ -99,7 +96,6 @@ python_unittest(
         "test_xnnpack_passes.py",
         "test_xnnpack_utils_classes.py",
     ],
-    supports_static_listing = True,
     deps = [
         "//caffe2:torch",
         "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
@@ -114,7 +110,6 @@ python_unittest(
     srcs = [
         "ops/add.py",
     ],
-    supports_static_listing = True,
     deps = [
         "//caffe2:torch",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
