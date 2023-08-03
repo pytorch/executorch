@@ -125,11 +125,6 @@ def _prepare_genrule_and_lib(
     # The command will always generate these files.
     genrule_outs = GENERATED_SOURCES + OPERATOR_HEADERS + (CUSTOM_OPS_NATIVE_FUNCTION_HEADER if custom_ops_yaml_path else [])
 
-    # Determine what sources custom_ops_<name> target should include
-    custom_ops_sources = CUSTOM_OPS_SCHEMA_REGISTRATION_SOURCES + (
-        CUSTOM_OPS_GENERATED_SOURCES if custom_ops_aten_kernel_deps else CUSTOM_OPS_DUMMY_KERNEL_SOURCES
-    )
-
     genrules = {}
     libs = {}
 
@@ -158,7 +153,6 @@ def _prepare_genrule_and_lib(
         genrule_cmd = genrule_cmd + [
             "--custom_ops_yaml_path=" + custom_ops_yaml_path,
         ]
-        genrule_outs += custom_ops_sources
     genrules[genrule_name] = {
         "cmd": genrule_cmd,
         "outs": genrule_outs,
@@ -175,20 +169,114 @@ def _prepare_genrule_and_lib(
     libs[header_lib] = {
         "headers": headers,
     }
+    return genrules, libs
+
+def _prepare_custom_ops_genrule_and_lib(
+        name,
+        custom_ops_yaml_path = None,
+        kernels = []):
+    """Similar to _prepare_genrule_and_lib but for custom ops."""
+    genrules = {}
+    libs = {}
+    aten_src_path = runtime.external_dep_location("aten-src-path")
+    target = runtime.external_dep_location("gen-executorch")
+    genrule_name = name + "_gen"
+
     if custom_ops_yaml_path:
+        genrule_cmd = [
+            "$(exe {})".format(target),
+            "--source-path=$(location //executorch/codegen:templates)",
+            "--tags-path $(location {})/aten/src/ATen/native/tags.yaml".format(aten_src_path),
+            "--aten_yaml_path $(location {})/aten/src/ATen/native/native_functions.yaml".format(aten_src_path),
+            "--custom_ops_yaml_path=" + custom_ops_yaml_path,
+            "--install_dir=${OUT}",
+        ]
+
+        # Determine what sources custom_ops_<name> target should include
+        custom_ops_sources = CUSTOM_OPS_SCHEMA_REGISTRATION_SOURCES + (
+            CUSTOM_OPS_GENERATED_SOURCES if kernels else CUSTOM_OPS_DUMMY_KERNEL_SOURCES
+        )
+
         # lib for registering custom ops to pytorch
-        libs["custom_ops_" + name] = {
+        libs[name] = {
             "genrule": genrule_name,
-            "headers": headers,
+            "headers": [],
             "srcs": custom_ops_sources,
         }
-        if header_lib in libs:
-            libs[header_lib]["headers"].update(headers)
-        else:
-            libs[header_lib] = {
-                "headers": headers,
-            }
+        genrules[genrule_name] = {
+            "cmd": " ".join(genrule_cmd),
+            "outs": {out: [out] for out in CUSTOM_OPS_NATIVE_FUNCTION_HEADER + custom_ops_sources},
+        }
     return genrules, libs
+
+def exir_custom_ops_aot_lib(
+        name,
+        yaml_target = None,
+        visibility = [],
+        kernels = [],
+        deps = [],
+        compiler_flags = [],
+        define_static_target = False,
+        platforms = get_default_executorch_platforms()):
+    """Generates a C++ library that helps to register the custom ops into PyTorch,
+    so they are visible to EXIR. To use this, we need to load the generated so file:
+    ```python
+    torch.ops.load_library(...)
+    ```
+
+    Args:
+        name: recommending a name that is obvious for user to tell this should only
+            be used by EXIR (AOT) but not executorch runtime.
+        yaml_target: buck target for the yaml file with proper schema and kernel entry.
+            See https://github.com/pytorch/executorch/blob/main/kernels/portable/README.md#yaml-schema
+            for the schema syntax.
+        visibility: visibility of the generated library.
+        kernels: C++ kernels for these custom ops. They need to be implemented using ATen/c10 basics.
+        deps: dependencies of the generated library.
+    """
+    genrules, libs = _prepare_custom_ops_genrule_and_lib(name = name, custom_ops_yaml_path = "$(location {})".format(yaml_target), kernels = kernels)
+    for genrule in genrules:
+        runtime.genrule(
+            name = genrule,
+            macros_only = False,
+            cmd = genrules[genrule]["cmd"],
+            outs = genrules[genrule]["outs"],
+            default_outs = ["."],
+        )
+    for compiler_lib in libs:
+        runtime.cxx_library(
+            name = compiler_lib,
+            srcs = [
+                ":{}[{}]".format(libs[compiler_lib]["genrule"], f)
+                for f in libs[compiler_lib]["srcs"]
+            ],
+            headers = {
+                "CustomOpsNativeFunctions.h": ":{}[CustomOpsNativeFunctions.h]".format(libs[compiler_lib]["genrule"]),
+            },
+            # link_whole is necessary because the operators register themselves
+            # via static initializers that run at program startup.
+            # @lint-ignore BUCKLINT link_whole
+            link_whole = True,
+            visibility = visibility,
+            deps = [
+                "//executorch/runtime/core/exec_aten:lib_aten",
+                "//executorch/codegen:macros",
+            ] + kernels + deps,
+            exported_deps = [
+                "//executorch/runtime/kernel:kernel_runtime_context_aten",
+            ],
+            external_deps = ["libtorch"],
+            define_static_target = define_static_target,
+            # Relax visibility restrictions since deps may include targets
+            # outside of //executorch.
+            _is_external_target = True,
+            # Explicitly indicate that this C++ library will be loaded by Python
+            # and consequently need to be exposed as shared libraries. It's not
+            # required, but when set it'll make builds faster.
+            supports_python_dlopen = True,
+            platforms = platforms,
+            compiler_flags = compiler_flags,
+        )
 
 def executorch_generated_lib(
         name,
@@ -382,49 +470,13 @@ def executorch_generated_lib(
             platforms = platforms,
         )
 
-    # If custom ops are provided, emit a host-only C++ library that declares and
-    # registers them. Clients can load this library into local PyTorch using
-    # `torch.ops.load_library()` to make them visible while authoring models.
-    #
-    # For the embedded runtime, clients should depend on the `<name>`
-    # cxx_library above, which will register the custom ops as long as
-    # custom_ops_requires_runtime_registration is True.
-    compiler_lib = "custom_ops_" + name if "custom_ops_" + name in libs else None
-    if compiler_lib:
-        # TODO(T129125039): Rename this to make it clear that it's not part of
-        # the embedded runtime; it's only for registering custom ops with the
-        # PyTorch authoring runtime.
-        runtime.cxx_library(
-            name = compiler_lib,
-            srcs = [
-                ":{}[{}]".format(libs[compiler_lib]["genrule"], f)
-                for f in libs[compiler_lib]["srcs"]
-            ],
-            headers = {
-                "CustomOpsNativeFunctions.h": ":{}[CustomOpsNativeFunctions.h]".format(libs[compiler_lib]["genrule"]),
-            },
-            # link_whole is necessary because the operators register themselves
-            # via static initializers that run at program startup.
-            # @lint-ignore BUCKLINT link_whole
-            link_whole = True,
+    if custom_ops_yaml_target:
+        exir_custom_ops_aot_lib(
+            name = "custom_ops_" + name,
+            yaml_target = custom_ops_yaml_target,
             visibility = visibility,
-            deps = [
-                "//executorch/runtime/core/exec_aten:lib_aten",
-                "//executorch/runtime/core:core",
-                "//executorch/codegen:macros",
-            ] + custom_ops_aten_kernel_deps,
-            exported_deps = [
-                "//executorch/runtime/kernel:kernel_runtime_context_aten",
-            ],
-            external_deps = ["libtorch"],
+            kernels = custom_ops_aten_kernel_deps,
+            deps = deps + [":" + header_lib],
             define_static_target = define_static_targets,
-            # Relax visibility restrictions since deps may include targets
-            # outside of //executorch.
-            _is_external_target = True,
-            # Explicitly indicate that this C++ library will be loaded by Python
-            # and consequently need to be exposed as shared libraries. It's not
-            # required, but when set it'll make builds faster.
-            supports_python_dlopen = True,
             platforms = platforms,
-            compiler_flags = compiler_flags,
         )
