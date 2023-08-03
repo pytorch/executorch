@@ -92,6 +92,13 @@ def define_common_targets():
         exported_deps = [
             ":compiler",
         ],
+        exported_preprocessor_flags = select(
+            {
+                "DEFAULT": [],
+                "ovr_config//os:linux": ["-DET_USE_LIBDL"],
+                "ovr_config//os:macos": ["-DET_USE_LIBDL"],
+            },
+        ),
         visibility = [
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",

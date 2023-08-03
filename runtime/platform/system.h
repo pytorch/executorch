@@ -14,7 +14,11 @@
  */
 #pragma once
 
-#if defined(__linux__) || defined(__APPLE__)
+/**
+ * To enable dynamic linking debugging capability on UNIX-like OS. If enabled
+ * and see an error like: `undefined symbol: dladdr`, install `libdl` to fix.
+ */
+#if defined(ET_USE_LIBDL)
 #include <dlfcn.h>
 #endif
 
@@ -30,7 +34,7 @@ extern "C" {
  * @retval The path to the shared library containing the symbol.
  */
 inline const char* et_pal_get_shared_library_name(const void* addr) {
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(ET_USE_LIBDL)
   Dl_info info;
   if (dladdr(addr, &info) && info.dli_fname) {
     return info.dli_fname;
