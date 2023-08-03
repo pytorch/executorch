@@ -14,7 +14,7 @@ def define_common_targets():
             "xnnpack_schema_generated.h": ["schema_generated.h"],
         },
         cmd = " ".join([
-            "$(exe fbsource//third-party/flatbuffers/fbsource_namespace:flatc)",
+            "$(exe {})".format(runtime.external_dep_location("flatc")),
             "--cpp",
             "--cpp-std c++11",
             "--scoped-enums",
@@ -30,9 +30,7 @@ def define_common_targets():
         exported_headers = {
             "xnnpack_schema_generated.h": ":gen_xnnpack_schema[xnnpack_schema_generated.h]",
         },
-        exported_deps = [
-            "fbsource//third-party/flatbuffers/fbsource_namespace:flatbuffers-api",
-        ],
+        exported_external_deps = ["flatbuffers-api"]
     )
 
     runtime.cxx_library(
