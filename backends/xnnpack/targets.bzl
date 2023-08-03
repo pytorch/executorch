@@ -52,7 +52,6 @@ def define_common_targets():
             "//xplat/third-party/XNNPACK:XNNPACK",
             ":xnnpack_schema",
             "//executorch/runtime/backend:backend_registry",
-            "//executorch/backends/qnnpack:qnnpack_utils",  # TODO Use (1) portable for choose_qparams(), (2) xnnpack for quantize_per_tensor()
             "//executorch/util:memory_utils",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
