@@ -48,7 +48,7 @@ def generate_schema_header(rule_name, srcs, headers, default_header):
             "-o ${OUT}",
             "${SRCS}",
             # Let our infra know that the file was generated.
-            " ".join(["&& echo '// @''generated' >> ${OUT}/" + header for header in headers]),
+            " ".join(["&& echo // @" + "generated >> ${OUT}/" + header for header in headers]),
         ]),
     )
 
