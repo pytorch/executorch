@@ -57,7 +57,8 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
         input_x = torch.ones([1, 32])
         input_h = torch.ones([1, 32])
         input_c = torch.ones([1, 32])
-
+        # To avoid `operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.`
+        # error
         pattern_lstm_conv_lifted = (
             exir.capture(
                 LSTMConvPattern(),
