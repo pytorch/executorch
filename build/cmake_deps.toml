@@ -1,0 +1,64 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+# Inherited by all other targets. When a key already exists, the elements of the
+# target's value are appended to lists here.
+[target_base]
+excludes = [
+  "^third-party",
+]
+
+[targets.program_schema]
+buck_targets = [
+  "//schema:program",
+]
+filters = [
+  ".fbs$",
+]
+
+[targets.executorch]
+buck_targets = [
+  "//runtime/executor:executor",
+]
+deps = [
+  "program_schema",
+]
+filters = [
+  ".cpp$",
+]
+
+[targets.portable_kernels]
+buck_targets = [
+  # //kernels/portable:operators would be more appropriate, but buck2 doesn't
+  # think it has any "inputs" since its srcs list is empty.
+  "//kernels/portable:generated_lib_all_ops",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  # Exclude the codegen templates, which are picked up because the buck target
+  # is the generated_lib and not the unwrapped set of kernels.
+  "^codegen/templates",
+]
+deps = [
+  "executorch",
+]
+
+[targets.executor_runner]
+buck_targets = [
+  "//examples/executor_runner:executor_runner",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "portable_kernels",
+]
