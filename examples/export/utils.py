@@ -11,7 +11,7 @@ import executorch.exir as exir
 # Reason is that there memory allocation ops with symbolic shape nodes.
 # and when evaulating shape, it doesnt seem that we presenting them with shape env
 # that contain those variables.
-_CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True, _unlift=False)
+_CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
 )
