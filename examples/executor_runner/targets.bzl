@@ -17,6 +17,7 @@ def define_common_targets():
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/util:util",
             "//executorch/kernels/portable:generated_lib_all_ops",
+            "//executorch/examples/custom_ops:generated_lib",
         ],
         external_deps = [
             "gflags",
