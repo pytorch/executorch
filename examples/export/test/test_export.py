@@ -8,8 +8,13 @@ import unittest
 
 import torch
 
-from executorch.examples.export.utils import _EDGE_COMPILE_CONFIG
+from executorch.examples.export.utils import _CAPTURE_CONFIG, _EDGE_COMPILE_CONFIG
 from executorch.examples.models import MODEL_NAME_TO_MODEL
+
+# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
+from executorch.extension.pybindings.portable import (  # @manual
+    _load_for_executorch_from_buffer,
+)
 
 
 class ExportTest(unittest.TestCase):
@@ -18,16 +23,18 @@ class ExportTest(unittest.TestCase):
     ):
         import executorch.exir as exir
 
-        capture_config = exir.CaptureConfig(enable_dynamic_shape=False)
-        edge_model = exir.capture(eager_model, example_inputs, capture_config).to_edge(
+        edge_model = exir.capture(eager_model, example_inputs, _CAPTURE_CONFIG).to_edge(
             _EDGE_COMPILE_CONFIG
         )
 
         executorch_model = edge_model.to_executorch()
+        # pyre-ignore
+        pte_model = _load_for_executorch_from_buffer(executorch_model.buffer)
+
         with torch.no_grad():
             eager_output = eager_model(*example_inputs)
         with torch.no_grad():
-            executorch_output = executorch_model.graph_module(*example_inputs)
+            executorch_output = pte_model.forward(example_inputs)
         self.assertTrue(
             torch.allclose(eager_output, executorch_output[0], rtol=1e-5, atol=1e-5)
         )
