@@ -52,10 +52,10 @@ if(NOT BUCK2)
 endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
-set(COMMON_COMPILE_OPTIONS -Wno-deprecated-declarations)
+set(_common_compile_options -Wno-deprecated-declarations)
 
 # Let files say "include <executorch/path/to/header.h>".
-set(COMMON_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR}/..)
+set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
@@ -150,8 +150,8 @@ target_include_directories(
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE program_schema)
 target_link_libraries(executorch PRIVATE dl) # For dladdr()
-target_include_directories(executorch PUBLIC ${COMMON_INCLUDE_DIRECTORIES})
-target_compile_options(executorch PUBLIC ${COMMON_COMPILE_OPTIONS})
+target_include_directories(executorch PUBLIC ${_common_include_directories})
+target_compile_options(executorch PUBLIC ${_common_compile_options})
 
 #
 # portable_kernels: Pure-C++ kernel library for ATen ops
@@ -161,7 +161,7 @@ target_compile_options(executorch PUBLIC ${COMMON_COMPILE_OPTIONS})
 
 add_library(portable_kernels ${_portable_kernels__srcs})
 target_link_libraries(portable_kernels PRIVATE executorch)
-target_compile_options(portable_kernels PUBLIC ${COMMON_COMPILE_OPTIONS})
+target_compile_options(portable_kernels PUBLIC ${_common_compile_options})
 
 #
 # portable_kernels_bindings: Bindings and registration for all ops defined in
@@ -265,4 +265,4 @@ endif()
 add_executable(executor_runner ${_executor_runner__srcs})
 target_link_libraries(executor_runner executorch portable_kernels_bindings
                       gflags)
-target_compile_options(executor_runner PUBLIC ${COMMON_COMPILE_OPTIONS})
+target_compile_options(executor_runner PUBLIC ${_common_compile_options})
