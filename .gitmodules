@@ -10,3 +10,6 @@
 [submodule "third-party/gflags"]
 	path = third-party/gflags
 	url = https://github.com/gflags/gflags.git
+[submodule "third-party/XNNPACK"]
+	path = third-party/XNNPACK
+	url = https://github.com/google/XNNPACK.git
