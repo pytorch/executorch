@@ -1,5 +1,7 @@
 buck-out/
 cmake-out/
+cmake-android-out/
+cmake-ios-out/
 executorch.egg-info
 __pycache__/
 build/lib/
