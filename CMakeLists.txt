@@ -7,15 +7,31 @@
 #
 # Simple CMake build system for runtime components.
 #
-# One-time setup:
+# ### One-time setup ###
+#
+# Configure the CMake build system. It's good practice to do this whenever
+# cloning or pulling the upstream repo. Once this is done, you don't need to do
+# it again until you pull from the upstream repo again.
+#
+# NOTE: If your `buck2` binary is not on the PATH, you can change this line to
+# say something like `-DBUCK2=/tmp/buck2` to point directly to the tool.
+#[[
+  (rm -rf cmake-out \
+    && mkdir cmake-out \
+    && cd cmake-out \
+    && cmake -DBUCK2=buck2 ..)
+]]
+#
+# ### Build ###
+#
+# NOTE: The `-j` argument specifies how many jobs/processes to use when
+# building, and tends to speed up the build significantly. It's typical to use
+# "core count + 1" as the `-j` value.
 # ~~~
-# (rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
+# cmake --build cmake-out -j9
 # ~~~
 #
-# Build:
-# ~~~
-# cmake --build cmake-out -j32
-# ~~~
+# ### Editing this file ###
 #
 # This file should be formatted with
 # ~~~

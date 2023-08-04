@@ -38,6 +38,7 @@ Compared to the legacy Lite Interpreter, there are some major benefits:
 ## Quick Links for Partners
 
 - [Setting up ExecuTorch from GitHub](/docs/website/docs/tutorials/00_setting_up_executorch.md)
+    - (Optional) [Building with CMake](/docs/website/docs/tutorials/cmake_build_system.md)
 - [Exporting to Executorch](/docs/website/docs/tutorials/exporting_to_executorch.md)
     - [EXIR Spec](/docs/website/docs/ir_spec/00_exir.md)
     - [Exporting manual](/docs/website/docs/export/00_export_manual.md)
