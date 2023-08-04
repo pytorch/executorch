@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set -ex
+set -exu
 
 IMAGE_NAME="$1"
 shift
@@ -17,10 +17,8 @@ OS_VERSION=22.04
 CLANG_VERSION=12
 PYTHON_VERSION=3.10
 MINICONDA_VERSION=23.5.1-0
-
-# TODO: Pin PyTorch version for now until we have the CI in place to update this
-# safely
-TORCH_VERSION=2.1.0.dev20230731
+TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
+BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
 docker build \
   --no-cache \
@@ -30,6 +28,7 @@ docker build \
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
   --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
+  --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   -f "${OS}"/Dockerfile \
   "$@" \
   .
