@@ -11,17 +11,12 @@ import unittest
 from typing import Dict, List, Tuple
 
 import executorch.exir as exir
-import executorch.exir.schema as schema
-import executorch.exir.tests.control_flow_models as control_flow_models
 import executorch.exir.tests.models as models
 
 import torch
 
-import torch.utils._pytree as pytree
 from executorch.exir import CaptureConfig
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.error import ExportError
-from executorch.exir.passes import DebugPass
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tracer import dynamo_trace, ExirDynamoConfig, using_dynamo
 from functorch.experimental.control_flow import cond, map
@@ -287,9 +282,6 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         prog = exir.capture(
             f,
             inp,
-            config=exir.CaptureConfig(
-                pt2_mode=True, _dynamo_config=ExirDynamoConfig(dynamic_shapes=False)
-            ),
             # missing dispatch key
         ).to_edge()
         self.assertTrue(prog(torch.randn(4, 5)).shape[0], 3)

@@ -10,7 +10,6 @@ import torch.nn.functional as F
 from executorch.backends.transforms import apply_addmm_mm_to_linear_transform
 
 from executorch.exir import CaptureConfig
-from executorch.exir.tracer import ExirDynamoConfig
 
 from torch.ao.quantization import QConfig, QConfigMapping  # @manual
 
@@ -49,15 +48,7 @@ def get_dynamic_quantized_graph(f, example_inputs, dynamic_shape=False):
     # Convert module
     converted_mod = _convert_to_reference_decomposed_fx(prepared_mod)
     if dynamic_shape:
-        dynamo_config = ExirDynamoConfig(
-            guard_nn_modules=True,
-            dynamic_shapes=True,
-            specialize_int=True,
-            verbose=True,
-        )
-        capture_config = CaptureConfig(
-            pt2_mode=True, _dynamo_config=dynamo_config, enable_dynamic_shape=True
-        )
+        capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=True)
     else:
         capture_config = CaptureConfig(pt2_mode=True)
     # EXIR trace

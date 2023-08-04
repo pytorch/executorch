@@ -9,21 +9,8 @@ The flow uses `PyTorch 2.0 Export Quantization` to quantize the model, that work
 ```
 # program capture
 from executorch import exir
-from executorch.exir.tracer import ExirDynamoConfig
 from executorch.exir import CaptureConfig
-dynamo_config = exir.tracer.ExirDynamoConfig(
-    capture_scalar_outputs=True,
-    guard_nn_modules=True,
-    dynamic_shapes=enable_dynamic_shape,
-    specialize_int=True,
-    verbose=True,
-)
-capture_config = exir.CaptureConfig(
-    pt2_mode=True,
-    _dynamo_config=dynamo_config,
-    enable_dynamic_shape=enable_dynamic_shape,
-)
-exported_program = exir.capture(m, example_inputs, capture_config)
+exported_program = exir.capture(m, example_inputs)
 m = exported_program.graph_module
 ```
 ### Result

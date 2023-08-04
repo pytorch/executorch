@@ -11,10 +11,9 @@ import unittest
 import torch
 import torchvision
 from executorch import exir
-from executorch.exir import CaptureConfig, EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
-from executorch.exir.tracer import ExirDynamoConfig
 from torch.ao.ns.fx.utils import compute_sqnr
 from torch.ao.quantization import get_default_qconfig, QConfigMapping  # @manual
 from torch.ao.quantization.quantize_fx import convert_to_reference_fx, prepare_fx
@@ -48,14 +47,7 @@ class TestQuantization(unittest.TestCase):
             m = torchvision.models.resnet18().eval()  # pyre-ignore[16]
             m_copy = copy.deepcopy(m)
             # program capture
-            dynamo_config = ExirDynamoConfig(
-                guard_nn_modules=True,
-                dynamic_shapes=False,
-                specialize_int=True,
-                verbose=True,
-            )
-            capture_config = CaptureConfig(pt2_mode=True, _dynamo_config=dynamo_config)
-            exported_program = exir.capture(m, example_inputs, config=capture_config)
+            exported_program = exir.capture(m, example_inputs)
             # TODO: probably need to support exported_program.to_aten()
             m = exported_program.to_edge(
                 exir.EdgeCompileConfig(
@@ -79,9 +71,7 @@ class TestQuantization(unittest.TestCase):
                 passes=[QuantFusionPass(), SpecPropPass()],
                 _check_ir_validity=False,
             )
-            m = exir.capture(m, example_inputs, config=capture_config).to_edge(
-                config=compile_config
-            )
+            m = exir.capture(m, example_inputs).to_edge(config=compile_config)
             FileCheck().check(
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor"
             ).check(

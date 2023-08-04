@@ -33,7 +33,6 @@ from executorch.exir.passes.replace_aten_with_edge_pass import (
     aten_to_edge,
     should_lower_to_edge,
 )
-from executorch.exir.tracer import ExirDynamoConfig
 from torch import fx
 from torch._export.exported_program import ExportedProgram
 
@@ -920,16 +919,8 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
                 backend_config=get_executorch_backend_config(),
             )
             print("converted:", converted_mod)
-            dynamo_config = ExirDynamoConfig(
-                dynamic_shapes=False,
-            )
-            capture_config = CaptureConfig(pt2_mode=True, _dynamo_config=dynamo_config)
-            captured_mod = exir.capture(
-                converted_mod, example_inputs, config=capture_config
-            ).to_edge(
-                exir.EdgeCompileConfig(
-                    _check_ir_validity=False,
-                )
+            captured_mod = exir.capture(converted_mod, example_inputs).to_edge(
+                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
             )
 
             print("captured mod:", captured_mod)
@@ -971,16 +962,8 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
                 backend_config=get_executorch_backend_config(),
             )
             print("converted:", converted_mod)
-            dynamo_config = ExirDynamoConfig(
-                dynamic_shapes=False,
-            )
-            capture_config = CaptureConfig(pt2_mode=True, _dynamo_config=dynamo_config)
-            captured_mod = exir.capture(
-                converted_mod, example_inputs, config=capture_config
-            ).to_edge(
-                exir.EdgeCompileConfig(
-                    _check_ir_validity=False,
-                )
+            captured_mod = exir.capture(converted_mod, example_inputs,).to_edge(
+                exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
             )
 
             print("captured mod:", captured_mod)

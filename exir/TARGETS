@@ -120,6 +120,7 @@ python_library(
     deps = [
         ":delegate",
         ":graph_module",
+        ":lib",
         ":tracer",
         "//caffe2:torch",
         "//executorch/backends:compile_spec_schema",

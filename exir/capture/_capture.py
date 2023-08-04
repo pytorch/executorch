@@ -79,11 +79,6 @@ def capture(
             graph_module = unlift_exported_program_lifted_states(ep)
 
         elif config.enable_dynamic_shape:
-            if not config._dynamo_config.dynamic_shapes:
-                raise ExportError(
-                    ExportErrorType.VIOLATION_OF_SPEC,
-                    "Can't trace dynamo with static shapes under symbolic mode",
-                )
             graph_module, _ = dynamo_trace(
                 f,
                 args,

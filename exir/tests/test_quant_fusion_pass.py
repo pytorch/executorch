@@ -13,7 +13,6 @@ from executorch import exir
 from executorch.exir import CaptureConfig, EdgeCompileConfig
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.tests.common import register_additional_test_aten_ops
-from executorch.exir.tracer import ExirDynamoConfig
 from torch.ao.quantization import (  # @manual
     float_qparams_weight_only_qconfig,
     get_default_qconfig_mapping,
@@ -297,17 +296,11 @@ class TestQuantFusionPass(unittest.TestCase):
             )
             m(*example_inputs)
             m = _convert_to_reference_decomposed_fx(m)
-            dynamo_config = ExirDynamoConfig(
-                guard_nn_modules=True,
-                dynamic_shapes=False,
-                specialize_int=True,
-                verbose=True,
+            compile_config = EdgeCompileConfig(
+                _check_ir_validity=False,
+                _use_edge_ops=True,
             )
-            compile_config = EdgeCompileConfig(_check_ir_validity=False)
-            capture_config = CaptureConfig(pt2_mode=True, _dynamo_config=dynamo_config)
-            m = exir.capture(m, example_inputs, config=capture_config).to_edge(
-                config=compile_config
-            )
+            m = exir.capture(m, example_inputs).to_edge(config=compile_config)
             # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
             m = m.transform(QuantFusionPass())
             # check that we are using functional variant of q/dq/cat
@@ -359,17 +352,11 @@ class TestQuantFusionPass(unittest.TestCase):
             )
             m(*example_inputs)
             m = _convert_to_reference_decomposed_fx(m)
-            dynamo_config = ExirDynamoConfig(
-                guard_nn_modules=True,
-                dynamic_shapes=False,
-                specialize_int=True,
-                verbose=True,
+            compile_config = EdgeCompileConfig(
+                _check_ir_validity=False,
+                _use_edge_ops=True,
             )
-            compile_config = EdgeCompileConfig(_check_ir_validity=False)
-            capture_config = CaptureConfig(pt2_mode=True, _dynamo_config=dynamo_config)
-            m = exir.capture(m, example_inputs, config=capture_config).to_edge(
-                config=compile_config
-            )
+            m = exir.capture(m, example_inputs).to_edge(config=compile_config)
             # QuantFusionPass should be part of to_executorch() config, separating it out so that we can check the graph.
             m = m.transform(QuantFusionPass())
             m(*example_inputs)

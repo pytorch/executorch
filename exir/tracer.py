@@ -605,10 +605,6 @@ class ExirDynamoConfig:
     Manage Exir-specific configurations of Dynamo.
     """
 
-    capture_dynamic_output_shape_ops: bool = True
-    guard_nn_modules: bool = True
-    dynamic_shapes: bool = True
-    specialize_int: bool = True
     allow_rnn: bool = True
     verbose: bool = True
     assume_static_by_default: bool = False

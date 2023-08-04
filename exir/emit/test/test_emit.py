@@ -36,15 +36,7 @@ from executorch.exir.schema import (
     Tensor,
 )
 from executorch.exir.tests.common import register_additional_test_aten_ops
-from executorch.exir.tests.models import (
-    Emformer,
-    FeedForwardBlock,
-    MLP,
-    Mul,
-    ScaledDotProductAttention,
-    ScaledDotProductAttentionModularized,
-)
-from executorch.exir.tracer import ExirDynamoConfig
+from executorch.exir.tests.models import MLP, Mul
 
 # pyre-ignore
 from executorch.extension.pybindings.portable import (  # @manual
@@ -687,7 +679,6 @@ class TestEmit(unittest.TestCase):
             pt2_mode=True,
             enable_functionalization=False,
             enable_dynamic_shape=True,
-            _dynamo_config=ExirDynamoConfig(specialize_int=False),
         )
         inputs = (torch.ones(4, 4), torch.ones(4))
         module = exir.capture(f, inputs, capture_config).to_edge(

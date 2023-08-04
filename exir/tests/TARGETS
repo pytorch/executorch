@@ -76,17 +76,13 @@ python_unittest(
     supports_static_listing = False,
     deps = [
         "fbsource//third-party/pypi/parameterized:parameterized",
-        ":control_flow_models",
         ":lib",
         ":models",
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",
-        "//executorch/exir:error",
         "//executorch/exir:lib",
-        "//executorch/exir:schema",
         "//executorch/exir:tracer",
         "//executorch/exir/dialects:lib",
-        "//executorch/exir/passes:lib",
     ],
 )
 
@@ -266,7 +262,6 @@ python_unittest(
         "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir:lib",
         "//executorch/exir:pass_base",
-        "//executorch/exir:tracer",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/passes:replace_aten_with_edge_pass",
     ],
@@ -327,7 +322,6 @@ python_unittest(
         ":lib",
         "//caffe2:torch",
         "//executorch/exir:lib",
-        "//executorch/exir:tracer",
         "//executorch/exir/passes:quant_fusion_pass",
     ],
 )
@@ -343,7 +337,6 @@ python_unittest(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:lib",
-        "//executorch/exir:tracer",
         "//executorch/exir/passes:quant_fusion_pass",
         "//executorch/exir/passes:spec_prop_pass",
         "//pytorch/vision:torchvision",
