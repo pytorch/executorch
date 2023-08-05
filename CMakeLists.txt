@@ -134,7 +134,9 @@ add_custom_command(
   DEPENDS flatc ${_program_schema__srcs}
   COMMENT "Generating program_schema headers"
   VERBATIM)
-add_library(program_schema INTERFACE ${_program_schema__outputs})
+
+add_library(program_schema ${_program_schema__outputs})
+set_target_properties(program_schema PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(
   program_schema
   INTERFACE ${_program_schema__include_dir}
