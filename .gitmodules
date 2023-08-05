@@ -19,3 +19,6 @@
 [submodule "third-party/FP16"]
 	path = third-party/FP16
 	url = https://github.com/Maratyszcza/FP16.git
+[submodule "third-party/FXdiv"]
+	path = third-party/FXdiv
+	url = https://github.com/Maratyszcza/FXdiv.git

@@ -2,6 +2,44 @@ load("@fbsource//xplat/executorch/build/runtime_wrapper.bzl", "runtime")
 load(":gflags.bzl", "define_gflags")
 load(":glob_defs.bzl", "subdir_glob")
 load(":prebuilt_python_defs.bzl", "add_prebuilt_python_library_targets")
+load(
+    ":xnnpack_src_defs.bzl",
+    "HOT_SRCS",
+    "JIT_SRCS",
+    "LOGGING_SRCS",
+    "OPERATOR_SRCS",
+    "SUBGRAPH_SRCS",
+    "TABLE_SRCS",
+)
+load(
+    ":xnnpack_wrapper_defs.bzl",
+    "AARCH32_ASM_MICROKERNEL_SRCS",
+    "AARCH64_ASM_MICROKERNEL_SRCS",
+    "PROD_AARCH64_NEONFP16ARITH_MICROKERNEL_SRCS",
+    "PROD_AARCH64_NEON_MICROKERNEL_SRCS",
+    "PROD_AVX2_MICROKERNEL_SRCS",
+    "PROD_AVX512F_MICROKERNEL_SRCS",
+    "PROD_AVX512SKX_MICROKERNEL_SRCS",
+    "PROD_AVX_MICROKERNEL_SRCS",
+    "PROD_F16C_MICROKERNEL_SRCS",
+    "PROD_FMA3_MICROKERNEL_SRCS",
+    "PROD_NEONDOT_MICROKERNEL_SRCS",
+    "PROD_NEONFMA_MICROKERNEL_SRCS",
+    "PROD_NEONFP16_MICROKERNEL_SRCS",
+    "PROD_NEONV8_MICROKERNEL_SRCS",
+    "PROD_NEON_MICROKERNEL_SRCS",
+    "PROD_SCALAR_AARCH32_MICROKERNEL_SRCS",
+    "PROD_SCALAR_PORTABLE_MICROKERNEL_SRCS",
+    "PROD_SSE2_MICROKERNEL_SRCS",
+    "PROD_SSE41_MICROKERNEL_SRCS",
+    "PROD_SSE_MICROKERNEL_SRCS",
+    "PROD_SSSE3_MICROKERNEL_SRCS",
+    "PROD_XOP_MICROKERNEL_SRCS",
+    "ALL_NEONFMA_AARCH64_MICROKERNEL_SRCS",
+    "ALL_NEON_AARCH64_MICROKERNEL_SRCS",
+    "PROD_AVX512VBMI_MICROKERNEL_SRCS",
+    "ALL_AVX512VBMI_MICROKERNEL_SRCS",
+)
 
 define_gflags()
 
@@ -289,6 +327,17 @@ runtime.cxx_library(
         "FP16/include/",
     ],
     force_static = True,
+    visibility = ["PUBLIC"],
+    _is_external_target=True,
+)
+
+runtime.cxx_library(
+    name = "FXdiv",
+    header_namespace = "",
+    exported_headers = {
+        "fxdiv.h": "FXdiv/include/fxdiv.h",
+    },
+    reexport_all_header_dependencies = True,
     visibility = ["PUBLIC"],
     _is_external_target=True,
 )
