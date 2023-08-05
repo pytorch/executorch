@@ -22,3 +22,6 @@
 [submodule "third-party/FXdiv"]
 	path = third-party/FXdiv
 	url = https://github.com/Maratyszcza/FXdiv.git
+[submodule "third-party/pthreadpool"]
+	path = third-party/pthreadpool
+	url = https://github.com/Maratyszcza/pthreadpool.git
