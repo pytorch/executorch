@@ -381,3 +381,21 @@ runtime.cxx_library(
     visibility = ['PUBLIC'],
     _is_external_target=True,
 )
+
+runtime.cxx_library(
+    name = "interface"
+    header_namespace = "",
+    exported_headers = {
+        "xnnpack.h": "XNNPACK/include/xnnpack.h",
+    },
+    apple_sdks = (IOS, MACOSX, APPLETVOS),
+    labels = labels,
+    preprocessor_flags = [
+        "-DXNN_LOG_LEVEL=0",
+    ],
+    visibility = ["PUBLIC"],
+    exported_deps = [
+        # Dependency only on pthreadpool interface
+        third_party("pthreadpool_header"),
+    ],
+)

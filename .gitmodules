@@ -10,9 +10,6 @@
 [submodule "third-party/gflags"]
 	path = third-party/gflags
 	url = https://github.com/gflags/gflags.git
-[submodule "third-party/XNNPACK"]
-	path = third-party/XNNPACK
-	url = https://github.com/google/XNNPACK.git
 [submodule "third-party/cpuinfo"]
 	path = third-party/cpuinfo
 	url = https://github.com/pytorch/cpuinfo.git
@@ -25,3 +22,6 @@
 [submodule "third-party/pthreadpool"]
 	path = third-party/pthreadpool
 	url = https://github.com/Maratyszcza/pthreadpool.git
+[submodule "third-party/XNNPACK"]
+	path = third-party/XNNPACK
+	url = https://github.com/google/XNNPACK.git
