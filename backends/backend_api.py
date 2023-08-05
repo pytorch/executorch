@@ -23,7 +23,6 @@ from executorch.exir.delegate import executorch_call_delegate, get_lowered_modul
 
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.lowered_backend_module import (
-    arrange_graph_placeholders,
     create_exported_program_from_submodule,
     create_submodule_from_nodes,
     LoweredBackendModule,

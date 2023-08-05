@@ -650,7 +650,7 @@ class TestBackends(unittest.TestCase):
         )
 
         new_res = program_with_delegates.dump_graph_module()(*inputs)
-        for t1, t2 in zip(new_res, orig_res):
+        for t1, t2 in zip(new_res, orig_res, strict=True):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 
         # Check the backend delegate
@@ -764,7 +764,7 @@ class TestBackends(unittest.TestCase):
         )
 
         new_res = traced_with_delegate(*inputs)
-        for t1, t2 in zip(new_res, orig_res):
+        for t1, t2 in zip(new_res, orig_res, strict=True):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 
         program_with_delegates = traced_with_delegate.to_executorch(
@@ -785,7 +785,7 @@ class TestBackends(unittest.TestCase):
         # )
 
         new_res = program_with_delegates.dump_graph_module()(*inputs)
-        for t1, t2 in zip(new_res, orig_res):
+        for t1, t2 in zip(new_res, orig_res, strict=True):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 
         # Check the backend delegate

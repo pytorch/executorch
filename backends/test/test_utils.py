@@ -280,6 +280,7 @@ class TestPartitioners(unittest.TestCase):
 
     test_lib = Library("test_lib", "DEF")
 
+    @staticmethod
     @bind_pattern_to_op(
         test_lib, "test_q_linear(Tensor x, Tensor weight, Tensor bias) -> Tensor"
     )

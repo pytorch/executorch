@@ -28,19 +28,17 @@ def is_same_node(
             and (node_left.op == node_right.op)
             and (len(node_left.all_input_nodes) == len(node_right.all_input_nodes))
             and all(
-                [
-                    is_same_node(arg_left, arg_right)
-                    for arg_left, arg_right in zip(
-                        node_left.all_input_nodes, node_right.all_input_nodes
-                    )
-                ]
+                is_same_node(arg_left, arg_right)
+                for arg_left, arg_right in zip(
+                    node_left.all_input_nodes, node_right.all_input_nodes, strict=True
+                )
             )
         ):
             return False
     else:
         if len(list(node_left)) != len(list(node_right)):
             return False
-        for n_left, n_right in zip(node_left, node_right):
+        for n_left, n_right in zip(node_left, node_right, strict=True):
             # pyre-fixme[6]: For 1st argument expected `Iterable[Node]` but got `Node`.
             # pyre-fixme[6]: For 2nd argument expected `Iterable[Node]` but got `Node`.
             if not is_same_node(n_left, n_right):
@@ -57,7 +55,9 @@ def is_identical_graph(
     # is not the same.
     if len(list(graph_left.graph.nodes)) != len(list(graph_right.graph.nodes)):
         return False
-    for node_left, node_right in zip(graph_left.graph.nodes, graph_right.graph.nodes):
+    for node_left, node_right in zip(
+        graph_left.graph.nodes, graph_right.graph.nodes, strict=True
+    ):
         if not (is_same_node(node_left, node_right)):
             return False
     return True

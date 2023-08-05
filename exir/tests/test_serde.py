@@ -13,9 +13,8 @@ import executorch.exir as exir
 
 import torch
 from executorch.backends.backend_api import CompileSpec, to_backend
-from executorch.backends.test.backend_with_compiler_demo import (  # noqa
-    BackendWithCompilerDemo,
-)
+from executorch.backends.test.backend_with_compiler_demo import BackendWithCompilerDemo
+
 from executorch.backends.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.serde.serialize import deserialize, serialize
@@ -40,7 +39,7 @@ class TestSerde(unittest.TestCase):
         flat_orig_outputs, _ = pytree.tree_flatten(orig_outputs)
         flat_loaded_outputs, _ = pytree.tree_flatten(loaded_outputs)
 
-        for orig, loaded in zip(flat_orig_outputs, flat_loaded_outputs):
+        for orig, loaded in zip(flat_orig_outputs, flat_loaded_outputs, strict=True):
             self.assertTrue(torch.allclose(orig, loaded))
 
     # pyre-ignore
@@ -118,7 +117,7 @@ class TestSerde(unittest.TestCase):
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m.exported_program, compile_specs
+            BackendWithCompilerDemo.__name__, edgeir_m.exported_program, compile_specs
         )
 
         class CompositeModule(torch.nn.Module):
