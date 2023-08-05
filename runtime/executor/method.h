@@ -15,12 +15,6 @@
 
 // Forward declare flatbuffer types. This is a public header and must not
 // include the generated flatbuffer header.
-namespace flatbuffers {
-template <typename T>
-class Vector;
-template <typename T>
-struct Offset;
-} // namespace flatbuffers
 namespace executorch_flatbuffer {
 struct Chain;
 struct ExecutionPlan;
@@ -262,13 +256,11 @@ class Method final {
   bool pre_allocated_input_;
 
   /**
-   * Initialize the EValue table of the program. *num_parsed is the number
-   * of elements actually parsed, which may be less than n_value_ on failure.
+   * Parses the elements of the values_ array. On error, n_value_ will be set to
+   * the number of successfully-initialized entries so that ~Method doesn't try
+   * to clean up uninitialized entries.
    */
-  __ET_NODISCARD Error parse_values(
-      const flatbuffers::Vector<
-          flatbuffers::Offset<executorch_flatbuffer::EValue>>* fb_values,
-      size_t* num_parsed);
+  __ET_NODISCARD Error parse_values();
 
   __ET_NODISCARD Error resolve_operator(
       int32_t op_index,
