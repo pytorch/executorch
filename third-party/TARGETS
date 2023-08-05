@@ -279,3 +279,16 @@ runtime.cxx_library(
     visibility = ["PUBLIC"],
     _is_external_target=True,
 )
+
+runtime.cxx_library(
+    name = "FP16",
+    raw_headers = glob([
+        "FP16/include/*.h",
+    ]),
+    public_include_directories = [
+        "FP16/include/",
+    ],
+    force_static = True,
+    visibility = ["PUBLIC"],
+    _is_external_target=True,
+)
