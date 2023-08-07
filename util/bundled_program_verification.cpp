@@ -46,7 +46,7 @@ at::Tensor tensor_like(executorch_flatbuffer::BundledTensor* bundled_tensor) {
       {ret_t_sizes, bundled_tensor->sizes()->size()},
       at::dtype(static_cast<ScalarType>(bundled_tensor->scalar_type())));
   memcpy(
-      ret_tensor.data_ptr(),
+      ret_tensor.mutable_data_ptr(),
       static_cast<const void*>(bundled_tensor->data()->Data()),
       ret_tensor.nbytes());
   return ret_tensor;

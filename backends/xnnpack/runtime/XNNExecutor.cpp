@@ -56,12 +56,12 @@ Error XNNExecutor::set_external_input(uint32_t id, Tensor* input) {
         e == Error::Ok, Internal, "QuantizePerTensor() failed");
     externals_.emplace_back(xnn_external_value{
         id,
-        qinput.data_ptr(),
+        qinput.mutable_data_ptr(),
         {static_cast<float>(input_qparam.scale),
          static_cast<int8_t>(input_qparam.zero_point)},
         batch_size});
   } else {
-    externals_.emplace_back(xnn_external_value{id, input->data_ptr()});
+    externals_.emplace_back(xnn_external_value{id, input->mutable_data_ptr()});
   }
   return Error::Ok;
 }

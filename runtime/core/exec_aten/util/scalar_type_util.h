@@ -732,14 +732,15 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
 // An example usage is:
 //
 // ET_SWITCH_REAL_TYPES(input.scalar_type(), "example", CTYPE, [&]() {
-//   output.const_data_ptr<CTYPE>[0] = input.data_ptr<CTYPE>[0];
+//   output.mutable_data_ptr<CTYPE>[0] = input.const_data_ptr<CTYPE>[0];
 // });
 //
 // Note that these can be nested as well:
 //
 // ET_SWITCH_REAL_TYPES(input.scalar_type(), "example", CTYPE_IN, [&]() {
 //   ET_SWITCH_REAL_TYPES(output.scalar_type(), "example", CTYPE_OUT, [&]() {
-//     output.const_data_ptr<CTYPE_OUT>[0] = input.data_ptr<CTYPE_IN>[0];
+//     output.mutable_data_ptr<CTYPE_OUT>[0] =
+//         input.const_data_ptr<CTYPE_IN>[0];
 //   });
 // });
 //

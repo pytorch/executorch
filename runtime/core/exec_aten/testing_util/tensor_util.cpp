@@ -86,8 +86,8 @@ bool tensors_are_close(
   // Since the two tensors have same shape and strides, any two elements that
   // share same index from underlying data perspective will also share same
   // index from tensor perspective, whatever the size and strides really are.
-  // e.g. if a[i_1, i_2, ... i_n] = a.data_ptr()[m], we can assert
-  // b[i_1, i_2, ... i_n] = b.data_ptr()[m])
+  // e.g. if a[i_1, i_2, ... i_n] = a.const_data_ptr()[m], we can assert
+  // b[i_1, i_2, ... i_n] = b.const_data_ptr()[m])
   // So we can just compare the two underlying data sequentially to figure out
   // if the two tensors are same.
 
@@ -112,7 +112,7 @@ bool tensors_are_close(
         atol);
   } else {
     // Non-floating-point types can be compared bitwise.
-    return memcmp(a.data_ptr(), b.data_ptr(), a.nbytes()) == 0;
+    return memcmp(a.const_data_ptr(), b.const_data_ptr(), a.nbytes()) == 0;
   }
 }
 
@@ -152,7 +152,7 @@ bool tensor_data_is_close(
         atol);
   } else {
     // Non-floating-point types can be compared bitwise.
-    return memcmp(a.data_ptr(), b.data_ptr(), a.nbytes()) == 0;
+    return memcmp(a.const_data_ptr(), b.const_data_ptr(), a.nbytes()) == 0;
   }
 }
 

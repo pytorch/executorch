@@ -47,7 +47,7 @@ TEST(ATenBridgeTest, AliasETensorToATenTensor) {
       strides.data());
   torch::executor::Tensor etensor(&tensor_impl);
   alias_etensor_to_attensor(at_tensor, etensor);
-  EXPECT_EQ(at_tensor.data_ptr(), etensor.data_ptr());
+  EXPECT_EQ(at_tensor.const_data_ptr(), etensor.const_data_ptr());
 }
 
 TEST(ATenBridgeTest, AliasETensorToATenTensorFail) {
@@ -99,8 +99,8 @@ TEST(ATenBridgeTest, AliasETensorToATenTensorNonContiguous) {
       strides.data());
   torch::executor::Tensor etensor(&tensor_impl);
   alias_etensor_to_attensor(sliced_tensor_contig, etensor);
-  EXPECT_EQ(sliced_tensor_contig.data_ptr(), etensor.data_ptr());
-  EXPECT_NE(sliced_tensor.data_ptr(), etensor.data_ptr());
+  EXPECT_EQ(sliced_tensor_contig.const_data_ptr(), etensor.const_data_ptr());
+  EXPECT_NE(sliced_tensor.const_data_ptr(), etensor.const_data_ptr());
 }
 
 TEST(ATenBridgeTest, AliasETensorToATenTensorNonContiguousFail) {
@@ -144,5 +144,5 @@ TEST(ATenBridgeTest, AliasATTensorToETensor) {
       strides.data());
   torch::executor::Tensor etensor(&tensor_impl);
   auto aliased_at_tensor = alias_attensor_to_etensor(etensor);
-  EXPECT_EQ(aliased_at_tensor.data_ptr(), etensor_data.data());
+  EXPECT_EQ(aliased_at_tensor.const_data_ptr(), etensor_data.data());
 }

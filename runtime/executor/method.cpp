@@ -624,7 +624,8 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
   // Get pre_allocation info for input tensors
   for (int i = 0; i < inputs_size(); i++) {
     if (get_input(i).isTensor()) {
-      pre_allocated_input_ = get_input(i).toTensor().data_ptr() != nullptr;
+      pre_allocated_input_ =
+          get_input(i).toTensor().const_data_ptr() != nullptr;
       break;
     }
   }

@@ -135,7 +135,7 @@ void alias_etensor_to_attensor(
   // then in the next call copying will not be the correct behavior.
   ET_CHECK_MSG(aten_tensor.is_contiguous(), "Input tensor must be contiguous");
   check_tensor_meta(aten_tensor, mutable_et);
-  mutable_et.unsafeGetTensorImpl()->set_data(aten_tensor.data_ptr());
+  mutable_et.unsafeGetTensorImpl()->set_data(aten_tensor.mutable_data_ptr());
 }
 
 at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
@@ -143,7 +143,7 @@ at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
   std::vector<int64_t> at_tensor_sizes(
       etensor.sizes().begin(), etensor.sizes().end());
   at::Tensor t = at::from_blob(
-      etensor.data_ptr(), at_tensor_sizes, at::TensorOptions(dtype));
+      etensor.mutable_data_ptr(), at_tensor_sizes, at::TensorOptions(dtype));
   check_tensor_meta(t, etensor);
   return t;
 }
@@ -164,7 +164,7 @@ std::unique_ptr<torch::executor::TensorImpl> eTensorFromAtTensor(
       torchToExecuTorchScalarType(options.dtype());
 
   return std::make_unique<torch::executor::TensorImpl>(
-      edtype, sizes32.size(), sizes32.data(), tensor.data_ptr());
+      edtype, sizes32.size(), sizes32.data(), tensor.mutable_data_ptr());
 }
 
 at::Tensor atTensorFromETensor(

@@ -75,8 +75,7 @@ inline exec_aten::ArrayRef<void*> PrepareInputTensors(const Method& method) {
     const auto& t = method.get_input(i).toTensor();
     at::StorageImpl* storage =
         t.unsafeGetTensorImpl()->unsafe_storage().unsafeGetStorageImpl();
-    auto& data_ptr = storage->data_ptr();
-    if (data_ptr.get() == nullptr) {
+    if (storage->data_ptr().get() == nullptr) {
       ET_LOG(Info, "input not initialized.");
       inputs[num_allocated++] = malloc(t.nbytes());
       storage->set_data_ptr(at::DataPtr(
@@ -97,7 +96,7 @@ inline exec_aten::ArrayRef<void*> PrepareInputTensors(const Method& method) {
       continue;
     }
     const auto& t = method.get_input(i).toTensor();
-    if (t.data_ptr() == nullptr) {
+    if (t.const_data_ptr() == nullptr) {
       ET_LOG(Info, "input not initialized.");
       inputs[num_allocated++] = malloc(t.nbytes());
       t.set_data(inputs[num_allocated - 1]);

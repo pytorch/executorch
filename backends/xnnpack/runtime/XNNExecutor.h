@@ -111,8 +111,8 @@ class XNNExecutor {
         outputs.size());
 
     for (int i = 0; i < outputs.size(); i++) {
-      externals_.emplace_back(
-          xnn_external_value{output_ids_[i], outputs[i]->data_ptr<float>()});
+      externals_.emplace_back(xnn_external_value{
+          output_ids_[i], outputs[i]->mutable_data_ptr<float>()});
     }
 
     return Error::Ok;
