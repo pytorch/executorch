@@ -90,7 +90,7 @@ int32_t. As a result, we need to static cast the shapes to size_t
 */
 template <typename T = size_t>
 std::vector<T> flatbufferDimsToVector(
-    const flatbuffers_fbsource::Vector<uint32_t>* fb_dims) {
+    const flatbuffers::Vector<uint32_t>* fb_dims) {
   std::vector<T> dims_data;
   dims_data.reserve(fb_dims->size());
   for (auto fb_dim : *fb_dims) {
@@ -1426,7 +1426,7 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
       fb_xnnpack::XNNGraphBufferHasIdentifier(buffer_pointer),
       DelegateInvalidCompatibility,
       "XNNPACK Delegate Serialization Format version identifier '%.4s' != expected '%.4s'",
-      flatbuffers_fbsource::GetBufferIdentifier(buffer_pointer),
+      flatbuffers::GetBufferIdentifier(buffer_pointer),
       fb_xnnpack::XNNGraphIdentifier());
 
   auto flatbuffer_graph = fb_xnnpack::GetXNNGraph(buffer_pointer);

@@ -113,7 +113,7 @@ def _patch_headers(kwargs):
 
     # header_namespace is to workaround the fact that all C++ source files are having the pattern:
     # `include <executorch/.../*.h>` but BUCK2 root is at executorch/ so the `executorch/` prefix is redundant.
-    if not kwargs["name"] in ["FXdiv", "pthreadpool_header"]: # HACK do not commit!!!!
+    if not kwargs["name"] in ["FXdiv", "pthreadpool_header", "interface", "operators", "hot", "subgraph","ukernels_scalar", "tables"]: # HACK do not commit!!!!
         kwargs["header_namespace"] = "executorch/" + native.package_name()
     return kwargs
 

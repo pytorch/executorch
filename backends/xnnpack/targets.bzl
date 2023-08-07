@@ -49,7 +49,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            "//xplat/third-party/XNNPACK:XNNPACK",
+            "//executorch/third-party:XNNPACK",
             ":xnnpack_schema",
             "//executorch/runtime/backend:backend_registry",
             "//executorch/util:memory_utils",
