@@ -32,10 +32,10 @@ load("@fbsource//tools/build_defs:fb_python_test.bzl", "fb_python_test")
 load("@fbsource//tools/build_defs:fb_xplat_cxx_binary.bzl", "fb_xplat_cxx_binary")
 load("@fbsource//tools/build_defs:fb_xplat_cxx_library.bzl", "fb_xplat_cxx_library")
 load("@fbsource//tools/build_defs:fb_xplat_cxx_test.bzl", "fb_xplat_cxx_test")
+load("@fbsource//tools/build_defs:fb_xplat_genrule.bzl", "fb_xplat_genrule")
 load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode", "is_xplat")
 load("@fbsource//tools/build_defs:type_defs.bzl", "is_dict", "is_list", "is_string", "is_tuple", "is_unicode")
-load("//tools/build_defs:fb_xplat_genrule.bzl", "fb_xplat_genrule")
-load(":clients.bzl", "EXECUTORCH_CLIENTS")
+load("@fbsource//xplat/executorch/build/fb:clients.bzl", "EXECUTORCH_CLIENTS")
 
 # Unique internal keys that refer to specific repos. Values don't matter.
 _FBCODE = "F"

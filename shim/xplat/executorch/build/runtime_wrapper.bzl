@@ -166,7 +166,8 @@ def _patch_kwargs_common(kwargs):
         for target in kwargs.get("visibility", []):
             if not (target.startswith("//executorch") or target.startswith("@")):
                 fail("Please manage all external visibility using the " +
-                     "EXECUTORCH_CLIENTS list in //executorch/build/clients.bzl. " +
+                     "EXECUTORCH_CLIENTS list in " +
+                     "//executorch/build/fb/clients.bzl. " +
                      "Found external visibility target \"{}\".".format(target))
     else:
         kwargs.pop("_is_external_target", None)
