@@ -13,7 +13,7 @@ import torch
 from executorch.backends.backend_api import to_backend
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackFloatingPointPartitioner
 
-# from ..models import MODEL_NAME_TO_MODEL
+from ..models import MODEL_NAME_TO_MODEL
 
 
 
@@ -69,10 +69,31 @@ def export_add_module_with_lower_graph():
     with open(filename, "wb") as file:
         file.write(buffer)
 
+def export_mv2_with_lower_graph():
+    mv2, example_inputs = MODEL_NAME_TO_MODEL["mv2"]()
+    capture_config = exir.CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
+    edge_compile_config = exir.EdgeCompileConfig()
 
+    edge = exir.capture(mv2, example_inputs, capture_config).to_edge(edge_compile_config)
+    edge.exported_program = to_backend(
+        edge.exported_program, XnnpackFloatingPointPartitioner
+    )
+
+    edge.exported_program.graph_module(*example_inputs)
+    print("Lowered graph: \n", edge.exported_program.graph)
+
+    exec_prog = edge.to_executorch()
+    buffer = exec_prog.buffer
+
+    model_name = "xnnpack_mv2"
+    filename = f"{model_name}.ff"
+    print(f"Saving exported program to {filename}")
+    with open(filename, "wb") as file:
+        file.write(buffer)
 
 OPTIONS_TO_LOWER = {
-    "add": export_add_module_with_lower_graph
+    "add": export_add_module_with_lower_graph,
+    "mobilenet_v2": export_mv2_with_lower_graph
 }
 
 if __name__ == "__main__":
