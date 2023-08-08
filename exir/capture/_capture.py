@@ -45,7 +45,6 @@ CompileSpec = namedtuple(
 
 
 @compatibility(is_backward_compatible=False)
-@torch.no_grad()
 def capture(
     f: Callable[..., Any],
     args: Tuple[Value, ...],

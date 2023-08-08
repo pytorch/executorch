@@ -306,7 +306,9 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
                 super().__init__()
                 self.register_buffer(
                     "_bin_num_examples",
-                    torch.empty([42]).fill_(0.0),
+                    torch.empty([42]).fill_(
+                        0.0,
+                    ),
                 )
 
             def forward(self, x, y, z):
@@ -327,8 +329,30 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             torch.tensor(3.14),
         )
 
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Found a graph input that requires gradients, and received a mutation.",
+        ):
+            _ = exir.capture(
+                model,
+                example_inputs,
+                exir.CaptureConfig(
+                    pt2_mode=True,
+                    enable_aot=True,
+                ),
+            )
+
+        # Note that model._bin_num_examples is mutated during exir.capture
+        # We need to create a new_model
+        new_model = Module()
+        example_inputs = (
+            torch.randn(4),
+            torch.tensor(0),
+            torch.tensor(3.14),
+        )
+
         ep = exir.capture(
-            model,
+            new_model,
             example_inputs,
             exir.CaptureConfig(
                 pt2_mode=True,
@@ -342,7 +366,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             torch.tensor(2.1),
         )
         graph_outputs = ep(*test_inputs)
-        eager_outputs = model(*test_inputs)
+        eager_outputs = new_model(*test_inputs)
         self.assertEqual(len(graph_outputs), 2)
         self.assertEqual(len(eager_outputs), 2)
         self.assertTrue(torch.allclose(graph_outputs[0], eager_outputs[0]))
