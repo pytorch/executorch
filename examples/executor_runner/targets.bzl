@@ -13,6 +13,7 @@ def define_common_targets():
         srcs = ["executor_runner.cpp"],
         deps = [
             "//executorch/runtime/executor/test:test_backend_compiler_lib",
+            "//executorch/backends/xnnpack:xnnpack_backend",
             "//executorch/runtime/executor:program",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/util:util",
