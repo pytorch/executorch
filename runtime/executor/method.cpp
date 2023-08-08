@@ -257,11 +257,19 @@ bool parse_cond_value(const EValue& cond_value) {
 
 } // namespace
 
-Error Method::parse_values(
-    const flatbuffers::Vector<
-        flatbuffers::Offset<executorch_flatbuffer::EValue>>* flatbuffer_values,
-    size_t* num_parsed) {
-  for (size_t i = 0; i < n_value_; ++i) {
+Error Method::parse_values() {
+  auto flatbuffer_values = serialization_plan_->values();
+  ET_CHECK(flatbuffer_values != nullptr);
+  size_t n_value = flatbuffer_values->size();
+  values_ = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
+      memory_manager_->get_runtime_allocator(), EValue, n_value);
+
+  // n_value_ counts the number of successfully-initialized values for ~Method()
+  // to clean up, and is incremented at the bottom of the loop. This makes it
+  // safe for errors to return without updating any state.
+  n_value_ = 0;
+
+  for (size_t i = 0; i < n_value; ++i) {
     auto serialization_value = flatbuffer_values->Get(i);
     switch (serialization_value->val_type()) {
       case executorch_flatbuffer::KernelTypes::Null: {
@@ -329,7 +337,6 @@ Error Method::parse_values(
               "Failed parsing tensor at index %zu: %" PRIu32,
               i,
               t.error());
-          *num_parsed = i;
           return t.error();
         }
         new (&values_[i]) EValue(t.get());
@@ -347,7 +354,6 @@ Error Method::parse_values(
               "Failed parsing tensor list at index %zu: %" PRIu32,
               i,
               tensors.error());
-          *num_parsed = i;
           return tensors.error();
         }
         new (&values_[i]) EValue(tensors.get());
@@ -365,7 +371,6 @@ Error Method::parse_values(
               "Failed parsing optional tensor list at index %zu: %" PRIu32,
               i,
               tensors.error());
-          *num_parsed = i;
           return tensors.error();
         }
         new (&values_[i]) EValue(tensors.get());
@@ -383,8 +388,12 @@ Error Method::parse_values(
             "to see which type this is.",
             static_cast<uint32_t>(serialization_value->val_type()) - 1);
     }
+
+    // ~Method() will try to clean up n_value_ entries in the values_ array.
+    // Only increment this once we know the entry is valid, so that we don't try
+    // to clean up an uninitialized entry.
+    n_value_ = i + 1;
   }
-  *num_parsed = n_value_;
   return Error::Ok;
 }
 
@@ -502,18 +511,9 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
   auto runtime_allocator = memory_manager_->get_runtime_allocator();
 
   {
-    // Load values
-    auto plan_values = serialization_plan_->values();
-    ET_CHECK(plan_values != nullptr);
-    n_value_ = plan_values->size();
-    values_ =
-        ET_ALLOCATE_LIST_OR_RETURN_ERROR(runtime_allocator, EValue, n_value_);
-    size_t num_parsed;
-    Error err = parse_values(plan_values, &num_parsed);
+    // Parse the elements of the values_ array.
+    Error err = parse_values();
     if (err != Error::Ok) {
-      // ~Method() will try to clean up entries in this list. Ensure that it
-      // doesn't look at any uninitialized entries.
-      n_value_ = num_parsed;
       return err;
     }
   }
