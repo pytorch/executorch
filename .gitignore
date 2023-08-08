@@ -7,3 +7,23 @@ __pycache__/
 build/lib/
 exir/serialize/scalar_type.fbs
 exir/serialize/program.fbs
+
+# Editor temporaries
+*.swa
+*.swb
+*.swc
+*.swd
+*.swe
+*.swf
+*.swg
+*.swh
+*.swi
+*.swj
+*.swk
+*.swl
+*.swm
+*.swn
+*.swo
+*.swp
+*~
+.~lock.*
