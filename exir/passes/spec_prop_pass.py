@@ -6,7 +6,7 @@
 
 # pyre-strict
 
-from typing import Tuple
+from typing import List
 
 import torch
 from executorch.exir.delegate import executorch_call_delegate
@@ -65,12 +65,12 @@ class SpecPropPass(ExportPass):
     def call_map(
         self,
         f: torch.fx.GraphModule,
-        num_mapped: int,
-        args: Tuple[ProxyValue, ...],
+        num_args: int,
+        args: List[ProxyValue],
         meta: NodeMetadata,
     ) -> ProxyValue:
         args_data = pytree.tree_map_only(ProxyValue, lambda x: x.data, args)
-        xs_data = args_data[:num_mapped]
+        xs_data = args_data[:num_args]
         *_, body_out_node = f.graph.nodes
         body_out_node_fake_tensor = body_out_node.meta["val"]
         map_fake_tensor = pytree.tree_map_only(
@@ -79,7 +79,7 @@ class SpecPropPass(ExportPass):
             body_out_node_fake_tensor,
         )
         meta["spec"] = pytree.tree_map(make_spec, map_fake_tensor)
-        return super().call_map(f, num_mapped, args, meta)
+        return super().call_map(f, num_args, args, meta)
 
     # pyre-ignore
     def call_delegate(self, lowered_module, args, kwargs, meta):

@@ -17,7 +17,7 @@ from executorch.exir.dynamic_shape import (
     calculate_dynamic_shape_spec,
     DynamicMemoryPlanningMode,
 )
-from executorch.exir.pass_base import Argument, BackendPass
+from executorch.exir.pass_base import Argument, ExportPass
 from executorch.exir.pass_infra.node_metadata import NodeMetadata
 from executorch.exir.pass_infra.proxy_value import ProxyValue
 from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
@@ -40,7 +40,7 @@ class DSInfo:
     ubval: Optional[int]
 
 
-class DynamicShapePropPass(BackendPass):
+class DynamicShapePropPass(ExportPass):
     """
     In general, for each op, this pass propagate dynamic shape information from
     op inputs to op outputs.

@@ -232,8 +232,6 @@ python_library(
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",
         "//executorch/exir/dialects/edge:lib",
-        "//executorch/exir/pass_infra:node_metadata",
-        "//executorch/exir/pass_infra:proxy_value",
     ],
 )
 

@@ -1067,8 +1067,6 @@ class TestBackends(unittest.TestCase):
             false_lowered[0][1].original_module.graph_module.code
         )
 
-    # TODO(T159713621): Fix this test
-    @unittest.expectedFailure
     def test_partition_with_map(self) -> None:
         def map_fn(x, y):
             x = x - y
@@ -1116,8 +1114,6 @@ class TestBackends(unittest.TestCase):
 
         self.assertTrue(torch.allclose(orig_res, new_res[0]))
 
-    # TODO(T159713621): Fixing this test
-    @unittest.expectedFailure
     def test_partition_with_nested_control_flow(self) -> None:
         """
         Partitions the add and mul ops, including the ones inside the submodules
