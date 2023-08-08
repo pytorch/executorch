@@ -229,7 +229,7 @@ void get_broadcast_target_size(
        a_idx--, b_idx--, expected_target_idx--) {
     if (a_idx >= 0 && b_idx >= 0) {
       out_sizes[expected_target_idx] =
-          a_size[a_idx] > b_size[b_idx] ? a_size[a_idx] : b_size[b_idx];
+          b_size[b_idx] == 1 ? a_size[a_idx] : b_size[b_idx];
     } else {
       out_sizes[expected_target_idx] =
           a_idx >= 0 ? a_size[a_idx] : b_size[b_idx];
