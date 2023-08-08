@@ -105,6 +105,7 @@ def define_common_targets():
                 "executor.h",
             ],
             visibility = [
+                "//executorch/exir/backend/test/demos/rpc/...",
                 "@EXECUTORCH_CLIENTS",
             ],
         )

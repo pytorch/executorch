@@ -10,13 +10,6 @@ import operator
 from typing import Any, Callable, cast, Dict, List, Optional, Union
 
 import torch
-
-from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
-    generate_partitions_from_list_of_nodes,
-    generate_pattern_op_partitions,
-)
-
-from executorch.backends.partitioner import DelegationSpec, Partitioner
 from executorch.backends.xnnpack.partition.support_patterns import (
     get_add_graphs,
     get_all_dynamically_quantized_linear_pattern,
@@ -48,6 +41,13 @@ from executorch.backends.xnnpack.partition.support_patterns import (
 )
 from executorch.backends.xnnpack.utils.utils import get_input_node
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
+
+from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
+    generate_partitions_from_list_of_nodes,
+    generate_pattern_op_partitions,
+)
+
+from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import chain, OperatorSupportBase

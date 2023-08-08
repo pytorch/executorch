@@ -12,11 +12,13 @@ from typing import Tuple
 import executorch.exir as exir
 
 import torch
-from executorch.backends.backend_api import CompileSpec, to_backend
-from executorch.backends.test.backend_with_compiler_demo import BackendWithCompilerDemo
-
-from executorch.backends.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir import EdgeCompileConfig
+from executorch.exir.backend.backend_api import CompileSpec, to_backend
+from executorch.exir.backend.test.backend_with_compiler_demo import (
+    BackendWithCompilerDemo,
+)
+
+from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.serde.serialize import deserialize, serialize
 from torch._export.exported_program import ExportedProgram as TorchExportedProgram
 from torch.utils import _pytree as pytree

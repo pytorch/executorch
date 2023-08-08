@@ -36,8 +36,8 @@ runtime.python_library(
         "//executorch/vulkan/...",
     ],
     deps = [
-        "//executorch/backends:backend_details",
         "//executorch/exir:graph_module",
+        "//executorch/exir/backend:backend_details",
         "//executorch/exir/serialize:bindings",
         "//executorch/exir/serialize:lib",
     ],

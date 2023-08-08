@@ -8,8 +8,8 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends:compile_spec_schema",
         "//executorch/examples/models/mobilenet_v2:mv2_export",
         "//executorch/examples/models/mobilenet_v3:mv3_export",
+        "//executorch/exir/backend:compile_spec_schema",
     ],
 )

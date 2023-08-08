@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import List, Optional, Union
 
-from executorch.backends.compile_spec_schema import CompileSpec
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.scalar_type import ScalarType
 

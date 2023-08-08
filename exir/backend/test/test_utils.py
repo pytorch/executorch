@@ -8,14 +8,14 @@ import unittest
 
 import torch
 from executorch import exir
-from executorch.backends.backend_api import to_backend
-from executorch.backends.partitioner import Partitioner
-from executorch.backends.utils import (
+from executorch.exir import CaptureConfig
+from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.partitioner import Partitioner
+from executorch.exir.backend.utils import (
     is_identical_graph,
     remove_first_quant_and_last_dequant,
     replace_quantized_partition_with_op,
 )
-from executorch.exir import CaptureConfig
 
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
 from torch.ao.quantization import get_default_qconfig  # @manual
@@ -271,7 +271,7 @@ class TestPartitioners(unittest.TestCase):
             )
         )
 
-        error_msg = r"Partitioner <class 'executorch.backends.test.test_utils.TestPartitioners.test_invalid_partitioner_without_partitioner.<locals>.InvalidPartitioner'> needs a `partition_tags` field containing a mapping of tags to delegate spec"
+        error_msg = r"Partitioner <class 'executorch.exir.backend.test.test_utils.TestPartitioners.test_invalid_partitioner_without_partitioner.<locals>.InvalidPartitioner'> needs a `partition_tags` field containing a mapping of tags to delegate spec"
         with self.assertRaisesRegex(
             AssertionError,
             error_msg,

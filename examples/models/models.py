@@ -10,7 +10,7 @@
 from typing import Any, Tuple
 
 import torch
-from executorch.backends.compile_spec_schema import CompileSpec
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 class MulModule(torch.nn.Module):

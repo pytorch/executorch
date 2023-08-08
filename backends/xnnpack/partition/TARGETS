@@ -11,7 +11,7 @@ runtime.python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends:utils",
+        "//executorch/exir/backend:utils",
     ],
 )
 
@@ -26,11 +26,11 @@ runtime.python_library(
     ],
     deps = [
         ":support_patterns",
-        "//executorch/backends:partitioner",
-        "//executorch/backends:utils",
-        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/exir:delegate",
         "//executorch/exir:lib",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
     ],
 )

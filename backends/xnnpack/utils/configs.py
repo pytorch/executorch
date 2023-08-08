@@ -7,10 +7,10 @@
 from typing import Optional
 
 import executorch.exir as exir
-from executorch.backends.canonical_partitioners.duplicate_dequant_node_pass import (
+from executorch.exir import CaptureConfig
+from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
     DuplicateDequantNodePass,
 )
-from executorch.exir import CaptureConfig
 
 ### XNNPACK Configs ###
 def get_xnnpack_edge_compile_config(additional_passes=None) -> exir.EdgeCompileConfig:

@@ -9,7 +9,6 @@ import unittest
 import executorch.exir as exir
 
 import torch
-from executorch.backends.backend_api import to_backend, validation_disabled
 from executorch.backends.qnnpack.partition.qnnpack_partitioner import QnnpackPartitioner
 from executorch.backends.qnnpack.qnnpack_preprocess import QnnpackBackend
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
@@ -20,6 +19,7 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 
 from executorch.exir import CaptureConfig
+from executorch.exir.backend.backend_api import to_backend, validation_disabled
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 
 # pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.

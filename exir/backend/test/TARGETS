@@ -14,8 +14,8 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends:backend_details",
-        "//executorch/backends:compile_spec_schema",
+        "//executorch/exir/backend:backend_details",
+        "//executorch/exir/backend:compile_spec_schema",
         "//executorch/exir/dialects:lib",
     ],
 )
@@ -30,8 +30,8 @@ python_library(
         "//executorch/test/...",
     ],
     deps = [
-        "//executorch/backends:backend_details",
-        "//executorch/backends:compile_spec_schema",
+        "//executorch/exir/backend:backend_details",
+        "//executorch/exir/backend:compile_spec_schema",
     ],
 )
 
@@ -47,9 +47,9 @@ python_library(
     deps = [
         ":qnn_backend_demo",
         "//caffe2:torch",
-        "//executorch/backends:partitioner",
-        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir:lib",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
     ],
 )
 
@@ -65,10 +65,10 @@ python_library(
     deps = [
         ":backend_with_compiler_demo",
         "//caffe2:torch",
-        "//executorch/backends:compile_spec_schema",
-        "//executorch/backends:partitioner",
-        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir:graph_module",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir/dialects:lib",
     ],
 )
@@ -97,15 +97,15 @@ python_unittest(
         ":qnn_backend_demo",
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",
-        "//executorch/backends:backend_api",
-        "//executorch/backends:compile_spec_schema",
-        "//executorch/backends:partitioner",
         "//executorch/exir:delegate",
         "//executorch/exir:graph_module",
         "//executorch/exir:lib",
         "//executorch/exir:lowered_backend_module",
         "//executorch/exir:print_program",
         "//executorch/exir:schema",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/backend:partitioner",
         "//executorch/exir/dialects:lib",
         "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/extension/pytree:pylib",
@@ -129,15 +129,15 @@ python_unittest(
         ":qnn_backend_demo",
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",
-        "//executorch/backends:backend_api",
-        "//executorch/backends:compile_spec_schema",
-        "//executorch/backends:partitioner",
         "//executorch/exir:delegate",
         "//executorch/exir:graph_module",
         "//executorch/exir:lib",
         "//executorch/exir:lowered_backend_module",
         "//executorch/exir:print_program",
         "//executorch/exir:schema",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/backend:partitioner",
         "//executorch/exir/dialects:lib",
         "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/extension/pytree:pylib",
@@ -156,8 +156,8 @@ python_unittest(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir:lib",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir/dialects:lib",
     ],
 )
@@ -175,15 +175,15 @@ python_unittest(
         ":op_partitioner_demo",
         "//caffe2:torch",
         "//caffe2/functorch:functorch_src",
-        "//executorch/backends:backend_api",
-        "//executorch/backends:backend_details",
-        "//executorch/backends:compile_spec_schema",
-        "//executorch/backends:partitioner",
-        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir:delegate",
         "//executorch/exir:graph_module",
         "//executorch/exir:lib",
         "//executorch/exir:lowered_backend_module",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:backend_details",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )
@@ -195,10 +195,10 @@ python_unittest(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends:backend_api",
-        "//executorch/backends:partitioner",
-        "//executorch/backends:utils",
         "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
         "//executorch/exir/dialects:lib",
         "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/runtime/executor/test:test_backend_compiler_lib",

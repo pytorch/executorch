@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/test/demos/rpc/ExecutorBackend.h>
+#include <executorch/exir/backend/test/demos/rpc/ExecutorBackend.h>
 
 #include <cstdint>
 #include <cstdio>

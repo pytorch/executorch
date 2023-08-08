@@ -9,9 +9,6 @@ from typing import Optional, Tuple
 
 import torch
 from executorch import exir
-from executorch.backends.canonical_partitioners.duplicate_dequant_node_pass import (
-    DuplicateDequantNodePass,
-)
 from executorch.backends.xnnpack.passes.channels_last_tagged_reshape_pass import (
     ChannelsLastTaggedReshapePass,
 )
@@ -26,6 +23,9 @@ from executorch.backends.xnnpack.test.test_xnnpack_utils_classes import (
 )
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_capture_config
 from executorch.backends.xnnpack.utils.utils import capture_graph_for_xnnpack
+from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
+    DuplicateDequantNodePass,
+)
 from torch.ao.quantization.backend_config.executorch import (
     get_executorch_backend_config,
 )

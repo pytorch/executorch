@@ -44,8 +44,8 @@ def define_common_targets():
             "runtime/*.h",
         ]),
         visibility = [
-            "//executorch/backends:backend_lib",
-            "//executorch/backends/test/...",
+            "//executorch/exir/backend:backend_lib",
+            "//executorch/exir/backend/test/...",
             "//executorch/backends/xnnpack/test/...",
             "//executorch/extension/pybindings/...",
             "@EXECUTORCH_CLIENTS",

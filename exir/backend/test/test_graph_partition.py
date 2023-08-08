@@ -10,10 +10,10 @@ from typing import List, Optional, Tuple
 
 import torch
 from executorch import exir
-from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
+from executorch.exir import CaptureConfig, EdgeCompileConfig
+from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
 )
-from executorch.exir import CaptureConfig, EdgeCompileConfig
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.node import Node
 from torch.fx.passes.operator_support import OperatorSupportBase

@@ -84,7 +84,7 @@ def to_backend(
 To register the backend for ahead of time, just simply lowered the module
 
 ```python
-from executorch.backends.test.backend_with_compiler_demo import BackendWithCompilerDemo
+from executorch.exir.backend.test.backend_with_compiler_demo import BackendWithCompilerDemo
 ```
 
 To register the backend for runtime, it's done via register_backend APIs
@@ -138,7 +138,7 @@ that can be loaded by the runtime.
 The following is an example of this flow:
 
 ```python
-from executorch.backends.backend_api import to_backend, MethodCompileSpec
+from executorch.exir.backend.backend_api import to_backend, MethodCompileSpec
 import executorch.exir as exir
 import torch
 
@@ -156,7 +156,7 @@ example_input = (torch.ones(1), )
 to_be_lowered_exir_submodule = exir.capture(to_be_lowered, example_input).to_edge()
 
 # Import the backend implementation
-from executorch.backends.test.backend_with_compiler_demo import (
+from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
 lowered_module = to_backend('BackendWithCompilerDemo', to_be_lowered_exir_submodule, [])
@@ -230,7 +230,7 @@ lowered modules will be inserted into the toplevel module and serialized.
 
 The following is an example of the flow:
 ```python
-from executorch.backends.backend_api import to_backend
+from executorch.exir.backend.backend_api import to_backend
 import executorch.exir as exir
 import torch
 
@@ -251,7 +251,7 @@ model = Model()
 model_inputs = (torch.randn(1, 3), torch.randn(1, 3))
 gm = exir.capture(model, model_inputs).to_edge()
 
-from executorch.backends.test.op_partitioner_demo import AddMulPartitionerDemo
+from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 exec_prog = to_backend(gm, AddMulPartitionerDemo).to_executorch(
     exir.ExecutorchBackendConfig(passes=SpecPropPass())
 )

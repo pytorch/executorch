@@ -11,13 +11,13 @@ from functools import singledispatch
 from typing import Dict, Generator, List, Type, Union
 
 import torch
-
-from executorch.backends.backend_details import BackendDetails
-from executorch.backends.compile_spec_schema import CompileSpec
-
-from executorch.backends.partitioner import Partitioner, TPartitioner
-from executorch.backends.utils import is_identical_graph
 from executorch.exir import MultiMethodExirExportedProgram
+
+from executorch.exir.backend.backend_details import BackendDetails
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+
+from executorch.exir.backend.partitioner import Partitioner, TPartitioner
+from executorch.exir.backend.utils import is_identical_graph
 
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
 

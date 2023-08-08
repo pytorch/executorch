@@ -8,14 +8,14 @@ import unittest
 
 import torch
 from executorch import exir
-from executorch.backends.backend_api import to_backend
-from executorch.backends.test.demos.rpc.executor_backend_partitioner import (
+from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.test.demos.rpc.executor_backend_partitioner import (
     ExecutorBackendPartitioner,
 )
-from executorch.backends.test.demos.rpc.executor_backend_preprocess import (
+from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
     ExecutorBackend,
 )
-from executorch.backends.test.op_partitioner_demo import AddMulPartitionerDemo
+from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 
 # pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
 from executorch.extension.pybindings.portable import (  # @manual

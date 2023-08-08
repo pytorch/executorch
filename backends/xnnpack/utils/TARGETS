@@ -24,8 +24,8 @@ python_library(
     srcs = glob(["*.py"]) + [":xnnpack_constants[xnnpack_constants.py]"],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir:lib",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir/dialects:lib",
     ],
 )

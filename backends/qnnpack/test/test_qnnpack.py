@@ -11,13 +11,13 @@ import executorch.exir as exir
 import torch
 import torch.nn.functional as F
 
-from executorch.backends.backend_api import to_backend, validation_disabled
-
 from executorch.backends.qnnpack.partition.qnnpack_partitioner import QnnpackPartitioner
 
 # import the xnnpack backend implementation
 from executorch.backends.qnnpack.qnnpack_preprocess import QnnpackBackend
 from executorch.exir import CaptureConfig
+
+from executorch.exir.backend.backend_api import to_backend, validation_disabled
 
 from executorch.exir.serialize import serialize_to_flatbuffer
 

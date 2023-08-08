@@ -9,12 +9,12 @@ from typing import final, List
 
 import torch
 from executorch import exir
-from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
+from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,
 )
 
-from executorch.backends.partitioner import DelegationSpec, Partitioner
-from executorch.backends.test.qnn_backend_demo import QnnBackend
+from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
+from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
 from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import Partition
 

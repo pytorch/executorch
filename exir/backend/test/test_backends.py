@@ -10,34 +10,33 @@ from typing import Dict, List
 import executorch.exir as exir
 import torch
 import torch.fx as fx
-from executorch.backends.backend_api import (
+from executorch.exir import multi_method_program_to_executorch
+from executorch.exir.backend.backend_api import (
     LoweredBackendModule,
     to_backend,
     to_backend_multiple,
 )
-from executorch.backends.compile_spec_schema import CompileSpec
-from executorch.backends.partitioner import DelegationSpec, Partitioner
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
 
 # import the backend implementation
-from executorch.backends.test.backend_with_compiler_demo import BackendWithCompilerDemo
-from executorch.backends.test.hta_partitioner_demo import (
+from executorch.exir.backend.test.backend_with_compiler_demo import (
+    BackendWithCompilerDemo,
+)
+from executorch.exir.backend.test.hta_partitioner_demo import (
     HTAPartitionerMultiplePatternsDemo,
     HTAPartitionerOnePatternDemo,
 )
-from executorch.backends.test.op_partitioner_demo import (
+from executorch.exir.backend.test.op_partitioner_demo import (
     AddAttributePartitionerDemo,
     AddMulPartitionerDemo,
 )
-from executorch.backends.test.qnn_backend_demo import QnnBackend
-from executorch.exir import multi_method_program_to_executorch
+from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
 
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_control_flow_submodules
-from executorch.exir.lowered_backend_module import (
-    get_lowered_backend_modules,
-    get_lowered_submodules,
-)
+from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.print_program import print_program
 from executorch.exir.schema import (
     BackendDelegate,
@@ -63,10 +62,6 @@ from torch.ao.quantization.quantize_fx import (
     prepare_fx,
 )
 from torch.testing import FileCheck
-
-
-def get_testing_capture_config():
-    return exir.CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=False)
 
 
 def vary_segments(test_method):
@@ -133,7 +128,7 @@ class TestBackends(unittest.TestCase):
         model_inputs = (torch.ones(1),)
         expected_res = sin_module(*model_inputs)
         edgeir_m = exir.capture(
-            sin_module, model_inputs, get_testing_capture_config()
+            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
         ).to_edge()
 
         lowered_sin_module = to_backend(
@@ -160,7 +155,7 @@ class TestBackends(unittest.TestCase):
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
         edgeir_m = exir.capture(
-            sin_module, model_inputs, get_testing_capture_config()
+            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
         ).to_edge()
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
@@ -182,7 +177,9 @@ class TestBackends(unittest.TestCase):
         composite_model(*model_inputs)
 
         exec_prog = (
-            exir.capture(composite_model, model_inputs, get_testing_capture_config())
+            exir.capture(
+                composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
+            )
             .to_edge()
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments)
@@ -257,7 +254,7 @@ class TestBackends(unittest.TestCase):
         add_mul_module = AddMulModule()
         model_inputs = (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
         edge_graph_module = exir.capture(
-            add_mul_module, model_inputs, get_testing_capture_config()
+            add_mul_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
         ).to_edge()
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
@@ -278,10 +275,10 @@ class TestBackends(unittest.TestCase):
         composite_model(*model_inputs)
 
         exec_prog = (
-            exir.capture(composite_model, model_inputs, get_testing_capture_config())
-            .to_edge(
-                exir.EdgeCompileConfig(_use_edge_ops=True, _check_ir_validity=True)
+            exir.capture(
+                composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
             )
+            .to_edge()
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments)
             )
@@ -312,7 +309,7 @@ class TestBackends(unittest.TestCase):
         # the backend only  accepts shape <= 4
         model_inputs = (torch.ones(6),)
         edgeir_m = exir.capture(
-            sin_module, model_inputs, get_testing_capture_config()
+            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
         ).to_edge()
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
@@ -334,7 +331,9 @@ class TestBackends(unittest.TestCase):
         composite_model(*model_inputs)
 
         exec_prog = (
-            exir.capture(composite_model, model_inputs, get_testing_capture_config())
+            exir.capture(
+                composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
+            )
             .to_edge()
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
@@ -360,7 +359,7 @@ class TestBackends(unittest.TestCase):
     def test_backend_with_compiler_delegate_and_operator(self, extract_segments: bool):
         # Test includes both delegates and operator
         # import the backend implementation
-        from executorch.backends.test.backend_with_compiler_demo import (
+        from executorch.exir.backend.test.backend_with_compiler_demo import (
             BackendWithCompilerDemo,
         )
 
@@ -376,7 +375,7 @@ class TestBackends(unittest.TestCase):
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
         edgeir_m = exir.capture(
-            sin_module, model_inputs, get_testing_capture_config()
+            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
         ).to_edge()
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
@@ -400,7 +399,9 @@ class TestBackends(unittest.TestCase):
         composite_model(*model_inputs)
 
         exec_prog = (
-            exir.capture(composite_model, model_inputs, get_testing_capture_config())
+            exir.capture(
+                composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
+            )
             .to_edge()
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
@@ -470,7 +471,7 @@ class TestBackends(unittest.TestCase):
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
         edgeir_m = exir.capture(
-            sin_module, model_inputs, get_testing_capture_config()
+            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
         ).to_edge()
         error_msg = r"call_function aten.cos.default is not supported in backend BackendWithCompilerDemo"
 
@@ -493,7 +494,7 @@ class TestBackends(unittest.TestCase):
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
         edgeir_m = exir.capture(
-            sin_module, model_inputs, get_testing_capture_config()
+            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
         ).to_edge()
         error_msg = r"Backend FakeBackendWithCompilerDemo was not found."
 
@@ -519,7 +520,7 @@ class TestBackends(unittest.TestCase):
         to_be_lowered = LowerableSubModel()
         example_input = (torch.ones(1),)
         to_be_lowered_exir_submodule = exir.capture(
-            to_be_lowered, example_input, get_testing_capture_config()
+            to_be_lowered, example_input, exir.CaptureConfig(pt2_mode=True)
         ).to_edge()
 
         max_value = example_input[0].shape[0]
@@ -560,7 +561,9 @@ class TestBackends(unittest.TestCase):
         composite_model(*model_inputs)
 
         exec_prog = (
-            exir.capture(composite_model, model_inputs, get_testing_capture_config())
+            exir.capture(
+                composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
+            )
             .to_edge()
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
@@ -622,15 +625,17 @@ class TestBackends(unittest.TestCase):
         orig_res = composite_m(*inputs)
 
         traced = exir.capture(
-            composite_m, inputs, get_testing_capture_config()
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+            composite_m, inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge(
+            # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
+            exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
 
         program_without_delegates = (
             exir.capture(CompositeModel(3), inputs)
             .to_edge(
-                exir.EdgeCompileConfig(
-                    _check_ir_validity=False,
-                )
+                # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
+                exir.EdgeCompileConfig(_check_ir_validity=False)
             )
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
@@ -733,19 +738,21 @@ class TestBackends(unittest.TestCase):
         traced = exir.capture(
             composite_m,
             inputs,
-            get_testing_capture_config(),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+            exir.CaptureConfig(pt2_mode=True),
+        ).to_edge(
+            # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
+            exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
 
         program_without_delegates = (
             exir.capture(
                 CompositeModel(3),
                 (input_x, input_h, input_c),
-                get_testing_capture_config(),
+                exir.CaptureConfig(pt2_mode=True),
             )
             .to_edge(
-                exir.EdgeCompileConfig(
-                    _check_ir_validity=False,
-                )
+                # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
+                exir.EdgeCompileConfig(_check_ir_validity=False)
             )
             .to_executorch(
                 config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
@@ -772,7 +779,7 @@ class TestBackends(unittest.TestCase):
         # graph_module_with_delegate = exir.capture(
         #     traced_with_delegate,
         #     (input_x, input_h, input_c),
-        #     get_testing_capture_config(),
+        #     exir.CaptureConfig(pt2_mode=True),
         # ).to_edge()
 
         # program_with_delegates = graph_module_with_delegate.to_executorch(
@@ -847,7 +854,7 @@ class TestBackends(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
         orig_res = m(*inputs)
 
-        ep = exir.capture(m, inputs, get_testing_capture_config()).to_edge()
+        ep = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
         executorch_prog = ep
         executorch_prog.exported_program = to_backend(
             ep.exported_program, AddMulPartitionerDemo
@@ -881,8 +888,9 @@ class TestBackends(unittest.TestCase):
     @vary_segments
     def test_partitioner_with_attributes(self, extract_segments: bool):
         """
-        check that parameters that are lowered are correctly moved into the sub
-        program, rather than being retained and passed as inputs.
+        Check that if we tag the getattr nodes, the attributes will be added to
+        the lowered submodule rather than being passed into the delegate as
+        inputs.
         """
 
         class AddOne(torch.nn.Module):
@@ -904,7 +912,7 @@ class TestBackends(unittest.TestCase):
 
         inputs = (torch.randn(1, 3), torch.randn(1, 3))
         orig_res = Model()(*inputs)
-        ep = exir.capture(Model(), inputs, get_testing_capture_config()).to_edge()
+        ep = exir.capture(Model(), inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
         executorch_prog = ep
         executorch_prog.exported_program = to_backend(
             ep.exported_program, AddAttributePartitionerDemo
@@ -914,16 +922,11 @@ class TestBackends(unittest.TestCase):
         )
 
         # Check the delegated submodules
-        lowered_backends = get_lowered_backend_modules(
-            executorch_prog.dump_graph_module()
-        )
-        self.assertEqual(len(lowered_backends), 2)
-        for backend in lowered_backends:
-            original_program = backend._original_module
-            # check that program has the lowered attributes
-            self.assertEqual(len(original_program.state_dict), 1)
-            # check backend has one placeholder input one placeholder parameter
-            self.check_delegate_input(backend, 2)
+        lowered_submodules = get_lowered_submodules(executorch_prog.dump_graph_module())
+        self.assertEqual(len(lowered_submodules), 2)
+        for _, lowered_submodule, _ in lowered_submodules:
+            # Attributes should be stored in the lowered module
+            self.check_delegate_input(lowered_submodule, 1)
 
         executorch_prog.buffer
 
@@ -963,7 +966,7 @@ class TestBackends(unittest.TestCase):
                         node.target = exir_ops.edge.aten.mul.Tensor
                 return edge_graph_module
 
-        ep = exir.capture(Model(), inputs, get_testing_capture_config()).to_edge()
+        ep = exir.capture(Model(), inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
         with self.assertRaises(AssertionError):
             _ = to_backend(ep.exported_program, BadPartitioner)
 
@@ -994,13 +997,8 @@ class TestBackends(unittest.TestCase):
             exir.CaptureConfig(
                 pt2_mode=True,
                 enable_aot=True,
-                _unlift=True,
             ),
-        ).to_edge(
-            exir.EdgeCompileConfig(
-                _check_ir_validity=False,
-            )
-        )
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         FileCheck().check_count("quantize_per_tensor_default", 3).check("addmm").run(
             converted_linear_gm.exported_program.graph_module.code
         )
@@ -1029,7 +1027,7 @@ class TestBackends(unittest.TestCase):
         orig = exir.capture(
             f,
             inputs,
-            get_testing_capture_config(),
+            exir.CaptureConfig(pt2_mode=True),
         ).to_edge()
         partitioned = orig
         partitioned.exported_program = to_backend(
@@ -1082,7 +1080,7 @@ class TestBackends(unittest.TestCase):
         orig = exir.capture(
             f,
             inputs,
-            get_testing_capture_config(),
+            exir.CaptureConfig(pt2_mode=True),
         ).to_edge()
         partitioned = orig
         partitioned.exported_program = to_backend(
@@ -1155,7 +1153,7 @@ class TestBackends(unittest.TestCase):
         orig = exir.capture(
             f,
             inputs,
-            get_testing_capture_config(),
+            exir.CaptureConfig(pt2_mode=True),
         ).to_edge()
         partitioned = orig
         partitioned.exported_program = to_backend(
@@ -1219,7 +1217,7 @@ class TestBackends(unittest.TestCase):
             return y
 
         inputs = ([torch.randn(2, 2), torch.randn(2, 2)],)
-        edge_prog = exir.capture(f, inputs, get_testing_capture_config()).to_edge()
+        edge_prog = exir.capture(f, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
         lowered_gm = to_backend(
             BackendWithCompilerDemo.__name__, edge_prog.exported_program, []
         )
@@ -1232,7 +1230,9 @@ class TestBackends(unittest.TestCase):
             def forward(self, x: List[torch.Tensor]):
                 return self.lowered(x)
 
-        gm = exir.capture(ComposedM(), inputs, get_testing_capture_config()).to_edge()
+        gm = exir.capture(
+            ComposedM(), inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
         gm(*inputs)
 
     def test_dict_input(self):
@@ -1241,7 +1241,7 @@ class TestBackends(unittest.TestCase):
             return y
 
         inputs = ({"a": torch.randn(2, 2), "b": torch.randn(2, 2)},)
-        edge_prog = exir.capture(f, inputs, get_testing_capture_config()).to_edge()
+        edge_prog = exir.capture(f, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
         lowered_gm = to_backend(
             BackendWithCompilerDemo.__name__, edge_prog.exported_program, []
         )
@@ -1254,7 +1254,9 @@ class TestBackends(unittest.TestCase):
             def forward(self, x: List[torch.Tensor]):
                 return self.lowered(x)
 
-        gm = exir.capture(ComposedM(), inputs, get_testing_capture_config()).to_edge()
+        gm = exir.capture(
+            ComposedM(), inputs, exir.CaptureConfig(pt2_mode=True)
+        ).to_edge()
         gm(*inputs)
 
     def test_lower_multiple(self) -> None:
@@ -1281,7 +1283,7 @@ class TestBackends(unittest.TestCase):
         }
 
         multi_method_prog = exir.capture_multiple(
-            module, method_name_to_args, get_testing_capture_config()
+            module, method_name_to_args, exir.CaptureConfig(pt2_mode=True)
         ).to_edge()
 
         lowered_multi_method_prog = to_backend_multiple(
@@ -1336,7 +1338,7 @@ class TestBackends(unittest.TestCase):
         }
 
         multi_method_prog = exir.capture_multiple(
-            module, method_name_to_args, get_testing_capture_config()
+            module, method_name_to_args, exir.CaptureConfig(pt2_mode=True)
         ).to_edge()
 
         method_name_to_partitioners = {

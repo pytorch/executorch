@@ -11,15 +11,15 @@ from typing import final, List
 import executorch.exir as exir
 
 import torch
-from executorch.backends.backend_api import ExportedProgram, to_backend
-from executorch.backends.backend_details import BackendDetails
-from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
+from executorch.exir.backend.backend_api import ExportedProgram, to_backend
+from executorch.exir.backend.backend_details import BackendDetails
+from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,
 )
-from executorch.backends.compile_spec_schema import CompileSpec
-from executorch.backends.partitioner import DelegationSpec, Partitioner
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
 
-from executorch.backends.test.op_partitioner_demo import (
+from executorch.exir.backend.test.op_partitioner_demo import (
     AddOperatorSupport,
     MatmulOperatorSupport,
 )

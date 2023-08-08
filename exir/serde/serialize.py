@@ -20,8 +20,10 @@ import torch
 import torch._export.exported_program as ep
 import torch._export.serde.schema as schema
 import torch._export.serde.serialize as export_serialize
-from executorch.backends.compile_spec_schema import CompileSpec as delegate_CompileSpec
 from executorch.exir import delegate
+from executorch.exir.backend.compile_spec_schema import (
+    CompileSpec as delegate_CompileSpec,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.lowered_backend_module import (

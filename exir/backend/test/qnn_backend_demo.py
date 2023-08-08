@@ -7,8 +7,8 @@
 # The fake qnnback
 from typing import final, List
 
-from executorch.backends.backend_details import BackendDetails, ExportedProgram
-from executorch.backends.compile_spec_schema import CompileSpec
+from executorch.exir.backend.backend_details import BackendDetails, ExportedProgram
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 @final

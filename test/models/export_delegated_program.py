@@ -13,9 +13,11 @@ from typing import Dict, final, Optional, Sequence, Type
 import executorch.exir as exir
 
 import torch
-from executorch.backends.backend_api import to_backend
-from executorch.backends.backend_details import BackendDetails
-from executorch.backends.test.backend_with_compiler_demo import BackendWithCompilerDemo
+from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.backend_details import BackendDetails
+from executorch.exir.backend.test.backend_with_compiler_demo import (
+    BackendWithCompilerDemo,
+)
 from torch import nn
 
 """Traces and exports delegated nn.Modules to Executorch .pte program files.

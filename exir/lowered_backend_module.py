@@ -10,8 +10,8 @@ from typing import List, Tuple
 
 import torch
 import torch.utils._pytree as pytree
-from executorch.backends.compile_spec_schema import CompileSpec
 from executorch.exir import CallSpec, ExportGraphSignature
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.delegate import executorch_call_delegate
 
 from executorch.exir.graph_module import _get_submodule

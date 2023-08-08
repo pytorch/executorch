@@ -9,8 +9,6 @@ from typing import final, List
 
 import torch
 
-from executorch.backends.backend_details import BackendDetails, CompileSpec
-
 from executorch.backends.qnnpack.serialization.qnnpack_graph_schema import (
     ConstTensor,
     QNNDynamicLinear,
@@ -20,6 +18,8 @@ from executorch.backends.qnnpack.serialization.qnnpack_graph_serialize import (
 )
 
 from executorch.backends.transforms import get_shape
+
+from executorch.exir.backend.backend_details import BackendDetails, CompileSpec
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._export.exported_program import ExportedProgram

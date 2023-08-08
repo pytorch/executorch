@@ -15,7 +15,7 @@ def define_common_targets(is_fbcode = False):
                 "test_backend_compiler_lib.cpp",
             ],
             visibility = [
-                "//executorch/backends/...",
+                "//executorch/exir/backend/test/...",
                 "//executorch/runtime/backend/...",
                 "//executorch/extension/pybindings/...",
                 "//executorch/sdk/runners/...",

@@ -8,14 +8,14 @@ import ctypes
 from typing import final, List
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
+from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
+    convert_to_flatbuffer,
+)
 
-from executorch.backends.backend_details import (
+from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
     ExportedProgram,
-)
-from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
-    convert_to_flatbuffer,
 )
 from torch import dtype, float32, Tensor
 from torch.fx import Node

@@ -14,7 +14,6 @@ python_unittest(
     tags = ["long_running"],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends:backend_api",
         "//executorch/backends/xnnpack:xnnpack_backend",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
@@ -23,6 +22,7 @@ python_unittest(
         "//executorch/bundled_program:core",
         "//executorch/bundled_program/serialize:lib",
         "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/exir/serialize:lib",
         "//executorch/extension/pybindings:portable",  # @manual
@@ -43,7 +43,6 @@ python_unittest(
     tags = ["long_running"],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends:backend_api",
         "//executorch/backends/xnnpack:xnnpack_backend",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
@@ -52,6 +51,7 @@ python_unittest(
         "//executorch/bundled_program:core",
         "//executorch/bundled_program/serialize:lib",
         "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/exir/serialize:lib",
@@ -73,7 +73,6 @@ python_unittest(
     tags = ["long_running"],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends:backend_api",
         "//executorch/backends/xnnpack:xnnpack_backend",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
@@ -82,6 +81,7 @@ python_unittest(
         "//executorch/bundled_program:core",
         "//executorch/bundled_program/serialize:lib",
         "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/exir/serialize:lib",
         "//executorch/extension/pybindings:portable",  # @manual
@@ -98,10 +98,10 @@ python_unittest(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/backends/xnnpack/passes:xnnpack_passes",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/exir:lib",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
     ],
 )
 

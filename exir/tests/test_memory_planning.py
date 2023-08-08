@@ -15,8 +15,8 @@ import executorch.exir.schema as schema
 
 import torch
 import torch.utils._pytree as pytree
-from executorch.backends.backend_api import to_backend, validation_disabled
 from executorch.backends.qnnpack.partition.qnnpack_partitioner import QnnpackPartitioner
+from executorch.exir.backend.backend_api import to_backend, validation_disabled
 from executorch.exir.memory_planning import filter_nodes, Verifier
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (  # noqa

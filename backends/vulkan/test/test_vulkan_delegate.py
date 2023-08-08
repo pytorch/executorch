@@ -10,10 +10,10 @@ from typing import Tuple
 
 import executorch.exir as exir
 import torch
-from executorch.backends.backend_api import to_backend
 
 # import the vulkan backend implementation
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
+from executorch.exir.backend.backend_api import to_backend
 
 from executorch.exir.serialize import serialize_to_flatbuffer
 

@@ -9,8 +9,8 @@ from typing import Dict, List, NamedTuple, TypeVar
 
 import torch.fx as fx
 
-from executorch.backends.backend_details import enforcedmethod
-from executorch.backends.compile_spec_schema import CompileSpec
+from executorch.exir.backend.backend_details import enforcedmethod
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 class DelegationSpec(NamedTuple):

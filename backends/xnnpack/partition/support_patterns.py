@@ -4,14 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import executorch.backends.utils as utils
+import executorch.exir.backend.utils as utils
 import torch
 import torch.nn.functional as F
 from executorch import exir
-from executorch.backends.canonical_partitioners.duplicate_dequant_node_pass import (
+from executorch.exir import CaptureConfig
+from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
     DuplicateDequantNodePass,
 )
-from executorch.exir import CaptureConfig
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.ao.quantization import PlaceholderObserver, QConfig, QConfigMapping

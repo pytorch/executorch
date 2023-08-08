@@ -89,8 +89,8 @@ def define_common_targets():
         srcs = ["export_delegated_program.py"],
         deps = [
             "//caffe2:torch",
-            "//executorch/backends:backend_api",
-            "//executorch/backends/test:backend_with_compiler_demo",
+            "//executorch/exir/backend:backend_api",
+            "//executorch/exir/backend/test:backend_with_compiler_demo",
             "//executorch/exir:lib",
         ],
         visibility = [],  # Private

@@ -8,8 +8,8 @@ from typing import final, List, NamedTuple
 
 import torch
 
-from executorch.backends.backend_details import BackendDetails
-from executorch.backends.compile_spec_schema import CompileSpec
+from executorch.exir.backend.backend_details import BackendDetails
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._export.exported_program import ExportedProgram
 

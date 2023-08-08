@@ -12,7 +12,7 @@ def define_common_targets():
         srcs = [],
         exported_headers = ["buffer_data_loader.h"],
         visibility = [
-            "//executorch/backends/test/...",
+            "//executorch/exir/backend/test/...",
             "//executorch/runtime/executor/test/...",
             "//executorch/extension/pybindings/...",
             "//executorch/test/...",

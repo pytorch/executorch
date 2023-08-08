@@ -11,7 +11,6 @@ from typing import Any, Tuple
 import torch
 import torch.nn.functional as F
 from executorch import exir
-from executorch.backends.backend_api import to_backend, validation_disabled
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner2,
@@ -32,6 +31,7 @@ from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
+from executorch.exir.backend.backend_api import to_backend, validation_disabled
 
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.serialize import serialize_to_flatbuffer

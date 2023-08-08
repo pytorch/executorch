@@ -17,14 +17,14 @@ import executorch.exir as exir
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from executorch.backends.backend_api import to_backend
-from executorch.backends.backend_details import BackendDetails
-from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
+from executorch.exir import CaptureConfig
+from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.backend_details import BackendDetails
+from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,
 )
-from executorch.backends.compile_spec_schema import CompileSpec
-from executorch.backends.partitioner import DelegationSpec, Partitioner
-from executorch.exir import CaptureConfig
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.pass_base import ExportPass, map_args

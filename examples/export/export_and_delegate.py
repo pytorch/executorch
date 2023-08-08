@@ -10,9 +10,9 @@ import argparse
 
 import executorch.exir as exir
 import torch
-from executorch.backends.backend_api import to_backend
 from executorch.backends.test.backend_with_compiler_demo import BackendWithCompilerDemo
 from executorch.backends.test.op_partitioner_demo import AddMulPartitionerDemo
+from executorch.exir.backend.backend_api import to_backend
 
 from ..models import MODEL_NAME_TO_MODEL
 

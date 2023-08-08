@@ -14,11 +14,11 @@ python_unittest(
     tags = ["long_running"],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends:backend_api",
         "//executorch/backends/qnnpack:qnnpack_backend",
         "//executorch/backends/qnnpack:qnnpack_preprocess",
         "//executorch/backends/qnnpack/partition:qnnpack_partitioner",
         "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
         "//executorch/exir/serialize:lib",
         "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/extension/pytree:pylib",

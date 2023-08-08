@@ -12,8 +12,6 @@ from typing import Dict, final, List
 
 import torch
 
-from executorch.backends.backend_details import BackendDetails, CompileSpec
-
 from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.node_visitor import get_node_visitors
 
@@ -32,6 +30,8 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
 from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
     convert_to_flatbuffer,
 )
+
+from executorch.exir.backend.backend_details import BackendDetails, CompileSpec
 from torch._export.exported_program import ExportedProgram
 
 XNN_VALUE_FLAG_NON_EXTERNAL = 0

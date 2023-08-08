@@ -11,9 +11,9 @@ runtime.python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends:backend_details",
-        "//executorch/backends:compile_spec_schema",
         "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_details",
+        "//executorch/exir/backend:compile_spec_schema",
         "//nodeapi/py:base",
     ],
 )
@@ -25,10 +25,10 @@ runtime.python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends:partitioner",
-        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir:graph_module",
         "//executorch/exir:lib",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
     ],
 )
 
@@ -41,17 +41,17 @@ python_unittest(
         "//executorch/kernels/portable:custom_ops_generated_lib",
         "//executorch/kernels/quantized:custom_ops_generated_lib",
         # the executor backend is prebuilt and linked when building the unit test binary. When it's linked, it'll register the backend.
-        # It can also be loaded in PyThon runtime via torch.ops.load_library("//executorch/backends/test/demos/rpc:executor_backend")
+        # It can also be loaded in PyThon runtime via torch.ops.load_library("//executorch/exir/backend/test/demos/rpc:executor_backend")
         # However, it's a better practice to build/link everything at earlier stage, instead of during runtime
-        "//executorch/backends/test/demos/rpc:executor_backend_register",
+        "//executorch/exir/backend/test/demos/rpc:executor_backend_register",
     ],
     deps = [
         ":executor_backend_partitioner",
         ":executor_backend_preprocess",
         "//caffe2:torch",
-        "//executorch/backends:backend_api",
-        "//executorch/backends/test:op_partitioner_demo",
         "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend/test:op_partitioner_demo",
         "//executorch/extension/pybindings:portable",  # @manual
     ],
 )

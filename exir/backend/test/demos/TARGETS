@@ -11,7 +11,6 @@ python_unittest(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends:backend_api",
         "//executorch/backends/qnnpack:qnnpack_backend",
         "//executorch/backends/qnnpack:qnnpack_preprocess",
         "//executorch/backends/qnnpack/partition:qnnpack_partitioner",
@@ -19,6 +18,7 @@ python_unittest(
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/extension/pytree:pylib",
@@ -35,10 +35,10 @@ python_unittest(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends:backend_api",
-        "//executorch/backends:compile_spec_schema",
-        "//executorch/backends/test:backend_with_compiler_demo",
         "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/exir/backend/test:backend_with_compiler_demo",
         "//executorch/extension/pybindings:aten_mode_lib",  # @manual
         "//executorch/extension/pytree:pylib",
     ],

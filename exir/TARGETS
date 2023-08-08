@@ -52,7 +52,7 @@ python_library(
     ],
     deps = [
         ":scalar_type",
-        "//executorch/backends:compile_spec_schema",
+        "//executorch/exir/backend:compile_spec_schema",
     ],
 )
 
@@ -123,7 +123,7 @@ python_library(
         ":lib",
         ":tracer",
         "//caffe2:torch",
-        "//executorch/backends:compile_spec_schema",
+        "//executorch/exir/backend:compile_spec_schema",
     ],
 )
 

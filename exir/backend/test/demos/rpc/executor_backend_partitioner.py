@@ -8,11 +8,13 @@ import typing
 from typing import final
 
 import torch
-from executorch.backends.canonical_partitioners.pattern_op_partitioner import (
+from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,
 )
-from executorch.backends.partitioner import DelegationSpec, Partitioner
-from executorch.backends.test.backend_with_compiler_demo import BackendWithCompilerDemo
+from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
+from executorch.exir.backend.test.backend_with_compiler_demo import (
+    BackendWithCompilerDemo,
+)
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
 

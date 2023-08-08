@@ -1,8 +1,8 @@
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 
+load("@fbsource//xplat/executorch/backends:backends.bzl", "get_all_cpu_aot_and_backend_targets")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load(":backends.bzl", "get_all_cpu_aot_and_backend_targets")
 load(":targets.bzl", "define_common_targets")
 
 define_common_targets()
@@ -23,7 +23,7 @@ runtime.python_library(
         ":backend_details",
         ":compile_spec_schema",
         "//caffe2:torch",
-        "//executorch/backends:utils",
+        "//executorch/exir/backend:utils",
     ],
 )
 
@@ -78,6 +78,9 @@ runtime.python_library(
 # it's supposed to be only used on server side and not for production on device.
 runtime.python_library(
     name = "backend_lib",
+    srcs = [
+        "__init__.py",
+    ],
     visibility = [
         "//executorch/...",
         "//executorch/test/...",
@@ -86,7 +89,8 @@ runtime.python_library(
     deps = [
         ":backend_api",
         ":backend_details",
-        "//executorch/backends/canonical_partitioners:canonical_partitioner_lib",
+        ":utils",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
     ] + get_all_cpu_aot_and_backend_targets(),
 )
 
@@ -97,7 +101,7 @@ runtime.python_library(
     ],
     visibility = [
         "//executorch/...",
-        "//executorch/backends/...",
+        "//executorch/exir/backend/...",
         "//executorch/test/...",
         "@EXECUTORCH_CLIENTS",
     ],

@@ -73,9 +73,9 @@ def define_common_targets():
             "serialization/schema.fbs",
         ],
         visibility = [
-            "//executorch/backends:backend_lib",
+            "//executorch/exir/backend:backend_lib",
             "//executorch/backends/qnnpack/test/...",
-            "//executorch/backends/test/...",
+            "//executorch/exir/backend/test/...",
             "//executorch/extension/pybindings/...",
             "@EXECUTORCH_CLIENTS",
         ],

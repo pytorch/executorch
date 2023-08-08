@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 
 from typing import List
 
-from executorch.backends.compile_spec_schema import CompileSpec
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._export.exported_program import ExportedProgram
 
 
@@ -24,7 +24,7 @@ a custom class BackendWithCompilerDemo, derived from BackendDetails.
 
 How to use the backend (for example, BackendWithCompilerDemo):
 2. Import this class, like
-from executorch.backends.backend_with_compiler_demo import BackendWithCompilerDemo
+from executorch.exir.backend.backend_with_compiler_demo import BackendWithCompilerDemo
 """
 
 
