@@ -58,7 +58,11 @@ Error share_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
 }
 
 Error copy_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
-  void* dst_data_ptr = t_dst.mutable_data_ptr();
+  void* dst_data_ptr = t_dst.unsafeGetTensorImpl()
+                           ->unsafe_storage()
+                           .unsafeGetStorageImpl()
+                           ->data_ptr()
+                           .get();
 
   // Currently even 0 sized tensors receive a dataptr in pre_allocated
   // memory planning so we can do this check.
