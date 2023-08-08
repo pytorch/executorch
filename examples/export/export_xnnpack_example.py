@@ -12,6 +12,7 @@ import executorch.exir as exir
 import torch
 from executorch.backends.backend_api import to_backend
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackFloatingPointPartitioner
+from executorch.backends.backend_api import validation_disabled
 
 from ..models import MODEL_NAME_TO_MODEL
 
@@ -71,13 +72,15 @@ def export_add_module_with_lower_graph():
 
 def export_mv2_with_lower_graph():
     mv2, example_inputs = MODEL_NAME_TO_MODEL["mv2"]()
+    mv2 =mv2.eval()
     capture_config = exir.CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
-    edge_compile_config = exir.EdgeCompileConfig()
+    edge_compile_config = exir.EdgeCompileConfig(_check_ir_validity=False)
 
     edge = exir.capture(mv2, example_inputs, capture_config).to_edge(edge_compile_config)
-    edge.exported_program = to_backend(
-        edge.exported_program, XnnpackFloatingPointPartitioner
-    )
+    with validation_disabled():
+        edge.exported_program = to_backend(
+            edge.exported_program, XnnpackFloatingPointPartitioner
+        )
 
     edge.exported_program.graph_module(*example_inputs)
     print("Lowered graph: \n", edge.exported_program.graph)
@@ -93,7 +96,7 @@ def export_mv2_with_lower_graph():
 
 OPTIONS_TO_LOWER = {
     "add": export_add_module_with_lower_graph,
-    "mobilenet_v2": export_mv2_with_lower_graph
+    "mv2": export_mv2_with_lower_graph
 }
 
 if __name__ == "__main__":

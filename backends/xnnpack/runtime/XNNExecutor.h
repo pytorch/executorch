@@ -17,7 +17,6 @@
 #include <map>
 #include <memory>
 #include <vector>
-#include <iostream>
 
 namespace torch {
 namespace executor {
@@ -120,7 +119,6 @@ class XNNExecutor {
   }
 
   __ET_NODISCARD Error forward() {
-    std::cout << "RUNING FORWARD FROM XNNPACK" << std::endl;
     ET_CHECK_OR_RETURN_ERROR(
         runtime_ != nullptr,
         Internal,
