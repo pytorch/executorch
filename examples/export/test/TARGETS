@@ -5,6 +5,7 @@ python_unittest(
     srcs = [
         "test_export.py",
     ],
+    tags = ["long_running"],
     deps = [
         "//caffe2:torch",
         "//executorch/examples/export:utils",
