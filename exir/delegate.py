@@ -107,8 +107,9 @@ def call_delegate_autograd(lowered_module, *args):
             def fake_requires_grad(var):
                 if var is not None:
                     var = var.detach()
-                    var.requires_grad = True
-                return err_fn(var)
+                    if torch.is_floating_point(var) or torch.is_complex(var):
+                        var.requires_grad = True
+                return var
 
             return pytree.tree_map(fake_requires_grad, res)
 

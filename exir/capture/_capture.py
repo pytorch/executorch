@@ -13,7 +13,6 @@ from unittest.mock import patch
 import torch
 import torch._export
 from executorch.exir.capture._config import CaptureConfig
-from executorch.exir.capture._unlift import unlift_exported_program_lifted_states
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.program import ExirExportedProgram, MultiMethodExirExportedProgram
 from executorch.exir.tracer import (
@@ -75,7 +74,7 @@ def capture(
             ep = ep.transform(ReplaceViewOpsWithViewCopyOpsPass())
             if not config._unlift:
                 return ExirExportedProgram(ep, False)
-            graph_module = unlift_exported_program_lifted_states(ep)
+            graph_module = ep.module()
 
         elif config.enable_dynamic_shape:
             graph_module, _ = dynamo_trace(
