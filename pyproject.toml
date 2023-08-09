@@ -12,6 +12,7 @@ dependencies=[
   "numpy",
   "zstd",
   "flatbuffers",
+  "tomli",
 ]
 
 [tool.setuptools.package-data]
