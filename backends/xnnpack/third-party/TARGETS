@@ -1,3 +1,6 @@
 load(":pthreadpool_defs.bzl", "define_pthreadpool")
+load(":cpuinfo_defs.bzl", "define_cpuinfo_and_clog")
 
 define_pthreadpool()
+
+define_cpuinfo_and_clog()
