@@ -12,7 +12,6 @@ from executorch.exir.capture._config import (
     EdgeCompileConfig,
     ExecutorchBackendConfig,
 )
-from executorch.exir.capture._unlift import unlift_exported_program_lifted_states
 
 __all__ = [
     "capture",
@@ -20,5 +19,4 @@ __all__ = [
     "CaptureConfig",
     "EdgeCompileConfig",
     "ExecutorchBackendConfig",
-    "unlift_exported_program_lifted_states",
 ]
