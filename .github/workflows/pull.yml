@@ -63,5 +63,6 @@ jobs:
         # here, as it's there in the container
         export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:${PATH}"
 
+        echo "${REPOSITORY}"
         # Build and test Executorch
         bash .ci/scripts/test-cmake.sh
