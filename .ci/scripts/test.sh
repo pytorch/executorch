@@ -25,6 +25,12 @@ build_and_test_executorch() {
   python -m examples.export.export_example --model_name="linear"
   # Run test model
   buck2 run //examples/executor_runner:executor_runner -- --model_path ./linear.pte
+
+  # Export delegate models
+  python -m examples.export.export_and_delegate --option "partition"
+
+  # Run delegate models
+  buck2 run //examples/executor_runner:executor_runner -- --model_path ./partition_lowered_model.pte
 }
 
 install_executorch
