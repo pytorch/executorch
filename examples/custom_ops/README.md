@@ -29,3 +29,5 @@ After the model is exported by EXIR, we need C++ implementations of these custom
       kernel_name: custom::mul3_out_impl # sub-namespace native:: is auto-added
 ```
 For how to write these YAML entries, please refer to [`kernels/portable/README.md`](https://github.com/pytorch/executorch/blob/main/kernels/portable/README.md).
+
+Currently we provide 2 build systems that links `my_ops::mul3.out` kernel (written in `custom_ops_1.cpp`) to Executor runtime: buck2 and CMake. Both instructions are listed in `examples/custom_ops/test_custom_ops.sh`.

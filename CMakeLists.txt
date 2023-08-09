@@ -43,6 +43,10 @@
 cmake_minimum_required(VERSION 3.13)
 project(executorch)
 
+# option to register custom ops in `examples/custom_ops`
+option(REGISTER_EXAMPLE_CUSTOM_OPS
+       "Register custom ops defined in examples/custom_ops" OFF)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -268,3 +272,9 @@ add_executable(executor_runner ${_executor_runner__srcs})
 target_link_libraries(executor_runner executorch portable_kernels_bindings
                       gflags)
 target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+
+# Generate custom_ops_lib based on REGISTER_EXAMPLE_CUSTOM_OPS
+if(REGISTER_EXAMPLE_CUSTOM_OPS)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/custom_ops)
+  target_link_libraries(executor_runner custom_ops_lib)
+endif()
