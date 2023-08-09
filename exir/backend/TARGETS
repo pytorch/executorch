@@ -78,9 +78,6 @@ runtime.python_library(
 # it's supposed to be only used on server side and not for production on device.
 runtime.python_library(
     name = "backend_lib",
-    srcs = [
-        "__init__.py",
-    ],
     visibility = [
         "//executorch/...",
         "//executorch/test/...",
