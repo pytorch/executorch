@@ -54,6 +54,7 @@ jobs:
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
+      repository: pytorch/executorch
       fetch-depth: 0
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -63,6 +64,5 @@ jobs:
         # here, as it's there in the container
         export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:${PATH}"
 
-        echo "${REPOSITORY}"
         # Build and test Executorch
         bash .ci/scripts/test-cmake.sh
