@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  buck-build-test:
-    name: buck-build-test
+  buck-build-test-linux:
+    name: buck-build-test-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     with:
       runner: linux.2xlarge
@@ -27,14 +27,23 @@ jobs:
         # here, as it's there in the container
         export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:${PATH}"
 
-        # Install executorch
-        pip3 install .
-        # Just print out the list of packages for debugging
-        pip3 list
+        # Build and test Executorch
+        bash .ci/scripts/test.sh
 
-        # Build executorch runtime
-        buck2 build //examples/executor_runner:executor_runner
-        # Export a test model
-        python3 -m examples.export.export_example --model_name="linear"
-        # Run test model
-        buck2 run //examples/executor_runner:executor_runner -- --model_path ./linear.pte
+  buck-build-test-macos:
+    name: buck-build-test-macos
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m1-12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        WORKSPACE=$(pwd)
+
+        pushd "${WORKSPACE}/pytorch/executorch"
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        bash .ci/scripts/setup-macos.sh
+
+        # Build and test Executorch
+        bash .ci/scripts/test.sh
+        popd

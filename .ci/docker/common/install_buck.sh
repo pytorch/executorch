@@ -11,13 +11,14 @@ install_ubuntu() {
   apt-get update
   apt-get install -y zstd
 
-  wget -q https://github.com/facebook/buck2/releases/download/2023-07-18/buck2-x86_64-unknown-linux-gnu.zst
-  zstd -d buck2-x86_64-unknown-linux-gnu.zst -o buck2
+  BUCK2=buck2-x86_64-unknown-linux-gnu.zst
+  wget -q "https://github.com/facebook/buck2/releases/download/${BUCK2_VERSION}/${BUCK2}"
+  zstd -d "${BUCK2}" -o buck2
 
   chmod +x buck2
   mv buck2 /usr/bin/
 
-  rm buck2-x86_64-unknown-linux-gnu.zst
+  rm "${BUCK2}"
   # Cleanup package manager
   apt-get autoclean && apt-get clean
   rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
