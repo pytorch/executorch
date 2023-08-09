@@ -50,7 +50,7 @@ jobs:
 
   cmake-build-test-linux:
     name: cmake-build-test-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@linux-job-mount-to-repo-name
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
