@@ -495,7 +495,9 @@ EVALUE_DEFINE_TO(
 
 template <typename T>
 exec_aten::ArrayRef<T> BoxedEvalueList<T>::get() const {
-  for (int i = 0; i < wrapped_vals_.size(); i++) {
+  for (typename exec_aten::ArrayRef<T>::size_type i = 0;
+       i < wrapped_vals_.size();
+       i++) {
     unwrapped_vals_[i] = wrapped_vals_[i]->template to<T>();
   }
   return exec_aten::ArrayRef<T>{unwrapped_vals_, wrapped_vals_.size()};
