@@ -1,9 +1,12 @@
 load(":pthreadpool_defs.bzl", "define_pthreadpool")
 load(":cpuinfo_defs.bzl", "define_cpuinfo_and_clog")
+load(":xnnpack.buck.bzl", "define_xnnpack")
 
 define_pthreadpool()
 
 define_cpuinfo_and_clog()
+
+define_xnnpack()
 
 native.cxx_library(
     name = "FP16",

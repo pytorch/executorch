@@ -22,3 +22,6 @@
 [submodule "backends/xnnpack/third-party/FXdiv"]
 	path = backends/xnnpack/third-party/FXdiv
 	url = https://github.com/Maratyszcza/FXdiv.git
+[submodule "backends/xnnpack/third-party/XNNPACK"]
+	path = backends/xnnpack/third-party/XNNPACK
+	url = https://github.com/google/XNNPACK.git
