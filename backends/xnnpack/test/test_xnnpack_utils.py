@@ -35,6 +35,7 @@ from executorch.exir.backend.backend_api import to_backend, validation_disabled
 
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.serialize import serialize_to_flatbuffer
+from executorch.exir.tracer import _default_decomposition_table
 
 # pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
 from executorch.extension.pybindings.portable import (  # @manual
@@ -312,11 +313,9 @@ class TestXNNPACK(unittest.TestCase):
     ):
         module.eval()
         # program capture
-        capture_config = exir.CaptureConfig(
-            pt2_mode=True, enable_functionalization=True
+        m = torch._export.capture_pre_autograd_graph(
+            module, example_inputs, decomp_table=_default_decomposition_table()
         )
-        captured_program = exir.capture(module, example_inputs, config=capture_config)
-        m = captured_program.exported_program.graph_module
 
         quantizer = XNNPACKQuantizer()
         quantization_config = get_symmetric_quantization_config()
@@ -324,7 +323,12 @@ class TestXNNPACK(unittest.TestCase):
         prepared = prepare_pt2e(m, quantizer)
         converted = convert_pt2e(prepared)
 
-        captured_program.exported_program.graph_module = converted
+        captured_program = exir.capture(
+            converted,
+            example_inputs,
+            config=exir.CaptureConfig(enable_aot=True, _unlift=True),
+        )
+
         edge_program = captured_program.to_edge(get_xnnpack_edge_compile_config())
         delegated_module = self.lower_module_and_test_output(
             module=edge_program,
