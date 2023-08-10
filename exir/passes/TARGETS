@@ -10,6 +10,7 @@ python_library(
     deps = [
         ":const_prop_pass",
         ":debug_handle_generator_pass",
+        ":memory_format_ops_pass",
         ":memory_planning_pass",
         ":normalize_transpose_pass",
         ":pass_registry",
@@ -262,5 +263,20 @@ python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:dim_order_utils",
+        "//executorch/exir/dialects:lib",
+    ],
+)
+
+python_library(
+    name = "memory_format_ops_pass",
+    srcs = [
+        "memory_format_ops_pass.py",
+    ],
+    deps = [
+        ":dim_order_ops_registry",
+        "//caffe2:torch",
+        "//executorch/exir:dim_order_utils",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects/edge:lib",
     ],
 )
