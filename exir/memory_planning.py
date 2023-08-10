@@ -464,7 +464,7 @@ def greedy(
     alloc_graph_output: bool = True,
 ) -> List[int]:
     spec2obj = {}
-    shared_objects = []
+    shared_objects = defaultdict(list)
     # Don't do assertion in collect_specs_from_nodes if we have already encountered
     # and ignored some to_out_variant errors.
     do_assertion = not getattr(graph_module, "encounter_to_out_var_failure", False)
@@ -477,23 +477,29 @@ def greedy(
         ignore_graph_input=not alloc_graph_input,
         ignore_graph_output=not alloc_graph_output,
     ):
-        spec.mem_id = 1
+        if spec.mem_id is None:
+            spec.mem_id = 1
         spec.realign(alignment)
-        spec2obj[spec] = pick_shared_obj(shared_objects, spec)
+        spec2obj[spec] = pick_shared_obj(shared_objects[spec.mem_id], spec)
 
-    input_total_size = 0
-    if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
-        input_total_size = bufsizes[1]
+    total_sizes = [0] * (max(shared_objects.keys()) + 1)
+    for mem_id in shared_objects:
+        input_total_size = 0
+        if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
+            if len(bufsizes) > mem_id:
+                input_total_size = bufsizes[mem_id]
+        total_sizes[mem_id] = materialize_buffer(
+            shared_objects[mem_id], input_total_size
+        )
 
     # Since we now know the number of shared objects we need and the size of
     # each shared object, we can assign offset in the memory buffer for each
     # shared object.
-    total_size = materialize_buffer(shared_objects, input_total_size)
     for spec, sobj in spec2obj.items():
         spec.mem_offset = sobj.offset
 
-    logging.debug(f"greedy algorithm returns bufsizes: {total_size}")
-    return [0, total_size]
+    logging.debug(f"greedy algorithm returns bufsizes: {total_sizes}")
+    return total_sizes
 
 
 @register_algo
@@ -506,10 +512,8 @@ def naive(
     # allocate 'allocated' bytes from buffer with id mem_id.
     # return the starting offset of the allocated buffer.
     def _allocate_buf(bufsizes: List[int], mem_id: int, allocated: int) -> int:
-        internal_assert(
-            mem_id >= 0 and mem_id < len(bufsizes),
-            f"Tensor mem_id should be between 0 and {len(bufsizes)}, but it was {mem_id}",
-        )
+        if mem_id >= len(bufsizes):
+            bufsizes.extend([0] * (mem_id - len(bufsizes) + 1))
         ret = bufsizes[mem_id]
         bufsizes[mem_id] += allocated
         return ret
@@ -525,7 +529,8 @@ def naive(
         ignore_graph_output=not alloc_graph_output,
     ):
         # assume a single memory layer which has mem_id 1
-        spec.mem_id = 1
+        if spec.mem_id is None:
+            spec.mem_id = 1
         # allocate spec.allocated_memory bytes in the buffer
         # with the corresponding mem_id
         spec.realign(alignment)

@@ -171,12 +171,16 @@ python_unittest(
     preload_deps = [
         "//executorch/kernels/portable:custom_ops_generated_lib",
     ],
+    # Static listing does not support tests generated with parameterized
+    supports_static_listing = False,
     deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
         ":asr_joiner",
         "//caffe2:torch",
         "//executorch/backends/qnnpack/partition:qnnpack_partitioner",
         "//executorch/exir:lib",
         "//executorch/exir:memory_planning",
+        "//executorch/exir:pass_base",
         "//executorch/exir:pass_manager",
         "//executorch/exir:print_program",
         "//executorch/exir:schema",
