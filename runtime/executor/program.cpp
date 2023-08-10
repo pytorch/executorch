@@ -206,6 +206,18 @@ Result<Method> Program::load_method(
   return Error::InvalidArgument;
 }
 
+Result<MethodMeta> Program::method_meta(const char* method_name) const {
+  EXECUTORCH_SCOPE_PROF("Program::method_meta");
+  auto execution_plans = internal_program_->execution_plan();
+  for (size_t i = 0; i < execution_plans->size(); i++) {
+    auto serialization_plan = execution_plans->GetMutableObject(i);
+    if (std::strcmp(serialization_plan->name()->c_str(), method_name) == 0) {
+      return MethodMeta(serialization_plan);
+    }
+  }
+  return Error::InvalidArgument;
+}
+
 const void* Program::get_constant_buffer_data(size_t buffer_idx) const {
   ET_CHECK(is_valid());
   auto internal_program =

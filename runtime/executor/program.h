@@ -17,6 +17,7 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method.h>
+#include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/compiler.h>
 
 // Forward declare flatbuffer types. This is a public header and must not
@@ -146,6 +147,13 @@ class Program final {
   Result<Method> load_method(
       const char* method_name,
       MemoryManager* memory_manager) const;
+
+  /**
+   * Gathers metadata for the named method.
+   *
+   * @param[in] method_name The name of the method to get metadata for.
+   */
+  Result<MethodMeta> method_meta(const char* method_name) const;
 
   /**
    * Get the size of constant buffer
