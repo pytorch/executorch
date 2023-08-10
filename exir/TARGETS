@@ -255,3 +255,11 @@ python_library(
         "//caffe2:torch",
     ],
 )
+
+python_library(
+    name = "dim_order_utils",
+    srcs = ["dim_order_utils.py"],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
