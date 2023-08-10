@@ -37,10 +37,17 @@ file(GLOB_RECURSE _codegen_tools_srcs "${EXECUTORCH_ROOT}/codegen/tools/*.py")
 file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
 file(GLOB_RECURSE _torchgen_srcs "${TORCH_ROOT}/torchgen/*.py")
 
-set(_gen_oplist_command
-    "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_oplist
-    --output_path=${_oplist_yaml}
-    --ops_schema_yaml_path=${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml)
+# Selective build. If we want to register all ops in custom_ops.yaml, do
+# `--ops_schema_yaml_path=${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml)` instead of
+# `root_ops`
+set(_gen_oplist_command "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_oplist
+                        --output_path=${_oplist_yaml})
+
+if(REGISTER_EXAMPLE_CUSTOM_OP_2)
+  list(APPEND _gen_oplist_command --root_ops="my_ops::mul4.out")
+elseif(REGISTER_EXAMPLE_CUSTOM_OP_1)
+  list(APPEND _gen_oplist_command --root_ops="my_ops::mul3.out")
+endif()
 
 # Command to codegen C++ wrappers to register custom ops to both PyTorch and
 # Executorch runtime.
@@ -78,22 +85,41 @@ add_custom_command(
   WORKING_DIRECTORY ${EXECUTORCH_ROOT})
 # Prepare for C++ libraries.
 
-# 1. TODO: C++ library to register custom ops into PyTorch.
-# ~~~
-# add_library(custom_ops_aot_lib SHARED
-#   ${OUTPUT_DIRECTORY}/RegisterCPUCustomOps.cpp
-#   ${OUTPUT_DIRECTORY}/RegisterSchema.cpp
-#   ${OUTPUT_DIRECTORY}/CustomOpsNativeFunctions.h)
-# ~~~
+# 1. C++ library to register custom ops into PyTorch.
+if(REGISTER_EXAMPLE_CUSTOM_OP_2)
+  add_library(
+    custom_ops_aot_lib SHARED
+    ${CMAKE_CURRENT_BINARY_DIR}/RegisterCPUCustomOps.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/RegisterSchema.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/CustomOpsNativeFunctions.h
+    ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2.cpp # register my_ops::mul4
+    ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2_out.cpp # register my_ops::mul4.out
+  )
+  # Find `Torch`.
+  find_package(Torch REQUIRED)
+  # ATen mode is on
+  target_compile_definitions(custom_ops_aot_lib PRIVATE USE_ATEN_LIB=1)
+  target_include_directories(custom_ops_aot_lib
+                             PUBLIC ${_common_include_directories})
+  include_directories(${TORCH_INCLUDE_DIRS})
 
-# Find `Torch`.
-# ~~~
-# find_package(Torch REQUIRED)
-# target_link_libraries(custom_ops_aot_lib PUBLIC Torch)
-# ~~~
+  target_link_libraries(custom_ops_aot_lib PRIVATE torch executorch)
+
+  # Ensure that the load-time constructor functions run. By default, the linker
+  # would remove them since there are no other references to them.
+  if((CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
+     OR (APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+    target_link_options(custom_ops_aot_lib INTERFACE
+                        "-Wl,-force_load,$<TARGET_FILE:custom_ops_aot_lib>")
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_link_options(
+      custom_ops_aot_lib INTERFACE
+      "-Wl,--whole-archive,$<TARGET_FILE:custom_ops_aot_lib>,--no-whole-archive"
+    )
+  endif()
+endif()
 
 # 1. C++ library to register custom ops into Executorch runtime.
-
 add_library(custom_ops_lib)
 target_sources(
   custom_ops_lib
@@ -101,8 +127,14 @@ target_sources(
     ${CMAKE_CURRENT_BINARY_DIR}/RegisterCodegenUnboxedKernelsEverything.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/Functions.h
     ${CMAKE_CURRENT_BINARY_DIR}/NativeFunctions.h
-    ${CMAKE_CURRENT_BINARY_DIR}/CustomOpsNativeFunctions.h
-    ${CMAKE_CURRENT_LIST_DIR}/custom_ops_1.cpp)
+    ${CMAKE_CURRENT_BINARY_DIR}/CustomOpsNativeFunctions.h)
+if(REGISTER_EXAMPLE_CUSTOM_OP_1)
+  target_sources(custom_ops_lib
+                 PRIVATE ${CMAKE_CURRENT_LIST_DIR}/custom_ops_1_out.cpp)
+elseif(REGISTER_EXAMPLE_CUSTOM_OP_2)
+  target_sources(custom_ops_lib
+                 PRIVATE ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2_out.cpp)
+endif()
 
 target_link_libraries(custom_ops_lib PRIVATE executorch)
 

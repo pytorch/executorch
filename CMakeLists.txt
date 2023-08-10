@@ -43,9 +43,16 @@
 cmake_minimum_required(VERSION 3.13)
 project(executorch)
 
-# option to register custom ops in `examples/custom_ops`
-option(REGISTER_EXAMPLE_CUSTOM_OPS
-       "Register custom ops defined in examples/custom_ops" OFF)
+# option to register custom operator `my_ops::mul3` in
+# `examples/custom_ops/custom_ops_1.py`
+option(REGISTER_EXAMPLE_CUSTOM_OP_1
+       "Register custom operator defined in examples/custom_ops/custom_ops_1.py"
+       OFF)
+# option to register custom operator `my_ops::mul4` in
+# `examples/custom_ops/custom_ops_2.py`
+option(REGISTER_EXAMPLE_CUSTOM_OP_2
+       "Register custom operator defined in examples/custom_ops/custom_ops_2.py"
+       OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_CXX_STANDARD)
@@ -57,6 +64,11 @@ endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
 set(_common_compile_options -Wno-deprecated-declarations)
+
+if(REGISTER_EXAMPLE_CUSTOM_OP_2)
+  # Need to be linked to a shared library
+  list(APPEND _common_compile_options -fPIC)
+endif()
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/..)
@@ -274,7 +286,7 @@ target_link_libraries(executor_runner executorch portable_kernels_bindings
 target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 
 # Generate custom_ops_lib based on REGISTER_EXAMPLE_CUSTOM_OPS
-if(REGISTER_EXAMPLE_CUSTOM_OPS)
+if(REGISTER_EXAMPLE_CUSTOM_OP_1 OR REGISTER_EXAMPLE_CUSTOM_OP_2)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/custom_ops)
   target_link_libraries(executor_runner custom_ops_lib)
 endif()

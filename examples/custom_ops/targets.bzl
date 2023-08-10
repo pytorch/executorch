@@ -15,9 +15,12 @@ def define_common_targets():
         ],
     )
 
+    # ~~~ START of custom ops 1 `my_ops::mul3` library definitions ~~~
     et_operator_library(
-        name = "executorch_all_ops",
-        include_all_operators = True,
+        name = "select_custom_ops_1",
+        ops = [
+            "my_ops::mul3.out",
+        ],
         define_static_targets = True,
         visibility = [
             "//executorch/codegen/...",
@@ -26,8 +29,8 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "custom_kernel_lib",
-        srcs = ["custom_ops_1.cpp"],
+        name = "custom_ops_1",
+        srcs = ["custom_ops_1_out.cpp"],
         deps = [
             "//executorch/runtime/kernel:kernel_includes",
         ],
@@ -38,10 +41,10 @@ def define_common_targets():
     )
 
     executorch_generated_lib(
-        name = "generated_lib",
+        name = "lib_1",
         deps = [
-            ":executorch_all_ops",
-            ":custom_kernel_lib",
+            ":select_custom_ops_1",
+            ":custom_ops_1",
         ],
         custom_ops_yaml_target = ":custom_ops.yaml",
         visibility = [
@@ -49,3 +52,5 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
     )
+
+    # ~~~ END of custom ops 1 `my_ops::mul3` library definitions ~~~
