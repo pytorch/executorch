@@ -16,3 +16,6 @@
 [submodule "backends/xnnpack/third-party/cpuinfo"]
 	path = backends/xnnpack/third-party/cpuinfo
 	url = https://github.com/pytorch/cpuinfo.git
+[submodule "backends/xnnpack/third-party/FP16"]
+	path = backends/xnnpack/third-party/FP16
+	url = https://github.com/Maratyszcza/FP16.git
