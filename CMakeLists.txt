@@ -111,6 +111,13 @@ add_subdirectory(third-party/flatbuffers)
 add_subdirectory(third-party/gflags)
 
 #
+# Use LLVM linker if possible
+#
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+  add_link_options("-fuse-ld=lld")
+endif()
+
+#
 # program_schema: Generated .h files from schema/*.fbs inputs
 #
 
@@ -246,8 +253,7 @@ target_link_libraries(portable_kernels_bindings INTERFACE portable_kernels)
 
 # Ensure that the load-time constructor functions run. By default, the linker
 # would remove them since there are no other references to them.
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL
-                                             "AppleClang")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
   target_link_options(
     portable_kernels_bindings
     INTERFACE
@@ -256,8 +262,8 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL
     # once because it's in this list of args. See if there's a way to avoid
     # that.
     -Wl,-force_load,libportable_kernels_bindings.a)
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  # Using gcc
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  # Using gcc/ld or clang/lld
   target_link_options(
     portable_kernels_bindings INTERFACE
     # TODO(dbort): This will cause the .a to show up on the link line twice
