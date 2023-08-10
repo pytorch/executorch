@@ -568,7 +568,6 @@ class TestEmit(unittest.TestCase):
             capture_config = exir.CaptureConfig(
                 pt2_mode=True,
                 enable_functionalization=True,
-                enable_dynamic_shape=True,
                 enable_aot=True,
                 _unlift=False,
             )
