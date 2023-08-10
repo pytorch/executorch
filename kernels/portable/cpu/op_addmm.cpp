@@ -165,7 +165,7 @@ void resize_out_tensor(const Tensor& mat1, const Tensor& mat2, Tensor& out) {
  * alpha=1, Tensor(a!) out) -> Tensor(a!)
  */
 Tensor& addmm_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     const Tensor& mat1,
     const Tensor& mat2,

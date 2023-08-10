@@ -115,14 +115,14 @@ int64_t adjust_slice_indices(
 /// end=None, int step=1, *, Tensor(a!) out) -> Tensor(a!)
 /// -> Tensor(a!)
 Tensor& slice_copy_Tensor_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& input,
     int64_t dim,
     exec_aten::optional<int64_t> start_val,
     exec_aten::optional<int64_t> end_val,
     int64_t step,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
   if (dim < 0) {
     dim += input.dim();
   }

@@ -70,12 +70,12 @@ void cumsum_tensors(const Tensor& self, int64_t dim, Tensor& out) {
  * operation is performed. This is useful for preventing data type overflows.
  */
 Tensor& cumsum_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     int64_t dim,
     optional<ScalarType> enforced_dtype,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
   // Ensure self has value
   ET_CHECK_MSG(self.numel() > 0, "self.numel() %zd <= 0", self.numel());
   // Ensure dim is valid

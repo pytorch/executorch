@@ -127,7 +127,7 @@ int64_t adjust_slice_indices(
 } // namespace
 
 Tensor& slice_scatter_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& input,
     const Tensor& src,
     int64_t dim,
@@ -135,7 +135,7 @@ Tensor& slice_scatter_out(
     exec_aten::optional<int64_t> end_val,
     int64_t step,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
 
   if (dim < 0) {
     dim += input.dim();

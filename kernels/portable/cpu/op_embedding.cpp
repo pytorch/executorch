@@ -82,14 +82,14 @@ void resize_out_tensor(
 // embedding.out(Tensor weight, Tensor indices, int padding_idx=-1, bool
 // scale_grad_by_freq=False, bool sparse=False, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& embedding_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& weight,
     const Tensor& indices,
     int64_t padding_idx,
     bool scale_grad_by_freq,
     bool sparse,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
   (void)padding_idx;
   (void)scale_grad_by_freq;
   (void)sparse;

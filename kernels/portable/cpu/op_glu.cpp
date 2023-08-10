@@ -188,8 +188,8 @@ void resize_out_tensor(const Tensor& self, int64_t dim, Tensor& out) {
  *  2. The output shall be in float types (Float, Double)
  */
 Tensor&
-glu_out(RuntimeContext& context, const Tensor& self, int64_t dim, Tensor& out) {
-  (void)context;
+glu_out(RuntimeContext& ctx, const Tensor& self, int64_t dim, Tensor& out) {
+  (void)ctx;
   resize_out_tensor(self, dim, out);
   check_pre_conditions(self, dim, out);
   const size_t non_negative_dim = dim < 0 ? dim + self.dim() : dim;

@@ -51,8 +51,8 @@ void ones_kernel(Tensor& out) {
 /**
  * `ones_out` implementation.
  */
-Tensor& ones_out(RuntimeContext& context, IntArrayRef size, Tensor& out) {
-  (void)context;
+Tensor& ones_out(RuntimeContext& ctx, IntArrayRef size, Tensor& out) {
+  (void)ctx;
   size_check(size, out.sizes());
 
 #define ONES_OUT(ctype, dtype) \

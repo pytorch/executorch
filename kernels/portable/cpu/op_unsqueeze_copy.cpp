@@ -86,11 +86,11 @@ void check_and_update_unsqueeze_copy_out_args(
 // unsqueeze_copy.out(Tensor self, int dim, *, Tensor(a!) out) -> Tensor(a!)
 // -> Tensor(a!)
 Tensor& unsqueeze_copy_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     int64_t dim,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
   // I think this is safe to do but need to confirm.
   // If we can do this then subsequent checks that specialize on dim < 0

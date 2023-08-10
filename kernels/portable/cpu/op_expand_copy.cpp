@@ -116,12 +116,12 @@ void check_output_tensor(
 } // namespace
 
 Tensor& expand_copy_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     ArrayRef<int64_t> expand_sizes,
     bool implicit,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
 
   ET_CHECK_MSG(
       implicit == false,

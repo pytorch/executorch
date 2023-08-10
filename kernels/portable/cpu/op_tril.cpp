@@ -124,11 +124,11 @@ void tril_kernel(const Tensor& self, int64_t diagonal, const Tensor& out) {
  *       main one are also captured.
  */
 Tensor& tril_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     int64_t diagonal,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
 
   // Assert `self` has at least 2 dims.
   ET_CHECK_MSG(self.dim() >= 2, "self.dim() %zd < 2", self.dim());

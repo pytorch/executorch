@@ -217,7 +217,7 @@ Tensor& set_arange_value(
  *
  * arange.out(Scalar end, *, Tensor(a!) out) -> Tensor(a!)
  */
-Tensor& arange_out(RuntimeContext& context, const Scalar& end, Tensor& out) {
+Tensor& arange_out(RuntimeContext& ctx, const Scalar& end, Tensor& out) {
   check_precondition(end, out);
 
   int64_t end_floor = 0;
@@ -255,12 +255,12 @@ Tensor& arange_out(RuntimeContext& context, const Scalar& end, Tensor& out) {
 }
 
 Tensor& arange_start_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Scalar& start,
     const Scalar& end,
     const Scalar& step,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
   check_precondition(start, end, step, out);
 
   double d_start;

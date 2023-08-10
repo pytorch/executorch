@@ -99,14 +99,14 @@ void check_select_scatter_args(
 /// aten::select_scatter.out(Tensor self, Tensor src, int dim, SymInt index, *,
 /// Tensor(a!) out) -> Tensor(a!)
 Tensor& select_scatter_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& input,
     const Tensor& src,
     int64_t dim,
     int64_t index,
     Tensor& out) {
   // Avoid unused variable warning
-  (void)context;
+  (void)ctx;
 
   // Account for negative indices
   if (dim < 0) {

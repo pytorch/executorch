@@ -50,8 +50,8 @@ void check_preconditions(const Tensor& a, Tensor& out) {
  * is equivalent to transpose(input, 0, 1).
  * t_copy.out(Tensor self, Tensor(a!) out)
  */
-Tensor& t_copy_out(RuntimeContext& context, const Tensor& a, Tensor& out) {
-  (void)context;
+Tensor& t_copy_out(RuntimeContext& ctx, const Tensor& a, Tensor& out) {
+  (void)ctx;
   check_preconditions(a, out);
   int dim_1 = a.sizes().size() == 2 ? 1 : 0;
 #define TRANSPOSE_TENSORS(ctype, dtype)         \

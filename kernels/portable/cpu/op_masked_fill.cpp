@@ -58,7 +58,7 @@ void masked_fill_kernel(
  * Tensor(a!) out) -> Tensor(a!)
  */
 Tensor& masked_fill_scalar_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     const Tensor& mask,
     const Scalar& value,

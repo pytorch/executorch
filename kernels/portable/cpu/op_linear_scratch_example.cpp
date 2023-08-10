@@ -96,7 +96,7 @@ Tensor& linear_scratch_example(
 }
 
 Tensor& linear_scratch_example(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& input,
     const Tensor& weight,
     const optional<Tensor>& bias,
@@ -104,7 +104,7 @@ Tensor& linear_scratch_example(
     Tensor& scratch) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
-  (void)context;
+  (void)ctx;
   return linear_scratch_example(input, weight, bias, out, scratch);
 }
 

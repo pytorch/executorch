@@ -22,12 +22,12 @@ using Tensor = exec_aten::Tensor;
 // TODO: We actually shouldn't see this op with the proper functionalization,
 // and this op needs to be deleted
 Tensor& copy_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     const Tensor& src,
     bool non_blocking,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
   // Right now we only support blocking data transfer
   ET_CHECK(non_blocking == false);
 

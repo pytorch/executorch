@@ -17,8 +17,8 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor&
-lift_fresh_copy_out(RuntimeContext& context, const Tensor& self, Tensor& out) {
-  (void)context;
+lift_fresh_copy_out(RuntimeContext& ctx, const Tensor& self, Tensor& out) {
+  (void)ctx;
   // The input and out shall share same dtype and size
   ET_CHECK_SAME_SHAPE_AND_DTYPE2(self, out);
 

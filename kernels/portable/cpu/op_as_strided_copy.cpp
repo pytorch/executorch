@@ -115,13 +115,13 @@ void check_preconditions(
  * shape
  */
 Tensor& as_strided_copy_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     ArrayRef<int64_t> size,
     ArrayRef<int64_t> stride,
     optional<int64_t> storage_offset,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
 
   torch::executor::Error err = resize_tensor(out, size);
   ET_CHECK_MSG(

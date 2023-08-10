@@ -193,13 +193,13 @@ Error resize_like_input(const Tensor& input, Tensor& out) {
 /// aten::index_put.out(Tensor self, Tensor?[] indices, Tensor values,
 /// bool accumulate=False, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& index_put_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& input,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
     const Tensor& values,
     const bool accumulate,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
 
   if (indices.empty()) {
     auto error = resize_tensor(out, input.sizes());
