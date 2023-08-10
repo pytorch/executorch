@@ -128,6 +128,19 @@ def define_common_targets(is_fbcode = False):
         )
 
         runtime.cxx_test(
+            name = "method_meta_test",
+            srcs = [
+                "method_meta_test.cpp",
+            ],
+            deps = [
+                "//executorch/runtime/executor:program",
+                "//executorch/util:util",
+                "//executorch/extension/data_loader:file_data_loader",
+            ],
+            env = modules_env,
+        )
+
+        runtime.cxx_test(
             name = "program_test",
             srcs = [
                 "program_test.cpp",
