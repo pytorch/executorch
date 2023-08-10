@@ -31,7 +31,7 @@ build_and_test_executorch() {
   python -m examples.export.export_example --model_name="linear"
 
   # Run test model
-  ./"${CMAKE_OUTPUT_DIR}"/executor_runner -- --model_path ./linear.pte
+  ./"${CMAKE_OUTPUT_DIR}"/executor_runner --model_path ./linear.pte
 }
 
 install_executorch
