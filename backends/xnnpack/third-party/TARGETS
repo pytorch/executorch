@@ -1,0 +1,3 @@
+load(":pthreadpool_defs.bzl", "define_pthreadpool")
+
+define_pthreadpool()
