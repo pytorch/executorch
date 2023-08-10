@@ -299,10 +299,10 @@ void apply_over_dim_list(
   }
 
   const size_t iter_length = get_reduced_dim_product(in, dim_list);
-  ET_CHECK_VALID_IX(start, iter_length);
-  ET_CHECK_VALID_IX(end, iter_length);
-  const size_t ustart = ET_NORMALIZE_IX(start, iter_length);
-  const size_t uend = ET_NORMALIZE_IX(end, iter_length);
+  const size_t normalized_start = ET_NORMALIZE_IX(start, iter_length);
+  const size_t normalized_end = ET_NORMALIZE_IX(end, iter_length);
+  const size_t ustart = std::max(normalized_start, size_t(0));
+  const size_t uend = std::min(normalized_end, iter_length - 1);
 
   // If dim_list is null or empty, iterate over the entire tensor
   if (!dim_list.has_value() || dim_list.value().size() == 0) {
