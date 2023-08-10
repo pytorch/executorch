@@ -19,3 +19,6 @@
 [submodule "backends/xnnpack/third-party/FP16"]
 	path = backends/xnnpack/third-party/FP16
 	url = https://github.com/Maratyszcza/FP16.git
+[submodule "backends/xnnpack/third-party/FXdiv"]
+	path = backends/xnnpack/third-party/FXdiv
+	url = https://github.com/Maratyszcza/FXdiv.git
