@@ -1,4 +1,6 @@
-# Short Term Quantization Flow in Executorch
+# [Deprecated, Please Don't Use] Short Term Quantization Flow in Executorch
+
+Note: this is deprecated, pelase use [this](./quantization_flow.md) instead.
 
 High level flow for short term quantization flow in exeuctorch looks like the following: https://fburl.com/8pspa022
 

@@ -95,7 +95,7 @@ At this point, users can choose to run additional passes through the
 `exported_program.transform(passes)` function. A tutorial on how to write
 transformations can be found [here](./passes.md).
 
-Additionally, users can run quantization at this step. A tutorial for doing so can be found [here](./short_term_quantization_flow.md).
+Additionally, users can run quantization at this step. A tutorial for doing so can be found [here](./quantization_flow.md).
 
 ### 1.2 Lower to EXIR Edge Dialect
 

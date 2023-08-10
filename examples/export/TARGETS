@@ -9,3 +9,15 @@ python_library(
         "//executorch/exir:lib",
     ],
 )
+
+python_library(
+    name = "export_example",
+    srcs = [
+        "export_example.py",
+    ],
+    deps = [
+        ":utils",
+        "//executorch/examples/models:models",
+        "//executorch/exir:lib",
+    ],
+)
