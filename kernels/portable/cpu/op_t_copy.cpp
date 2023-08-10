@@ -28,7 +28,7 @@ namespace {
 void check_preconditions(const Tensor& a, Tensor& out) {
   auto a_dim = a.dim();
   ET_CHECK_MSG(
-      a_dim > 0 && a_dim <= 2,
+      a_dim >= 0 && a_dim <= 2,
       "Rank of tensor a has to be <=2 but received tensor of rank : %zd.:",
       a_dim);
   if (a_dim < 2) {
@@ -36,8 +36,9 @@ void check_preconditions(const Tensor& a, Tensor& out) {
   } else {
     ET_CHECK_SAME_DTYPE2(a, out);
     ET_CHECK_MSG(
-        (a.sizes()[0] == out.sizes()[1]) == (a.sizes()[1] == out.sizes()[0]),
+        (a.sizes()[0] == out.sizes()[1]) && (a.sizes()[1] == out.sizes()[0]),
         "Input tensor and output tensor shapes do not support transposing");
+    ET_CHECK_MSG(out.dim() == 2, "Output tensor must have same dim (2)");
   }
 }
 
