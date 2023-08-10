@@ -16,3 +16,12 @@ native.cxx_library(
     force_static = True,
     visibility = ["PUBLIC"],
 )
+
+native.cxx_library(
+    name = "FXdiv",
+    header_namespace = "",
+    exported_headers = {
+        "fxdiv.h": "FXdiv/include/fxdiv.h",
+    },
+    visibility = ["PUBLIC"],
+)
