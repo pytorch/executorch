@@ -89,6 +89,7 @@ python_unittest(
     preload_deps = [
         "//executorch/kernels/portable:custom_ops_generated_lib",
         "//executorch/kernels/quantized:custom_ops_generated_lib",
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
     deps = [
         ":backend_with_compiler_demo",
@@ -109,7 +110,6 @@ python_unittest(
         "//executorch/exir/dialects:lib",
         "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/extension/pytree:pylib",
-        "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )
 
