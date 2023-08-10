@@ -35,9 +35,18 @@ class ExportTest(unittest.TestCase):
             eager_output = eager_model(*example_inputs)
         with torch.no_grad():
             executorch_output = pte_model.forward(example_inputs)
-        self.assertTrue(
-            torch.allclose(eager_output, executorch_output[0], rtol=1e-5, atol=1e-5)
-        )
+
+        if isinstance(eager_output, tuple):
+            # TODO: Allow validating other items
+            self.assertTrue(
+                torch.allclose(
+                    eager_output[0], executorch_output[0][0], rtol=1e-5, atol=1e-5
+                )
+            )
+        else:
+            self.assertTrue(
+                torch.allclose(eager_output, executorch_output[0], rtol=1e-5, atol=1e-5)
+            )
 
     def test_mv3_export_to_executorch(self):
         eager_model, example_inputs = MODEL_NAME_TO_MODEL["mv3"]()
@@ -47,6 +56,12 @@ class ExportTest(unittest.TestCase):
 
     def test_mv2_export_to_executorch(self):
         eager_model, example_inputs = MODEL_NAME_TO_MODEL["mv2"]()
+        eager_model = eager_model.eval()
+
+        self._assert_eager_lowered_same_result(eager_model, example_inputs)
+
+    def test_emformer_export_to_executorch(self):
+        eager_model, example_inputs = MODEL_NAME_TO_MODEL["emformer"]()
         eager_model = eager_model.eval()
 
         self._assert_eager_lowered_same_result(eager_model, example_inputs)
