@@ -13,3 +13,6 @@
 [submodule "backends/xnnpack/third-party/pthreadpool"]
 	path = backends/xnnpack/third-party/pthreadpool
 	url = https://github.com/Maratyszcza/pthreadpool.git
+[submodule "backends/xnnpack/third-party/cpuinfo"]
+	path = backends/xnnpack/third-party/cpuinfo
+	url = https://github.com/pytorch/cpuinfo.git
