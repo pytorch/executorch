@@ -37,12 +37,10 @@ size_t calculate_output_sizes(
 
     output_sizes[j] = expand_sizes[j];
 
-    if (self_sizes[i] == 1) {
-      // if original size is 1, then it matches any new sizes.
-    } else if (expand_sizes[j] == -1) {
+    if (expand_sizes[j] == -1) {
       // -1 can use for replacing any corresponding dimension
       output_sizes[j] = self_sizes[i];
-    } else {
+    } else if (self_sizes[i] != 1) {
       ET_CHECK_MSG(
           expand_sizes[j] == self_sizes[i],
           "The expanded size of the tensor (%zu) must match the existing size (%zu) at non-singleton dimension %zu.",

@@ -90,6 +90,18 @@ TEST(OpExpandOutTest, AllNegativeOnes) {
   EXPECT_TENSOR_EQ(out, tf.ones({2, 4, 12}));
 }
 
+TEST(OpExpandOutTest, AllNegativeOnes2) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor a = tf.ones({2, 1, 12});
+  Tensor out = tf.zeros({2, 1, 12});
+
+  const std::vector<int64_t> dims{-1, -1, -1};
+
+  auto ret = op_expand_copy_out(a, {dims.data(), dims.size()}, false, out);
+  EXPECT_TENSOR_EQ(out, ret);
+  EXPECT_TENSOR_EQ(out, tf.ones({2, 1, 12}));
+}
+
 TEST(OpExpandOutTest, EndsNegativeOnes) {
   TensorFactory<ScalarType::Int> tf;
   Tensor a = tf.ones({2, 1, 12});
