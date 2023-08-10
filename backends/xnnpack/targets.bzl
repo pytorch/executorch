@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -49,7 +50,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            "//xplat/third-party/XNNPACK:XNNPACK",
+            third_party_dep("XNNPACK"),
             ":xnnpack_schema",
             "//executorch/runtime/backend:backend_registry",
             "//executorch/backends/qnnpack:qnnpack_utils",  # TODO Use (1) portable for choose_qparams(), (2) xnnpack for quantize_per_tensor()
