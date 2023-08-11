@@ -233,6 +233,7 @@ def create_exported_program_from_submodule(
         # TODO(T159524653): fill in range and equality constraints
         range_constraints={},
         equality_constraints=[],
+        module_call_graph=[],
     )
 
 

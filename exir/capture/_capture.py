@@ -212,6 +212,7 @@ def capture(
         {},
         {},
         [],
+        [],
     )
     return ExirExportedProgram(ep, False)
 
