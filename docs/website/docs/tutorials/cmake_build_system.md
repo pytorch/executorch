@@ -182,4 +182,7 @@ If using ios cmake tool chain from `https://github.com/leetal/ios-cmake.git`, af
 
 - Open the project in XCode, drag the `executorch.xcodeproj` generated from Step 2 to `Frameworks`,
 - Go to project Target’s  `Build Phases`  -  `Link Binaries With Libraries`, click the + sign and add all the library files located in  `cmake-ios-out/build`.
-- Navigate to the project  `Build Settings`, set the value  **Header Search Paths**  to  `cmake-ios-out/include`  and  **Library Search Paths**  to  `cmake-ios-out/build`
+- Navigate to the project  `Build Settings`
+  - Set the value  **Header Search Paths**  to  `cmake-ios-out/include`
+  - Set **Library Search Paths**  to  `cmake-ios-out/build`
+  - In **other linker flags**, add a custom linker flag `-all_load`
