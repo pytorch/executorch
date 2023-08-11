@@ -81,11 +81,11 @@ Tensor& mm_out_kernel(const Tensor& self, const Tensor& mat1, Tensor& out) {
  * mm.out(Tensor self, Tensor mat1, *, Tensor(a!) out) -> Tensor(a!)
  */
 Tensor& mm_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     const Tensor& mat1,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
   Tensor::SizesType expected_output_size[2];
   expected_output_size[0] = self.size(0);
   expected_output_size[1] = mat1.size(1);

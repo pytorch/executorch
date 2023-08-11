@@ -22,7 +22,7 @@ class CaptureConfig:
     enable_dynamic_shape: bool = False  # This flag does nothing if enable_aot is True
     enable_aot: bool = False  # When it's true it implies automatic dynamic shapes via default dynamo config
     _dynamo_config: "ExirDynamoConfig" = field(default_factory=ExirDynamoConfig)
-    _unlift: bool = False
+    _unlift: bool = False  # This flag does nothing if enable_aot is False.
     _use_old_decomp_table: bool = False
 
 

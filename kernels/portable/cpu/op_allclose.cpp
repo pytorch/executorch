@@ -143,7 +143,7 @@ Tensor allclose_tensor(
 }
 
 Tensor& allclose_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     const Tensor& other,
     double rtol,
@@ -151,14 +151,14 @@ Tensor& allclose_out(
     __ET_UNUSED bool equal_nan,
     __ET_UNUSED bool dummy_param,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
   return allclose_out(self, other, rtol, atol, equal_nan, dummy_param, out);
 }
 
 Tensor allclose_tensor(
-    __ET_UNUSED RuntimeContext& context,
+    __ET_UNUSED RuntimeContext& ctx,
     __ET_UNUSED const Tensor& self,
     __ET_UNUSED const Tensor& other,
     __ET_UNUSED double rtol,

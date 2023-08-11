@@ -162,11 +162,11 @@ Error resize_out(
 /// aten::index.Tensor_out(Tensor self, Tensor?[] indices, *, Tensor(a!) out) ->
 /// Tensor(a!)
 Tensor& index_Tensor_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& input,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
 
   if (indices.empty()) {
     auto error = resize_tensor(out, input.sizes());

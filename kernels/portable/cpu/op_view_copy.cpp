@@ -37,11 +37,11 @@ void size_compare(
 
 // view_copy.out(Tensor self, int[] size, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& view_copy_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     exec_aten::ArrayRef<int64_t> size_int64_t,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
   ET_CHECK(size_int64_t.size() == out.sizes().size());
   Tensor::SizesType expected_output_size[16];
   size_t out_numels_without_minus_1 = 1;

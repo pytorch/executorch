@@ -19,25 +19,33 @@ using Tensor = exec_aten::Tensor;
 // clone.out(Tensor self, *, MemoryFormat? memory_format=None, Tensor(a!) out)
 // -> Tensor(a!)
 Tensor& clone_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     exec_aten::optional<exec_aten::MemoryFormat> memory_format,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
 
-  torch::executor::Error err = resize_tensor(out, self.sizes());
-  ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
-      "Failed to resize out Tensor in clone_out");
+  ET_KERNEL_CHECK(
+      context,
+      resize_tensor(out, self.sizes()) == torch::executor::Error::Ok,
+      InvalidArgument,
+      out);
 
   // The input and out shall share same dtype and size
-  ET_CHECK_SAME_SHAPE_AND_DTYPE2(self, out);
+  ET_KERNEL_CHECK(
+      context,
+      tensors_have_same_shape_and_dtype(self, out),
+      InvalidArgument,
+      out);
 
   // Right now we only focus on contiguous memory, memory_format shall always
   // either a nullopt or exec::aten::MemoryFormat::Contiguous
-  ET_CHECK(
-      (!memory_format.has_value()) ||
-      memory_format.value() == MemoryFormat::Contiguous);
+  ET_KERNEL_CHECK(
+      context,
+      !memory_format.has_value() ||
+          memory_format.value() == MemoryFormat::Contiguous,
+      InvalidArgument,
+      out);
 
   if (self.nbytes() > 0) {
     // Note that this check is important. It's valid for a tensor with numel 0

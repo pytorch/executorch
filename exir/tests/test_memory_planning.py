@@ -18,6 +18,7 @@ import torch.utils._pytree as pytree
 from executorch.backends.qnnpack.partition.qnnpack_partitioner import QnnpackPartitioner
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 from executorch.exir.memory_planning import filter_nodes, Verifier
+from executorch.exir.pass_base import PassResult
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (  # noqa
     ConstPropPass,
@@ -29,6 +30,7 @@ from executorch.exir.passes import (  # noqa
 )
 from executorch.exir.print_program import print_program
 from executorch.exir.tests.asr_joiner import ASRJoiner
+from parameterized import parameterized
 
 from torch import nn
 from torch.ao.quantization import (  # @manual=//caffe2:torch
@@ -155,6 +157,47 @@ class ModuleListArg(nn.Module):
         testcase.assertEqual(2, len(getitem_specs))
         for getitem_spec in getitem_specs:
             testcase.assertTrue(getitem_spec.lifetime[1] >= cat_specs[0].lifetime[0])
+
+
+class CustomPoolMemoryPlanningPass(MemoryPlanningPass):
+    def call(self, graph_module: GraphModule) -> PassResult:
+        for subgm in graph_module.modules():
+            if not isinstance(subgm, GraphModule):
+                continue
+            for node in subgm.graph.nodes:
+                # mem_id = 1 placeholder and outputs of mul
+                # mem_id = 3 for outputs of add
+                # parent class will copy spec will to alloc nodes
+                if node.op == "placeholder":
+                    node.meta["spec"].mem_id = 1
+                    continue
+
+                if node.op != "call_function":
+                    continue
+
+                if node.target == torch.ops.aten.add.out:
+                    node.meta["spec"].mem_id = 3
+                elif node.target == torch.ops.aten.mul.out:
+                    node.meta["spec"].mem_id = 1
+
+        return super().call(graph_module)
+
+
+class MultiplePoolsToyModel(torch.nn.Module):
+    def forward(self, a: torch.Tensor) -> torch.Tensor:
+        # a: mem_id = 1, offset = 0
+        # b: mem_id = 3, offset = 0
+        # c: mem_id = 1, offset = 4
+        # d: mem_id = 3, offset = 4
+        # greedy:
+        # e: mem_id = 1, offset = 0
+        # naive:
+        # e: mem_id = 1, offset = 8
+        b = a + a
+        c = a * b
+        d = c + b
+        e = c * d
+        return e
 
 
 def maketest(
@@ -463,3 +506,60 @@ class TestMisc(unittest.TestCase):
                 )
 
         self.assertEqual(3, ncheck)
+
+    # pyre-ignore
+    @parameterized.expand(
+        [
+            (
+                "naive",
+                [(1, 0), (3, 0), (1, 4), (3, 4), (1, 8)],
+                [0, 12, 0, 8],
+            ),
+            (
+                "greedy",
+                [(1, 0), (3, 0), (1, 4), (3, 4), (1, 0)],
+                [0, 8, 0, 8],
+            ),
+        ]
+    )
+    def test_multiple_pools(
+        self,
+        algo: str,
+        expected_allocs: List[Tuple[int, int]],
+        expected_bufsizes: List[int],
+    ) -> None:
+        edge_program = exir.capture(
+            MultiplePoolsToyModel(),
+            (torch.ones(1),),
+            exir.CaptureConfig(pt2_mode=True),
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+
+        program = edge_program.to_executorch(
+            exir.ExecutorchBackendConfig(
+                memory_planning_pass=CustomPoolMemoryPlanningPass(
+                    memory_planning_algo=algo,
+                    alignment=1,
+                )
+            )
+        )
+        graph_module = program.dump_graph_module()
+
+        verifier = Verifier(
+            graph_module,
+            alloc_graph_input=True,
+            alloc_graph_output=True,
+        )
+        verifier.verify_storage_reuse()
+        verifier.verify_graph_input_output()
+
+        idx = 0
+        for node in graph_module.graph.nodes:
+            if node.op == "placeholder" or (
+                node.op == "call_function"
+                and node.target in (torch.ops.aten.add.out, torch.ops.aten.mul.out)
+            ):
+                mem_id, mem_offset = expected_allocs[idx]
+                self.assertEqual(node.meta["spec"].mem_id, mem_id)
+                self.assertEqual(node.meta["spec"].mem_offset, mem_offset)
+                idx += 1
+        self.assertEqual(graph_module.meta["non_const_buffer_sizes"], expected_bufsizes)

@@ -60,8 +60,19 @@ def capture(
     out_spec = None
     # TODO (zhxchen17) Always functionalize in a second pass no matter which path is taken.
     flat_args = tuple(pytree.tree_flatten(args)[0])
+    if not config.enable_aot:
+        if config._unlift:
+            raise ExportError(
+                ExportErrorType.NOT_SUPPORTED,
+                "_unlift config doesn't do anything without enable_aot enabled. Please do not set it",
+            )
     if config.pt2_mode:
         if config.enable_aot:
+            if config.enable_dynamic_shape:
+                raise ExportError(
+                    ExportErrorType.NOT_SUPPORTED,
+                    "Under enable_aot, enable_dynamic_shapes flag doesn't do anything. Please do not set it",
+                )
             if not config.enable_functionalization:
                 raise ExportError(
                     ExportErrorType.NOT_SUPPORTED,
@@ -200,6 +211,7 @@ def capture(
         CallSpec(in_spec, out_spec),
         {},
         {},
+        [],
         [],
     )
     return ExirExportedProgram(ep, False)

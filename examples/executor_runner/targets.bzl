@@ -7,7 +7,9 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    include_custom_ops = native.read_config("executorch", "include_custom_ops", "0") == "1"
+    register_custom_op_1 = native.read_config("executorch", "register_custom_op_1", "0") == "1"
+
+    custom_ops_lib = ["//executorch/examples/custom_ops:lib_1"] if register_custom_op_1 else []
 
     # Test driver for models, uses all portable kernels.
     runtime.cxx_binary(
@@ -19,7 +21,7 @@ def define_common_targets():
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/util:util",
             "//executorch/kernels/portable:generated_lib_all_ops",
-        ] + (["//executorch/examples/custom_ops:generated_lib"] if include_custom_ops else []),
+        ] + custom_ops_lib,
         external_deps = [
             "gflags",
         ],

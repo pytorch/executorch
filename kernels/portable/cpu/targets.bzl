@@ -250,6 +250,9 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_empty",
+    ),
+    op_target(
         name = "op_erf",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",

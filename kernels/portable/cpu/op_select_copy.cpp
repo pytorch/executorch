@@ -98,12 +98,12 @@ void check_and_update_select_copy_int_out_args(
 /// select_copy.int_out(Tensor self, int dim, int index, *, Tensor(a!) output)
 /// -> Tensor(a!)
 Tensor& select_copy_int_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& input,
     int64_t dim,
     int64_t index,
     Tensor& output) {
-  (void)context;
+  (void)ctx;
   // Assert that the args are valid.
   check_and_update_select_copy_int_out_args(input, dim, index, output);
 

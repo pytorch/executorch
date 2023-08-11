@@ -36,8 +36,8 @@ void size_check(
  *
  * zeros.out(SymInt[] size, *, Tensor(a!) out) -> Tensor(a!)
  */
-Tensor& zeros_out(RuntimeContext& context, IntArrayRef size, Tensor& out) {
-  (void)context;
+Tensor& zeros_out(RuntimeContext& ctx, IntArrayRef size, Tensor& out) {
+  (void)ctx;
 
   torch::executor::Error err = resize_tensor(out, size);
   ET_CHECK_MSG(

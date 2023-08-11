@@ -17,9 +17,8 @@ namespace torch {
 namespace executor {
 namespace native {
 
-Tensor&
-scalar_tensor_out(RuntimeContext& context, const Scalar& s, Tensor& out) {
-  (void)context;
+Tensor& scalar_tensor_out(RuntimeContext& ctx, const Scalar& s, Tensor& out) {
+  (void)ctx;
 
   ET_CHECK_MSG(out.numel() == 1, "Output tensor must have only one element");
 

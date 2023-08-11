@@ -99,7 +99,7 @@ void check_index_select_args(
 /// aten::index_select.out(Tensor self, int dim, Tensor index, *, Tensor(a!)
 /// out) -> Tensor(a!)
 Tensor& index_select_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& input,
     int64_t dim,
     const Tensor& index,

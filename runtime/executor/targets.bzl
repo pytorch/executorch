@@ -49,6 +49,7 @@ def define_common_targets():
             name = "program" + aten_suffix,
             srcs = [
                 "method.cpp",
+                "method_meta.cpp",
                 "program.cpp",
                 "tensor_parser{}.cpp".format(aten_suffix),
             ],
@@ -57,6 +58,7 @@ def define_common_targets():
             ],
             exported_headers = [
                 "method.h",
+                "method_meta.h",
                 "program.h",
             ],
             deps = [

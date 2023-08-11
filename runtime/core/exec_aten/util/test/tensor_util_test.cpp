@@ -409,3 +409,94 @@ TEST_F(TensorUtilTest, BoolTensorNotScalarFails) {
   bool ok = torch::executor::extract_scalar_tensor(c, &out);
   EXPECT_FALSE(ok);
 }
+
+//
+// Tests for utility functions that check tensor attributes
+//
+
+TEST_F(TensorUtilTest, TensorsHaveSameDtypeTest) {
+  using namespace torch::executor;
+  Tensor a = tf_float_.ones({2, 3});
+  Tensor b = tf_float_.ones({2, 3});
+  Tensor c = tf_float_.ones({3, 3});
+  Tensor d = tf_int_.ones({4, 3});
+
+  EXPECT_TRUE(tensors_have_same_dtype(a, b));
+  EXPECT_FALSE(tensors_have_same_dtype(a, d));
+  EXPECT_TRUE(tensors_have_same_dtype(a, b, c));
+  EXPECT_FALSE(tensors_have_same_dtype(a, b, d));
+}
+
+TEST_F(TensorUtilTest, TensorsHaveSameShapeTest) {
+  using namespace torch::executor;
+  Tensor a = tf_float_.ones({2, 3});
+  Tensor b = tf_int_.ones({2, 3});
+  Tensor c = tf_byte_.ones({2, 3});
+  Tensor d = tf_double_.ones({3, 2});
+  Tensor e = tf_bool_.ones({3, 2});
+
+  EXPECT_TRUE(tensors_have_same_shape(a, b));
+  EXPECT_FALSE(tensors_have_same_shape(a, d));
+  EXPECT_TRUE(tensors_have_same_shape(d, e));
+  EXPECT_TRUE(tensors_have_same_shape(a, b, c));
+  EXPECT_FALSE(tensors_have_same_shape(a, b, d));
+  EXPECT_FALSE(tensors_have_same_shape(a, d, e));
+
+  Tensor scalar_a = tf_float_.ones({1, 1});
+  Tensor scalar_b = tf_double_.ones({1});
+  Tensor scalar_c = tf_int_.ones({1, 1, 1, 1});
+
+  EXPECT_TRUE(tensors_have_same_shape(scalar_a, scalar_b));
+  EXPECT_TRUE(tensors_have_same_shape(scalar_a, scalar_b, scalar_c));
+}
+
+TEST_F(TensorUtilTest, TensorsHaveSameShapeAndDtypeTest) {
+  using namespace torch::executor;
+  Tensor a = tf_float_.ones({2, 3});
+  Tensor b = tf_float_.ones({2, 3});
+  Tensor c = tf_float_.ones({2, 3});
+  Tensor d = tf_double_.ones({2, 3});
+  Tensor e = tf_float_.ones({3, 2});
+
+  EXPECT_TRUE(tensors_have_same_shape_and_dtype(a, b));
+  EXPECT_FALSE(tensors_have_same_shape_and_dtype(a, d));
+  EXPECT_TRUE(tensors_have_same_shape_and_dtype(a, b, c));
+  EXPECT_FALSE(tensors_have_same_shape_and_dtype(a, b, d));
+  EXPECT_FALSE(tensors_have_same_shape_and_dtype(a, d, e));
+
+  Tensor scalar_a = tf_float_.ones({1, 1});
+  Tensor scalar_b = tf_float_.ones({1});
+  Tensor scalar_c = tf_float_.ones({1, 1, 1, 1});
+
+  EXPECT_TRUE(tensors_have_same_shape_and_dtype(scalar_a, scalar_b));
+  EXPECT_TRUE(tensors_have_same_shape_and_dtype(scalar_a, scalar_b, scalar_c));
+}
+
+TEST_F(TensorUtilTest, TensorsHaveSameStridesTest) {
+  using namespace torch::executor;
+  Tensor a = tf_float_.full_channels_last({4, 5, 2, 3}, 1);
+  Tensor b = tf_float_.full_channels_last({4, 5, 2, 3}, 2);
+  Tensor c = tf_float_.full_channels_last({4, 5, 2, 3}, 3);
+  Tensor d = tf_double_.ones({4, 5, 2, 3});
+  Tensor e = tf_float_.ones({4, 5, 2, 3});
+
+  EXPECT_TRUE(tensors_have_same_strides(a, b));
+  EXPECT_FALSE(tensors_have_same_strides(a, d));
+  EXPECT_TRUE(tensors_have_same_strides(a, b, c));
+  EXPECT_FALSE(tensors_have_same_strides(a, b, d));
+  EXPECT_FALSE(tensors_have_same_strides(a, d, e));
+}
+
+TEST_F(TensorUtilTest, TensorIsContiguous) {
+  using namespace torch::executor;
+  // Note that the strides.size() == 0 case is not tested, since
+  Tensor a = tf_float_.full_channels_last({4, 5, 2, 3}, 1);
+  Tensor b = tf_float_.ones({4, 5, 2, 3});
+  Tensor c = tf_float_.full_channels_last({1, 1, 1, 1}, 1);
+  Tensor d = tf_float_.ones({});
+
+  EXPECT_FALSE(tensor_is_contiguous(a));
+  EXPECT_TRUE(tensor_is_contiguous(b));
+  EXPECT_TRUE(tensor_is_contiguous(c));
+  EXPECT_TRUE(tensor_is_contiguous(d));
+}

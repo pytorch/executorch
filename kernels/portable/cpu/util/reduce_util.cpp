@@ -21,6 +21,17 @@ using Tensor = exec_aten::Tensor;
 // Helper Functions
 //
 
+// Normalize the dimension by adding in_dim if d < 0; for 0-D, clamp to 0
+inline size_t _normalize_non_neg_d(ssize_t d, ssize_t in_dim) {
+  if (in_dim == 0 && (d == 0 || d == -1)) {
+    return 0;
+  }
+  if (d < 0) {
+    return d + in_dim;
+  }
+  return d;
+}
+
 void check_dim_list_is_valid(
     const Tensor& in,
     const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list) {
@@ -29,9 +40,14 @@ void check_dim_list_is_valid(
     bool dim_exist[kTensorDimensionLimit];
     memset(dim_exist, false, sizeof(dim_exist));
     for (const auto& d : reduce_dims) {
-      ET_CHECK_VALID_DIM(d, in.dim());
-      const size_t non_neg_d = d < 0 ? d + in.dim() : d;
-      ET_CHECK(non_neg_d < kTensorDimensionLimit);
+      if (in.dim() == 0) {
+        ET_CHECK(d == 0 || d == -1);
+      } else {
+        ET_CHECK_VALID_DIM(d, in.dim());
+      }
+      const size_t non_neg_d = _normalize_non_neg_d(d, in.dim());
+      ET_CHECK(non_neg_d < kTensorDimensionLimit && non_neg_d >= 0);
+
       ET_CHECK_MSG(
           dim_exist[non_neg_d] == false,
           "dim %zd appears multiple times in the list of dims",
@@ -46,7 +62,7 @@ bool check_dim_in_dim_list(
     const size_t max_dim,
     const exec_aten::ArrayRef<int64_t>& dim_list) {
   for (const auto& d : dim_list) {
-    const size_t non_neg_dim = d < 0 ? d + max_dim : d;
+    const size_t non_neg_dim = _normalize_non_neg_d(d, max_dim);
     if (dim == non_neg_dim) {
       return true;
     }
@@ -58,6 +74,9 @@ bool check_dim_in_dim_list(
  * Returns the product of the sizes of all reduction dims.
  */
 size_t get_reduced_dim_product(const Tensor& in, const optional<int64_t>& dim) {
+  if (in.dim() == 0) {
+    return 1;
+  }
   size_t dim_product = 1;
   if (!dim.has_value()) {
     for (size_t i = 0; i < in.dim(); ++i) {
@@ -65,7 +84,7 @@ size_t get_reduced_dim_product(const Tensor& in, const optional<int64_t>& dim) {
     }
     return dim_product;
   }
-  const size_t d = dim.value() < 0 ? dim.value() + in.dim() : dim.value();
+  const size_t d = _normalize_non_neg_d(dim.value(), in.dim());
   return in.size(d);
 }
 
@@ -75,6 +94,9 @@ size_t get_reduced_dim_product(const Tensor& in, const optional<int64_t>& dim) {
 size_t get_reduced_dim_product(
     const Tensor& in,
     const optional<ArrayRef<int64_t>>& dim_list) {
+  if (in.dim() == 0) {
+    return 1;
+  }
   size_t dim_product = 1;
   const size_t in_dim = in.dim();
   if (!dim_list.has_value() || dim_list.value().size() == 0) {
@@ -84,7 +106,7 @@ size_t get_reduced_dim_product(
     return dim_product;
   }
   for (const auto& d : dim_list.value()) {
-    const size_t non_neg_d = d < 0 ? d + in_dim : d;
+    const size_t non_neg_d = _normalize_non_neg_d(d, in_dim);
     dim_product *= in.size(non_neg_d);
   }
   return dim_product;
@@ -98,8 +120,12 @@ size_t get_out_numel(const Tensor& in, const optional<int64_t>& dim) {
   size_t out_numel = 1;
   if (dim.has_value()) {
     const auto dim_val = dim.value();
-    ET_CHECK_VALID_DIM(dim_val, in.dim());
-    const size_t non_neg_dim = dim_val < 0 ? dim_val + in.dim() : dim_val;
+    if (in.dim() == 0) {
+      ET_CHECK(dim_val == 0 || dim_val == -1);
+    } else {
+      ET_CHECK_VALID_DIM(dim_val, in.dim());
+    }
+    const size_t non_neg_dim = _normalize_non_neg_d(dim_val, in.dim());
     for (size_t d = 0; d < in.dim(); ++d) {
       if (d != non_neg_dim) {
         out_numel *= in.size(d);
@@ -139,8 +165,12 @@ size_t get_init_index(
     return 0;
   }
   const auto dim_val = dim.value();
-  ET_CHECK_VALID_DIM(dim_val, in.dim());
-  const size_t non_neg_dim = dim_val < 0 ? dim_val + in.dim() : dim_val;
+  if (in.dim() == 0) {
+    ET_CHECK(dim_val == 0 || dim_val == -1);
+  } else {
+    ET_CHECK_VALID_DIM(dim_val, in.dim());
+  }
+  const size_t non_neg_dim = _normalize_non_neg_d(dim_val, in.dim());
   size_t init_ix = 0;
   size_t mutable_out_ix = out_ix;
   auto strides = in.strides();
@@ -191,7 +221,7 @@ size_t compute_reduced_out_size(
 
   if (dim.has_value()) {
     const auto dim_val = dim.value();
-    const auto non_neg_dim = dim_val < 0 ? dim_val + in_dim : dim_val;
+    const size_t non_neg_dim = _normalize_non_neg_d(dim_val, in_dim);
     for (size_t i = 0; i < non_neg_dim; ++i) {
       sizes_arr[i] = in.size(i);
     }

@@ -74,6 +74,20 @@ const executorch_flatbuffer::Program* DeserializeFlatbufferData(
   return program;
 }
 
+Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
+    const executorch_flatbuffer::Program* program,
+    const char* method_name) {
+  auto execution_plans = program->execution_plan();
+  for (size_t i = 0; i < execution_plans->size(); i++) {
+    auto plan = execution_plans->GetMutableObject(i);
+    if (std::strcmp(plan->name()->c_str(), method_name) == 0) {
+      return plan;
+    }
+  }
+  ET_LOG(Error, "No method named '%s' in program", method_name);
+  return Error::InvalidArgument;
+}
+
 } // namespace
 
 Program::Program(const void* serialized_content)
@@ -183,43 +197,49 @@ size_t Program::num_methods() const {
   return internal_program->execution_plan()->size();
 }
 
-Result<const char*> Program::get_method_name(size_t plan_idx) const {
-  if (plan_idx >= this->num_methods()) {
+Result<const char*> Program::get_method_name(size_t plan_index) const {
+  if (plan_index >= this->num_methods()) {
     return Error::InvalidArgument;
   }
   auto internal_program =
       static_cast<const executorch_flatbuffer::Program*>(internal_program_);
-  return internal_program->execution_plan()->Get(plan_idx)->name()->c_str();
+  return internal_program->execution_plan()->Get(plan_index)->name()->c_str();
 }
 
 Result<Method> Program::load_method(
     const char* method_name,
     MemoryManager* memory_manager) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
-  auto execution_plans = internal_program_->execution_plan();
-  for (size_t i = 0; i < execution_plans->size(); i++) {
-    auto serialization_plan = execution_plans->GetMutableObject(i);
-    if (std::strcmp(serialization_plan->name()->c_str(), method_name) == 0) {
-      return Method::load(serialization_plan, this, memory_manager);
-    }
+  auto plan = get_execution_plan(internal_program_, method_name);
+  if (!plan.ok()) {
+    return plan.error();
   }
-  return Error::InvalidArgument;
+  return Method::load(plan.get(), this, memory_manager);
 }
 
-const void* Program::get_constant_buffer_data(size_t buffer_idx) const {
+Result<MethodMeta> Program::method_meta(const char* method_name) const {
+  EXECUTORCH_SCOPE_PROF("Program::method_meta");
+  auto plan = get_execution_plan(internal_program_, method_name);
+  if (!plan.ok()) {
+    return plan.error();
+  }
+  return MethodMeta(plan.get());
+}
+
+const void* Program::get_constant_buffer_data(size_t buffer_index) const {
   ET_CHECK(is_valid());
   auto internal_program =
       static_cast<const executorch_flatbuffer::Program*>(internal_program_);
   ET_CHECK_MSG(
-      buffer_idx < constant_buffer_size(),
+      buffer_index < constant_buffer_size(),
       "Constant buffer %zu out of program buffer range %zu",
-      buffer_idx,
+      buffer_index,
       constant_buffer_size());
 
   const auto& constant_buffer = *internal_program->constant_buffer();
 
   return static_cast<const void*>(
-      constant_buffer[buffer_idx]->storage()->data());
+      constant_buffer[buffer_index]->storage()->data());
 }
 
 size_t Program::constant_buffer_size() const {
@@ -230,42 +250,44 @@ size_t Program::constant_buffer_size() const {
 }
 
 int64_t Program::get_non_const_buffer_size(
-    size_t buffer_idx,
-    size_t execution_plan_idx) const {
+    size_t buffer_index,
+    size_t execution_plan_index) const {
   ET_CHECK(is_valid());
   ET_CHECK_MSG(
-      execution_plan_idx == Program::kForwardMethodIndex,
+      execution_plan_index == Program::kForwardMethodIndex,
       "Unsupported plan index %zu != %zu",
-      execution_plan_idx,
+      execution_plan_index,
       Program::kForwardMethodIndex);
-  auto res = this->get_non_const_buffer_size(buffer_idx, "forward");
+  auto res = this->get_non_const_buffer_size(buffer_index, "forward");
   ET_CHECK(res.ok());
   return res.get();
 }
 
 Result<int64_t> Program::get_non_const_buffer_size(
-    size_t buffer_idx,
+    size_t buffer_index,
     const char* method_name) const {
-  auto internal_program =
-      static_cast<const executorch_flatbuffer::Program*>(internal_program_);
-  for (auto plan : *internal_program->execution_plan()) {
-    if (std::strcmp(plan->name()->c_str(), method_name) == 0) {
-      auto non_const_buffer_sizes = plan->non_const_buffer_sizes();
-      if (buffer_idx >= non_const_buffer_sizes->size()) {
-        return Error::InvalidArgument;
-      }
-      return (*plan->non_const_buffer_sizes())[buffer_idx];
-    }
+  auto plan = get_execution_plan(internal_program_, method_name);
+  if (!plan.ok()) {
+    return plan.error();
   }
-  return Error::InvalidArgument;
+  auto non_const_buffer_sizes = plan.get()->non_const_buffer_sizes();
+  if (buffer_index >= non_const_buffer_sizes->size()) {
+    ET_LOG(
+        Error,
+        "invalid buffer index %zu for size %zu",
+        buffer_index,
+        (size_t)non_const_buffer_sizes->size());
+    return Error::InvalidArgument;
+  }
+  return (*(plan.get()->non_const_buffer_sizes()))[buffer_index];
 }
 
-size_t Program::num_non_const_buffers(size_t execution_plan_idx) const {
+size_t Program::num_non_const_buffers(size_t execution_plan_index) const {
   ET_CHECK(is_valid());
   ET_CHECK_MSG(
-      execution_plan_idx == Program::kForwardMethodIndex,
+      execution_plan_index == Program::kForwardMethodIndex,
       "Unsupported plan index %zu != %zu",
-      execution_plan_idx,
+      execution_plan_index,
       Program::kForwardMethodIndex);
   auto res = this->num_non_const_buffers("forward");
   ET_CHECK(res.ok());
@@ -273,23 +295,20 @@ size_t Program::num_non_const_buffers(size_t execution_plan_idx) const {
 }
 
 Result<size_t> Program::num_non_const_buffers(const char* method_name) const {
-  auto internal_program =
-      static_cast<const executorch_flatbuffer::Program*>(internal_program_);
-  for (auto plan : *internal_program->execution_plan()) {
-    if (std::strcmp(plan->name()->c_str(), method_name) == 0) {
-      return plan->non_const_buffer_sizes()->size();
-    }
+  auto plan = get_execution_plan(internal_program_, method_name);
+  if (!plan.ok()) {
+    return plan.error();
   }
-  return Error::InvalidArgument;
+  return plan.get()->non_const_buffer_sizes()->size();
 }
 
 const char* Program::get_output_flattening_encoding(
-    size_t execution_plan_idx) const {
+    size_t execution_plan_index) const {
   ET_CHECK(is_valid());
   ET_CHECK_MSG(
-      execution_plan_idx == Program::kForwardMethodIndex,
+      execution_plan_index == Program::kForwardMethodIndex,
       "Executor only supports a single execution plan at this time, but received a query about plan #%zu",
-      execution_plan_idx);
+      execution_plan_index);
   auto res = this->get_output_flattening_encoding("forward");
   ET_CHECK(res.ok());
   return res.get();
@@ -297,14 +316,11 @@ const char* Program::get_output_flattening_encoding(
 
 Result<const char*> Program::get_output_flattening_encoding(
     const char* method_name) const {
-  auto internal_program =
-      static_cast<const executorch_flatbuffer::Program*>(internal_program_);
-  for (auto plan : *internal_program->execution_plan()) {
-    if (std::strcmp(plan->name()->c_str(), method_name) == 0) {
-      return plan->container_meta_type()->encoded_out_str()->c_str();
-    }
+  auto plan = get_execution_plan(internal_program_, method_name);
+  if (!plan.ok()) {
+    return plan.error();
   }
-  return Error::InvalidArgument;
+  return plan.get()->container_meta_type()->encoded_out_str()->c_str();
 }
 
 Error Program::get_backend_delegate_data(

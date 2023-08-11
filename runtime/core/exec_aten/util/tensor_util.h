@@ -322,6 +322,77 @@
   })
 
 /**
+ * A convenience macro to be used in utility functions that check whether input
+ * tensor(s) are valid, which are expected to return a boolean. Checks whether
+ * `cond` is true; if not, log the failed check and return false.
+ *
+ * @param[in] cond the condition to check
+ */
+#define ET_LOG_AND_RETURN_IF_FALSE(cond)           \
+  do {                                             \
+    if (!(cond)) {                                 \
+      ET_LOG(Error, "Check failed (%s): ", #cond); \
+      return false;                                \
+    }                                              \
+  } while (false)
+
+/**
+ * A convenience macro to be used in utility functions that check whether input
+ * tensor(s) are valid, which are expected to return a boolean. Checks whether
+ * `cond` is true; if not, log the failed check with `message` and return false.
+ *
+ * @param[in] cond the condition to check
+ * @param[in] message an additional message to log with `cond`
+ */
+#define ET_LOG_MSG_AND_RETURN_IF_FALSE(cond, message, ...)                \
+  do {                                                                    \
+    if (!(cond)) {                                                        \
+      ET_LOG(Error, "Check failed (%s): " message, #cond, ##__VA_ARGS__); \
+      return false;                                                       \
+    }                                                                     \
+  } while (false)
+
+/**
+ * If `cond` is false, log `cond` and return from the kernel with a failure
+ * state set.
+ *
+ * TODO(ssjia): add context.fail(torch.executor::Error::error); before exit
+ * TODO(ssjia): replace runtime_abort() with return retval
+ *
+ * @param[in] context the runtime context
+ * @param[in] cond the condition to check
+ * @param[in] error torch::executor::Error enum value (e.g `InvalidArgument`)
+ * @param[in] retval return value of the kernel to allow for early exit
+ */
+#define ET_KERNEL_CHECK(context, cond, error, retval) \
+  do {                                                \
+    if (!(cond)) {                                    \
+      ET_LOG(Error, "Check failed (%s): ", #cond);    \
+      torch::executor::runtime_abort();               \
+    }                                                 \
+  } while (false)
+
+/**
+ * If `cond` is false, log `message` and return from the kernel with a failure
+ * state set.
+ *
+ * TODO(ssjia): add context.fail(torch.executor::Error::error); before exit
+ * TODO(ssjia): replace runtime_abort() with return retval
+ *
+ * @param[in] context the runtime context
+ * @param[in] cond the condition to check
+ * @param[in] error torch::executor::Error enum value (e.g `InvalidArgument`)
+ * @param[in] retval return value of the kernel to allow for early exit
+ */
+#define ET_KERNEL_CHECK_MSG(context, cond, error, retval, message, ...)   \
+  do {                                                                    \
+    if (!(cond)) {                                                        \
+      ET_LOG(Error, "Check failed (%s): " message, #cond, ##__VA_ARGS__); \
+      torch::executor::runtime_abort();                                   \
+    }                                                                     \
+  } while (false)
+
+/**
  * Convenience macro to extract a scalar tensor into a value
  */
 #define ET_EXTRACT_SCALAR_TENSOR(scalar_tensor, out_val) \
@@ -335,6 +406,90 @@ namespace executor {
 using Tensor = exec_aten::Tensor;
 using Scalar = exec_aten::Scalar;
 using ScalarType = exec_aten::ScalarType;
+
+//
+// Utility functions for checking tensor attributes
+//
+
+inline bool tensors_have_same_dtype(exec_aten::Tensor a, exec_aten::Tensor b) {
+  return a.scalar_type() == b.scalar_type();
+}
+
+inline bool tensors_have_same_dtype(
+    exec_aten::Tensor a,
+    exec_aten::Tensor b,
+    exec_aten::Tensor c) {
+  return a.scalar_type() == b.scalar_type() &&
+      b.scalar_type() == c.scalar_type();
+}
+
+inline bool tensors_have_same_shape(exec_aten::Tensor a, exec_aten::Tensor b) {
+  if (a.numel() != b.numel()) {
+    return false;
+  }
+  if (a.numel() == 1) {
+    // PyTorch operators treat all scalar tensors as the same shape even if
+    // they have different dims.
+    return true;
+  }
+  // Does a length comparison (ensuring dims are equal) and element-by-element
+  // comparison (ensuring sizes are equal).
+  if (a.sizes() != b.sizes()) {
+    return false;
+  }
+  return true;
+}
+
+inline bool tensors_have_same_shape(
+    exec_aten::Tensor a,
+    exec_aten::Tensor b,
+    exec_aten::Tensor c) {
+  return tensors_have_same_shape(a, b) && tensors_have_same_shape(b, c);
+}
+
+inline bool tensors_have_same_shape_and_dtype(
+    exec_aten::Tensor a,
+    exec_aten::Tensor b) {
+  return tensors_have_same_shape(a, b) && tensors_have_same_dtype(a, b);
+}
+
+inline bool tensors_have_same_shape_and_dtype(
+    exec_aten::Tensor a,
+    exec_aten::Tensor b,
+    exec_aten::Tensor c) {
+  return tensors_have_same_shape(a, b, c) && tensors_have_same_dtype(a, b, c);
+}
+
+inline bool tensors_have_same_strides(
+    exec_aten::Tensor a,
+    exec_aten::Tensor b) {
+  return a.strides() == b.strides();
+}
+
+inline bool tensors_have_same_strides(
+    exec_aten::Tensor a,
+    exec_aten::Tensor b,
+    exec_aten::Tensor c) {
+  return a.strides() == b.strides() && b.strides() == c.strides();
+}
+
+inline bool tensor_is_contiguous(exec_aten::Tensor t) {
+  const auto strides = t.strides();
+  const auto sizes = t.sizes();
+  // If tensor is 0-dim (i.e. a scalar tensor) it is contiguous
+  if (strides.size() == 0) {
+    return true;
+  }
+  if (strides[strides.size() - 1] != 1) {
+    return false;
+  }
+  for (auto i = strides.size() - 1; i > 0; --i) {
+    if (strides[i - 1] != strides[i] * sizes[i]) {
+      return false;
+    }
+  }
+  return true;
+}
 
 /**
  * The expected output size may not be the existing size of any inputs and

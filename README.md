@@ -42,6 +42,7 @@ Compared to the legacy Lite Interpreter, there are some major benefits:
 - [Exporting to Executorch](/docs/website/docs/tutorials/exporting_to_executorch.md)
     - [EXIR Spec](/docs/website/docs/ir_spec/00_exir.md)
     - [Exporting manual](/docs/website/docs/export/00_export_manual.md)
+    - [Quantization](/docs/website/docs/tutorials/quantization_flow.md)
     - [Delegate to a backend](/docs/website/docs/tutorials/backend_delegate.md)
     - [Profiling](/docs/website/docs/tutorials/profiling.md)
 - [Executorch Google Colab](https://colab.research.google.com/drive/1m8iU4y7CRVelnnolK3ThS2l2gBo7QnAP#scrollTo=1o2t3LlYJQY5)

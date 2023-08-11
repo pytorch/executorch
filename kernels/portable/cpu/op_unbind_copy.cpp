@@ -80,11 +80,11 @@ void check_args(const Tensor& input, int64_t dim, TensorList out) {
  * unbind_copy.int_out(Tensor input, int dim=0, *, Tensor(a!)[] out) -> ()
  */
 void unbind_copy_int_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& input,
     int64_t dim,
     TensorList out) {
-  (void)context;
+  (void)ctx;
   // Support python-style negative indexing.
   if (dim < 0) {
     dim += input.dim();

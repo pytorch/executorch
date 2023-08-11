@@ -109,13 +109,13 @@ void scatter_add(
  * be in Long (int64) type.
  */
 Tensor& scatter_add_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     int64_t dim,
     const Tensor& index,
     const Tensor& src,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
   ET_CHECK_SAME_SHAPE_AND_DTYPE2(self, out);
   ET_CHECK_SAME_DTYPE2(self, src);
   ET_CHECK_MSG(

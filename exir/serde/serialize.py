@@ -42,7 +42,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
     def __init__(
         self, graph_signature: ep.ExportGraphSignature, call_spec: ep.CallSpec
     ) -> None:
-        super().__init__(graph_signature, call_spec)
+        super().__init__(graph_signature, call_spec, [])
         self.state_dict: Dict[str, torch.Tensor] = {}  # TODO(T157676982)
 
     def serialize_operator(
@@ -574,6 +574,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             graph_module,
             sig,
             call_spec,
+            module_call_graph,
             symbol_name_to_symbol,
         ) = GraphModuleDeserializer(state_dict).deserialize(
             serialized_exported_program.graph_module,
@@ -603,6 +604,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             {},  # TODO(T157676982)
             range_constraints,
             equality_constraints,
+            [],
         )
 
 

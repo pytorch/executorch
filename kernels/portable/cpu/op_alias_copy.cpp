@@ -16,8 +16,8 @@ namespace native {
 
 using Tensor = exec_aten::Tensor;
 
-Tensor& alias_copy_out(RuntimeContext& context, const Tensor& in, Tensor& out) {
-  (void)context;
+Tensor& alias_copy_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
+  (void)ctx;
 
   ET_CHECK(resize_tensor(out, in.sizes()) == torch::executor::Error::Ok);
   ET_CHECK_SAME_DTYPE2(in, out);

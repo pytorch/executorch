@@ -190,12 +190,7 @@ class QnnpackBackend final : public PyTorchBackendInterface {
     new (executor) QNNExecutor(
         std::move(packed_weights), bias_buf, qinput_buf, scale_buf, zp_buf);
 
-    // TODO(T144120904): Remove this MMAP block once all users switch to
-    // MmapDataLoader.
-#if defined(ET_MMAP_SUPPORTED)
-    torch::executor::util::mark_memory_as_unused(
-        const_cast<void*>(processed->data()), processed->size());
-#endif
+    // Free the flatbuffer
     processed->Free();
 
     return executor;

@@ -171,12 +171,16 @@ python_unittest(
     preload_deps = [
         "//executorch/kernels/portable:custom_ops_generated_lib",
     ],
+    # Static listing does not support tests generated with parameterized
+    supports_static_listing = False,
     deps = [
+        "fbsource//third-party/pypi/parameterized:parameterized",
         ":asr_joiner",
         "//caffe2:torch",
         "//executorch/backends/qnnpack/partition:qnnpack_partitioner",
         "//executorch/exir:lib",
         "//executorch/exir:memory_planning",
+        "//executorch/exir:pass_base",
         "//executorch/exir:pass_manager",
         "//executorch/exir:print_program",
         "//executorch/exir:schema",
@@ -414,5 +418,30 @@ python_unittest(
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/verification:verifier",
+    ],
+)
+
+python_unittest(
+    name = "dim_order_utils",
+    srcs = [
+        "test_dim_order_utils.py",
+    ],
+    supports_static_listing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:dim_order_utils",
+    ],
+)
+
+python_unittest(
+    name = "memory_format_ops_pass",
+    srcs = [
+        "test_memory_format_ops_pass.py",
+    ],
+    supports_static_listing = True,
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/passes:lib",
     ],
 )

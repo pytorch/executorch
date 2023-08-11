@@ -106,3 +106,83 @@ I 00:00:00.002159 executorch:executor_runner.cpp:186] Inputs prepared.
 I 00:00:00.011684 executorch:executor_runner.cpp:195] Model executed successfully.
 I 00:00:00.011709 executorch:executor_runner.cpp:210] 8.000000
 ```
+
+
+## Cross compilation
+
+
+### Android
+- Prerequisite: [Android NDK](https://developer.android.com/ndk), choose one of the following:
+  - Option 1: Download Android Studio, [follow instruction here to install ndk](https://developer.android.com/studio/projects/install-ndk)
+  - Option 2: Download NDK directly from [here](https://developer.android.com/ndk/downloads)
+
+Assuming NDK is available on installed, run
+```bash
+# Run the following lines from executorch folder
+rm -r cmake-android-out
+mkdir cmake-android-out
+cd cmake-android-out
+
+# point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
+# Run `which buck2`, if it returns empty (meaning the system doesn't know where buck2 is installed), pass in pass in this flag `-DBUCK2=/path/to/buck2` pointing to buck2
+cmake -DCMAKE_TOOLCHAIN_FILE=/Users/{user_name}/Library/Android/sdk/ndk/25.2.9519653/build/cmake/android.toolchain.cmake  -DANDROID_ABI=arm64-v8a ..
+
+cd  ..
+cmake --build  cmake-android-out  -j9
+
+# push the binary to an Android device
+adb push  cmake-android-out/executor_runner  /data/local/tmp/executorch
+
+adb shell  "/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.ff"
+```
+
+### IOS
+```
+---
+**NOTE**
+While we're working on making it a smoother experience, here is an early workflow to try out cross compilation for iOS.
+---
+
+```
+Only supported in mac
+
+Prerequisites:
+-   XCode
+
+After XCode is installed,
+
+1. Get the iOS cmake toolchain, options are
+- Option 1 [recommended] : use the `ios.toolchain.cmake` from the following github repo
+```bash
+git clone  https://github.com/leetal/ios-cmake.git
+```
+- Option2 [wip], use the `iOS.cmake` from pytorch, the tool chain is located in `executorch/third-party/pytorch/pytorch/blob/main/cmake/iOS.cmake`
+
+
+2.  Use the tool chain provided in the repro to build the executorch library.
+```bash
+rm -r cmake-ios-out
+mkdir cmake-ios-out
+cd cmake-ios-out
+
+# change the platform accordingly, please refer to the table listed in Readme
+cmake . -G Xcode -DCMAKE_TOOLCHAIN_FILE=~/ios-cmake/ios.toolchain.cmake -DPLATFORM=SIMULATOR
+
+# Create an include folder in cmake-ios-out to include all header files
+mkdir include
+cp -r ../runtime include
+cp -r ../extension include
+cp -r ../utils include
+```
+
+
+3. XCode setup
+
+If using ios cmake tool chain from `https://github.com/leetal/ios-cmake.git`, after build:
+
+- Open the project in XCode, drag the `executorch.xcodeproj` generated from Step 2 to `Frameworks`,
+- Go to project Target’s  `Build Phases`  -  `Link Binaries With Libraries`, click the + sign and add all the library files located in  `cmake-ios-out/build`.
+- Navigate to the project  `Build Settings`
+  - Set the value  **Header Search Paths**  to  `cmake-ios-out/include`
+  - Set **Library Search Paths**  to  `cmake-ios-out/build`
+  - In **other linker flags**, add a custom linker flag `-all_load`

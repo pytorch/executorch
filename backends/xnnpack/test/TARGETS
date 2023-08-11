@@ -102,6 +102,7 @@ python_unittest(
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/exir:lib",
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir/dialects:lib",
     ],
 )
 

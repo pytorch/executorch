@@ -1,0 +1,10 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+
+python_binary(
+    name = "example",
+    main_src = "example.py",
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models:models",
+    ],
+)

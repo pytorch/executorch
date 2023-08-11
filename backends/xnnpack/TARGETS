@@ -23,7 +23,5 @@ runtime.python_library(
         "//executorch/backends/xnnpack/passes:xnnpack_passes",
         "//executorch/exir:graph_module",
         "//executorch/exir/backend:backend_details",
-        "//executorch/exir/serialize:bindings",
-        "//executorch/exir/serialize:lib",
     ],
 )

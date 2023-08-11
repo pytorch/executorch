@@ -44,12 +44,7 @@ class XnnpackBackend final : public PyTorchBackendInterface {
       ET_LOG(Error, "XNNCompiler::compleModel failed: 0x%x", (unsigned int)err);
     }
 
-    // TODO(T144120904): Remove this MMAP block once all users switch to
-    // MmapDataLoader.
-#if defined(ET_MMAP_SUPPORTED)
-    torch::executor::util::mark_memory_as_unused(
-        const_cast<void*>(processed->data()), processed->size());
-#endif
+    // Free the flatbuffer
     processed->Free();
 
     return executor;

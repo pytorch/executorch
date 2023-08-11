@@ -19,7 +19,7 @@ test_buck2_custom_op_1() {
 
   echo 'Running executor_runner'
   buck2 run //fbcode/executorch/examples/executor_runner:executor_runner \
-      --config=executorch.include_custom_ops=1 -- --model_path="./${model_name}.pte"
+      --config=executorch.register_custom_op_1=1 -- --model_path="./${model_name}.pte"
   # should give correct result
 
   echo "Removing ${model_name}.pte"
@@ -34,7 +34,7 @@ test_cmake_custom_op_1() {
   (rm -rf cmake-out \
     && mkdir cmake-out \
     && cd cmake-out \
-    && cmake -DBUCK2=buck2 -DBUILD_EXAMPLE_CUSTOM_OPS=ON ..)
+    && cmake -DBUCK2=buck2 -DREGISTER_EXAMPLE_CUSTOM_OP_1=ON ..)
 
   echo 'Building executor_runner'
   cmake --build cmake-out -j9
@@ -43,5 +43,29 @@ test_cmake_custom_op_1() {
   cmake-out/executor_runner --model_path="./${model_name}.pte"
 }
 
+test_cmake_custom_op_2() {
+  local model_name='custom_ops_2'
+  SITE_PACKAGES="$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
+  CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
+
+  (rm -rf cmake-out \
+    && mkdir cmake-out \
+    && cd cmake-out \
+    && cmake -DBUCK2=buck2 \
+      -DREGISTER_EXAMPLE_CUSTOM_OP_2=ON \
+      -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" ..)
+
+  echo 'Building executor_runner'
+  cmake --build cmake-out -j9
+
+  echo "Exporting ${model_name}.pte"
+  python3 -m "examples.custom_ops.${model_name}"
+  # should save file custom_ops_2.pte
+
+  echo 'Running executor_runner'
+  cmake-out/executor_runner "--model_path=./${model_name}.pte"
+}
+
 test_buck2_custom_op_1
 test_cmake_custom_op_1
+test_cmake_custom_op_2

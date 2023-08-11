@@ -71,11 +71,11 @@ void check_squeeze_copy_dim_out(
 // squeeze_copy.dim_out(Tensor self, int dim, Tensor(a!) out) -> Tensor(a!)
 //
 Tensor& squeeze_copy_dim_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     int64_t dim,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
 
   // The input and out shall share same dtype

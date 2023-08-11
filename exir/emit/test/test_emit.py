@@ -568,7 +568,6 @@ class TestEmit(unittest.TestCase):
             capture_config = exir.CaptureConfig(
                 pt2_mode=True,
                 enable_functionalization=True,
-                enable_dynamic_shape=True,
                 enable_aot=True,
                 _unlift=False,
             )
@@ -646,8 +645,6 @@ class TestEmit(unittest.TestCase):
             len(program.execution_plan[0].chains[0].instructions[1].instr_args.args), 4
         )
 
-    # UpsampleNearest is incorrectly decomposed
-    @unittest.expectedFailure
     def test_optional_float_list(self) -> None:
         class M(torch.nn.Module):
             def __init__(self):

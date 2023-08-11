@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -14,7 +15,7 @@ def define_common_targets():
             "xnnpack_schema_generated.h": ["schema_generated.h"],
         },
         cmd = " ".join([
-            "$(exe fbsource//third-party/flatbuffers/fbsource_namespace:flatc)",
+            "$(exe {})".format(runtime.external_dep_location("flatc")),
             "--cpp",
             "--cpp-std c++11",
             "--scoped-enums",
@@ -30,9 +31,7 @@ def define_common_targets():
         exported_headers = {
             "xnnpack_schema_generated.h": ":gen_xnnpack_schema[xnnpack_schema_generated.h]",
         },
-        exported_deps = [
-            "fbsource//third-party/flatbuffers/fbsource_namespace:flatbuffers-api",
-        ],
+        exported_external_deps = ["flatbuffers-api"],
     )
 
     runtime.cxx_library(
@@ -51,7 +50,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         deps = [
-            "//xplat/third-party/XNNPACK:XNNPACK",
+            third_party_dep("XNNPACK"),
             ":xnnpack_schema",
             "//executorch/runtime/backend:backend_registry",
             "//executorch/backends/qnnpack:qnnpack_utils",  # TODO Use (1) portable for choose_qparams(), (2) xnnpack for quantize_per_tensor()

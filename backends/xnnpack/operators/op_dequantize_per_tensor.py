@@ -11,6 +11,7 @@ from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNConvert,
     XNNGraph,
@@ -23,12 +24,7 @@ from executorch.backends.xnnpack.utils.utils import get_input_node
 @register_node_visitor
 class OpDeQuantizePerTensor(NodeVisitor):
     """
-    Dequantize Per Tensor Node visitor. We only insert an XNNPACK node if
-    this op was found as a graph input or graph output. This is so we
-    dequantize the input going in. Every other instance of quantize per
-    tensor is only used as signaling for q params of node inputs, so
-    we ignore those. This is because xnnpack only supports entire graph
-    quantization
+    Dequantize Per Tensor Node visitor
     """
 
     target = "quantized_decomposed.dequantize_per_tensor.default"
@@ -44,10 +40,9 @@ class OpDeQuantizePerTensor(NodeVisitor):
         debug_handle: int,
     ) -> None:
         """
-        We only define a node if it is a graph output
+        We only define a node if it is not an implict dq node
         """
-        # TODO:@maxren better handle in-graph quantization conversions, this is hacky
-        if self.is_graph_output(node):
+        if not TagImplicitQDqPass.is_tagged_as_implicit_q_dq(node):
             dq_input = get_input_node(node, 0)
             input_quant_params = QuantParams.from_q_dq_node(node)
             # fp32 output

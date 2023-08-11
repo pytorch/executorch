@@ -115,11 +115,11 @@ void resize_out_tensor(const Tensor& self, const Tensor& mat2, Tensor& out) {
 
 // bmm.out(Tensor self, Tensor mat2, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& bmm_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     const Tensor& mat2,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
   resize_out_tensor(self, mat2, out);
   check_bmm_out_args(self, mat2, out);
   ET_CHECK_SAME_DTYPE3(self, mat2, out);

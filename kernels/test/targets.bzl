@@ -190,6 +190,7 @@ def define_common_targets():
     _common_op_test("op_detach_copy_test", ["aten", "portable"])
     _common_op_test("op_div_test", ["aten", "portable", "optimized"])
     _common_op_test("op_embedding_test", ["aten", "portable"])
+    _common_op_test("op_empty_test", ["aten", "portable"])
     _common_op_test("op_eq_test", ["aten", "portable"])
     _common_op_test("op_erf_test", ["aten", "portable"])
     _common_op_test("op_exp_test", ["aten", "portable", "optimized"])

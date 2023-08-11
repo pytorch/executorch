@@ -44,11 +44,11 @@ using Tensor = exec_aten::Tensor;
 
 // repeat.out(Tensor self, int[] repeats, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& repeat_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& self,
     exec_aten::ArrayRef<int64_t> repeats,
     Tensor& out) {
-  (void)context;
+  (void)ctx;
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
   calculate_output_size(self.sizes(), repeats, expected_output_size);
   auto error = resize_tensor(out, {expected_output_size, repeats.size()});

@@ -156,12 +156,12 @@ void check_args(
  * Tensor(a!)[] out) -> ()
  */
 void split_copy_Tensor_out(
-    RuntimeContext& context,
+    RuntimeContext& ctx,
     const Tensor& input,
     int64_t split_size,
     int64_t dim,
     TensorList out) {
-  (void)context;
+  (void)ctx;
   // Support python-style negative indexing.
   if (dim < 0) {
     dim += input.dim();

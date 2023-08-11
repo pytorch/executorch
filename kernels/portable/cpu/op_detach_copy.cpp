@@ -22,9 +22,8 @@ namespace {} // namespace
  * Copy the tener `self` to `out`, assume `self` and `out` have same type and
  * shape
  */
-Tensor&
-detach_copy_out(RuntimeContext& context, const Tensor& self, Tensor& out) {
-  (void)context;
+Tensor& detach_copy_out(RuntimeContext& ctx, const Tensor& self, Tensor& out) {
+  (void)ctx;
 
   torch::executor::Error err = resize_tensor(out, self.sizes());
   ET_CHECK_MSG(
