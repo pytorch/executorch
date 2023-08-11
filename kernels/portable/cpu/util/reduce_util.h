@@ -197,8 +197,12 @@ void apply_over_dim(
     return;
   }
 
-  if (dim.has_value()) {
+  if (in.dim() != 0) {
     ET_CHECK_VALID_DIM(dim.value(), in.dim());
+  } else {
+    ET_CHECK(dim.value() == 0 || dim.value() == -1);
+    fn(in.numel(), 1, 0);
+    return;
   }
 
   if (in.numel() == 0) {
@@ -304,8 +308,8 @@ void apply_over_dim_list(
   const size_t ustart = std::max(normalized_start, size_t(0));
   const size_t uend = std::min(normalized_end, iter_length - 1);
 
-  // If dim_list is null or empty, iterate over the entire tensor
-  if (!dim_list.has_value() || dim_list.value().size() == 0) {
+  // If dim_list is null or empty, or in is 0-D, iterate over the entire tensor
+  if (!dim_list.has_value() || dim_list.value().size() == 0 || in.dim() == 0) {
     apply_on_flat_ix_with_stride_and_base(
         fn, /*stride=*/1, /*base=*/0, ustart, uend);
     return;
@@ -539,7 +543,10 @@ inline ssize_t compute_reduced_out_dim(
     const exec_aten::Tensor& in,
     const exec_aten::optional<int64_t>& dim,
     bool keepdim) {
-  return (keepdim ? in.dim() : dim.has_value() ? in.dim() - 1 : 0);
+  return (
+      keepdim                                ? in.dim()
+          : dim.has_value() && in.dim() != 0 ? in.dim() - 1
+                                             : 0);
 }
 
 inline ssize_t compute_reduced_out_dim(
@@ -548,7 +555,9 @@ inline ssize_t compute_reduced_out_dim(
     bool keepdim) {
   return (
       keepdim ? in.dim()
-          : dim_list.has_value() && dim_list.value().size() != 0
+          : dim_list.has_value() && dim_list.value().size() != 0 &&
+              in.dim() != 0
+
           ? in.dim() - dim_list.value().size()
           : 0);
 }

@@ -127,6 +127,26 @@ TEST(ReduceUtilTest, ApplyOverDimListNull) {
   EXPECT_TENSOR_EQ(in, tf.zeros({2, 4, 5, 3}));
 }
 
+TEST(ReduceUtilTest, ApplyOverZeroDimListEmpty) {
+  TensorFactory<ScalarType::Long> tf;
+  optional<ArrayRef<int64_t>> null_dim_list;
+
+  Tensor in = tf.ones({});
+  _apply_over_dim_list(in, null_dim_list);
+  EXPECT_TENSOR_EQ(in, tf.zeros({}));
+}
+
+TEST(ReduceUtilTest, ApplyOverZeroDim) {
+  TensorFactory<ScalarType::Long> tf;
+  optional<ArrayRef<int64_t>> dim_list;
+  int64_t dim_array_0[1] = {0};
+  dim_list = optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_0, 1});
+
+  Tensor in = tf.ones({});
+  _apply_over_dim_list(in, dim_list);
+  EXPECT_TENSOR_EQ(in, tf.zeros({}));
+}
+
 TEST(ReduceUtilTest, ApplyOverDimListEmpty) {
   TensorFactory<ScalarType::Long> tf;
   optional<ArrayRef<int64_t>> empty_dim_list{ArrayRef<int64_t>{}};
@@ -446,7 +466,8 @@ TEST(ReduceUtilTest, ApplyOnZeroDimTensorOverDimListNonEmpty) {
       optional<ArrayRef<int64_t>>(ArrayRef<int64_t>{dim_array_0, 1});
 
   Tensor in = tf.ones({});
-  ET_EXPECT_DEATH(_apply_over_dim_list(in, dim_list), "");
+  _apply_over_dim_list(in, dim_list), "";
+  EXPECT_TENSOR_EQ(in, tf.make({}, {0}));
 }
 
 TEST(ReduceUtilTest, ApplyOnEmptyTensorOverDim) {
