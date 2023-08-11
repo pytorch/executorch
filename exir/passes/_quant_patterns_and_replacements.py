@@ -478,12 +478,58 @@ def _get_embedding_ops_patterns_and_replacements() -> List[
             )
             return out
 
+        @bind_pattern_to_op(quantized_decomposed_lib, "embedding_byte")
+        def pattern_with_padding_idx(
+            weight,
+            weight_scales,
+            weight_zero_points,
+            weight_quant_min,
+            weight_quant_max,
+            indicies,
+            padding_idx,
+        ):
+            weight = torch.ops.quantized_decomposed.dequantize_per_channel.default(
+                weight,
+                weight_scales,
+                weight_zero_points,
+                0,
+                weight_quant_min,
+                weight_quant_max,
+                torch.uint8,
+            )
+            out = torch.ops.aten.embedding.default(weight, indicies, padding_idx)
+            return out
+
+        def replacement_with_padding_idx(
+            weight,
+            weight_scales,
+            weight_zero_points,
+            weight_quant_min,
+            weight_quant_max,
+            indicies,
+            _,  # padding_idx only matters for training and not when running op for inference
+        ):
+            out = torch.ops.quantized_decomposed.embedding_byte.default(
+                weight,
+                weight_scales,
+                weight_zero_points,
+                weight_quant_min,
+                weight_quant_max,
+                indicies,
+            )
+            return out
+
         return [
             (
                 _trace_and_lower_to_edge_ops(pattern),
                 _trace_and_lower_to_edge_ops(replacement),
                 [],
-            )
+            ),
+            (
+                _trace_and_lower_to_edge_ops(pattern_with_padding_idx),
+                _trace_and_lower_to_edge_ops(replacement_with_padding_idx),
+                [],
+            ),
         ]
 
     patterns_and_replacements = []
