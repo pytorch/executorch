@@ -15,7 +15,7 @@ from ..models import MODEL_NAME_TO_MODEL
 from .utils import _CAPTURE_CONFIG, _EDGE_COMPILE_CONFIG
 
 
-def export_to_ff(model_name, model, example_inputs):
+def export_to_pte(model_name, model, example_inputs):
     m = model.eval()
     edge = exir.capture(m, example_inputs, _CAPTURE_CONFIG).to_edge(
         _EDGE_COMPILE_CONFIG
@@ -51,4 +51,4 @@ if __name__ == "__main__":
 
     model, example_inputs = MODEL_NAME_TO_MODEL[args.model_name]()
 
-    export_to_ff(args.model_name, model, example_inputs)
+    export_to_pte(args.model_name, model, example_inputs)
