@@ -14,6 +14,7 @@ from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
 )
 from executorch.backends.xnnpack.passes.prelu_reshape_pass import PReLUReshapePass
 from executorch.backends.xnnpack.passes.remove_getitem_op import RemoveGetItemPass
+from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 
 from executorch.exir.passes import PassManager
 from executorch.exir.passes.const_prop_pass import ConstPropPass
@@ -27,5 +28,6 @@ xnnpack_delegation_passes = PassManager(
         Conv1dUnsqueezePass(),
         PReLUReshapePass(),
         ChannelsLastTaggedReshapePass(),
+        TagImplicitQDqPass(),
     ]
 )

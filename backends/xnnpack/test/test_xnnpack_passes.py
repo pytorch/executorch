@@ -17,6 +17,7 @@ from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.xnnpack.passes.remove_getitem_op import RemoveGetItemPass
+from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 
 from executorch.backends.xnnpack.test.test_xnnpack_utils_classes import (
     OpSequencesAddConv2d,
@@ -26,6 +27,7 @@ from executorch.backends.xnnpack.utils.utils import capture_graph_for_xnnpack
 from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
     DuplicateDequantNodePass,
 )
+from executorch.exir.dialects._ops import ops as exir_ops
 from torch.ao.quantization.backend_config.executorch import (
     get_executorch_backend_config,
 )
@@ -446,3 +448,60 @@ class TestXNNPackPasses(unittest.TestCase):
                 1,
                 expected_node="executorch_exir_dialects_edge__ops_aten_linear_default",
             )
+
+    def test_tag_implicit_q_dq_pass(self):
+        class TestModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default(
+                    x, 0.12345, 0, -127, 127, torch.int8
+                )
+                x = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default(
+                    x, 0.12345, 0, -127, 127, torch.int8
+                )
+                x = torch.add(x, x)
+                x = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default(
+                    x, 0.12345, 0, -127, 127, torch.int8
+                )
+                x = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default(
+                    x, 0.12345, 0, -127, 127, torch.int8
+                )
+                x = torch.mul(x, x)
+                x = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default(
+                    x, 0.12345, 0, -127, 127, torch.int8
+                )
+                x = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default(
+                    x, 0.12345, 0, -127, 127, torch.int8
+                )
+                x = torch.add(x, x)
+                x = torch.mul(x, x)
+                return x
+
+        test_model = TestModule()
+        test_model.eval()
+
+        sample_inputs = (torch.randn(2, 3),)
+
+        edge_program = capture_graph_for_xnnpack(test_model, sample_inputs)
+
+        tag_pass = TagImplicitQDqPass()
+        tagged_graph = tag_pass(
+            edge_program.exported_program.graph_module
+        ).graph_module.graph
+
+        # The six tagged nodes are:
+        # 1) The dq of the first add input
+        # 2) The dq of the second add input
+        # 3) The q of the add output
+        # 4) The dq of the first mul input
+        # 5) The dq of the second mul input
+        # 6) The q of the mul output
+        self.assertEqual(
+            sum(
+                node.meta.get(TagImplicitQDqPass.IS_IMPLICIT_Q_DQ_TAG, False)
+                for node in tagged_graph.nodes
+            ),
+            6,
+        )
