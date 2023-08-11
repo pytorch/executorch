@@ -126,7 +126,8 @@ add_subdirectory(third-party/gflags)
 #
 # Use LLVM linker if possible
 #
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+    AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
   add_link_options("-fuse-ld=lld")
 endif()
 
