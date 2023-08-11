@@ -645,8 +645,6 @@ class TestEmit(unittest.TestCase):
             len(program.execution_plan[0].chains[0].instructions[1].instr_args.args), 4
         )
 
-    # UpsampleNearest is incorrectly decomposed
-    @unittest.expectedFailure
     def test_optional_float_list(self) -> None:
         class M(torch.nn.Module):
             def __init__(self):
