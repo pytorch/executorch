@@ -124,14 +124,6 @@ add_subdirectory(third-party/flatbuffers)
 add_subdirectory(third-party/gflags)
 
 #
-# Use LLVM linker if possible
-#
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
-    AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-  add_link_options("-fuse-ld=lld")
-endif()
-
-#
 # program_schema: Generated .h files from schema/*.fbs inputs
 #
 
@@ -266,20 +258,9 @@ target_link_libraries(portable_kernels_bindings PRIVATE executorch)
 target_link_libraries(portable_kernels_bindings INTERFACE portable_kernels)
 
 # Ensure that the load-time constructor functions run. By default, the linker
-# would remove them since there are no other references to them.
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL
-                                             "AppleClang")
-  if(CMAKE_TOOLCHAIN_FILE MATCHES ".*android\.toolchain\.cmake$")
-    # For Android tool chain
-    gcc_kernel_link_options(portable_kernels_bindings)
-  else()
-    # For host tool chain
-    clang_kernel_link_options(portable_kernels_bindings)
-  endif()
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  # Using gcc
-  gcc_kernel_link_options(portable_kernels_bindings)
-endif()
+# would remove them since there are no other references to them. The --whole-archive
+# linker option works with both GNU ld and LLVM LLD
+gcc_kernel_link_options(portable_kernels_bindings)
 
 #
 # executor_runner: A simple commandline tool that loads and runs a program file.
