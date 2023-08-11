@@ -18,7 +18,7 @@ It's an app to use MobileNet with Executorch. In XCode, the layout is as followi
 
 and UI looks like
 
-![](./executorch_mobilenet_xcode.png)
+![](./executorch_mobilenet_ui.png)
 
 Step 1. Export a MobileNetV2 model following example follwing executorch/examples/export/export_example.py. Instead of export mv2 directly, add a softmax at the end
 ```python
