@@ -258,13 +258,7 @@ def exir_custom_ops_aot_lib(
             # @lint-ignore BUCKLINT link_whole
             link_whole = True,
             visibility = visibility,
-            deps = [
-                "//executorch/runtime/core/exec_aten:lib_aten",
-                "//executorch/codegen:macros",
-            ] + kernels + deps,
-            exported_deps = [
-                "//executorch/runtime/kernel:kernel_runtime_context_aten",
-            ],
+            deps = kernels + deps,
             external_deps = ["libtorch"],
             define_static_target = define_static_target,
             # Relax visibility restrictions since deps may include targets
