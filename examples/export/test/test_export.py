@@ -27,14 +27,14 @@ class ExportTest(unittest.TestCase):
             _EDGE_COMPILE_CONFIG
         )
 
-        executorch_model = edge_model.to_executorch()
+        executorch_prog = edge_model.to_executorch()
         # pyre-ignore
-        pte_model = _load_for_executorch_from_buffer(executorch_model.buffer)
+        pte_model = _load_for_executorch_from_buffer(executorch_prog.buffer)
 
         with torch.no_grad():
             eager_output = eager_model(*example_inputs)
         with torch.no_grad():
-            executorch_output = pte_model.forward(example_inputs)
+            executorch_output = pte_model.run_method("forward", example_inputs)
 
         if isinstance(eager_output, tuple):
             # TODO: Allow validating other items
@@ -62,6 +62,12 @@ class ExportTest(unittest.TestCase):
 
     def test_emformer_export_to_executorch(self):
         eager_model, example_inputs = MODEL_NAME_TO_MODEL["emformer"]()
+        eager_model = eager_model.eval()
+
+        self._assert_eager_lowered_same_result(eager_model, example_inputs)
+
+    def test_vit_export_to_executorch(self):
+        eager_model, example_inputs = MODEL_NAME_TO_MODEL["vit"]()
         eager_model = eager_model.eval()
 
         self._assert_eager_lowered_same_result(eager_model, example_inputs)
