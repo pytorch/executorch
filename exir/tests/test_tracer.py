@@ -35,7 +35,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
     def test_simple(self) -> None:
         f = models.BasicSinMax()
         f = (
-            exir.capture(f, f.get_random_inputs(), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, f.get_random_inputs(), exir.CaptureConfig())
             .to_edge()
             .exported_program.graph_module
         )
@@ -54,7 +54,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         pred = True
         x = torch.randn(100)
         f_true = (
-            exir.capture(f, (pred, x), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, (pred, x), exir.CaptureConfig())
             .to_edge()
             .exported_program.graph_module
         )
@@ -65,7 +65,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
 
         pred = False
         f_false = (
-            exir.capture(f, (pred, x), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, (pred, x), exir.CaptureConfig())
             .to_edge()
             .exported_program.graph_module
         )
@@ -76,7 +76,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
     def test_copy(self) -> None:
         f = models.BasicSinMax()
         f = (
-            exir.capture(f, f.get_random_inputs(), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, f.get_random_inputs(), exir.CaptureConfig())
             .to_edge()
             .exported_program.graph_module
         )
@@ -90,7 +90,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             return x + x
 
         traced_f = (
-            exir.capture(f, (torch.rand(2, 2),), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, (torch.rand(2, 2),), exir.CaptureConfig())
             .to_edge()
             .exported_program.graph_module
         )
@@ -110,9 +110,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             SpecViolationError,
             r"operator .* is not functional",
         ):
-            exir.capture(
-                f, (torch.zeros(5),), exir.CaptureConfig(pt2_mode=True)
-            ).to_edge()
+            exir.capture(f, (torch.zeros(5),), exir.CaptureConfig()).to_edge()
 
     def test_tensor_spec_for_const_tensors(self) -> None:
         class Module(torch.nn.Module):
@@ -128,9 +126,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
 
         model = Module()
         graph_module = (
-            exir.capture(
-                model, model.get_random_inputs(), exir.CaptureConfig(pt2_mode=True)
-            )
+            exir.capture(model, model.get_random_inputs(), exir.CaptureConfig())
             # torch._ops.aten.t.default
             .to_edge(
                 exir.EdgeCompileConfig(_check_ir_validity=False)
@@ -153,7 +149,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
 
         cnt = 0
         module = (
-            exir.capture(f, (torch.zeros(1, 2, 3),), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, (torch.zeros(1, 2, 3),), exir.CaptureConfig())
             .to_edge()
             .exported_program.graph_module
         )
@@ -175,7 +171,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             exir.capture(
                 f,
                 inputs,
-                exir.CaptureConfig(pt2_mode=True),
+                exir.CaptureConfig(),
             )
             .to_edge()
             .exported_program.graph_module
@@ -218,7 +214,6 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
                 m,
                 (example_input,),
                 exir.CaptureConfig(
-                    pt2_mode=True,
                     enable_functionalization=False,
                     enable_dynamic_shape=True,
                 ),
@@ -239,7 +234,6 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
                 forward,
                 (torch.ones(3, 2, dtype=torch.int64),),
                 exir.CaptureConfig(
-                    pt2_mode=True,
                     enable_functionalization=False,
                     enable_dynamic_shape=True,
                 ),
@@ -270,7 +264,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
 
         with using_dynamo(True):
             inp = ((torch.ones(6), (torch.ones(6), torch.ones(6))),)
-            gm = exir.capture(Module(), inp, exir.CaptureConfig(pt2_mode=True))
+            gm = exir.capture(Module(), inp, exir.CaptureConfig())
             self.assertTrue(torch.allclose(Module()(*inp), gm(*inp)))
 
     # TODO (tmanlaibaatar) remove this test
@@ -296,7 +290,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         # pyre-fixme[23]: Unable to unpack `(...) -> Tuple[GraphModule,
         #  Set[torch._guards.Guard]]` into 2 values.
         gm, _ = torch._dynamo.export(f, *inp, aten_graph=True, tracing_mode="symbolic")
-        prog = exir.capture(f, inp, config=exir.CaptureConfig(pt2_mode=True)).to_edge()
+        prog = exir.capture(f, inp, config=exir.CaptureConfig()).to_edge()
 
         self.assertEqual(prog(*inp), f(*inp))
 
@@ -337,7 +331,6 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
                 model,
                 example_inputs,
                 exir.CaptureConfig(
-                    pt2_mode=True,
                     enable_aot=True,
                 ),
             )
@@ -355,7 +348,6 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             new_model,
             example_inputs,
             exir.CaptureConfig(
-                pt2_mode=True,
                 enable_aot=True,
             ),
         )
@@ -380,7 +372,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
 
         dynamo_config = ExirDynamoConfig(assume_static_by_default=True)
         capture_config = exir.CaptureConfig(
-            pt2_mode=True, enable_dynamic_shape=True, _dynamo_config=dynamo_config
+            enable_dynamic_shape=True, _dynamo_config=dynamo_config
         )
         captured = exir.capture(
             foo, (torch.ones(6, 2), torch.ones(6, 3)), capture_config
@@ -405,7 +397,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             def forward(self, x):
                 return x.cos() + self.buffer.sum()
 
-        capture_config = exir.CaptureConfig(pt2_mode=True, enable_aot=True)
+        capture_config = exir.CaptureConfig(enable_aot=True)
         captured_gm = exir.capture(
             FooWithBuffer(), (torch.ones(6, 2),), capture_config
         ).exported_program.graph_module
@@ -441,7 +433,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         ep = exir.capture(
             Foo(),
             (torch.ones(6, 4),),
-            exir.CaptureConfig(enable_aot=True, pt2_mode=True, _unlift=True),
+            exir.CaptureConfig(enable_aot=True, _unlift=True),
         )
 
         self.assertTrue(torch.allclose(ep(torch.ones(6, 4)), Foo()(torch.ones(6, 4))))
@@ -459,7 +451,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         ep = exir.capture(
             FooContainerInputOutput(),
             (inp,),
-            CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True),
+            CaptureConfig(enable_aot=True, _unlift=True),
         )
         self.assertTrue(torch.allclose(ep(inp), FooContainerInputOutput()(inp)))
 
@@ -476,7 +468,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         ep = exir.capture(
             FooContainerInputOutputV2(),
             inp,
-            CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True),
+            CaptureConfig(enable_aot=True, _unlift=True),
         )
         self.assertTrue(torch.allclose(ep(*inp), FooContainerInputOutputV2()(*inp)))
 
@@ -507,7 +499,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         ep = exir.capture(
             Foo(),
             (inp,),
-            CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True),
+            CaptureConfig(enable_aot=True, _unlift=True),
         )
         self.assertTrue(torch.allclose(ep(torch.ones(6, 4)), Foo()(torch.ones(6, 4))))
 
@@ -544,7 +536,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         ep = exir.capture(
             Module(),
             (torch.tensor(True), inp),
-            CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True),
+            CaptureConfig(enable_aot=True, _unlift=True),
         )
 
         inp_test = torch.randn(3, 2, 1)

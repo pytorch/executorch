@@ -32,7 +32,7 @@ class TestArgValidator(unittest.TestCase):
         m = TestModel()
         inputs = (torch.randn(1, 3, 100, 100).to(dtype=torch.int),)
         egm = (
-            exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True))
+            exir.capture(m, inputs, exir.CaptureConfig())
             .to_edge(EdgeCompileConfig(_check_ir_validity=False))
             .exported_program.graph_module
         )
@@ -52,7 +52,7 @@ class TestArgValidator(unittest.TestCase):
 
         inputs = (torch.randn(1, 3, 100, 100).to(dtype=torch.bfloat16),)
         egm = (
-            exir.capture(M(), inputs, exir.CaptureConfig(pt2_mode=True))
+            exir.capture(M(), inputs, exir.CaptureConfig())
             .to_edge(EdgeCompileConfig(_check_ir_validity=False))
             .exported_program.graph_module
         )

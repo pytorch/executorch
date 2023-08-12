@@ -83,7 +83,7 @@ class TestQnnbackends(unittest.TestCase):
         )
 
         # Step 2: EXIR capturing
-        capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
+        capture_config = CaptureConfig(enable_dynamic_shape=False)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
         ).to_edge(EDGE_COMPILE_CONFIG)
@@ -115,9 +115,7 @@ class TestQnnbackends(unittest.TestCase):
 
         composite_model(*example_inputs)
         program = (
-            exir.capture(
-                composite_model, example_inputs, exir.CaptureConfig(pt2_mode=True)
-            )
+            exir.capture(composite_model, example_inputs, exir.CaptureConfig())
             .to_edge(EDGE_COMPILE_CONFIG)
             .to_executorch(config=EXECUTORCH_BACKEND_CONFIG)
             .program
@@ -159,7 +157,7 @@ class TestQnnbackends(unittest.TestCase):
         )
 
         # Step 2: EXIR capturing
-        capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
+        capture_config = CaptureConfig(enable_dynamic_shape=False)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
         ).to_edge(EDGE_COMPILE_CONFIG)
@@ -202,9 +200,7 @@ class TestQnnbackends(unittest.TestCase):
 
         composite_model(*example_inputs)
         program = (
-            exir.capture(
-                composite_model, example_inputs, exir.CaptureConfig(pt2_mode=True)
-            )
+            exir.capture(composite_model, example_inputs, exir.CaptureConfig())
             .to_edge(EDGE_COMPILE_CONFIG)
             .to_executorch(config=EXECUTORCH_BACKEND_CONFIG)
             .program
@@ -246,7 +242,7 @@ class TestQnnbackends(unittest.TestCase):
         )
 
         # Step 2: EXIR capturing
-        capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
+        capture_config = CaptureConfig(enable_dynamic_shape=False)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
         ).to_edge(EDGE_COMPILE_CONFIG)
@@ -321,7 +317,7 @@ class TestQnnbackends(unittest.TestCase):
         )
 
         # Step 2: EXIR capturing
-        capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
+        capture_config = CaptureConfig(enable_dynamic_shape=False)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
         ).to_edge(EDGE_COMPILE_CONFIG)
@@ -406,7 +402,7 @@ class TestQnnbackends(unittest.TestCase):
         )
 
         # Step 2: EXIR capturing
-        capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=True)
+        capture_config = CaptureConfig(enable_dynamic_shape=True)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
         ).to_edge(EDGE_COMPILE_CONFIG)
@@ -438,9 +434,7 @@ class TestQnnbackends(unittest.TestCase):
 
         composite_model(*example_inputs)
         program = (
-            exir.capture(
-                composite_model, example_inputs, exir.CaptureConfig(pt2_mode=True)
-            )
+            exir.capture(composite_model, example_inputs, exir.CaptureConfig())
             .to_edge(EDGE_COMPILE_CONFIG)
             .to_executorch(config=EXECUTORCH_BACKEND_CONFIG)
             .program
@@ -483,7 +477,7 @@ class TestQnnbackends(unittest.TestCase):
         )
 
         # Step 2: EXIR capturing
-        capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
+        capture_config = CaptureConfig(enable_dynamic_shape=False)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
         ).to_edge(EDGE_COMPILE_CONFIG)
@@ -538,7 +532,7 @@ class TestQnnbackends(unittest.TestCase):
         # composite_model(*example_inputs)
         # program = (
         #     exir.capture(
-        #         composite_model, example_inputs, exir.CaptureConfig(pt2_mode=True)
+        #         composite_model, example_inputs, exir.CaptureConfig()
         #     )
         #     .to_edge(EDGE_COMPILE_CONFIG)
         #     .to_executorch()

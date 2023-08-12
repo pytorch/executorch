@@ -61,9 +61,7 @@ class TestBackends(unittest.TestCase):
         the given sample inputs. It then runs the lowered module and compares its
         outputs with the outputs of the eager module.
         """
-        edgeir_m = exir.capture(
-            module, sample_inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge()
+        edgeir_m = exir.capture(module, sample_inputs, exir.CaptureConfig()).to_edge()
         lowered_module = to_backend("VulkanBackend", edgeir_m.exported_program, [])
 
         class WrappedModule(torch.nn.Module):
@@ -75,9 +73,7 @@ class TestBackends(unittest.TestCase):
                 return self.one_module(*args)
 
         program = (
-            exir.capture(
-                WrappedModule(), sample_inputs, exir.CaptureConfig(pt2_mode=True)
-            )
+            exir.capture(WrappedModule(), sample_inputs, exir.CaptureConfig())
             .to_edge()
             .to_executorch()
             .program

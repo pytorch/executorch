@@ -200,7 +200,7 @@ class TestNestedBackends(unittest.TestCase):
         orig = exir.capture(
             m,
             m.get_example_inputs(),
-            exir.CaptureConfig(pt2_mode=True),
+            exir.CaptureConfig(),
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
 
         partitioned = orig

@@ -40,7 +40,7 @@ class EXIRATenDialectVerifier(ATenDialectVerifier):
         return builtin_funcs
 
     # TODO(angelayi): Delete this function when we migrate all tests to
-    # pt2_mode=True because right now old tracer does not add ["val"] metadata
+    #  because right now old tracer does not add ["val"] metadata
     def check_valid(self, gm: GraphModule) -> None:  # noqa: C901
 
         for node in gm.graph.nodes:

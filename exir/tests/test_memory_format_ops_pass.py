@@ -46,7 +46,7 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             before = exir.capture(
                 module,
                 sample_input,
-                CaptureConfig(pt2_mode=True, enable_dynamic_shape=True),
+                CaptureConfig(enable_dynamic_shape=True),
             )
 
             # check op strings before

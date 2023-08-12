@@ -73,9 +73,7 @@ def create_program(
     # These cleanup passes are required to convert the `add` op to its out
     # variant, along with some other transformations.
     exec_prog = (
-        exir.capture_multiple(
-            eager_module, input_map, config=CaptureConfig(pt2_mode=True)
-        )
+        exir.capture_multiple(eager_module, input_map, config=CaptureConfig())
         .to_edge()
         .to_executorch()
     )

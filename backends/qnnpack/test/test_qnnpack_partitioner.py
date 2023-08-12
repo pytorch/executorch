@@ -54,7 +54,7 @@ def get_actual_dyanmic_quantized_graph(
     converted_mod = _convert_to_reference_decomposed_fx(prepared_mod)
 
     # Step 2: EXIR capturing
-    capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=dynamic_shape)
+    capture_config = CaptureConfig(enable_dynamic_shape=dynamic_shape)
     dynamic_quantized_exir_graph = (
         exir.capture(converted_mod, example_inputs, config=capture_config)
         .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))

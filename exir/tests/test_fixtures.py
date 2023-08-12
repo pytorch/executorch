@@ -53,7 +53,7 @@ def export_to_file(m: Any, inputs: Any) -> bytes:
     Given a module and its inputs, return the json flatbuffer of that module.
     """
     exec_prog = (
-        exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True))
+        exir.capture(m, inputs, exir.CaptureConfig())
         .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         .to_executorch()
     )

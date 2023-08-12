@@ -81,7 +81,7 @@ class TestXnnQnnBackends(unittest.TestCase):
         )
 
         # Step 2: EXIR capturing
-        capture_config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=False)
+        capture_config = CaptureConfig(enable_dynamic_shape=False)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
         ).to_edge(

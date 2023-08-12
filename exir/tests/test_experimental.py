@@ -40,9 +40,7 @@ class TestExperimental(unittest.TestCase):
 
         x = (torch.randn(100),)
         edge_gm = (
-            exir.capture(f, x, CaptureConfig(pt2_mode=True))
-            .to_edge()
-            .exported_program.graph_module
+            exir.capture(f, x, CaptureConfig()).to_edge().exported_program.graph_module
         )
         validation_f = add_assertions(edge_gm)
 
