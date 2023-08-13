@@ -7,4 +7,9 @@
 - func: my_ops::mul3.out(Tensor input, *, Tensor(a!) output) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: custom::mul3_out_impl # sub-namespace native:: is auto-added
+      kernel_name: custom::mul3_out_impl # custom_op_1.cpp, sub-namespace native:: is auto-added
+
+- func: my_ops::mul4.out(Tensor input, *, Tensor(a!) output) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: custom::mul4_out_impl # custom_op_2.cpp
