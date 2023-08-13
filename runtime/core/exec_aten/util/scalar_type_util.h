@@ -318,9 +318,10 @@ inline bool isComplexType(exec_aten::ScalarType t) {
 }
 
 inline bool isBitsType(exec_aten::ScalarType t) {
-  return t == ScalarType::Bits1x8 || t == ScalarType::Bits2x4 ||
-      t == ScalarType::Bits4x2 || t == ScalarType::Bits8 ||
-      t == ScalarType::Bits16;
+  return t == exec_aten::ScalarType::Bits1x8 ||
+      t == exec_aten::ScalarType::Bits2x4 ||
+      t == exec_aten::ScalarType::Bits4x2 ||
+      t == exec_aten::ScalarType::Bits8 || t == exec_aten::ScalarType::Bits16;
 }
 
 inline bool isQIntType(exec_aten::ScalarType t) {
