@@ -32,7 +32,12 @@ void check_preconditions(
     Tensor& out) {
   auto a_dim = a.dim();
   ET_CHECK_MSG(
-      a_dim > 0 && a_dim == out.dim(), "invalid rank of tensor a: %zd", a_dim);
+      a_dim >= 0 && a_dim == out.dim(), "invalid rank of tensor a: %zd", a_dim);
+  if (a_dim == 0) {
+    ET_CHECK(dim0 == 0 || dim0 == -1);
+    ET_CHECK(dim1 == 0 || dim1 == -1);
+    return;
+  }
   ET_CHECK_MSG(
       dim0 >= 0 && dim0 < a_dim,
       "dim0: %" PRId64 " out of bounds [0,%zd)",
