@@ -62,7 +62,7 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
             exir.capture(
                 LSTMConvPattern(),
                 (input_x, input_h, input_c),
-                exir.CaptureConfig(pt2_mode=True, enable_aot=True),
+                exir.CaptureConfig(enable_aot=True),
             )
             .to_edge(
                 # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
@@ -74,7 +74,7 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
             exir.capture(
                 LSTMConvPattern(),
                 (input_x, input_h, input_c),
-                exir.CaptureConfig(pt2_mode=True),
+                exir.CaptureConfig(),
             )
             .to_edge(
                 # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
@@ -90,7 +90,7 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
             exir.capture(
                 sub,
                 (input_x, input_h),
-                exir.CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=False),
+                exir.CaptureConfig(enable_aot=True, _unlift=False),
             )
             .to_edge(exir.EdgeCompileConfig(_use_edge_ops=True))
             .exported_program.graph_module
@@ -99,7 +99,7 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
             exir.capture(
                 sub,
                 (input_x, input_h),
-                exir.CaptureConfig(pt2_mode=True),
+                exir.CaptureConfig(),
             )
             .to_edge()
             .exported_program.graph_module
@@ -236,7 +236,7 @@ class HTAPartitionerOnePatternDemo(Partitioner):
             exir.capture(
                 LSTMConvPattern(),
                 (input_x, input_h, input_c),
-                exir.CaptureConfig(pt2_mode=True, enable_aot=True),
+                exir.CaptureConfig(enable_aot=True),
             )
             .to_edge(
                 # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
@@ -248,7 +248,7 @@ class HTAPartitionerOnePatternDemo(Partitioner):
             exir.capture(
                 LSTMConvPattern(),
                 (input_x, input_h, input_c),
-                exir.CaptureConfig(pt2_mode=True),
+                exir.CaptureConfig(),
             )
             .to_edge(
                 # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.

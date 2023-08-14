@@ -46,7 +46,7 @@ class TestSerde(unittest.TestCase):
 
     # pyre-ignore
     def check_serde(self, m, inputs) -> None:
-        aten = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True))
+        aten = exir.capture(m, inputs, exir.CaptureConfig())
         aten_new = deserialize(*serialize(aten.exported_program))
         self.check_ep(aten.exported_program, aten_new, inputs)
 
@@ -114,7 +114,7 @@ class TestSerde(unittest.TestCase):
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
         edgeir_m = exir.capture(
-            sin_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
+            sin_module, model_inputs, exir.CaptureConfig()
         ).to_edge()
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
@@ -135,9 +135,7 @@ class TestSerde(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        aten = exir.capture(
-            composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
-        )
+        aten = exir.capture(composite_model, model_inputs, exir.CaptureConfig())
         aten_new = deserialize(*serialize(aten.exported_program))
         self.check_ep(aten.exported_program, aten_new, model_inputs)
 
@@ -157,7 +155,7 @@ class TestSerde(unittest.TestCase):
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
 
-        ep = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
+        ep = exir.capture(m, inputs, exir.CaptureConfig()).to_edge()
         edge = to_backend(ep.exported_program, AddMulPartitionerDemo)
         edge_new = deserialize(*serialize(edge))
         self.check_ep(edge, edge_new, inputs)
@@ -174,6 +172,6 @@ class TestSerde(unittest.TestCase):
         m = Model()
         inputs = (torch.tensor([1, 1]),)
 
-        edge = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
+        edge = exir.capture(m, inputs, exir.CaptureConfig()).to_edge()
         edge_new = deserialize(*serialize(edge.exported_program))
         self.check_ep(edge, edge_new, inputs)

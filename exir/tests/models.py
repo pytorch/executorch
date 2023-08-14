@@ -151,7 +151,7 @@ class CompositeDelegateModule(torch.nn.Module):
         edge_ir_m = exir.capture(
             delegated_m,
             delegated_m.get_random_inputs(),
-            exir.CaptureConfig(pt2_mode=True),
+            exir.CaptureConfig(),
         ).to_edge()
         lowered_module = LoweredBackendModule(
             edge_program=edge_ir_m,

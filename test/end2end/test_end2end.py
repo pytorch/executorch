@@ -653,7 +653,6 @@ class E2ETest(unittest.TestCase):
     test_mem_planning_toy_model = maketest(
         ToyModelForMemPlanning,
         capture_config=exir.CaptureConfig(
-            pt2_mode=True,
             enable_dynamic_shape=True,
         ),
     )
@@ -671,7 +670,6 @@ class E2ETest(unittest.TestCase):
         ModuleContainers,
         do_tree_flatten=True,
         capture_config=exir.CaptureConfig(
-            pt2_mode=True,
             enable_dynamic_shape=True,
         ),
     )
@@ -722,7 +720,6 @@ class DynamicModelE2ETest(unittest.TestCase):
         # with upperbound shape and may not match the actual shape.
         run_graph_module=False,
         capture_config=exir.CaptureConfig(
-            pt2_mode=True,
             enable_dynamic_shape=True,
             # enable_functionalization=False,  # TODO enable functionalization
         ),
@@ -736,7 +733,6 @@ class DynamicModelE2ETest(unittest.TestCase):
             run_graph_module=False,
             allow_non_contiguous_tensor=True,
             capture_config=exir.CaptureConfig(
-                pt2_mode=True,
                 enable_dynamic_shape=True,
             ),
         )
@@ -756,7 +752,6 @@ class DynamicModelE2ETest(unittest.TestCase):
     test_ft_cond_basic = maketest(
         FTCondBasic,
         capture_config=exir.CaptureConfig(
-            pt2_mode=True,
             enable_dynamic_shape=True,
             enable_functionalization=False,  # TODO enable functionalization
         ),
@@ -766,7 +761,6 @@ class DynamicModelE2ETest(unittest.TestCase):
         maketest(
             FTMapBasic,
             capture_config=exir.CaptureConfig(
-                pt2_mode=True,
                 enable_dynamic_shape=True,
                 enable_functionalization=False,  # TODO enable functionalization
             ),
@@ -776,7 +770,6 @@ class DynamicModelE2ETest(unittest.TestCase):
     test_ft_cond_dynshape = maketest(
         FTCondDynShape,
         capture_config=exir.CaptureConfig(
-            pt2_mode=True,
             enable_dynamic_shape=True,
             enable_functionalization=False,  # TODO enable functionalization
         ),
@@ -786,7 +779,6 @@ class DynamicModelE2ETest(unittest.TestCase):
         maketest(
             FTMapDynShape,
             capture_config=exir.CaptureConfig(
-                pt2_mode=True,
                 enable_dynamic_shape=True,
                 enable_functionalization=False,  # TODO enable functionalization
             ),
@@ -796,7 +788,6 @@ class DynamicModelE2ETest(unittest.TestCase):
     test_batch_norm = maketest(
         BatchNormModel,
         capture_config=exir.CaptureConfig(
-            pt2_mode=True,
             enable_dynamic_shape=True,
         ),
         verify_graph=BatchNormModel.verify_graph,
@@ -843,7 +834,6 @@ class BundledProgramE2ETest(unittest.TestCase):
         run_graph_module=False,
         bundled_io=True,
         capture_config=exir.CaptureConfig(
-            pt2_mode=True,
             enable_dynamic_shape=True,
         ),
     )

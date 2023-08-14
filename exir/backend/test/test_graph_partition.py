@@ -23,9 +23,7 @@ class TestGraphPartition(unittest.TestCase):
     def get_graph_module(
         self, module: torch.nn.Module, inputs: Tuple[torch.Tensor]
     ) -> torch.fx.GraphModule:
-        capture_config = CaptureConfig(
-            pt2_mode=True,
-        )
+        capture_config = CaptureConfig()
         graph_module = (
             exir.capture(module, inputs, capture_config)
             .to_edge(

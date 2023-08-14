@@ -23,9 +23,7 @@ class TestCapture(unittest.TestCase):
         inputs = model.get_random_inputs()
         expected = model(*inputs)
         # TODO(ycao): Replace it with capture_multiple
-        exported_program = exir.capture(
-            model, inputs, exir.CaptureConfig(pt2_mode=True)
-        )
+        exported_program = exir.capture(model, inputs, exir.CaptureConfig())
 
         self.assertTrue(torch.allclose(expected, exported_program(*inputs)))
 

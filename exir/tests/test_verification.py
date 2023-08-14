@@ -27,7 +27,7 @@ class TestVerification(unittest.TestCase):
 
         # Generate program
         program = (
-            exir.capture(f, (torch.randn(2),), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, (torch.randn(2),), exir.CaptureConfig())
             .to_edge(exir.EdgeCompileConfig(passes=[ConstPropPass()]))
             .to_executorch()
             .program
@@ -78,7 +78,7 @@ class TestVerification(unittest.TestCase):
         model1 = Op1()
         inputs = (torch.ones(2, 2),)
         program = (
-            exir.capture(model1, inputs, exir.CaptureConfig(pt2_mode=True))
+            exir.capture(model1, inputs, exir.CaptureConfig())
             .to_edge()
             .to_executorch(ExecutorchBackendConfig(to_out_var_pass=ToOutVarPass(True)))
             .program
@@ -95,7 +95,7 @@ class TestVerification(unittest.TestCase):
         model2 = Op2()
         inputs = (torch.ones(2, 2),)
         program = (
-            exir.capture(model2, inputs, exir.CaptureConfig(pt2_mode=True))
+            exir.capture(model2, inputs, exir.CaptureConfig())
             .to_edge()
             .to_executorch()
             .program
@@ -130,7 +130,7 @@ class TestVerification(unittest.TestCase):
         model2 = Op2()
         inputs = torch.ones(2, 2)
         exec_prog = (
-            exir.capture(model2, (inputs,), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(model2, (inputs,), exir.CaptureConfig())
             .to_edge()
             .to_executorch()
         )
@@ -159,7 +159,7 @@ class TestVerification(unittest.TestCase):
             exir.capture(
                 m,
                 (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
-                exir.CaptureConfig(pt2_mode=True),
+                exir.CaptureConfig(),
             )
             .to_edge()
             .exported_program.graph_module
@@ -182,7 +182,7 @@ class TestVerification(unittest.TestCase):
             exir.capture(
                 m,
                 (torch.rand(16, 8, 32, 32), torch.rand(8), torch.rand(8)),
-                exir.CaptureConfig(pt2_mode=True),
+                exir.CaptureConfig(),
             )
             .to_edge()
             .exported_program.graph_module
@@ -204,7 +204,7 @@ class TestVerification(unittest.TestCase):
             exir.capture(
                 m,
                 ([],),
-                exir.CaptureConfig(pt2_mode=True),
+                exir.CaptureConfig(),
             )
             .to_edge()
             .exported_program.graph_module
@@ -227,7 +227,7 @@ class TestVerification(unittest.TestCase):
         egm = exir.capture(
             m,
             (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
-            exir.CaptureConfig(pt2_mode=True),
+            exir.CaptureConfig(),
         ).exported_program.graph_module
         verifier = EXIREdgeDialectVerifier()
         with self.assertRaises(SpecViolationError):
@@ -246,7 +246,7 @@ class TestVerification(unittest.TestCase):
             exir.capture(
                 m,
                 (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
-                exir.CaptureConfig(pt2_mode=True),
+                exir.CaptureConfig(),
             )
             .to_edge(EdgeCompileConfig())
             .exported_program.graph_module
@@ -263,7 +263,7 @@ class TestVerification(unittest.TestCase):
                 exir.capture(
                     m,
                     (torch.randn(1, 3, 100, 100).to(dtype=torch.bfloat16),),
-                    exir.CaptureConfig(pt2_mode=True),
+                    exir.CaptureConfig(),
                 )
                 .to_edge()
                 .exported_program.graph_module

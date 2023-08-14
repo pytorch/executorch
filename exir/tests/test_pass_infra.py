@@ -104,7 +104,7 @@ class TestPassInfra(unittest.TestCase):
             return z
 
         f = (
-            exir.capture(f, (torch.randn(10),), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, (torch.randn(10),), exir.CaptureConfig())
             .to_edge()
             .exported_program.graph_module
         )
@@ -149,7 +149,7 @@ class TestPassInfra(unittest.TestCase):
             return z
 
         traced_f1 = (
-            exir.capture(f, (torch.randn(10),), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, (torch.randn(10),), exir.CaptureConfig())
             .to_edge()
             .exported_program.graph_module
         )
@@ -166,7 +166,7 @@ class TestPassInfra(unittest.TestCase):
 
         sample_inputs = (torch.randn(1, 3), torch.randn(1, 3))
         gm = exir.capture(
-            f, sample_inputs, exir.CaptureConfig(pt2_mode=True)
+            f, sample_inputs, exir.CaptureConfig()
         ).exported_program.graph_module
 
         pass_result = ScalarToTensorPass()(gm)

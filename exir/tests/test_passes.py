@@ -104,7 +104,7 @@ class TestPasses(unittest.TestCase):
         int_tensor = torch.tensor([[1, 2, 3]])
         float_tensor = torch.tensor([[1.0, 2.0, 3.0]])
         edge_prog = exir.capture(
-            add, (int_tensor, float_tensor), exir.CaptureConfig(pt2_mode=True)
+            add, (int_tensor, float_tensor), exir.CaptureConfig()
         ).to_edge()
 
         new_prog = edge_prog.transform(RemoveMixedTypeOperators())
@@ -129,7 +129,7 @@ class TestPasses(unittest.TestCase):
         double_tensor = double_tensor.to(torch.double)
 
         double_prog = exir.capture(
-            add, (int_tensor, double_tensor), exir.CaptureConfig(pt2_mode=True)
+            add, (int_tensor, double_tensor), exir.CaptureConfig()
         ).to_edge()
 
         double_prog.transform(RemoveMixedTypeOperators())
@@ -155,7 +155,7 @@ class TestPasses(unittest.TestCase):
 
         float_tensor_vert = float_tensor.T
         mult_prog = exir.capture(
-            mult, (int_tensor, float_tensor_vert), exir.CaptureConfig(pt2_mode=True)
+            mult, (int_tensor, float_tensor_vert), exir.CaptureConfig()
         ).to_edge()
 
         # graph_module_mult.graph.print_tabular()
@@ -186,7 +186,7 @@ class TestPasses(unittest.TestCase):
         edge_prog = exir.capture(
             foo,
             (torch.ones(1, dtype=torch.float32),),
-            exir.CaptureConfig(pt2_mode=True),
+            exir.CaptureConfig(),
         ).to_edge()
         edge_prog = edge_prog.transform(RemoveNoopPass())
         self.assertIsNotNone(edge_prog.exported_program.graph_module)
@@ -207,9 +207,7 @@ class TestPasses(unittest.TestCase):
 
         # Turn off functionalization so that we can get the actual to.dtype op
         x = torch.ones((3, 8, 8))
-        prog = exir.capture(
-            foo_with_no_slice, (x,), exir.CaptureConfig(pt2_mode=True)
-        ).to_edge()
+        prog = exir.capture(foo_with_no_slice, (x,), exir.CaptureConfig()).to_edge()
         prog = prog.transform(RemoveNoopPass())
         new_graph_module = prog.exported_program.graph_module
         FileCheck().check_count(
@@ -219,7 +217,7 @@ class TestPasses(unittest.TestCase):
         prog = exir.capture(
             foo_with_one_slice,
             (x,),
-            exir.CaptureConfig(pt2_mode=True),
+            exir.CaptureConfig(),
         ).to_edge()
         prog = prog.transform(RemoveNoopPass())
         new_graph_module = prog.exported_program.graph_module
@@ -230,7 +228,7 @@ class TestPasses(unittest.TestCase):
         prog = exir.capture(
             foo_with_all_slices,
             (x,),
-            exir.CaptureConfig(pt2_mode=True),
+            exir.CaptureConfig(),
         ).to_edge()
         prog = prog.transform(RemoveNoopPass())
         new_graph_module = prog.exported_program.graph_module
@@ -244,9 +242,7 @@ class TestPasses(unittest.TestCase):
 
         x = (torch.randn(2, 3),)
 
-        exir.capture(
-            f, x, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge().exported_program.graph_module
+        exir.capture(f, x, exir.CaptureConfig()).to_edge().exported_program.graph_module
         # TODO(angelayi): Add a utility function that verifies a model is in
         # the edge dialect
 
@@ -274,7 +270,7 @@ class TestPasses(unittest.TestCase):
         composite_m = CompositeModel(3)
 
         edge_prog = (
-            exir.capture(composite_m, inputs, exir.CaptureConfig(pt2_mode=True))
+            exir.capture(composite_m, inputs, exir.CaptureConfig())
             # torch._ops.aten.t.default
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         )
@@ -308,7 +304,7 @@ class TestPasses(unittest.TestCase):
 
         model = MyModel()
         inputs = model.get_random_inputs()
-        prog = exir.capture(model, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge(
+        prog = exir.capture(model, inputs, exir.CaptureConfig()).to_edge(
             EdgeCompileConfig(_check_ir_validity=False)
         )  # TODO(larryliu): fix split_copy
         new_prog = prog.transform(ToOutVarPass())
@@ -338,7 +334,7 @@ class TestPasses(unittest.TestCase):
 
         model = MyModel()
         inputs = model.get_random_inputs()
-        prog = exir.capture(model, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge(
+        prog = exir.capture(model, inputs, exir.CaptureConfig()).to_edge(
             EdgeCompileConfig(_check_ir_validity=False)
         )  # TODO(larryliu): fix topk
 
@@ -367,9 +363,7 @@ class TestPasses(unittest.TestCase):
         inputs = torch.tensor(1.0, dtype=torch.float)
         model_res = model(inputs)
 
-        edge_dialect = exir.capture(
-            model, (inputs,), exir.CaptureConfig(pt2_mode=True)
-        ).to_edge()
+        edge_dialect = exir.capture(model, (inputs,), exir.CaptureConfig()).to_edge()
         edge_res = edge_dialect(inputs)
         self.assertTrue(torch.allclose(model_res, edge_res))
 
@@ -381,9 +375,7 @@ class TestPasses(unittest.TestCase):
         class NullPass(ExportPass):
             pass
 
-        prog = exir.capture(
-            f, (torch.ones(3, 2),), exir.CaptureConfig(pt2_mode=True)
-        ).to_edge(
+        prog = exir.capture(f, (torch.ones(3, 2),), exir.CaptureConfig()).to_edge(
             EdgeCompileConfig(_check_ir_validity=False)
         )  # TODO(larryliu): fix cat
         new_prog = prog.transform(NullPass())
@@ -412,7 +404,7 @@ class TestPasses(unittest.TestCase):
         prog = exir.capture(
             f,
             (torch.ones(3, 2),),
-            CaptureConfig(pt2_mode=True, enable_functionalization=False),
+            CaptureConfig(enable_functionalization=False),
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         new_prog = prog.transform(NullPass())
         new_nodes = new_prog.exported_program.graph_module.graph.nodes
@@ -448,9 +440,7 @@ class TestPasses(unittest.TestCase):
         graph_module = exir.capture(
             M(),
             (torch.zeros(2, 2, 3),),
-            CaptureConfig(
-                pt2_mode=True, enable_dynamic_shape=True, enable_functionalization=True
-            ),
+            CaptureConfig(enable_dynamic_shape=True, enable_functionalization=True),
         ).exported_program.graph_module
         self.assertEqual(count_additions(graph_module), 3)
 
@@ -463,9 +453,7 @@ class TestPasses(unittest.TestCase):
         def mul(x: torch.Tensor) -> torch.Tensor:
             return x * 3.14
 
-        expo_prog = exir.capture(
-            mul, (torch.ones(1),), exir.CaptureConfig(pt2_mode=True)
-        )
+        expo_prog = exir.capture(mul, (torch.ones(1),), exir.CaptureConfig())
         new_prog = expo_prog.transform(ScalarToTensorPass())
         self.assertIsNotNone(new_prog.exported_program.graph_module)
         new_graph_module = new_prog.exported_program.graph_module
@@ -492,7 +480,7 @@ class TestPasses(unittest.TestCase):
         gm = exir.capture(
             f,
             example_inputs,
-            exir.CaptureConfig(pt2_mode=True, enable_dynamic_shape=True),
+            exir.CaptureConfig(enable_dynamic_shape=True),
         )
         new_gm = gm.transform(
             ReplaceSymSizeOpPass(), ScalarToTensorPass(), RemoveMixedTypeOperators()
@@ -506,7 +494,7 @@ class TestPasses(unittest.TestCase):
             return x + x
 
         gm = exir.capture(
-            f, (torch.ones(3, 2),), exir.CaptureConfig(pt2_mode=True)
+            f, (torch.ones(3, 2),), exir.CaptureConfig()
         ).exported_program.graph_module
         new_gm = SpecPropPass()(gm)
         self.assertIsNotNone(new_gm)
@@ -525,7 +513,7 @@ class TestPasses(unittest.TestCase):
             return (x + x,)
 
         gm = exir.capture(
-            f, (torch.ones(3, 2),), exir.CaptureConfig(pt2_mode=True)
+            f, (torch.ones(3, 2),), exir.CaptureConfig()
         ).exported_program.graph_module
         new_gm = SpecPropPass()(gm)
         self.assertIsNotNone(new_gm)
@@ -549,7 +537,7 @@ class TestPasses(unittest.TestCase):
             return model(inp)
 
         # ReplaceBrokenOpsWithFunctionalOpsPass is used in to_edge()
-        prog = exir.capture(f, (x,), exir.CaptureConfig(pt2_mode=True)).to_edge(
+        prog = exir.capture(f, (x,), exir.CaptureConfig()).to_edge(
             exir.EdgeCompileConfig(_check_ir_validity=False)
         )
         gm = prog.exported_program.graph_module
@@ -570,7 +558,6 @@ class TestPasses(unittest.TestCase):
             f,
             (torch.ones(3, 2),),
             exir.CaptureConfig(
-                pt2_mode=True,
                 enable_functionalization=False,
                 enable_dynamic_shape=True,
             ),
@@ -594,7 +581,6 @@ class TestPasses(unittest.TestCase):
             eager_model,
             inputs,
             exir.CaptureConfig(
-                pt2_mode=True,
                 enable_dynamic_shape=True,
                 enable_functionalization=False,
             ),
@@ -643,7 +629,7 @@ class TestPasses(unittest.TestCase):
             eager_model,
             inputs,
             exir.CaptureConfig(
-                pt2_mode=True, enable_dynamic_shape=True, enable_functionalization=False
+                enable_dynamic_shape=True, enable_functionalization=False
             ),
         ).exported_program.graph_module
 
@@ -664,7 +650,6 @@ class TestPasses(unittest.TestCase):
                 f,
                 (torch.rand(5),),
                 config=CaptureConfig(
-                    pt2_mode=True,
                     enable_dynamic_shape=True,
                 ),
             )
@@ -699,7 +684,6 @@ class TestPasses(unittest.TestCase):
             f,
             (inp,),
             config=CaptureConfig(
-                pt2_mode=True,
                 enable_dynamic_shape=True,
             ),
         ).to_edge(
@@ -730,7 +714,7 @@ class TestPasses(unittest.TestCase):
             return x + x
 
         gm = (
-            exir.capture(f, (x,), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, (x,), exir.CaptureConfig())
             .to_edge()
             .exported_program.graph_module
         )
@@ -753,7 +737,7 @@ class TestPasses(unittest.TestCase):
                 torch.randn(2, 2),
                 torch.randn(2, 2),
             ),
-            exir.CaptureConfig(pt2_mode=True),
+            exir.CaptureConfig(),
         )
         # should look like:
         # graph():
@@ -816,7 +800,7 @@ class TestPasses(unittest.TestCase):
                 torch.randn(2, 2),
                 torch.randn(2, 2),
             ),
-            exir.CaptureConfig(pt2_mode=True),
+            exir.CaptureConfig(),
         )
         # Retrace-able, the graph "promote" back to ATen dialect, showing up add and relu, which is expected.
         FileCheck().check("torch.ops.aten.add.Tensor").check(
@@ -831,7 +815,6 @@ class TestPasses(unittest.TestCase):
             eager_model,
             inputs,
             exir.CaptureConfig(
-                pt2_mode=True,
                 enable_dynamic_shape=False,
                 enable_functionalization=True,
             ),
@@ -849,7 +832,7 @@ class TestPasses(unittest.TestCase):
 
         inputs = (torch.ones(6),)
         prog = exir.capture(
-            f, inputs, exir.CaptureConfig(pt2_mode=True, enable_dynamic_shape=True)
+            f, inputs, exir.CaptureConfig(enable_dynamic_shape=True)
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         prog = prog.transform(SymIntToTensorPass())
 
@@ -867,7 +850,7 @@ class TestPasses(unittest.TestCase):
                 torch.randn(2, 2),
                 torch.randn(2, 2),
             ),
-            exir.CaptureConfig(pt2_mode=True),
+            exir.CaptureConfig(),
         )
         # should look like:
         # graph():
@@ -917,7 +900,7 @@ class TestPasses(unittest.TestCase):
         gm = exir.capture(
             f,
             (torch.randn(5),),
-            exir.CaptureConfig(pt2_mode=True),
+            exir.CaptureConfig(),
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         new_gm = gm.transform(RemoveAssertAsyncPass())
         num_asserts = [
@@ -938,7 +921,7 @@ class TestPasses(unittest.TestCase):
                 return torch.arange(start=0, end=2) + x
 
         _ = (
-            exir.capture(M(), (torch.randn(2),), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(M(), (torch.randn(2),), exir.CaptureConfig())
             .to_edge()
             .to_executorch()
         )
@@ -953,7 +936,7 @@ class TestPasses(unittest.TestCase):
                 return self.a[:2] + x
 
         gm = (
-            exir.capture(M(), (torch.randn(2),), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(M(), (torch.randn(2),), exir.CaptureConfig())
             .to_edge()
             .exported_program.graph_module
         )
