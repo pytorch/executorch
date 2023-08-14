@@ -23,8 +23,8 @@
 #endif
 
 #if !defined(USE_ATEN_LIB)
-#include <executorch/extension/fb/threadpool/threadpool.h>
-#include <executorch/extension/fb/threadpool/threadpool_use_n_threads.h>
+#include <executorch/backends/xnnpack/threadpool/fb/threadpool_use_n_threads.h>
+#include <executorch/backends/xnnpack/threadpool/threadpool.h>
 #endif
 
 // This tool includes all of the headers necessary to execute a model.
