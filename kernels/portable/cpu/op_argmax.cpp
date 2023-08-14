@@ -27,6 +27,12 @@ void check_preconditions(
     optional<int64_t> dim,
     bool keepdim,
     Tensor& out) {
+  if (in.dim() == 0) {
+    if (dim.has_value()) {
+      ET_CHECK(dim.value() == 0 || dim.value() == -1);
+    }
+    return;
+  }
   if (dim.has_value()) {
     ET_CHECK_VALID_DIM(dim.value(), in.dim());
     ET_CHECK_NON_ZERO_DIM_SIZE(dim.value(), in);

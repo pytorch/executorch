@@ -40,7 +40,11 @@ void check_preconditions(
   // Ensure in has value
   ET_CHECK_MSG(in.numel() > 0, "in.numel() %zd <= 0", in.numel());
   // Ensure dim is valid
-  ET_CHECK_VALID_DIM(dim, in.dim());
+  if (in.dim() == 0) {
+    ET_CHECK_MSG(dim == 0 || dim == -1, "dim must be 0 or -1 for 0-D tensor");
+  } else {
+    ET_CHECK_VALID_DIM(dim, in.dim());
+  }
   ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(in);
   ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(out);
 }
