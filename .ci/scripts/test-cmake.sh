@@ -10,6 +10,14 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
+test_model() {
+  MODEL_NAME=$1
+  python -m examples.export.export_example --model_name="${MODEL_NAME}"
+
+  # Run test model
+  ./"${CMAKE_OUTPUT_DIR}"/executor_runner --model_path "./${MODEL_NAME}.pte"
+}
+
 build_and_test_executorch() {
   CMAKE_OUTPUT_DIR=cmake-out
   # Build executorch runtime using cmake
@@ -27,11 +35,8 @@ build_and_test_executorch() {
   cmake --build "${CMAKE_OUTPUT_DIR}" -j "${CMAKE_JOBS}"
 
   which python
-  # Export a test model
-  python -m examples.export.export_example --model_name="linear"
-
-  # Run test model
-  ./"${CMAKE_OUTPUT_DIR}"/executor_runner --model_path ./linear.pte
+  # Test the example linear model
+  test_model "linear"
 }
 
 install_executorch
