@@ -19,7 +19,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "executor_cpu_optimized",
         exported_deps = [
-            "//executorch/extension/fb/threadpool:threadpool",
+            "//executorch/backends/xnnpack/threadpool:threadpool",
         ] + get_all_cpu_backend_targets(),
         visibility = [
             "//executorch/test/...",
