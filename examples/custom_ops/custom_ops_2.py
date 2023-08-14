@@ -7,7 +7,7 @@
 """Example of showcasing registering custom operator through torch library API."""
 import torch
 
-from examples.export.export_example import export_to_ff
+from examples.export.export_example import export_to_pte
 
 torch.ops.load_library("cmake-out/examples/custom_ops/libcustom_ops_aot_lib.so")
 
@@ -21,7 +21,7 @@ def main():
     m = Model()
     input = torch.randn(2, 3)
     # capture and lower
-    export_to_ff("custom_ops_2", m, (input,))
+    export_to_pte("custom_ops_2", m, (input,))
 
 
 if __name__ == "__main__":
