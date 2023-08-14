@@ -38,7 +38,7 @@ if __name__ == "__main__":
         "-m",
         "--model_name",
         required=True,
-        help=f"Provide model name. Valid ones: {list(MODEL_NAME_TO_MODEL.keys())}",
+        help=f"provide a model name. Valid ones: {list(MODEL_NAME_TO_MODEL.keys())}",
     )
 
     args = parser.parse_args()

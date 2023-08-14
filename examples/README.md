@@ -34,18 +34,22 @@ cd executorch # To the top level dir
 
 bash examples/install_requirements.sh
 
+# To get a list of example models
+python3 -m examples.export.export_example -h
+
+# To generate a specific pte model
 python3 -m examples.export.export_example --model_name="mv2" # for MobileNetv2
 
 # This should generate ./mv2.pte file, if successful.
 ```
+
+Use `-h` (or `--help`) to see all the supported models.
 
 3. Once we have the model binary (pte) file, then let's run it with Executorch runtime using the `executor_runner`.
 
 ```bash
 buck2 run examples/executor_runner:executor_runner -- --model_path mv2.pte
 ```
-
-For MobileNetv3, change the model name and the corrosponding binary filename from "mv2" to "mv3".
 
 ## Dependencies
 
