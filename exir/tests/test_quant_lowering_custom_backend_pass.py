@@ -224,7 +224,7 @@ class PatternWrapper:
             exir.capture(
                 self.pattern,
                 self.inputs,
-                exir.CaptureConfig(pt2_mode=True),
+                exir.CaptureConfig(),
             )
             .to_edge(
                 exir.EdgeCompileConfig(
@@ -493,7 +493,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
 
-    @torch.inference_mode()  # TODO Use pt2_mode=True for capturing.
+    @torch.inference_mode()  # TODO Use  for capturing.
     def test(self) -> None:
         mod = TestModel(
             constant_tensor=torch.ones(
@@ -541,7 +541,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
 
         # Step 2: EXIR capturing + duplicating dequant nodes
         captured_program = exir.capture(
-            converted_mod, example_inputs, exir.CaptureConfig(pt2_mode=True)
+            converted_mod, example_inputs, exir.CaptureConfig()
         ).to_edge(
             exir.EdgeCompileConfig(
                 passes=[DuplicateDequantNodePass()],
@@ -615,7 +615,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         #   - Retracing to verify that it is still runnable before custom passes
         #   - Target-aware pass where it fuses quantized ConvRelu and MaxPool to a DSP
         # fused_mod = exir.capture(
-        #     delegated_mod, example_inputs, exir.CaptureConfig(pt2_mode=True)
+        #     delegated_mod, example_inputs, exir.CaptureConfig()
         # ).to_edge(
         #     EdgeCompileConfig(
         #         passes=[ReplaceQuantizedOperatorsWithQualcommDSP()],
@@ -657,7 +657,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         )
 
         # Step 2: EXIR capturing
-        capture_config = CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True)
+        capture_config = CaptureConfig(enable_aot=True, _unlift=True)
         captured_mod = (
             exir.capture(converted_mod, example_inputs, config=capture_config)
             .to_edge(
@@ -798,7 +798,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         print("converted:", converted_mod)
 
         # Step 2: EXIR capturing
-        capture_config = CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True)
+        capture_config = CaptureConfig(enable_aot=True, _unlift=True)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
         ).to_edge(
@@ -866,7 +866,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         print("converted:", converted_mod)
 
         # Step 2: EXIR capturing
-        capture_config = CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True)
+        capture_config = CaptureConfig(enable_aot=True, _unlift=True)
         captured_mod = exir.capture(
             converted_mod, example_inputs, config=capture_config
         ).to_edge(

@@ -20,10 +20,7 @@ class TestDynamicShapeProp(TestCase):
         prog = exir.capture(
             eager_model,
             inputs,
-            exir.CaptureConfig(
-                pt2_mode=True,
-                enable_dynamic_shape=True,
-            ),
+            exir.CaptureConfig(enable_dynamic_shape=True),
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
 
         new_prog = prog.transform(SpecPropPass(), SymShapeEvalPass())

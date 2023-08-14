@@ -38,7 +38,7 @@ class TestDelegate(unittest.TestCase):
             return x + y
 
         inputs = (torch.ones(1, 3), torch.ones(1, 3))
-        edge_ir_m = exir.capture(g, inputs, CaptureConfig(pt2_mode=True)).to_edge()
+        edge_ir_m = exir.capture(g, inputs, CaptureConfig()).to_edge()
         lowered_module: LoweredBackendModule = LoweredBackendModule(
             edge_ir_m, "BackendWithCompilerDemo", b"moo", []
         )
@@ -51,7 +51,7 @@ class TestDelegate(unittest.TestCase):
             f,
             inputs,
             exir.CaptureConfig(
-                pt2_mode=True, enable_functionalization=True, enable_dynamic_shape=True
+                enable_functionalization=True, enable_dynamic_shape=True
             ),
         )
         FileCheck().check("lowered_module_0").check(
@@ -65,7 +65,7 @@ class TestDelegate(unittest.TestCase):
         m = models.CompositeDelegateModule()
 
         exec_prog = (
-            exir.capture(m, m.get_random_inputs(), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(m, m.get_random_inputs(), exir.CaptureConfig())
             .to_edge(
                 EdgeCompileConfig(_check_ir_validity=False)
             )  # TODO(larryliu): fix split_copy.Tensor
@@ -164,7 +164,7 @@ class TestDelegate(unittest.TestCase):
                 return x
 
         orig_res = Model()(*inputs)
-        prog = exir.capture(Model(), inputs, CaptureConfig(pt2_mode=True)).to_edge()
+        prog = exir.capture(Model(), inputs, CaptureConfig()).to_edge()
         gm = prog.exported_program.graph_module
 
         node_list = []
@@ -224,7 +224,7 @@ class TestDelegate(unittest.TestCase):
                 return x
 
         orig_res = Model()(*inputs)
-        prog = exir.capture(Model(), inputs, CaptureConfig(pt2_mode=True)).to_edge()
+        prog = exir.capture(Model(), inputs, CaptureConfig()).to_edge()
         gm = prog.exported_program.graph_module
 
         node_list = []
@@ -283,7 +283,7 @@ class TestDelegate(unittest.TestCase):
                 return x
 
         orig_res = Model()(*inputs)
-        prog = exir.capture(Model(), inputs, CaptureConfig(pt2_mode=True)).to_edge()
+        prog = exir.capture(Model(), inputs, CaptureConfig()).to_edge()
         gm = prog.exported_program.graph_module
 
         node_list = []

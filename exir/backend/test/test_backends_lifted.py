@@ -68,7 +68,7 @@ from torch.testing import FileCheck
 
 
 def get_testing_capture_config():
-    return exir.CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=False)
+    return exir.CaptureConfig(enable_aot=True, _unlift=False)
 
 
 def vary_segments(test_method):
@@ -994,7 +994,6 @@ class TestBackends(unittest.TestCase):
             converted_linear,
             example_inputs,
             exir.CaptureConfig(
-                pt2_mode=True,
                 enable_aot=True,
                 _unlift=True,
             ),
