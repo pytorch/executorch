@@ -65,7 +65,7 @@ $ python3
 >>> from executorch.exir.tests.models import Mul
 >>> m = Mul()
 >>> print(exir.capture(m, m.get_random_inputs()).to_edge())
->>> open("add.pte", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
+>>> open("mul.pte", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
 ```
 
 ## Runtime Setup
