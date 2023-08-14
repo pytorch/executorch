@@ -411,32 +411,160 @@ using ScalarType = exec_aten::ScalarType;
 // Utility functions for checking tensor attributes
 //
 
+inline bool tensor_can_cast_to(
+    exec_aten::Tensor a,
+    exec_aten::ScalarType dtype) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      torch::executor::canCast(a.scalar_type(), dtype),
+      "Tensor of dtype %s cannot cast to dtype %s",
+      torch::executor::toString(a.scalar_type()),
+      torch::executor::toString(dtype));
+
+  return true;
+}
+
+inline bool tensor_is_bool_type(exec_aten::Tensor t) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      t.scalar_type() == exec_aten::ScalarType::Bool,
+      "Expected to find bool type, but tensor has type %s",
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
+inline bool tensor_is_integral_type(
+    exec_aten::Tensor t,
+    bool includeBool = false) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      torch::executor::isIntegralType(t.scalar_type(), includeBool),
+      "Expected to find a integral type, but tensor has type %s",
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
+inline bool tensor_is_floating_type(exec_aten::Tensor t) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      torch::executor::isFloatingType(t.scalar_type()),
+      "Expected to find a floating type, but tensor has type %s",
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
+inline bool tensor_is_complex_type(exec_aten::Tensor t) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      torch::executor::isComplexType(t.scalar_type()),
+      "Expected to find a complex type, but tensor has type %s",
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
+inline bool tensor_is_bits_type(exec_aten::Tensor t) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      torch::executor::isBitsType(t.scalar_type()),
+      "Expected to find a bits type, but tensor has type %s",
+      torch::executor::toString(t.scalar_type()));
+
+  return true;
+}
+
 inline bool tensors_have_same_dtype(exec_aten::Tensor a, exec_aten::Tensor b) {
-  return a.scalar_type() == b.scalar_type();
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      a.scalar_type() == b.scalar_type(),
+      ET_TENSOR_CHECK_PREFIX__ ": dtype={%s, %s}",
+      torch::executor::toString(a.scalar_type()),
+      torch::executor::toString(b.scalar_type()));
+  return true;
 }
 
 inline bool tensors_have_same_dtype(
     exec_aten::Tensor a,
     exec_aten::Tensor b,
     exec_aten::Tensor c) {
-  return a.scalar_type() == b.scalar_type() &&
-      b.scalar_type() == c.scalar_type();
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      a.scalar_type() == b.scalar_type() && b.scalar_type() == c.scalar_type(),
+      ET_TENSOR_CHECK_PREFIX__ ": dtype={%s, %s, %s}",
+      torch::executor::toString(a.scalar_type()),
+      torch::executor::toString(b.scalar_type()),
+      torch::executor::toString(c.scalar_type()));
+  return true;
+}
+
+inline bool tensor_is_rank(exec_aten::Tensor t, size_t rank) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      t.dim() == rank,
+      "Expected tensor.dim() to be %zu, but got %zu",
+      static_cast<size_t>(rank),
+      static_cast<size_t>(t.dim()));
+
+  return true;
+}
+
+inline bool tensor_has_dim(exec_aten::Tensor t, int64_t d) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      d > 0 ? d < t.dim() : t.dim() + d >= 0,
+      "%zu-dim tensor does not have dim at index %zu",
+      static_cast<size_t>(t.dim()),
+      static_cast<size_t>(d));
+
+  return true;
+}
+
+inline bool tensors_have_same_size_at_dims(
+    exec_aten::Tensor a,
+    size_t dim_a,
+    exec_aten::Tensor b,
+    size_t dim_b) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      dim_a < a.dim(),
+      "Cannot retrieve dim %zu from tensor with dim %zu",
+      static_cast<size_t>(dim_a),
+      static_cast<size_t>(a.dim()));
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      dim_b < b.dim(),
+      "Cannot retrieve dim %zu from tensor with dim %zu",
+      static_cast<size_t>(dim_b),
+      static_cast<size_t>(b.dim()));
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      a.size(dim_a) == b.size(dim_b),
+      ET_TENSOR_CHECK_PREFIX__
+      ": a.size(%zu) = %zu does not match b.size(%zu) = %zu",
+      static_cast<size_t>(dim_a),
+      static_cast<size_t>(a.size(dim_a)),
+      static_cast<size_t>(dim_b),
+      static_cast<size_t>(b.size(dim_b)));
+
+  return true;
 }
 
 inline bool tensors_have_same_shape(exec_aten::Tensor a, exec_aten::Tensor b) {
-  if (a.numel() != b.numel()) {
-    return false;
-  }
-  if (a.numel() == 1) {
+  if (a.numel() == 1 && b.numel() == 1) {
     // PyTorch operators treat all scalar tensors as the same shape even if
     // they have different dims.
     return true;
   }
-  // Does a length comparison (ensuring dims are equal) and element-by-element
-  // comparison (ensuring sizes are equal).
-  if (a.sizes() != b.sizes()) {
+  if (!(a.sizes() == b.sizes() && a.numel() == b.numel())) {
+    ET_LOG(
+        Error,
+        ET_TENSOR_CHECK_PREFIX__ ": numel=(%zu,  %zu), dim=(%zu, %zu)",
+        static_cast<size_t>(a.numel()),
+        static_cast<size_t>(b.numel()),
+        static_cast<size_t>(a.dim()),
+        static_cast<size_t>(b.dim()));
+    for (size_t d = 0; d < ET_MIN2(a.dim(), b.dim()); ++d) {
+      ET_LOG(
+          Error,
+          "    size(%zu): (%zu, %zu)",
+          static_cast<size_t>(d),
+          static_cast<size_t>(a.size(d)),
+          static_cast<size_t>(b.size(d)));
+    }
+
     return false;
   }
+
   return true;
 }
 
@@ -444,7 +572,38 @@ inline bool tensors_have_same_shape(
     exec_aten::Tensor a,
     exec_aten::Tensor b,
     exec_aten::Tensor c) {
-  return tensors_have_same_shape(a, b) && tensors_have_same_shape(b, c);
+  if (a.numel() == 1 && b.numel() == 1 && c.numel() == 1) {
+    // PyTorch operators treat all scalar tensors as the same shape even if
+    // they have different dims.
+    return true;
+  }
+  bool cond1 = (a.sizes() == b.sizes()) && (a.numel() == b.numel());
+  bool cond2 = (b.sizes() == c.sizes()) && (b.numel() == c.numel());
+
+  if (!(cond1 && cond2)) {
+    ET_LOG(
+        Error,
+        ET_TENSOR_CHECK_PREFIX__ ": numel=(%zu, %zu, %zu), dim=(%zu, %zu, %zu)",
+        static_cast<size_t>(a.numel()),
+        static_cast<size_t>(b.numel()),
+        static_cast<size_t>(c.numel()),
+        static_cast<size_t>(a.dim()),
+        static_cast<size_t>(b.dim()),
+        static_cast<size_t>(c.dim()));
+    for (size_t d = 0; d < ET_MIN3(a.dim(), b.dim(), c.dim()); ++d) {
+      ET_LOG(
+          Error,
+          "    size(%zu): (%zu, %zu, %zu)",
+          static_cast<size_t>(d),
+          static_cast<size_t>(a.size(d)),
+          static_cast<size_t>(b.size(d)),
+          static_cast<size_t>(c.size(d)));
+    }
+
+    return false;
+  }
+
+  return true;
 }
 
 inline bool tensors_have_same_shape_and_dtype(
@@ -463,14 +622,50 @@ inline bool tensors_have_same_shape_and_dtype(
 inline bool tensors_have_same_strides(
     exec_aten::Tensor a,
     exec_aten::Tensor b) {
-  return a.strides() == b.strides();
+  if (a.strides() != b.strides()) {
+    ET_LOG(
+        Error,
+        ET_TENSOR_CHECK_PREFIX__ ": dim=(%zu, %zu)",
+        static_cast<size_t>(a.dim()),
+        static_cast<size_t>(b.dim()));
+    for (size_t d = 0; d < ET_MIN2(a.dim(), b.dim()); ++d) {
+      ET_LOG(
+          Error,
+          "    stride(%zu): (%zu, %zu)",
+          static_cast<size_t>(d),
+          static_cast<size_t>(a.strides()[d]),
+          static_cast<size_t>(b.strides()[d]));
+    }
+
+    return false;
+  }
+  return true;
 }
 
 inline bool tensors_have_same_strides(
     exec_aten::Tensor a,
     exec_aten::Tensor b,
     exec_aten::Tensor c) {
-  return a.strides() == b.strides() && b.strides() == c.strides();
+  if (!(a.strides() == b.strides() && b.strides() == c.strides())) {
+    ET_LOG(
+        Error,
+        ET_TENSOR_CHECK_PREFIX__ ": dim=(%zu, %zu, %zu)",
+        static_cast<size_t>(a.dim()),
+        static_cast<size_t>(b.dim()),
+        static_cast<size_t>(c.dim()));
+    for (size_t d = 0; d < ET_MIN3(a.dim(), b.dim(), c.dim()); ++d) {
+      ET_LOG(
+          Error,
+          "    stride(%zu): (%zu, %zu, %zu)",
+          static_cast<size_t>(d),
+          static_cast<size_t>(a.strides()[d]),
+          static_cast<size_t>(b.strides()[d]),
+          static_cast<size_t>(c.strides()[d]));
+    }
+
+    return false;
+  }
+  return true;
 }
 
 inline bool tensor_is_contiguous(exec_aten::Tensor t) {
@@ -480,13 +675,21 @@ inline bool tensor_is_contiguous(exec_aten::Tensor t) {
   if (strides.size() == 0) {
     return true;
   }
-  if (strides[strides.size() - 1] != 1) {
-    return false;
-  }
-  for (auto i = strides.size() - 1; i > 0; --i) {
-    if (strides[i - 1] != strides[i] * sizes[i]) {
-      return false;
-    }
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      strides[strides.size() - 1] == 1,
+      "Tensor is not contiguous; the stride of the last dimension must be 1, "
+      "but got %zu",
+      static_cast<size_t>(strides[strides.size() - 1]));
+  for (int i = strides.size() - 1; i > 0; --i) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        strides[i - 1] == strides[i] * sizes[i],
+        "Tensor is not contiguous; the stride of dim %zu should be equal to "
+        "strides[%zu] * sizes[%zu] = %zu, but found %zu",
+        static_cast<size_t>(i - 1),
+        static_cast<size_t>(i),
+        static_cast<size_t>(i),
+        static_cast<size_t>(strides[i] * sizes[i]),
+        static_cast<size_t>(strides[i - 1]));
   }
   return true;
 }
