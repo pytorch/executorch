@@ -4,6 +4,6 @@
 	#include <TargetConditionals.h>
 #endif /* __APPLE__ */
 
-#if (defined(__arm__) || defined(__aarch64__)) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+#if (defined(__arm__) || defined(__aarch64__)) && defined(TARGET_OS_MAC) && TARGET_OS_MAC
 #include <arm/mach/init.c>
-#endif /* (defined(__arm__) || defined(__aarch64__)) && defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE */
+#endif /* (defined(__arm__) || defined(__aarch64__)) && defined(TARGET_OS_MAC) && TARGET_OS_MAC */
