@@ -9,6 +9,7 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <cmath>
 #include <limits>
@@ -29,6 +30,12 @@ class TensorUtilTest : public ::testing::Test {
   TensorFactory<ScalarType::Float> tf_float_;
   TensorFactory<ScalarType::Double> tf_double_;
   TensorFactory<ScalarType::Bool> tf_bool_;
+
+  void SetUp() override {
+    // As some of these tests cause ET_LOG to be called, the PAL must be
+    // initialized first by calling runtime_init();
+    torch::executor::runtime_init();
+  }
 };
 
 TEST_F(TensorUtilTest, IdentityChecks) {
@@ -414,6 +421,30 @@ TEST_F(TensorUtilTest, BoolTensorNotScalarFails) {
 // Tests for utility functions that check tensor attributes
 //
 
+TEST_F(TensorUtilTest, TensorIsRankTest) {
+  using namespace torch::executor;
+  Tensor a = tf_float_.ones({2, 3, 5});
+
+  EXPECT_TRUE(tensor_is_rank(a, 3));
+  EXPECT_FALSE(tensor_is_rank(a, 0));
+  EXPECT_FALSE(tensor_is_rank(a, 5));
+}
+
+TEST_F(TensorUtilTest, TensorHasDimTest) {
+  using namespace torch::executor;
+  Tensor a = tf_float_.ones({2, 3, 5});
+
+  EXPECT_TRUE(tensor_has_dim(a, 2));
+  EXPECT_TRUE(tensor_has_dim(a, 1));
+  EXPECT_TRUE(tensor_has_dim(a, 0));
+  EXPECT_TRUE(tensor_has_dim(a, -1));
+  EXPECT_TRUE(tensor_has_dim(a, -2));
+  EXPECT_TRUE(tensor_has_dim(a, -3));
+
+  EXPECT_FALSE(tensor_has_dim(a, -4));
+  EXPECT_FALSE(tensor_has_dim(a, 3));
+}
+
 TEST_F(TensorUtilTest, TensorsHaveSameDtypeTest) {
   using namespace torch::executor;
   Tensor a = tf_float_.ones({2, 3});
@@ -425,6 +456,18 @@ TEST_F(TensorUtilTest, TensorsHaveSameDtypeTest) {
   EXPECT_FALSE(tensors_have_same_dtype(a, d));
   EXPECT_TRUE(tensors_have_same_dtype(a, b, c));
   EXPECT_FALSE(tensors_have_same_dtype(a, b, d));
+}
+
+TEST_F(TensorUtilTest, TensorsHaveSameSizeAtDimTest) {
+  using namespace torch::executor;
+  Tensor a = tf_float_.ones({2, 3, 4, 5});
+  Tensor b = tf_float_.ones({5, 4, 3, 2});
+
+  EXPECT_TRUE(tensors_have_same_size_at_dims(a, 0, b, 3));
+  EXPECT_TRUE(tensors_have_same_size_at_dims(a, 1, b, 2));
+  EXPECT_FALSE(tensors_have_same_size_at_dims(a, 1, b, 0));
+  EXPECT_FALSE(tensors_have_same_size_at_dims(a, 4, b, 0));
+  EXPECT_FALSE(tensors_have_same_size_at_dims(a, 2, b, 3));
 }
 
 TEST_F(TensorUtilTest, TensorsHaveSameShapeTest) {

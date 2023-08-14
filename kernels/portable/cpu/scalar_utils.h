@@ -65,6 +65,20 @@ inline ScalarType get_scalar_dtype(Scalar scalar) {
   ET_CHECK_MSG(false, "Scalar must be Boolean, Integral or Floating.");
 }
 
+inline bool scalars_have_same_dtype(Scalar a, Scalar b) {
+  ScalarType a_dtype = get_scalar_dtype(a);
+  ScalarType b_dtype = get_scalar_dtype(b);
+  if (a_dtype == b_dtype) {
+    return true;
+  }
+  ET_LOG(
+      Error,
+      "Expected scalars to have the same dtype, but found %s and %s",
+      toString(a_dtype),
+      toString(b_dtype));
+  return false;
+}
+
 /**
  * Implement type promotion between a tensor's ScalarType with a Scalar.
  * If the Scalar contains a value in the same category of the tensor's
