@@ -8,17 +8,14 @@
 
 #include <cstring>
 
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
-#include <executorch/runtime/platform/assert.h>
+#include <executorch/kernels/portable/cpu/util/normalization_ops_util.h>
 
 namespace torch {
 namespace executor {
 
 using Tensor = exec_aten::Tensor;
 
-void check_batch_norm_args(
+bool check_batch_norm_args(
     const Tensor& in,
     const exec_aten::optional<Tensor>& weight,
     const exec_aten::optional<Tensor>& bias,
@@ -28,27 +25,34 @@ void check_batch_norm_args(
     double eps,
     Tensor& out) {
   // All tensors must be the same dtype
-  ET_CHECK_SAME_DTYPE3(in, running_mean, running_var);
-  ET_CHECK_SAME_DTYPE2(in, out);
+  ET_LOG_AND_RETURN_IF_FALSE(
+      tensors_have_same_dtype(in, running_mean, running_var));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   if (weight.has_value()) {
-    ET_CHECK_SAME_DTYPE2(in, weight.value());
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight.value()));
   }
   if (bias.has_value()) {
-    ET_CHECK_SAME_DTYPE2(in, bias.value());
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, bias.value()));
   }
 
   size_t C_dim = in.dim() >= 1 ? 1 : 0;
   // All parameter tensors must be of dim 1 and have length equal to the
   // channels dim of in
-  ET_CHECK(running_mean.dim() == 1 && running_mean.size(0) == in.size(C_dim));
-  ET_CHECK(running_var.dim() == 1 && running_var.size(0) == in.size(C_dim));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(running_mean, 1));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      tensors_have_same_size_at_dims(running_mean, 0, in, C_dim));
   if (weight.has_value()) {
-    ET_CHECK(
-        weight.value().dim() == 1 && weight.value().size(0) == in.size(C_dim));
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight.value(), 1));
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensors_have_same_size_at_dims(weight.value(), 0, in, C_dim));
   }
   if (bias.has_value()) {
-    ET_CHECK(bias.value().dim() == 1 && bias.value().size(0) == in.size(C_dim));
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(bias.value(), 1));
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensors_have_same_size_at_dims(bias.value(), 0, in, C_dim));
   }
+
+  return true;
 }
 
 } // namespace executor

@@ -8,22 +8,19 @@
 
 #include <cstring>
 
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
-#include <executorch/runtime/platform/assert.h>
+#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 
 namespace torch {
 namespace executor {
 
 using Tensor = exec_aten::Tensor;
 
-void check_cat_args(
+bool check_cat_args(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out) {
   // Ensure the input tensors list is non-empty
-  ET_CHECK(tensors.size() > 0);
+  ET_LOG_AND_RETURN_IF_FALSE(tensors.size() > 0);
 
   // Find the first non-empty tensor in the list to use as a reference
   size_t ref_i = 0;
@@ -39,7 +36,8 @@ void check_cat_args(
   // https://pytorch.org/docs/stable/generated/torch.cat.html
   for (size_t i = 0; i < tensors.size(); ++i) {
     // All input dtypes must be castable to the output dtype.
-    ET_CHECK(canCast(tensors[i].scalar_type(), out.scalar_type()));
+    ET_LOG_AND_RETURN_IF_FALSE(
+        canCast(tensors[i].scalar_type(), out.scalar_type()));
 
     // Empty tensors have no shape constraints.
     if (tensors[i].numel() == 0) {
@@ -47,17 +45,21 @@ void check_cat_args(
     }
 
     // All input tensors must have the same number of dimensions.
-    ET_CHECK(tensors[i].dim() == tensors[ref_i].dim());
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensor_is_rank(tensors[ref_i], tensors[i].dim()));
 
     for (size_t d = 0; d < tensors[i].dim(); ++d) {
       if (d != dim) {
-        ET_CHECK(tensors[i].size(d) == tensors[ref_i].size(d));
+        ET_LOG_AND_RETURN_IF_FALSE(
+            tensors_have_same_size_at_dims(tensors[i], d, tensors[ref_i], d));
       }
     }
   }
 
   // Ensure dim is in range.
-  ET_CHECK(dim >= 0 && dim < tensors[ref_i].dim());
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(tensors[ref_i], dim));
+
+  return true;
 }
 
 void get_cat_out_target_size(
@@ -86,9 +88,9 @@ void get_cat_out_target_size(
   }
 }
 
-void check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out) {
-  ET_CHECK(in.dim() == dims.size());
-  ET_CHECK_SAME_DTYPE2(in, out);
+bool check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, dims.size()));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
 
   // Make sure no dimensions are duplicated and all in the range [-in.dim(),
   // in.dim() - 1]. Use gaussian sum to check this.
@@ -98,13 +100,15 @@ void check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out) {
     // Convert dimension to a non-negative number. dim_base is in the range
     // [0 .. in.dim() - 1].
     size_t dim = dims[i] > -1 ? dims[i] : in.dim() + dims[i];
-    ET_CHECK(dim >= 0 && dim < in.dim());
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
     gauss_sum += dim + 1;
   }
 
-  ET_CHECK_MSG(
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
       gauss_sum == expected_sum,
       "The dims passed to permute_copy must contain one of each dim!");
+
+  return true;
 }
 
 void get_permute_copy_out_target_size(
@@ -119,28 +123,32 @@ void get_permute_copy_out_target_size(
   }
 }
 
-void check_stack_args(
+bool check_stack_args(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
     Tensor& out) {
   // Ensure the input tensors list is non-empty
-  ET_CHECK(tensors.size() > 0);
+  ET_LOG_AND_RETURN_IF_FALSE(tensors.size() > 0);
 
   // All input tensors need to be of the same size
   // https://pytorch.org/docs/stable/generated/torch.stack.html
   for (size_t i = 0; i < tensors.size(); i++) {
     // All input dtypes must be castable to the output dtype.
-    ET_CHECK(canCast(tensors[i].scalar_type(), out.scalar_type()));
+    ET_LOG_AND_RETURN_IF_FALSE(
+        canCast(tensors[i].scalar_type(), out.scalar_type()));
 
-    ET_CHECK(tensors[i].dim() == tensors[0].dim());
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(tensors[i], tensors[0].dim()));
     for (size_t d = 0; d < tensors[i].dim(); d++) {
-      ET_CHECK(tensors[i].size(d) == tensors[0].size(d));
+      ET_LOG_AND_RETURN_IF_FALSE(
+          tensors_have_same_size_at_dims(tensors[i], d, tensors[0], d));
     }
   }
 
   // The output tensor will have a dimension inserted, so dim should be between
   // 0 and ndim_of_inputs + 1
-  ET_CHECK(dim >= 0 && dim < tensors[0].dim() + 1);
+  ET_LOG_AND_RETURN_IF_FALSE(dim >= 0 && dim < tensors[0].dim() + 1);
+
+  return true;
 }
 
 void get_stack_out_target_size(
