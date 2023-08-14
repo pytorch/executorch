@@ -27,32 +27,38 @@ void check_and_update_select_copy_int_out_args(
     int64_t dim,
     int64_t index,
     Tensor output) {
-  // Support python-style negative indexing. E.g., for the shape {2, 3, 4},
-  // dim = -1 would refer to dim[2], dim = -2 would refer to dim[1], and so on.
+  if (input.dim() == 0) {
+    ET_CHECK(dim == 0 || dim == -1);
+  } else {
+    // Support python-style negative indexing. E.g., for the shape {2, 3, 4},
+    // dim = -1 would refer to dim[2], dim = -2 would refer to dim[1], and so
+    // on.
 
-  // The dim planed to be selected on shall exist in input
-  ET_CHECK_MSG(
-      dim >= -input.dim() && dim < input.dim(),
-      "dim %" PRId64 " out of range [-%zd,%zd)",
-      dim,
-      input.dim(),
-      input.dim());
+    // The dim planed to be selected on shall exist in input
+    ET_CHECK_MSG(
+        dim >= -input.dim() && dim < input.dim(),
+        "dim %" PRId64 " out of range [-%zd,%zd)",
+        dim,
+        input.dim(),
+        input.dim());
 
-  // The index shall be valid in the given dimenson
-  ET_CHECK_MSG(
-      index >= -input.size(dim) && index < input.size(dim),
-      "index %" PRId64 " out of range [-%zd,%zd) at input.size( %" PRId64 ")",
-      index,
-      input.size(dim),
-      input.size(dim),
-      dim);
+    // Support python-style negative indexing
+    if (dim < 0) {
+      dim += input.dim();
+    }
 
-  // Support python-style negative indexing
-  if (dim < 0) {
-    dim += input.dim();
-  }
-  if (index < 0) {
-    index += input.size(dim);
+    // The index shall be valid in the given dimenson
+    ET_CHECK_MSG(
+        index >= -input.size(dim) && index < input.size(dim),
+        "index %" PRId64 " out of range [-%zd,%zd) at input.size( %" PRId64 ")",
+        index,
+        input.size(dim),
+        input.size(dim),
+        dim);
+
+    if (index < 0) {
+      index += input.size(dim);
+    }
   }
 
   // Input dtype shall match the output dtype.
@@ -71,7 +77,7 @@ void check_and_update_select_copy_int_out_args(
   // - output.size(i) shall equal to input.size(i) if i < dim,
   // - output.size(i) shall equal to input.size(i+1) if i >= dim
 
-  for (size_t d = 0; d < input.dim() - 1; d++) {
+  for (ssize_t d = 0; d < input.dim() - 1; d++) {
     if (d < dim) {
       ET_CHECK_MSG(
           input.size(d) == output.size(d),

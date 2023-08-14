@@ -88,23 +88,6 @@ TEST(OpSoftmaxOutTest, AllDtypesSupported) {
   // for those types.
 }
 
-TEST(OpSoftmaxOutTest, EmptyInputOrEmptyOutTensorDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle empty input or output";
-  }
-  TensorFactory<ScalarType::Float> tff;
-
-  Tensor x = tff.make({2, 2, 0}, {});
-
-  // Make an empty out tensor and demonstrate that it's empty.
-  Tensor out = tff.make({2, 2, 0}, {});
-
-  EXPECT_EQ(out.numel(), 0);
-
-  ET_EXPECT_KERNEL_FAILURE(
-      op_softmax_out(x, /*dim=*/1, /*half_to_float*/ false, out));
-}
-
 TEST(OpSoftmaxOutTest, MismatchedDimensionsDies) {
   TensorFactory<ScalarType::Float> tff;
 

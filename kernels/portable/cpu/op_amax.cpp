@@ -28,8 +28,10 @@ void check_preconditions(
     Tensor& out) {
   ET_CHECK_SAME_DTYPE2(in, out);
   check_dim_list_is_valid(in, dim_list);
-  for (const auto& d : dim_list) {
-    ET_CHECK_NON_ZERO_DIM_SIZE(d, in);
+  if (in.dim() != 0) {
+    for (const auto& d : dim_list) {
+      ET_CHECK_NON_ZERO_DIM_SIZE(d, in);
+    }
   }
   ET_CHECK_MSG(
       out.dim() == compute_reduced_out_dim(in, dim_list, keepdim),

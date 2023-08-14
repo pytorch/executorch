@@ -32,11 +32,15 @@ void check_index_select_args(
     const Tensor& index,
     Tensor& output) {
   // Check dim. The dim planed to be selected on shall exist in input
-  ET_CHECK_MSG(
-      dim >= 0 && dim < input.dim(),
-      "dim %" PRId64 " out of range [0,%zd)",
-      dim,
-      input.dim());
+  if (input.dim() == 0) {
+    ET_CHECK(dim == 0);
+  } else {
+    ET_CHECK_MSG(
+        dim >= 0 && dim < input.dim(),
+        "dim %" PRId64 " out of range [0,%zd)",
+        dim,
+        input.dim());
+  }
 
   // Input output should have the same dim
   ET_CHECK_MSG(
@@ -62,7 +66,10 @@ void check_index_select_args(
   // Index should be a 1-D LongTensor, check if any index is out of bound
   ET_CHECK_MSG(
       index.scalar_type() == ScalarType::Long, "index scalar_type not long");
-  ET_CHECK_MSG(index.dim() == 1, "index.dim() %zd != 1", index.dim());
+  ET_CHECK_MSG(
+      index.dim() == 1 || index.dim() == 0,
+      "index.dim() %zd != 1 or 0",
+      index.dim());
 
   const int64_t* src = index.mutable_data_ptr<int64_t>();
   for (auto i = 1; i < index.numel(); i++) {
