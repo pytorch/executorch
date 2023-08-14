@@ -13,7 +13,7 @@
 namespace torch {
 namespace executor {
 
-void check_batch_norm_args(
+bool check_batch_norm_args(
     const Tensor& in,
     const exec_aten::optional<Tensor>& weight,
     const exec_aten::optional<Tensor>& bias,

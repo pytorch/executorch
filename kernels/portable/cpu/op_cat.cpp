@@ -26,7 +26,7 @@ Tensor& cat_out(
     dim += out.dim();
   }
 
-  check_cat_args(tensors, dim, out);
+  ET_KERNEL_CHECK(ctx, check_cat_args(tensors, dim, out), InvalidArgument, out);
 
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;

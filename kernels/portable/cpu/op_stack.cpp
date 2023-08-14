@@ -28,13 +28,17 @@ Tensor& stack_out(
     dim += out.dim();
   }
 
-  check_stack_args(tensors, dim, out);
+  ET_KERNEL_CHECK(
+      ctx, check_stack_args(tensors, dim, out), InvalidArgument, out);
 
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;
   get_stack_out_target_size(tensors, dim, expected_out_size, &expected_out_dim);
-  ET_CHECK(
-      resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok,
+      InvalidArgument,
+      out);
 
   const size_t outer = getLeadingDims(out, dim);
   const size_t inner = getTrailingDims(out, dim);
