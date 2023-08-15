@@ -18,45 +18,22 @@ namespace torch {
 namespace executor {
 namespace deserialization {
 
-Result<exec_aten::Tensor> parseTensor(
+__ET_NODISCARD Result<exec_aten::Tensor> parseTensor(
     const Program* program,
     MemoryManager* memory_manager,
     const executorch_flatbuffer::Tensor* s_tensor);
 
-inline Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
+__ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
     const flatbuffers::Vector<int32_t>* tensor_indices,
     EValue* values_,
-    MemoryManager* memory_manager) {
-  EXECUTORCH_SCOPE_PROF("TensorParser::parseTensorList");
-
-  auto* tensor_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      memory_manager->get_runtime_allocator(),
-      exec_aten::Tensor,
-      tensor_indices->size());
-  auto* evalp_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      memory_manager->get_runtime_allocator(), EValue*, tensor_indices->size());
-
-  // For each tensor index look up the corresponding Tensor (which has been
-  // already allocated) and stick it in the list.
-  size_t output_idx = 0;
-  for (int32_t tensor_index : *tensor_indices) {
-    // Placement new as the list elements are not initialized, so calling
-    // copy assignment is not defined if its non trivial.
-    new (&tensor_list[output_idx]) exec_aten::Tensor(
-        values_[static_cast<size_t>(tensor_index)].toTensor());
-    evalp_list[output_idx] = &values_[static_cast<size_t>(tensor_index)];
-    output_idx++;
-  }
-
-  return BoxedEvalueList<exec_aten::Tensor>(
-      evalp_list, tensor_list, tensor_indices->size());
-}
+    MemoryManager* memory_manager);
 
 // Deserializes a List of optional type. The code here is the same between all
 // list of optionals: list of optional Tensor, list of optional float etc, so we
 // just use a template to avoid boilerplate.
 template <typename T>
-inline Result<BoxedEvalueList<exec_aten::optional<T>>> parseListOptionalType(
+__ET_NODISCARD Result<BoxedEvalueList<exec_aten::optional<T>>>
+parseListOptionalType(
     const flatbuffers::Vector<int32_t>* value_indices,
     EValue* values_,
     MemoryManager* memory_manager) {
@@ -111,35 +88,11 @@ inline Result<BoxedEvalueList<exec_aten::optional<T>>> parseListOptionalType(
  * @returns On success, the data pointer to use for the tensor. On failure, a
  *     non-Ok Error.
  */
-__ET_NODISCARD inline Result<void*> getTensorDataPtr(
+__ET_NODISCARD Result<void*> getTensorDataPtr(
     const executorch_flatbuffer::Tensor* s_tensor,
     const Program* program,
     size_t nbytes,
-    HierarchicalAllocator* allocator) {
-  if (s_tensor->constant_buffer_idx() > 0) {
-    const void* data =
-        program->get_constant_buffer_data(s_tensor->constant_buffer_idx());
-    // The const_cast is ok here because the program and runtime should
-    // guarantee that this data is never modified.
-    return const_cast<void*>(data);
-  }
-
-  const executorch_flatbuffer::AllocationDetails* allocation_info =
-      s_tensor->allocation_info();
-  if (allocation_info != nullptr) {
-    // Normal non-constant Tensor. Allocate data using mem_id and offset.
-
-    // TODO(T142455629): make the allocator actually id based and not indexed
-    // based. -1 is a hack to get the memory ids 0 aligned because previously
-    // 0 was reserved
-    const uint32_t memory_id = allocation_info->memory_id() - 1;
-    return allocator->get_offset_address(
-        memory_id, allocation_info->memory_offset(), nbytes);
-  }
-
-  // The tensor's data will be allocated as part of execution.
-  return nullptr;
-}
+    HierarchicalAllocator* allocator);
 
 } // namespace deserialization
 } // namespace executor
