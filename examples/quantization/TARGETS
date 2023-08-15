@@ -1,6 +1,6 @@
-load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-python_binary(
+runtime.python_binary(
     name = "example",
     main_src = "example.py",
     deps = [

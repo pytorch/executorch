@@ -133,3 +133,4 @@ if __name__ == "__main__":
         )
 
     quantize(args.model_name, model, example_inputs)
+    print("finished")
