@@ -87,13 +87,13 @@ void check_args(
 
   // Validate each output.
   for (size_t i = 0; i < out.size(); ++i) {
-    // All output dtypes must match the input type.
+    // All output dtypes must be the same.
     ET_CHECK_MSG(
-        out[i].scalar_type() == input.scalar_type(),
-        "out[%zu] dtype %hhd != input dtype %hhd",
+        out[i].scalar_type() == out[0].scalar_type(),
+        "out[%zu] dtype %hhd != out[0] dtype %hhd",
         i,
         out[i].scalar_type(),
-        input.scalar_type());
+        out[0].scalar_type());
 
     // All outputs must have the same number of dimensions as the input.
     ET_CHECK_MSG(
@@ -170,26 +170,32 @@ void split_copy_Tensor_out(
 
   const size_t leading_dims = getLeadingDims(input, dim);
   const size_t trailing_dims = getTrailingDims(input, dim);
+  const size_t step = input.size(dim) * trailing_dims;
 
-  const size_t element_size = input.element_size();
-  const size_t step = input.size(dim) * trailing_dims * element_size;
+  ScalarType in_type = input.scalar_type();
+  ScalarType out_type = out[0].scalar_type();
 
-  const char* input_data = input.const_data_ptr<char>();
-  for (size_t i = 0, e = out.size(); i < e; ++i) {
-    size_t num_bytes = out[i].size(dim) * trailing_dims * element_size;
-    if (num_bytes == 0) {
-      continue;
-    }
-
-    const char* src = input_data;
-    char* dest = out[i].mutable_data_ptr<char>();
-    for (size_t j = 0; j < leading_dims; ++j) {
-      memcpy(dest, src, num_bytes);
-      src += step;
-      dest += num_bytes;
-    }
-    input_data += num_bytes;
-  }
+  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE_IN, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, __func__, CTYPE_OUT, [&]() {
+      const CTYPE_IN* input_data = input.const_data_ptr<CTYPE_IN>();
+      for (size_t i = 0, e = out.size(); i < e; ++i) {
+        size_t out_step = out[i].size(dim) * trailing_dims;
+        if (out_step == 0) {
+          continue;
+        }
+        const CTYPE_IN* src = input_data;
+        CTYPE_OUT* dest = out[i].mutable_data_ptr<CTYPE_OUT>();
+        for (size_t j = 0; j < leading_dims; ++j) {
+          for (size_t k = 0; k < out_step; ++k) {
+            dest[k] = convert<CTYPE_OUT, CTYPE_IN>(src[k]);
+          }
+          src += step;
+          dest += out_step;
+        }
+        input_data += out_step;
+      }
+    });
+  });
 }
 
 } // namespace native

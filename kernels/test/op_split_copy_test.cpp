@@ -356,9 +356,7 @@ TEST(OpSplitCopyTensorOutTest, OutOfRangeDimsDie) {
 }
 
 TEST(OpSplitCopyTensorOutTest, DtypeMismatchDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle dtype mismatch";
-  }
+  GTEST_SKIP() << "ATen kernel can handle dtype mismatch";
   TensorFactory<ScalarType::Int> tf_int;
   TensorListFactory<ScalarType::Int> tlf_int;
   TensorListFactory<ScalarType::Float> tlf_float;
