@@ -64,31 +64,38 @@ class ExecutorBackend final : public PyTorchBackendInterface {
         ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(runtime_allocator, Program);
     new (client_program) Program(std::move(program_result.get()));
 
+    Result<MethodMeta> method_meta = client_program->method_meta("forward");
+    if (!method_meta.ok()) {
+      ET_LOG(Error, "error constructing method meta");
+      return method_meta.error();
+    }
+
     // Building all different allocators for the client executor
     auto client_const_allocator = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
         runtime_allocator, MemoryAllocator);
     new (client_const_allocator) MemoryAllocator(0, nullptr);
 
-    size_t num_non_const_buffers = client_program->num_non_const_buffers() - 1;
+    auto num_buffers = method_meta->num_non_const_buffers();
+    size_t num_non_const_buffers = num_buffers - 1;
 
     uint8_t** non_const_buffers = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
         runtime_allocator, uint8_t*, num_non_const_buffers);
     MemoryAllocator* non_const_allocators = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
         runtime_allocator, MemoryAllocator, num_non_const_buffers);
 
-    for (size_t id = 1; id < client_program->num_non_const_buffers(); ++id) {
-      const size_t buffer_size = client_program->get_non_const_buffer_size(id);
+    for (size_t id = 1; id < num_buffers; ++id) {
+      auto buffer_size = method_meta->non_const_buffer_size(id);
       uint8_t* buffer_i = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-          runtime_allocator, uint8_t, buffer_size);
+          runtime_allocator, uint8_t, buffer_size.get());
       non_const_buffers[id - 1] = buffer_i;
       new (&non_const_allocators[id - 1])
-          MemoryAllocator(static_cast<uint32_t>(buffer_size), buffer_i);
+          MemoryAllocator(static_cast<uint32_t>(buffer_size.get()), buffer_i);
     }
 
     auto client_non_const_allocator = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
         runtime_allocator, HierarchicalAllocator);
-    new (client_non_const_allocator) HierarchicalAllocator(
-        client_program->num_non_const_buffers() - 1, non_const_allocators);
+    new (client_non_const_allocator)
+        HierarchicalAllocator(num_non_const_buffers, non_const_allocators);
 
     // Allocate some memory from runtime allocator for the client executor, in
     // real case, like if it's an executor in dsp, it should allocate memory
@@ -113,46 +120,49 @@ class ExecutorBackend final : public PyTorchBackendInterface {
         client_runtime_allocator,
         client_temp_allocator);
 
-    // Construct the client executor
-    auto client_executor =
-        ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(runtime_allocator, Executor);
-    new (client_executor) Executor(client_program, client_memory_manager);
-
-    // Initialize the client executor
-    Error err = client_executor->init_execution_plan("forward");
-    if (err != Error::Ok) {
-      ET_LOG(Error, "Failed to init client executor: 0x%x", (unsigned int)err);
-      return err;
+    // Construct the client Method
+    Result<Method> method_res =
+        client_program->load_method("forward", client_memory_manager);
+    if (!method_res.ok()) {
+      ET_LOG(
+          Error,
+          "Failed to load client method: 0x%x",
+          (unsigned int)method_res.error());
+      return method_res.error();
     }
 
-    // Return the client executor so it will be passed to `execute()` as
+    auto client_method =
+        ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(runtime_allocator, Method);
+    new (client_method) Method(std::move(method_res.get()));
+
+    // Return the client method so it will be passed to `execute()` as
     // `handle`.
-    return client_executor;
+    return client_method;
   }
 
   Error execute(DelegateHandle* handle, EValue** args) const override {
-    Executor* client_executor = static_cast<Executor*>(handle);
-    auto& plan = client_executor->execution_plan();
-    auto plan_inputs_size = plan.inputs_size();
+    Method* client_method = static_cast<Method*>(handle);
+    auto num_inputs = client_method->inputs_size();
     Error status = Error::Ok;
 
     // Receive client executor input
-    for (size_t input_idx = 0; input_idx < plan_inputs_size; input_idx++) {
-      status = plan.set_input(*args[input_idx], input_idx);
+    for (size_t input_idx = 0; input_idx < num_inputs; input_idx++) {
+      status = client_method->set_input(*args[input_idx], input_idx);
     }
     // Execute client executor
-    status = plan.execute();
+    status = client_method->execute();
 
     // Send the client executor output
-    status = plan.get_outputs(args[plan_inputs_size], plan.outputs_size());
+    status = client_method->get_outputs(
+        args[num_inputs], client_method->outputs_size());
 
     return status;
   }
 
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
-      Executor* client_executor = static_cast<Executor*>(handle);
-      client_executor->~Executor();
+      Method* client_executor = static_cast<Method*>(handle);
+      client_executor->~Method();
     }
   }
 };

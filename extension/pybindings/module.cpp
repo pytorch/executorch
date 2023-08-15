@@ -555,7 +555,7 @@ void init_module_functions(py::module_& m) {
       .def("run_method", &PyModule::run_method)
       .def("forward", &PyModule::forward)
       .def_property_readonly_static("FORWARD_METHOD_INDEX", [](py::object) {
-        return torch::executor::Program::kForwardMethodIndex;
+        return 0; // TODO(T152881296) remove this
       });
   ;
 
