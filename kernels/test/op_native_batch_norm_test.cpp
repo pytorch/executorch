@@ -18,7 +18,7 @@
 using namespace ::testing;
 
 ::std::tuple<exec_aten::Tensor&, exec_aten::Tensor&, exec_aten::Tensor&>
-__native_batch_norm_legit_no_training_out(
+op_native_batch_norm_legit_no_training_out(
     const exec_aten::Tensor& input,
     const exec_aten::optional<exec_aten::Tensor>& weight,
     const exec_aten::optional<exec_aten::Tensor>& bias,
@@ -114,7 +114,7 @@ TEST(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest2D) {
                7.372773170471191});
   exec_aten::Tensor out1_expected = tfFloat.make({0}, {});
   exec_aten::Tensor out2_expected = tfFloat.make({0}, {});
-  __native_batch_norm_legit_no_training_out(
+  op_native_batch_norm_legit_no_training_out(
       input,
       weight,
       bias,
@@ -274,7 +274,7 @@ TEST(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
                   0.3513677716255188,  1.2478822469711304});
   exec_aten::Tensor out1_expected = tfFloat.make({0}, {});
   exec_aten::Tensor out2_expected = tfFloat.make({0}, {});
-  __native_batch_norm_legit_no_training_out(
+  op_native_batch_norm_legit_no_training_out(
       input,
       weight,
       bias,
@@ -464,7 +464,7 @@ TEST(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest4D) {
        6.598236560821533,    7.107358932495117});
   exec_aten::Tensor out1_expected = tfFloat.make({0}, {});
   exec_aten::Tensor out2_expected = tfFloat.make({0}, {});
-  __native_batch_norm_legit_no_training_out(
+  op_native_batch_norm_legit_no_training_out(
       input,
       weight,
       bias,
@@ -593,7 +593,7 @@ TEST(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestDouble) {
        2.858748044414565,    2.4459192831196264,   3.570683705559329});
   exec_aten::Tensor out1_expected = tfDouble.make({0}, {});
   exec_aten::Tensor out2_expected = tfDouble.make({0}, {});
-  __native_batch_norm_legit_no_training_out(
+  op_native_batch_norm_legit_no_training_out(
       input,
       weight,
       bias,
@@ -744,7 +744,7 @@ TEST(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
                   6.813542366027832,   7.285834312438965});
   exec_aten::Tensor out1_expected = tfFloat.make({0}, {});
   exec_aten::Tensor out2_expected = tfFloat.make({0}, {});
-  __native_batch_norm_legit_no_training_out(
+  op_native_batch_norm_legit_no_training_out(
       input,
       weight,
       bias,
@@ -810,7 +810,7 @@ TEST(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeightNoBias) {
        2.2175559997558594,  1.4201356172561646});
   exec_aten::Tensor out1_expected = tfFloat.make({0}, {});
   exec_aten::Tensor out2_expected = tfFloat.make({0}, {});
-  __native_batch_norm_legit_no_training_out(
+  op_native_batch_norm_legit_no_training_out(
       input,
       weight,
       bias,
