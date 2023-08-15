@@ -31,9 +31,16 @@ namespace executor {
 
 namespace {
 
-bool IsAligned(const void* data, size_t alignment) {
+/**
+ * Program data must be aligned to this value to properly parse it. Must be a
+ * power of 2. Note that max_align_t is the alignment that malloc() and new
+ * guarantee.
+ */
+constexpr size_t kMinimumAlignment = alignof(std::max_align_t);
+
+bool IsAligned(const void* data) {
   uintptr_t addr = reinterpret_cast<uintptr_t>(data);
-  return addr % alignment == 0;
+  return addr % kMinimumAlignment == 0;
 }
 
 /**
@@ -54,12 +61,12 @@ const executorch_flatbuffer::Program* DeserializeFlatbufferData(
 
   // The provided pointer must start at an aligned address to ensure internal
   // alignment of flatbuffer fields.
-  if (!IsAligned(data, FLATBUFFERS_MAX_ALIGNMENT)) {
+  if (!IsAligned(data)) {
     ET_LOG(
         Error,
-        "Program data 0x%p must be aligned to %u",
+        "Program data 0x%p must be aligned to %zu",
         data,
-        FLATBUFFERS_MAX_ALIGNMENT);
+        kMinimumAlignment);
     return nullptr;
   }
 
@@ -172,11 +179,11 @@ Program::Program(const void* serialized_content)
   // The flatbuffer data must start at an aligned address to ensure internal
   // alignment of flatbuffer fields.
   ET_CHECK_OR_RETURN_ERROR(
-      IsAligned(program_data->data(), FLATBUFFERS_MAX_ALIGNMENT),
+      IsAligned(program_data->data()),
       InvalidArgument,
-      "Program data 0x%p must be aligned to %u",
+      "Program data 0x%p must be aligned to %zu",
       program_data->data(),
-      FLATBUFFERS_MAX_ALIGNMENT);
+      kMinimumAlignment);
 
   // Get the pointer to the root flatbuffer table.
   const executorch_flatbuffer::Program* flatbuffer_program =
