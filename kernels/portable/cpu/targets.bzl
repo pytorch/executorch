@@ -39,6 +39,7 @@ _ATEN_OPS = (
         name = "op_addmm",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
             ":scalar_utils",
             ":vec_ops",
         ],
@@ -167,6 +168,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_bmm",
         deps = [
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
             ":vec_ops",
         ],
     ),
@@ -497,6 +499,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_mm",
         deps = [
+            "//executorch/kernels/portable/cpu/util:matmul_ops_util",
             ":vec_ops",
         ],
     ),

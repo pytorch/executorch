@@ -6,19 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/util/matmul_ops_util.h>
 #include <executorch/kernels/portable/cpu/vec_ops.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-/**
- * Performs a matrix multiplication of the matrices input and mat2.
- *
- * If input is a (n \times m)(n×m) tensor, mat2 is a (m \times p)(m×p) tensor,
- * out will be a (n \times p)(n×p) tensor.
- *
- * NOTE
- *
- * This function does not broadcast. For broadcasting matrix products, see
- * torch.matmul().
- */
 
 namespace torch {
 namespace executor {
@@ -26,86 +16,33 @@ namespace native {
 
 using Tensor = exec_aten::Tensor;
 
-namespace {
+Tensor&
+mm_out(RuntimeContext& ctx, const Tensor& in, const Tensor& mat2, Tensor& out) {
+  ET_KERNEL_CHECK(ctx, check_mm_args(in, mat2, out), InvalidArgument, out);
 
-/**
- * Asserts that the parameters are valid.
- * self (n x m), mat1 (m x p) and out (n x p)
- * z[i][j] = sum(x[i][k] * y[k][j]), for k in range(m)
- */
-void check_mm_out_args(const Tensor& self, const Tensor& mat1, Tensor& out) {
-  // Ensure dimensions are the same for all tensors
-  ET_CHECK_MSG(
-      self.dim() == mat1.dim() && self.dim() == out.dim(),
-      "self.dim() %zd and mat1.dim() %zd and out.dim() %zd are not the same",
-      self.dim(),
-      mat1.dim(),
-      out.dim());
-  // Ensure dimension is 2 for all tensors
-  ET_CHECK_MSG(self.dim() == 2, "self.dim() %zd != 2", self.dim());
-  // Ensure 3 tensors are having the same dtype
-  ET_CHECK_SAME_DTYPE3(self, mat1, out);
-  // Ensure the out size is compatible with input tensors
-  ET_CHECK_MSG(
-      mat1.size(1) == out.size(1),
-      "mat1.size(1) %zd != out.size(1) %zd",
-      mat1.size(1),
-      out.size(1));
-  ET_CHECK_MSG(
-      self.size(0) == out.size(0),
-      "self.size(0) %zd != out.size(0) %zd",
-      self.size(0),
-      out.size(0));
-}
+  size_t output_ndim = 0;
+  exec_aten::SizesType output_sizes[kTensorDimensionLimit];
+  get_mm_out_target_size(in, mat2, output_sizes, &output_ndim);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {output_sizes, output_ndim}) == Error::Ok,
+      InvalidArgument,
+      out);
 
-// for simplicity, assuming all tensors are of the same type. T is the tensor
-// dtype.
-template <typename T>
-Tensor& mm_out_kernel(const Tensor& self, const Tensor& mat1, Tensor& out) {
-  const T* self_data = self.const_data_ptr<T>();
-  const T* mat1_data = mat1.const_data_ptr<T>();
-  T* out_data = out.mutable_data_ptr<T>();
+  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "mm", CTYPE, [&]() {
+    size_t m = in.size(0);
+    size_t n = in.size(1);
+    size_t p = mat2.size(1);
 
-  size_t m = self.size(0);
-  size_t n = self.size(1);
-  size_t p = out.size(1);
+    vec_matmul<CTYPE>(
+        out.mutable_data_ptr<CTYPE>(),
+        in.const_data_ptr<CTYPE>(),
+        mat2.const_data_ptr<CTYPE>(),
+        m,
+        n,
+        p);
+  });
 
-  vec_matmul<T>(out_data, self_data, mat1_data, m, n, p);
-
-  return out;
-}
-
-} // namespace
-
-/**
- * mm.out(Tensor self, Tensor mat1, *, Tensor(a!) out) -> Tensor(a!)
- */
-Tensor& mm_out(
-    RuntimeContext& ctx,
-    const Tensor& self,
-    const Tensor& mat1,
-    Tensor& out) {
-  (void)ctx;
-  Tensor::SizesType expected_output_size[2];
-  expected_output_size[0] = self.size(0);
-  expected_output_size[1] = mat1.size(1);
-  auto error = resize_tensor(
-      out, {expected_output_size, static_cast<size_t>(out.dim())});
-  // TODO: Construct error message with requested output sizes.
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
-  check_mm_out_args(self, mat1, out);
-  auto scalar_type = self.scalar_type();
-#define MM_TENSOR(ctype, dtype)            \
-  case ScalarType::dtype:                  \
-    mm_out_kernel<ctype>(self, mat1, out); \
-    break;
-
-  switch (scalar_type) {
-    ET_FORALL_REAL_TYPES(MM_TENSOR)
-    default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd", scalar_type);
-  }
-#undef MM_TENSOR
   return out;
 }
 
