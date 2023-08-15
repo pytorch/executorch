@@ -89,12 +89,6 @@ def gen_mobilenet_v2_model_inputs() -> Tuple[torch.nn.Module, Any]:
     return MV2Model.get_model(), MV2Model.get_example_inputs()
 
 
-def gen_emformer_model_inputs() -> Tuple[torch.nn.Module, Any]:
-    from ..models.emformer import EmformerModel
-
-    return EmformerModel.get_model(), EmformerModel.get_example_inputs()
-
-
 def gen_torchvision_vit_model_and_inputs() -> Tuple[torch.nn.Module, Any]:
     from ..models.torchvision_vit import TorchVisionViTModel
 
@@ -108,6 +102,5 @@ MODEL_NAME_TO_MODEL = {
     "add_mul": lambda: (AddMulModule(), AddMulModule.get_example_inputs()),
     "mv2": gen_mobilenet_v2_model_inputs,
     "mv3": gen_mobilenet_v3_model_inputs,
-    "emformer": gen_emformer_model_inputs,
     "vit": gen_torchvision_vit_model_and_inputs,
 }
