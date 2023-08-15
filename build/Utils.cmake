@@ -30,7 +30,7 @@ function(clang_kernel_link_options target_name)
         # for targets that depend on this library; once because CMake will add
         # it, and once because it's in this list of args. See if there's a way
         # to avoid that.
-        -Wl,$<TARGET_FILE:${target_name}>
+        -Wl,-force_load,$<TARGET_FILE:${target_name}>
     )
 endfunction()
 

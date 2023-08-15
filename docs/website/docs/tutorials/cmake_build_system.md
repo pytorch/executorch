@@ -41,7 +41,7 @@ useful to embedded systems users.
      install` inside your conda environment if you created one during AOT Setup
      (see [Setting up
      Executorch](00_setting_up_executorch.md#aot-setup-open-on-google-colab)).
-1. Install CMake version 3.13 or later
+1. Install CMake version 3.19 or later
 
 ## Configure the CMake build
 
