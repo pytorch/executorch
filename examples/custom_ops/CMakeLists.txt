@@ -31,6 +31,9 @@ endif()
 if(NOT TORCH_ROOT)
   set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 endif()
+
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+
 # Command to generate selected_operators.yaml from custom_ops.yaml.
 set(_oplist_yaml ${CMAKE_CURRENT_BINARY_DIR}/selected_operators.yaml)
 file(GLOB_RECURSE _codegen_tools_srcs "${EXECUTORCH_ROOT}/codegen/tools/*.py")
@@ -107,16 +110,7 @@ if(REGISTER_EXAMPLE_CUSTOM_OP_2)
 
   # Ensure that the load-time constructor functions run. By default, the linker
   # would remove them since there are no other references to them.
-  if((CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
-     OR (APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
-    target_link_options(custom_ops_aot_lib INTERFACE
-                        "-Wl,-force_load,$<TARGET_FILE:custom_ops_aot_lib>")
-  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    target_link_options(
-      custom_ops_aot_lib INTERFACE
-      "-Wl,--whole-archive,$<TARGET_FILE:custom_ops_aot_lib>,--no-whole-archive"
-    )
-  endif()
+  kernel_link_options("custom_ops_aot_lib")
 endif()
 
 # 1. C++ library to register custom ops into Executorch runtime.
