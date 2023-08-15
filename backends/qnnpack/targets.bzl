@@ -42,25 +42,6 @@ def define_common_targets():
         ],
     )
 
-    for aten_mode in (True, False):
-        aten_suffix = "_aten" if aten_mode else ""
-        runtime.cxx_library(
-            name = "qnnpack_utils" + aten_suffix,
-            srcs = [
-                "utils/utils.cpp",
-            ],
-            exported_headers = ["utils/utils.h"],
-            deps = [
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-                "//executorch/runtime/backend:backend_registry",
-            ],
-            visibility = [
-                "//executorch/backends/qnnpack/test/...",
-                "//executorch/backends/xnnpack/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
-        )
-
     runtime.cxx_library(
         name = "qnnpack_backend",
         srcs = [
@@ -84,6 +65,7 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/runtime/backend:backend_registry",
             "//executorch/backends/xnnpack/threadpool:threadpool",
+            "//executorch/backends/xnnpack:dynamic_quant_utils",
             "//executorch/util:memory_utils",
             "//{prefix}caffe2/aten/src/ATen/native/quantized/cpu/qnnpack:pytorch_qnnpack".format(
                 prefix = (
@@ -91,7 +73,6 @@ def define_common_targets():
                 ),
             ),
             ":qnnpack_schema",
-            ":qnnpack_utils",
         ],
         platforms = [
             ANDROID,

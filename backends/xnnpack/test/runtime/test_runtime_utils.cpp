@@ -13,7 +13,7 @@
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/platform/runtime.h>
-#include "executorch/backends/qnnpack/utils/utils.h"
+#include "executorch/backends/xnnpack/runtime/utils/utils.h"
 
 using namespace ::testing;
 

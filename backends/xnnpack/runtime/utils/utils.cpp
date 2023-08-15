@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/qnnpack/utils/utils.h>
+#include <executorch/backends/xnnpack/runtime/utils/utils.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace torch {

@@ -2,6 +2,22 @@ load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
+    runtime.cxx_library(
+        name = "dynamic_quant_utils",
+        srcs = [
+            "runtime/utils/utils.cpp",
+        ],
+        exported_headers = ["runtime/utils/utils.h"],
+        deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/backend:backend_registry",
+        ],
+        visibility = [
+            "//executorch/backends/xnnpack/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
     runtime.genrule(
         name = "gen_xnnpack_schema",
         srcs = [
@@ -52,8 +68,8 @@ def define_common_targets():
         deps = [
             third_party_dep("XNNPACK"),
             ":xnnpack_schema",
+            ":dynamic_quant_utils",  # TODO Use (1) portable for choose_qparams(), (2) xnnpack for quantize_per_tensor(),
             "//executorch/runtime/backend:backend_registry",
-            "//executorch/backends/qnnpack:qnnpack_utils",  # TODO Use (1) portable for choose_qparams(), (2) xnnpack for quantize_per_tensor()
             "//executorch/backends/xnnpack/threadpool:threadpool",
             "//executorch/util:memory_utils",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
