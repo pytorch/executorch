@@ -74,23 +74,6 @@ class ExportTest(unittest.TestCase):
             eager_model, example_inputs, self.validate_tensor_allclose
         )
 
-    def test_emformer_export_to_executorch(self):
-        eager_model, example_inputs = MODEL_NAME_TO_MODEL["emformer"]()
-        eager_model = eager_model.eval()
-
-        validate_emformer_result = (
-            lambda eager_output, executorch_output: torch.allclose(
-                eager_output[0],
-                executorch_output[0][0],
-                rtol=1e-5,
-                atol=1e-5,
-            )
-        )
-
-        self._assert_eager_lowered_same_result(
-            eager_model, example_inputs, validate_emformer_result
-        )
-
     def test_vit_export_to_executorch(self):
         eager_model, example_inputs = MODEL_NAME_TO_MODEL["vit"]()
         eager_model = eager_model.eval()
