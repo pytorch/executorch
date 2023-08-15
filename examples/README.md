@@ -7,9 +7,12 @@ It also includes a list of modules, from a simple `Add` to a full model like `Mo
 ## Directory structure
 ```bash
 examples
+├── custom_ops      # Contains examples to register custom operators into PyTorch as well as register its kernels into Executorch runtime
 ├── executor_runner # This is an example C++ wrapper around the ET runtime
 ├── export          # Python helper scripts to illustrate export workflow
+├── ios_demo_apps   # Contains iOS demo apps
 ├── models          # Contains a set of simple to PyTorch models
+├── quantization    # Contains examples of quantization workflow
 └── README.md       # This file
 ```
 
