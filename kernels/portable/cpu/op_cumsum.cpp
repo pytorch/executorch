@@ -35,8 +35,17 @@ namespace {
  */
 template <typename CTYPE_IN, typename CTYPE_OUT>
 void cumsum_tensors(const Tensor& self, int64_t dim, Tensor& out) {
+  if (self.numel() == 0) {
+    return;
+  }
+
   const CTYPE_IN* input_data_base = self.const_data_ptr<CTYPE_IN>();
   CTYPE_OUT* output_data_base = out.mutable_data_ptr<CTYPE_OUT>();
+
+  if (self.dim() == 0) {
+    output_data_base[0] = input_data_base[0];
+    return;
+  }
 
   const size_t dim_size = static_cast<size_t>(self.size(dim));
   const size_t leading_dims = getLeadingDims(self, dim);
@@ -76,15 +85,17 @@ Tensor& cumsum_out(
     optional<ScalarType> enforced_dtype,
     Tensor& out) {
   (void)ctx;
-  // Ensure self has value
-  ET_CHECK_MSG(self.numel() > 0, "self.numel() %zd <= 0", self.numel());
   // Ensure dim is valid
-  ET_CHECK_MSG(
-      dim >= -self.dim() && dim < self.dim(),
-      "dim %" PRId64 " >= 0 && dim %" PRId64 " < self.dim() %zd",
-      dim,
-      dim,
-      self.dim());
+  if (self.dim() == 0) {
+    ET_CHECK(dim == 0 || dim == -1);
+  } else {
+    ET_CHECK_MSG(
+        dim >= -self.dim() && dim < self.dim(),
+        "dim %" PRId64 " >= 0 && dim %" PRId64 " < self.dim() %zd",
+        dim,
+        dim,
+        self.dim());
+  }
 
   torch::executor::Error err = resize_tensor(out, self.sizes());
   ET_CHECK_MSG(
@@ -97,7 +108,7 @@ Tensor& cumsum_out(
         enforced_dtype.value() == out.scalar_type(),
         "dtype must be equal to the type of out tensor");
   }
-  dim = dim < 0 ? dim + self.dim() : dim;
+  dim = (self.dim() == 0) ? 0 : dim < 0 ? dim + self.dim() : dim;
 
 // Use a two layer switch to hanldle each possible data pair
 #define CUMSUM_IMPL(SELF_CTYPE, OUT_CTYPE, out_dtype)      \

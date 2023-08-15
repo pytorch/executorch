@@ -33,23 +33,6 @@ Tensor& op_cumsum_out(
       context, self, dim, enforced_dtype, out);
 }
 
-TEST(OpCumSumOutTest, EmptyInputOrEmptyOutTensorDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle empty input or out tensor";
-  }
-  TensorFactory<ScalarType::Float> tff;
-
-  Tensor in = tff.make({2, 2, 0}, {});
-
-  // Make an empty out tensor and demonstrate that it's empty.
-  Tensor out = tff.make({2, 2, 0}, {});
-
-  EXPECT_EQ(out.numel(), 0);
-
-  optional<ScalarType> enforced_dtype;
-  ET_EXPECT_KERNEL_FAILURE(op_cumsum_out(in, /*dim=*/1, enforced_dtype, out));
-}
-
 TEST(OpCumSumOutTest, MismatchedDimensionsDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
