@@ -79,7 +79,7 @@ inline void get_unsqueezed_dim_order(
  * in_C_per_group x in_H x in_W, to compute an out channel of size 1 x out_H x
  * out_W.
  */
-template <typename CTYPE>
+template <typename CTYPE, typename CTYPE_BIAS>
 void conv2d_impl(
     const CTYPE* const in_ptr,
     SizesArrayRef in_sizes,
@@ -87,7 +87,7 @@ void conv2d_impl(
     const CTYPE* const w_ptr,
     SizesArrayRef w_sizes,
     StridesArrayRef w_strides,
-    const CTYPE* const bias_ptr,
+    const CTYPE_BIAS* const bias_ptr,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
@@ -174,7 +174,7 @@ void conv2d_impl(
       }
 
       if (bias_ptr != nullptr) {
-        accum += bias_ptr[out_c];
+        accum += convert<CTYPE, CTYPE_BIAS>(bias_ptr[out_c]);
       }
       size_t out_idx = calculate_linear_index(out_coord, out_strides.data(), 4);
       out_ptr[out_idx] = accum;
@@ -182,7 +182,7 @@ void conv2d_impl(
   }
 }
 
-template <typename CTYPE>
+template <typename CTYPE, typename CTYPE_BIAS>
 void convolution_wrapper(
     const Tensor& in,
     const Tensor& weight,
@@ -289,8 +289,8 @@ void convolution_wrapper(
   CTYPE* const out_ptr = out.mutable_data_ptr<CTYPE>();
   const CTYPE* const in_ptr = in.const_data_ptr<CTYPE>();
   const CTYPE* const w_ptr = weight.const_data_ptr<CTYPE>();
-  const CTYPE* const bias_ptr =
-      bias.has_value() ? bias.value().const_data_ptr<CTYPE>() : nullptr;
+  const CTYPE_BIAS* const bias_ptr =
+      bias.has_value() ? bias.value().const_data_ptr<CTYPE_BIAS>() : nullptr;
 
   for (size_t batch = 0; batch < out_N; ++batch) {
     for (size_t group = 0; group < groups; ++group) {
@@ -424,9 +424,16 @@ Tensor& convolution_out(
   Error err = resize_tensor(out, {output_sizes, output_ndim});
   ET_CHECK_MSG(err == Error::Ok, "Could not resize output");
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "convolution", CTYPE, [&]() {
-    convolution_wrapper<CTYPE>(
-        in, weight, bias, stride, padding, dilation, groups, out);
+  ScalarType in_type = in.scalar_type();
+  ScalarType bias_type = in_type;
+  if (bias.has_value()) {
+    bias_type = bias.value().scalar_type();
+  }
+  ET_SWITCH_REAL_TYPES(in_type, ctx, __func__, CTYPE, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, bias_type, ctx, __func__, CTYPE_BIAS, [&]() {
+      convolution_wrapper<CTYPE, CTYPE_BIAS>(
+          in, weight, bias, stride, padding, dilation, groups, out);
+    });
   });
 
   return out;
