@@ -51,6 +51,23 @@ Use `-h` (or `--help`) to see all the supported models.
 buck2 run examples/executor_runner:executor_runner -- --model_path mv2.pte
 ```
 
+## Quantization
+Here is the [Quantization Flow Docs](/docs/website/docs/tutorials/quantization_flow.md).
+
+You can run quantization test with the following command:
+```bash
+buck2 run executorch/examples/quantization:example -- --model_name="mv2" # for MobileNetv2
+```
+It will print both the original model after capture and quantized model.
+
+The flow produces a quantized model that could be lowered through partitioner or the runtime directly.
+
+
+you can also find the valid quantized example models by running:
+```bash
+buck2 run executorch/examples/quantization:example -- --help
+```
+
 ## Dependencies
 
 Various models listed in this directory have dependencies on some other packages, e.g. torchvision, torchaudio.
