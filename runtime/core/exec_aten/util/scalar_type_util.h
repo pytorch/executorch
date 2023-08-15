@@ -456,6 +456,31 @@ inline bool canCast(
 }
 
 /**
+ * When casting from floating point to integral type, if the floating value is
+ * outside the integral type range, then an error is thrown if sanitization is
+ * enabled. To circumvent this, we cast the floating point to int64_t first.
+ */
+template <
+    typename To,
+    typename From,
+    typename std::enable_if<
+        (std::is_floating_point<From>::value && std::is_integral<To>::value),
+        int>::type = 0>
+To convert(From val) {
+  return static_cast<To>(static_cast<int64_t>(val));
+}
+
+template <
+    typename To,
+    typename From,
+    typename std::enable_if<
+        !(std::is_floating_point<From>::value && std::is_integral<To>::value),
+        int>::type = 0>
+To convert(From val) {
+  return static_cast<To>(val);
+}
+
+/**
  * Implements type promotion rules that are consistent with ATen behaviour,
  * which in turn is consistent with NumPy's promote_types.
  */
