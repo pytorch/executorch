@@ -666,12 +666,9 @@ void test_dtype() {
   EXPECT_TENSOR_EQ(ret, expect_ret);
 }
 
-TEST(OpSliceCopyTensorOutTest, AllDtypesSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+TEST(OpSliceCopyTensorOutTest, AllRealDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
   // TODO: Also add tests for half, complex, quantized, and other types. Easiest
   // way to do that would be to make TensorFactory support zeros() and ones()
@@ -750,22 +747,6 @@ TEST(OpSliceCopyTensorOutTest, MismatchedOutDtypesDies) {
 
   // Size is compatible to the output, but a mismatched dtype.
   Tensor out = tf_float.ones({1, 2, 2});
-
-  ET_EXPECT_KERNEL_FAILURE(op_slice_scatter_out(
-      input, src, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));
-}
-
-TEST(OpSliceCopyTensorOutTest, MismatchedSrcDtypesDies) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle src with mismatched dtype";
-  }
-  TensorFactory<ScalarType::Int> tf_int;
-  TensorFactory<ScalarType::Float> tf_float;
-  Tensor input = tf_int.zeros({1, 2, 2});
-  Tensor src = tf_float.zeros({1, 2, 2});
-
-  // Size is compatible to the output, but a mismatched dtype.
-  Tensor out = tf_int.ones({1, 2, 2});
 
   ET_EXPECT_KERNEL_FAILURE(op_slice_scatter_out(
       input, src, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));

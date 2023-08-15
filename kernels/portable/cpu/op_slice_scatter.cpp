@@ -39,8 +39,8 @@ void check_input_args(
   // Input and output tensors should be the same shape
   ET_CHECK_SAME_SHAPE2(input, output);
 
-  // All tensors should have the same dtype
-  ET_CHECK_SAME_DTYPE3(input, src, output);
+  // Input and output tensors should have the same shape
+  ET_CHECK_SAME_DTYPE2(input, output);
 
   // The input.dim() shall equal to src.dim()
   ET_CHECK_MSG(
@@ -158,28 +158,36 @@ Tensor& slice_scatter_out(
   check_input_args(input, src, dim, num_values, step, out);
 
   size_t dim_length = input.size(dim);
-
   size_t leading_dims = getLeadingDims(input, dim);
   size_t trailing_dims = getTrailingDims(input, dim);
 
-  size_t length_per_step = trailing_dims * input.element_size();
-
-  const char* in_data = input.const_data_ptr<char>();
-  const char* src_data = src.const_data_ptr<char>();
-
-  char* out_data = out.mutable_data_ptr<char>();
-
   // To start, copy the input into the output
-  memcpy(out_data, in_data, input.nbytes());
+  memcpy(out.mutable_data_ptr(), input.const_data_ptr(), input.nbytes());
 
-  for (int i = 0; i < leading_dims; i++) {
-    char* dst = out_data + (i * dim_length + start) * length_per_step;
-    for (int j = 0; j < num_values; j++) {
-      memcpy(dst, src_data, length_per_step);
-      src_data += length_per_step;
-      dst += step * length_per_step;
-    }
-  }
+  ScalarType in_type = input.scalar_type();
+  ScalarType src_type = src.scalar_type();
+
+  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, src_type, ctx, __func__, CTYPE_SRC, [&]() {
+      CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+      const CTYPE_SRC* src_data = src.const_data_ptr<CTYPE_SRC>();
+
+      size_t src_offset = 0;
+
+      for (int i = 0; i < leading_dims; i++) {
+        size_t out_offset = (i * dim_length + start) * trailing_dims;
+        for (int j = 0; j < num_values; j++) {
+          for (size_t k = 0; k < trailing_dims; ++k) {
+            out_data[out_offset + k] =
+                convert<CTYPE, CTYPE_SRC>(src_data[src_offset + k]);
+          }
+          src_offset += trailing_dims;
+          out_offset += step * trailing_dims;
+        }
+      }
+    });
+  });
+
   return out;
 }
 
