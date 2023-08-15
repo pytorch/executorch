@@ -8,24 +8,48 @@
 
 #pragma once
 
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/platform/compiler.h>
+
 namespace torch {
 namespace executor {
 
 /**
- * Bucket type abstraction that contains many elements of runtime state that
- * a kernel author may want available, but would otherwise be unable to access.
+ * Runtime state and functionality for kernel implementations.
  *
- * Forwarded along to all operators when running in lean mode. NOTE: Will not be
- * forwarded to operators if running in ATen mode as those operators do not
- * expect to receive a KernelRuntimeContext and would not use it.
- *
- * This includes things like setting an error state, a scratch allocator for
- * operators that need more then constant space, and a TensorResizer for dynamic
- * shape tensors allowing programs to be more flexible with Tensor shape.
- *
- * TODO(T147221312): Define this interface
+ * NOTE: Will not be passed to operators if running in ATen mode as those
+ * operators do not expect to receive a KernelRuntimeContext argument.
  */
-class KernelRuntimeContext {};
+class KernelRuntimeContext {
+ public:
+  /**
+   * Tells the runtime that the kernel call has failed. Prefer this over
+   * ET_CHECK_*(), which fatally panics the process/system.
+   *
+   * If this is not called, the runtime will treat the kernel call as
+   * successful.
+   *
+   * This unusual error-propagation path is required because kernel signatures
+   * do not have a natural way to return errors directly. They are generally
+   * compatible with core PyTorch ATen kernel signatures, which use exceptions
+   * to report errors. But, ExecuTorch does not use exceptions.
+   */
+  void fail(Error error) {
+    failure_state_ = error;
+  }
+
+  /// Returns the current failure state.
+  __ET_NODISCARD Error failure_state() const {
+    return failure_state_;
+  }
+
+  // TODO(T147221312): Add a way to allocate temporary memory.
+
+  // TODO(T147221312): Add a way to resize a tensor.
+
+ private:
+  Error failure_state_ = Error::Ok;
+};
 
 } // namespace executor
 } // namespace torch
