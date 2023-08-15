@@ -27,7 +27,7 @@ namespace {
  * 3. dim and index values are valid given the input tensor
  */
 void check_select_scatter_args(
-    const Tensor& input,
+    const Tensor& in,
     const Tensor& src,
     int64_t dim,
     int64_t index,
@@ -37,56 +37,50 @@ void check_select_scatter_args(
 
   // The dim planed to be selected on shall exist in input
   ET_CHECK_MSG(
-      dim >= 0 && dim < input.dim(),
+      dim >= 0 && dim < in.dim(),
       "dim %" PRId64 " out of range [-%zd,%zd)",
       dim,
-      input.dim(),
-      input.dim());
+      in.dim(),
+      in.dim());
 
   // The index shall be valid in the given dimenson
   ET_CHECK_MSG(
-      index >= 0 && index < input.size(dim),
-      "index %" PRId64 " out of range [-%zd,%zd) at input.size( %" PRId64 ")",
+      index >= 0 && index < in.size(dim),
+      "index %" PRId64 " out of range [-%zd,%zd) at in.size( %" PRId64 ")",
       index,
-      input.size(dim),
-      input.size(dim),
+      in.size(dim),
+      in.size(dim),
       dim);
 
-  // All tensors should be same dtype
-  ET_CHECK_SAME_DTYPE3(input, output, src);
-
-  // The size of output tensor should be the same as the input
-  ET_CHECK_SAME_SHAPE2(input, output);
-
-  // The src.dim() shall be one lower than input.dim() since src needs to fit
+  // The src.dim() shall be one lower than in.dim() since src needs to fit
   // into the selected data on one dim of input
   // https://pytorch.org/docs/stable/generated/torch.select_scatter.html
   ET_CHECK_MSG(
-      input.dim() == src.dim() + 1,
-      "input.dim() %zd != src.dim() + 1 %zd",
-      input.dim(),
+      in.dim() == src.dim() + 1,
+      "in.dim() %zd != src.dim() + 1 %zd",
+      in.dim(),
       src.dim() + 1);
 
   // The size of src tensor should follow these rules:
-  // - src.size(i) shall equal to input.size(i) if i < dim,
-  // - src.size(i) shall equal to input.size(i+1) if i >= dim
+  // - src.size(i) shall equal to in.size(i) if i < dim,
+  // - src.size(i) shall equal to in.size(i+1) if i >= dim
 
-  for (ssize_t d = 0; d < input.dim() - 1; d++) {
+  for (ssize_t d = 0; d < in.dim() - 1; d++) {
     if (d < dim) {
       ET_CHECK_MSG(
-          input.size(d) == src.size(d),
-          "input.size(%zu) %zd != src.size(%zu) %zd | dim = %" PRId64 ")",
+          in.size(d) == src.size(d),
+          "in.size(%zu) %zd != src.size(%zu) %zd | dim = %" PRId64 ")",
           d,
-          input.size(d),
+          in.size(d),
           d,
           src.size(d),
           dim);
     } else {
       ET_CHECK_MSG(
-          input.size(d + 1) == src.size(d),
-          "input.size(%zu) %zd != src.size(%zu) %zd | dim = %" PRId64 ")",
+          in.size(d + 1) == src.size(d),
+          "in.size(%zu) %zd != src.size(%zu) %zd | dim = %" PRId64 ")",
           d + 1,
-          input.size(d + 1),
+          in.size(d + 1),
           d,
           src.size(d),
           dim);
@@ -100,67 +94,60 @@ void check_select_scatter_args(
 /// Tensor(a!) out) -> Tensor(a!)
 Tensor& select_scatter_out(
     RuntimeContext& ctx,
-    const Tensor& input,
+    const Tensor& in,
     const Tensor& src,
     int64_t dim,
     int64_t index,
     Tensor& out) {
-  // Avoid unused variable warning
   (void)ctx;
+
+  ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
   // Account for negative indices
   if (dim < 0) {
-    dim += input.dim();
+    dim += in.dim();
   }
   if (index < 0) {
-    index += input.size(dim);
+    index += in.size(dim);
   }
-
-  // Resize the tensor to the expected output size
-  Tensor::SizesType expected_output_size[16];
-  for (size_t i = 0; i < input.dim(); ++i) {
-    expected_output_size[i] = input.size(i);
-  }
-  auto error = resize_tensor(
-      out, {expected_output_size, static_cast<size_t>(input.dim())});
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
   // Check args
-  check_select_scatter_args(input, src, dim, index, out);
+  check_select_scatter_args(in, src, dim, index, out);
 
-  // If the input is a empty tensor, no other operation could be done. We just
+  // If the input is an empty tensor, no other operation could be done. We just
   // return the output.
-  if (input.numel() == 0) {
+  if (in.numel() == 0) {
     return out;
   }
 
   // To start, copy the input into the output. Input will not be empty due to
   // the checks performed above.
-  memcpy(out.mutable_data_ptr(), input.const_data_ptr(), input.nbytes());
+  memcpy(out.mutable_data_ptr(), in.const_data_ptr(), in.nbytes());
 
   // Strides to help with memory address arithmetic
-  size_t leading_dims = getLeadingDims(input, dim);
-  size_t trailing_stride = getTrailingDims(input, dim);
+  size_t leading_dims = getLeadingDims(in, dim);
+  size_t trailing_stride = getTrailingDims(in, dim);
+  size_t start_offset = index * trailing_stride;
+  size_t out_step = in.size(dim) * trailing_stride;
 
-  size_t dim_length = input.size(dim);
+  ScalarType in_type = in.scalar_type();
+  ScalarType src_type = src.scalar_type();
 
-  // Number of bytes to copy for each memcpy
-  size_t copy_nbytes = trailing_stride * src.element_size();
+  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, src_type, ctx, __func__, CTYPE_SRC, [&]() {
+      CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
+      const CTYPE_SRC* const src_data = src.const_data_ptr<CTYPE_SRC>();
 
-  // Number of bytes to step forward to reach the next copy output location
-  size_t out_step_nbytes = dim_length * trailing_stride * out.element_size();
-
-  // Position data pointers at the starting point
-  size_t start_offset = index * trailing_stride * out.element_size();
-  char* out_data = out.mutable_data_ptr<char>() + start_offset;
-
-  const char* src_data = src.const_data_ptr<char>();
-
-  for (size_t step = 0; step < leading_dims; ++step) {
-    memcpy(out_data, src_data, copy_nbytes);
-    out_data += out_step_nbytes;
-    src_data += copy_nbytes;
-  }
+      for (size_t i = 0; i < leading_dims; ++i) {
+        for (size_t j = 0; j < trailing_stride; ++j) {
+          out_data[start_offset + i * out_step + j] =
+              convert<CTYPE, CTYPE_SRC>(src_data[i * trailing_stride + j]);
+        }
+      }
+    });
+  });
 
   return out;
 }
