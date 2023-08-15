@@ -786,10 +786,24 @@ Error Method::execute_instruction() {
   switch (instruction->instr_args_type()) {
     case executorch_flatbuffer::InstructionArguments::KernelCall: {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
-      KernelRuntimeContext context{};
+      // TODO(T147221312): Also expose the temp allocator and tensor resizer
+      // via the context.
+      KernelRuntimeContext context;
       chain.kernels_[step_state_.instr_idx](
           context, chain.argument_lists_[step_state_.instr_idx].data());
-      // TODO(T135464333): inspect runtime context for error state
+      Error err = context.failure_state();
+      if (err != Error::Ok) {
+        ET_LOG(
+            Error,
+            "KernelCall failed at instruction %zu:%zu: 0x%x",
+            step_state_.chain_idx,
+            step_state_.instr_idx,
+            (unsigned int)err);
+        // TODO(T153804650): Consider logging the EValues to help with
+        // debugging. This is a failure path, and it doesn't matter if it's a
+        // little slow. Do the same for DelegateCall errors.
+        return err;
+      }
     } break;
     case executorch_flatbuffer::InstructionArguments::DelegateCall: {
       EXECUTORCH_SCOPE_PROF("DELEGATE_CALL");

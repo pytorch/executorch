@@ -169,6 +169,24 @@ def define_common_targets(is_fbcode = False):
         )
 
         runtime.cxx_test(
+            name = "kernel_integration_test",
+            srcs = [
+                "kernel_integration_test.cpp",
+            ],
+            deps = [
+                ":managed_memory_manager",
+                "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/executor:program",
+                "//executorch/runtime/kernel:kernel_runtime_context",
+                "//executorch/runtime/kernel:operator_registry",
+                "//executorch/runtime/platform:platform",
+                "//executorch/util:util",
+            ],
+            env = modules_env,
+        )
+
+        runtime.cxx_test(
             name = "backend_integration_test",
             srcs = [
                 "backend_integration_test.cpp",
