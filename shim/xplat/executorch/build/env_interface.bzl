@@ -107,6 +107,11 @@ def _remove_platform_specific_args(kwargs):
         kwargs.pop(key)
     return kwargs
 
+def _remove_unsupported_kwargs(kwargs):
+    """Removes environment unsupported kwargs
+    """
+    return kwargs
+
 def _patch_headers(kwargs):
     """Patch (add or modify or remove) headers related attributes for this build environment.
     """
@@ -202,6 +207,7 @@ env = struct(
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     python_test = native.python_test,
     remove_platform_specific_args = _remove_platform_specific_args,
+    remove_unsupported_kwargs = _remove_unsupported_kwargs,
     resolve_external_dep = _resolve_external_dep,
     target_needs_patch = _target_needs_patch,
     EXTERNAL_DEP_FALLTHROUGH = _EXTERNAL_DEP_FALLTHROUGH,

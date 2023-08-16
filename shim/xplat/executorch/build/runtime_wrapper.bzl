@@ -208,6 +208,7 @@ def _patch_kwargs_common(kwargs):
     return kwargs
 
 def _patch_kwargs_cxx(kwargs):
+    env.remove_unsupported_kwargs(kwargs)
     env.patch_platforms(kwargs)
     env.remove_platform_specific_args(kwargs)
     return _patch_kwargs_common(kwargs)

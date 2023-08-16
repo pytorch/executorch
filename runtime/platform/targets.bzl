@@ -50,6 +50,11 @@ def define_common_targets():
         visibility = [
             "//executorch/core/...",
         ],
+        # WARNING: using a deprecated API to avoid being built into a shared
+        # library. In the case of dynamically loading so library we don't want
+        # it to depend on other so libraries because that way we have to
+        # specify library directory path.
+        force_static = True,
     )
 
     # Interfaces for executorch users
@@ -78,6 +83,11 @@ def define_common_targets():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
+        # WARNING: using a deprecated API to avoid being built into a shared
+        # library. In the case of dynamically loading so library we don't want
+        # it to depend on other so libraries because that way we have to
+        # specify library directory path.
+        force_static = True,
     )
 
     # Library for backend implementers to define implementations against.

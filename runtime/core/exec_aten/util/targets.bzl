@@ -61,4 +61,9 @@ def define_common_targets():
                 ":scalar_type_util" + aten_suffix,
                 ":dim_order_util" + aten_suffix,
             ],
+            # WARNING: using a deprecated API to avoid being built into a shared
+            # library. In the case of dynamically loading so library we don't want
+            # it to depend on other so libraries because that way we have to
+            # specify library directory path.
+            force_static = True,
         )
