@@ -93,11 +93,12 @@ git clone https://github.com/pytorch/executorch.git
 git clone git@github.com:pytorch/executorch.git
 ```
 
-Ensure that git has fetched the submodules. This is only necessary after
-cloning.
+Ensure that git has fetched and updated the submodules. This is necessary anytime
+commit hash of any of the submodules changes. Thus it is safe and necessary at times to apply this step after you pull changes from upstream.
 
 ```bash
 cd executorch
+git submodule sync
 git submodule update --init
 ```
 
