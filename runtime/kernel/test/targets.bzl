@@ -63,3 +63,17 @@ def define_common_targets():
             ":specialized_kernel_generated_lib",
         ],
     )
+
+    for aten_mode in (True, False):
+        aten_suffix = "_aten" if aten_mode else ""
+
+        runtime.cxx_test(
+            name = "kernel_runtime_context_test" + aten_suffix,
+            srcs = [
+                "kernel_runtime_context_test.cpp",
+            ],
+            deps = [
+                "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
+                ":specialized_kernel_generated_lib",
+            ],
+        )

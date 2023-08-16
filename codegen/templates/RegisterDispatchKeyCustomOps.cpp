@@ -10,22 +10,20 @@
 #include <torch/library.h>
 #include <ATen/Tensor.h>
 
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-$ops_headers
+${ops_headers}
 
 namespace torch {
 namespace executor {
 namespace function {
-
 
 ${dispatch_anonymous_definitions}
 
 // All out variants ops
 ${static_init_dispatch_registrations}
 
-namespace ${dispatch_namespace}
-{
-  ${dispatch_namespaced_definitions}
+namespace ${dispatch_namespace} {
+
+${dispatch_namespaced_definitions}
 
 } // namespace ${dispatch_namespace}
 

@@ -438,7 +438,8 @@ TEST(ReduceUtilTest, ApplyOnZeroDimTensorOverDim) {
   TensorFactory<ScalarType::Long> tf;
 
   Tensor in = tf.ones({});
-  ET_EXPECT_DEATH(_apply_over_dim(in, 0), "");
+  _apply_over_dim(in, 0);
+  EXPECT_TENSOR_EQ(in, tf.make({}, {0}));
 }
 
 TEST(ReduceUtilTest, ApplyOnZeroDimTensorOverDimListNull) {

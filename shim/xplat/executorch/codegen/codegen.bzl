@@ -174,6 +174,7 @@ def _prepare_genrule_and_lib(
 def _prepare_custom_ops_genrule_and_lib(
         name,
         custom_ops_yaml_path = None,
+        deps = [],
         kernels = []):
     """Similar to _prepare_genrule_and_lib but for custom ops."""
     genrules = {}
@@ -183,6 +184,20 @@ def _prepare_custom_ops_genrule_and_lib(
     genrule_name = name + "_gen"
 
     if custom_ops_yaml_path:
+        # genrule for selective build from static operator list
+        oplist_dir_name = name + "_oplist"
+        runtime.genrule(
+            name = oplist_dir_name,
+            macros_only = False,
+            cmd = ("$(exe fbsource//xplat/executorch/codegen/tools:gen_all_oplist) " +
+                   "--model_file_list_path $(@query_outputs 'attrfilter(labels, et_operator_library, deps(set({deps})))') " +
+                   "--allow_include_all_overloads " +
+                   "--output_dir $OUT ").format(deps = " ".join(["\"{}\"".format(d) for d in deps])),
+            outs = {"selected_operators.yaml": ["selected_operators.yaml"]},
+            default_outs = ["."],
+        )
+
+        # genrule for generating operator kernel bindings
         genrule_cmd = [
             "$(exe {})".format(target),
             "--source-path=$(location //executorch/codegen:templates)",
@@ -190,6 +205,7 @@ def _prepare_custom_ops_genrule_and_lib(
             "--aten_yaml_path $(location {})/aten/src/ATen/native/native_functions.yaml".format(aten_src_path),
             "--custom_ops_yaml_path=" + custom_ops_yaml_path,
             "--install_dir=${OUT}",
+            "--op_selection_yaml_path=$(location :{}[selected_operators.yaml])".format(oplist_dir_name),
         ]
 
         # Determine what sources custom_ops_<name> target should include
@@ -234,7 +250,12 @@ def exir_custom_ops_aot_lib(
         kernels: C++ kernels for these custom ops. They need to be implemented using ATen/c10 basics.
         deps: dependencies of the generated library.
     """
-    genrules, libs = _prepare_custom_ops_genrule_and_lib(name = name, custom_ops_yaml_path = "$(location {})".format(yaml_target), kernels = kernels)
+    genrules, libs = _prepare_custom_ops_genrule_and_lib(
+        name = name,
+        custom_ops_yaml_path = "$(location {})".format(yaml_target),
+        kernels = kernels,
+        deps = deps,
+    )
     for genrule in genrules:
         runtime.genrule(
             name = genrule,
@@ -258,13 +279,7 @@ def exir_custom_ops_aot_lib(
             # @lint-ignore BUCKLINT link_whole
             link_whole = True,
             visibility = visibility,
-            deps = [
-                "//executorch/runtime/core/exec_aten:lib_aten",
-                "//executorch/codegen:macros",
-            ] + kernels + deps,
-            exported_deps = [
-                "//executorch/runtime/kernel:kernel_runtime_context_aten",
-            ],
+            deps = kernels + deps,
             external_deps = ["libtorch"],
             define_static_target = define_static_target,
             # Relax visibility restrictions since deps may include targets

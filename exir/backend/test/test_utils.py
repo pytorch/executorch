@@ -108,7 +108,7 @@ class TestPartitioners(unittest.TestCase):
             exir.capture(
                 MyModule1(),
                 (torch.rand(3, 4), torch.rand(3, 4)),
-                CaptureConfig(pt2_mode=True),
+                CaptureConfig(),
             )
             .to_edge()
             .exported_program.graph_module
@@ -117,7 +117,7 @@ class TestPartitioners(unittest.TestCase):
             exir.capture(
                 MyModule2(),
                 (torch.rand(3, 4), torch.rand(3, 4)),
-                CaptureConfig(pt2_mode=True),
+                CaptureConfig(),
             )
             .to_edge()
             .exported_program.graph_module
@@ -154,7 +154,7 @@ class TestPartitioners(unittest.TestCase):
             exir.capture(
                 LargeModel(),
                 inputs,
-                CaptureConfig(pt2_mode=True),
+                CaptureConfig(),
             )
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
             .exported_program.graph_module
@@ -170,7 +170,7 @@ class TestPartitioners(unittest.TestCase):
         # output         output             output              ([addmm_default],)                           {}
 
         pattern = (
-            exir.capture(torch.nn.Linear(3, 3), inputs, CaptureConfig(pt2_mode=True))
+            exir.capture(torch.nn.Linear(3, 3), inputs, CaptureConfig())
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
             .exported_program.graph_module.graph
         )
@@ -202,7 +202,6 @@ class TestPartitioners(unittest.TestCase):
                 converted_linear,
                 example_inputs,
                 CaptureConfig(
-                    pt2_mode=True,
                     enable_functionalization=False,
                 ),
             )
@@ -264,7 +263,7 @@ class TestPartitioners(unittest.TestCase):
         exported_program = exir.capture(
             torch.nn.Linear(3, 3),
             (torch.randn(3, 3),),
-            CaptureConfig(pt2_mode=True),
+            CaptureConfig(),
         ).to_edge(
             exir.EdgeCompileConfig(
                 _check_ir_validity=False,
@@ -317,7 +316,6 @@ class TestPartitioners(unittest.TestCase):
                 converted_linear,
                 example_inputs,
                 CaptureConfig(
-                    pt2_mode=True,
                     enable_functionalization=False,
                 ),
             )

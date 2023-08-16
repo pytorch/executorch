@@ -18,7 +18,7 @@ test_buck2_custom_op_1() {
   # should save file custom_ops_1.pte
 
   echo 'Running executor_runner'
-  buck2 run //fbcode/executorch/examples/executor_runner:executor_runner \
+  buck2 run //examples/executor_runner:executor_runner \
       --config=executorch.register_custom_op_1=1 -- --model_path="./${model_name}.pte"
   # should give correct result
 

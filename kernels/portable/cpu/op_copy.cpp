@@ -17,62 +17,56 @@ namespace native {
 
 using Tensor = exec_aten::Tensor;
 
-// copy.out(const Tensor& self, const Tensor& src, bool non_blocking, Tensor(a!)
+// copy.out(const Tensor& in, const Tensor& src, bool non_blocking, Tensor(a!)
 // out) -> Tensor(a!), see caffe2/aten/src/ATen/native/Copy.cpp
 // TODO: We actually shouldn't see this op with the proper functionalization,
 // and this op needs to be deleted
 Tensor& copy_out(
     RuntimeContext& ctx,
-    const Tensor& self,
+    const Tensor& in,
     const Tensor& src,
     bool non_blocking,
     Tensor& out) {
   (void)ctx;
   // Right now we only support blocking data transfer
-  ET_CHECK(non_blocking == false);
+  ET_KERNEL_CHECK(ctx, non_blocking == false, InvalidArgument, non_blocking);
 
-  // The srs and out shall share same dtype, but not necessarily for self,
-  // because `auto intermediate = src.to(self, non_blocking)` doesn't restrict
-  // the type of self. In this kernel we didn't do `to` inside the op. If
-  // in the short term we need self in a different type, can extend the op to
-  // cover it.
-  ET_CHECK_SAME_DTYPE3(self, src, out);
+  ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
 
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
   size_t expected_output_dim = 0;
 
-  ET_CHECK_MSG(
-      tensor_is_broadcastable_to(src, self),
-      "can't broadcast from self to src");
+  ET_KERNEL_CHECK(
+      ctx, tensor_is_broadcastable_to(src, in), InvalidArgument, src);
+
   get_broadcast_target_size(
-      self,
+      in,
       src,
       expected_output_size,
       kTensorDimensionLimit,
       &expected_output_dim);
 
-  ET_CHECK_MSG(
-      Error::Ok ==
-          resize_tensor(out, {expected_output_size, expected_output_dim}),
-      "Failed to resize output tensor.");
-  bool to_be_broadcasted_src = !out.sizes().equals(src.sizes());
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {expected_output_size, expected_output_dim}) ==
+          Error::Ok,
+      InvalidArgument,
+      out);
 
-  //   ET_CHECK_SAME_SHAPE2(expected_output_size, self);
-  const Tensor& broadcasted_src =
-      to_be_broadcasted_src ? broadcast_tensor(src, out) : src;
+  ScalarType in_type = in.scalar_type();
+  ScalarType src_type = src.scalar_type();
 
-  if (broadcasted_src.nbytes() > 0) {
-    // Note that this check is important. It's valid for a tensor with numel 0
-    // to have a null data pointer, but in some environments it's invalid to
-    // pass a null pointer to memcpy() even when the size is zero.
-    memcpy(
-        out.mutable_data_ptr(),
-        broadcasted_src.const_data_ptr(),
-        broadcasted_src.nbytes());
-  }
-  if (to_be_broadcasted_src) {
-    free_broadcast_tensor(broadcasted_src);
-  }
+  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, src_type, ctx, __func__, CTYPE_SRC, [&]() {
+      apply_binary_elementwise_fn<CTYPE, CTYPE_SRC, CTYPE>(
+          [](const CTYPE val_in, const CTYPE_SRC val_src) {
+            return convert<CTYPE, CTYPE_SRC>(val_src);
+          },
+          in,
+          src,
+          out);
+    });
+  });
 
   return out;
 }

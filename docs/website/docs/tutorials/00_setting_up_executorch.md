@@ -24,7 +24,7 @@ Setting up PyTorch
 # Install the nightly builds
 # Note: if you are behind a firewall an appropriate proxy server must be setup
 # for all subsequent steps.
-TORCH_VERSION=2.1.0.dev20230810
+TORCH_VERSION=2.1.0.dev20230813
 pip install --force-reinstall --pre torch=="${TORCH_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
 ```
 
@@ -65,7 +65,7 @@ $ python3
 >>> from executorch.exir.tests.models import Mul
 >>> m = Mul()
 >>> print(exir.capture(m, m.get_random_inputs()).to_edge())
->>> open("add.pte", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
+>>> open("mul.pte", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
 ```
 
 ## Runtime Setup

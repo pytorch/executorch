@@ -19,9 +19,7 @@ from executorch.sdk.etrecord._etrecord import ETRecordReservedFileNames
 class TestETRecord(unittest.TestCase):
     def get_test_model(self):
         f = models.BasicSinMax()
-        captured_output = exir.capture(
-            f, f.get_random_inputs(), exir.CaptureConfig(pt2_mode=True)
-        )
+        captured_output = exir.capture(f, f.get_random_inputs(), exir.CaptureConfig())
         captured_output_copy = copy.deepcopy(captured_output)
         edge_output = captured_output.to_edge(
             # TODO(gasoon): Remove _use_edge_ops=False once serde is fully migrated to Edge ops

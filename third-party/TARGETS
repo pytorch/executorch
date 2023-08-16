@@ -2,6 +2,7 @@ load("@fbsource//xplat/executorch/build/runtime_wrapper.bzl", "runtime")
 load(":gflags.bzl", "define_gflags")
 load(":glob_defs.bzl", "subdir_glob")
 load(":prebuilt_python_defs.bzl", "add_prebuilt_python_library_targets")
+load("@prelude//rules.bzl", "prebuilt_cxx_library")
 
 define_gflags()
 
@@ -165,23 +166,35 @@ runtime.cxx_binary(
         "flatbuffers/grpc/src/compiler/python_generator.cc",
         "flatbuffers/grpc/src/compiler/swift_generator.cc",
         "flatbuffers/grpc/src/compiler/ts_generator.cc",
+        "flatbuffers/src/annotated_binary_text_gen.cpp",
+        "flatbuffers/src/bfbs_gen_lua.cpp",
+        "flatbuffers/src/bfbs_gen_nim.cpp",
+        "flatbuffers/src/binary_annotator.cpp",
+        "flatbuffers/src/code_generators.cpp",
+        "flatbuffers/src/file_binary_writer.cpp",
+        "flatbuffers/src/file_name_saving_file_manager.cpp",
+        "flatbuffers/src/file_writer.cpp",
+        "flatbuffers/src/flatc.cpp",
         "flatbuffers/src/flatc_main.cpp",
+        "flatbuffers/src/idl_gen_binary.cpp",
         "flatbuffers/src/idl_gen_cpp.cpp",
         "flatbuffers/src/idl_gen_csharp.cpp",
         "flatbuffers/src/idl_gen_dart.cpp",
+        "flatbuffers/src/idl_gen_fbs.cpp",
         "flatbuffers/src/idl_gen_go.cpp",
         "flatbuffers/src/idl_gen_grpc.cpp",
         "flatbuffers/src/idl_gen_java.cpp",
-        "flatbuffers/src/idl_gen_js_ts.cpp",
         "flatbuffers/src/idl_gen_json_schema.cpp",
         "flatbuffers/src/idl_gen_kotlin.cpp",
         "flatbuffers/src/idl_gen_lobster.cpp",
-        "flatbuffers/src/idl_gen_lua.cpp",
         "flatbuffers/src/idl_gen_php.cpp",
         "flatbuffers/src/idl_gen_python.cpp",
         "flatbuffers/src/idl_gen_rust.cpp",
         "flatbuffers/src/idl_gen_swift.cpp",
         "flatbuffers/src/idl_gen_text.cpp",
+        "flatbuffers/src/idl_gen_ts.cpp",
+        "flatbuffers/src/idl_parser.cpp",
+        "flatbuffers/src/reflection.cpp",
         "flatbuffers/src/util.cpp",
     ],
     include_directories = [
@@ -189,12 +202,10 @@ runtime.cxx_binary(
         "flatbuffers/include",
     ],
     raw_headers = [
-        "flatbuffers/grpc/src/compiler/config.h",
         "flatbuffers/grpc/src/compiler/cpp_generator.h",
         "flatbuffers/grpc/src/compiler/go_generator.h",
         "flatbuffers/grpc/src/compiler/java_generator.h",
         "flatbuffers/grpc/src/compiler/python_generator.h",
-        "flatbuffers/grpc/src/compiler/python_private_generator.h",
         "flatbuffers/grpc/src/compiler/schema_interface.h",
         "flatbuffers/grpc/src/compiler/swift_generator.h",
         "flatbuffers/grpc/src/compiler/ts_generator.h",
@@ -203,4 +214,39 @@ runtime.cxx_binary(
     deps = [":flatc_library"],
     link_style = "static",
     _is_external_target = True,
+)
+
+runtime.genrule(
+    name = "libtorch_gen",
+    out = "libtorch.so",
+    srcs = ["link_torch.sh"],
+    bash = 'bash $SRCS torch/lib/libtorch.so ${OUT}',
+)
+
+runtime.genrule(
+    name = "torch_headers_gen",
+    out = "include",
+    srcs = ["link_torch.sh"],
+    bash = 'bash $SRCS torch/include ${OUT}',
+)
+
+runtime.genrule(
+    name = "libtorch_dir",
+    out = "lib",
+    srcs = ["link_torch.sh"],
+    bash = 'bash $SRCS torch/lib ${OUT}',
+)
+
+prebuilt_cxx_library(
+    name = "libtorch",
+    shared_lib = ":libtorch_gen",
+    soname = "libtorch.so",
+    exported_preprocessor_flags = [
+        "-D_GLIBCXX_USE_CXX11_ABI=0", # `libtorch` is built without CXX11_ABI so any target depends on it need to use the same build config.
+        "-I$(location :torch_headers_gen)", # include header directories
+        "-I$(location :torch_headers_gen)/torch/csrc/api/include", # include header directories
+    ],
+    exported_linker_flags = ["-Wl,-rpath,$(location :libtorch_dir)"], # define rpath to locate shared library
+    exported_headers = [":torch_headers_gen"],
+    visibility = ["PUBLIC"],
 )

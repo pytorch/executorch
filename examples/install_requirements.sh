@@ -12,9 +12,13 @@
 
 # Note:
 # When getting a new version of the executorch repo (via clone, fetch, or pull),
-# you may need to re-install a new version the TorchVision nightly pip package. The
-# `TORCH_VISION_VERSION` value in this document will be the correct version for the
+# you may need to re-install a new version for all dependencies in order to the
+# models in executorch/examples/models.
+# The version in this file will be the correct version for the
 # corresponsing version of the repo.
 
-TORCH_VISION_VERSION=0.16.0.dev20230810
+TORCH_VISION_VERSION=0.16.0.dev20230813
 pip install --force-reinstall --pre torchvision=="${TORCH_VISION_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
+
+TORCH_AUDIO_VERSION=2.1.0.dev20230813
+pip install --force-reinstall --pre torchaudio=="${TORCH_AUDIO_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu

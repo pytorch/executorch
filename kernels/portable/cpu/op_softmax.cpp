@@ -37,10 +37,12 @@ void check_preconditions(
       "in.dim() %zd!= out.dim() %zd",
       in.dim(),
       out.dim());
-  // Ensure in has value
-  ET_CHECK_MSG(in.numel() > 0, "in.numel() %zd <= 0", in.numel());
   // Ensure dim is valid
-  ET_CHECK_VALID_DIM(dim, in.dim());
+  if (in.dim() == 0) {
+    ET_CHECK(dim == 0 || dim == -1);
+  } else {
+    ET_CHECK_VALID_DIM(dim, in.dim());
+  }
   ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(in);
   ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(out);
 }

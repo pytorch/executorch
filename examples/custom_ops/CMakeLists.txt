@@ -13,7 +13,7 @@
 # both binding wrapper and the implementation source file. This library can be
 # linked into Executorch binary (`executor_runner` in this example) and it is
 # ready to run models containing that custom op.
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.19)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_CXX_STANDARD)

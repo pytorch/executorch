@@ -37,7 +37,7 @@ class TestDelegateAtenMode(unittest.TestCase):
         add_mul_module = AddMulModule()
         model_inputs = (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
         edge_graph_module = exir.capture(
-            add_mul_module, model_inputs, exir.CaptureConfig(pt2_mode=True)
+            add_mul_module, model_inputs, exir.CaptureConfig()
         ).to_edge()
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
@@ -60,9 +60,7 @@ class TestDelegateAtenMode(unittest.TestCase):
         composite_model(*model_inputs)
 
         exec_prog = (
-            exir.capture(
-                composite_model, model_inputs, exir.CaptureConfig(pt2_mode=True)
-            )
+            exir.capture(composite_model, model_inputs, exir.CaptureConfig())
             .to_edge()
             .to_executorch()
         )

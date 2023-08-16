@@ -236,7 +236,7 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
         conv.eval()
         self.lower_and_test_with_partitioner(conv, example_inputs)
 
-    @torch.inference_mode()  # TODO Use pt2_mode=True for capturing.
+    @torch.inference_mode()  # TODO Use  for capturing.
     def test_xnnpack_backend_mm(self):
         in_sizes = [1, 4, 4]
         input_sizes = [4, 37, 17]
@@ -329,7 +329,7 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
         )
         self.lower_and_test_with_partitioner(module, model_inputs)
 
-    @torch.inference_mode()  # TODO Use pt2_mode=True for capturing.
+    @torch.inference_mode()  # TODO Use  for capturing.
     def test_xnnpack_backend_linear(self):
         in_size = 2
         input_size = 3

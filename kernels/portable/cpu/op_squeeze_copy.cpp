@@ -82,6 +82,9 @@ Tensor& squeeze_copy_dim_out(
   ET_CHECK_SAME_DTYPE2(self, out);
 
   // A valid dim must be in [-self.dim(), self.dim())
+  if (self.dim() == 0 && dim == -1) {
+    dim = 0;
+  }
   ET_CHECK_MSG(
       (self.dim() == 0 && dim == 0) || (dim >= -self.dim() && dim < self.dim()),
       "dim %" PRId64 " out of range [-%zd,%zd)",

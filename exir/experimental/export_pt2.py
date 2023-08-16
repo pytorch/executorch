@@ -139,7 +139,7 @@ def trace(root: Callable[..., Value], concrete_args: Tuple[Value, ...]) -> Trace
     graph_module = exir.capture(
         root,
         concrete_args,
-        CaptureConfig(pt2_mode=True, enable_functionalization=False),
+        CaptureConfig(enable_functionalization=False),
     ).graph_module
     # TODO convert torchdynamo guards to our own guards
     def _convert_dynamo_guard_to_exir_guard(

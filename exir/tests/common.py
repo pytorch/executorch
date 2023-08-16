@@ -117,7 +117,7 @@ def get_graph_module_with_op(op: Callable, args: Any) -> torch.fx.GraphModule:
 def register_additional_test_aten_ops() -> None:
     # TODO: either mark those ops as canonical in native_functions.yaml,
     # or stop using graphs with those in tests.
-    canonical = torch.Tag.core  # pyre-ignore
+    canonical = torch.Tag.core
     torch.ops.aten.max.default.tags.append(canonical)
     torch.ops.aten.sum.default.tags.append(canonical)
     torch.ops.aten.searchsorted.Tensor.tags.append(canonical)

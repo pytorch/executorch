@@ -34,8 +34,6 @@ def get_xnnpack_executorch_backend_config(
 
 def get_xnnpack_capture_config(dynamic_shape=False, enable_aot: Optional[bool] = None):
     if enable_aot is None:
-        return CaptureConfig(pt2_mode=True, enable_dynamic_shape=dynamic_shape)
+        return CaptureConfig(enable_dynamic_shape=dynamic_shape)
     else:
-        return CaptureConfig(
-            pt2_mode=True, enable_dynamic_shape=dynamic_shape, enable_aot=enable_aot
-        )
+        return CaptureConfig(enable_dynamic_shape=dynamic_shape, enable_aot=enable_aot)

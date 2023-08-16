@@ -31,47 +31,16 @@ namespace executor {
 
 namespace {
 
-bool IsAligned(const void* data, size_t alignment) {
-  uintptr_t addr = reinterpret_cast<uintptr_t>(data);
-  return addr % alignment == 0;
-}
-
 /**
- * Tries deserializing the data as a Program flabuffer file. Returns nullptr if
- * the file appears to be corrupt or incompatible.
+ * Program data must be aligned to this value to properly parse it. Must be a
+ * power of 2. Note that max_align_t is the alignment that malloc() and new
+ * guarantee.
  */
-const executorch_flatbuffer::Program* DeserializeFlatbufferData(
-    const void* data) {
-  if (Program::check_header(data, Program::kMinHeadBytes) !=
-      Program::HeaderStatus::CompatibleVersion) {
-    ET_LOG(
-        Error,
-        "Program identifier '%.4s' != expected '%.4s'",
-        flatbuffers::GetBufferIdentifier(data),
-        executorch_flatbuffer::ProgramIdentifier());
-    return nullptr;
-  }
+constexpr size_t kMinimumAlignment = alignof(std::max_align_t);
 
-  // The provided pointer must start at an aligned address to ensure internal
-  // alignment of flatbuffer fields.
-  if (!IsAligned(data, FLATBUFFERS_MAX_ALIGNMENT)) {
-    ET_LOG(
-        Error,
-        "Program data 0x%p must be aligned to %u",
-        data,
-        FLATBUFFERS_MAX_ALIGNMENT);
-    return nullptr;
-  }
-
-  const executorch_flatbuffer::Program* program =
-      executorch_flatbuffer::GetProgram(data);
-  if (program->segments()->size() > 0) {
-    ET_LOG(
-        Error,
-        "Program constructor does not support segments; use Program::Load()");
-    return nullptr;
-  }
-  return program;
+bool IsAligned(const void* data) {
+  uintptr_t addr = reinterpret_cast<uintptr_t>(data);
+  return addr % kMinimumAlignment == 0;
 }
 
 Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
@@ -89,16 +58,6 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 }
 
 } // namespace
-
-Program::Program(const void* serialized_content)
-    : Program(
-          /*loader=*/nullptr,
-          /*segment_base_offset=*/0,
-          FreeableBuffer(
-              /*data=*/nullptr,
-              /*size=*/0,
-              /*free_fn=*/nullptr),
-          DeserializeFlatbufferData(serialized_content)) {}
 
 /* static */ Result<Program> Program::Load(
     DataLoader* loader,
@@ -172,11 +131,11 @@ Program::Program(const void* serialized_content)
   // The flatbuffer data must start at an aligned address to ensure internal
   // alignment of flatbuffer fields.
   ET_CHECK_OR_RETURN_ERROR(
-      IsAligned(program_data->data(), FLATBUFFERS_MAX_ALIGNMENT),
+      IsAligned(program_data->data()),
       InvalidArgument,
-      "Program data 0x%p must be aligned to %u",
+      "Program data 0x%p must be aligned to %zu",
       program_data->data(),
-      FLATBUFFERS_MAX_ALIGNMENT);
+      kMinimumAlignment);
 
   // Get the pointer to the root flatbuffer table.
   const executorch_flatbuffer::Program* flatbuffer_program =
@@ -226,41 +185,22 @@ Result<MethodMeta> Program::method_meta(const char* method_name) const {
   return MethodMeta(plan.get());
 }
 
-const void* Program::get_constant_buffer_data(size_t buffer_index) const {
-  ET_CHECK(is_valid());
+Result<const void*> Program::get_constant_buffer_data(
+    size_t buffer_index) const {
   auto internal_program =
       static_cast<const executorch_flatbuffer::Program*>(internal_program_);
-  ET_CHECK_MSG(
-      buffer_index < constant_buffer_size(),
+  size_t size = internal_program->constant_buffer()->size();
+  ET_CHECK_OR_RETURN_ERROR(
+      buffer_index < size,
+      InvalidArgument,
       "Constant buffer %zu out of program buffer range %zu",
       buffer_index,
-      constant_buffer_size());
+      size);
 
   const auto& constant_buffer = *internal_program->constant_buffer();
 
   return static_cast<const void*>(
       constant_buffer[buffer_index]->storage()->data());
-}
-
-size_t Program::constant_buffer_size() const {
-  ET_CHECK(is_valid());
-  auto internal_program =
-      static_cast<const executorch_flatbuffer::Program*>(internal_program_);
-  return internal_program->constant_buffer()->size();
-}
-
-int64_t Program::get_non_const_buffer_size(
-    size_t buffer_index,
-    size_t execution_plan_index) const {
-  ET_CHECK(is_valid());
-  ET_CHECK_MSG(
-      execution_plan_index == Program::kForwardMethodIndex,
-      "Unsupported plan index %zu != %zu",
-      execution_plan_index,
-      Program::kForwardMethodIndex);
-  auto res = this->get_non_const_buffer_size(buffer_index, "forward");
-  ET_CHECK(res.ok());
-  return res.get();
 }
 
 Result<int64_t> Program::get_non_const_buffer_size(
@@ -282,36 +222,12 @@ Result<int64_t> Program::get_non_const_buffer_size(
   return (*(plan.get()->non_const_buffer_sizes()))[buffer_index];
 }
 
-size_t Program::num_non_const_buffers(size_t execution_plan_index) const {
-  ET_CHECK(is_valid());
-  ET_CHECK_MSG(
-      execution_plan_index == Program::kForwardMethodIndex,
-      "Unsupported plan index %zu != %zu",
-      execution_plan_index,
-      Program::kForwardMethodIndex);
-  auto res = this->num_non_const_buffers("forward");
-  ET_CHECK(res.ok());
-  return res.get();
-}
-
 Result<size_t> Program::num_non_const_buffers(const char* method_name) const {
   auto plan = get_execution_plan(internal_program_, method_name);
   if (!plan.ok()) {
     return plan.error();
   }
   return plan.get()->non_const_buffer_sizes()->size();
-}
-
-const char* Program::get_output_flattening_encoding(
-    size_t execution_plan_index) const {
-  ET_CHECK(is_valid());
-  ET_CHECK_MSG(
-      execution_plan_index == Program::kForwardMethodIndex,
-      "Executor only supports a single execution plan at this time, but received a query about plan #%zu",
-      execution_plan_index);
-  auto res = this->get_output_flattening_encoding("forward");
-  ET_CHECK(res.ok());
-  return res.get();
 }
 
 Result<const char*> Program::get_output_flattening_encoding(
@@ -327,7 +243,6 @@ Error Program::get_backend_delegate_data(
     size_t index,
     const void** out_data,
     size_t* out_size) const {
-  ET_CHECK(is_valid());
   const auto* data_list =
       static_cast<const executorch_flatbuffer::Program*>(internal_program_)
           ->backend_delegate_data();

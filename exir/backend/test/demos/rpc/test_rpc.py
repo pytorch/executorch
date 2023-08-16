@@ -103,7 +103,7 @@ class TestRPCDemos(unittest.TestCase):
         simple_net = self.get_a_simple_net()
         simple_net_input = simple_net.get_example_inputs()
         exported_program = exir.capture(
-            simple_net, simple_net_input, exir.CaptureConfig(pt2_mode=True)
+            simple_net, simple_net_input, exir.CaptureConfig()
         ).to_edge(
             exir.EdgeCompileConfig(
                 _check_ir_validity=False,
@@ -125,9 +125,7 @@ class TestRPCDemos(unittest.TestCase):
         composite_model = CompositeModule()
 
         exec_prog = (
-            exir.capture(
-                composite_model, simple_net_input, exir.CaptureConfig(pt2_mode=True)
-            )
+            exir.capture(composite_model, simple_net_input, exir.CaptureConfig())
             .to_edge()
             .to_executorch()
         )
@@ -165,9 +163,7 @@ class TestRPCDemos(unittest.TestCase):
         model = Model()
         inputs = (torch.ones(2, 2), torch.ones(2, 2), torch.ones(2, 2))
 
-        exported_program = exir.capture(
-            model, inputs, exir.CaptureConfig(pt2_mode=True)
-        ).to_edge()
+        exported_program = exir.capture(model, inputs, exir.CaptureConfig()).to_edge()
 
         # First lower to demo backend
         demo_backend_lowered = exported_program

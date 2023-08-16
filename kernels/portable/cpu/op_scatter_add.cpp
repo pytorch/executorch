@@ -18,104 +18,12 @@ using ScalarType = exec_aten::ScalarType;
 
 namespace {
 
-/**
- * Add input_data to output_data in the fashion of scatter recursively
- */
-template <typename CTYPE_DATA>
-void scatter_add_helper(
-    CTYPE_DATA* src_data,
-    long* index_data,
-    CTYPE_DATA* output_data,
-    const Tensor& src,
-    const Tensor& index,
-    Tensor& out,
-    int64_t dim,
-    int64_t current_dim,
-    int64_t dim_offset) {
-  // the last dimension, copy data
-  if (current_dim == index.dim() - 1) {
-    size_t trailing_dims = getTrailingDims(out, dim);
-    CTYPE_DATA* output_data_base =
-        output_data - (size_t)dim_offset * trailing_dims;
-    for (size_t i = 0; i < index.size(current_dim); ++i) {
-      output_data = output_data_base + (size_t)index_data[i] * trailing_dims;
-      // if dim is the last dimension, do not need to traverse again
-      if (dim == current_dim) {
-        *output_data += src_data[i];
-      } else {
-        output_data[i] += src_data[i];
-      }
-    }
-    return;
-  }
-  size_t trailing_dims_out = getTrailingDims(out, current_dim);
-  size_t trailing_dims_src = getTrailingDims(src, current_dim);
-  size_t trailing_dims_index = getTrailingDims(index, current_dim);
-  size_t current_dim_offset = 0;
-  // recursively set data for the next dimension
-  for (size_t i = 0; i < index.size(current_dim); ++i) {
-    scatter_add_helper<CTYPE_DATA>(
-        src_data,
-        index_data,
-        output_data,
-        src,
-        index,
-        out,
-        dim,
-        current_dim + 1,
-        current_dim_offset);
-    src_data += trailing_dims_src;
-    output_data += trailing_dims_out;
-    index_data += trailing_dims_index;
-    if (current_dim == dim) {
-      current_dim_offset += 1;
-    }
-  }
-}
-
-template <typename CTYPE_DATA>
-void scatter_add(
+void check_arguments(
     const Tensor& self,
     int64_t dim,
     const Tensor& index,
     const Tensor& src,
     Tensor& out) {
-  long* index_data = index.mutable_data_ptr<long>();
-  for (size_t i = 0; i < index.numel(); ++i) {
-    ET_CHECK_MSG(
-        index_data[i] < self.size(dim),
-        "Index is out of bounds for dimension %zd with size %zd",
-        (size_t)dim,
-        self.size(dim));
-  }
-  CTYPE_DATA* self_data = self.mutable_data_ptr<CTYPE_DATA>();
-  CTYPE_DATA* src_data = src.mutable_data_ptr<CTYPE_DATA>();
-  CTYPE_DATA* out_data = out.mutable_data_ptr<CTYPE_DATA>();
-  memcpy(out_data, self_data, self.nbytes());
-  scatter_add_helper<CTYPE_DATA>(
-      src_data, index_data, out_data, src, index, out, dim, 0, 0);
-}
-
-} // namespace
-
-/**
- * Adds all values from the tensor src into self at the indices specified in the
- * index tensor in a similar fashion as scatter(). For each value in src, it is
- * added to an index in self which is specified by its index in src for
- * dimension != dim and by the corresponding value in index for dimension = dim.
- *
- * Assume tensor self, src, out have the same dtype, and shall be in any real
- * types (Byte, Char, Short, Int, Long, Float, Double), and index tensor shall
- * be in Long (int64) type.
- */
-Tensor& scatter_add_out(
-    RuntimeContext& ctx,
-    const Tensor& self,
-    int64_t dim,
-    const Tensor& index,
-    const Tensor& src,
-    Tensor& out) {
-  (void)ctx;
   ET_CHECK_SAME_SHAPE_AND_DTYPE2(self, out);
   ET_CHECK_SAME_DTYPE2(self, src);
   ET_CHECK_MSG(
@@ -145,19 +53,95 @@ Tensor& scatter_add_out(
           (size_t)dim);
     }
   }
-
-#define SCATTER_ADD(ctype, dtype)                   \
-  case ScalarType::dtype:                           \
-    scatter_add<ctype>(self, dim, index, src, out); \
-    break;
-
-  switch (self.scalar_type()) {
-    ET_FORALL_REAL_TYPES(SCATTER_ADD)
-    default:
-      ET_CHECK_MSG(false, "Unhandled input dtype %hhd", self.scalar_type());
+  const long* index_data = index.const_data_ptr<long>();
+  for (size_t i = 0; i < index.numel(); ++i) {
+    ET_CHECK_MSG(
+        index_data[i] < self.size(dim),
+        "Index is out of bounds for dimension %zd with size %zd",
+        (size_t)dim,
+        self.size(dim));
   }
+}
 
-#undef SCATTER_ADD
+/**
+ * Add input_data to output_data in the fashion of scatter recursively
+ */
+template <typename CTYPE>
+void scatter_add_helper(
+    const CTYPE* src_data,
+    const long* index_data,
+    CTYPE* out_data,
+    const Tensor& src,
+    const Tensor& index,
+    Tensor& out,
+    int64_t dim,
+    int64_t current_dim,
+    int64_t dim_offset) {
+  // the last dimension, copy data
+  if (current_dim == index.dim() - 1) {
+    size_t trailing_dims = getTrailingDims(out, dim);
+    CTYPE* out_data_base = out_data - (size_t)dim_offset * trailing_dims;
+    for (size_t i = 0; i < index.size(current_dim); ++i) {
+      out_data = out_data_base + (size_t)index_data[i] * trailing_dims;
+      // if dim is the last dimension, do not need to traverse again
+      if (dim == current_dim) {
+        *out_data += src_data[i];
+      } else {
+        out_data[i] += src_data[i];
+      }
+    }
+    return;
+  }
+  size_t trailing_dims_out = getTrailingDims(out, current_dim);
+  size_t trailing_dims_src = getTrailingDims(src, current_dim);
+  size_t trailing_dims_index = getTrailingDims(index, current_dim);
+  size_t current_dim_offset = 0;
+  // recursively set data for the next dimension
+  for (size_t i = 0; i < index.size(current_dim); ++i) {
+    scatter_add_helper<CTYPE>(
+        src_data,
+        index_data,
+        out_data,
+        src,
+        index,
+        out,
+        dim,
+        current_dim + 1,
+        current_dim_offset);
+    src_data += trailing_dims_src;
+    out_data += trailing_dims_out;
+    index_data += trailing_dims_index;
+    if (current_dim == dim) {
+      current_dim_offset += 1;
+    }
+  }
+}
+
+} // namespace
+
+Tensor& scatter_add_out(
+    RuntimeContext& ctx,
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    const Tensor& src,
+    Tensor& out) {
+  (void)ctx;
+
+  check_arguments(self, dim, index, src, out);
+
+  ScalarType self_type = self.scalar_type();
+
+  ET_SWITCH_REAL_TYPES_AND(Bool, self_type, ctx, __func__, CTYPE, [&]() {
+    const CTYPE* self_data = self.const_data_ptr<CTYPE>();
+    const long* index_data = index.const_data_ptr<long>();
+    const CTYPE* src_data = src.const_data_ptr<CTYPE>();
+    CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+    memcpy(out_data, self_data, self.nbytes());
+    scatter_add_helper<CTYPE>(
+        src_data, index_data, out_data, src, index, out, dim, 0, 0);
+  });
+
   return out;
 }
 

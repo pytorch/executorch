@@ -302,78 +302,6 @@ TEST_F(ProgramTest, HeaderNotPresent) {
 // TODO(T144120904): Add tests for programs with segments once we can generate
 // them.
 
-TEST_F(ProgramTest, DEPRECATEDDataParsesAndIsValid) {
-  // Load the whole file into a FreeableBuffer.
-  size_t data_len = add_loader_->size().get();
-  Result<FreeableBuffer> data = add_loader_->Load(/*offset=*/0, data_len);
-  ASSERT_EQ(data.error(), Error::Ok);
-  ASSERT_EQ(data->size(), data_len);
-
-  // Parse the Program from the data.
-  Program program(data->data());
-
-  // Should be valid.
-  EXPECT_TRUE(program.is_valid());
-
-  // Method calls should succeed without hitting ET_CHECK.
-  program.get_constant_buffer_data(0);
-  program.constant_buffer_size();
-  program.get_non_const_buffer_size(1, "forward");
-  auto res = program.num_non_const_buffers("forward");
-  EXPECT_TRUE(res.ok());
-  EXPECT_EQ(res.get(), 2);
-}
-
-TEST_F(ProgramTest, DEPRECATEDBadMagicIsInvalid) {
-  // Make a local copy of the data.
-  size_t data_len = add_loader_->size().get();
-  auto data = std::make_unique<char[]>(data_len);
-  {
-    Result<FreeableBuffer> src = add_loader_->Load(/*offset=*/0, data_len);
-    ASSERT_EQ(src.error(), Error::Ok);
-    ASSERT_EQ(src->size(), data_len);
-    memcpy(data.get(), src->data(), data_len);
-    // FreeableBuffer goes out of scope and frees its data.
-  }
-
-  // Corrupt the magic value.
-  EXPECT_EQ(data[4], 'E');
-  data[4] = 'X';
-  EXPECT_EQ(data[5], 'T');
-  data[5] = 'Y';
-
-  // Parse the Program from the data.
-  Program program(data.get());
-
-  // Should not be valid.
-  EXPECT_FALSE(program.is_valid());
-
-  // Method calls should die from ET_CHECK.
-  ET_EXPECT_DEATH(program.get_constant_buffer_data(0), "");
-  ET_EXPECT_DEATH(program.constant_buffer_size(), "");
-  ET_EXPECT_DEATH(program.get_non_const_buffer_size(1), "");
-  ET_EXPECT_DEATH(program.num_non_const_buffers(), "");
-}
-
-TEST_F(ProgramTest, DEPRECATEDUnalignedProgramDataFails) {
-  // Make a local copy of the data, on an odd alignment.
-  size_t data_len = add_loader_->size().get();
-  auto data = std::make_unique<char[]>(data_len + 1);
-  {
-    Result<FreeableBuffer> src = add_loader_->Load(/*offset=*/0, data_len);
-    ASSERT_EQ(src.error(), Error::Ok);
-    ASSERT_EQ(src->size(), data_len);
-    memcpy(data.get() + 1, src->data(), data_len);
-    // FreeableBuffer goes out of scope and frees its data.
-  }
-
-  // Parse the Program from the data.
-  Program program(data.get());
-
-  // Should not be valid.
-  EXPECT_FALSE(program.is_valid());
-}
-
 TEST_F(ProgramTest, getMethods) {
   // Parse the Program from the data.
   Result<Program> program_res =
@@ -381,9 +309,6 @@ TEST_F(ProgramTest, getMethods) {
   EXPECT_EQ(program_res.error(), Error::Ok);
 
   Program program(std::move(program_res.get()));
-
-  // Should not be valid.
-  EXPECT_TRUE(program.is_valid());
 
   // Method calls should succeed without hitting ET_CHECK.
   EXPECT_EQ(program.num_methods(), 2);

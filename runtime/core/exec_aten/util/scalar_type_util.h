@@ -318,9 +318,10 @@ inline bool isComplexType(exec_aten::ScalarType t) {
 }
 
 inline bool isBitsType(exec_aten::ScalarType t) {
-  return t == ScalarType::Bits1x8 || t == ScalarType::Bits2x4 ||
-      t == ScalarType::Bits4x2 || t == ScalarType::Bits8 ||
-      t == ScalarType::Bits16;
+  return t == exec_aten::ScalarType::Bits1x8 ||
+      t == exec_aten::ScalarType::Bits2x4 ||
+      t == exec_aten::ScalarType::Bits4x2 ||
+      t == exec_aten::ScalarType::Bits8 || t == exec_aten::ScalarType::Bits16;
 }
 
 inline bool isQIntType(exec_aten::ScalarType t) {
@@ -452,6 +453,31 @@ inline bool canCast(
   }
 
   return true;
+}
+
+/**
+ * When casting from floating point to integral type, if the floating value is
+ * outside the integral type range, then an error is thrown if sanitization is
+ * enabled. To circumvent this, we cast the floating point to int64_t first.
+ */
+template <
+    typename To,
+    typename From,
+    typename std::enable_if<
+        (std::is_floating_point<From>::value && std::is_integral<To>::value),
+        int>::type = 0>
+To convert(From val) {
+  return static_cast<To>(static_cast<int64_t>(val));
+}
+
+template <
+    typename To,
+    typename From,
+    typename std::enable_if<
+        !(std::is_floating_point<From>::value && std::is_integral<To>::value),
+        int>::type = 0>
+To convert(From val) {
+  return static_cast<To>(val);
 }
 
 /**

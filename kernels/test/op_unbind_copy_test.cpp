@@ -48,8 +48,8 @@ Tensor make1x2x3(TensorFactory<DTYPE>& tf) {
 
 template <ScalarType DTYPE>
 void test_unbind_dim0() {
-  TensorFactory<ScalarType::Int> tf;
-  TensorListFactory<ScalarType::Int> tlf;
+  TensorFactory<DTYPE> tf;
+  TensorListFactory<DTYPE> tlf;
 
   // clang-format off
   std::vector<Tensor> expected_out = {
@@ -117,8 +117,8 @@ void test_unbind_dim1() {
 
 template <ScalarType DTYPE>
 void test_unbind_dim2() {
-  TensorFactory<ScalarType::Int> tf;
-  TensorListFactory<ScalarType::Int> tlf;
+  TensorFactory<DTYPE> tf;
+  TensorListFactory<DTYPE> tlf;
 
   // Splitting on dim=N with split_size=2 will produce a list of tensors where
   // the max dim[N] is 2, and the other dims are the same as the input.
@@ -164,24 +164,21 @@ void test_unbind_dim2() {
   EXPECT_TENSOR_LISTS_EQ(expected_out, out2);
 }
 
-TEST(OpUnbindCopyIntOutTest, Unbind1x2x3OnDim0AllSupportedDtypes) {
+TEST(OpUnbindCopyIntOutTest, Unbind1x2x3OnDim0AllRealDtypes) {
 #define TEST_ENTRY(ctype, dtype) test_unbind_dim0<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST(OpUnbindCopyIntOutTest, Unbind1x2x3OnDim1AllSupportedDTypes) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
+TEST(OpUnbindCopyIntOutTest, Unbind1x2x3OnDim1AllRealDTypes) {
 #define TEST_ENTRY(ctype, dtype) test_unbind_dim1<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST(OpUnbindCopyIntOutTest, Unbind1x2x3OnDim2) {
+TEST(OpUnbindCopyIntOutTest, Unbind1x2x3OnDim2AllRealDTypes) {
 #define TEST_ENTRY(ctype, dtype) test_unbind_dim2<ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+  ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

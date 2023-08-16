@@ -82,7 +82,7 @@ def export_module_to_program(
     inputs = ()
     if hasattr(eager_module, "get_random_inputs"):
         inputs = eager_module.get_random_inputs()
-    capture_config = exir.CaptureConfig(pt2_mode=True)
+    capture_config = exir.CaptureConfig()
 
     edge: exir.ExirExportedProgram = exir.capture(
         getattr(eager_module, method),

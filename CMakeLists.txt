@@ -40,7 +40,7 @@
 # It should also be cmake-lint clean.
 #
 
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.19)
 project(executorch)
 include(build/Utils.cmake)
 
@@ -152,7 +152,7 @@ add_custom_command(
   COMMENT "Generating program_schema headers"
   VERBATIM)
 
-add_library(program_schema ${_program_schema__outputs})
+add_library(program_schema INTERFACE ${_program_schema__outputs})
 set_target_properties(program_schema PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(
   program_schema

@@ -229,7 +229,7 @@ def maketest(
                 exir.capture(
                     eager_module,
                     inputs,
-                    exir.CaptureConfig(pt2_mode=True),
+                    exir.CaptureConfig(),
                 )
                 # torch._ops.aten.t.default
                 .to_edge(
@@ -466,7 +466,6 @@ class TestMisc(unittest.TestCase):
             eager_model,
             inputs,
             exir.CaptureConfig(
-                pt2_mode=True,
                 enable_dynamic_shape=True,
             ),
         ).to_edge(
@@ -531,7 +530,6 @@ class TestMisc(unittest.TestCase):
         edge_program = exir.capture(
             MultiplePoolsToyModel(),
             (torch.ones(1),),
-            exir.CaptureConfig(pt2_mode=True),
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
 
         program = edge_program.to_executorch(

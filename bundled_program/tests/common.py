@@ -229,7 +229,7 @@ def get_common_program() -> Tuple[Program, BundledConfig]:
         DEFAULT_INT_INPUT,
     )
     program = (
-        exir.capture(eager_model, capture_input, CaptureConfig(pt2_mode=True))
+        exir.capture(eager_model, capture_input, CaptureConfig())
         .to_edge()
         .to_executorch()
         .program

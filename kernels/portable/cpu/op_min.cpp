@@ -37,8 +37,12 @@ void check_preconditions(
       min_indices.scalar_type() == ScalarType::Long,
       "dtype of the min_indices Tensor expected to be be long.");
   // Ensure dim is valid
-  ET_CHECK_VALID_DIM(dim, in.dim());
-  ET_CHECK_NON_ZERO_DIM_SIZE(dim, in);
+  if (in.dim() == 0) {
+    ET_CHECK(dim == 0 || dim == -1);
+  } else {
+    ET_CHECK_VALID_DIM(dim, in.dim());
+    ET_CHECK_NON_ZERO_DIM_SIZE(dim, in);
+  }
   const auto expected_dim = compute_reduced_out_dim(in, dim, keepdim);
   ET_CHECK_MSG(
       min.dim() == expected_dim && min_indices.dim() == expected_dim,

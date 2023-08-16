@@ -222,19 +222,19 @@ size_t compute_reduced_out_size(
   if (dim.has_value()) {
     const auto dim_val = dim.value();
     const size_t non_neg_dim = _normalize_non_neg_d(dim_val, in_dim);
-    for (size_t i = 0; i < non_neg_dim; ++i) {
+    for (ssize_t i = 0; i < non_neg_dim; ++i) {
       sizes_arr[i] = in.size(i);
     }
     if (keepdim) {
       sizes_arr[non_neg_dim] = 1;
-      for (size_t i = non_neg_dim + 1; i < in_dim; ++i) {
+      for (ssize_t i = non_neg_dim + 1; i < in_dim; ++i) {
         sizes_arr[i] = in.size(i);
       }
     } else {
-      for (size_t i = non_neg_dim; i < in_dim - 1; ++i) {
+      for (ssize_t i = non_neg_dim; i < in_dim - 1; ++i) {
         sizes_arr[i] = in.size(i + 1);
       }
-      out_dim = in_dim - 1;
+      out_dim = in_dim == 0 ? 0 : in_dim - 1;
     }
   } else {
     if (keepdim) {

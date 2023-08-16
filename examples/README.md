@@ -7,9 +7,12 @@ It also includes a list of modules, from a simple `Add` to a full model like `Mo
 ## Directory structure
 ```bash
 examples
+├── custom_ops      # Contains examples to register custom operators into PyTorch as well as register its kernels into Executorch runtime
 ├── executor_runner # This is an example C++ wrapper around the ET runtime
 ├── export          # Python helper scripts to illustrate export workflow
+├── ios_demo_apps   # Contains iOS demo apps
 ├── models          # Contains a set of simple to PyTorch models
+├── quantization    # Contains examples of quantization workflow
 └── README.md       # This file
 ```
 
@@ -34,18 +37,39 @@ cd executorch # To the top level dir
 
 bash examples/install_requirements.sh
 
+# To get a list of example models
+python3 -m examples.export.export_example -h
+
+# To generate a specific pte model
 python3 -m examples.export.export_example --model_name="mv2" # for MobileNetv2
 
 # This should generate ./mv2.pte file, if successful.
 ```
 
-3. Once we have the model binary (ff) file, then let's run it with Executorch runtime using the `executor_runner`.
+Use `-h` (or `--help`) to see all the supported models.
+
+3. Once we have the model binary (pte) file, then let's run it with Executorch runtime using the `executor_runner`.
 
 ```bash
 buck2 run examples/executor_runner:executor_runner -- --model_path mv2.pte
 ```
 
-For MobileNetv3, change the model name and the corrosponding binary filename from "mv2" to "mv3".
+## Quantization
+Here is the [Quantization Flow Docs](/docs/website/docs/tutorials/quantization_flow.md).
+
+You can run quantization test with the following command:
+```bash
+buck2 run executorch/examples/quantization:example -- --model_name="mv2" # for MobileNetv2
+```
+It will print both the original model after capture and quantized model.
+
+The flow produces a quantized model that could be lowered through partitioner or the runtime directly.
+
+
+you can also find the valid quantized example models by running:
+```bash
+buck2 run executorch/examples/quantization:example -- --help
+```
 
 ## Dependencies
 

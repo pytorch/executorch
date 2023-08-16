@@ -30,15 +30,17 @@ def define_common_targets():
                 "kernel_runtime_context.h",
             ],
             visibility = [
-                "//executorch/kernels/prim_ops/...",  # Contains kernels
-                "//executorch/runtime/kernel/...",
                 "//executorch/kernels/...",
                 "//executorch/runtime/executor/...",
+                "//executorch/runtime/kernel/...",
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
                 "//executorch/runtime/core:core",
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/platform:platform",
+                # TODO(T147221312): This will eventually depend on exec_aten
+                # once KernelRuntimeContext support tensor resizing, which is
+                # why this target supports aten mode.
             ],
         )
 

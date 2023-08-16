@@ -107,7 +107,7 @@ class TestEmit(unittest.TestCase):
             exir.capture(
                 f,
                 (torch.ones(3, 2), torch.zeros(3, 2)),
-                exir.CaptureConfig(pt2_mode=True),
+                exir.CaptureConfig(),
             )
             .to_edge()
             .to_executorch()
@@ -130,7 +130,7 @@ class TestEmit(unittest.TestCase):
     def test_basic_end_to_end(self) -> None:
         f = models.BasicSinMax()
         program = (
-            exir.capture(f, f.get_random_inputs(), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, f.get_random_inputs(), exir.CaptureConfig())
             .to_edge()
             .to_executorch()
             .program
@@ -159,10 +159,7 @@ class TestEmit(unittest.TestCase):
 
         x = (torch.randn(100),)
         program = (
-            exir.capture(f, x, exir.CaptureConfig(pt2_mode=True))
-            .to_edge()
-            .to_executorch()
-            .program
+            exir.capture(f, x, exir.CaptureConfig()).to_edge().to_executorch().program
         )
         exec_plan = program.execution_plan[0]
         self.assertEqual(len(exec_plan.outputs), 4)
@@ -182,7 +179,7 @@ class TestEmit(unittest.TestCase):
             return torch.ones(100) + x + (torch.ones(100) * 2)
 
         program = (
-            exir.capture(f, (torch.randn(100),), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, (torch.randn(100),), exir.CaptureConfig())
             .to_edge(exir.EdgeCompileConfig(passes=[ConstPropPass()]))
             .to_executorch()
             .program
@@ -224,7 +221,7 @@ class TestEmit(unittest.TestCase):
             return z.max()
 
         inputs = (torch.ones((10, 10)),)
-        edge = exir.capture(f, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
+        edge = exir.capture(f, inputs, exir.CaptureConfig()).to_edge()
 
         removed_ops = ["aten::relu_", "aten::view"]
         expected_ops = ["aten::sin", "aten::relu", "aten::max", "aten::view_copy"]
@@ -266,7 +263,7 @@ class TestEmit(unittest.TestCase):
         inputs = (torch.ones(2, 2),)
 
         program = (
-            exir.capture(model, inputs, exir.CaptureConfig(pt2_mode=True))
+            exir.capture(model, inputs, exir.CaptureConfig())
             .to_edge()
             .to_executorch()
             .program
@@ -281,7 +278,7 @@ class TestEmit(unittest.TestCase):
             return torch.permute(x, (2, 0, 1))
 
         program = (
-            exir.capture(f, (torch.randn(2, 3, 5),), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, (torch.randn(2, 3, 5),), exir.CaptureConfig())
             .to_edge()
             .to_executorch()
             .program
@@ -305,7 +302,7 @@ class TestEmit(unittest.TestCase):
             return torch.addbmm(x, batch1, batch2, alpha=2, beta=3)
 
         program = (
-            exir.capture(f, (torch.randn(3, 5),), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, (torch.randn(3, 5),), exir.CaptureConfig())
             .to_edge()
             .to_executorch()
             .program
@@ -325,7 +322,7 @@ class TestEmit(unittest.TestCase):
 
         x, _ = torch.sort(torch.randn(3, 4))
         program = (
-            exir.capture(f, (x,), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, (x,), exir.CaptureConfig())
             .to_edge()
             .to_executorch()
             .program
@@ -338,7 +335,6 @@ class TestEmit(unittest.TestCase):
 
     def test_no_input(self) -> None:
         capture_config = CaptureConfig(
-            pt2_mode=True,
             enable_functionalization=True,
             enable_dynamic_shape=False,
         )
@@ -374,9 +370,7 @@ class TestEmit(unittest.TestCase):
             return y
 
         program_supported_without_mem_format = (
-            exir.capture(
-                f_1, (torch.ones([4, 4, 4, 4]),), exir.CaptureConfig(pt2_mode=True)
-            )
+            exir.capture(f_1, (torch.ones([4, 4, 4, 4]),), exir.CaptureConfig())
             .to_edge()
             .to_executorch()
             .program
@@ -385,7 +379,7 @@ class TestEmit(unittest.TestCase):
             exir.capture(
                 f_2,
                 (torch.ones([4, 4, 4, 4]), torch.contiguous_format),
-                exir.CaptureConfig(pt2_mode=True),
+                exir.CaptureConfig(),
             )
             .to_edge()
             .to_executorch()
@@ -398,7 +392,7 @@ class TestEmit(unittest.TestCase):
             exir.capture(
                 f_2,
                 (torch.ones([4, 4, 4, 4]), torch.channels_last),
-                exir.CaptureConfig(pt2_mode=True),
+                exir.CaptureConfig(),
             ).to_edge().to_executorch().program
 
         # Get the indexes at which the memory_format values are present in the values list
@@ -434,9 +428,7 @@ class TestEmit(unittest.TestCase):
             return torch.mul(x, y, out=z)
 
         program = (
-            exir.capture(
-                f, (torch.ones(3), torch.ones(3)), exir.CaptureConfig(pt2_mode=True)
-            )
+            exir.capture(f, (torch.ones(3), torch.ones(3)), exir.CaptureConfig())
             .to_edge()
             .to_executorch()
             .program
@@ -467,7 +459,7 @@ class TestEmit(unittest.TestCase):
 
         # Trace to FX Graph.
         program = (
-            exir.capture(model_out, inputs, exir.CaptureConfig(pt2_mode=True))
+            exir.capture(model_out, inputs, exir.CaptureConfig())
             .to_edge()
             .to_executorch()
             .program
@@ -493,7 +485,7 @@ class TestEmit(unittest.TestCase):
 
         x = (torch.randn(3, 2),)
         exec_prog = (
-            exir.capture(h, x, exir.CaptureConfig(pt2_mode=True))
+            exir.capture(h, x, exir.CaptureConfig())
             .to_edge()
             .to_executorch(exir.ExecutorchBackendConfig(emit_stacktrace=True))
         )
@@ -534,10 +526,7 @@ class TestEmit(unittest.TestCase):
 
         x = (torch.randn(3, 2),)
         program = (
-            exir.capture(h, x, exir.CaptureConfig(pt2_mode=True))
-            .to_edge()
-            .to_executorch()
-            .program
+            exir.capture(h, x, exir.CaptureConfig()).to_edge().to_executorch().program
         )
 
         # Check the stacktrace is None since we did not specify to get the stacktrace
@@ -550,7 +539,7 @@ class TestEmit(unittest.TestCase):
 
         x = torch.randn(3, 2)
         program = (
-            exir.capture(f, (x, x), exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, (x, x), exir.CaptureConfig())
             .to_edge(self.compile_config)  # TODO(larryliu): fix cat
             .to_executorch()
             .program
@@ -566,7 +555,6 @@ class TestEmit(unittest.TestCase):
             inputs = eager_module.get_random_inputs()
             eager_output = eager_module.forward(*inputs)
             capture_config = exir.CaptureConfig(
-                pt2_mode=True,
                 enable_functionalization=True,
                 enable_aot=True,
                 _unlift=False,
@@ -599,7 +587,7 @@ class TestEmit(unittest.TestCase):
 
         x = (torch.randn(10),)
         program = (
-            exir.capture(f, x, exir.CaptureConfig(pt2_mode=True))
+            exir.capture(f, x, exir.CaptureConfig())
             .to_edge(self.compile_config)  # TODO(larryliu): fix topk
             .to_executorch()
             .program
@@ -616,10 +604,7 @@ class TestEmit(unittest.TestCase):
 
         x = (torch.randn(3, 2),)
         program = (
-            exir.capture(f, x, exir.CaptureConfig(pt2_mode=True))
-            .to_edge()
-            .to_executorch()
-            .program
+            exir.capture(f, x, exir.CaptureConfig()).to_edge().to_executorch().program
         )
 
         vals = program.execution_plan[0].values
@@ -635,7 +620,7 @@ class TestEmit(unittest.TestCase):
             return b
 
         x = (torch.randn(3, 2),)
-        config = CaptureConfig(pt2_mode=True, enable_dynamic_shape=True)
+        config = CaptureConfig(enable_dynamic_shape=True)
         program = exir.capture(f, x, config=config).to_edge().to_executorch().program
 
         self.assertEqual(
@@ -656,7 +641,7 @@ class TestEmit(unittest.TestCase):
 
         x = (torch.randn(1, 1, 2, 2),)
         program = (
-            exir.capture(M(), x, exir.CaptureConfig(pt2_mode=True))
+            exir.capture(M(), x, exir.CaptureConfig())
             .to_edge(exir.EdgeCompileConfig(passes=[ConstPropPass()]))
             .to_executorch()
             .program
@@ -673,7 +658,6 @@ class TestEmit(unittest.TestCase):
             return control_flow.map(map_fn, x, y)
 
         capture_config = CaptureConfig(
-            pt2_mode=True,
             enable_functionalization=False,
             enable_dynamic_shape=True,
         )
@@ -751,7 +735,6 @@ class TestEmit(unittest.TestCase):
         model = SimpleLinear()
         inputs = (torch.ones(10, 5),)
         capture_config = CaptureConfig(
-            pt2_mode=True,
             enable_dynamic_shape=True,
         )
         program = (
@@ -855,7 +838,6 @@ class TestEmit(unittest.TestCase):
         model = SimpleLinear()
         inputs = (torch.ones(10, 5),)
         capture_config = CaptureConfig(
-            pt2_mode=True,
             enable_dynamic_shape=True,
         )
         program_relu = (
@@ -922,7 +904,6 @@ class TestEmit(unittest.TestCase):
         model = SimpleLinear()
         inputs = (torch.ones(10, 5),)
         capture_config = CaptureConfig(
-            pt2_mode=True,
             enable_dynamic_shape=True,
         )
         program_relu = (
@@ -987,7 +968,6 @@ class TestEmit(unittest.TestCase):
                     fn,
                     inputs,
                     CaptureConfig(
-                        pt2_mode=True,
                         enable_dynamic_shape=True,
                     ),
                 )
@@ -1048,7 +1028,6 @@ class TestEmit(unittest.TestCase):
         model = Simple()
         inputs = (torch.ones(10, 5),)
         capture_config = CaptureConfig(
-            pt2_mode=True,
             enable_dynamic_shape=True,
         )
         program = (
@@ -1120,9 +1099,7 @@ class TestEmit(unittest.TestCase):
             exir.capture(
                 mul_model,
                 mul_model.get_random_inputs(),
-                CaptureConfig(
-                    pt2_mode=True,
-                ),
+                CaptureConfig(),
             )
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
             .to_executorch()
@@ -1145,9 +1122,7 @@ class TestEmit(unittest.TestCase):
             exir.capture(
                 mul_model,
                 (torch.ones(2, 2),),
-                CaptureConfig(
-                    pt2_mode=True,
-                ),
+                CaptureConfig(),
             )
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
             .to_executorch()

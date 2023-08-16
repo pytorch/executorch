@@ -24,7 +24,8 @@ from executorch.exir import delegate
 from executorch.exir.backend.compile_spec_schema import (
     CompileSpec as delegate_CompileSpec,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.dialects._ops import _DialectNamespace, ops as exir_ops
+from executorch.exir.dialects.backend._ops import BackendOpOverload
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.lowered_backend_module import (
     LoweredBackendModule as ExirLoweredBackendModule,
@@ -50,18 +51,25 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         target: Union[
             str,
             EdgeOpOverload,
+            BackendOpOverload,
             torch._ops.OpOverload,
             torch._ops.HigherOrderOperator,
         ],
     ) -> str:
         if isinstance(target, str):
             return target
-        elif target.__module__.startswith("executorch.exir.dialects"):
+        elif target.__module__.startswith("executorch.exir.dialects.edge"):
             # TODO(zhxchen17) Maybe provide a function name helper in FX.
             # From torch.fx.node._get_qualified_name
             module = target.__module__.replace(
                 "executorch.exir.dialects.edge._ops",
                 "executorch.exir.dialects.edge.ops",
+            )
+            return f"{module}.{target.__name__}"
+        elif target.__module__.startswith("executorch.exir.dialects.backend"):
+            module = target.__module__.replace(
+                "executorch.exir.dialects.backend._ops",
+                "executorch.exir.dialects.backend.ops",
             )
             return f"{module}.{target.__name__}"
 
@@ -337,8 +345,7 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         self.state_dict: Dict[str, Any] = state_dict  # TODO(T157676982)
 
     def deserialize_operator(self, serialized_target: str) -> str:
-        if serialized_target.startswith("executorch.exir.dialects.edge.ops"):
-            module = exir_ops.edge
+        def find_operator(module: _DialectNamespace, serialized_target: str) -> str:
             serialized_target_names = serialized_target.split(".")[5:]
 
             target = module
@@ -348,6 +355,11 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
                 else:
                     target = getattr(target, name)
             return target
+
+        if serialized_target.startswith("executorch.exir.dialects.edge.ops"):
+            return find_operator(exir_ops.edge, serialized_target)
+        elif serialized_target.startswith("executorch.exir.dialects.backend.ops"):
+            return find_operator(exir_ops.backend, serialized_target)
 
         return super().deserialize_operator(serialized_target)
 
@@ -630,6 +642,10 @@ def deserialize(
 ) -> exir.ExportedProgram:
     exported_program_str = exported_program_bytes.decode("utf-8")
     exported_program_dict = json.loads(exported_program_str)
+    # Executorch tests save exported program on disk when we haven't
+    # provided any compatibility guarantees.
+    if "module_call_graph" not in exported_program_dict["graph_module"]:
+        exported_program_dict["graph_module"]["module_call_graph"] = []
     serialized_exported_program = export_serialize._dict_to_dataclass(
         schema.ExportedProgram, exported_program_dict
     )

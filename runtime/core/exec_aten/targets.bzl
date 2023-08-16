@@ -20,5 +20,5 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = ["//executorch/runtime/core:tensor_shape_dynamism"] + ([] if aten_mode else ["//executorch/runtime/core/portable_type:portable_type"]),
-            exported_external_deps = ["torch-core-cpp"] if aten_mode else [],
+            exported_external_deps = ["libtorch"] if aten_mode else [],
         )

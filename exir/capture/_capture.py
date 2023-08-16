@@ -184,7 +184,7 @@ def capture(
 
     else:
         warnings.warn(
-            "exir.capture with pt2_mode=False is deprecated. Please use the default (pt2_mode=True) instead."
+            "exir.capture with pt2_mode=False is deprecated. Please use the default () instead."
         )
         if not config.enable_functionalization:
             raise InternalError(
@@ -196,7 +196,7 @@ def capture(
             )
         if config.enable_aot:
             raise InternalError(
-                "Using AOT mode is not supported for leagacy capture mode, please use pt2_mode=True instead."
+                "Using AOT mode is not supported for leagacy capture mode, please use  instead."
             )
         graph_module = dispatch_trace(f, args)
         in_spec, out_spec = graph_module.in_spec, graph_module.out_spec

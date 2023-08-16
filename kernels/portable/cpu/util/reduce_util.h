@@ -200,6 +200,8 @@ void apply_over_dim(
   if (in.dim() != 0) {
     ET_CHECK_VALID_DIM(dim.value(), in.dim());
   } else {
+    // Special handling for 0-D tensor; 0 or -1 is valid for PyTorch code
+    // `torch.mean(torch.tensor(2, dtype=float), dim=-1)`
     ET_CHECK(dim.value() == 0 || dim.value() == -1);
     fn(in.numel(), 1, 0);
     return;
@@ -243,7 +245,11 @@ void apply_over_dim(
     const int64_t start = 0,
     const int64_t end = -1) {
   if (dim.has_value()) {
-    ET_CHECK_VALID_DIM(dim.value(), in.dim());
+    if (in.dim() != 0) {
+      ET_CHECK_VALID_DIM(dim.value(), in.dim());
+    } else {
+      ET_CHECK(dim.value() == 0 || dim.value() == -1);
+    }
   }
   ET_CHECK_MSG(
       out_ix < get_out_numel(in, dim),
@@ -255,10 +261,10 @@ void apply_over_dim(
   }
 
   const size_t iter_length = get_reduced_dim_product(in, dim);
-  ET_CHECK_VALID_IX(start, iter_length);
-  ET_CHECK_VALID_IX(end, iter_length);
-  const size_t ustart = ET_NORMALIZE_IX(start, iter_length);
-  const size_t uend = ET_NORMALIZE_IX(end, iter_length);
+  const size_t normalized_start = ET_NORMALIZE_IX(start, iter_length);
+  const size_t normalized_end = ET_NORMALIZE_IX(end, iter_length);
+  const size_t ustart = std::max(normalized_start, size_t(0));
+  const size_t uend = std::min(normalized_end, iter_length - 1);
 
   // If dim is null, iterate over the entire tensor
   if (!dim.has_value()) {
@@ -273,8 +279,12 @@ void apply_over_dim(
   // Compute non-negative dimension value from dim value
   const size_t d = ET_NORMALIZE_IX(dim.value(), in.dim());
 
-  apply_on_flat_and_dim_ix_with_stride_and_base(
-      fn, in.strides()[d], base, ustart, uend);
+  if (in.dim() == 0) {
+    fn(base, ustart);
+  } else {
+    apply_on_flat_and_dim_ix_with_stride_and_base(
+        fn, in.strides()[d], base, ustart, uend);
+  }
 }
 
 /**
@@ -370,7 +380,11 @@ std::tuple<CTYPE_OUT, long> map_reduce_over_dim(
     const exec_aten::optional<int64_t>& dim,
     const size_t out_ix) {
   if (dim.has_value()) {
-    ET_CHECK_VALID_DIM(dim.value(), in.dim());
+    if (in.dim() != 0) {
+      ET_CHECK_VALID_DIM(dim.value(), in.dim());
+    } else {
+      ET_CHECK(dim.value() == 0 || dim.value() == -1);
+    }
   }
 
   ET_CHECK_MSG(

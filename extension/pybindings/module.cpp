@@ -283,7 +283,7 @@ py::object pyFromEValue(const EValue& v, KeepAlive& keep_alive) {
 }
 
 static constexpr size_t kDEFAULT_NON_CONSTANT_POOL_SIZE =
-    256 * 1024U * 1024U; // 256 MB
+    2 * 256 * 1024U * 1024U; // 512 MB
 static constexpr size_t kRUNTIME_POOL_SIZE = 256 * 1024U * 1024U; // 256 MB
 static constexpr size_t kDEFAULT_BUNDLED_INPUT_POOL_SIZE = 16 * 1024U;
 
@@ -555,7 +555,7 @@ void init_module_functions(py::module_& m) {
       .def("run_method", &PyModule::run_method)
       .def("forward", &PyModule::forward)
       .def_property_readonly_static("FORWARD_METHOD_INDEX", [](py::object) {
-        return torch::executor::Program::kForwardMethodIndex;
+        return 0; // TODO(T152881296) remove this
       });
   ;
 

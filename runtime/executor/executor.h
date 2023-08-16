@@ -37,11 +37,10 @@ class __ET_DEPRECATED Executor {
    * May only be called once for the lifetime of the Executor.
    *
    * @param[in] index The index of the entry point to use for this plan.
-   *     Defaults to using the `forward()` method.
+   *     Defaults to using the first method sorted alphabetically.
    * @retval Error::Ok on successful initialization.
    */
-  __ET_DEPRECATED __ET_NODISCARD Error
-  init_execution_plan(size_t index = Program::kForwardMethodIndex);
+  __ET_DEPRECATED __ET_NODISCARD Error init_execution_plan(size_t index = 0);
 
   /**
    * DEPRECATED: Use `Program::load_method()` instead.

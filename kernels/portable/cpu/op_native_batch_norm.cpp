@@ -33,12 +33,26 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
     Tensor& var_out) {
   (void)ctx;
 
-  ET_CHECK(resize_tensor(out, in.sizes()) == Error::Ok);
+  std::tuple<Tensor&, Tensor&, Tensor&> ret_val(out, mean_out, var_out);
 
-  check_batch_norm_args(
-      in, weight, bias, running_mean, running_var, momentum, eps, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, in.sizes()) == Error::Ok,
+      InvalidArgument,
+      ret_val);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      check_batch_norm_args(
+          in, weight, bias, running_mean, running_var, momentum, eps, out),
+      InvalidArgument,
+      ret_val);
   // For now, only support the default dim order
-  ET_CHECK(is_default_dim_order(in.dim_order().data(), in.dim_order().size()));
+  ET_KERNEL_CHECK(
+      ctx,
+      is_default_dim_order(in.dim_order().data(), in.dim_order().size()),
+      InvalidArgument,
+      ret_val);
 
   size_t C_dim = in.dim() >= 1 ? 1 : 0;
   size_t C = in.size(C_dim);
@@ -75,7 +89,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
         }
       });
 
-  return {out, mean_out, var_out};
+  return ret_val;
 }
 
 } // namespace native

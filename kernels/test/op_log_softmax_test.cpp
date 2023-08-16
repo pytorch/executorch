@@ -93,24 +93,6 @@ TEST(OpLogSoftmaxOutTest, AllDtypesSupported) {
   // for those types.
 }
 
-TEST(OpLogSoftmaxOutTest, EmptyInputOrEmptyOutTensorDies) {
-  if (SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen currently supports empty input or out";
-  }
-
-  TensorFactory<ScalarType::Float> tff;
-
-  Tensor x = tff.make({2, 2, 0}, {});
-
-  // Make an empty out tensor and demonstrate that it's empty.
-  Tensor out = tff.make({2, 2, 0}, {});
-
-  EXPECT_EQ(out.numel(), 0);
-
-  ET_EXPECT_KERNEL_FAILURE(
-      op_log_softmax_out(x, /*dim=*/1, /*half_to_float*/ false, out));
-}
-
 TEST(OpLogSoftmaxOutTest, MismatchedDimensionsDies) {
   if (SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen currently supports mismatched dimensions";

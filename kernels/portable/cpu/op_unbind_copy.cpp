@@ -41,13 +41,13 @@ void check_args(const Tensor& input, int64_t dim, TensorList out) {
 
   // Validate each output.
   for (size_t i = 0; i < out.size(); ++i) {
-    // All output dtypes must match the input type.
+    // All output dtypes must be the same.
     ET_CHECK_MSG(
-        out[i].scalar_type() == input.scalar_type(),
-        "out[%zu] dtype %hhd != input dtype %hhd",
+        out[i].scalar_type() == out[0].scalar_type(),
+        "out[%zu] dtype %hhd != out[0] dtype %hhd",
         i,
         out[i].scalar_type(),
-        input.scalar_type());
+        out[0].scalar_type());
 
     // output tensor must have # of dims = input.dim() -1
     ET_CHECK_MSG(
@@ -97,25 +97,29 @@ void unbind_copy_int_out(
 
   const size_t leading_dims = getLeadingDims(input, dim);
   const size_t trailing_dims = getTrailingDims(input, dim);
+  const size_t step = input.size(dim) * trailing_dims;
 
-  const size_t element_size = input.element_size();
-  const size_t step = input.size(dim) * trailing_dims * element_size;
+  ScalarType in_type = input.scalar_type();
+  ScalarType out_type = out[0].scalar_type();
 
-  const char* input_data = input.const_data_ptr<char>();
-  for (size_t i = 0, e = out.size(); i < e; ++i) {
-    size_t num_bytes = trailing_dims * element_size;
-    // num_bytes should not be zero because trailing_dims
-    // will at least return 1
-
-    const char* src = input_data;
-    char* dest = out[i].mutable_data_ptr<char>();
-    for (size_t j = 0; j < leading_dims; ++j) {
-      memcpy(dest, src, num_bytes);
-      src += step;
-      dest += num_bytes;
-    }
-    input_data += num_bytes;
-  }
+  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE_IN, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, __func__, CTYPE_OUT, [&]() {
+      const CTYPE_IN* const input_data = input.const_data_ptr<CTYPE_IN>();
+      for (size_t i = 0, e = out.size(); i < e; ++i) {
+        size_t input_offset = i * trailing_dims;
+        CTYPE_OUT* const dest = out[i].mutable_data_ptr<CTYPE_OUT>();
+        size_t dest_offset = 0;
+        for (size_t j = 0; j < leading_dims; ++j) {
+          for (size_t k = 0; k < trailing_dims; ++k) {
+            dest[dest_offset + k] =
+                convert<CTYPE_OUT, CTYPE_IN>(input_data[input_offset + k]);
+          }
+          input_offset += step;
+          dest_offset += trailing_dims;
+        }
+      }
+    });
+  });
 }
 
 } // namespace native

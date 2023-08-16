@@ -29,6 +29,7 @@ def define_common_targets():
                 "//executorch/util:util" + aten_suffix,
             ] + (MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB if aten_mode else [
                 "//executorch/configurations:executor_cpu_optimized",
+                "//executorch/kernels/quantized:generated_lib",
             ] + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB),
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             external_deps = [

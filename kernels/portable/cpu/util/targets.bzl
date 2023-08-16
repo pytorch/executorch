@@ -51,6 +51,21 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "matmul_ops_util",
+        srcs = ["matmul_ops_util.cpp"],
+        exported_headers = [
+            "matmul_ops_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            ":broadcast_util",
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/kernels/portable/cpu:scalar_utils",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
+
+    runtime.cxx_library(
         name = "normalization_ops_util",
         srcs = ["normalization_ops_util.cpp"],
         exported_headers = [
