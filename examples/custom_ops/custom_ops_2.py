@@ -8,10 +8,11 @@
 library that calls PyTorch C++ op registration API.
 """
 
+import argparse
+
 import torch
 
 from examples.export.export_example import export_to_pte
-
 
 # example model
 class Model(torch.nn.Module):
@@ -22,21 +23,21 @@ class Model(torch.nn.Module):
 def main():
     m = Model()
     input = torch.randn(2, 3)
-    # load shared library
-    from sys import platform
 
-    if platform == "linux" or platform == "linux2":
-        extension = ".so"
-    elif platform == "darwin":
-        extension = ".dylib"
-    else:
-        raise RuntimeError(f"Unsupported platform {platform}")
-    torch.ops.load_library(
-        f"cmake-out/examples/custom_ops/libcustom_ops_aot_lib{extension}"
-    )
     # capture and lower
     export_to_pte("custom_ops_2", m, (input,))
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-s",
+        "--so_library",
+        required=True,
+        help="Provide path to so library. E.g., cmake-out/examples/custom_ops/libcustom_ops_aot_lib.so",
+    )
+    args = parser.parse_args()
+    torch.ops.load_library(args.so_library)
+    print(args.so_library)
+
     main()

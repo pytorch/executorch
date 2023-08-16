@@ -7,9 +7,14 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    register_custom_op_1 = native.read_config("executorch", "register_custom_op_1", "0") == "1"
+    register_custom_op = native.read_config("executorch", "register_custom_op", "0")
 
-    custom_ops_lib = ["//executorch/examples/custom_ops:lib_1"] if register_custom_op_1 else []
+    if register_custom_op == "1":
+        custom_ops_lib = ["//executorch/examples/custom_ops:lib_1"]
+    elif register_custom_op == "2":
+        custom_ops_lib = ["//executorch/examples/custom_ops:lib_2"]
+    else:
+        custom_ops_lib = []
 
     # Test driver for models, uses all portable kernels.
     runtime.cxx_binary(

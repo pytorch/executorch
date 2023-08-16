@@ -218,35 +218,54 @@ runtime.cxx_binary(
 
 runtime.genrule(
     name = "libtorch_gen",
-    out = "libtorch.so",
+    outs = select({
+        "ovr_config//os:macos": {
+            "libtorch": ["libtorch.dylib"],
+            "libc10": ["libc10.dylib"],
+            "libtorch_cpu": ["libtorch_cpu.dylib"],
+            "include": ["include"],
+        },
+        "DEFAULT": {
+            "libtorch": ["libtorch.so"],
+            "libc10": ["libc10.so"],
+            "libtorch_cpu": ["libtorch_cpu.so"],
+            "include": ["include"],
+        },
+    }),
+    default_outs = ["."],
     srcs = ["link_torch.sh"],
-    bash = 'bash $SRCS torch/lib/libtorch.so ${OUT}',
+    bash = select({
+        "ovr_config//os:macos": "bash $SRCS -f torch/lib/libtorch.dylib,torch/lib/libtorch_cpu.dylib,torch/lib/libc10.dylib,torch/include -o ${OUT}",
+        "DEFAULT": "bash $SRCS -f torch/lib/libtorch.so,torch/lib/libtorch_cpu.so,torch/lib/libc10.so,torch/include -o ${OUT}",
+    }),
 )
 
-runtime.genrule(
-    name = "torch_headers_gen",
-    out = "include",
-    srcs = ["link_torch.sh"],
-    bash = 'bash $SRCS torch/include ${OUT}',
+prebuilt_cxx_library(
+    name = "libc10",
+    shared_lib = ":libtorch_gen[libc10]",
 )
 
-runtime.genrule(
-    name = "libtorch_dir",
-    out = "lib",
-    srcs = ["link_torch.sh"],
-    bash = 'bash $SRCS torch/lib ${OUT}',
+prebuilt_cxx_library(
+    name = "libtorch_cpu",
+    shared_lib = ":libtorch_gen[libtorch_cpu]",
 )
 
 prebuilt_cxx_library(
     name = "libtorch",
-    shared_lib = ":libtorch_gen",
-    soname = "libtorch.so",
+    shared_lib = ":libtorch_gen[libtorch]",
     exported_preprocessor_flags = [
-        "-D_GLIBCXX_USE_CXX11_ABI=0", # `libtorch` is built without CXX11_ABI so any target depends on it need to use the same build config.
-        "-I$(location :torch_headers_gen)", # include header directories
-        "-I$(location :torch_headers_gen)/torch/csrc/api/include", # include header directories
+        "-D_GLIBCXX_USE_CXX11_ABI=0",  # `libtorch` is built without CXX11_ABI so any target depends on it need to use the same build config.
+        "-I$(location :libtorch_gen[include])",  # include header directories
+        "-I$(location :libtorch_gen[include])/torch/csrc/api/include",  # include header directories
     ],
-    exported_linker_flags = ["-Wl,-rpath,$(location :libtorch_dir)"], # define rpath to locate shared library
-    exported_headers = [":torch_headers_gen"],
+    exported_linker_flags = select({
+        "ovr_config//os:macos": ["-Xlinker", "-rpath", "$(location :libtorch_gen)", "-Xlinker"],
+        "DEFAULT": ["-Wl,-rpath,$(location :libtorch_gen)"],  # define rpath to locate shared library
+    }),
+    exported_headers = [":libtorch_gen[include]"],
+    exported_deps = [
+        ":libc10",
+        ":libtorch_cpu",
+    ],
     visibility = ["PUBLIC"],
 )

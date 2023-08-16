@@ -19,7 +19,7 @@ test_buck2_custom_op_1() {
 
   echo 'Running executor_runner'
   buck2 run //examples/executor_runner:executor_runner \
-      --config=executorch.register_custom_op_1=1 -- --model_path="./${model_name}.pte"
+      --config=executorch.register_custom_op=1 -- --model_path="./${model_name}.pte"
   # should give correct result
 
   echo "Removing ${model_name}.pte"
@@ -43,6 +43,38 @@ test_cmake_custom_op_1() {
   cmake-out/executor_runner --model_path="./${model_name}.pte"
 }
 
+test_buck2_custom_op_2() {
+  local model_name='custom_ops_2'
+
+  echo 'Building custom ops shared library'
+  SO_LIB=$(buck2 build //examples/custom_ops:custom_ops_aot_lib_2 --show-output | grep "buck-out" | cut -d" " -f2)
+
+  echo "Exporting ${model_name}.pte"
+  python3 -m "examples.custom_ops.${model_name}" --so_library="$SO_LIB"
+  # should save file custom_ops_2.pte
+
+  buck2 run //examples/executor_runner:executor_runner \
+      --config=executorch.register_custom_op=2 -- --model_path="./${model_name}.pte"
+  # should give correct result
+  echo "Removing ${model_name}.pte"
+  rm "./${model_name}.pte"
+}
+
+get_shared_lib_ext() {
+  UNAME=$(uname)
+  if [[ $UNAME == "Darwin" ]];
+  then
+    EXT=".dylib"
+  elif [[ $UNAME == "Linux" ]];
+  then
+    EXT=".so"
+  else
+    echo "Unsupported platform $UNAME"
+    exit 1
+  fi
+  echo $EXT
+}
+
 test_cmake_custom_op_2() {
   local model_name='custom_ops_2'
   SITE_PACKAGES="$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
@@ -56,10 +88,11 @@ test_cmake_custom_op_2() {
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" ..)
 
   echo 'Building executor_runner'
-  cmake --build cmake-out -j9
+  cmake --build cmake-out -j4
 
+  EXT=$(get_shared_lib_ext)
   echo "Exporting ${model_name}.pte"
-  python3 -m "examples.custom_ops.${model_name}"
+  python3 -m "examples.custom_ops.${model_name}" --so_library="cmake-out/examples/custom_ops/libcustom_ops_aot_lib$EXT"
   # should save file custom_ops_2.pte
 
   echo 'Running executor_runner'
@@ -68,4 +101,5 @@ test_cmake_custom_op_2() {
 
 test_buck2_custom_op_1
 test_cmake_custom_op_1
+test_buck2_custom_op_2
 test_cmake_custom_op_2
