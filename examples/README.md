@@ -59,7 +59,7 @@ Here is the [Quantization Flow Docs](/docs/website/docs/tutorials/quantization_f
 
 You can run quantization test with the following command:
 ```bash
-buck2 run executorch/examples/quantization:example -- --model_name="mv2" # for MobileNetv2
+python3 -m examples.quantization.example --model_name "mv2" # for MobileNetv2
 ```
 It will print both the original model after capture and quantized model.
 
