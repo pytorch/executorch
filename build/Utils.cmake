@@ -22,20 +22,8 @@ function(executorch_print_configuration_summary)
     message(STATUS "  REGISTER_EXAMPLE_CUSTOM_OPS   : ${REGISTER_EXAMPLE_CUSTOM_OPS}")
 endfunction()
 
-# This is the funtion to use -Wl to link static library, used for clang
-function(clang_kernel_link_options target_name)
-    target_link_options(${target_name}
-        INTERFACE
-        # TODO(dbort): This will cause the .a to show up on the link line twice
-        # for targets that depend on this library; once because CMake will add
-        # it, and once because it's in this list of args. See if there's a way
-        # to avoid that.
-        -Wl,-force_load,$<TARGET_FILE:${target_name}>
-    )
-endfunction()
-
-# This is the funtion to use -Wl, --whole-archive to link static library, used for gcc
-function(gcc_kernel_link_options target_name)
+# This is the funtion to use -Wl, --whole-archive to link static library
+function(kernel_link_options target_name)
     target_link_options(${target_name}
         INTERFACE
         # TODO(dbort): This will cause the .a to show up on the link line twice
