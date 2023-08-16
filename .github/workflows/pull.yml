@@ -49,12 +49,10 @@ jobs:
 
         set -exu
         # TODO: This is a workaround because python3 binary isn't in the path,
-        # so subsequent commands using python3 wrongly uses system python3 instead
+        # so subsequent commands wrongly used system python3, which didn't have
+        # executorch
         PYTHON_PATH=$(dirname $(conda run --no-capture-output which python))
         export PATH="${PYTHON_PATH}:${PATH}"
-        # DEBUG
-        which python3
-        echo "DONE"
 
         # Build and test Executorch
         bash .ci/scripts/test.sh

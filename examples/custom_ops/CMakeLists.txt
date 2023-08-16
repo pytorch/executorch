@@ -110,7 +110,11 @@ if(REGISTER_EXAMPLE_CUSTOM_OP_2)
 
   # Ensure that the load-time constructor functions run. By default, the linker
   # would remove them since there are no other references to them.
-  kernel_link_options("custom_ops_aot_lib")
+  if(APPLE)
+    macos_kernel_link_options("custom_ops_aot_lib")
+  else()
+    kernel_link_options("custom_ops_aot_lib")
+  endif()
 endif()
 
 # 1. C++ library to register custom ops into Executorch runtime.
