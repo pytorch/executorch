@@ -49,10 +49,10 @@ jobs:
 
         # Build and test Executorch
         bash .ci/scripts/test.sh
-        popd
 
         # Test custom ops
         bash examples/custom_ops/test_custom_ops.sh
+        popd
 
   cmake-build-test-linux:
     name: cmake-build-test-linux
