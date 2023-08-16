@@ -40,6 +40,12 @@ install_conda() {
   popd
 }
 
+use_conda_python() {
+  PYTHON_PATH=$(dirname $(conda run --no-capture-output which python))
+  # Use conda python
+  export PATH="${PYTHON_PATH}:${PATH}"
+}
+
 install_pip_dependencies() {
   pushd .ci/docker
   # Install all Python dependencies, including PyTorch
@@ -52,4 +58,5 @@ install_pip_dependencies() {
 
 install_buck
 install_conda
+use_conda_python
 install_pip_dependencies
