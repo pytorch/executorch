@@ -30,6 +30,9 @@ jobs:
         # Build and test Executorch
         bash .ci/scripts/test.sh
 
+        # Test custom ops
+        bash examples/custom_ops/test_custom_ops.sh
+
   buck-build-test-macos:
     name: buck-build-test-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
