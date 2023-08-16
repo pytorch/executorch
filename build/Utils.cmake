@@ -32,3 +32,11 @@ function(kernel_link_options target_name)
         -Wl,--no-whole-archive
     )
 endfunction()
+
+function(macos_kernel_link_options target_name)
+    target_link_options(${target_name}
+        INTERFACE
+        # Same as kernel_link_options but it's for MacOS linker
+        -Wl,-force_load,$<TARGET_FILE:${target_name}>
+    )
+endfunction()

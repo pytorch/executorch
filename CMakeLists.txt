@@ -259,7 +259,11 @@ target_link_libraries(portable_kernels_bindings INTERFACE portable_kernels)
 
 # Ensure that the load-time constructor functions run. By default, the linker
 # would remove them since there are no other references to them.
-kernel_link_options(portable_kernels_bindings)
+if(APPLE)
+  macos_kernel_link_options(portable_kernels_bindings)
+else()
+  kernel_link_options(portable_kernels_bindings)
+endif()
 
 #
 # executor_runner: A simple commandline tool that loads and runs a program file.
