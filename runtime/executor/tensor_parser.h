@@ -58,11 +58,15 @@ parseListOptionalType(
     if (index == -1) {
       new (&optional_tensor_list[output_idx])
           exec_aten::optional<T>(exec_aten::nullopt);
+      // no value to point to. BoxedEvalueList for optional tensor will convert
+      // this to nullopt.
+      // TODO(T161156879): do something less hacky here.
+      evalp_list[output_idx] = nullptr;
     } else {
       new (&optional_tensor_list[output_idx])
           exec_aten::optional<T>(values_[index].toOptional<T>());
+      evalp_list[output_idx] = &values_[static_cast<size_t>(index)];
     }
-    evalp_list[output_idx] = &values_[static_cast<size_t>(index)];
     output_idx++;
   }
   return BoxedEvalueList<exec_aten::optional<T>>(

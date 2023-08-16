@@ -63,6 +63,7 @@ def define_common_targets():
         "ModuleBasic",
         "ModuleLinear",
         "ModuleMultipleEntry",
+        "ModuleIndex",
     ]
 
     # Generates Executorch .pte program files for various modules at build time.

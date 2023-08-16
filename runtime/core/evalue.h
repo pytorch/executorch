@@ -73,6 +73,10 @@ class BoxedEvalueList {
   mutable T* unwrapped_vals_;
 };
 
+template <>
+exec_aten::ArrayRef<exec_aten::optional<exec_aten::Tensor>>
+BoxedEvalueList<exec_aten::optional<exec_aten::Tensor>>::get() const;
+
 // Aggregate typing system similar to IValue only slimmed down with less
 // functionality, no dependencies on atomic, and fewer supported types to better
 // suit embedded systems (ie no intrusive ptr)
@@ -498,6 +502,7 @@ exec_aten::ArrayRef<T> BoxedEvalueList<T>::get() const {
   for (typename exec_aten::ArrayRef<T>::size_type i = 0;
        i < wrapped_vals_.size();
        i++) {
+    ET_CHECK(wrapped_vals_[i] != nullptr);
     unwrapped_vals_[i] = wrapped_vals_[i]->template to<T>();
   }
   return exec_aten::ArrayRef<T>{unwrapped_vals_, wrapped_vals_.size()};
