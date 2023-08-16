@@ -47,6 +47,15 @@ jobs:
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         bash .ci/scripts/setup-macos.sh
 
+        # TODO: This is a workaround because python3 binary isn't in the path,
+        # so subsequent commands using python3 wrongly uses system python3 instead
+        PYTHON_PATH=$(dirname $(conda run --no-capture-output which python3))
+        # Use conda python3
+        export PATH="${PYTHON_PATH}:${PATH}"
+
+        # DEBUG
+        which python3
+
         # Build and test Executorch
         bash .ci/scripts/test.sh
 
