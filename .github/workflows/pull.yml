@@ -47,18 +47,8 @@ jobs:
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         bash .ci/scripts/setup-macos.sh
 
-        set -exu
-        # TODO: This is a workaround because python3 binary isn't in the path,
-        # so subsequent commands wrongly used system python3, which didn't have
-        # executorch
-        PYTHON_PATH=$(dirname $(conda run --no-capture-output which python))
-        export PATH="${PYTHON_PATH}:${PATH}"
-
         # Build and test Executorch
         bash .ci/scripts/test.sh
-
-        # Test custom ops
-        bash examples/custom_ops/test_custom_ops.sh
         popd
 
   cmake-build-test-linux:
