@@ -66,6 +66,10 @@ test_cmake_custom_op_2() {
   cmake-out/executor_runner "--model_path=./${model_name}.pte"
 }
 
+# DEBUG
+which python3
+python3 -mpip list
+
 test_buck2_custom_op_1
 test_cmake_custom_op_1
 test_cmake_custom_op_2

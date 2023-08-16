@@ -50,18 +50,6 @@ install_pip_dependencies() {
   popd
 }
 
-create_python3_softlink() {
-  PYTHON=$(which python)
-
-  # This is a workaround because miniconda setup on MacOS doesn't include
-  # a python3 binary anymore because python is now always python3
-  PYTHON3=$(echo "${PYTHON}" | sed "s/python/python3/")
-  ln -s "${PYTHON}" "${PYTHON3}"
-
-  which python3
-}
-
 install_buck
 install_conda
 install_pip_dependencies
-create_python3_softlink
