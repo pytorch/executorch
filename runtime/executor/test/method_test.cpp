@@ -38,26 +38,41 @@ class MethodTest : public ::testing::Test {
     const char* path = std::getenv("ET_MODULE_ADD_PATH");
     Result<FileDataLoader> loader = FileDataLoader::From(path);
     ASSERT_EQ(loader.error(), Error::Ok);
-    loader_ = std::make_unique<FileDataLoader>(std::move(loader.get()));
+    add_loader_ = std::make_unique<FileDataLoader>(std::move(loader.get()));
 
     // Use it to load the program.
     Result<Program> program = Program::Load(
-        loader_.get(), Program::Verification::InternalConsistency);
+        add_loader_.get(), Program::Verification::InternalConsistency);
     ASSERT_EQ(program.error(), Error::Ok);
-    program_ = std::make_unique<Program>(std::move(program.get()));
+    add_program_ = std::make_unique<Program>(std::move(program.get()));
+
+    // Create a loader for the serialized ModuleIndex program.
+    const char* index_path = std::getenv("ET_MODULE_INDEX_PATH");
+    Result<FileDataLoader> index_loader = FileDataLoader::From(index_path);
+    ASSERT_EQ(index_loader.error(), Error::Ok);
+    index_loader_ =
+        std::make_unique<FileDataLoader>(std::move(index_loader.get()));
+
+    // Use it to load the program.
+    Result<Program> index_program = Program::Load(
+        index_loader_.get(), Program::Verification::InternalConsistency);
+    ASSERT_EQ(index_program.error(), Error::Ok);
+    index_program_ = std::make_unique<Program>(std::move(index_program.get()));
   }
 
  private:
   // Must outlive program_, but tests shouldn't need to touch it.
-  std::unique_ptr<FileDataLoader> loader_;
+  std::unique_ptr<FileDataLoader> add_loader_;
+  std::unique_ptr<FileDataLoader> index_loader_;
 
  protected:
-  std::unique_ptr<Program> program_;
+  std::unique_ptr<Program> add_program_;
+  std::unique_ptr<Program> index_program_;
 };
 
 TEST_F(MethodTest, MoveTest) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Result<Method> method = program_->load_method("forward", &mmm.get());
+  Result<Method> method = add_program_->load_method("forward", &mmm.get());
   ASSERT_EQ(method.error(), Error::Ok);
 
   // Can execute the method.
@@ -79,3 +94,29 @@ TEST_F(MethodTest, MoveTest) {
 
   torch::executor::util::FreeInputs(inputs);
 }
+
+// TODO(T161163608): Test is disabled due to a resize bug in tensor_index_out of
+// the portable op lib
+
+// TEST_F(MethodTest, OptionalTensorListDeserialization) {
+//   ManagedMemoryManager mmm(kDefaultNonConstMemBytes,
+//   kDefaultRuntimeMemBytes); Result<Method> method =
+//   index_program_->load_method("forward", &mmm.get());
+//   ASSERT_EQ(method.error(), Error::Ok);
+
+//   // Can execute the method.
+//   exec_aten::ArrayRef<void*> inputs =
+//       torch::executor::util::PrepareInputTensors(*method);
+//   Error err = method->execute();
+//   ASSERT_EQ(err, Error::Ok);
+
+//   EXPECT_EQ(method->inputs_size(), 1);
+
+//   auto outputs = method->get_output(0);
+//   EXPECT_EQ(outputs.toTensor().dim(), 3);
+//   EXPECT_EQ(outputs.toTensor().size(0), 5);
+//   EXPECT_EQ(outputs.toTensor().size(1), 2);
+//   EXPECT_EQ(outputs.toTensor().size(2), 10);
+
+//   torch::executor::util::FreeInputs(inputs);
+// }

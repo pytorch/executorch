@@ -60,6 +60,7 @@ def define_common_targets():
             exported_headers = [
                 "evalue.h",
             ],
+            srcs = ["evalue.cpp"],
             visibility = [
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",
