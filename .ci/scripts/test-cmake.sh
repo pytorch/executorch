@@ -15,12 +15,24 @@ test_model() {
   python -m examples.export.export_example --model_name="${MODEL_NAME}"
 
   # Run test model
-  buck2 run //examples/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
+  ./"${CMAKE_OUTPUT_DIR}"/executor_runner --model_path "./${MODEL_NAME}.pte"
 }
 
 build_and_test_executorch() {
-  # Build executorch runtime
-  buck2 build //examples/executor_runner:executor_runner
+  CMAKE_OUTPUT_DIR=cmake-out
+  # Build executorch runtime using cmake
+  rm -rf "${CMAKE_OUTPUT_DIR}" && mkdir "${CMAKE_OUTPUT_DIR}"
+
+  pushd "${CMAKE_OUTPUT_DIR}"
+  cmake -DBUCK2=buck2 ..
+  popd
+
+  if [ "$(uname)" == "Darwin" ]; then
+    CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))
+  else
+    CMAKE_JOBS=$(( $(nproc) - 1 ))
+  fi
+  cmake --build "${CMAKE_OUTPUT_DIR}" -j "${CMAKE_JOBS}"
 
   which python
   # Test the example linear model
