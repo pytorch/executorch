@@ -287,7 +287,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_floor",
         deps = [
-            "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/pattern:pattern",
         ],
     ),
     op_target(
