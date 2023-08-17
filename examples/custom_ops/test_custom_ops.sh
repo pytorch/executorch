@@ -14,7 +14,7 @@ set -e
 test_buck2_custom_op_1() {
   local model_name='custom_ops_1'
   echo "Exporting ${model_name}.pte"
-  python3 -m "examples.custom_ops.${model_name}"
+  python -m "examples.custom_ops.${model_name}"
   # should save file custom_ops_1.pte
 
   echo 'Running executor_runner'
@@ -29,7 +29,7 @@ test_buck2_custom_op_1() {
 test_cmake_custom_op_1() {
   local model_name='custom_ops_1'
   echo "Exporting ${model_name}.pte"
-  python3 -m "examples.custom_ops.${model_name}"
+  python -m "examples.custom_ops.${model_name}"
   # should save file custom_ops_1.pte
   (rm -rf cmake-out \
     && mkdir cmake-out \
@@ -50,7 +50,7 @@ test_buck2_custom_op_2() {
   SO_LIB=$(buck2 build //examples/custom_ops:custom_ops_aot_lib_2 --show-output | grep "buck-out" | cut -d" " -f2)
 
   echo "Exporting ${model_name}.pte"
-  python3 -m "examples.custom_ops.${model_name}" --so_library="$SO_LIB"
+  python -m "examples.custom_ops.${model_name}" --so_library="$SO_LIB"
   # should save file custom_ops_2.pte
 
   buck2 run //examples/executor_runner:executor_runner \
@@ -92,14 +92,24 @@ test_cmake_custom_op_2() {
 
   EXT=$(get_shared_lib_ext)
   echo "Exporting ${model_name}.pte"
-  python3 -m "examples.custom_ops.${model_name}" --so_library="cmake-out/examples/custom_ops/libcustom_ops_aot_lib$EXT"
+  python -m "examples.custom_ops.${model_name}" --so_library="cmake-out/examples/custom_ops/libcustom_ops_aot_lib$EXT"
   # should save file custom_ops_2.pte
 
   echo 'Running executor_runner'
   cmake-out/executor_runner "--model_path=./${model_name}.pte"
 }
 
-test_buck2_custom_op_1
-test_cmake_custom_op_1
-test_buck2_custom_op_2
-test_cmake_custom_op_2
+if [[ $1 == "cmake" ]];
+then
+  test_cmake_custom_op_1
+  test_cmake_custom_op_2
+elif [[ $1 == "buck2" ]];
+then
+  test_buck2_custom_op_1
+  test_buck2_custom_op_2
+else
+  test_cmake_custom_op_1
+  test_cmake_custom_op_2
+  test_buck2_custom_op_1
+  test_buck2_custom_op_2
+fi
