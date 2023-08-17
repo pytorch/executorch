@@ -14,7 +14,7 @@ set -e
 test_buck2_custom_op_1() {
   local model_name='custom_ops_1'
   echo "Exporting ${model_name}.pte"
-  python -m "examples.custom_ops.${model_name}"
+  ${PYTHON_EXECUTABLE} -m "examples.custom_ops.${model_name}"
   # should save file custom_ops_1.pte
 
   echo 'Running executor_runner'
@@ -29,12 +29,14 @@ test_buck2_custom_op_1() {
 test_cmake_custom_op_1() {
   local model_name='custom_ops_1'
   echo "Exporting ${model_name}.pte"
-  python -m "examples.custom_ops.${model_name}"
+  ${PYTHON_EXECUTABLE} -m "examples.custom_ops.${model_name}"
   # should save file custom_ops_1.pte
   (rm -rf cmake-out \
     && mkdir cmake-out \
     && cd cmake-out \
-    && cmake -DBUCK2=buck2 -DREGISTER_EXAMPLE_CUSTOM_OP_1=ON ..)
+    && cmake -DBUCK2=buck2 \
+        -DREGISTER_EXAMPLE_CUSTOM_OP_1=ON \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
   echo 'Building executor_runner'
   cmake --build cmake-out -j9
@@ -50,7 +52,7 @@ test_buck2_custom_op_2() {
   SO_LIB=$(buck2 build //examples/custom_ops:custom_ops_aot_lib_2 --show-output | grep "buck-out" | cut -d" " -f2)
 
   echo "Exporting ${model_name}.pte"
-  python -m "examples.custom_ops.${model_name}" --so_library="$SO_LIB"
+  ${PYTHON_EXECUTABLE} -m "examples.custom_ops.${model_name}" --so_library="$SO_LIB"
   # should save file custom_ops_2.pte
 
   buck2 run //examples/executor_runner:executor_runner \
@@ -77,7 +79,7 @@ get_shared_lib_ext() {
 
 test_cmake_custom_op_2() {
   local model_name='custom_ops_2'
-  SITE_PACKAGES="$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
+  SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
   CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
 
   (rm -rf cmake-out \
@@ -85,20 +87,25 @@ test_cmake_custom_op_2() {
     && cd cmake-out \
     && cmake -DBUCK2=buck2 \
       -DREGISTER_EXAMPLE_CUSTOM_OP_2=ON \
-      -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" ..)
+      -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
   echo 'Building executor_runner'
   cmake --build cmake-out -j4
 
   EXT=$(get_shared_lib_ext)
   echo "Exporting ${model_name}.pte"
-  python -m "examples.custom_ops.${model_name}" --so_library="cmake-out/examples/custom_ops/libcustom_ops_aot_lib$EXT"
+  ${PYTHON_EXECUTABLE} -m "examples.custom_ops.${model_name}" --so_library="cmake-out/examples/custom_ops/libcustom_ops_aot_lib$EXT"
   # should save file custom_ops_2.pte
 
   echo 'Running executor_runner'
   cmake-out/executor_runner "--model_path=./${model_name}.pte"
 }
 
+if [[ -z $PYTHON_EXECUTABLE ]];
+then
+  PYTHON_EXECUTABLE=python3
+fi
 if [[ $1 == "cmake" ]];
 then
   test_cmake_custom_op_1
