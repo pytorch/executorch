@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 import torch
 
-from executorch.examples.export.utils import _CAPTURE_CONFIG, _EDGE_COMPILE_CONFIG
+from executorch.examples.export.utils import export_to_edge
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 
 # pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
@@ -34,9 +34,7 @@ class ExportTest(unittest.TestCase):
         """
         import executorch.exir as exir
 
-        edge_model = exir.capture(eager_model, example_inputs, _CAPTURE_CONFIG).to_edge(
-            _EDGE_COMPILE_CONFIG
-        )
+        edge_model = export_to_edge(eager_model, example_inputs)
 
         executorch_prog = edge_model.to_executorch()
         # pyre-ignore

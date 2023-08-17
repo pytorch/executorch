@@ -18,7 +18,7 @@ from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDe
 
 from ..models import MODEL_NAME_TO_MODEL
 
-from .utils import _CAPTURE_CONFIG, _EDGE_COMPILE_CONFIG
+from .utils import export_to_edge
 
 """
 BackendWithCompilerDemo is a test demo backend, only supports torch.mm and torch.add, here are some examples
@@ -52,7 +52,7 @@ def export_compsite_module_with_lower_graph():
     m, m_inputs = MODEL_NAME_TO_MODEL.get("add_mul")()
     m = m.eval()
     m_inputs = m.get_example_inputs()
-    edge = exir.capture(m, m_inputs, _CAPTURE_CONFIG).to_edge(_EDGE_COMPILE_CONFIG)
+    edge = export_to_edge(m, m_inputs)
     print("Exported graph:\n", edge.exported_program.graph)
 
     # Lower AddMulModule to the demo backend
@@ -71,11 +71,7 @@ def export_compsite_module_with_lower_graph():
             return torch.sub(self.lowered_graph(*args), torch.ones(1))
 
     # Get the graph for the composite module, which includes lowered graph
-    composited_edge = exir.capture(
-        CompositeModule(),
-        m_inputs,
-        _CAPTURE_CONFIG,
-    ).to_edge(_EDGE_COMPILE_CONFIG)
+    composited_edge = export_to_edge(CompositeModule(), m_inputs)
 
     # The graph module is still runnerable
     composited_edge.exported_program.graph_module(*m_inputs)
@@ -122,9 +118,7 @@ def export_and_lower_partitioned_graph():
             return (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
 
     m = Model()
-    edge = exir.capture(m, m.get_example_inputs(), _CAPTURE_CONFIG).to_edge(
-        _EDGE_COMPILE_CONFIG
-    )
+    edge = export_to_edge(m, m.get_example_inputs())
     print("Exported graph:\n", edge.exported_program.graph)
 
     # Lower to backend_with_compiler_demo
@@ -158,7 +152,7 @@ def export_and_lower_the_whole_graph():
     m, m_inputs = MODEL_NAME_TO_MODEL.get("add_mul")()
     m = m.eval()
     m_inputs = m.get_example_inputs()
-    edge = exir.capture(m, m_inputs, _CAPTURE_CONFIG).to_edge(_EDGE_COMPILE_CONFIG)
+    edge = export_to_edge(m, m_inputs)
     print("Exported graph:\n", edge.exported_program.graph)
 
     # Lower AddMulModule to the demo backend

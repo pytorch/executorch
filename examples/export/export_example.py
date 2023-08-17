@@ -12,16 +12,11 @@ import executorch.exir as exir
 
 from ..models import MODEL_NAME_TO_MODEL
 
-from .utils import _CAPTURE_CONFIG, _EDGE_COMPILE_CONFIG
+from .utils import export_to_edge
 
 
 def export_to_pte(model_name, model, example_inputs):
-    m = model.eval()
-    edge = exir.capture(m, example_inputs, _CAPTURE_CONFIG).to_edge(
-        _EDGE_COMPILE_CONFIG
-    )
-    print("Exported graph:\n", edge.exported_program.graph)
-
+    edge = export_to_edge(model, example_inputs)
     exec_prog = edge.to_executorch()
 
     buffer = exec_prog.buffer
