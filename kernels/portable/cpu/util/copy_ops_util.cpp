@@ -57,7 +57,8 @@ bool check_cat_args(
   }
 
   // Ensure dim is in range.
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(tensors[ref_i], dim));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      tensors[ref_i].numel() == 0 || tensors[ref_i].dim() > dim);
 
   return true;
 }

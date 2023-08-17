@@ -45,6 +45,9 @@ Tensor& cat_out(
       for (size_t j = 0; j < ninputs; ++j) {
         const auto in_type = tensors[j].scalar_type();
         ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "cat", CTYPE_IN, [&] {
+          if (tensors[j].numel() == 0) {
+            return;
+          }
           size_t inner = tensors[j].size(dim) * dim_stride;
           const CTYPE_IN* const in_ptr =
               tensors[j].const_data_ptr<CTYPE_IN>() + i * inner;
