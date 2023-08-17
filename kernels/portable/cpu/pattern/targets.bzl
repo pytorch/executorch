@@ -13,6 +13,7 @@ def define_common_targets():
             "binary_ufunc_realb_realb_to_realb_logical.cpp",
             "unary_ufunc_realb_to_bool.cpp",
             "unary_ufunc_realb_to_float.cpp",
+            "unary_ufunc_real.cpp",
         ],
         exported_headers = [
             "pattern.h",

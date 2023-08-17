@@ -53,6 +53,18 @@ namespace internal {
 
 /**
  * Implements an op pattern for ops that take a single input tensor of any
+ * real dtye, no additional arguments, and outputs a tensor of the same size
+ * and dtype. The function fn specifies the math operation which is applied to
+ * the input tensor element-wise.
+ */
+Tensor& unary_ufunc_real(
+    FunctionRef<double(double)> fn,
+    RuntimeContext& ctx,
+    const Tensor& in,
+    Tensor& out);
+
+/**
+ * Implements an op pattern for ops that take a single input tensor of any
  * realb dtye (real and boolean), no additional arguments, and outputs a
  * boolean tensor of the same size. The function fn specifies the math
  * operation which is applied to the input tensor element-wise.
