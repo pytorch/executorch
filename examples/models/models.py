@@ -95,6 +95,13 @@ def gen_torchvision_vit_model_and_inputs() -> Tuple[torch.nn.Module, Any]:
     return TorchVisionViTModel.get_model(), TorchVisionViTModel.get_example_inputs()
 
 
+def gen_wav2letter_model_and_inputs() -> Tuple[torch.nn.Module, Any]:
+    from ..models.wav2letter import Wav2LetterModel
+
+    model = Wav2LetterModel()
+    return model.get_model(), model.get_example_inputs()
+
+
 MODEL_NAME_TO_MODEL = {
     "mul": lambda: (MulModule(), MulModule.get_example_inputs()),
     "linear": lambda: (LinearModule(), LinearModule.get_example_inputs()),
@@ -103,4 +110,5 @@ MODEL_NAME_TO_MODEL = {
     "mv2": gen_mobilenet_v2_model_inputs,
     "mv3": gen_mobilenet_v3_model_inputs,
     "vit": gen_torchvision_vit_model_and_inputs,
+    "w2l": gen_wav2letter_model_and_inputs,
 }
