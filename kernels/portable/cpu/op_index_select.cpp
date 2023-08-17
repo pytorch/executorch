@@ -63,9 +63,12 @@ void check_index_select_args(
       index.numel(),
       trailing_dims);
 
-  // Index should be a 1-D LongTensor, check if any index is out of bound
+  // Index should be a 1-D Long or Int Tensor. Check if any index is out of
+  // bound
+  ScalarType ix_type = index.scalar_type();
   ET_CHECK_MSG(
-      index.scalar_type() == ScalarType::Long, "index scalar_type not long");
+      ix_type == ScalarType::Long || ix_type == ScalarType::Int,
+      "Expected index tensor to have Long or Int scalar types");
   ET_CHECK_MSG(
       index.dim() == 1 || index.dim() == 0,
       "index.dim() %zd != 1 or 0",
@@ -138,16 +141,22 @@ Tensor& index_select_out(
 
   const char* input_data = input.const_data_ptr<char>();
   char* out_data = out.mutable_data_ptr<char>();
-  const int64_t* index_arr = index.mutable_data_ptr<int64_t>();
-  for (int i = 0; i < leading_dims; i++) {
-    const char* src = input_data + i * in_dim_length * length_per_step;
-    char* dest = out_data + i * out_dim_length * length_per_step;
-    for (auto j = 0; j < out_dim_length; j++) {
-      const char* copy_src = src + index_arr[j] * length_per_step;
-      memcpy(dest, copy_src, length_per_step);
-      dest += length_per_step;
+
+  ScalarType ix_type = index.scalar_type();
+
+  ET_SWITCH_TWO_TYPES(Long, Int, ix_type, ctx, __func__, CTYPE, [&]() {
+    const CTYPE* const index_arr = index.mutable_data_ptr<CTYPE>();
+    for (int i = 0; i < leading_dims; i++) {
+      const char* src = input_data + i * in_dim_length * length_per_step;
+      char* dest = out_data + i * out_dim_length * length_per_step;
+      for (auto j = 0; j < out_dim_length; j++) {
+        const char* copy_src = src + index_arr[j] * length_per_step;
+        memcpy(dest, copy_src, length_per_step);
+        dest += length_per_step;
+      }
     }
-  }
+  });
+
   return out;
 }
 
