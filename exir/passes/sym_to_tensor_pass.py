@@ -14,7 +14,7 @@ from torch import SymBool, SymFloat, SymInt
 from torch.utils._pytree import PyTree
 
 
-class SymIntToTensorPass(ExportPass):
+class SymToTensorPass(ExportPass):
     """
     The dispatcher implicitly converts SymInt/SymFloats to tensors, but
     sometimes this doesn't comply with the operator's schema which Executorch

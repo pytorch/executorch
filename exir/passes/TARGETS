@@ -25,6 +25,7 @@ python_library(
         ":scalar_to_tensor_pass",
         ":spec_prop_pass",
         ":sym_shape_eval_pass",
+        ":sym_to_tensor_pass",
         "//caffe2:torch",
         "//executorch/exir:common",
         "//executorch/exir:control_flow",
@@ -87,9 +88,9 @@ python_library(
 )
 
 python_library(
-    name = "symint_to_tensor_pass",
+    name = "sym_to_tensor_pass",
     srcs = [
-        "symint_to_tensor_pass.py",
+        "sym_to_tensor_pass.py",
     ],
     deps = [
         "//caffe2:torch",

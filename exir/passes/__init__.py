@@ -52,6 +52,7 @@ from executorch.exir.passes.replace_sym_size_op_pass import ReplaceSymSizeOpPass
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_shape_eval_pass import SymShapeEvalPass
+from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
 from torch import fx
 from torch._subclasses import FakeTensor
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -475,6 +476,7 @@ aten_to_edge_passes = PassManager(
         NormalizeTransposePass(),
         ReplaceBrokenOpsWithFunctionalOpsPass(),
         ScalarToTensorPass(),
+        SymToTensorPass(),
         RemoveMixedTypeOperators(),
         RemoveNoopPass(),
         dead_code_elimination_pass,
