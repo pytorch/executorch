@@ -40,7 +40,7 @@ from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOp
 from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendOpsPass
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
-from executorch.exir.passes.symint_to_tensor_pass import SymIntToTensorPass
+from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
 from executorch.exir.tensor import TensorSpec
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.control_flow_models import FTCondDeadCode, FTMapBasic
@@ -834,10 +834,21 @@ class TestPasses(unittest.TestCase):
         prog = exir.capture(
             f, inputs, exir.CaptureConfig(enable_dynamic_shape=True)
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-        prog = prog.transform(SymIntToTensorPass())
+        prog = prog.transform(SymToTensorPass())
 
+        FileCheck().check(
+            "executorch_exir_dialects_edge__ops_aten_scalar_tensor_default"
+        ).run(prog.exported_program.graph_module.code)
         self.assertTrue(torch.allclose(f(torch.ones(6)), prog(torch.ones(6))))
         self.assertTrue(torch.allclose(f(torch.zeros(6)), prog(torch.zeros(6))))
+
+        # This pass should also be part of to_edge, so checking again after to_edge
+        prog = exir.capture(
+            f, inputs, exir.CaptureConfig(enable_dynamic_shape=True)
+        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+        FileCheck().check(
+            "executorch_exir_dialects_edge__ops_aten_scalar_tensor_default"
+        ).run(prog.exported_program.graph_module.code)
 
     def test_replace_edge_with_backend_pass(self) -> None:
         def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
