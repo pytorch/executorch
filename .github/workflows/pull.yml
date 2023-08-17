@@ -51,7 +51,7 @@ jobs:
         bash .ci/scripts/test.sh
 
         # Test custom ops
-        bash examples/custom_ops/test_custom_ops.sh buck2
+        PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh buck2
         popd
 
   cmake-build-test-linux:
@@ -90,5 +90,5 @@ jobs:
         bash .ci/scripts/setup-macos.sh
 
         # Build and test custom ops
-        bash examples/custom_ops/test_custom_ops.sh cmake
+        PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh cmake
         popd

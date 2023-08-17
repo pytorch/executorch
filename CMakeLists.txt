@@ -62,6 +62,9 @@ endif()
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
+if(NOT PYTHON_EXECUTABLE)
+  set(PYTHON_EXECUTABLE python3)
+endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
 set(_common_compile_options -Wno-deprecated-declarations)
@@ -87,7 +90,7 @@ if(NOT EXECUTORCH_SRCS_FILE)
   message(STATUS "executorch: Generating source lists")
   set(EXECUTORCH_SRCS_FILE "${CMAKE_CURRENT_BINARY_DIR}/executorch_srcs.cmake")
   execute_process(
-    COMMAND python3 build/extract_sources.py --buck2=${BUCK2}
+    COMMAND ${PYTHON_EXECUTABLE} build/extract_sources.py --buck2=${BUCK2}
             --config=build/cmake_deps.toml --out=${EXECUTORCH_SRCS_FILE}
     OUTPUT_VARIABLE gen_srcs_output
     ERROR_VARIABLE gen_srcs_error
