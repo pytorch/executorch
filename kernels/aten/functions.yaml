@@ -81,6 +81,8 @@
 
 - op: cat.out
 
+- op: ceil.out
+
 - op: clamp_min.out
 
 - op: clamp.out
