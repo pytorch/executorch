@@ -33,7 +33,7 @@ while getopts ":o:f:" opt; do
   esac
 done
 
-LIB=$(python3 -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
+LIB=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
 
 # delimiter ,
 export IFS=","
