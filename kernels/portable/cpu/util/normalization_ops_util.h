@@ -21,7 +21,9 @@ bool check_batch_norm_args(
     const Tensor& running_var,
     double momentum,
     double eps,
-    Tensor& out);
+    Tensor& out,
+    Tensor& mean_out,
+    Tensor& var_out);
 
 bool check_layer_norm_args(
     const Tensor& input,

@@ -23,11 +23,15 @@ bool check_batch_norm_args(
     const Tensor& running_var,
     double momentum,
     double eps,
-    Tensor& out) {
+    Tensor& out,
+    Tensor& mean_out,
+    Tensor& var_out) {
   // All tensors must be the same dtype
   ET_LOG_AND_RETURN_IF_FALSE(
       tensors_have_same_dtype(in, running_mean, running_var));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, mean_out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, var_out));
   if (weight.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight.value()));
   }
