@@ -511,6 +511,14 @@ class FXOperatorGraph(OperatorGraphWithStats):
                         )
                     elif isinstance(list_arg, torch.fx.node.Node):
                         arg_name += [FXOperatorGraph._get_node_name(list_arg)]
+                    elif list_arg is None:
+                        arg_name += ["CONST_NONE" + str(const_count)]
+                        const_count += 1
+                        const_node = ValueNode(arg_name[-1], val=str(arg))
+                        nodes[arg_name[-1]] = const_node
+                        FXOperatorGraph._update_module_mapping(
+                            const_node, module_mapping, node.meta
+                        )
                     else:
                         raise Exception(
                             f"Unsupported argument encountered in list {arg}, {type(arg[0])}"
