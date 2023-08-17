@@ -179,6 +179,12 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_ceil",
+        deps = [
+            "//executorch/kernels/portable/cpu/pattern:pattern",
+        ],
+    ),
+    op_target(
         name = "op_clamp",
         deps = [
             ":scalar_utils",
