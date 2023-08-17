@@ -31,7 +31,7 @@ jobs:
         bash .ci/scripts/test.sh
 
         # Test custom ops
-        bash examples/custom_ops/test_custom_ops.sh
+        bash examples/custom_ops/test_custom_ops.sh buck2
 
   buck-build-test-macos:
     name: buck-build-test-macos
@@ -49,6 +49,9 @@ jobs:
 
         # Build and test Executorch
         bash .ci/scripts/test.sh
+
+        # Test custom ops
+        bash examples/custom_ops/test_custom_ops.sh buck2
         popd
 
   cmake-build-test-linux:
@@ -68,3 +71,24 @@ jobs:
 
         # Build and test Executorch
         bash .ci/scripts/test-cmake.sh
+
+        # Build and test custom ops
+        bash examples/custom_ops/test_custom_ops.sh cmake
+
+  cmake-build-test-macos:
+    name: cmake-build-test-macos
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-m1-12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        WORKSPACE=$(pwd)
+
+        pushd "${WORKSPACE}/pytorch/executorch"
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        bash .ci/scripts/setup-macos.sh
+
+        # Build and test custom ops
+        bash examples/custom_ops/test_custom_ops.sh cmake
+        popd
