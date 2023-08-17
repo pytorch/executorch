@@ -55,5 +55,28 @@ bool check_batch_norm_args(
   return true;
 }
 
+bool check_layer_norm_args(
+    const Tensor& input,
+    IntArrayRef normalized_shape,
+    const exec_aten::optional<Tensor>& weight,
+    const exec_aten::optional<Tensor>& bias,
+    Tensor& out,
+    Tensor& mean_out,
+    Tensor& rstd_out) {
+  ET_LOG_AND_RETURN_IF_FALSE(normalized_shape.size() == 1);
+  ET_LOG_AND_RETURN_IF_FALSE(weight.has_value());
+  if (weight.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, weight.value()));
+  }
+  if (bias.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, bias.value()));
+  }
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, mean_out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, rstd_out));
+  ET_LOG_AND_RETURN_IF_FALSE(input.dim() == out.dim());
+  return true;
+}
+
 } // namespace executor
 } // namespace torch
