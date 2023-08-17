@@ -287,8 +287,16 @@ def _(
         tagged_graph_module, partitioner_instance, edge_program
     )
 
-    edge_program.graph_module = tagged_graph_module
-    return edge_program
+    return ExportedProgram(
+        tagged_graph_module,
+        tagged_graph_module.graph,
+        copy.deepcopy(edge_program.graph_signature),
+        copy.deepcopy(edge_program.call_spec),
+        edge_program.state_dict,
+        copy.deepcopy(edge_program.range_constraints),
+        copy.deepcopy(edge_program.equality_constraints),
+        copy.deepcopy(edge_program.module_call_graph),
+    )
 
 
 def to_backend_multiple(

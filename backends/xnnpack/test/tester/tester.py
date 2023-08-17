@@ -152,7 +152,7 @@ class Quantize2(Stage):
     ) -> None:
         prepared = prepare_pt2e(artifact.exported_program.graph_module, self.quantizer)
         converted = convert_pt2e(prepared)
-        artifact.exported_program.graph_module = converted
+        artifact.exported_program._graph_module = converted
         self.converted_program = artifact
 
     @property
