@@ -28,23 +28,6 @@ def preprocess(
 
 The demo preprocess is implemented here: executorch/backends/tests/backend_with_compiler_demo.py. The demo loops through the nodes in the graph module of the `edge_program` and serializes the add, mul, and sin instructions into a string, which is later parsed and executed at runtime.
 
-The graph module being preprocessed is a lifted graph, this means that static data like weights and biases are supplied as inputs to the graph. However, we can access the weights and biases ahead-of-time through the exported program. An example of accessing these parameters from a given node looks like this:
-
-```python
-def get_param_from_node(
-    node: torch.fx.Node, edge_program: ExportedProgram
-) -> Optional[torch.nn.Parameter]:
-    """
-    Returns the parameter associated with the given node in the edge program.
-    Returns None if the node is not a parameter within the edge_program
-    """
-    if node.name in edge_program.graph_signature.inputs_to_parameters:
-        parameter_name = edge_program.graph_signature.inputs_to_parameters[node.name]
-        return edge_program.state_dict[parameter_name]
-
-    return None
-```
-
 **Runtime initialization and execution interface**
 
 ```cpp
@@ -337,3 +320,77 @@ model_outputs = executorch_module.forward([model_inputs])
 ```
 
 It's expected to capture debug handler like `instruction demo::tan_default<debug_handle>1 is not supported, debug handler is: 1`
+
+
+## Common Questions
+
+1. How to get data in backend.preprocess
+
+The graph module being preprocessed is a lifted graph, this means that static data like weights and biases are supplied as inputs to the graph. However, we can access the weights and biases ahead-of-time through the exported program. To access these parameters from a given node, we can use the function `get_params` provided in  `torch/_export/utils.py`
+
+2. How to embed the data (like weight/bias) to the backend?
+
+It's common that backend have some ways optimize the const data. In this case, we'd need to tag the placeholder node which are also the state in the partitioner, and during backend.preprocess, we can follow the description in the first question to get the weight.
+
+3. How to run the lowered module in Python?
+
+We haven't added the support yet but that's the plan!
+
+4. Should we expect to see `get_attr` node in exir?
+
+The`get_attr` will only show up for control flow or after to_backend call. It won't hold any data.
+
+5. Can we delegate to multiple backends?
+
+Yes! There are two ways to do this:
+
+Option 1: Run to_backend multiple times for different backends
+
+If we have two backends, backend_1 and backend_2, and they have their own parititioners: backend_1_parititioner and backend_2_partitioner, we can run it like
+
+```python
+# Will first lower nodes to backend_1 depending on the backend_1_parititioner depending on partitioner algorithm
+exported_program_backend_1 = to_backend(exported_program, backend_1_parititioner)
+# For the rest of nodes, they will be lowered to backend_2 depending on backend_2_parititioner
+exported_program_backend_1_and_2 = to_backend(exported_program_backend_1, backend_2_parititioner)
+```
+
+A more conrete example be found in executorch/exir/backend/test/demos/test_xnnpack_qnnpack.py. In this example, qnnpack is one backend and xnnpack is another backend. We haven't open-sourced these two backends delegates yet, and this example won't run out of box. It can be used as a reference to see how it can be done.
+
+This option is easy to try becuase usually all backends will implement their own parititioner. However this option may get different results if we change the order of to_backend call. If we want to have a better control on the nodes, like which backend they should go, option 2 is better.
+
+Option 2:
+Another option is to create a customized partitioner, say parititioner `backend_1_2_parittioner`, and inside the partitioner logic,
+
+```python
+class Backend_1_2_Partitioner(Partitioner):
+    """
+    Partitions all add/mul nodes regardless of order for Backend2
+    """
+
+    def __init__(self) -> None:
+        self.delegation_spec_1 = DelegationSpec("Backend1", [])
+        self.delegation_spec_2 = DelegationSpec("Backend2", [])
+        self.partition_tags = {}
+
+    def partition(
+        self, edge_graph_module: torch.fx.GraphModule
+    ) -> torch.fx.GraphModule:
+
+        # Tag all nodes in the first partiton to backend 1
+        node_to_backend_1 = ... # some logic to select the nodes from the graph
+        delegation_tag = f"backend2_tag{partitioner_1.id}"
+        node.meta["delegation_tag"] = delegation_tag
+        self.partition_tags[delegation_tag] = self.delegation_spec_1
+
+        # Tag all nodes in the first partiton to backend 2
+        node_to_backend_2 = ... # some logic to select the nodes from the graph
+        delegation_tag = f"backend2_tag{partitioner_2.id}"
+        node.meta["delegation_tag"] = delegation_tag
+        self.partition_tags[delegation_tag] = self.delegation_spec_2
+        return edge_graph_module
+```
+
+6. Is there an easy way to write partitioner?
+
+We provide canonical partitioners in "Partitioner Sesssion" in passes to make it easy to find nodes from decomposed operators.
