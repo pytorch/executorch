@@ -23,5 +23,14 @@ bool check_batch_norm_args(
     double eps,
     Tensor& out);
 
+bool check_layer_norm_args(
+    const Tensor& input,
+    IntArrayRef normalized_shape,
+    const exec_aten::optional<Tensor>& weight,
+    const exec_aten::optional<Tensor>& bias,
+    Tensor& out,
+    Tensor& mean_out,
+    Tensor& rstd_out);
+
 } // namespace executor
 } // namespace torch
