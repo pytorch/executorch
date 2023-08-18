@@ -619,6 +619,16 @@ inline bool tensors_have_same_shape_and_dtype(
   return tensors_have_same_shape(a, b, c) && tensors_have_same_dtype(a, b, c);
 }
 
+#define ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(t__)           \
+  ({                                                             \
+    ET_CHECK_MSG(                                                \
+        is_default_dim_order(                                    \
+            t__.dim_order().data(), t__.dim_order().size()) ||   \
+            is_channels_last_dim_order(                          \
+                t__.dim_order().data(), t__.dim_order().size()), \
+        "Tensor must have default or channels last dim order");  \
+  })
+
 inline bool tensors_have_same_strides(
     exec_aten::Tensor a,
     exec_aten::Tensor b) {
@@ -949,6 +959,19 @@ __ET_NODISCARD Error get_dim_order(
     const exec_aten::Tensor& tensor,
     exec_aten::DimOrderType* out_dim_order,
     size_t out_dim_order_size);
+
+/**
+ * Checks whether a tensor has a valid dim order. If the dim order could not be
+ * determined, then this function returns false by default.
+ */
+bool tensor_has_valid_dim_order(exec_aten::Tensor t);
+
+/**
+ * Checks whether a tensor has either the default of channels last dim order. If
+ * the dim order could not be determined, then this function returns false by
+ * default.
+ */
+bool tensor_is_default_or_channels_last_dim_order(exec_aten::Tensor t);
 
 /**
  * Given an n-dimensional coordinate array and an array of tensor strides,

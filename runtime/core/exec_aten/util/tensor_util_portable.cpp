@@ -38,6 +38,41 @@ Error get_dim_order(
   return Error::Ok;
 }
 
+bool tensor_has_valid_dim_order(torch::executor::Tensor t) {
+  if (!validate_dim_order(t.dim_order().data(), t.dim_order().size())) {
+    ET_LOG(Error, "Tensor dim order is not valid:");
+    for (size_t d = 0; d < t.dim(); ++d) {
+      ET_LOG(
+          Error,
+          "    dim_order(%zu): %zu",
+          static_cast<size_t>(d),
+          static_cast<size_t>(t.dim_order()[d]));
+    }
+    return false;
+  }
+  return true;
+}
+
+bool tensor_is_default_or_channels_last_dim_order(torch::executor::Tensor t) {
+  bool ret_val =
+      is_default_dim_order(t.dim_order().data(), t.dim_order().size()) ||
+      is_channels_last_dim_order(t.dim_order().data(), t.dim_order().size());
+
+  if (!ret_val) {
+    ET_LOG(
+        Error,
+        "Expected tensor to have default or channels last dim order, but got");
+    for (size_t d = 0; d < t.dim(); ++d) {
+      ET_LOG(
+          Error,
+          "    dim_order(%zu): %zu",
+          static_cast<size_t>(d),
+          static_cast<size_t>(t.dim_order()[d]));
+    }
+  }
+  return ret_val;
+}
+
 namespace internal {
 
 Error share_tensor_data(
