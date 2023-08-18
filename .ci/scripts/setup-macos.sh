@@ -46,7 +46,8 @@ install_pip_dependencies() {
   pip install --progress-bar off -r requirements-ci.txt
 
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
-  pip install --progress-bar off --pre torch=="${TORCH_VERSION}" --index-url https://download.pytorch.org/whl/nightly/cpu
+  TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
+  pip install --progress-bar off --pre torch=="${TORCH_VERSION}" torchvision=="${TORCHVISION_VERSION}" --index-url https://download.pytorch.org/whl/nightly/cpu
   popd
 }
 

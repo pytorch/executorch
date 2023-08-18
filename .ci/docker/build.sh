@@ -18,6 +18,7 @@ CLANG_VERSION=12
 PYTHON_VERSION=3.10
 MINICONDA_VERSION=23.5.1-0
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
+TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
 BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
 docker build \
@@ -28,6 +29,7 @@ docker build \
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
   --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
+  --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   -f "${OS}"/Dockerfile \
   "$@" \
