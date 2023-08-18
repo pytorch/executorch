@@ -24,7 +24,7 @@ build_and_test_executorch() {
   rm -rf "${CMAKE_OUTPUT_DIR}" && mkdir "${CMAKE_OUTPUT_DIR}"
 
   pushd "${CMAKE_OUTPUT_DIR}"
-  cmake -DBUCK2=buck2 ..
+  cmake -DBUCK2=buck2 -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" ..
   popd
 
   if [ "$(uname)" == "Darwin" ]; then
