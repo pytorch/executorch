@@ -35,7 +35,9 @@ bool is_index_mask(
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices) {
   if (indices.size() == 1 && indices[0].has_value()) {
     const Tensor& mask = indices[0].value();
-    if (mask.scalar_type() == ScalarType::Bool && mask.dim() == tensor.dim()) {
+    if ((mask.scalar_type() == ScalarType::Bool ||
+         mask.scalar_type() == ScalarType::Byte) &&
+        mask.dim() == tensor.dim()) {
       return true;
     }
   }
@@ -49,7 +51,8 @@ size_t get_indices_broadcast_len(
     if (indices[i].has_value()) {
       const Tensor& index = indices[i].value();
       size_t len = 0;
-      if (index.scalar_type() == ScalarType::Bool) {
+      if (index.scalar_type() == ScalarType::Bool ||
+          index.scalar_type() == ScalarType::Byte) {
         len = count_boolean_index(index);
       } else {
         len = index.numel();
@@ -99,7 +102,7 @@ bool indices_list_is_valid(
         ET_LOG_AND_RETURN_IF_FALSE(
             index_values_are_valid<int64_t>(tensor, i, index));
       }
-    } else if (idx_type == ScalarType::Bool) {
+    } else if (idx_type == ScalarType::Bool || idx_type == ScalarType::Byte) {
       ET_LOG_MSG_AND_RETURN_IF_FALSE(
           index.numel() == tensor.size(i),
           "indices[%zd].numel() %zd incompatible with input.size(%zd) %zd",
@@ -162,7 +165,7 @@ size_t get_index_query_pos_offset(
         index_val += tensor.size(dim);
       }
       offset += index_val * step_len;
-    } else if (idx_type == ScalarType::Bool) {
+    } else if (idx_type == ScalarType::Bool || idx_type == ScalarType::Byte) {
       const bool* const index_ptr = index.const_data_ptr<bool>();
       // Broadcasting for boolean index tensors
       size_t num_true = count_boolean_index(index);
