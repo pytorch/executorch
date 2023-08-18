@@ -30,6 +30,7 @@ docker build \
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
   --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
+  --build-arg "TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION}" \
   --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   -f "${OS}"/Dockerfile \
