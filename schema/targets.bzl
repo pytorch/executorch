@@ -55,7 +55,6 @@ def define_common_targets():
     runtime.export_file(
         name = INPUT_PROGRAM,
         visibility = [
-            "//executorch/exir/scripts/...",
             "//executorch/exir/serialize/...",
         ],
     )
