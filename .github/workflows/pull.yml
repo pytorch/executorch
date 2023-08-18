@@ -15,7 +15,7 @@ jobs:
   gather-models:
     runs-on: ubuntu-22.04
     outputs:
-      models: ${{ steps.gather-models.output.models }}
+      models: ${{ steps.gather-models.outputs.models }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
