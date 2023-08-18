@@ -18,8 +18,8 @@ jobs:
     strategy:
       matrix: |
         { include: [
-          { model: "linear" },
-          { model: "mv2" }
+          { model: "linear", runner: "linux.2xlarge" },
+          { model: "mv2", runner: "linux.2xlarge" },
         ]}
       fail-fast: false
     with:
