@@ -629,6 +629,31 @@ inline bool tensors_have_same_shape_and_dtype(
         "Tensor must have default or channels last dim order");  \
   })
 
+inline bool tensor_has_expected_size(
+    exec_aten::Tensor a,
+    exec_aten::ArrayRef<exec_aten::SizesType> expected_sizes) {
+  if (!(a.sizes() == expected_sizes)) {
+    ET_LOG(
+        Error,
+        ET_TENSOR_CHECK_PREFIX__ ": dim=(%zu, %zu)",
+        static_cast<size_t>(a.dim()),
+        static_cast<size_t>(expected_sizes.size()));
+    size_t a_dim = static_cast<size_t>(a.dim());
+    size_t expected_dim = static_cast<size_t>(expected_sizes.size());
+    for (size_t d = 0; d < ET_MIN2(a_dim, expected_dim); ++d) {
+      ET_LOG(
+          Error,
+          "    size(%zu): (%zu, %zu)",
+          static_cast<size_t>(d),
+          static_cast<size_t>(a.size(d)),
+          static_cast<size_t>(expected_sizes[d]));
+    }
+
+    return false;
+  }
+  return true;
+}
+
 inline bool tensors_have_same_strides(
     exec_aten::Tensor a,
     exec_aten::Tensor b) {

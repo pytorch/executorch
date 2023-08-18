@@ -21,7 +21,7 @@ namespace {
  * within the bounds of the tensor being indexed.
  */
 template <typename CTYPE>
-void check_index_values(
+bool index_values_are_valid(
     const Tensor& tensor,
     const size_t dim,
     const Tensor& index) {
@@ -31,12 +31,13 @@ void check_index_values(
     if (index_val < 0) {
       index_val += tensor.size(dim);
     }
-    ET_CHECK_MSG(
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
         index_val >= 0 && index_val < tensor.size(dim),
         "index[i] %" PRId64 " out of bound [0, input.size(j) %zd)",
         static_cast<int64_t>(index_val),
         tensor.size(i));
   }
+  return true;
 }
 
 } // namespace
@@ -45,11 +46,6 @@ void check_index_values(
  * Gets the length of the largest dim of a tensor.
  */
 size_t get_max_dim_len(const Tensor& tensor);
-
-/**
- * Checks that the size of a tensor matches an expected size array.
- */
-void check_tensor_size(const Tensor& tensor, Tensor::SizesType* expected_size);
 
 /**
  * Counts the number of elements set to true in a boolen index tensor
@@ -82,7 +78,7 @@ size_t get_indices_broadcast_len(
  * Indices can be represented as a single boolean mask. The index mask must be
  * the same shape as the tensor being indexed.
  */
-void check_indices_mask(
+bool indices_mask_is_valid(
     const Tensor& tensor,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices);
 
@@ -117,31 +113,13 @@ void check_indices_mask(
  * 4. {[T, F, T, F], [1, 3],} selects for [0, 1, :] and [1, 3, :]
  * 5. {[0, 2], [3],} selects for [0, 3, :] and [0, 3, :]
  */
-void check_indices_list(
+bool indices_list_is_valid(
     const Tensor& tensor,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices);
 
-void check_indices(
+bool indices_are_valid(
     const Tensor& tensor,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices);
-
-/**
- * Determines the size of the result tensor given indices
- */
-void get_index_result_size(
-    const Tensor& tensor,
-    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
-    Tensor::SizesType* sizes_arr,
-    size_t& dim);
-
-/**
- * Validates that the size of a result tensor matches the expected size when
- * applying an indices array to specified tensor.
- */
-void check_index_result_size(
-    const Tensor& tensor,
-    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
-    const Tensor& result);
 
 /**
  * Given indices in the list format, collect the tensor position that is
@@ -159,6 +137,40 @@ size_t get_index_query_pos_offset(
     size_t query_idx,
     const Tensor& tensor,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices);
+
+//
+// Operator specific utility functions
+//
+
+bool check_index_args(
+    const Tensor& in,
+    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
+    Tensor& out);
+
+void get_index_out_target_size(
+    const Tensor& in,
+    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim);
+
+bool check_index_put_args(
+    const Tensor& in,
+    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
+    const Tensor& values,
+    Tensor& output);
+
+bool check_index_select_args(
+    const Tensor& in,
+    int64_t dim,
+    const Tensor& index,
+    Tensor& out);
+
+void get_index_select_out_target_size(
+    const Tensor& in,
+    int64_t dim,
+    const Tensor& index,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim);
 
 } // namespace executor
 } // namespace torch

@@ -19,18 +19,6 @@ size_t get_max_dim_len(const Tensor& tensor) {
   return dim_len;
 }
 
-void check_tensor_size(const Tensor& tensor, Tensor::SizesType* expected_size) {
-  for (size_t d = 0; d < tensor.dim(); d++) {
-    ET_CHECK_MSG(
-        tensor.size(d) == expected_size[d],
-        "values.size(%zu) %zd != expected_size[%zu] %zd",
-        d,
-        tensor.size(d),
-        d,
-        ssize_t(expected_size[d]));
-  }
-}
-
 size_t count_boolean_index(const Tensor& index) {
   const bool* const index_ptr = index.const_data_ptr<bool>();
   size_t sum = 0;
@@ -72,16 +60,17 @@ size_t get_indices_broadcast_len(
   return broadcast_len;
 }
 
-void check_indices_mask(
+bool indices_mask_is_valid(
     const Tensor& tensor,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices) {
   if (indices.size() == 1 && indices[0].has_value()) {
     const Tensor& mask = indices[0].value();
-    ET_CHECK_SAME_SHAPE2(tensor, mask);
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_shape(tensor, mask));
   }
+  return true;
 }
 
-void check_indices_list(
+bool indices_list_is_valid(
     const Tensor& tensor,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices) {
   size_t broadcast_len = get_indices_broadcast_len(indices);
@@ -90,13 +79,13 @@ void check_indices_list(
     const Tensor& index = indices[i].value();
     ScalarType idx_type = index.scalar_type();
 
-    ET_CHECK_MSG(
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
         get_max_dim_len(index) == index.numel(),
         "Each index tensor must have all dims equal to 1 except one");
 
     // TODO(ssjia): properly support tensor broadcasting
     if (idx_type == ScalarType::Int || idx_type == ScalarType::Long) {
-      ET_CHECK_MSG(
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
           index.numel() == broadcast_len || index.numel() == 1,
           "indices[%zd].numel() %zd cannot broadcast with length %zd",
           i,
@@ -104,12 +93,14 @@ void check_indices_list(
           broadcast_len);
 
       if (idx_type == ScalarType::Int) {
-        check_index_values<int32_t>(tensor, i, index);
+        ET_LOG_AND_RETURN_IF_FALSE(
+            index_values_are_valid<int32_t>(tensor, i, index));
       } else {
-        check_index_values<int64_t>(tensor, i, index);
+        ET_LOG_AND_RETURN_IF_FALSE(
+            index_values_are_valid<int64_t>(tensor, i, index));
       }
     } else if (idx_type == ScalarType::Bool) {
-      ET_CHECK_MSG(
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
           index.numel() == tensor.size(i),
           "indices[%zd].numel() %zd incompatible with input.size(%zd) %zd",
           i,
@@ -118,79 +109,30 @@ void check_indices_list(
           tensor.size(i));
 
       size_t len = count_boolean_index(index);
-      ET_CHECK_MSG(
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
           len == broadcast_len || len == 1,
           "indices[%zd] true count %zd cannot broadcast with length %zd",
           i,
           len,
           broadcast_len);
     } else {
-      ET_CHECK_MSG(
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
           false,
           "%hhd scalar type is not supported for indices",
           index.scalar_type());
     }
   }
+  return true;
 }
 
-void check_indices(
+bool indices_are_valid(
     const Tensor& tensor,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices) {
   if (is_index_mask(tensor, indices)) {
-    check_indices_mask(tensor, indices);
+    return indices_mask_is_valid(tensor, indices);
   } else {
-    check_indices_list(tensor, indices);
+    return indices_list_is_valid(tensor, indices);
   }
-}
-
-void get_index_result_size(
-    const Tensor& tensor,
-    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
-    Tensor::SizesType* sizes_arr,
-    size_t& dim) {
-  // If indexing using a boolean mask, the result will be one dimensional with
-  // length equal to the number of true elements in the mask.
-  if (is_index_mask(tensor, indices)) {
-    dim = 1;
-    const Tensor& mask = indices[0].value();
-    size_t true_count = count_boolean_index(mask);
-    sizes_arr[0] = true_count;
-    return;
-  }
-
-  // If indexing using a list of index tensors, each index tensor corresponds to
-  // one dim of the original tensor. These tensors can be broadcasted, so first
-  // retrieve broadcasted size of each tensor.
-  size_t broadcast_len = get_indices_broadcast_len(indices);
-  // The expected ndim of the result tensor is equal to the ndim of the original
-  // tensor offset by the number of dimensions that were indexed.
-  dim = tensor.dim() - indices.size() + 1;
-
-  // The leading dim of the result should be equal to number of index queries
-  sizes_arr[0] = broadcast_len;
-
-  // The remaining dims should match the size of the unqueried dims of original
-  // tensor.
-  for (size_t i = 1; i < dim; i++) {
-    sizes_arr[i] = tensor.size(i + indices.size() - 1);
-  }
-}
-
-void check_index_result_size(
-    const Tensor& tensor,
-    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
-    const Tensor& result) {
-  size_t expected_ndim = 0;
-  Tensor::SizesType expected_size[kTensorDimensionLimit];
-  get_index_result_size(tensor, indices, expected_size, expected_ndim);
-
-  ET_CHECK_MSG(
-      result.dim() == expected_ndim,
-      "result.dim() must be %zu, got dim of %zd",
-      expected_ndim,
-      result.dim());
-
-  check_tensor_size(result, expected_size);
 }
 
 size_t get_index_query_pos_offset(
@@ -239,13 +181,150 @@ size_t get_index_query_pos_offset(
           }
         }
       }
-      ET_CHECK_MSG(
-          index_val < index.numel(), "invalid index_val %zd", index_val);
+
       // Update data pointers
       offset += index_val * step_len;
     }
   }
   return offset;
+}
+
+bool check_index_args(
+    const Tensor& in,
+    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
+    Tensor& out) {
+  // size of indices must not exceed the number of dimensions
+  if (indices.size() > 0) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, indices.size() - 1));
+  }
+  ET_LOG_AND_RETURN_IF_FALSE(indices_are_valid(in, indices));
+  return true;
+}
+
+void get_index_out_target_size(
+    const Tensor& in,
+    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim) {
+  // If indexing using a boolean mask, the result will be one dimensional with
+  // length equal to the number of true elements in the mask.
+  if (is_index_mask(in, indices)) {
+    *out_ndim = 1;
+    const Tensor& mask = indices[0].value();
+    size_t true_count = count_boolean_index(mask);
+    out_sizes[0] = true_count;
+    return;
+  }
+
+  // If indexing using a list of index tensors, each index tensor corresponds to
+  // one dim of the original tensor. These tensors can be broadcasted, so first
+  // retrieve broadcasted size of each tensor.
+  size_t broadcast_len = get_indices_broadcast_len(indices);
+  // The expected ndim of the result tensor is equal to the ndim of the original
+  // tensor offset by the number of dimensions that were indexed.
+  *out_ndim = in.dim() - indices.size() + 1;
+
+  // The leading dim of the result should be equal to number of index queries
+  out_sizes[0] = broadcast_len;
+
+  // The remaining dims should match the size of the unqueried dims of original
+  // tensor.
+  for (size_t i = 1; i < *out_ndim; i++) {
+    out_sizes[i] = in.size(i + indices.size() - 1);
+  }
+}
+
+bool check_index_put_args(
+    const Tensor& in,
+    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
+    const Tensor& values,
+    Tensor& out) {
+  // size of indices must not exceed the number of dimensions
+  if (indices.size() > 0) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, indices.size() - 1));
+  }
+
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, values, out));
+
+  ET_LOG_AND_RETURN_IF_FALSE(indices_are_valid(in, indices));
+
+  size_t expected_ndim = 0;
+  Tensor::SizesType expected_size[kTensorDimensionLimit];
+  get_index_out_target_size(in, indices, expected_size, &expected_ndim);
+  // If values not broadcastable, then check it is equal to the size of the
+  // expected indexing result.
+  if (values.numel() != 1) {
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensor_has_expected_size(values, {expected_size, expected_ndim}));
+  }
+
+  return true;
+}
+
+bool check_index_select_args(
+    const Tensor& in,
+    int64_t dim,
+    const Tensor& index,
+    Tensor& out) {
+  if (in.dim() == 0) {
+    ET_LOG_AND_RETURN_IF_FALSE(dim == 0);
+  } else {
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
+  }
+
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      index.scalar_type() == ScalarType::Long ||
+          index.scalar_type() == ScalarType::Int,
+      "Expected index to have type of Long or Int, but found %s",
+      toString(index.scalar_type()));
+
+  if (index.dim() > 0) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(index, 1));
+  }
+  if (index.scalar_type() == ScalarType::Long) {
+    const int64_t* const index_ptr = index.const_data_ptr<int64_t>();
+    for (size_t i = 1; i < index.numel(); ++i) {
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          index_ptr[i] >= 0 && index_ptr[i] < in.size(dim),
+          "index[%zu] = %" PRId64 " is out of bounds for in.size(%" PRId64
+          ") = %zd",
+          i,
+          index_ptr[i],
+          dim,
+          in.size(dim));
+    }
+  } else {
+    const int32_t* const index_ptr = index.const_data_ptr<int32_t>();
+    for (size_t i = 1; i < index.numel(); ++i) {
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          index_ptr[i] >= 0 && index_ptr[i] < in.size(dim),
+          "index[%zu] = %" PRId32 " is out of bounds for in.size(%" PRId64
+          ") = %zd",
+          i,
+          index_ptr[i],
+          dim,
+          static_cast<size_t>(in.size(dim)));
+    }
+  }
+
+  return true;
+}
+
+void get_index_select_out_target_size(
+    const Tensor& in,
+    int64_t dim,
+    const Tensor& index,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim) {
+  *out_ndim = in.dim();
+  for (size_t i = 0; i < in.dim(); ++i) {
+    if (i == dim) {
+      out_sizes[i] = index.numel();
+    } else {
+      out_sizes[i] = in.size(i);
+    }
+  }
 }
 
 } // namespace executor
