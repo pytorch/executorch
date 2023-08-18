@@ -27,5 +27,7 @@ build_and_test_executorch() {
   test_model "linear"
 }
 
+echo ">>> ${MODEL_NAME} <<<"
+
 install_executorch
 build_and_test_executorch

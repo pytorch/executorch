@@ -30,12 +30,13 @@ jobs:
       binary-matrix: |
         { "MODEL_NAME": "${{ matrix.model }}" }
       script: |
-        echo "=== ${MODEL_NAME} ==="
-
         PYTHON_VERSION=3.10
         # TODO: Figure out why /opt/conda/envs/py_$PYTHON_VERSION/bin is not in the path
         # here, as it's there in the container
         export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:${PATH}"
+        # The name of model we are going to test
+        export MODEL_NAME=${{ matrix.model }}
+        echo "=== ${MODEL_NAME} ==="
 
         # Build and test Executorch
         bash .ci/scripts/test.sh
