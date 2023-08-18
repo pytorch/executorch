@@ -19,7 +19,7 @@ jobs:
       matrix: |
         { include: [
           { model: "linear" },
-          { model: "mv2" },
+          { model: "mv2" }
         ]}
       fail-fast: false
     with:
