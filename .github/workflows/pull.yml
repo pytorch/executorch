@@ -29,6 +29,9 @@ jobs:
 
         # This is a simple Python script but as it tries to import executorch.examples.models,
         # it requires a whole bunch of Executorch dependencies on the Docker image
+        source .ci/scripts/utils.sh
+        install_executorch
+
         PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py
 
   buck-build-test-linux:
