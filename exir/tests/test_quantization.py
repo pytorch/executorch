@@ -19,9 +19,9 @@ from torch.ao.quantization import get_default_qconfig, QConfigMapping  # @manual
 from torch.ao.quantization.quantize_fx import convert_to_reference_fx, prepare_fx
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
-from torch.ao.quantization.quantizer import XNNPACKQuantizer
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
+    XNNPACKQuantizer,
 )
 from torch.testing import FileCheck
 from torch.testing._internal.common_quantization import skipIfNoQNNPACK
