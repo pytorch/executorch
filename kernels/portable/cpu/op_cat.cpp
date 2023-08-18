@@ -34,6 +34,19 @@ Tensor& cat_out(
   ET_CHECK(
       resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok);
 
+  // Special handling when all inputs are 1D-empty tensors for aten consistency
+  // In that case, just return an 1D-empty tensor without checking dim
+  bool all_1d_empty = true;
+  for (size_t i = 0; i < tensors.size(); ++i) {
+    if (tensors[i].numel() != 0 || tensors[i].dim() != 1) {
+      all_1d_empty = false;
+      break;
+    }
+  }
+  if (all_1d_empty) {
+    return out;
+  }
+
   const size_t outer = getLeadingDims(out, dim);
   const size_t dim_stride = getTrailingDims(out, dim);
   const size_t ninputs = tensors.size();

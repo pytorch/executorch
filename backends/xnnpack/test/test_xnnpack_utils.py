@@ -31,10 +31,10 @@ from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
+from executorch.exir import ExecutorchProgram, ExirExportedProgram
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
-from executorch.exir.serialize import serialize_to_flatbuffer
 from executorch.exir.tracer import _default_decomposition_table
 
 # pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
@@ -158,8 +158,8 @@ class TestXNNPACK(unittest.TestCase):
         quantized_dynamic: bool = False,
         # TODO: remove this after we migrate to use long term flow
         quantizer_api_test: bool = False,
-        dump_ff: bool = False,  # for debugging, dump the generated flatbuffer file
-    ) -> exir.ExirExportedProgram:
+        dump_bundled_program: bool = False,  # for debugging, dump the generated bundled program file
+    ) -> ExirExportedProgram:
         """
         Helper testing function that takes a torch.nn.Module and lowers it to XNNPACK with
         the given sample inputs. It then runs the lowered module and compares its
@@ -167,7 +167,7 @@ class TestXNNPACK(unittest.TestCase):
         """
 
         if quantizer_api_test:
-            assert isinstance(module, exir.ExirExportedProgram)
+            assert isinstance(module, ExirExportedProgram)
             edge_program = module
         else:
 
@@ -197,46 +197,42 @@ class TestXNNPACK(unittest.TestCase):
                     edge_program.exported_program, partitioner
                 )
 
-            program = delegated_program.to_executorch(
+            executorch_program: ExecutorchProgram = delegated_program.to_executorch(
                 get_xnnpack_executorch_backend_config([SpecPropPass()]),
-            ).program
+            )
         else:
             delegated_program = to_backend(
                 "XnnpackBackend", edge_program.exported_program, []
             )
 
-            exported_program = capture_graph_for_xnnpack(
+            exported_program: ExirExportedProgram = capture_graph_for_xnnpack(
                 delegated_program, sample_inputs
             )
-            program = exported_program.to_executorch(
+            executorch_program: ExecutorchProgram = exported_program.to_executorch(
                 get_xnnpack_executorch_backend_config(),
-            ).program
+            )
 
         # print("Graph Module with delegate:")
         # delegated_module.print_readable()
 
         # Assert the backend name is xnnpack
         self.assertEqual(
-            program.execution_plan[0].delegates[0].id,
+            executorch_program.program.execution_plan[0].delegates[0].id,
             XnnpackBackend.__name__,
         )
-        buffer = serialize_to_flatbuffer(program)
 
         ref_output = delegated_program(*sample_inputs)
-        if dump_ff:
-            filename = f"/tmp/xnnpack_test_{randint(1, 99999)}.pte"
-            print(f"Writing flatbuffer to {filename} ...")
-
+        if dump_bundled_program:
             save_bundled_program(
                 representative_inputs=sample_inputs,
-                program=program,
+                program=executorch_program.program,
                 ref_output=ref_output,
-                output_path=filename,
+                output_path=f"/tmp/xnnpack_test_{randint(1, 99999)}",
             )
 
         # Test the model with executor
-        # pyre-ignore
-        executorch_module = _load_for_executorch_from_buffer(buffer)
+        # pyre-ignore[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
+        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(sample_inputs)
 
@@ -353,7 +349,7 @@ class TestXNNPACK(unittest.TestCase):
         self,
         weight_qconfig,
         use_bias: bool,
-        dump_ff: bool = False,
+        dump_bundled_program: bool = False,
     ):
         assert weight_qconfig in [
             weight_observer_range_neg_127_to_127,
@@ -413,13 +409,15 @@ class TestXNNPACK(unittest.TestCase):
         composite_model = CompositeModule()
         composite_model(*example_inputs)
 
-        exported_program = capture_graph_for_xnnpack(composite_model, example_inputs)
-        program = exported_program.to_executorch(
+        exported_program: ExirExportedProgram = capture_graph_for_xnnpack(
+            composite_model, example_inputs
+        )
+        executorch_program: ExecutorchProgram = exported_program.to_executorch(
             get_xnnpack_executorch_backend_config(),
-        ).program
+        )
 
         self.assertEqual(
-            program.execution_plan[0].delegates[0].id,
+            executorch_program.program.execution_plan[0].delegates[0].id,
             XnnpackBackend.__name__,
         )
 
@@ -427,25 +425,23 @@ class TestXNNPACK(unittest.TestCase):
         ref_output = composite_model(*example_inputs)
         print("ref_output:", ref_output)
 
-        if dump_ff:
+        if dump_bundled_program:
             mm_str = "addmm" if use_bias else "mm"
             filename = f"/tmp/dqlinear_{mm_str}"
             if weight_qconfig == weight_observer_range_neg_127_to_127:
                 filename = f"{filename}_per_tensor"
             else:
                 filename = f"{filename}_per_channel"
-            print(f"Writing flatbuffer to {filename} ...")
 
             save_bundled_program(
                 representative_inputs=example_inputs,
-                program=program,
+                program=executorch_program.program,
                 ref_output=ref_output,
                 output_path=filename,
             )
 
-        buffer = serialize_to_flatbuffer(program)
         # pyre-ignore
-        executorch_module = _load_for_executorch_from_buffer(buffer)
+        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(example_inputs)
 

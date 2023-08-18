@@ -101,10 +101,11 @@ void apply_padding_to_dim(
     size_t copy_len = in_step_len * self_sizes[dim];
     size_t copy_nbytes = copy_len * sizeof(CTYPE);
 
-    memcpy(out_data, self_data, copy_nbytes);
-
-    out_data += copy_len;
-    self_data += copy_len;
+    if (copy_nbytes > 0) {
+      memcpy(out_data, self_data, copy_nbytes);
+      out_data += copy_len;
+      self_data += copy_len;
+    }
   }
   // Otherwise, call this function recursively
   else {

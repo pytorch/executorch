@@ -100,7 +100,38 @@ bool is_channels_last_dim_order(
  * dim_order_utils depends on kernel_type, we have circular deps. This is also
  * the reason for templatizing this function. Better ideas welcome!
  * TODO(T148342910)
+ *
+ * Note that this function does not check that the provided dim order is valid.
+ * This function should only be used when the validity of the dim order has been
+ * checked beforehand. A safer version of this function is provided below as
+ * dim_order_to_stride which will check that the dim order is valid.
  */
+template <typename SizesType, typename DimOrderType, typename StridesType>
+inline void dim_order_to_stride_nocheck(
+    const SizesType* sizes,
+    const DimOrderType* dim_order,
+    const size_t dims,
+    StridesType* strides) {
+  // For 0 dim tensors, just return ok.
+  if (dims == 0) {
+    return;
+  }
+  // Fastest moving dim has stride of 1.
+  // For example:
+  // Size = [2, 3, 4, 5] dim_names = [N, C, H, W]
+  // dim_order = [0, 2, 3, 1]
+  // strides = [60, 1, 15, 3]
+  strides[dim_order[dims - 1]] = 1;
+  for (int32_t i = dims - 2; i >= 0; --i) {
+    if (sizes[dim_order[i + 1]] == 0) {
+      strides[dim_order[i]] = strides[dim_order[i + 1]];
+    } else {
+      strides[dim_order[i]] =
+          strides[dim_order[i + 1]] * sizes[dim_order[i + 1]];
+    }
+  }
+}
+
 template <typename SizesType, typename DimOrderType, typename StridesType>
 __ET_NODISCARD inline Error dim_order_to_stride(
     const SizesType* sizes,
@@ -116,20 +147,8 @@ __ET_NODISCARD inline Error dim_order_to_stride(
       InvalidArgument,
       "Invalid dim order. One of the value is larger than the number of dims %zu",
       dims);
-  // Fastest moving dim has stride of 1.
-  // For example:
-  // Size = [2, 3, 4, 5] dim_names = [N, C, H, W]
-  // dim_order = [0, 2, 3, 1]
-  // strides = [60, 1, 15, 3]
-  strides[dim_order[dims - 1]] = 1;
-  for (int32_t i = dims - 2; i >= 0; --i) {
-    if (sizes[dim_order[i + 1]] == 0) {
-      strides[dim_order[i]] = strides[dim_order[i + 1]];
-    } else {
-      strides[dim_order[i]] =
-          strides[dim_order[i + 1]] * sizes[dim_order[i + 1]];
-    }
-  }
+
+  dim_order_to_stride_nocheck(sizes, dim_order, dims, strides);
   return Error::Ok;
 }
 

@@ -33,6 +33,50 @@ Error get_dim_order(
       tensor.strides().data(), tensor.dim(), out_dim_order);
 }
 
+bool tensor_has_valid_dim_order(at::Tensor t) {
+  exec_aten::DimOrderType dim_order[kTensorDimensionLimit];
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      get_dim_order(t, dim_order, t.dim()) == Error::Ok,
+      "Failed to retrieve dim order from tensor!");
+
+  if (!validate_dim_order(dim_order, t.dim())) {
+    ET_LOG(Error, "Tensor dim order is not valid:");
+    for (size_t d = 0; d < t.dim(); ++d) {
+      ET_LOG(
+          Error,
+          "    dim_order(%zu): %zu",
+          static_cast<size_t>(d),
+          static_cast<size_t>(dim_order[d]));
+    }
+    return false;
+  }
+  return true;
+}
+
+inline bool tensor_is_default_or_channels_last_dim_order(at::Tensor t) {
+  exec_aten::DimOrderType dim_order[kTensorDimensionLimit];
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      get_dim_order(t, dim_order, t.dim()) == Error::Ok,
+      "Failed to retrieve dim order from tensor!");
+
+  bool ret_val = is_default_dim_order(dim_order, t.dim()) ||
+      is_channels_last_dim_order(dim_order, t.dim());
+
+  if (!ret_val) {
+    ET_LOG(
+        Error,
+        "Expected tensor to have default or channels last dim order, but got");
+    for (size_t d = 0; d < t.dim(); ++d) {
+      ET_LOG(
+          Error,
+          "    dim_order(%zu): %zu",
+          static_cast<size_t>(d),
+          static_cast<size_t>(dim_order[d]));
+    }
+  }
+  return ret_val;
+}
+
 namespace internal {
 
 Error share_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {

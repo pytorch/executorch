@@ -201,6 +201,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_convolution",
         deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             ":vec_ops",
         ],
     ),
@@ -377,6 +378,9 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_index_select",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:index_util",
+        ],
     ),
     op_target(
         name = "op_isinf",
@@ -477,6 +481,12 @@ _ATEN_OPS = (
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
+        ],
+    ),
+    op_target(
+        name = "op_max_pool2d_with_indices",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
         ],
     ),
     op_target(

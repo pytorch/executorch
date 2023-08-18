@@ -68,12 +68,16 @@ void get_cat_out_target_size(
     int64_t dim,
     Tensor::SizesType* out_sizes,
     size_t* out_ndim) {
-  // Find the last non-empty tensor in the list to use as a reference
+  // Find the first non-1D-or-empty tensor in the list to use as a reference
+  // because an 1D empty tensor is a wildcard and should be ignored when we
+  // calculate out dim
   size_t ref_i = 0;
   size_t cat_dim_size = 0;
   for (size_t i = 0; i < tensors.size(); ++i) {
     if (tensors[i].numel() > 0) {
       cat_dim_size += tensors[i].size(dim);
+    }
+    if (tensors[i].dim() != 1 || tensors[i].numel() != 0) {
       ref_i = i;
     }
   }

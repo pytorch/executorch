@@ -13,10 +13,7 @@ import unittest
 
 import torch
 
-# torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
-
 from executorch import exir
-from executorch.exir.serialize import serialize_to_flatbuffer
 
 # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.extension.pybindings.portable`.
 from executorch.extension.pybindings.portable import (
@@ -51,10 +48,16 @@ class TestCustomOps(unittest.TestCase):
     def setUpClass(cls) -> None:
         model = Module()
         inputs = (torch.ones(2, 2, dtype=torch.float),)
-        program = exir.capture(model, inputs).to_edge().to_executorch().program
-        cls.flatbuff_without_stacktrace = serialize_to_flatbuffer(program)
+
+        # The serialized program file. This must live longer than cls.module,
+        # because the C++ pybindings will have a pointer to it. But none of the
+        # tests should need to touch it.
+        cls.__buffer: bytes = (
+            exir.capture(model, inputs).to_edge().to_executorch().buffer
+        )
+
         # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
-        cls.module = _load_for_executorch_from_buffer(cls.flatbuff_without_stacktrace)
+        cls.module = _load_for_executorch_from_buffer(cls.__buffer)
 
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         cls.inputs_flattened, _ = tree_flatten(inputs)
