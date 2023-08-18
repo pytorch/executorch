@@ -45,7 +45,6 @@ from executorch.exir.passes import (
     ToOutVarPass,
 )
 from executorch.exir.print_program import pretty_print, print_program
-from executorch.exir.serialize import serialize_to_flatbuffer
 from executorch.exir.tensor import make_tensor_value, TensorSpec
 from executorch.exir.tests.control_flow_models import (
     FTCondBasic,

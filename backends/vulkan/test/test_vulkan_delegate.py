@@ -13,9 +13,9 @@ import torch
 
 # import the vulkan backend implementation
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
-from executorch.exir.backend.backend_api import to_backend
 
-from executorch.exir.serialize import serialize_to_flatbuffer
+from executorch.exir import ExecutorchProgram
+from executorch.exir.backend.backend_api import to_backend
 
 ctypes.CDLL("libvulkan.so.1")
 
@@ -72,24 +72,21 @@ class TestBackends(unittest.TestCase):
             def forward(self, *args):
                 return self.one_module(*args)
 
-        program = (
+        executorch_program: ExecutorchProgram = (
             exir.capture(WrappedModule(), sample_inputs, exir.CaptureConfig())
             .to_edge()
             .to_executorch()
-            .program
         )
 
         # Assert the backend name is vulkan
         self.assertEqual(
-            program.execution_plan[0].delegates[0].id,
+            executorch_program.program.execution_plan[0].delegates[0].id,
             VulkanBackend.__name__,
         )
 
-        buffer = serialize_to_flatbuffer(program)
-
         # Test the model with executor
-        # pyre-ignore
-        executorch_module = _load_for_executorch_from_buffer(buffer)
+        # pyre-ignore[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
+        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(sample_inputs)
 
