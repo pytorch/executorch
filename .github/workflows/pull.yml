@@ -16,11 +16,10 @@ jobs:
     name: buck-build-test-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
-      matrix: |
-        { include: [
-          { model: "linear", runner: "linux.2xlarge" },
-          { model: "mv2", runner: "linux.2xlarge" },
-        ]}
+      matrix:
+        include:
+          - model: linear
+          - model: mv2
       fail-fast: false
     with:
       runner: linux.2xlarge
