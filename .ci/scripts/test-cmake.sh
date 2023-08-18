@@ -40,8 +40,8 @@ build_and_test_executorch() {
   cmake --build "${CMAKE_OUTPUT_DIR}" -j "${CMAKE_JOBS}"
 
   which python
-  # Test the example linear model
-  test_model "linear"
+  # Test the select model
+  test_model
 }
 
 if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
