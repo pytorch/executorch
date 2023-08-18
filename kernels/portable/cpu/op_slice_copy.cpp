@@ -144,6 +144,10 @@ Tensor& slice_copy_Tensor_out(
   size_t leading_dims = getLeadingDims(input, dim);
   size_t trailing_dims = getTrailingDims(input, dim);
 
+  if (trailing_dims == 0) {
+    return out;
+  }
+
   size_t length_per_step = trailing_dims * input.element_size();
 
   const char* input_data = input.const_data_ptr<char>();

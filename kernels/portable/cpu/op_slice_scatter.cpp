@@ -145,6 +145,10 @@ Tensor& slice_scatter_out(
   auto error = resize_like_input(input, out);
   ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
+  if (input.numel() == 0) {
+    return out;
+  }
+
   // If user do not set value to end_val, set end to input.size(dim) (largest
   // value available)
   int64_t end = end_val.has_value() ? end_val.value() : input.size(dim);

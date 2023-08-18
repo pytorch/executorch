@@ -86,20 +86,23 @@ void transpose_tensors(
   auto dim = a.dim();
   auto data_a = a.const_data_ptr<T>();
   auto data_out = out.mutable_data_ptr<T>();
-  auto a_sizes = a.sizes();
-  auto a_strides = a.strides();
 
   size_t out_index[kTensorDimensionLimit];
   memset(out_index, 0, sizeof(out_index));
 
   StridesType new_strides[kTensorDimensionLimit];
-  memcpy(new_strides, a_strides.data(), dim * sizeof(StridesType));
-
   SizesType new_sizes[kTensorDimensionLimit];
-  memcpy(new_sizes, a_sizes.data(), dim * sizeof(SizesType));
 
-  std::swap(new_sizes[dim0], new_sizes[dim1]);
-  std::swap(new_strides[dim1], new_strides[dim0]);
+  if (dim != 0) {
+    auto a_strides = a.strides();
+    memcpy(new_strides, a_strides.data(), dim * sizeof(StridesType));
+
+    auto a_sizes = a.sizes();
+    memcpy(new_sizes, a_sizes.data(), dim * sizeof(SizesType));
+
+    std::swap(new_sizes[dim0], new_sizes[dim1]);
+    std::swap(new_strides[dim1], new_strides[dim0]);
+  }
 
   // non_1_dim_indices stores the indices of the dimensions that have a value
   // greater than 1. Dimensions can only have a value of 1 or larger.
