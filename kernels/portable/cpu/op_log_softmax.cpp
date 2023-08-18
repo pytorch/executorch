@@ -37,8 +37,6 @@ void check_preconditions(
       "in.dim() %zd!= out.dim() %zd",
       in.dim(),
       out.dim());
-  // Ensure in has value
-  ET_CHECK_MSG(in.numel() > 0, "in.numel() %zd <= 0", in.numel());
   // Ensure dim is valid
   if (in.dim() == 0) {
     ET_CHECK_MSG(dim == 0 || dim == -1, "dim must be 0 or -1 for 0-D tensor");
