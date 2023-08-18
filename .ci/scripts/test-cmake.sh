@@ -39,5 +39,9 @@ build_and_test_executorch() {
   test_model "linear"
 }
 
+if [[ -z "${PYTHON_EXECUTABLE}" ]]; then
+  PYTHON_EXECUTABLE=python3
+fi
+
 install_executorch
 build_and_test_executorch
