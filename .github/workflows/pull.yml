@@ -16,7 +16,7 @@ jobs:
     name: buck-build-test-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
-      matrix:|
+      matrix: |
         { include: [
           { model: "linear" },
           { model: "mv2" },
