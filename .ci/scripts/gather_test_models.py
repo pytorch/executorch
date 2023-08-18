@@ -11,6 +11,8 @@ def set_output(name: str, val: Any) -> None:
     """
     Set the GitHb output so that it can be accessed by other jobs
     """
+    print(f"Setting {val} to GitHub output")
+
     if os.getenv("GITHUB_OUTPUT"):
         with open(str(os.getenv("GITHUB_OUTPUT")), "a") as env:
             print(f"{name}={val}", file=env)
