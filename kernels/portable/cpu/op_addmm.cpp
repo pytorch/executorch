@@ -84,7 +84,7 @@ Tensor& addmm_out(
               [alpha_val, beta_val](const CTYPE val_a, const CTYPE val_b) {
                 CTYPE a_casted = static_cast<CTYPE>(val_a);
                 CTYPE b_casted = static_cast<CTYPE>(val_b);
-                CTYPE value = a_casted + alpha_val * b_casted * beta_val;
+                CTYPE value = a_casted * alpha_val + b_casted * beta_val;
 
                 return value;
               },
