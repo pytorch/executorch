@@ -12,14 +12,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  gather-models:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: pip
+      - run: |
+          set -eux
+          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py
+
   buck-build-test-linux:
     name: buck-build-test-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    needs: gather-models
     strategy:
-      matrix:
-        include:
-          - model: linear
-          - model: mv2
+      matrix: ${{ fromJSON(gather-models.outputs.models) }}
       fail-fast: false
     with:
       runner: linux.2xlarge
