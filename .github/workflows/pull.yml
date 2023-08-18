@@ -15,6 +15,13 @@ jobs:
   buck-build-test-linux:
     name: buck-build-test-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:|
+        { include: [
+          { model: "linear" },
+          { model: "mv2" },
+        ]}
+      fail-fast: false
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
