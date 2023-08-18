@@ -21,6 +21,8 @@ jobs:
           - model: linear
           - model: mv2
       fail-fast: false
+    env:
+      MODEL_NAME: ${{ matrix.model }}
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
@@ -28,6 +30,8 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
+        echo "=== ${MODEL_NAME} ==="
+
         PYTHON_VERSION=3.10
         # TODO: Figure out why /opt/conda/envs/py_$PYTHON_VERSION/bin is not in the path
         # here, as it's there in the container
