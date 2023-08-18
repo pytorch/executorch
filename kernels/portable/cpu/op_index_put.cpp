@@ -10,9 +10,8 @@
 #include <cstdint>
 #include <cstring>
 
-#include <executorch/runtime/kernel/kernel_includes.h>
-
 #include <executorch/kernels/portable/cpu/util/index_util.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {
@@ -22,45 +21,21 @@ using Tensor = exec_aten::Tensor;
 
 namespace {
 
-void check_index_put_args(
-    const Tensor& input,
-    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
-    const Tensor& values,
-    Tensor& output) {
-  // size of indices must not exceed the number of dimensions
-  ET_CHECK_MSG(
-      indices.size() <= input.dim(),
-      "indices.size() %zd > input.dim() %zd",
-      ssize_t(indices.size()),
-      ssize_t(input.dim()));
-
-  // input and output should have the same dtype
-  ET_CHECK_SAME_DTYPE3(input, output, values);
-
-  check_indices(input, indices);
-
-  // If values not broadcastable, then check it is equal to the size of the
-  // indexing result.
-  if (values.numel() != 1) {
-    check_index_result_size(input, indices, values);
-  }
-}
-
 template <typename CTYPE>
 void index_put_out_impl_mask(
-    const Tensor& input,
+    const Tensor& in,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
     const Tensor& values,
     const bool accum,
     Tensor& out) {
   // Data pointers
-  const CTYPE* const in_data = input.const_data_ptr<CTYPE>();
+  const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
   CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
   const CTYPE* val_data = values.const_data_ptr<CTYPE>();
 
-  // To start, copy the input into the output
-  memcpy(out_data, in_data, input.nbytes());
+  // To start, copy the in into the output
+  memcpy(out_data, in_data, in.nbytes());
 
   const Tensor& mask = indices[0].value();
   const bool* const mask_ptr = mask.const_data_ptr<bool>();
@@ -81,19 +56,19 @@ void index_put_out_impl_mask(
 
 template <typename CTYPE>
 void index_put_out_impl_list(
-    const Tensor& input,
+    const Tensor& in,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
     const Tensor& values,
     const bool accum,
     Tensor& out) {
   // Data pointers
-  const CTYPE* const in_data = input.const_data_ptr<CTYPE>();
+  const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
   CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
   const CTYPE* val = values.const_data_ptr<CTYPE>();
 
-  // To start, copy the input into the output
-  memcpy(out_data, in_data, input.nbytes());
+  // To start, copy the in into the output
+  memcpy(out_data, in_data, in.nbytes());
 
   size_t num_idx_queries = get_indices_broadcast_len(indices);
   for (size_t idx = 0; idx < num_idx_queries; idx++) {
@@ -102,14 +77,14 @@ void index_put_out_impl_list(
 
     // For each index query, align the src and dst pointers to the position
     // described by the query.
-    size_t offset = get_index_query_pos_offset(idx, input, indices);
+    size_t offset = get_index_query_pos_offset(idx, in, indices);
     src += offset;
     dst += offset;
 
     // Calculate the region of data to copy for this query.
     // For example, a 2x4x3x5 tensor indexing at [1, 1, :, :] should copy 15
     // elements.
-    size_t copy_len = getTrailingDims(input, indices.size() - 1);
+    size_t copy_len = getTrailingDims(in, indices.size() - 1);
 
     // If values only contains 1 element, it needs to be broadcasted.
     if (values.numel() == 1) {
@@ -139,90 +114,40 @@ void index_put_out_impl_list(
   }
 }
 
-template <typename CTYPE>
-void index_put_out_impl(
-    const Tensor& input,
-    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
-    const Tensor& values,
-    const bool accum,
-    Tensor& out) {
-  if (is_index_mask(input, indices)) {
-    index_put_out_impl_mask<CTYPE>(input, indices, values, accum, out);
-  } else {
-    index_put_out_impl_list<CTYPE>(input, indices, values, accum, out);
-  }
-}
-
-inline void index_put_out_switch_input(
-    const Tensor& input,
-    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
-    const Tensor& values,
-    const bool accum,
-    Tensor& out) {
-  auto input_type = input.scalar_type();
-#define INDEX_PUT_SWITCH_INPUT_CASE(ctype, dtype)                  \
-  case ScalarType::dtype:                                          \
-    index_put_out_impl<ctype>(input, indices, values, accum, out); \
-    break;
-
-  switch (input_type) {
-    ET_FORALL_REAL_TYPES_AND(Bool, INDEX_PUT_SWITCH_INPUT_CASE);
-    default:
-      ET_CHECK_MSG(
-          false, "%hhd scalar type is not supported for input", input_type);
-  }
-
-#undef INDEX_PUT_SWITCH_INPUT_CASE
-}
-
-// Output tensor should be the same size as the input tensor
-Error resize_like_input(const Tensor& input, Tensor& out) {
-  Tensor::SizesType expected_output_size[kTensorDimensionLimit];
-  for (size_t i = 0; i < input.dim(); ++i) {
-    expected_output_size[i] = input.size(i);
-  }
-  ArrayRef<Tensor::SizesType> output_size{
-      expected_output_size, static_cast<size_t>(input.dim())};
-  auto error = resize_tensor(out, output_size);
-
-  return error;
-}
-
 } // namespace
 
-/// aten::index_put.out(Tensor self, Tensor?[] indices, Tensor values,
-/// bool accumulate=False, *, Tensor(a!) out) -> Tensor(a!)
 Tensor& index_put_out(
     RuntimeContext& ctx,
-    const Tensor& input,
+    const Tensor& in,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
     const Tensor& values,
     const bool accumulate,
     Tensor& out) {
-  (void)ctx;
+  ET_KERNEL_CHECK(
+      ctx,
+      check_index_put_args(in, indices, values, out),
+      InvalidArgument,
+      out);
 
-  if (indices.empty()) {
-    auto error = resize_tensor(out, input.sizes());
-    ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  if (indices.empty() || in.numel() == 0) {
+    ET_KERNEL_CHECK(
+        ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
     memcpy(
-        out.mutable_data_ptr<char>(),
-        input.const_data_ptr<char>(),
-        input.nbytes());
+        out.mutable_data_ptr<char>(), in.const_data_ptr<char>(), in.nbytes());
     return out;
   }
 
-  // resize out tensor
-  auto error = resize_like_input(input, out);
-  // TODO: Construct error message with requested output sizes.
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
-  check_index_put_args(input, indices, values, out);
-
-  if (input.numel() == 0) {
-    return out;
-  }
-
-  index_put_out_switch_input(input, indices, values, accumulate, out);
+  ScalarType dtype = in.scalar_type();
+  ET_SWITCH_REAL_TYPES_AND(Bool, dtype, ctx, "index_put", CTYPE, [&]() {
+    if (is_index_mask(in, indices)) {
+      index_put_out_impl_mask<CTYPE>(in, indices, values, accumulate, out);
+    } else {
+      index_put_out_impl_list<CTYPE>(in, indices, values, accumulate, out);
+    }
+  });
 
   return out;
 }

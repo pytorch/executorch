@@ -378,6 +378,9 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_index_select",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:index_util",
+        ],
     ),
     op_target(
         name = "op_isinf",
