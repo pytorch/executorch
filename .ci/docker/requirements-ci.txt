@@ -5,3 +5,13 @@ ruamel.yaml==0.17.32
 sympy==1.12
 tomli==2.0.1
 zstd==1.5.5.1
+
+# Doc build requirements
+
+sphinx==5.0.0
+sphinx-gallery
+matplotlib
+# PyTorch Theme
+-e git+https://github.com/pytorch/pytorch_sphinx_theme.git#egg=pytorch_sphinx_theme
+myst-parser
+sphinx_design
