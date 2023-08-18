@@ -8,6 +8,7 @@
 
 #include <cstring>
 
+#include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -23,54 +24,6 @@ using DimOrderArrayRef = exec_aten::ArrayRef<exec_aten::DimOrderType>;
 using StridesArrayRef = exec_aten::ArrayRef<exec_aten::StridesType>;
 
 namespace {
-
-/**
- * Extracts a value at index i from an int array. If the array length is 1, then
- * the first element will be returned regardless of what i is requested to
- * simulate broadcasting.
- */
-inline int64_t val_at(IntArrayRef array, size_t i) {
-  if (array.size() == 1) {
-    return array[0];
-  } else if (array.size() > 1) {
-    return array[i];
-  } else {
-    ET_CHECK_MSG(false, "Attempted to retrieve from an empty array!");
-  }
-}
-
-inline void get_unsqueezed_sizes(
-    const Tensor& t,
-    int64_t unsqueeze_dim,
-    exec_aten::SizesType* sizes_arr,
-    size_t& ndim) {
-  ndim = t.dim() + 1;
-  for (int d = 0; d < unsqueeze_dim; ++d) {
-    sizes_arr[d] = t.size(d);
-  }
-  sizes_arr[unsqueeze_dim] = 1;
-  for (int d = (unsqueeze_dim + 1); d < ndim; d++) {
-    sizes_arr[d] = t.size(d - 1);
-  }
-}
-
-inline void get_unsqueezed_dim_order(
-    const Tensor& t,
-    exec_aten::DimOrderType unsqueeze_dim,
-    exec_aten::DimOrderType* dim_order_arr) {
-  int offset = 0;
-  for (int i = 0; i < t.dim(); ++i) {
-    exec_aten::DimOrderType dim = t.dim_order()[i];
-    if (dim == unsqueeze_dim) {
-      dim_order_arr[i] = dim;
-      dim_order_arr[i + 1] = dim + 1;
-      offset = 1;
-    } else {
-      dim_order_arr[i + offset] = dim > unsqueeze_dim ? dim + 1 : dim;
-    }
-  }
-  return;
-}
 
 /**
  * Computes 2D convolution out results for a given group and channel. The
@@ -134,12 +87,9 @@ void conv2d_impl(
         for (size_t w_y = 0; w_y < w_H; ++w_y) {
           w_coord[2] = w_y;
 
-          int64_t dilation_y = 1;
-          if (dilation.size() > 0) {
-            dilation_y = val_at(dilation, 0);
-          }
           int64_t stride_y = val_at(stride, 0);
-          int64_t padding_y = val_at(padding, 0);
+          int64_t padding_y = val_at(padding, 0, /*default_value=*/0);
+          int64_t dilation_y = val_at(dilation, 0);
           size_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
           in_coord[2] = in_y;
           // Only proceed if input y coordinate is within bounds
@@ -147,12 +97,9 @@ void conv2d_impl(
             for (size_t w_x = 0; w_x < w_W; ++w_x) {
               w_coord[3] = w_x;
 
-              int64_t dilation_x = 1;
-              if (dilation.size() > 0) {
-                dilation_x = val_at(dilation, 0);
-              }
               int64_t stride_x = val_at(stride, 1);
-              int64_t padding_x = val_at(padding, 1);
+              int64_t padding_x = val_at(padding, 1, /*default_value=*/0);
+              int64_t dilation_x = val_at(dilation, 1);
               size_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
               in_coord[3] = in_x;
 
@@ -265,26 +212,19 @@ void convolution_wrapper(
   }
 
   exec_aten::StridesType in_strides[kTensorDimensionLimit];
-  ET_CHECK(
-      dim_order_to_stride(
-          in_sizes.data(), in_dim_order.data(), in_sizes.size(), in_strides) ==
-      Error::Ok);
+  dim_order_to_stride_nocheck(
+      in_sizes.data(), in_dim_order.data(), in_sizes.size(), in_strides);
 
   exec_aten::StridesType weight_strides[kTensorDimensionLimit];
-  ET_CHECK(
-      dim_order_to_stride(
-          weight_sizes.data(),
-          weight_dim_order.data(),
-          weight_sizes.size(),
-          weight_strides) == Error::Ok);
+  dim_order_to_stride_nocheck(
+      weight_sizes.data(),
+      weight_dim_order.data(),
+      weight_sizes.size(),
+      weight_strides);
 
   exec_aten::StridesType out_strides[kTensorDimensionLimit];
-  ET_CHECK(
-      dim_order_to_stride(
-          out_sizes.data(),
-          out_dim_order.data(),
-          out_sizes.size(),
-          out_strides) == Error::Ok);
+  dim_order_to_stride_nocheck(
+      out_sizes.data(), out_dim_order.data(), out_sizes.size(), out_strides);
 
   CTYPE* const out_ptr = out.mutable_data_ptr<CTYPE>();
   const CTYPE* const in_ptr = in.const_data_ptr<CTYPE>();
@@ -322,72 +262,6 @@ void convolution_wrapper(
   }
 }
 
-void get_conv_output_size(
-    const Tensor& in,
-    const Tensor& weight,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    exec_aten::SizesType* sizes_arr,
-    size_t& dim) {
-  dim = in.dim();
-
-  sizes_arr[0] = in.size(0);
-  sizes_arr[1] = weight.size(0);
-  for (size_t d = 2; d < in.dim(); ++d) {
-    int64_t dilation_val = 1;
-    if (dilation.size() > 1) {
-      dilation_val = val_at(dilation, d - 2);
-    }
-    int64_t padding_val = val_at(padding, d - 2);
-    int64_t stride_val = val_at(stride, d - 2);
-
-    int64_t kernel_len = dilation_val * (weight.size(d) - 1) + 1;
-    sizes_arr[d] =
-        (in.size(d) + (2 * padding_val) - kernel_len) / stride_val + 1;
-  }
-}
-
-void check_preconditions(
-    const Tensor& in,
-    const Tensor& weight,
-    const exec_aten::optional<Tensor>& bias,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    bool transposed,
-    IntArrayRef output_padding,
-    int64_t groups,
-    Tensor& out) {
-  ET_CHECK_SAME_DTYPE3(in, weight, out);
-
-  ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(in);
-  ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(weight);
-  ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(out);
-
-  ET_CHECK(in.dim() >= 3 && in.dim() < 5);
-  ET_CHECK(in.dim() == weight.dim());
-  ET_CHECK(in.dim() == out.dim());
-
-  if (bias.has_value()) {
-    ET_CHECK(bias.value().dim() == 1);
-    ET_CHECK(bias.value().size(0) == weight.size(0));
-  }
-
-  ET_CHECK(padding.size() > 0 && padding.size() <= in.dim() - 2);
-  ET_CHECK(stride.size() > 0 && stride.size() <= in.dim() - 2);
-  if (dilation.size() > 0) {
-    ET_CHECK(dilation.size() <= in.dim() - 2);
-  }
-  // input channels must be evenly divisible by groups
-  ET_CHECK(in.size(1) % groups == 0);
-
-  ET_CHECK_MSG(!transposed, "transposed convolution not supported yet!");
-  if (output_padding.size() > 0) {
-    ET_CHECK(dilation.size() <= in.dim() - 2);
-  }
-}
-
 } // namespace
 
 Tensor& convolution_out(
@@ -404,25 +278,38 @@ Tensor& convolution_out(
     Tensor& out) {
   (void)ctx;
 
-  check_preconditions(
-      in,
-      weight,
-      bias,
-      stride,
-      padding,
-      dilation,
-      transposed,
-      output_padding,
-      groups,
+  ET_KERNEL_CHECK(
+      ctx,
+      check_convolution_args(
+          in,
+          weight,
+          bias,
+          stride,
+          padding,
+          dilation,
+          transposed,
+          output_padding,
+          groups,
+          out),
+      InvalidArgument,
       out);
 
   size_t output_ndim = 0;
   exec_aten::SizesType output_sizes[kTensorDimensionLimit];
-  get_conv_output_size(
-      in, weight, stride, padding, dilation, output_sizes, output_ndim);
+  get_convolution_out_target_size(
+      in, weight, stride, padding, dilation, output_sizes, &output_ndim);
 
-  Error err = resize_tensor(out, {output_sizes, output_ndim});
-  ET_CHECK_MSG(err == Error::Ok, "Could not resize output");
+  ET_KERNEL_CHECK(
+      ctx,
+      output_size_is_valid({output_sizes, output_ndim}),
+      InvalidArgument,
+      out);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {output_sizes, output_ndim}) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ScalarType in_type = in.scalar_type();
   ScalarType bias_type = in_type;
