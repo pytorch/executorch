@@ -1,0 +1,80 @@
+name: Build documentation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - v[0-9]+.[0-9]+.[0-9]
+      - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  build:
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    with:
+      job-name: Build doc
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      fetch-depth: 0
+      submodules: 'true'
+      repository: pytorch/executorch
+      upload-artifact: docs
+
+      script: |
+        # Set up Environment Variables
+        PYTHON_VERSION=3.10
+        export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:${PATH}"
+
+        if [[(${GITHUB_EVENT_NAME} = 'pull_request' && (${GITHUB_BASE_REF} = 'release'*)) || (${GITHUB_REF} = 'refs/heads/release'*) ]]; then
+          export CHANNEL=test
+        else
+          export CHANNEL=nightly
+        fi
+
+        set -ex
+        set +u
+
+        # Build docset:
+        cd docs
+        make html
+        cd ..
+
+        cp -rf docs/_build/html/* "${RUNNER_DOCS_DIR}"
+        mv docs/_build/html "${RUNNER_ARTIFACT_DIR}"
+
+# Enable preview later. Previews are available publicly
+#
+# upload-preview:
+#    if: github.repository == 'pytorch/executorch' && github.event_name == 'push' &&
+#        (github.ref_type == 'branch' && github.ref_name == 'main')
+#    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+
+  upload-gh-pages:
+    if: ${{ (github.repository == 'pytorch/executorch') && (github.ref_name == 'main') }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        ref: gh-pages
+    - uses: actions/download-artifact@v3
+      with:
+        name: docs
+    - name: Upload docs
+      run: |
+
+        set -x
+        git config user.name 'pytorchbot'
+        git config user.email 'soumith+bot@pytorch.org'
+        rm -rf main
+        mv html main
+        git add --all main || true
+        git commit -m "Auto-generating sphinx docs" || true
+        git push -f
