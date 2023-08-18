@@ -15,14 +15,14 @@ install_executorch() {
 }
 
 install_conda() {
-  pushd .ci/docker
+  pushd .ci/docker || return
   # Install conda dependencies like flatbuffer
   conda install --file conda-env-ci.txt
-  popd
+  popd || return
 }
 
 install_pip_dependencies() {
-  pushd .ci/docker
+  pushd .ci/docker || return
   # Install all Python dependencies, including PyTorch
   pip install --progress-bar off -r requirements-ci.txt
 
@@ -34,5 +34,5 @@ install_pip_dependencies() {
     torchaudio=="${TORCHAUDIO_VERSION}" \
     torchvision=="${TORCHVISION_VERSION}" \
     --index-url https://download.pytorch.org/whl/nightly/cpu
-  popd
+  popd || return
 }
