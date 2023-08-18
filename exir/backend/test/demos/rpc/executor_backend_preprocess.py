@@ -6,7 +6,7 @@
 
 from typing import final, List
 
-import executorch.exir as exir
+from executorch.exir import ExirExportedProgram
 from executorch.exir.backend.backend_details import BackendDetails, ExportedProgram
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
@@ -18,9 +18,12 @@ class ExecutorBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> bytes:
-        new_prog = edge_program.transform(
-            *exir.edge_to_executorch_passes(exir.ExecutorchBackendConfig())
+        return (
+            ExirExportedProgram(
+                exported_program=edge_program,
+                # Indicates that edge_program is already in edge dialect.
+                after_to_edge_passes=True,
+            )
+            .to_executorch()
+            .buffer
         )
-        program = exir.emit_program(new_prog).program
-        buffer = exir.serialize_to_flatbuffer(program)
-        return buffer
