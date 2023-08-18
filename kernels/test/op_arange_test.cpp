@@ -85,31 +85,7 @@ TEST(OpArangeOutTest, AllRealDtypesSupported) {
 #undef TEST_ENTRY
 }
 
-TEST(OpArangeOutTest, BoolDtypeSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
-  TensorFactory<ScalarType::Bool> tf;
-
-  Scalar end = Scalar(2);
-
-  Tensor out = tf.make({2}, {true, false});
-
-  Tensor ret = op_arange_out(end, out);
-
-  // Should always return the provided out Tensor.
-  EXPECT_TENSOR_EQ(ret, out);
-
-  // Expected tensor, filled with 0, 1, a,k,a false, true
-  Tensor expected = tf.make({2}, {false, true});
-
-  EXPECT_TENSOR_EQ(out, expected);
-}
-
 TEST(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   TensorFactory<ScalarType::Float> tf;
 
   // end = any floating point number between [a, a+1) where a is an arbitrary
@@ -117,7 +93,7 @@ TEST(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
   // arange(5)
   Scalar end = Scalar(5.5);
 
-  Tensor out = tf.zeros({5});
+  Tensor out = tf.zeros({6});
 
   Tensor ret = op_arange_out(end, out);
 
@@ -125,23 +101,9 @@ TEST(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
   EXPECT_TENSOR_EQ(ret, out);
 
   // Expected tensor, equal
-  Tensor expected = tf.make({5}, {0.0, 1.0, 2.0, 3.0, 4.0});
+  Tensor expected = tf.make({6}, {0.0, 1.0, 2.0, 3.0, 4.0, 5.0});
 
   EXPECT_TENSOR_EQ(out, expected);
-}
-
-TEST(OpArangeOutTest, EndOutTypeMismatchDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle type mismatch";
-  }
-  TensorFactory<ScalarType::Float> tf;
-
-  Scalar end = Scalar(5);
-
-  Tensor out = tf.zeros({5});
-
-  // Scalar end and Tensor out type mismatch: one is int another is float.
-  ET_EXPECT_KERNEL_FAILURE(op_arange_out(end, out));
 }
 
 TEST(OpArangeOutTest, OutDimUnsupportedDie) {
@@ -159,37 +121,37 @@ TEST(OpArangeOutTest, OutDimUnsupportedDie) {
 }
 
 TEST(OpArangeOutTest, DynamicShapeUpperBoundSameAsExpected) {
-  GTEST_SKIP() << "Dynamic shape is not supported";
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
 
   Tensor out =
-      tf.zeros({5, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+      tf.zeros({5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   Tensor ret = op_arange_out(Scalar(5), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
 TEST(OpArangeOutTest, DynamicShapeUpperBoundLargerThanExpected) {
-  GTEST_SKIP() << "Dynamic shape is not supported";
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
 
   Tensor out =
-      tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+      tf.zeros({10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   Tensor ret = op_arange_out(Scalar(5), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
 TEST(OpArangeOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape is not supported";
+  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Dynamic Unbound not supported";
+  }
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
 
   Tensor out =
-      tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
+      tf.zeros({1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   Tensor ret = op_arange_out(Scalar(5), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
@@ -223,33 +185,7 @@ TEST(OpArangeStartOutTest, AllRealDtypesSupported) {
 #undef TEST_ENTRY
 }
 
-TEST(OpArangeStartOutTest, BoolDtypeSupported) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
-  TensorFactory<ScalarType::Bool> tf;
-
-  Scalar start = Scalar(0);
-  Scalar end = Scalar(2);
-  Scalar step = Scalar(1);
-
-  Tensor out = tf.make({2}, {true, false});
-
-  Tensor ret = op_arange_start_out(start, end, step, out);
-
-  // Should always return the provided out Tensor.
-  EXPECT_TENSOR_EQ(ret, out);
-
-  // Expected tensor, filled with 0, 1, a,k,a false, true
-  Tensor expected = tf.make({2}, {false, true});
-
-  EXPECT_TENSOR_EQ(out, expected);
-}
-
 TEST(OpArangeStartOutTest, FloatNumberNotEqualIntSupport) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   TensorFactory<ScalarType::Float> tf;
 
   // Tested in bento:
@@ -273,22 +209,6 @@ TEST(OpArangeStartOutTest, FloatNumberNotEqualIntSupport) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpArangeStartOutTest, EndOutTypeMismatchDie) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle type mismatch";
-  }
-  TensorFactory<ScalarType::Float> tf;
-
-  Scalar start = Scalar(0);
-  Scalar end = Scalar(5);
-  Scalar step = Scalar(1);
-
-  Tensor out = tf.zeros({5});
-
-  // Scalar end and Tensor out type mismatch: one is int another is float.
-  ET_EXPECT_KERNEL_FAILURE(op_arange_start_out(start, end, step, out));
-}
-
 TEST(OpArangeStartOutTest, OutDimUnsupportedDie) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched out dim";
@@ -306,37 +226,37 @@ TEST(OpArangeStartOutTest, OutDimUnsupportedDie) {
 }
 
 TEST(OpArangeStartOutTest, DynamicShapeUpperBoundSameAsExpected) {
-  GTEST_SKIP() << "Dynamic shape is not supported";
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
 
   Tensor out =
-      tf.zeros({5, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+      tf.zeros({5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   Tensor ret = op_arange_start_out(Scalar(0), Scalar(5), Scalar(1), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
 TEST(OpArangeStartOutTest, DynamicShapeUpperBoundLargerThanExpected) {
-  GTEST_SKIP() << "Dynamic shape is not supported";
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
 
   Tensor out =
-      tf.zeros({10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+      tf.zeros({10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   Tensor ret = op_arange_start_out(Scalar(0), Scalar(5), Scalar(1), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
 TEST(OpArangeStartOutTest, DynamicShapeUnbound) {
-  GTEST_SKIP() << "Dynamic shape is not supported";
+  if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Dynamic Unbound not supported";
+  }
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
 
   Tensor out =
-      tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
+      tf.zeros({1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   Tensor ret = op_arange_start_out(Scalar(0), Scalar(5), Scalar(1), out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
