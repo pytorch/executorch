@@ -61,86 +61,80 @@ jobs:
         # Test custom ops
         bash examples/custom_ops/test_custom_ops.sh buck2
 
-#  buck-build-test-macos:
-#    name: buck-build-test-macos
-#    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-#    strategy:
-#      matrix:
-#        include:
-#          - model: linear
-#          - model: mv2
-#      fail-fast: false
-#    with:
-#      runner: macos-m1-12
-#      submodules: 'true'
-#      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-#      script: |
-#        WORKSPACE=$(pwd)
-#
-#        pushd "${WORKSPACE}/pytorch/executorch"
-#        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-#        bash .ci/scripts/setup-macos.sh
-#
-#        # The name of model we are going to test
-#        MODEL_NAME=${{ matrix.model }}
-#        # Build and test Executorch
-#        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}"
-#        # Test custom ops
-#        PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh buck2
-#        popd
-#
-#  cmake-build-test-linux:
-#    name: cmake-build-test-linux
-#    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-#    strategy:
-#      matrix:
-#        include:
-#          - model: linear
-#          - model: mv2
-#      fail-fast: false
-#    with:
-#      runner: linux.2xlarge
-#      docker-image: executorch-ubuntu-22.04-clang12
-#      fetch-depth: 0
-#      submodules: 'true'
-#      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-#      script: |
-#        PYTHON_VERSION=3.10
-#        # TODO: Figure out why /opt/conda/envs/py_$PYTHON_VERSION/bin is not in the path
-#        # here, as it's there in the container
-#        export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:${PATH}"
-#
-#        # The name of model we are going to test
-#        MODEL_NAME=${{ matrix.model }}
-#        # Build and test Executorch
-#        bash .ci/scripts/test-cmake.sh "${MODEL_NAME}"
-#        # Build and test custom ops
-#        bash examples/custom_ops/test_custom_ops.sh cmake
-#
-#  cmake-build-test-macos:
-#    name: cmake-build-test-macos
-#    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-#    strategy:
-#      matrix:
-#        include:
-#          - model: linear
-#          - model: mv2
-#      fail-fast: false
-#    with:
-#      runner: macos-m1-12
-#      submodules: 'true'
-#      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-#      script: |
-#        WORKSPACE=$(pwd)
-#
-#        pushd "${WORKSPACE}/pytorch/executorch"
-#        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-#        bash .ci/scripts/setup-macos.sh
-#
-#        # The name of model we are going to test
-#        MODEL_NAME=${{ matrix.model }}
-#        # Build and test Executorch
-#        PYTHON_EXECUTABLE=python bash .ci/scripts/test-cmake.sh "${MODEL_NAME}"
-#        # Build and test custom ops
-#        PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh cmake
-#        popd
+  buck-build-test-macos:
+    name: buck-build-test-macos
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    needs: gather-models
+    strategy:
+      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      fail-fast: false
+    with:
+      runner: macos-m1-12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        WORKSPACE=$(pwd)
+
+        pushd "${WORKSPACE}/pytorch/executorch"
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        bash .ci/scripts/setup-macos.sh
+
+        # The name of model we are going to test
+        MODEL_NAME=${{ matrix.model }}
+        # Build and test Executorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}"
+        # Test custom ops
+        PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh buck2
+        popd
+
+  cmake-build-test-linux:
+    name: cmake-build-test-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    needs: gather-models
+    strategy:
+      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      fetch-depth: 0
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        PYTHON_VERSION=3.10
+        # TODO: Figure out why /opt/conda/envs/py_$PYTHON_VERSION/bin is not in the path
+        # here, as it's there in the container
+        export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:${PATH}"
+
+        # The name of model we are going to test
+        MODEL_NAME=${{ matrix.model }}
+        # Build and test Executorch
+        bash .ci/scripts/test-cmake.sh "${MODEL_NAME}"
+        # Build and test custom ops
+        bash examples/custom_ops/test_custom_ops.sh cmake
+
+  cmake-build-test-macos:
+    name: cmake-build-test-macos
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    needs: gather-models
+    strategy:
+      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      fail-fast: false
+    with:
+      runner: macos-m1-12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        WORKSPACE=$(pwd)
+
+        pushd "${WORKSPACE}/pytorch/executorch"
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        bash .ci/scripts/setup-macos.sh
+
+        # The name of model we are going to test
+        MODEL_NAME=${{ matrix.model }}
+        # Build and test Executorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test-cmake.sh "${MODEL_NAME}"
+        # Build and test custom ops
+        PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh cmake
+        popd

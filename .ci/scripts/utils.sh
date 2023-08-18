@@ -27,7 +27,12 @@ install_pip_dependencies() {
   pip install --progress-bar off -r requirements-ci.txt
 
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
+  TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
   TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
-  pip install --progress-bar off --pre torch=="${TORCH_VERSION}" torchvision=="${TORCHVISION_VERSION}" --index-url https://download.pytorch.org/whl/nightly/cpu
+  pip install --progress-bar off --pre \
+    torch=="${TORCH_VERSION}" \
+    torchaudio=="${TORCHAUDIO_VERSION}" \
+    torchvision=="${TORCHVISION_VERSION}" \
+    --index-url https://download.pytorch.org/whl/nightly/cpu
   popd
 }

@@ -18,6 +18,7 @@ CLANG_VERSION=12
 PYTHON_VERSION=3.10
 MINICONDA_VERSION=23.5.1-0
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
+TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
 TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
 BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
