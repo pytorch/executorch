@@ -13,16 +13,23 @@ concurrency:
 
 jobs:
   gather-models:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-          cache: pip
-      - run: |
-          set -eux
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py
+    name: gather-models
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      fetch-depth: 0
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        PYTHON_VERSION=3.10
+        # TODO: Figure out why /opt/conda/envs/py_$PYTHON_VERSION/bin is not in the path
+        # here, as it's there in the container
+        export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:${PATH}"
+
+        # This is a simple Python script but as it tries to import executorch.examples.models,
+        # it requires a whole bunch of Executorch dependencies on the Docker image
+        PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py
 
   buck-build-test-linux:
     name: buck-build-test-linux
