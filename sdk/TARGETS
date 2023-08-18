@@ -26,30 +26,3 @@ python_binary(
         "//executorch/sdk/etrecord:etrecord",
     ],
 )
-
-python_library(
-    name = "sdk",
-    srcs = [
-        "sdk.py",
-    ],
-    deps = [
-        "//executorch/sdk/edir:et_schema",
-        "//executorch/sdk/etdb:etdb",
-        "//executorch/sdk/etrecord:etrecord",
-        "//executorch/sdk/fb/visualizer:generator",
-        "//manifold/clients/python:manifold_client",
-    ],
-)
-
-python_binary(
-    name = "sdk_main",
-    main_src = "sdk.py",
-    par_style = "xar",
-    deps = [
-        "//executorch/sdk/edir:et_schema",
-        "//executorch/sdk/etdb:etdb",
-        "//executorch/sdk/etrecord:etrecord",
-        "//executorch/sdk/fb/visualizer:generator",
-        "//manifold/clients/python:manifold_client",
-    ],
-)
