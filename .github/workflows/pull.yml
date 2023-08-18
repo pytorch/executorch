@@ -14,13 +14,17 @@ concurrency:
 jobs:
   gather-models:
     runs-on: ubuntu-22.04
+    outputs:
+      models: ${{ steps.gather-models.output.models }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
           cache: pip
-      - run: |
+      - name: Extract the list of models to test
+        id: gather-models
+        run: |
           set -eux
 
           source .ci/scripts/utils.sh
