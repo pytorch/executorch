@@ -10,8 +10,13 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
+MODEL_NAME=$1
+if [[ -z "${MODEL_NAME:-}" ]]; then
+  echo "Missing model name, exiting..."
+  exit 1
+fi
+
 test_model() {
-  MODEL_NAME=$1
   python -m examples.export.export_example --model_name="${MODEL_NAME}"
 
   # Run test model
@@ -23,11 +28,9 @@ build_and_test_executorch() {
   buck2 build //examples/executor_runner:executor_runner
 
   which python
-  # Test the example linear model
-  test_model "linear"
+  # Test the select model
+  test_model
 }
-
-echo ">>> ${MODEL_NAME} <<<"
 
 install_executorch
 build_and_test_executorch

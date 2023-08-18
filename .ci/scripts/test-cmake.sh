@@ -10,8 +10,13 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
+MODEL_NAME=$1
+if [[ -z "${MODEL_NAME:-}" ]]; then
+  echo "Missing model name, exiting..."
+  exit 1
+fi
+
 test_model() {
-  MODEL_NAME=$1
   python -m examples.export.export_example --model_name="${MODEL_NAME}"
 
   # Run test model
