@@ -481,6 +481,12 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_max_pool2d_with_indices",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_mean",
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",

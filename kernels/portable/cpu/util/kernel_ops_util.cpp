@@ -40,6 +40,16 @@ bool int_array_all_ge(IntArrayRef array, int64_t val) {
   return true;
 }
 
+bool kernel_size_is_valid(IntArrayRef kernel_size, size_t kernel_ndim) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      kernel_size.size() == kernel_ndim,
+      "Expected kernel_size to have size %zu but got %zd",
+      kernel_ndim,
+      kernel_size.size());
+  ET_LOG_AND_RETURN_IF_FALSE(int_array_all_ge(kernel_size, 1));
+  return true;
+}
+
 bool stride_is_valid(IntArrayRef stride, size_t kernel_ndim) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       stride.size() > 0 && stride.size() <= kernel_ndim,
@@ -265,6 +275,59 @@ void get_convolution_out_target_size(
   }
   calculate_kernel_output_sizes(
       in, {kernel_size, kernel_ndim}, stride, padding, dilation, out_sizes);
+}
+
+bool check_max_pool2d_with_indices_args(
+    const Tensor& in,
+    IntArrayRef kernel_size,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    bool ceil_mode,
+    Tensor& out,
+    Tensor& indices) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      indices.scalar_type() == ScalarType::Long,
+      "Expected indices to have type of Long, but found %s",
+      toString(indices.scalar_type()));
+
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
+
+  ET_LOG_AND_RETURN_IF_FALSE(kernel_size_is_valid(kernel_size, 2));
+  if (stride.size() > 0) {
+    ET_LOG_AND_RETURN_IF_FALSE(stride_is_valid(kernel_size, 2));
+  }
+  ET_LOG_AND_RETURN_IF_FALSE(padding_is_valid(padding, kernel_size, 2, true));
+  if (dilation.size() > 0) {
+    ET_LOG_AND_RETURN_IF_FALSE(dilation_is_valid(dilation, 2));
+  }
+
+  return true;
+}
+
+void get_max_pool2d_with_indices_out_target_size(
+    const Tensor& in,
+    IntArrayRef kernel_size,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef dilation,
+    bool ceil_mode,
+    exec_aten::SizesType* out_sizes,
+    size_t* out_ndim) {
+  *out_ndim = in.dim();
+
+  // Batch dim is optional, so in can be either 3 or 4 dim.
+  if (in.dim() == 4) {
+    out_sizes[0] = in.size(0);
+    out_sizes[1] = in.size(1);
+  } else {
+    out_sizes[0] = in.size(0);
+  }
+
+  calculate_kernel_output_sizes(
+      in, kernel_size, stride, padding, dilation, out_sizes, ceil_mode);
 }
 
 } // namespace executor
