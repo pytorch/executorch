@@ -266,6 +266,18 @@ class TestProgram(unittest.TestCase):
         # Programs should be the same.
         self.assert_programs_equal(program, program2)
 
+    def test_round_trip_large_buffer_sizes(self) -> None:
+        """Tests that when the non_const_buffer_sizes contains integers
+        overflowing a signed/unsigned 32 bit integer, we can still serialize the
+        model and get the same program by deserialization.
+        """
+        program = get_test_program()
+        program.execution_plan[0].non_const_buffer_sizes = [0, 2**48]
+        flatbuffer_from_py = serialize_to_flatbuffer(program)
+        self.assert_programs_equal(
+            program, deserialize_from_flatbuffer(flatbuffer_from_py)
+        )
+
     def test_round_trip_with_header_no_segments(self) -> None:
         """Tests that a Program remains the same after serializing and
         deserializing, even when it contains an extended header.
