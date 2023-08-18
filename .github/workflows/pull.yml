@@ -27,8 +27,8 @@ jobs:
       fetch-depth: 0
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      binary-matrix:
-        MODEL_NAME: ${{ matrix.model }}
+      binary-matrix: |
+        { 'MODEL_NAME': '${{ matrix.model }}' }
       script: |
         echo "=== ${MODEL_NAME} ==="
 
