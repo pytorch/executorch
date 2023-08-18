@@ -89,6 +89,9 @@ jobs:
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         bash .ci/scripts/setup-macos.sh
 
+        # Build and test Executorch
+        bash .ci/scripts/test-cmake.sh
+
         # Build and test custom ops
         PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh cmake
         popd
