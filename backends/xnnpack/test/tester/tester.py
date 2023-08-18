@@ -28,7 +28,6 @@ from executorch.exir import (
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
-from executorch.exir.serialize import serialize_to_flatbuffer
 
 # pyre-ignore[21]: Could not find module `executorch.pybindings.portable`.
 from executorch.extension.pybindings.portable import (  # @manual
@@ -253,7 +252,7 @@ class Serialize(Stage):
         self.buffer = None
 
     def run(self, artifact: ExecutorchProgram, inputs=None) -> None:
-        self.buffer = serialize_to_flatbuffer(artifact.program)
+        self.buffer = artifact.buffer
 
     @property
     def artifact(self) -> bytes:
