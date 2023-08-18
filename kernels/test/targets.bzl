@@ -225,6 +225,7 @@ def define_common_targets():
     _common_op_test("op_lt_test", ["aten", "portable"])
     _common_op_test("op_masked_fill_test", ["aten", "portable"])
     _common_op_test("op_max_test", ["aten", "portable"])
+    _common_op_test("op_max_pool2d_with_indices_test", ["aten", "portable"])
     _common_op_test("op_mean_test", ["aten", "portable"])
     _common_op_test("op_min_test", ["aten", "portable"])
     _common_op_test("op_minimum_test", ["aten", "portable"])
