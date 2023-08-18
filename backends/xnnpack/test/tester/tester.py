@@ -47,11 +47,12 @@ from torch.ao.quantization.quantize_fx import (
     prepare_fx,
 )
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer import XNNPACKQuantizer
-from torch.ao.quantization.quantizer.quantizer import QuantizationConfig, Quantizer
+from torch.ao.quantization.quantizer.quantizer import Quantizer
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
+    XNNPACKQuantizer,
 )
+from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
 from torch.testing import FileCheck
 from torch.utils._pytree import tree_flatten
 
