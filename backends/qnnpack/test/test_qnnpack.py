@@ -15,11 +15,9 @@ from executorch.backends.qnnpack.partition.qnnpack_partitioner import QnnpackPar
 
 # import the xnnpack backend implementation
 from executorch.backends.qnnpack.qnnpack_preprocess import QnnpackBackend
-from executorch.exir import CaptureConfig
+from executorch.exir import CaptureConfig, ExecutorchProgram
 
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
-
-from executorch.exir.serialize import serialize_to_flatbuffer
 
 # pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
 from executorch.extension.pybindings.portable import (  # @manual
@@ -114,20 +112,18 @@ class TestQnnbackends(unittest.TestCase):
         example_inputs = (torch.rand(self.input_dims),)
 
         composite_model(*example_inputs)
-        program = (
+        executorch_program: ExecutorchProgram = (
             exir.capture(composite_model, example_inputs, exir.CaptureConfig())
             .to_edge(EDGE_COMPILE_CONFIG)
             .to_executorch(config=EXECUTORCH_BACKEND_CONFIG)
-            .program
         )
         self.assertEqual(
-            program.execution_plan[0].delegates[0].id,
+            executorch_program.program.execution_plan[0].delegates[0].id,
             QnnpackBackend.__name__,
         )
 
         # Step 4: Run model and check outputs
-        buffer = serialize_to_flatbuffer(program)
-        executorch_module = _load_for_executorch_from_buffer(buffer)
+        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
         inputs_flattened, _ = tree_flatten(example_inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = composite_model(*example_inputs)
@@ -199,20 +195,18 @@ class TestQnnbackends(unittest.TestCase):
         example_inputs = (torch.rand(self.input_dims),)
 
         composite_model(*example_inputs)
-        program = (
+        executorch_program: ExecutorchProgram = (
             exir.capture(composite_model, example_inputs, exir.CaptureConfig())
             .to_edge(EDGE_COMPILE_CONFIG)
             .to_executorch(config=EXECUTORCH_BACKEND_CONFIG)
-            .program
         )
         self.assertEqual(
-            program.execution_plan[0].delegates[0].id,
+            executorch_program.program.execution_plan[0].delegates[0].id,
             QnnpackBackend.__name__,
         )
 
         # Step 4: Run model and check outputs
-        buffer = serialize_to_flatbuffer(program)
-        executorch_module = _load_for_executorch_from_buffer(buffer)
+        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
         inputs_flattened, _ = tree_flatten(example_inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = composite_model(*example_inputs)
@@ -274,20 +268,18 @@ class TestQnnbackends(unittest.TestCase):
         example_inputs = (torch.rand(self.input_dims),)
 
         composite_model(*example_inputs)
-        program = (
+        executorch_program: ExecutorchProgram = (
             exir.capture(composite_model, example_inputs, capture_config)
             .to_edge(EDGE_COMPILE_CONFIG)
             .to_executorch(config=EXECUTORCH_BACKEND_CONFIG)
-            .program
         )
         self.assertEqual(
-            program.execution_plan[0].delegates[0].id,
+            executorch_program.program.execution_plan[0].delegates[0].id,
             QnnpackBackend.__name__,
         )
 
         # Step 4: Run model and check outputs
-        buffer = serialize_to_flatbuffer(program)
-        executorch_module = _load_for_executorch_from_buffer(buffer)
+        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
         inputs_flattened, _ = tree_flatten(example_inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = composite_model(*example_inputs)
@@ -359,20 +351,18 @@ class TestQnnbackends(unittest.TestCase):
         example_inputs = (torch.rand(self.input_dims),)
 
         composite_model(*example_inputs)
-        program = (
+        executorch_program: ExecutorchProgram = (
             exir.capture(composite_model, example_inputs, capture_config)
             .to_edge(EDGE_COMPILE_CONFIG)
             .to_executorch(config=EXECUTORCH_BACKEND_CONFIG)
-            .program
         )
         self.assertEqual(
-            program.execution_plan[0].delegates[0].id,
+            executorch_program.program.execution_plan[0].delegates[0].id,
             QnnpackBackend.__name__,
         )
 
         # Step 4: Run model and check outputs
-        buffer = serialize_to_flatbuffer(program)
-        executorch_module = _load_for_executorch_from_buffer(buffer)
+        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
         inputs_flattened, _ = tree_flatten(example_inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = composite_model(*example_inputs)
@@ -433,20 +423,18 @@ class TestQnnbackends(unittest.TestCase):
         example_inputs = (torch.rand(self.input_dims),)
 
         composite_model(*example_inputs)
-        program = (
+        executorch_program: ExecutorchProgram = (
             exir.capture(composite_model, example_inputs, exir.CaptureConfig())
             .to_edge(EDGE_COMPILE_CONFIG)
             .to_executorch(config=EXECUTORCH_BACKEND_CONFIG)
-            .program
         )
         self.assertEqual(
-            program.execution_plan[0].delegates[0].id,
+            executorch_program.program.execution_plan[0].delegates[0].id,
             QnnpackBackend.__name__,
         )
 
         # Step 4: Run model and check outputs
-        buffer = serialize_to_flatbuffer(program)
-        executorch_module = _load_for_executorch_from_buffer(buffer)
+        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
         inputs_flattened, _ = tree_flatten(example_inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = composite_model(*example_inputs)
@@ -515,7 +503,9 @@ class TestQnnbackends(unittest.TestCase):
             lowered_module.exported_program.graph_module.code
         )
 
-        program = lowered_module.to_executorch(config=EXECUTORCH_BACKEND_CONFIG).program
+        executorch_program: ExecutorchProgram = lowered_module.to_executorch(
+            config=EXECUTORCH_BACKEND_CONFIG
+        )
 
         # TODO(T143084047)
         # class CompositeModule(torch.nn.Module):
@@ -530,23 +520,21 @@ class TestQnnbackends(unittest.TestCase):
         # example_inputs = (torch.rand(self.input_dims),)
 
         # composite_model(*example_inputs)
-        # program = (
+        # executorch_program: ExecutorchProgram = (
         #     exir.capture(
         #         composite_model, example_inputs, exir.CaptureConfig()
         #     )
         #     .to_edge(EDGE_COMPILE_CONFIG)
         #     .to_executorch()
-        #     .program
         # )
 
         self.assertEqual(
-            program.execution_plan[0].delegates[0].id,
+            executorch_program.program.execution_plan[0].delegates[0].id,
             QnnpackBackend.__name__,
         )
 
         # Step 4: Run model and check outputs
-        buffer = serialize_to_flatbuffer(program)
-        executorch_module = _load_for_executorch_from_buffer(buffer)
+        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
         inputs_flattened, _ = tree_flatten(example_inputs)
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
         ref_output = captured_mod(*example_inputs)
