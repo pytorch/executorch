@@ -49,8 +49,6 @@ runtime.python_library(
         "//executorch/codegen/...",
         "//executorch/examples/async_exec:emit_program_lib",
         "//executorch/exir/...",
-        "//executorch/exir/scripts:serialize",
-        "//executorch/exir/scripts:serialize-library",
         "//executorch/exir/tests/...",
         "//executorch/extension/...",
         "//executorch/extension/pybindings/test:test",
