@@ -26,13 +26,15 @@ install_pip_dependencies() {
   # Install all Python dependencies, including PyTorch
   pip install --progress-bar off -r requirements-ci.txt
 
+  NIGHTLY=$(cat ci_commit_pins/nightly.txt)
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
   TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
   TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
+
   pip install --progress-bar off --pre \
-    torch=="${TORCH_VERSION}" \
-    torchaudio=="${TORCHAUDIO_VERSION}" \
-    torchvision=="${TORCHVISION_VERSION}" \
+    torch=="${TORCH_VERSION}.${NIGHTLY}" \
+    torchaudio=="${TORCHAUDIO_VERSION}.${NIGHTLY}" \
+    torchvision=="${TORCHVISION_VERSION}.${NIGHTLY}" \
     --index-url https://download.pytorch.org/whl/nightly/cpu
   popd || return
 }

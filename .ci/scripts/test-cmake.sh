@@ -14,6 +14,8 @@ MODEL_NAME=$1
 if [[ -z "${MODEL_NAME:-}" ]]; then
   echo "Missing model name, exiting..."
   exit 1
+else
+  echo "Testing ${MODEL_NAME} ..."
 fi
 
 test_model() {

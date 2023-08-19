@@ -17,10 +17,12 @@ OS_VERSION=22.04
 CLANG_VERSION=12
 PYTHON_VERSION=3.10
 MINICONDA_VERSION=23.5.1-0
+BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
+
+NIGHTLY=$(cat ci_commit_pins/nightly.txt)
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
 TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
 TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
-BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
 docker build \
   --no-cache \
@@ -29,9 +31,9 @@ docker build \
   --build-arg "CLANG_VERSION=${CLANG_VERSION}" \
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
-  --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
-  --build-arg "TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION}" \
-  --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}" \
+  --build-arg "TORCH_VERSION=${TORCH_VERSION}.${NIGHTLY}" \
+  --build-arg "TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION}.${NIGHTLY}" \
+  --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}.${NIGHTLY}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   -f "${OS}"/Dockerfile \
   "$@" \
