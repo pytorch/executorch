@@ -87,3 +87,11 @@ class ExportTest(unittest.TestCase):
         self._assert_eager_lowered_same_result(
             eager_model, example_inputs, self.validate_tensor_allclose
         )
+
+    def test_ic3_export_to_executorch(self):
+        eager_model, example_inputs = MODEL_NAME_TO_MODEL["ic3"]()
+        eager_model = eager_model.eval()
+
+        self._assert_eager_lowered_same_result(
+            eager_model, example_inputs, self.validate_tensor_allclose
+        )
