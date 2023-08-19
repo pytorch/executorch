@@ -9,7 +9,6 @@
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
-#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -55,7 +54,7 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
       ctx,
       output_size_is_valid({output_sizes, output_ndim}),
       InvalidArgument,
-      out);
+      ret_val);
 
   ET_KERNEL_CHECK(
       ctx,
@@ -71,13 +70,19 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
 
   ScalarType in_type = in.scalar_type();
   ET_SWITCH_REAL_TYPES(in_type, ctx, __func__, CTYPE, [&]() {
-    apply_kernel_2d_reduce_fn<CTYPE>(
-        [](const CTYPE in_val, int64_t in_idx, CTYPE accum, int64_t accum_idx) {
+    apply_kernel_2d_reduce_then_map_fn<CTYPE>(
+        [](const CTYPE in_val,
+           const int64_t in_idx,
+           const CTYPE accum,
+           const int64_t accum_idx) {
           if (in_val > accum) {
             return std::tuple<CTYPE, int64_t>(in_val, in_idx);
           }
           return std::tuple<CTYPE, int64_t>(accum, accum_idx);
         },
+        // Max pooling does not need to post-process the accumulated output
+        [](const int64_t count, const CTYPE accum) { return accum; },
+        /*include_pad=*/false,
         in,
         kernel_size,
         stride,

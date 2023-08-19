@@ -192,6 +192,58 @@ void calculate_kernel_output_sizes(
   }
 }
 
+bool check_avg_pool2d_args(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    const bool count_include_pad,
+    const exec_aten::optional<int64_t>& divisor_override,
+    const Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
+
+  ET_LOG_AND_RETURN_IF_FALSE(kernel_size_is_valid(kernel_size, 2));
+  if (stride.size() > 0) {
+    ET_LOG_AND_RETURN_IF_FALSE(stride_is_valid(kernel_size, 2));
+  }
+  ET_LOG_AND_RETURN_IF_FALSE(padding_is_valid(padding, kernel_size, 2, true));
+
+  if (divisor_override.has_value()) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        divisor_override.value() > 0,
+        "divisor_override must be > 0, but found %" PRId64,
+        divisor_override.value());
+  }
+
+  return true;
+}
+
+void get_avg_pool2d_out_target_size(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    exec_aten::SizesType* const out_sizes,
+    size_t* const out_ndim) {
+  *out_ndim = in.dim();
+
+  // Batch dim is optional, so in can be either 3 or 4 dim.
+  if (in.dim() == 4) {
+    out_sizes[0] = in.size(0);
+    out_sizes[1] = in.size(1);
+  } else {
+    out_sizes[0] = in.size(0);
+  }
+
+  calculate_kernel_output_sizes(
+      in, kernel_size, stride, padding, {}, out_sizes, ceil_mode);
+}
+
 bool check_convolution_args(
     const Tensor& in,
     const Tensor& weight,
