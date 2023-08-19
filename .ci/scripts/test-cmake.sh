@@ -10,8 +10,15 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
+MODEL_NAME=$1
+if [[ -z "${MODEL_NAME:-}" ]]; then
+  echo "Missing model name, exiting..."
+  exit 1
+else
+  echo "Testing ${MODEL_NAME} ..."
+fi
+
 test_model() {
-  MODEL_NAME=$1
   python -m examples.export.export_example --model_name="${MODEL_NAME}"
 
   # Run test model
@@ -24,7 +31,7 @@ build_and_test_executorch() {
   rm -rf "${CMAKE_OUTPUT_DIR}" && mkdir "${CMAKE_OUTPUT_DIR}"
 
   pushd "${CMAKE_OUTPUT_DIR}"
-  cmake -DBUCK2=buck2 ..
+  cmake -DBUCK2=buck2 -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" ..
   popd
 
   if [ "$(uname)" == "Darwin" ]; then
@@ -35,9 +42,13 @@ build_and_test_executorch() {
   cmake --build "${CMAKE_OUTPUT_DIR}" -j "${CMAKE_JOBS}"
 
   which python
-  # Test the example linear model
-  test_model "linear"
+  # Test the select model
+  test_model
 }
+
+if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
+  PYTHON_EXECUTABLE=python3
+fi
 
 install_executorch
 build_and_test_executorch
