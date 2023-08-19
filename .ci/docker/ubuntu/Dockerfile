@@ -28,6 +28,8 @@ RUN bash ./install_user.sh && rm install_user.sh
 ARG MINICONDA_VERSION
 ARG PYTHON_VERSION
 ARG TORCH_VERSION
+ARG TORCHAUDIO_VERSION
+ARG TORCHVISION_VERSION
 ENV PYTHON_VERSION=$PYTHON_VERSION
 ENV PATH /opt/conda/envs/py_$PYTHON_VERSION/bin:/opt/conda/bin:$PATH
 COPY requirements-ci.txt /opt/conda/
