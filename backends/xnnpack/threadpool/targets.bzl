@@ -27,8 +27,8 @@ def define_common_targets():
         exported_headers = _THREADPOOL_HEADERS,
         exported_deps = [
             third_party_dep("pthreadpool"),
+            third_party_dep("cpuinfo"),
         ],
-        external_deps = ["cpuinfo"],
         exported_preprocessor_flags = [
             "-DET_USE_THREADPOOL",
         ],
