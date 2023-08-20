@@ -27,6 +27,7 @@ class ConvertToLinearPass(ExportPass):
     linear_modules = [
         torch.nn.Linear,
         torch.nn.functional.linear,
+        torch.ops.aten.addmm.default,
     ]
 
     targets = [

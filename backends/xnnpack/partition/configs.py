@@ -111,6 +111,10 @@ SUPPORTED_QUANT_MODULES = [
     torch.nn.functional.leaky_relu,
     torch.nn.functional.leaky_relu_,
     torch.nn.LeakyReLU,
+    # TODO(): In quant --> export flow source_fn is operator target instead of module name
+    # This is actively being fixed, but until, we add these operator target names to partitioenr
+    torch.ops.aten.convolution.default,
+    torch.ops.aten.addmm.default,
 ]
 
 SUPPORTED_IMPLICIT_Q_DQ_MODULES_SET = set(SUPPORTED_QUANT_MODULES)
