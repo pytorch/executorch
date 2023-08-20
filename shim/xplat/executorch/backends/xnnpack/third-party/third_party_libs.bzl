@@ -8,7 +8,7 @@ _THIRD_PARTY_LIBS = {
     "FXdiv": ["//xplat/third-party/FXdiv:FXdiv", "//backends/xnnpack/third-party:FXdiv"],
     "XNNPACK": ["//xplat/third-party/XNNPACK:XNNPACK", "//backends/xnnpack/third-party:XNNPACK"],
     "clog": ["//xplat/third-party/clog:clog", "//backends/xnnpack/third-party:clog"],
-    "cpuinfo": ["//third-party/cpuinfo:cpuinfo", "//backends/xnnpack/third-party:cpuinfo"],
+    "cpuinfo": ["fbsource//third-party/cpuinfo:cpuinfo", "//backends/xnnpack/third-party:cpuinfo"],
     "pthreadpool": ["//xplat/third-party/pthreadpool:pthreadpool", "//backends/xnnpack/third-party:pthreadpool"],
     "pthreadpool_header": ["//xplat/third-party/pthreadpool:pthreadpool_header", "//backends/xnnpack/third-party:pthreadpool_header"],
 }
