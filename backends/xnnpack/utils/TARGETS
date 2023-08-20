@@ -1,27 +1,8 @@
-load("@fbcode_macros//build_defs:native_rules.bzl", "buck_genrule")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
-
-buck_genrule(
-    name = "xnnpack_constants",
-    srcs = {
-        "xnnpack.h": "//xplat/third-party/XNNPACK:xnnpack.h",
-    },
-    outs = {
-        "xnnpack_constants.py": ["xnnpack_constants.py"],
-    },
-    cmd = " && ".join([
-        "echo UINT32_MAX = 4294967295 > ${OUT}/xnnpack_constants.py",
-        "awk '/^#define\\s+XNN_/ { print $2,\"=\",$3} ' xnnpack.h >> ${OUT}/xnnpack_constants.py",
-        "if ! grep -qc \"^XNN_\" ${OUT}/xnnpack_constants.py; then false; fi",
-    ]),
-    visibility = [
-        "//executorch/backends/xnnpack/utils:xnnpack_utils",
-    ],
-)
 
 python_library(
     name = "xnnpack_utils",
-    srcs = glob(["*.py"]) + [":xnnpack_constants[xnnpack_constants.py]"],
+    srcs = glob(["*.py"]),
     deps = [
         "//caffe2:torch",
         "//executorch/exir:lib",
