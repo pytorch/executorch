@@ -1,7 +1,4 @@
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
-load(":targets.bzl", "define_common_targets")
-
-define_common_targets()
 
 python_unittest(
     name = "test_qnnpack",
