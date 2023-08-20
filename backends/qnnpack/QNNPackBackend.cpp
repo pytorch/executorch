@@ -8,7 +8,7 @@
 
 #include <executorch/backends/qnnpack/executor/QNNExecutor.h>
 #include <executorch/backends/qnnpack/qnnpack_schema_generated.h>
-#include <executorch/backends/qnnpack/utils/utils.h>
+#include <executorch/backends/xnnpack/runtime/utils/utils.h>
 #include <executorch/backends/xnnpack/threadpool/threadpool.h>
 #include <executorch/runtime/backend/backend_registry.h>
 #include <executorch/runtime/core/error.h>
