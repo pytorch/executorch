@@ -120,6 +120,8 @@ class ConvertToLinearPass(ExportPass):
             src_partition.input_nodes
             + src_partition.params,  # non quant weight can be in params
         )
+        if linear_weight.target == exir_ops.edge.aten.permute_copy.default:
+            linear_weight = linear_weight.args[0]
         logger.debug(f"Found weight: {linear_weight} from node {node}")
 
         linear_bias = self.find(

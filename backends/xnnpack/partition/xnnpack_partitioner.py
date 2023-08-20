@@ -682,6 +682,9 @@ class XnnpackQuantizedPartitioner2(XnnpackFloatingPointPartitioner):
         """
         nodes = set()
         for inp in input_nodes:
+            if inp.target == exir_ops.edge.aten.permute_copy.default:
+                nodes.add(inp)
+                inp = cast(torch.fx.Node, inp.args[0])
             if inp.target in self._DQ_OPS:
                 # dequant node
                 nodes.add(inp)
