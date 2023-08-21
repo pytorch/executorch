@@ -118,6 +118,18 @@ MATCHER_P(IsCloseTo, other, "") {
 }
 
 /**
+ * Lets gtest users write
+ * `EXPECT_THAT(tensor1, IsCloseToWithTol(tensor2, rtol, atol))`
+ * or `EXPECT_THAT(tensor1, Not(IsCloseToWithTol(tensor2, rtol, atol)))`.
+ *
+ * See also `EXPECT_TENSOR_CLOSE_WITH_TOL()` and
+ * `EXPECT_TENSOR_NOT_CLOSE_WITH_TOL()`.
+ */
+MATCHER_P3(IsCloseToWithTol, other, rtol, atol, "") {
+  return tensors_are_close(arg, other, rtol, atol);
+}
+
+/**
  * Lets gtest users write `EXPECT_THAT(tensor1, IsEqualTo(tensor2))` or
  * `EXPECT_THAT(tensor1, Not(IsEqualTo(tensor2)))`.
  *
@@ -136,6 +148,19 @@ MATCHER_P(IsEqualTo, other, "") {
 MATCHER_P(IsDataCloseTo, other, "") {
   return tensor_data_is_close(arg, other);
 }
+
+/**
+ * Lets gtest users write
+ * `EXPECT_THAT(tensor1, IsDataCloseToWithTol(tensor2, rtol, atol))`
+ * or `EXPECT_THAT(tensor1, Not(IsDataCloseToWithTol(tensor2, rtol, atol)))`.
+ *
+ * See also `EXPECT_TENSOR_CLOSE_WITH_TOL()` and
+ * `EXPECT_TENSOR_NOT_CLOSE_WITH_TOL()`.
+ */
+MATCHER_P3(IsDataCloseToWithTol, other, rtol, atol, "") {
+  return tensor_data_is_close(arg, other, rtol, atol);
+}
+
 /**
  * Lets gtest users write `EXPECT_THAT(tensor1, IsDataEqualTo(tensor2))` or
  * `EXPECT_THAT(tensor1, Not(IsDataEqualTo(tensor2)))`.
@@ -205,6 +230,23 @@ MATCHER_P(IsListEqualTo, other, "") {
 #define ASSERT_TENSOR_NOT_CLOSE(t1, t2) \
   ASSERT_THAT((t1), ::testing::Not(torch::executor::testing::IsCloseTo(t2)))
 
+#define EXPECT_TENSOR_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
+  EXPECT_THAT(                                           \
+      (t1), ::torch::executor::testing::IsCloseToWithTol(t2, rtol, atol))
+#define EXPECT_TENSOR_NOT_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
+  EXPECT_THAT(                                               \
+      (t1),                                                  \
+      ::testing::Not(                                        \
+          torch::executor::testing::IsCloseToWithTol(t2, rtol, atol)))
+#define ASSERT_TENSOR_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
+  ASSERT_THAT(                                           \
+      (t1), ::torch::executor::testing::IsCloseToWithTol(t2, rtol, atol))
+#define ASSERT_TENSOR_NOT_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
+  ASSERT_THAT(                                               \
+      (t1),                                                  \
+      ::testing::Not(                                        \
+          torch::executor::testing::IsCloseToWithTol(t2, rtol, atol)))
+
 #define EXPECT_TENSOR_DATA_EQ(t1, t2) \
   EXPECT_THAT((t1), ::torch::executor::testing::IsDataEqualTo(t2))
 #define EXPECT_TENSOR_DATA_NE(t1, t2) \
@@ -222,6 +264,23 @@ MATCHER_P(IsListEqualTo, other, "") {
   ASSERT_THAT((t1), ::torch::executor::testing::IsDataCloseTo(t2))
 #define ASSERT_TENSOR_DATA_NOT_CLOSE(t1, t2) \
   ASSERT_THAT((t1), ::testing::Not(torch::executor::testing::IsDataCloseTo(t2)))
+
+#define EXPECT_TENSOR_DATA_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
+  EXPECT_THAT(                                                \
+      (t1), ::torch::executor::testing::IsDataCloseToWithTol(t2, rtol, atol))
+#define EXPECT_TENSOR_DATA_NOT_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
+  EXPECT_THAT(                                                    \
+      (t1),                                                       \
+      ::testing::Not(                                             \
+          torch::executor::testing::IsDataCloseToWithTol(t2, rtol, atol)))
+#define ASSERT_TENSOR_DATA_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
+  ASSERT_THAT(                                                \
+      (t1), ::torch::executor::testing::IsDataCloseToWithTol(t2, rtol, atol))
+#define ASSERT_TENSOR_DATA_NOT_CLOSE_WITH_TOL(t1, t2, rtol, atol) \
+  ASSERT_THAT(                                                    \
+      (t1),                                                       \
+      ::testing::Not(                                             \
+          torch::executor::testing::IsDataCloseToWithTol(t2, rtol, atol)))
 
 /*
  * Helpers for comparing lists of Tensors.
