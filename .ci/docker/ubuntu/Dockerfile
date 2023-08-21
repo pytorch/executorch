@@ -27,6 +27,7 @@ RUN bash ./install_user.sh && rm install_user.sh
 # Install conda and other dependencies
 ARG MINICONDA_VERSION
 ARG PYTHON_VERSION
+ARG TIMM_VERSION 
 ARG TORCH_VERSION
 ARG TORCHAUDIO_VERSION
 ARG TORCHVISION_VERSION
