@@ -28,9 +28,9 @@ test_model() {
   python -m examples.export.export_example --model_name="${MODEL_NAME}"
 
   # Run test model
-  if [[ $1 == "buck2" ]]; then
+  if [[ "${BUILD_TOOL}" == "buck2" ]]; then
     buck2 run //examples/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
-  elif [[ $1 == "cmake" ]]; then
+  elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
     ./"${CMAKE_OUTPUT_DIR}"/executor_runner --model_path "./${MODEL_NAME}.pte"
   else
     echo "Invalid build tool $1. Only buck2 and cmake are supported atm"
