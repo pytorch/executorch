@@ -107,9 +107,9 @@ jobs:
         export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:${PATH}"
 
         BUILD_TOOL=${{ matrix.build-tool }}
-        bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Test custom ops
-        bash examples/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
 
   test-custom-ops-macos:
     name: test-custom-ops-macos
