@@ -37,7 +37,7 @@ test_model() {
     CMAKE_OUTPUT_DIR=cmake-out
     ./"${CMAKE_OUTPUT_DIR}"/executor_runner --model_path "./${MODEL_NAME}.pte"
   else
-    echo "Invalid build tool $1. Only buck2 and cmake are supported atm"
+    echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
     exit 1
   fi
 }
