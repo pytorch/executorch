@@ -10,6 +10,14 @@ set -exu
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
+BUILD_TOOL=$1
+if [[ -z "${BUILD_TOOL:-}" ]]; then
+  echo "Missing build tool (require buck2 or cmake), exiting..."
+  exit 1
+else
+  echo "Setup MacOS for ${BUILD_TOOL} ..."
+fi
+
 install_buck() {
   if ! command -v zstd &> /dev/null; then
     brew install zstd
@@ -36,6 +44,10 @@ install_buck() {
   fi
 }
 
-install_buck
+if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+  install_buck
+fi
 install_conda
 install_pip_dependencies
+install_executorch
+build_executorch_runner "${BUILD_TOOL}"
