@@ -213,9 +213,10 @@ A `call_function` node represents a call to an operator.
 1. In FX graph, a call_function can refer to any callable, in EXIR, we restrict
 this to only Canonical ATen operators (a select subset of PyTorch ATen operator
 library), custom operators and control flow operators.
-2. In FX graph, calling with both args and kwargs is allowed, in EXIR, only args
-will be used, kwargs will be an empty dict.
-3. In EXIR, constant arguments will be embedded within the graph.
+2. In EXIR, constant arguments will be embedded within the graph.
+3. In FX graph, a get_attr node can represent reading any attribute stored in
+the graph module. However, in EXIR this will only be reading submodules as all
+parameters/buffers will be passed in as inputs to the graph module.
 
 
 #### Metadata
