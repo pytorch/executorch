@@ -57,9 +57,9 @@ jobs:
         BUILD_TOOL=${{ matrix.build-tool }}
         QUANTIZATION=${{ matrix.quantization }}
 
-        bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Build and test Executorch
-        bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}"
 
   test-models-macos:
     name: test-models-macos
