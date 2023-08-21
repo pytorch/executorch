@@ -22,3 +22,6 @@ pip install --force-reinstall --pre torchvision=="${TORCH_VISION_VERSION}" -i ht
 
 TORCH_AUDIO_VERSION=2.1.0.dev20230813
 pip install --force-reinstall --pre torchaudio=="${TORCH_AUDIO_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
+
+TIMM_VERSION=0.6.13
+pip install --pre timm=${TIMM_VERSION}

@@ -23,6 +23,7 @@ NIGHTLY=$(cat ci_commit_pins/nightly.txt)
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
 TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
 TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
+TIMM_VERSION=$(cat ci_commit_pins/timm.txt)
 
 docker build \
   --no-cache \
@@ -31,6 +32,7 @@ docker build \
   --build-arg "CLANG_VERSION=${CLANG_VERSION}" \
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
+  --build-arg "TIMM_VERSION=${TIMM_VERSION}" \
   --build-arg "TORCH_VERSION=${TORCH_VERSION}.${NIGHTLY}" \
   --build-arg "TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION}.${NIGHTLY}" \
   --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}.${NIGHTLY}" \

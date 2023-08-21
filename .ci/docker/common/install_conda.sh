@@ -45,6 +45,10 @@ install_pip_dependencies() {
     torchaudio=="${TORCHAUDIO_VERSION}" \
     torchvision=="${TORCHVISION_VERSION}" \
     --index-url https://download.pytorch.org/whl/nightly/cpu
+
+  pip install --pre \
+    timm==${TIMM_VERSION}
+
   popd
 }
 
