@@ -79,7 +79,7 @@ jobs:
         BUILD_TOOL=${{ matrix.build-tool }}
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test Executorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}"
         popd
@@ -129,7 +129,7 @@ jobs:
 
         BUILD_TOOL=${{ matrix.build-tool }}
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test custom ops
         PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
         popd

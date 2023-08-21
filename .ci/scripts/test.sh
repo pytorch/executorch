@@ -38,6 +38,11 @@ test_model() {
   fi
 }
 
+test_quantized_model() {
+  python -m examples.quantization.example --model_name="${MODEL_NAME}"
+}
+
 which python
 # Test the select model
 test_model
+test_quantized_model
