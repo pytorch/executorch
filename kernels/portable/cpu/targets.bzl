@@ -120,6 +120,12 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_avg_pool2d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_bitwise_and",
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",

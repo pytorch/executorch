@@ -132,6 +132,11 @@
     - arg_meta: null
       kernel_name: torch::executor::atanh_out
 
+- op: avg_pool2d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::avg_pool2d_out
+
 - op: bitwise_and.Scalar_out
   kernels:
     - arg_meta: null
