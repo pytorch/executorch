@@ -14,25 +14,30 @@ MODEL_NAME=$1
 if [[ -z "${MODEL_NAME:-}" ]]; then
   echo "Missing model name, exiting..."
   exit 1
-else
-  echo "Testing ${MODEL_NAME} ..."
 fi
+
+BUILD_TOOL=$2
+if [[ -z "${BUILD_TOOL:-}" ]]; then
+  echo "Missing build tool (require buck2 or cmake), exiting..."
+  exit 1
+fi
+
+echo "Testing ${MODEL_NAME} with ${BUILD_TOOL}..."
 
 test_model() {
   python -m examples.export.export_example --model_name="${MODEL_NAME}"
 
   # Run test model
-  buck2 run //examples/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
+  if [[ $1 == "buck2" ]]; then
+    buck2 run //examples/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
+  elif [[ $1 == "cmake" ]]; then
+    ./"${CMAKE_OUTPUT_DIR}"/executor_runner --model_path "./${MODEL_NAME}.pte"
+  else
+    echo "Invalid build tool $1. Only buck2 and cmake are supported atm"
+    exit 1
+  fi
 }
 
-build_and_test_executorch() {
-  # Build executorch runtime
-  buck2 build //examples/executor_runner:executor_runner
-
-  which python
-  # Test the select model
-  test_model
-}
-
-install_executorch
-build_and_test_executorch
+which python
+# Test the select model
+test_model

@@ -26,20 +26,7 @@ test_model() {
 }
 
 build_and_test_executorch() {
-  CMAKE_OUTPUT_DIR=cmake-out
-  # Build executorch runtime using cmake
-  rm -rf "${CMAKE_OUTPUT_DIR}" && mkdir "${CMAKE_OUTPUT_DIR}"
-
-  pushd "${CMAKE_OUTPUT_DIR}"
-  cmake -DBUCK2=buck2 -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" ..
-  popd
-
-  if [ "$(uname)" == "Darwin" ]; then
-    CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))
-  else
-    CMAKE_JOBS=$(( $(nproc) - 1 ))
-  fi
-  cmake --build "${CMAKE_OUTPUT_DIR}" -j "${CMAKE_JOBS}"
+  build_executorch_runner cmake
 
   which python
   # Test the select model
