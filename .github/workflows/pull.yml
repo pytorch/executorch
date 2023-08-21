@@ -55,10 +55,11 @@ jobs:
 
         MODEL_NAME=${{ matrix.model }}
         BUILD_TOOL=${{ matrix.build-tool }}
+        QUANTIZATION=${{ matrix.quantization }}
 
         bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Build and test Executorch
-        bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}"
+        bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}"
 
   test-models-macos:
     name: test-models-macos
@@ -77,11 +78,12 @@ jobs:
 
         MODEL_NAME=${{ matrix.model }}
         BUILD_TOOL=${{ matrix.build-tool }}
+        QUANTIZATION=${{ matrix.quantization }}
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test Executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}"
         popd
 
   test-custom-ops-linux:

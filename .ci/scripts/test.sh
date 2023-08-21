@@ -22,7 +22,10 @@ if [[ -z "${BUILD_TOOL:-}" ]]; then
   exit 1
 fi
 
-echo "Testing ${MODEL_NAME} with ${BUILD_TOOL}..."
+QUANTIZATION=$3
+if [[ -z "${QUANTIZATION:-}" ]]; then
+  QUANTIZATION=false
+fi
 
 test_model() {
   python -m examples.export.export_example --model_name="${MODEL_NAME}"
@@ -43,6 +46,13 @@ test_quantized_model() {
 }
 
 which python
+
+echo "Testing ${MODEL_NAME} with ${BUILD_TOOL}..."
 # Test the select model
 test_model
-test_quantized_model
+
+if [[ "${QUANTIZATION}" == true ]]; then
+  test_quantized_model
+else
+  echo "The model ${MODEL_NAME} doesn't support quantization yet"
+fi

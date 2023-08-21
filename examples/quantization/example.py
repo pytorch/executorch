@@ -30,6 +30,10 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
 
 from ..models import MODEL_NAME_TO_MODEL
 
+# Note: for mv3, the mul op is not supported in XNNPACKQuantizer, that could be supported soon
+QUANT_MODEL_NAME_TO_MODEL = {
+    name: MODEL_NAME_TO_MODEL[name] for name in ["linear", "add", "add_mul", "mv2"]
+}
 
 def quantize(model_name, model, example_inputs):
     """This is the official recommended flow for quantization in pytorch 2.0 export"""
@@ -94,11 +98,6 @@ def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_
 
 
 if __name__ == "__main__":
-    # Note: for mv3, the mul op is not supported in XNNPACKQuantizer, that could be supported soon
-    QUANT_MODEL_NAME_TO_MODEL = {
-        name: MODEL_NAME_TO_MODEL[name] for name in ["linear", "add", "add_mul", "mv2"]
-    }
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",

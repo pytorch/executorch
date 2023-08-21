@@ -10,6 +10,7 @@ import os
 from typing import Any
 
 from examples.models import MODEL_NAME_TO_MODEL
+from examples.quantization import QUANT_MODEL_NAME_TO_MODEL
 
 BUILD_TOOLS = [
     "buck2",
@@ -38,8 +39,11 @@ def export_models_for_ci() -> None:
     # https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs
     models = {"include": []}
     for name in MODEL_NAME_TO_MODEL.keys():
+        quantization = name in QUANT_MODEL_NAME_TO_MODEL
         for build_tool in BUILD_TOOLS:
-            models["include"].append({"build-tool": build_tool, "model": name})
+            models["include"].append(
+                {"build-tool": build_tool, "model": name, "quantization": quantization}
+            )
     set_output("models", json.dumps(models))
 
 
