@@ -72,7 +72,25 @@ void calculate_kernel_output_sizes(
  * should return both an accumulator value and an index value; so for example,
  * if reducing using the max() function, this function will track both the
  * maximum value observed as well as the index of the maximum value that was
- * observed. The index is a linear index with respect to the 2D plane formed by
+ * observed. Therefore reduce_fn should follow the signature:
+ *
+ * ```
+ * std::tuple<T, int64_t> reduce_fn(
+ *    const T in_val,
+ *    const int64_t in_idx,
+ *    T accum,
+ *    int64_t accum_idx);
+ * ```
+ *
+ * Then, before writing out the accumulator and index values to out_ptr and
+ * indices_ptr respectively, accumulator will be mapped with map_fn, which
+ * should follow the signature:
+ *
+ * ```
+ * T map_fn(const int64_t count, const T accum);
+ * ```
+ *
+ * The index is a linear index with respect to the 2D plane formed by
  * the height and width axes. So for a tensor of size (N, C, H, W), an element
  * at location (n, c, h, w) will have a index of h * W + w. Although the an
  * index accumulator is tracked, if `indices_ptr` is `nullptr` then it will not
@@ -81,6 +99,10 @@ void calculate_kernel_output_sizes(
  *
  * @param[in] reduce_fn The reduction function used to update accumulator
  * values.
+ * @param[in] map_fn The map function used to post-process the accumulator
+ * value before writing to out_ptr.
+ * @param[in] include_pad Indicates if the reduction function should be applied
+ * over the padded regions implicitly added by the `padding` argument.
  * @param[in] in_ptr The pointer to the input tensor data.
  * @param[in] in_sizes Sizes array describing the size of the input tensor.
  * @param[in] in_strides Strides array describing the strides of the input
@@ -100,19 +122,21 @@ void calculate_kernel_output_sizes(
  * @param[in] batch The batch index of the output locations being computed.
  * @param[in] out_c The channels index of the output locations being computed.
  */
-template <typename CTYPE, typename ReduceOp>
-void kernel_reduction_2d(
+template <typename CTYPE, typename ReduceOp, typename MapOp>
+void kernel_reduction_then_map_2d(
     const ReduceOp& reduce_fn,
+    const MapOp& map_fn,
+    const bool include_pad,
     const CTYPE* const in_ptr,
-    exec_aten::ArrayRef<exec_aten::SizesType> in_sizes,
-    exec_aten::ArrayRef<exec_aten::StridesType> in_strides,
-    IntArrayRef kernel_size,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
+    const exec_aten::ArrayRef<exec_aten::SizesType> in_sizes,
+    const exec_aten::ArrayRef<exec_aten::StridesType> in_strides,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const IntArrayRef dilation,
     CTYPE* const out_ptr,
-    exec_aten::ArrayRef<exec_aten::SizesType> out_sizes,
-    exec_aten::ArrayRef<exec_aten::StridesType> out_strides,
+    const exec_aten::ArrayRef<exec_aten::SizesType> out_sizes,
+    const exec_aten::ArrayRef<exec_aten::StridesType> out_strides,
     int64_t* const indices_ptr,
     const size_t batch,
     const size_t out_c) {
@@ -146,6 +170,7 @@ void kernel_reduction_2d(
       bool accum_initialized = false;
       CTYPE accum = 0;
       int64_t accum_idx = 0;
+      int64_t count = 0;
 
       for (size_t w_y = 0; w_y < k_H; ++w_y) {
         int64_t stride_y = val_at(stride, 0);
@@ -154,42 +179,51 @@ void kernel_reduction_2d(
 
         size_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
         in_coord[in_dim - 2] = in_y;
-        // Only proceed if input y coordinate is within bounds
-        if (in_y >= 0 && in_y < in_H) {
-          for (size_t w_x = 0; w_x < k_W; ++w_x) {
-            int64_t stride_x = val_at(stride, 1);
-            int64_t padding_x = val_at(padding, 1, /*default_value=*/0);
-            int64_t dilation_x = val_at(dilation, 1);
 
-            size_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
-            in_coord[in_dim - 1] = in_x;
+        for (size_t w_x = 0; w_x < k_W; ++w_x) {
+          int64_t stride_x = val_at(stride, 1);
+          int64_t padding_x = val_at(padding, 1, /*default_value=*/0);
+          int64_t dilation_x = val_at(dilation, 1);
 
-            // Only proceed if input x coordinate is within bounds
-            if (in_x >= 0 && in_x < in_W) {
-              size_t in_idx =
-                  calculate_linear_index(in_coord, in_strides.data(), in_dim);
-              CTYPE in_val = in_ptr[in_idx];
+          size_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
+          in_coord[in_dim - 1] = in_x;
 
-              int64_t idx = in_y * in_W + in_x;
+          const bool x_in_bound = (in_x >= 0 && in_x < in_W);
+          const bool y_in_bound = (in_y >= 0 && in_y < in_H);
+          const bool xy_in_bound = (x_in_bound && y_in_bound);
 
-              if (!accum_initialized) {
-                accum = in_val;
-                accum_idx = idx;
-                accum_initialized = true;
-              } else {
-                std::tuple<CTYPE, int64_t> ret =
-                    reduce_fn(in_val, idx, accum, accum_idx);
-                accum = std::get<0>(ret);
-                accum_idx = std::get<1>(ret);
-              }
+          CTYPE in_val = 0;
+          if (xy_in_bound) {
+            size_t in_idx =
+                calculate_linear_index(in_coord, in_strides.data(), in_dim);
+            in_val = in_ptr[in_idx];
+          }
+
+          int64_t idx = idx = in_y * in_W + in_x;
+          if (include_pad) {
+            idx =
+                in_y + padding_y * (in_W + 2 * padding_x) + (in_x + padding_x);
+          }
+
+          if (xy_in_bound || include_pad) {
+            if (!accum_initialized) {
+              accum = in_val;
+              accum_idx = idx;
+              accum_initialized = true;
+            } else {
+              std::tuple<CTYPE, int64_t> ret =
+                  reduce_fn(in_val, idx, accum, accum_idx);
+              accum = std::get<0>(ret);
+              accum_idx = std::get<1>(ret);
             }
+            count++;
           }
         }
       }
 
       size_t out_idx =
           calculate_linear_index(out_coord, out_strides.data(), out_dim);
-      out_ptr[out_idx] = accum;
+      out_ptr[out_idx] = map_fn(count, accum);
       if (indices_ptr) {
         indices_ptr[out_idx] = accum_idx;
       }
@@ -199,13 +233,38 @@ void kernel_reduction_2d(
 
 /**
  * Given a 3-D {C, H, W} or 4-D {N, C, H, W} tensor, applies a reduction
- * function over a 2D kernel region.
+ * function over a 2D kernel region, which will return two accumulator values
+ * (the first associated with the reduced value and the second associated with
+ * an input index). Then apply a map function to the first accumulator value
+ * before writing to out. Optionally, the second accumulator value will be
+ * written to indices, if provided.
+ *
+ * reduce_fn should have the following
+ * signature:
+ *
+ * ```
+ * std::tuple<T, int64_t> reduce_fn(
+ *    const T in_val,
+ *    const int64_t in_idx,
+ *    const T accum,
+ *    const int64_t accum_idx);
+ * ```
+ *
+ * map_fn should have the following signature:
+ *
+ * ```
+ * T map_fn(const int64_t count, const T accum);
+ * ```
  *
  * TODO(ssjia) Allow this to handle 1-D kernels as well by unsqueezing
  * appropriately.
  *
  * @param[in] reduce_fn The reduction function used to update accumulator
  * values.
+ * @param[in] map_fn The map function used to post-process the accumulated
+ * value before writing to out.
+ * @param[in] include_pad Indicates if the reduction function should be applied
+ * over the padded regions implicitly added by the `padding` argument.
  * @param[in] in The input tensor.
  * @param[in] kernel_size 2D array describing the height and width of the kernel
  * region.
@@ -217,16 +276,18 @@ void kernel_reduction_2d(
  * @param[in] out The output tensor.
  * @param[in] indices An optional indices output tensor to write out to.
  */
-template <typename CTYPE, typename ReduceOp>
-void apply_kernel_2d_reduce_fn(
+template <typename CTYPE, typename ReduceOp, typename MapOp>
+void apply_kernel_2d_reduce_then_map_fn(
     const ReduceOp& reduce_fn,
+    const MapOp& map_fn,
+    const bool include_pad,
     const Tensor& in,
-    IntArrayRef kernel_size,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const IntArrayRef dilation,
     Tensor& out,
-    exec_aten::optional<Tensor> indices) {
+    exec_aten::optional<Tensor> indices = {}) {
   exec_aten::ArrayRef<exec_aten::SizesType> in_sizes = in.sizes();
   exec_aten::ArrayRef<exec_aten::SizesType> out_sizes = out.sizes();
 
@@ -263,8 +324,10 @@ void apply_kernel_2d_reduce_fn(
   }
   for (size_t batch = 0; batch < batch_size; ++batch) {
     for (size_t channel = 0; channel < in_sizes[in.dim() - 3]; ++channel) {
-      kernel_reduction_2d(
+      kernel_reduction_then_map_2d(
           reduce_fn,
+          map_fn,
+          include_pad,
           in_ptr,
           in_sizes,
           {in_strides, 4},
@@ -285,6 +348,25 @@ void apply_kernel_2d_reduce_fn(
 //
 // Operator specific utility functions
 //
+
+bool check_avg_pool2d_args(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    const bool count_include_pad,
+    const exec_aten::optional<int64_t>& divisor_override,
+    const Tensor& out);
+
+void get_avg_pool2d_out_target_size(
+    const Tensor& in,
+    const IntArrayRef kernel_size,
+    const IntArrayRef stride,
+    const IntArrayRef padding,
+    const bool ceil_mode,
+    exec_aten::SizesType* const out_sizes,
+    size_t* const out_ndim);
 
 bool check_convolution_args(
     const Tensor& in,
