@@ -10,7 +10,7 @@ import os
 from typing import Any
 
 from examples.models import MODEL_NAME_TO_MODEL
-from examples.quantization import QUANT_MODEL_NAME_TO_MODEL
+from examples.quantization.example import QUANT_MODEL_NAME_TO_MODEL
 
 BUILD_TOOLS = [
     "buck2",
