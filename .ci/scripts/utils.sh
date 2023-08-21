@@ -38,3 +38,36 @@ install_pip_dependencies() {
     --index-url https://download.pytorch.org/whl/nightly/cpu
   popd || return
 }
+
+build_executorch_runner_buck2() {
+  # Build executorch runtime
+  buck2 build //examples/executor_runner:executor_runner
+}
+
+build_executorch_runner_cmake() {
+  CMAKE_OUTPUT_DIR=cmake-out
+  # Build executorch runtime using cmake
+  rm -rf "${CMAKE_OUTPUT_DIR}" && mkdir "${CMAKE_OUTPUT_DIR}"
+
+  pushd "${CMAKE_OUTPUT_DIR}" || return
+  cmake -DBUCK2=buck2 -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" ..
+  popd || return
+
+  if [ "$(uname)" == "Darwin" ]; then
+    CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))
+  else
+    CMAKE_JOBS=$(( $(nproc) - 1 ))
+  fi
+  cmake --build "${CMAKE_OUTPUT_DIR}" -j "${CMAKE_JOBS}"
+}
+
+build_executorch_runner() {
+  if [[ $1 == "buck2" ]]; then
+    build_executorch_runner_buck2
+  elif [[ $1 == "cmake" ]]; then
+    build_executorch_runner_cmake
+  else
+    echo "Invalid build tool $1. Only buck2 and cmake are supported atm"
+    exit 1
+  fi
+}

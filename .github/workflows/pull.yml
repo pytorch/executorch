@@ -35,8 +35,8 @@ jobs:
 
           PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py
 
-  buck-build-test-linux:
-    name: buck-build-test-linux
+  test-models-linux:
+    name: test-models-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     needs: gather-models
     strategy:
@@ -53,15 +53,16 @@ jobs:
         # here, as it's there in the container
         export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:${PATH}"
 
-        # The name of model we are going to test
         MODEL_NAME=${{ matrix.model }}
-        # Build and test Executorch
-        bash .ci/scripts/test.sh "${MODEL_NAME}"
-        # Test custom ops
-        bash examples/custom_ops/test_custom_ops.sh buck2
+        BUILD_TOOL=${{ matrix.build-tool }}
+        QUANTIZATION=${{ matrix.quantization }}
 
-  buck-build-test-macos:
-    name: buck-build-test-macos
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        # Build and test Executorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}"
+
+  test-models-macos:
+    name: test-models-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     needs: gather-models
     strategy:
@@ -73,25 +74,26 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
         WORKSPACE=$(pwd)
-
         pushd "${WORKSPACE}/pytorch/executorch"
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        bash .ci/scripts/setup-macos.sh
 
-        # The name of model we are going to test
         MODEL_NAME=${{ matrix.model }}
+        BUILD_TOOL=${{ matrix.build-tool }}
+        QUANTIZATION=${{ matrix.quantization }}
+
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test Executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}"
-        # Test custom ops
-        PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh buck2
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}"
         popd
 
-  cmake-build-test-linux:
-    name: cmake-build-test-linux
+  test-custom-ops-linux:
+    name: test-custom-ops-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-    needs: gather-models
     strategy:
-      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      matrix:
+        include:
+          - build-tool: buck2
+          - build-tool: cmake
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -104,19 +106,19 @@ jobs:
         # here, as it's there in the container
         export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:${PATH}"
 
-        # The name of model we are going to test
-        MODEL_NAME=${{ matrix.model }}
-        # Build and test Executorch
-        bash .ci/scripts/test-cmake.sh "${MODEL_NAME}"
-        # Build and test custom ops
-        bash examples/custom_ops/test_custom_ops.sh cmake
+        BUILD_TOOL=${{ matrix.build-tool }}
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        # Test custom ops
+        PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
 
-  cmake-build-test-macos:
-    name: cmake-build-test-macos
+  test-custom-ops-macos:
+    name: test-custom-ops-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    needs: gather-models
     strategy:
-      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      matrix:
+        include:
+          - build-tool: buck2
+          - build-tool: cmake
       fail-fast: false
     with:
       runner: macos-m1-12
@@ -126,13 +128,10 @@ jobs:
         WORKSPACE=$(pwd)
 
         pushd "${WORKSPACE}/pytorch/executorch"
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        bash .ci/scripts/setup-macos.sh
 
-        # The name of model we are going to test
-        MODEL_NAME=${{ matrix.model }}
-        # Build and test Executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test-cmake.sh "${MODEL_NAME}"
+        BUILD_TOOL=${{ matrix.build-tool }}
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test custom ops
-        PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh cmake
+        PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
         popd
