@@ -420,6 +420,48 @@ TEST(TensorUtilTest, DoubleAndInfinitNanElementsAreCloseAndEqual) {
   EXPECT_TENSORS_CLOSE_AND_EQUAL(a, b);
 }
 
+// Testing closeness with tolerances
+
+TEST(TensorUtilTest, TensorsAreCloseWithTol) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Double> td;
+
+  // Create two tensors with identical shape and dtype, but different data.
+  Tensor af = tf.make(/*sizes=*/{2, 2}, /*data=*/{1.0, 2.099999, 0.0, -0.05});
+  Tensor bf = tf.make(/*sizes=*/{2, 2}, /*data=*/{1.099999, 2.0, 0.05, 0.0});
+
+  EXPECT_TENSOR_CLOSE_WITH_TOL(af, bf, 0.0, 0.1);
+
+  // Create two tensors with identical shape and dtype, but different data.
+  Tensor ad = td.make(/*sizes=*/{2, 2}, /*data=*/{1.099, 2.199, NAN, -9.0});
+  Tensor bd = td.make(/*sizes=*/{2, 2}, /*data=*/{1.0, 2.0, NAN, -10.0});
+
+  EXPECT_TENSOR_CLOSE_WITH_TOL(ad, bd, 0.1, 0.0);
+}
+
+TEST(TensorUtilTest, TensorsAreNotCloseWithTol) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Double> td;
+
+  // Create two tensors with identical shape and dtype, but different data.
+  Tensor af = tf.make(/*sizes=*/{3}, /*data=*/{1.00, NAN, -10.0});
+  Tensor bf = tf.make(/*sizes=*/{3}, /*data=*/{1.11, NAN, -10.0});
+
+  EXPECT_TENSOR_NOT_CLOSE_WITH_TOL(af, bf, 0.0, 0.1);
+
+  // Create two tensors with identical shape and dtype, but different data.
+  Tensor ad = td.make(/*sizes=*/{3}, /*data=*/{1.0, 0.0, -10.0});
+  Tensor bd = td.make(/*sizes=*/{3}, /*data=*/{1.0, 0.0, -9.0});
+
+  EXPECT_TENSOR_NOT_CLOSE_WITH_TOL(ad, bd, 0.1, 0.0);
+
+  // Create two tensors with identical shape and dtype, but different data.
+  ad = tf.make(/*sizes=*/{3}, /*data=*/{1.0, 2.0, 0.00001});
+  bd = tf.make(/*sizes=*/{3}, /*data=*/{1.0, 2.0, 0.0});
+
+  EXPECT_TENSOR_NOT_CLOSE_WITH_TOL(ad, bd, 0.1, 0.0);
+}
+
 //
 // Tests for shape-agnostic data equality.
 //
@@ -583,6 +625,48 @@ TEST(TensorUtilTest, TensorDataMismatched) {
   Tensor t_zero_dim = tf.make(/*size=*/{}, /*data=*/{0});
   Tensor t_empty = tf.make(/*size=*/{0}, /*data=*/{});
   EXPECT_TENSORS_DATA_NOT_CLOSE_OR_EQUAL(t_zero_dim, t_empty);
+}
+
+// Testing data closeness with tolerances
+
+TEST(TensorUtilTest, TensorDataCloseWithTol) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Double> td;
+
+  // Create two tensors with identical shape and dtype, but different data.
+  Tensor af = tf.make(/*sizes=*/{4, 1}, /*data=*/{1.0, 2.099, 0.0, -0.05});
+  Tensor bf = tf.make(/*sizes=*/{2, 2}, /*data=*/{1.099, 2.0, 0.05, 0.0});
+
+  EXPECT_TENSOR_DATA_CLOSE_WITH_TOL(af, bf, 0.0, 0.1);
+
+  // Create two tensors with identical shape and dtype, but different data.
+  Tensor ad = td.make(/*sizes=*/{2, 2}, /*data=*/{1.099, 2.199, NAN, -9.0});
+  Tensor bd = td.make(/*sizes=*/{4}, /*data=*/{1.0, 2.0, NAN, -10.0});
+
+  EXPECT_TENSOR_DATA_CLOSE_WITH_TOL(ad, bd, 0.1, 0.0);
+}
+
+TEST(TensorUtilTest, TensorDataNotCloseWithTol) {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Double> td;
+
+  // Create two tensors with identical shape and dtype, but different data.
+  Tensor af = tf.make(/*sizes=*/{3}, /*data=*/{1.00, 0.0, -10.0});
+  Tensor bf = tf.make(/*sizes=*/{3, 1}, /*data=*/{1.11, 0.0, -10.0});
+
+  EXPECT_TENSOR_DATA_NOT_CLOSE_WITH_TOL(af, bf, 0.0, 0.1);
+
+  // Create two tensors with identical shape and dtype, but different data.
+  Tensor ad = td.make(/*sizes=*/{2, 2}, /*data=*/{1.0, 0.0, -10.0, 0.0});
+  Tensor bd = td.make(/*sizes=*/{4}, /*data=*/{1.0, 0.0, -9.0, 0.0});
+
+  EXPECT_TENSOR_DATA_NOT_CLOSE_WITH_TOL(ad, bd, 0.1, 0.0);
+
+  // Create two tensors with identical shape and dtype, but different data.
+  ad = tf.make(/*sizes=*/{1, 4}, /*data=*/{1.0, 2.0, NAN, 0.00001});
+  bd = tf.make(/*sizes=*/{2, 2}, /*data=*/{1.0, 2.0, NAN, 0.0});
+
+  EXPECT_TENSOR_DATA_NOT_CLOSE_WITH_TOL(ad, bd, 0.1, 0.0);
 }
 
 //
