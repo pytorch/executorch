@@ -34,6 +34,7 @@ test_model() {
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
     buck2 run //examples/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
+    CMAKE_OUTPUT_DIR=cmake-out
     ./"${CMAKE_OUTPUT_DIR}"/executor_runner --model_path "./${MODEL_NAME}.pte"
   else
     echo "Invalid build tool $1. Only buck2 and cmake are supported atm"
