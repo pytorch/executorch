@@ -49,9 +49,9 @@ build_executorch_runner_cmake() {
   # Build executorch runtime using cmake
   rm -rf "${CMAKE_OUTPUT_DIR}" && mkdir "${CMAKE_OUTPUT_DIR}"
 
-  pushd "${CMAKE_OUTPUT_DIR}"
+  pushd "${CMAKE_OUTPUT_DIR}" || return
   cmake -DBUCK2=buck2 -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" ..
-  popd
+  popd || return
 
   if [ "$(uname)" == "Darwin" ]; then
     CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))

@@ -35,6 +35,7 @@ QUANT_MODEL_NAME_TO_MODEL = {
     name: MODEL_NAME_TO_MODEL[name] for name in ["linear", "add", "add_mul", "mv2"]
 }
 
+
 def quantize(model_name, model, example_inputs):
     """This is the official recommended flow for quantization in pytorch 2.0 export"""
     m = model.eval()
