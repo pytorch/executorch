@@ -365,6 +365,12 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         return super().deserialize_operator(serialized_target)
 
     # pyre-ignore
+    def deserialize_inputs_no_schema(self, serialized_node) -> Any:
+        return tuple(
+            self.deserialize_input(input.arg) for input in serialized_node.inputs
+        )
+
+    # pyre-ignore
     def deserialize_node(self, serialized_node: schema.Node, target: Callable) -> None:
         if target == "memory.alloc":
             args = self.deserialize_alloc_inputs(serialized_node.inputs)
@@ -426,6 +432,11 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
 
             fake_op.__name__ = target
             target = fake_op
+
+            args = self.deserialize_inputs_no_schema(serialized_node)
+            fx_node = self.graph.create_node("call_function", target, args, None, None)
+            self.deserialize_arbitrary_outputs(serialized_node, fx_node)
+
             return
 
         super().deserialize_node(serialized_node, target)
@@ -502,12 +513,20 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
     def deserialize_arbitrary_outputs(
         self, serialized_node: schema.Node, fx_node: torch.fx.Node
     ) -> None:
+        if len(serialized_node.outputs) == 0:
+            return
         # Single tensor return
-        if (
+        elif (
             len(serialized_node.outputs) == 1
             and serialized_node.outputs[0].type == "as_tensor"
         ):
             return self.sync_fx_node(serialized_node.outputs[0].as_tensor.name, fx_node)
+        elif len(serialized_node.outputs) == 1 and isinstance(
+            serialized_node.outputs[0].value,
+            (schema.SymIntArgument, schema.SymBoolArgument),
+        ):
+            self.sync_fx_node(serialized_node.outputs[0].value.as_name, fx_node)
+            return
 
         self.deserialize_multiple_outputs(serialized_node, fx_node)
 

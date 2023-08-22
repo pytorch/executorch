@@ -486,6 +486,8 @@ class FXOperatorGraph(OperatorGraphWithStats):
 
         for arg in args:
             if isinstance(arg, torch.fx.node.Node):
+                if arg.target == exir.memory.alloc:
+                    continue
                 arg_name = FXOperatorGraph._get_node_name(arg)
             elif isinstance(arg, (int, float, torch.dtype)):
                 # e.g. The "0" from node.args of squeeze_copy (mm_default, 0)
