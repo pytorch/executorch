@@ -118,22 +118,6 @@ class Module final {
     mem_to_delete_ = mem_to_delete;
   }
 
-  // TODO(T148052221): Only used to support the bundled input functions. Remove
-  // this method
-  ExecutionPlan& get_forward_execution_plan() {
-    return methods_["forward"]->execution_plan();
-  }
-
-  // TODO(T148052221): Only used to support the bundled input functions. Remove
-  // this method
-  void plan_execute() {
-    auto status = methods_["forward"]->execution_plan().execute();
-    THROW_IF_ERROR(
-        status,
-        "executing execution plan for method 'forward' failed with error: 0x%" PRIx32,
-        status);
-  }
-
  private:
   run_method_return_type run_method_internal(
       const std::string& method_name,
@@ -395,38 +379,6 @@ struct PyModule final {
         runtime_pool_size);
   }
 
-  void
-  load_bundled_input(PyBundledModule& m, size_t plan_idx, size_t testset_idx) {
-    const void* bundled_program_ptr = m.get_bundled_program_ptr();
-    Error status = util::LoadBundledInput(
-        module_->get_forward_execution_plan(),
-        bundled_program_ptr,
-        &m.get_bundled_input_allocator(),
-        plan_idx,
-        testset_idx);
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "LoadBundledInput failed with status %" PRIu32,
-        status);
-  }
-
-  void verify_result_with_bundled_expected_output(
-      PyBundledModule& m,
-      size_t plan_idx,
-      size_t testset_idx) {
-    const void* bundled_program_ptr = m.get_bundled_program_ptr();
-    Error status = util::VerifyResultWithBundledExpectedOutput(
-        module_->get_forward_execution_plan(),
-        bundled_program_ptr,
-        &m.get_bundled_input_allocator(),
-        plan_idx,
-        testset_idx);
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "Result verification failed with status %" PRIu32,
-        status);
-  }
-
   py::list run_method(const std::string& name, const py::sequence& pyinputs) {
     std::vector<EValue> inputs;
     const auto inputs_size = py::len(pyinputs);
@@ -445,12 +397,6 @@ struct PyModule final {
     return list;
   }
 
-  // TODO(T148052221): Only used to support the bundled input functions. Remove
-  // this method
-  void plan_execute() {
-    module_->plan_execute();
-  }
-
   py::list forward(const py::sequence& pyinputs) {
     return run_method("forward", pyinputs);
   }
@@ -465,32 +411,6 @@ struct PyModule final {
   std::unique_ptr<Module> module_;
   KeepAlive keep_alive_;
 };
-
-// TODO(T148052221): Remove this method
-void load_bundled_input(
-    ExecutionPlan& plan,
-    PyBundledModule& m,
-    size_t plan_idx,
-    size_t testset_idx) {
-  throw std::runtime_error(
-      "This method to load bundled will be deleted by end of H1 2023.\n"
-      "Please instead use module bound method, e.g.\n"
-      "m = _load_for_executorch_from_buffer\n"
-      "m.load_bundled_input(...)");
-}
-
-// TODO(T148052221): Remove this method
-void verify_result_with_bundled_expected_output(
-    ExecutionPlan& plan,
-    PyBundledModule& m,
-    size_t plan_idx,
-    size_t testset_idx) {
-  throw std::runtime_error(
-      "This method to verify result with bundled output will be deleted by end of H1 2023.\n"
-      "Please instead use module bound method, e.g.\n"
-      "m = _load_for_executorch_from_buffer\n"
-      "m.verify_result_with_bundled_expected_output(...)");
-}
 
 void create_profile_block(const std::string& name) {
   EXECUTORCH_PROFILE_CREATE_BLOCK(name.c_str());
@@ -531,10 +451,6 @@ void init_module_functions(py::module_& m) {
       &PyBundledModule::load_from_buffer,
       py::arg("buffer"),
       py::arg("non_const_pool_size") = kDEFAULT_BUNDLED_INPUT_POOL_SIZE);
-  m.def("_load_bundled_input", &load_bundled_input);
-  m.def(
-      "_verify_result_with_bundled_expected_output",
-      &verify_result_with_bundled_expected_output);
   m.def("_ops_names", &get_ops_names);
   m.def("_dump_profile_results", []() {
     prof_result_t prof_result;
@@ -547,22 +463,8 @@ void init_module_functions(py::module_& m) {
   m.def("_reset_profile_results", []() { EXECUTORCH_RESET_PROFILE_RESULTS(); });
 
   py::class_<PyModule>(m, "Module")
-      .def("load_bundled_input", &PyModule::load_bundled_input)
-      .def(
-          "verify_result_with_bundled_expected_output",
-          &PyModule::verify_result_with_bundled_expected_output)
-      .def("plan_execute", &PyModule::plan_execute)
       .def("run_method", &PyModule::run_method)
-      .def("forward", &PyModule::forward)
-      .def_property_readonly_static("FORWARD_METHOD_INDEX", [](py::object) {
-        return 0; // TODO(T152881296) remove this
-      });
-  ;
-
-  py::class_<ExecutionPlan>(m, "ExecutionPlanWrapper")
-      .def("inputs_size", &ExecutionPlan::inputs_size)
-      .def("outputs_size", &ExecutionPlan::outputs_size)
-      .def("init", &ExecutionPlan::init);
+      .def("forward", &PyModule::forward);
 
   py::class_<PyBundledModule>(m, "BundledModule");
 }
