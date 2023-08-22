@@ -11,7 +11,6 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/profiler.h>
-#include <executorch/util/memory_utils.h>
 #include <memory>
 
 namespace torch {
