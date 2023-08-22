@@ -30,17 +30,12 @@ install_pip_dependencies() {
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
   TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
   TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
-  TIMM_VERSION=$(cat ci_commit_pins/timm.txt)
 
   pip install --progress-bar off --pre \
     torch=="${TORCH_VERSION}.${NIGHTLY}" \
     torchaudio=="${TORCHAUDIO_VERSION}.${NIGHTLY}" \
     torchvision=="${TORCHVISION_VERSION}.${NIGHTLY}" \
     --index-url https://download.pytorch.org/whl/nightly/cpu
-
-  pip install --progress-bar off --pre \
-    timm==${TIMM_VERSION}
-
   popd || return
 }
 
