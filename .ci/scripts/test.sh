@@ -35,16 +35,13 @@ test_model() {
     buck2 run //examples/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
     CMAKE_OUTPUT_DIR=cmake-out
-    ./"${CMAKE_OUTPUT_DIR}"/executor_runner --model_path "./${MODEL_NAME}.pte"
+    ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./${MODEL_NAME}.pte"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
     exit 1
   fi
 }
 
-test_quantized_model() {
-  python -m examples.quantization.example --model_name="${MODEL_NAME}"
-}
 
 which python
 
@@ -53,7 +50,7 @@ echo "Testing ${MODEL_NAME} with ${BUILD_TOOL}..."
 test_model
 
 if [[ "${QUANTIZATION}" == true ]]; then
-  test_quantized_model
+  bash examples/quantization/test_quantize.sh "${MODEL_NAME}"
 else
   echo "The model ${MODEL_NAME} doesn't support quantization yet"
 fi
