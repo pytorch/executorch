@@ -623,24 +623,6 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
 
         self.lower_and_test_with_partitioner(mul_module, model_inputs)
 
-    def test_xnnpack_backend_sub(self):
-        class Sub(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.sub = torch.sub
-
-            def forward(self, x, y):
-                return self.sub(x, y)
-
-        module = Sub()
-        M = torch.randn(2, 3)
-        N = torch.randn(2, 3)
-        model_inputs = (
-            M,
-            N,
-        )
-        self.lower_and_test_with_partitioner(module, model_inputs)
-
     def test_xnnpack_backend_floor(self):
         model_inputs = (torch.randn(1, 3, 3),)
         self.lower_and_test_with_partitioner(torch.floor, model_inputs)

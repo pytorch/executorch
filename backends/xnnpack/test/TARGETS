@@ -116,6 +116,7 @@ python_unittest(
     name = "test_xnnpack_ops",
     srcs = [
         "ops/add.py",
+        "ops/sub.py",
     ],
     deps = [
         "//caffe2:torch",
