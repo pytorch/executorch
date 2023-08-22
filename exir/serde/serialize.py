@@ -34,6 +34,7 @@ from executorch.exir.serde.schema import (
     CompileSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
 )
+from torch._export.serde.serialize import SerializeError
 from torch.fx.experimental import symbolic_shapes
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -451,6 +452,24 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
             res["debug_handle"] = int(debug_handle)
 
         return res
+
+    def deserialize_graph_output(self, output: schema.Argument) -> torch.fx.Node:
+        if isinstance(output.value, schema.TensorArgument):
+            if output.value.name in self.state_dict:  # TODO(T157676982)
+                val = self.state_dict[output.value.name]
+                setattr(self.module, output.value.name, val)
+                node = self.graph.create_node(
+                    "get_attr",
+                    output.value.name,
+                    name=output.value.name,
+                )
+                node.meta = {"val": ""}
+                return node
+            return self.serialized_name_to_node[output.value.name]
+        elif isinstance(output.value, (schema.SymIntArgument, schema.SymBoolArgument)):
+            return self.serialized_name_to_node[output.value.as_name]
+        else:
+            raise SerializeError(f"Unable to deserialize output node {output}")
 
     # pyre-ignore
     def deserialize_alloc_inputs(self, serialized_inputs: List[schema.NamedArgument]):
