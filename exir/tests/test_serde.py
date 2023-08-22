@@ -175,3 +175,20 @@ class TestSerde(unittest.TestCase):
         edge = exir.capture(m, inputs, exir.CaptureConfig()).to_edge()
         edge_new = deserialize(*serialize(edge.exported_program))
         self.check_ep(edge, edge_new, inputs)
+
+    # Get rid of this test once parameters are lifted by default.
+    def test_return_get_attr_as_outputs(self) -> None:
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.a = torch.ones([1, 1])
+
+            def forward(self, x):
+                return self.a
+
+        m = Model()
+        inputs = (torch.ones([1, 1]),)
+
+        edge = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
+        edge_new = deserialize(*serialize(edge.exported_program))
+        self.check_ep(edge, edge_new, inputs)
