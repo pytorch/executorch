@@ -1,5 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library", "executorch_generated_lib")
+load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library", "executorch_generated_lib", "exir_custom_ops_aot_lib")
 
 def define_common_targets():
     runtime.export_file(
@@ -13,6 +13,17 @@ def define_common_targets():
         name = "all_quantized_ops",
         ops_schema_yaml_target = ":quantized.yaml",
         define_static_targets = True,
+    )
+
+    # lib used to register quantized ops into EXIR
+    exir_custom_ops_aot_lib(
+        name = "aot_lib",
+        yaml_target = ":quantized.yaml",
+        visibility = ["//executorch/..."],
+        kernels = [":quantized_operators_aten"],
+        deps = [
+            ":all_quantized_ops",
+        ],
     )
 
     for aten_mode in (True, False):

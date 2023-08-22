@@ -123,6 +123,11 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         deps = [
             "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
         ] + deps,
+        # WARNING: using a deprecated API to avoid being built into a shared
+        # library. In the case of dynamically loading so library we don't want
+        # it to depend on other so libraries because that way we have to
+        # specify library directory path.
+        force_static = True,
         # link_whole is necessary because the operators register themselves
         # via static initializers that run at program startup.
         # @lint-ignore BUCKLINT link_whole

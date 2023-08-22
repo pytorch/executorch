@@ -25,8 +25,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-# TODO: maybe move this to examples/export/utils.py?
-# from ..export.export_example import export_to_ff
+from ..export.export_example import export_to_pte
 
 from ..models import MODEL_NAME_TO_MODEL
 
@@ -51,8 +50,7 @@ def quantize(model_name, model, example_inputs):
     m = convert_pt2e(m)
     print("quantized model:", m)
     # make sure we can export to flat buffer
-    # Note: this is not working yet due to missing out variant ops for quantize_per_tensor/dequantize_per_tensor ops
-    # aten = export_to_ff(model_name, m, copy.deepcopy(example_inputs))
+    export_to_pte(model_name, m, copy.deepcopy(example_inputs))
 
 
 def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_inputs):
@@ -114,9 +112,16 @@ if __name__ == "__main__":
         default=False,
         help="flag for verifying XNNPACKQuantizer against fx graph mode quantization",
     )
+    parser.add_argument(
+        "-s",
+        "--so_library",
+        required=False,
+        help="shared library for quantized operators",
+    )
 
     args = parser.parse_args()
-
+    if args.so_library:
+        torch.ops.load_library(args.so_library)
     if not args.verify and args.model_name not in QUANT_MODEL_NAME_TO_MODEL:
         raise RuntimeError(
             f"Model {args.model_name} is not a valid name. or not quantizable right now, "
