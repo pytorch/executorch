@@ -108,6 +108,12 @@ def gen_inception_v3_model_and_inputs() -> Tuple[torch.nn.Module, Any]:
     return InceptionV3Model.get_model(), InceptionV3Model.get_example_inputs()
 
 
+def gen_inception_v4_model_and_inputs() -> Tuple[torch.nn.Module, Any]:
+    from ..models.inception_v4 import InceptionV4Model
+
+    return InceptionV4Model.get_model(), InceptionV4Model.get_example_inputs()
+
+
 MODEL_NAME_TO_MODEL = {
     "mul": lambda: (MulModule(), MulModule.get_example_inputs()),
     "linear": lambda: (LinearModule(), LinearModule.get_example_inputs()),
@@ -118,4 +124,5 @@ MODEL_NAME_TO_MODEL = {
     "vit": gen_torchvision_vit_model_and_inputs,
     "w2l": gen_wav2letter_model_and_inputs,
     "ic3": gen_inception_v3_model_and_inputs,
+    "ic4": gen_inception_v4_model_and_inputs,
 }
