@@ -9,6 +9,7 @@ python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/examples/models/inception_v3:ic3_export",
+        "//executorch/examples/models/inception_v4:ic4_export",
         "//executorch/examples/models/mobilenet_v2:mv2_export",
         "//executorch/examples/models/mobilenet_v3:mv3_export",
         "//executorch/examples/models/torchvision_vit:vit_export",
