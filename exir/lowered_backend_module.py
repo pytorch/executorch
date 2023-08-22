@@ -6,7 +6,8 @@
 
 # pyre-strict
 
-from typing import List, Tuple
+import copy
+from typing import Dict, List, Tuple, Union
 
 import torch
 import torch.utils._pytree as pytree
@@ -163,6 +164,53 @@ def arrange_graph_placeholders(
     return gm
 
 
+def _get_new_signature(
+    original_program: ExportedProgram, gm: torch.fx.GraphModule
+) -> Tuple[ExportGraphSignature, Dict[str, Union[torch.Tensor, torch.nn.Parameter]]]:
+    old_signature = original_program.graph_signature
+
+    new_signature = ExportGraphSignature(
+        parameters=[],
+        buffers=[],
+        user_inputs=[],
+        user_outputs=[],
+        inputs_to_parameters={},
+        inputs_to_buffers={},
+        buffers_to_mutate={},
+        backward_signature=None,
+    )
+    new_state_dict = {}
+
+    for node in gm.graph.nodes:
+        if node.op == "placeholder":
+            if node.name in old_signature.inputs_to_parameters:
+                parameter_name = old_signature.inputs_to_parameters[node.name]
+                # add param to graph signature
+                new_signature.parameters.append(parameter_name)
+                new_signature.inputs_to_parameters[node.name] = parameter_name
+
+                # add param to state_dict
+                new_state_dict[parameter_name] = original_program.state_dict[
+                    parameter_name
+                ]
+            elif node.name in old_signature.inputs_to_buffers:
+                buffer_name = old_signature.inputs_to_buffers[node.name]
+                # add buffer to graph signature
+                new_signature.buffers.append(buffer_name)
+                new_signature.inputs_to_buffers[node.name] = buffer_name
+
+                # add param to new_state_dict
+                new_state_dict[buffer_name] = original_program.state_dict[buffer_name]
+            else:
+                # not param or buffer then user input
+                new_signature.user_inputs.append(node.name)
+        if node.op == "output":
+            for output in node.all_input_nodes:
+                new_signature.user_outputs.append(output.name)
+
+    return new_signature, new_state_dict
+
+
 def create_exported_program_from_submodule(
     submodule: torch.fx.GraphModule,
     owning_program: ExportedProgram,
@@ -182,47 +230,10 @@ def create_exported_program_from_submodule(
     # Arrange the submodule's placeholders in order
     submodule = arrange_graph_placeholders(submodule, owning_program)
 
-    subgraph_signature = ExportGraphSignature(
-        parameters=[],
-        buffers=[],
-        user_inputs=[],
-        user_outputs=[],
-        inputs_to_parameters={},
-        inputs_to_buffers={},
-        buffers_to_mutate={},
-        backward_signature=None,
+    # Get updated graph signature
+    subgraph_signature, subgraph_state_dict = _get_new_signature(
+        owning_program, submodule
     )
-    toplevel_gs = owning_program.graph_signature
-    subgraph_state_dict = {}
-
-    for node in submodule.graph.nodes:
-        if node.op == "placeholder":
-            if node.name in toplevel_gs.inputs_to_parameters:
-                parameter_name = toplevel_gs.inputs_to_parameters[node.name]
-                # add param to graph signature
-                subgraph_signature.parameters.append(parameter_name)
-                subgraph_signature.inputs_to_parameters[node.name] = parameter_name
-
-                # add param to subgraph_state_dict
-                subgraph_state_dict[parameter_name] = owning_program.state_dict[
-                    parameter_name
-                ]
-            elif node.name in toplevel_gs.inputs_to_buffers:
-                buffer_name = toplevel_gs.inputs_to_buffers[node.name]
-                # add buffer to graph signature
-                subgraph_signature.buffers.append(buffer_name)
-                subgraph_signature.inputs_to_buffers[node.name] = buffer_name
-
-                # add param to subgraph_state_dict
-                subgraph_state_dict[buffer_name] = owning_program.state_dict[
-                    buffer_name
-                ]
-            else:
-                # not param or buffer then user input
-                subgraph_signature.user_inputs.append(node.name)
-        if node.op == "output":
-            for output in node.all_input_nodes:
-                subgraph_signature.user_outputs.append(output.name)
 
     return ExportedProgram(
         root=submodule,
@@ -230,8 +241,7 @@ def create_exported_program_from_submodule(
         graph_signature=subgraph_signature,
         call_spec=CallSpec(None, None),
         state_dict=subgraph_state_dict,
-        # TODO(T159524653): fill in range and equality constraints
-        range_constraints={},
+        range_constraints=copy.deepcopy(owning_program.range_constraints),
         equality_constraints=[],
         module_call_graph=[],
     )

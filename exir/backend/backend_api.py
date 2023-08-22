@@ -23,6 +23,7 @@ from executorch.exir.delegate import executorch_call_delegate, get_lowered_modul
 
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.lowered_backend_module import (
+    _get_new_signature,
     create_exported_program_from_submodule,
     create_submodule_from_nodes,
     LoweredBackendModule,
@@ -287,12 +288,17 @@ def _(
         tagged_graph_module, partitioner_instance, edge_program
     )
 
+    # TODO(angelayi): Update this signature in a less manual way (maybe through
+    # retracing)
+    new_signature, new_state_dict = _get_new_signature(
+        edge_program, tagged_graph_module
+    )
     return ExportedProgram(
         tagged_graph_module,
         tagged_graph_module.graph,
-        copy.deepcopy(edge_program.graph_signature),
+        new_signature,
         copy.deepcopy(edge_program.call_spec),
-        edge_program.state_dict,
+        new_state_dict,
         copy.deepcopy(edge_program.range_constraints),
         copy.deepcopy(edge_program.equality_constraints),
         copy.deepcopy(edge_program.module_call_graph),
