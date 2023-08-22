@@ -50,3 +50,16 @@ def define_common_targets():
         define_static_target = True,
         **get_oss_build_kwargs()
     )
+
+    # executor runner for XNNPACK Backend and portable kernels.
+    runtime.cxx_binary(
+        name = "xnn_executor_runner",
+        srcs = [],
+        deps = [
+            ":executor_runner_lib",
+            "//executorch/backends/xnnpack:xnnpack_backend",
+            "//executorch/kernels/portable:generated_lib_all_ops",
+        ] + custom_ops_lib,
+        define_static_target = True,
+        **get_oss_build_kwargs()
+    )
