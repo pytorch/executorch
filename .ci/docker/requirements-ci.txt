@@ -3,6 +3,7 @@ numpy==1.25.2
 PyYAML==6.0.1
 ruamel.yaml==0.17.32
 sympy==1.12
+timm==0.6.13
 tomli==2.0.1
 zstd==1.5.5.1
 
