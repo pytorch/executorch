@@ -7,7 +7,9 @@
  */
 
 #include <executorch/backends/xnnpack/runtime/XNNExecutor.h>
+#ifdef ENABLE_DYNAMIC_QUANTIZATION
 #include <executorch/backends/xnnpack/runtime/utils/utils.h>
+#endif
 
 namespace torch {
 namespace executor {
@@ -17,6 +19,7 @@ namespace delegate {
 Error XNNExecutor::set_external_input(uint32_t id, Tensor* input) {
   auto qinput_pair = qinputs_.find(id);
   if (qinput_pair != qinputs_.end()) {
+#ifdef ENABLE_DYNAMIC_QUANTIZATION
     auto qinput = qinput_pair->second;
     // dq the input and copy it in to qinput
     float input_min, input_max;
@@ -60,6 +63,10 @@ Error XNNExecutor::set_external_input(uint32_t id, Tensor* input) {
         {static_cast<float>(input_qparam.scale),
          static_cast<int8_t>(input_qparam.zero_point)},
         batch_size});
+#else
+    ET_LOG(Error, "Dynamic Quantization is not supported");
+    return Error::NotSupported;
+#endif
   } else {
     externals_.emplace_back(xnn_external_value{id, input->mutable_data_ptr()});
   }
