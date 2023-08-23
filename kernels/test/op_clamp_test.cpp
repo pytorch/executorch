@@ -303,12 +303,12 @@ TEST(OpClampOutTest, ByteTensorFloatingPointClampDies) {
 
 #ifndef USE_ATEN_LIB
 TEST(OpClampOutTest, IntTensorTooSmallClampDies) {
-  // Cannot be represented by a uint32_t.
+  // Cannot be represented by a int32_t.
   expect_bad_clamp_value_dies<ScalarType::Int>(-2147483649);
 }
 
 TEST(OpClampOutTest, IntTensorTooLargeClampDies) {
-  // Cannot be represented by a uint32_t.
+  // Cannot be represented by a int32_t.
   expect_bad_clamp_value_dies<ScalarType::Int>(2147483648);
 }
 #endif
