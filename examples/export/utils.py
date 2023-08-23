@@ -12,15 +12,10 @@ import executorch.exir as exir
 # and when evaulating shape, it doesnt seem that we presenting them with shape env
 # that contain those variables.
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
-_EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
-    _check_ir_validity=False,
-)
 
 
 def export_to_edge(model, example_inputs):
     m = model.eval()
-    edge = exir.capture(m, example_inputs, _CAPTURE_CONFIG).to_edge(
-        _EDGE_COMPILE_CONFIG
-    )
+    edge = exir.capture(m, example_inputs, _CAPTURE_CONFIG).to_edge()
     print("Exported graph:\n", edge.exported_program.graph)
     return edge
