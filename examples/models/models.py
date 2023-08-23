@@ -114,8 +114,14 @@ def gen_inception_v4_model_and_inputs() -> Tuple[torch.nn.Module, Any]:
     return InceptionV4Model.get_model(), InceptionV4Model.get_example_inputs()
 
 
+def gen_resnet18_model_and_inputs() -> Tuple[torch.nn.Module, Any]:
+    from ..models.resnet import ResNet18Model
+
+    return ResNet18Model.get_model(), ResNet18Model.get_example_inputs()
+
+
 def gen_resnet50_model_and_inputs() -> Tuple[torch.nn.Module, Any]:
-    from ..models.resnet50 import ResNet50Model
+    from ..models.resnet import ResNet50Model
 
     return ResNet50Model.get_model(), ResNet50Model.get_example_inputs()
 
@@ -131,5 +137,6 @@ MODEL_NAME_TO_MODEL = {
     "w2l": gen_wav2letter_model_and_inputs,
     "ic3": gen_inception_v3_model_and_inputs,
     "ic4": gen_inception_v4_model_and_inputs,
+    "resnet18": gen_resnet18_model_and_inputs,
     "resnet50": gen_resnet50_model_and_inputs,
 }
