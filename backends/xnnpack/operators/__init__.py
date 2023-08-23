@@ -30,6 +30,7 @@ from . import (  # noqa
     op_minimum,
     op_multiply,
     op_negate,
+    op_permute,
     op_prelu,
     op_quantize_per_tensor,
     op_relu,
@@ -42,7 +43,6 @@ from . import (  # noqa
     op_squeeze,
     op_static_constant_pad,
     op_static_resize_bilinear_2d,
-    op_static_transpose,
     op_sub,
     op_to_copy,
 )
