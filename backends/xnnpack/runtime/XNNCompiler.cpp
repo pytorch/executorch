@@ -1517,6 +1517,7 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
   if (!executor->qinputs_.empty() && flatbuffer_graph->xnodes()->size() > 0 &&
       flatbuffer_graph->xnodes()->Get(0)->xnode_union_type() ==
           fb_xnnpack::XNodeUnion::XNNFullyConnected) {
+#ifdef ENABLE_DYNAMIC_QUANTIZATION
     // This delegate is for DQLinear which supports dynamic input shapes
     if (executor->getNumInputs() < 1 || executor->getNumOutputs() != 1) {
       ET_LOG(
@@ -1525,6 +1526,10 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
       return Error::NotSupported;
     }
     executor->setNeedsResizeOutput();
+#else
+    ET_LOG(Error, "DQ Linear is not supported");
+    return Error::NotSupported;
+#endif
   }
 
   return err;
