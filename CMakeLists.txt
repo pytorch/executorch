@@ -53,6 +53,11 @@ option(
   "Register whether custom op 1 (my_ops::mul3) or custom op 2 (my_ops::mul4) or no custom op at all."
   OFF)
 
+# Option to register quantized ops with quantized kernels. See
+# kernels/quantized/CMakeLists.txt
+option(REGISTER_QUANTIZED_OPS
+       "Register quantized ops defined in kernels/quantized/" OFF)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -264,13 +269,17 @@ endif()
 #
 # executor_runner: A simple commandline tool that loads and runs a program file.
 #
-
 set(_libs executorch portable_kernels_bindings gflags)
 
 # Generate custom_ops_lib based on REGISTER_EXAMPLE_CUSTOM_OP
 if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 1 OR REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/custom_ops)
   list(APPEND _libs custom_ops_lib)
+endif()
+
+# Generate lib to register quantized ops
+if(REGISTER_QUANTIZED_OPS)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
 endif()
 
 # ios can only build library but not binary
