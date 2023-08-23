@@ -3,8 +3,10 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 runtime.python_binary(
     name = "example",
     main_src = "example.py",
+    preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
         "//caffe2:torch",
+        "//executorch/examples/export:export_example",
         "//executorch/examples/models:models",
     ],
 )
