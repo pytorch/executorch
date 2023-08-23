@@ -345,7 +345,7 @@ class TestBackends(unittest.TestCase):
     def test_backend_with_compiler_out_of_range(self, extract_segments: bool):
         with self.assertRaisesRegex(
             RuntimeError,
-            "initializing executor for method forward failed with error 0x:12",
+            "loading method forward failed with error 0x12",
         ):
             self.run_model_in_unsupported_backend(extract_segments=extract_segments)
 
