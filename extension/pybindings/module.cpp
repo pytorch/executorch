@@ -73,23 +73,23 @@ class Module final {
         loader_.get(), Program::Verification::InternalConsistency);
     THROW_IF_ERROR(
         program.error(),
-        "Failed to deserialize program: 0x%" PRIx32,
+        "loading program failed with error: 0x%" PRIx32,
         program.error());
     program_ = std::make_unique<Program>(std::move(program.get()));
     for (size_t i = 0; i < program_->num_methods(); ++i) {
-      auto name = program_->get_method_name(i);
+      auto name = program_->get_method_name(i).get();
       // It's safe to use the same memory manager for all modules because
       // we can guarantee that only one will be executing at a time.
       // Everything in this module runs on a single thread.
-      auto executor =
-          std::make_unique<Executor>(program_.get(), memory_manager);
-      auto status = executor->init_execution_plan(name.get());
+      Result<Method> method = program_->load_method(name, memory_manager);
       THROW_IF_ERROR(
-          status,
-          "initializing executor for method %s failed with error 0x:%" PRIx32,
-          name.get(),
-          status);
-      methods_.insert({std::string(name.get()), std::move(executor)});
+          method.error(),
+          "loading method %s failed with error 0x%" PRIx32,
+          name,
+          method.error());
+      methods_.insert(
+          {std::string(name),
+           std::make_unique<Method>(std::move(method.get()))});
     }
   }
 
@@ -122,13 +122,13 @@ class Module final {
   run_method_return_type run_method_internal(
       const std::string& method_name,
       run_method_inputs_type args) {
-    auto& plan = methods_[method_name]->execution_plan();
+    auto& method = methods_[method_name];
     exec_aten::ArrayRef<EValue> input_evalue_list(args.data(), args.size());
 
-    Error set_inputs_status = plan.set_inputs(input_evalue_list);
+    Error set_inputs_status = method->set_inputs(input_evalue_list);
     THROW_IF_ERROR(
         set_inputs_status,
-        "plan.set_inputs() for method '%s' failed with error 0x%" PRIx32,
+        "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
         method_name.c_str(),
         set_inputs_status);
 
@@ -145,19 +145,19 @@ class Module final {
     c10::impl::ExcludeDispatchKeyGuard no_autograd(
         c10::autograd_dispatch_keyset);
 #endif
-    Error execute_status = plan.execute();
+    Error execute_status = method->execute();
     THROW_IF_ERROR(
         execute_status,
-        "execution_plan().execute() failed with error 0x%" PRIx32,
+        "method->execute() failed with error 0x%" PRIx32,
         execute_status);
     // process outputs
-    std::vector<EValue> result(plan.outputs_size());
+    std::vector<EValue> result(method->outputs_size());
 
     Error get_outputs_status =
-        plan.get_outputs(result.data(), plan.outputs_size());
+        method->get_outputs(result.data(), method->outputs_size());
     THROW_IF_ERROR(
         get_outputs_status,
-        "plan.get_outputs() for method '%s' failed with error 0x%" PRIx32,
+        "method->get_outputs() for method '%s' failed with error 0x%" PRIx32,
         method_name.c_str(),
         get_outputs_status);
 
@@ -165,9 +165,9 @@ class Module final {
   }
 
   std::shared_ptr<char> mem_to_delete_; // loader_ may point to this.
-  std::shared_ptr<DataLoader> loader_; // program_ points to this.
-  std::unique_ptr<const Program> program_; // executor_ points to this.
-  std::unordered_map<std::string, std::unique_ptr<Executor>> methods_;
+  std::unique_ptr<DataLoader> loader_; // program_ points to this.
+  std::unique_ptr<const Program> program_; // methods_ entries points to this.
+  std::unordered_map<std::string, std::unique_ptr<Method>> methods_;
 };
 
 inline std::unique_ptr<Module> load_from_buffer(
