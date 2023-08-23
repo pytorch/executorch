@@ -71,7 +71,6 @@ def define_common_targets():
             ":dynamic_quant_utils",  # TODO Use (1) portable for choose_qparams(), (2) xnnpack for quantize_per_tensor(),
             "//executorch/runtime/backend:backend_registry",
             "//executorch/backends/xnnpack/threadpool:threadpool",
-            "//executorch/util:memory_utils",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         # XnnpackBackend.cpp needs to compile with executor as whole

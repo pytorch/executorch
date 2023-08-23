@@ -10,7 +10,6 @@
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/platform/compiler.h>
-#include <executorch/util/system.h>
 #include <memory>
 #include <string>
 
@@ -51,22 +50,6 @@ __ET_NODISCARD Error read_file_content(
  * @returns The pointer to file data, if read successfully. Otherwise null_ptr.
  */
 __ET_DEPRECATED std::shared_ptr<char> read_file_content(const char* name);
-
-#if defined(ET_MMAP_SUPPORTED)
-/**
- * Memory map contents of a file.
- *
- * @param[in] file_name The name of the file to be read.
- * @param[out] file_data shared_ptr<char>, the file data, if read successfully.
- *
- * @returns Error::Ok if the file is read successfully, file_data point to the
- * data. Other values on failure.
- */
-__ET_NODISCARD Error mmap_file_content(
-    const char* file_name,
-    std::shared_ptr<char>* file_data,
-    size_t* file_length);
-#endif
 
 } // namespace util
 } // namespace executor

@@ -16,7 +16,6 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/profiler.h>
-#include <executorch/util/memory_utils.h>
 #include <pytorch_qnnpack.h>
 #include <qnnpack_func.h>
 #include <string>
