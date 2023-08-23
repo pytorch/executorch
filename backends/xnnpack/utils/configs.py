@@ -36,4 +36,8 @@ def get_xnnpack_capture_config(dynamic_shape=False, enable_aot: Optional[bool] =
     if enable_aot is None:
         return CaptureConfig(enable_dynamic_shape=dynamic_shape)
     else:
-        return CaptureConfig(enable_dynamic_shape=dynamic_shape, enable_aot=enable_aot)
+        return CaptureConfig(
+            enable_dynamic_shape=dynamic_shape,
+            enable_aot=enable_aot,
+            _unlift=enable_aot,
+        )
