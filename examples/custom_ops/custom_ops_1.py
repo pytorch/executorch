@@ -29,8 +29,8 @@ my_op_lib.define(
 
 @impl(my_op_lib, "mul3.out", dispatch_key="CompositeExplicitAutograd")
 def mul3_out_impl(a: torch.Tensor, *, out: torch.Tensor) -> torch.Tensor:
-    a.mul_(3)
     out.copy_(a)
+    out.mul_(3)
     return out
 
 

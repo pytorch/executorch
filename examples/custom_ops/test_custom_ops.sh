@@ -35,7 +35,7 @@ test_cmake_custom_op_1() {
     && mkdir cmake-out \
     && cd cmake-out \
     && cmake -DBUCK2=buck2 \
-        -DREGISTER_EXAMPLE_CUSTOM_OP_1=ON \
+        -DREGISTER_EXAMPLE_CUSTOM_OP=1 \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
   echo 'Building executor_runner'
@@ -86,7 +86,7 @@ test_cmake_custom_op_2() {
     && mkdir cmake-out \
     && cd cmake-out \
     && cmake -DBUCK2=buck2 \
-      -DREGISTER_EXAMPLE_CUSTOM_OP_2=ON \
+      -DREGISTER_EXAMPLE_CUSTOM_OP=2 \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 

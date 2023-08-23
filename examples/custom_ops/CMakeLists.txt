@@ -33,117 +33,37 @@ if(NOT TORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
-# Command to generate selected_operators.yaml from custom_ops.yaml.
-set(_oplist_yaml ${CMAKE_CURRENT_BINARY_DIR}/selected_operators.yaml)
-file(GLOB_RECURSE _codegen_tools_srcs "${EXECUTORCH_ROOT}/codegen/tools/*.py")
-file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
-file(GLOB_RECURSE _torchgen_srcs "${TORCH_ROOT}/torchgen/*.py")
-
-# Selective build. If we want to register all ops in custom_ops.yaml, do
-# `--ops_schema_yaml_path=${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml)` instead of
-# `root_ops`
-set(_gen_oplist_command "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_oplist
-                        --output_path=${_oplist_yaml})
-
-if(REGISTER_EXAMPLE_CUSTOM_OP_2)
-  list(APPEND _gen_oplist_command --root_ops="my_ops::mul4.out")
-elseif(REGISTER_EXAMPLE_CUSTOM_OP_1)
-  list(APPEND _gen_oplist_command --root_ops="my_ops::mul3.out")
+# Generate C++ bindings to register kernels into both PyTorch (for AOT) and
+# Executorch (for runtime).
+if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 1)
+  gen_selected_ops("" "my_ops::mul3.out" "")
+elseif(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
+  gen_selected_ops("" "my_ops::mul4.out" "")
 endif()
+# Expect gen_selected_ops output file to be selected_operators.yaml
+generate_bindings_for_kernels("" ${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml)
+message("Generated files ${gen_command_sources}")
 
-# Command to codegen C++ wrappers to register custom ops to both PyTorch and
-# Executorch runtime.
-set(_gen_command
-    "${PYTHON_EXECUTABLE}" -m torchgen.gen_executorch
-    --source-path=${EXECUTORCH_ROOT}/codegen
-    --install-dir=${CMAKE_CURRENT_BINARY_DIR}
-    --tags-path=${TORCH_ROOT}/aten/src/ATen/native/tags.yaml
-    --aten-yaml-path=${TORCH_ROOT}/aten/src/ATen/native/native_functions.yaml
-    --op-selection-yaml-path=${_oplist_yaml}
-    --custom-ops-yaml-path=${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml)
-
-set(_gen_command_sources
-    ${CMAKE_CURRENT_BINARY_DIR}/RegisterCodegenUnboxedKernelsEverything.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/RegisterCPUCustomOps.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/RegisterSchema.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/Functions.h
-    ${CMAKE_CURRENT_BINARY_DIR}/NativeFunctions.h
-    ${CMAKE_CURRENT_BINARY_DIR}/CustomOpsNativeFunctions.h)
-message(STATUS "Generating selected operator list ${_gen_oplist_command}")
-
-add_custom_command(
-  COMMENT "Generating selected_operators.yaml for custom ops"
-  OUTPUT ${_oplist_yaml}
-  COMMAND ${_gen_oplist_command}
-  DEPENDS ${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml ${_codegen_tools_srcs}
-  WORKING_DIRECTORY ${EXECUTORCH_ROOT})
-
-add_custom_command(
-  COMMENT "Generating code for custom operator registration"
-  OUTPUT ${_gen_command_sources}
-  COMMAND ${_gen_command}
-  DEPENDS ${_oplist_yaml} ${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml
-          ${_codegen_templates} ${_torchgen_srcs}
-  WORKING_DIRECTORY ${EXECUTORCH_ROOT})
 # Prepare for C++ libraries.
 
-# 1. C++ library to register custom ops into PyTorch.
-if(REGISTER_EXAMPLE_CUSTOM_OP_2)
-  add_library(
-    custom_ops_aot_lib SHARED
-    ${CMAKE_CURRENT_BINARY_DIR}/RegisterCPUCustomOps.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/RegisterSchema.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/CustomOpsNativeFunctions.h
-    ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2.cpp # register my_ops::mul4
-    ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2_out.cpp # register my_ops::mul4.out
+# C++ library to register custom ops into PyTorch.
+if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
+  set(custom_ops_kernel_sources
+      ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2.cpp # register my_ops::mul4
+      ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2_out.cpp # register
+      # my_ops::mul4.out)
   )
-  # Find `Torch`.
-  find_package(Torch REQUIRED)
-  # ATen mode is on
-  target_compile_definitions(custom_ops_aot_lib PRIVATE USE_ATEN_LIB=1)
+  gen_custom_ops_aot_lib("custom_ops_aot_lib" "${custom_ops_kernel_sources}")
   target_include_directories(custom_ops_aot_lib
                              PUBLIC ${_common_include_directories})
-  include_directories(${TORCH_INCLUDE_DIRS})
-
-  target_link_libraries(custom_ops_aot_lib PRIVATE torch executorch)
-
-  # Ensure that the load-time constructor functions run. By default, the linker
-  # would remove them since there are no other references to them.
-  if(APPLE)
-    macos_kernel_link_options("custom_ops_aot_lib")
-  else()
-    kernel_link_options("custom_ops_aot_lib")
-  endif()
 endif()
 
-# 1. C++ library to register custom ops into Executorch runtime.
-add_library(custom_ops_lib)
-target_sources(
-  custom_ops_lib
-  PRIVATE
-    ${CMAKE_CURRENT_BINARY_DIR}/RegisterCodegenUnboxedKernelsEverything.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/Functions.h
-    ${CMAKE_CURRENT_BINARY_DIR}/NativeFunctions.h
-    ${CMAKE_CURRENT_BINARY_DIR}/CustomOpsNativeFunctions.h)
-if(REGISTER_EXAMPLE_CUSTOM_OP_1)
-  target_sources(custom_ops_lib
-                 PRIVATE ${CMAKE_CURRENT_LIST_DIR}/custom_ops_1_out.cpp)
-elseif(REGISTER_EXAMPLE_CUSTOM_OP_2)
-  target_sources(custom_ops_lib
-                 PRIVATE ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2_out.cpp)
+# C++ library to register custom ops into Executorch runtime.
+if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 1)
+  set(kernel_sources ${CMAKE_CURRENT_LIST_DIR}/custom_ops_1_out.cpp)
+elseif(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
+  set(kernel_sources ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2_out.cpp)
 endif()
-
-target_link_libraries(custom_ops_lib PRIVATE executorch)
-
-# Ensure that the load-time constructor functions run. By default, the linker
-# would remove them since there are no other references to them.
-if((CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
-   OR (APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
-  target_link_options(custom_ops_lib INTERFACE
-                      "-Wl,-force_load,$<TARGET_FILE:custom_ops_lib>")
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-  target_link_options(
-    custom_ops_lib INTERFACE
-    "-Wl,--whole-archive,$<TARGET_FILE:custom_ops_lib>,--no-whole-archive")
-endif()
+gen_operators_lib("custom_ops_lib" "${kernel_sources}")
