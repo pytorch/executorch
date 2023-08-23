@@ -6,7 +6,7 @@ MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB = [
     "//executorch/kernels/portable:generated_lib",
 ]
 
-MODULE_DEPS = [
+PORTABLE_MODULE_DEPS = [
     "//caffe2:ATen",
     "//caffe2:torch",
     "//caffe2:torch_extension",
@@ -18,10 +18,27 @@ MODULE_DEPS = [
     "//executorch/util:bundled_program_verification",
     "//executorch/extension/data_loader:buffer_data_loader",
     "//executorch/extension/data_loader:mmap_data_loader",
+    "//executorch/extension/memory_allocator:malloc_memory_allocator",
     "//executorch/util:test_memory_config",
     "//executorch/util:util",
     "//executorch/runtime/executor/test:test_backend_compiler_lib",
 ] + get_all_cpu_backend_targets()
+
+ATEN_MODULE_DEPS = [
+    "//executorch/runtime/kernel:operator_registry",
+    "//executorch/runtime/executor:executor_aten",
+    "//executorch/runtime/core/exec_aten:lib",
+    "//executorch/schema:bundled_program_schema",
+    "//executorch/schema:program",
+    "//executorch/extension/data_loader:buffer_data_loader",
+    "//executorch/extension/data_loader:mmap_data_loader",
+    "//executorch/extension/memory_allocator:malloc_memory_allocator",
+    "//executorch/util:read_file",
+    "//executorch/util:test_memory_config",
+    "//executorch/util:bundled_program_verification_aten",
+    "//caffe2:torch-cpp",
+    "//executorch/runtime/executor/test:test_backend_compiler_lib_aten",
+]
 
 # Generated lib for all ATen ops with aten kernel used by models in model inventory
 MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB = [
