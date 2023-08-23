@@ -203,28 +203,6 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
     return passes
 
 
-def is_param(edge_program: ExportedProgram, node: torch.fx.Node) -> bool:
-    """
-    Checks if the given node is a parameter within the edge_program
-    """
-    return node.name in edge_program.graph_signature.inputs_to_parameters
-
-
-def get_param(
-    edge_program: ExportedProgram,
-    node: torch.fx.Node,
-) -> Optional[torch.nn.Parameter]:
-    """
-    Returns the parameter associated with the given node in the edge program.
-    Returns None if the node is not a parameter within the edge_program
-    """
-    if is_param(edge_program, node):
-        parameter_name = edge_program.graph_signature.inputs_to_parameters[node.name]
-        return edge_program.state_dict[parameter_name]
-
-    return None
-
-
 ######## MULTI METHOD STUFF BELOW HERE. TO BE MERGED INTO ExirExportedProgram and ExecutorchProgram AND THEN DELETED ##########
 
 
