@@ -10,6 +10,7 @@ from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
+import torch._export as export
 from executorch import exir
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackFloatingPointPartitioner,
@@ -145,23 +146,23 @@ class Quantize2(Stage):
 
         self.quantizer.set_global(self.quantization_config)
 
-        self.converted_program = None
+        self.converted_graph = None
 
     def run(
-        self, artifact: ExirExportedProgram, inputs: Optional[Tuple[torch.Tensor]]
+        self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
-        prepared = prepare_pt2e(artifact.exported_program.graph_module, self.quantizer)
+        captured_graph = export.capture_pre_autograd_graph(artifact, inputs)
+        prepared = prepare_pt2e(captured_graph, self.quantizer)
         converted = convert_pt2e(prepared)
-        artifact.exported_program._graph_module = converted
-        self.converted_program = artifact
+        self.converted_graph = converted
 
     @property
-    def artifact(self) -> ExirExportedProgram:
-        return self.converted_program
+    def artifact(self) -> torch.fx.GraphModule:
+        return self.converted_graph
 
     @property
     def graph_module(self) -> str:
-        return self.converted_program.exported_program.graph_module
+        return self.converted_graph
 
 
 @register_stage
@@ -274,12 +275,11 @@ class Tester:
         self.inputs = inputs
         self.stages: Dict[str, Stage] = OrderedDict.fromkeys(list(_stages_.keys()))
         self.pipeline = {
+            self._stage_name(Quantize2): [self._stage_name(Export)],
             self._stage_name(Quantize): [self._stage_name(Export)],
             self._stage_name(Export): [
-                self._stage_name(Quantize2),
                 self._stage_name(ToEdge),
             ],
-            self._stage_name(Quantize2): [self._stage_name(ToEdge)],
             self._stage_name(ToEdge): [self._stage_name(Partition)],
             # TODO Make this Stage optional
             self._stage_name(Partition): [self._stage_name(ToExecutorch)],

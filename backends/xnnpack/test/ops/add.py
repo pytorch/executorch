@@ -75,9 +75,9 @@ class TestXNNPACKAdd(unittest.TestCase):
 
         (
             Tester(add_module, model_inputs)
+            .quantize2()
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 4})
-            .quantize2()
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 4})
