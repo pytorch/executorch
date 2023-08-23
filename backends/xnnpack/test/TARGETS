@@ -123,3 +123,16 @@ python_unittest(
         "//executorch/backends/xnnpack/test/tester:tester",
     ],
 )
+
+python_unittest(
+    name = "test_xnnpack_models",
+    srcs = glob([
+        "models/*.py",
+    ]),
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//pytorch/vision:torchvision",
+    ],
+)
