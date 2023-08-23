@@ -12,6 +12,7 @@ python_library(
     deps = [
         "//executorch/sdk/edir:et_schema",
         "//executorch/sdk/etdb:etdb",
+        "//executorch/sdk/etdb:inspector",
         "//executorch/sdk/etrecord:etrecord",
     ],
 )
@@ -23,6 +24,7 @@ python_binary(
     deps = [
         "//executorch/sdk/edir:et_schema",
         "//executorch/sdk/etdb:etdb",
+        "//executorch/sdk/etdb:inspector",
         "//executorch/sdk/etrecord:etrecord",
     ],
 )
