@@ -42,7 +42,6 @@ test_model() {
   fi
 }
 
-
 which python
 
 echo "Testing ${MODEL_NAME} with ${BUILD_TOOL}..."
@@ -50,7 +49,15 @@ echo "Testing ${MODEL_NAME} with ${BUILD_TOOL}..."
 test_model
 
 if [[ "${QUANTIZATION}" == true ]]; then
-  bash examples/quantization/test_quantize.sh "${MODEL_NAME}"
+  if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+    bash examples/quantization/test_quantize.sh buck2 "${MODEL_NAME}"
+  elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
+    CMAKE_OUTPUT_DIR=cmake-out
+    bash examples/quantization/test_quantize.sh cmake "${MODEL_NAME}"
+  else
+    echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
+    exit 1
+  fi
 else
   echo "The model ${MODEL_NAME} doesn't support quantization yet"
 fi
