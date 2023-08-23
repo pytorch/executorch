@@ -25,3 +25,14 @@ python_library(
         "//executorch/sdk/edir:et_schema",
     ],
 )
+
+python_library(
+    name = "inspector",
+    srcs = [
+        "inspector.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/pandas:pandas",
+        "//executorch/sdk/edir:et_schema",
+    ],
+)
