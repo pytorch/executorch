@@ -7,7 +7,7 @@
 import argparse
 import asyncio
 import os
-from typing import Mapping, Optional
+from typing import Mapping, Optional, Union
 
 from executorch.sdk.edir.et_schema import (
     FXOperatorGraph,
@@ -15,6 +15,7 @@ from executorch.sdk.edir.et_schema import (
     OperatorGraphWithStats,
 )
 from executorch.sdk.etdb.etdb import debug_graphs
+from executorch.sdk.etdb.inspector import Inspector
 from executorch.sdk.etrecord import ETRecord, parse_etrecord
 
 """
@@ -86,6 +87,30 @@ def debug_etrecord_path(
     debug_etrecord(parse_etrecord(etrecord_path), et_dump_path, verbose)
 
 
+def gen_inspector_from_etrecord(
+    etrecord: Union[str, ETRecord],
+    etdump_path: Optional[str] = None,
+    show_stack_trace: Optional[bool] = False,
+    verbose: Optional[bool] = False,
+) -> Inspector:
+    """
+    API that creates an Inspector instance based on a file path to an ETRecord instance
+    or an ETRecord instance and optional parameters including a file path to an ETDump
+    """
+    if isinstance(etrecord, str):
+        etrecord = parse_etrecord(etrecord_path=str(etrecord))
+
+    op_graph_dict: Mapping[str, OperatorGraphWithStats] = _gen_graphs_from_etrecord(
+        etrecord=etrecord
+    )
+    if etdump_path is not None:
+        _gen_and_attach_metadata(op_graph_dict=op_graph_dict, et_dump_path=etdump_path)
+
+    return Inspector(
+        op_graph_dict=op_graph_dict, show_stack_trace=show_stack_trace, verbose=verbose
+    )
+
+
 """
 SDK Binary
 """
@@ -100,6 +125,10 @@ def parse_args():
         action="store_true",
         help="Whether the terminal should display in verbose mode",
     )
+    parser.add_argument(
+        "--show_stack_trace",
+        help="Whether to show stack trace in the output tables",
+    )
     return parser.parse_args()
 
 
@@ -110,7 +139,13 @@ async def main() -> int:
     Only required argument is an et_record path
     """
     args = parse_args()
-    debug_etrecord_path(args.et_record, args.et_dump, args.verbose)
+    et_inspector = gen_inspector_from_etrecord(
+        etrecord=args.et_record,
+        etdump_path=args.et_dump,
+        show_stack_trace=args.show_stack_trace,
+        verbose=args.verbose,
+    )
+    et_inspector.cli_flow()
     return 0
 
 
