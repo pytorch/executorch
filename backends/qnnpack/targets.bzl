@@ -66,7 +66,6 @@ def define_common_targets():
             "//executorch/runtime/backend:backend_registry",
             "//executorch/backends/xnnpack/threadpool:threadpool",
             "//executorch/backends/xnnpack:dynamic_quant_utils",
-            "//executorch/util:memory_utils",
             "//{prefix}caffe2/aten/src/ATen/native/quantized/cpu/qnnpack:pytorch_qnnpack".format(
                 prefix = (
                     "xplat/" if is_xplat() else ""
