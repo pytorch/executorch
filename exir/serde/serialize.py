@@ -335,6 +335,7 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
                 opset_version=self.opset_version,
                 range_constraints=serialized_range_constraints,
                 equality_constraints=serialized_equality_constraints,
+                schema_version=schema.SCHEMA_VERSION,
             ),
             export_serialize.serialize_state_dict(gm_serializer.state_dict),
         )
