@@ -195,7 +195,8 @@ inline std::unique_ptr<Module> load_from_file(
     MemoryManager* memory_manager) {
   EXECUTORCH_SCOPE_PROF("load_from_file");
 
-  Result<MmapDataLoader> res = MmapDataLoader::From(path.c_str());
+  Result<MmapDataLoader> res = MmapDataLoader::From(
+      path.c_str(), MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
   THROW_IF_ERROR(
       res.error(),
       "Failed to create MmapDataLoader from file %s, error: 0x:%" PRIx32,
