@@ -114,10 +114,6 @@ class Module final {
     return run_method("forward", std::forward<Types>(args)...);
   }
 
-  void set_delete_memory(std::shared_ptr<char> mem_to_delete) {
-    mem_to_delete_ = mem_to_delete;
-  }
-
  private:
   run_method_return_type run_method_internal(
       const std::string& method_name,
@@ -164,22 +160,10 @@ class Module final {
     return result;
   }
 
-  std::shared_ptr<char> mem_to_delete_; // loader_ may point to this.
   std::unique_ptr<DataLoader> loader_; // program_ points to this.
   std::unique_ptr<const Program> program_; // methods_ entries points to this.
   std::unordered_map<std::string, std::unique_ptr<Method>> methods_;
 };
-
-inline std::unique_ptr<Module> load_from_buffer(
-    std::shared_ptr<char> ptr,
-    size_t ptr_len,
-    MemoryManager* memory_manager) {
-  EXECUTORCH_SCOPE_PROF("load_from_buffer");
-  auto loader = std::make_unique<BufferDataLoader>(ptr.get(), ptr_len);
-  auto m = std::make_unique<Module>(std::move(loader), memory_manager);
-  m->set_delete_memory(std::move(ptr));
-  return m;
-}
 
 inline std::unique_ptr<Module> load_from_buffer(
     const void* ptr,
