@@ -96,6 +96,14 @@ class ExportTest(unittest.TestCase):
             eager_model, example_inputs, self.validate_tensor_allclose
         )
 
+    def test_resnet18_export_to_executorch(self):
+        eager_model, example_inputs = MODEL_NAME_TO_MODEL["resnet18"]()
+        eager_model = eager_model.eval()
+
+        self._assert_eager_lowered_same_result(
+            eager_model, example_inputs, self.validate_tensor_allclose
+        )
+
     def test_resnet50_export_to_executorch(self):
         eager_model, example_inputs = MODEL_NAME_TO_MODEL["resnet50"]()
         eager_model = eager_model.eval()
