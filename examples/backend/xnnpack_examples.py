@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
     exec_prog = edge.to_executorch()
     buffer = exec_prog.buffer
-    quant_tag = "quantize" if args.quantize else ""
+    quant_tag = "q8" if args.quantize else "fp32"
     filename = f"{args.model_name}_xnnpack_{quant_tag}.pte"
     logging.info(f"Saving exported program to {filename}.")
     with open(filename, "wb") as f:

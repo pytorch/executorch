@@ -53,16 +53,18 @@ test_model() {
 test_model_with_xnnpack() {
   WITH_QUANTIZATION=$1
   if [[ ${WITH_QUANTIZATION} == true ]]; then
+    SUFFIX="q8"
     "${PYTHON_EXECUTABLE}" -m examples.backend.xnnpack_examples --model_name="${MODEL_NAME}" --delegate --quantize
-    OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_quantize.pte"
   else
+    SUFFIX="fp32"
     "${PYTHON_EXECUTABLE}" -m examples.backend.xnnpack_examples --model_name="${MODEL_NAME}" --delegate
     OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_.pte"
   fi
 
+  OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_${SUFFIX}.pte"
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-    buck2 run //executorch/examples/backend:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
+    buck2 run //examples/backend:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
     # TODO: Add cmake support for xnn_executor_runner
     echo "XNNPACK doesn't support cmake yet, skipping..."

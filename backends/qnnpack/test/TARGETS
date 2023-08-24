@@ -16,7 +16,6 @@ python_unittest(
         "//executorch/backends/qnnpack/partition:qnnpack_partitioner",
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_api",
-        "//executorch/exir/serialize:lib",
         "//executorch/extension/pybindings:portable",  # @manual
         "//executorch/extension/pytree:pylib",
     ],

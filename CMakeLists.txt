@@ -288,6 +288,11 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
   add_executable(executor_runner ${_executor_runner__srcs})
   target_link_libraries(executor_runner ${_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
+
+  # Like executor_runner but link with XNNPACK
+  add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
+  target_link_libraries(xnn_executor_runner ${_libs})
+  target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
 endif()
 
 # Print all summary

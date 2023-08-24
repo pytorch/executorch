@@ -3,9 +3,24 @@
 # targets.bzl. This file can contain fbcode-only targets.
 
 load("@fbcode//executorch/extension/pybindings:targets.bzl", "ATEN_MODULE_DEPS", "MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB", "MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB", "PORTABLE_MODULE_DEPS", "define_common_targets", "executorch_pybindings")
+load("@fbcode_macros//build_defs:native_rules.bzl", "buck_genrule")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 define_common_targets()
+
+# In order to have pyre recognize the pybindings module, the name of the .pyi must exactly match the
+# name of the lib. To avoid copy pasting the pyi file in tree a whole bunch of times we use genrules
+# to do it for us
+buck_genrule(
+    name = "pybindings_types_gen",
+    srcs = [":pybinding_types"],
+    outs = {
+        "aten_mode_lib.pyi": ["aten_mode_lib.pyi"],
+        "portable.pyi": ["portable.pyi"],
+    },
+    cmd = "cp $(location :pybinding_types)/* $OUT/portable.pyi && cp $(location :pybinding_types)/* $OUT/aten_mode_lib.pyi",
+    visibility = ["//executorch/extension/pybindings/..."],
+)
 
 executorch_pybindings(
     srcs = [
@@ -22,6 +37,7 @@ executorch_pybindings(
     ],
     cppdeps = PORTABLE_MODULE_DEPS + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB,
     python_module_name = "portable",
+    types = ["//executorch/extension/pybindings:pybindings_types_gen[portable.pyi]"],
     visibility = ["PUBLIC"],
 )
 
@@ -31,6 +47,7 @@ executorch_pybindings(
     ],
     cppdeps = ATEN_MODULE_DEPS + MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB,
     python_module_name = "aten_mode_lib",
+    types = ["//executorch/extension/pybindings:pybindings_types_gen[aten_mode_lib.pyi]"],
     visibility = ["PUBLIC"],
 )
 

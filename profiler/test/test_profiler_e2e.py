@@ -15,7 +15,6 @@ import torch
 
 from executorch import exir
 
-# pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.extension.pybindings.portable`.
 from executorch.extension.pybindings.portable import (
     _create_profile_block,
     _dump_profile_results,
@@ -56,13 +55,11 @@ class TestCustomOps(unittest.TestCase):
             exir.capture(model, inputs).to_edge().to_executorch().buffer
         )
 
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         cls.module = _load_for_executorch_from_buffer(cls.__buffer)
 
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         cls.inputs_flattened, _ = tree_flatten(inputs)
         cls.module.run_method("forward", tuple(cls.inputs_flattened))
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         prof_dump = _dump_profile_results()
         assert (
             len(prof_dump) > 0
@@ -72,15 +69,11 @@ class TestCustomOps(unittest.TestCase):
 
     def test_profiler_new_block(self) -> None:
         block_names = ["block_1", "block_2"]
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         _reset_profile_results()
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         _create_profile_block(block_names[0])
         self.module.run_method("forward", tuple(self.inputs_flattened))
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         _create_profile_block(block_names[1])
         self.module.run_method("forward", tuple(self.inputs_flattened))
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         prof_dump = _dump_profile_results()
         self.assertGreater(
             len(prof_dump),
