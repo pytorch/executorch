@@ -21,22 +21,6 @@
 namespace torch {
 namespace util {
 
-using sizes32_t = std::vector<int32_t>;
-using sizes64_t = std::vector<int64_t>;
-
-struct KeepAliveSizes {
-  std::vector<sizes32_t> sizes32;
-  std::vector<sizes64_t> sizes64;
-};
-
-// TODO: we should really remove this as
-__ET_DEPRECATED std::unique_ptr<torch::executor::TensorImpl>
-eTensorFromAtTensor(const at::Tensor& tensor, KeepAliveSizes& keep_alive);
-
-__ET_DEPRECATED at::Tensor atTensorFromETensor(
-    torch::executor::TensorImpl* etensor,
-    KeepAliveSizes& keep_alive);
-
 torch::executor::ScalarType torchToExecuTorchScalarType(caffe2::TypeMeta type);
 
 c10::ScalarType execuTorchtoTorchScalarType(torch::executor::ScalarType type);

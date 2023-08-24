@@ -147,39 +147,5 @@ at::Tensor alias_attensor_to_etensor(const torch::executor::Tensor& etensor) {
   check_tensor_meta(t, etensor);
   return t;
 }
-
-std::unique_ptr<torch::executor::TensorImpl> eTensorFromAtTensor(
-    const at::Tensor& tensor,
-    KeepAliveSizes& keep_alive) {
-  auto sizes = tensor.sizes();
-  auto options = tensor.options();
-  keep_alive.sizes32.emplace_back(sizes.size());
-  auto& sizes32 = keep_alive.sizes32.back();
-  for (size_t i = 0; i < sizes.size(); ++i) {
-    // NOLINTNEXTLINE
-    sizes32[i] = sizes[i];
-  }
-
-  const torch::executor::ScalarType edtype =
-      torchToExecuTorchScalarType(options.dtype());
-
-  return std::make_unique<torch::executor::TensorImpl>(
-      edtype, sizes32.size(), sizes32.data(), tensor.mutable_data_ptr());
-}
-
-at::Tensor atTensorFromETensor(
-    torch::executor::TensorImpl* etensor,
-    KeepAliveSizes& keep_alive) {
-  c10::ScalarType dtype = execuTorchtoTorchScalarType(etensor->scalar_type());
-  keep_alive.sizes64.emplace_back(etensor->sizes().size());
-  auto& sizes64 = keep_alive.sizes64.back();
-  for (size_t i = 0; i < etensor->sizes().size(); ++i) {
-    // NOLINTNEXTLINE
-    sizes64[i] = etensor->sizes()[i];
-  }
-  return at::from_blob(
-      etensor->mutable_data(), sizes64, at::TensorOptions(dtype));
-}
-
 } // namespace util
 } // namespace torch
