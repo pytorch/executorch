@@ -95,7 +95,7 @@ def define_common_targets():
             # Lock this down as tightly as possible to ensure that flatbuffers
             # are an implementation detail. Ideally this list would only include
             # //executorch/runtime/executor/...
-            "//executorch/extension/pybindings/...",
+            "//executorch/codegen/tools/pybindings/...",
             "//executorch/runtime/executor/...",
             "//executorch/util/...",  # bundled_program_verification
         ],

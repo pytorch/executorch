@@ -1,0 +1,25 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+python_unittest(
+    # @autodeps-skip
+    name = "test_selective_build",
+    srcs = [
+        "test_selective_build.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//caffe2:torch_fx",
+        "//executorch/codegen/tools/pybindings:selective_build",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir:scalar_type",
+        "//executorch/exir/emit:lib",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/serialize:lib",
+    ],
+)

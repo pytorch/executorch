@@ -23,13 +23,14 @@ namespace {
 // Metadata for kernel call io variables.
 // dtype and dim_order will exist only if corresponding variable is Tensor.
 struct IOMetaData {
-  int type;
+  int kernel_type;
   int dtype;
   std::vector<unsigned int> dim_order;
 
   // Create tensor metadata. It records tensor's dtype and dim order.
   explicit IOMetaData(const executorch_flatbuffer::Tensor* t)
-      : type(static_cast<int>(executorch_flatbuffer::KernelTypes::Tensor)),
+      : kernel_type(
+            static_cast<int>(executorch_flatbuffer::KernelTypes::Tensor)),
         dtype(static_cast<int>(t->scalar_type())) {
     for (size_t i = 0; i < t->dim_order()->size(); i++) {
       dim_order.push_back(static_cast<unsigned int>(t->dim_order()->Get(i)));
@@ -38,7 +39,7 @@ struct IOMetaData {
 
   // Create metadata for non-tensor variable.
   explicit IOMetaData(executorch_flatbuffer::KernelTypes type)
-      : type(static_cast<int>(type)) {
+      : kernel_type(static_cast<int>(type)) {
     ET_CHECK(
         type != executorch_flatbuffer::KernelTypes::Tensor &&
         type != executorch_flatbuffer::KernelTypes::TensorList &&
@@ -54,10 +55,10 @@ struct KernelIOMetaDataComparsion {
       return lhs.size() < rhs.size();
     }
     for (size_t i = 0; i < lhs.size(); i++) {
-      if (lhs[i].type != rhs[i].type) {
-        return lhs[i].type < rhs[i].type;
+      if (lhs[i].kernel_type != rhs[i].kernel_type) {
+        return lhs[i].kernel_type < rhs[i].kernel_type;
       }
-      if (lhs[i].type !=
+      if (lhs[i].kernel_type !=
           static_cast<int>(executorch_flatbuffer::KernelTypes::Tensor)) {
         continue;
       }
@@ -241,12 +242,8 @@ py::dict _get_io_metadata_for_program_operators(
   return py_program_op_io_metadata;
 }
 
-void init_module_functions(py::module_&);
-
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
-  init_module_functions(m);
-
-  py::class_<executorch_flatbuffer::Program>(m, "Program");
+  py::class_<executorch_flatbuffer::Program>(m, "_Program");
 
   m.def(
       "_get_program_from_buffer",
@@ -263,8 +260,8 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       &_get_io_metadata_for_program_operators,
       py::return_value_policy::copy);
 
-  py::class_<IOMetaData>(m, "IOMetaData")
-      .def_readwrite("type", &IOMetaData::type)
+  py::class_<IOMetaData>(m, "_IOMetaData")
+      .def_readwrite("kernel_type", &IOMetaData::kernel_type)
       .def_readwrite("dtype", &IOMetaData::dtype)
       .def_readwrite("dim_order", &IOMetaData::dim_order);
 }

@@ -18,7 +18,7 @@ def define_common_targets(is_fbcode = False):
         external_deps = ["torchgen"],
         deps = select({
             "DEFAULT": [],
-            "ovr_config//os:linux": [] if runtime.is_oss else ["//executorch/extension/pybindings:operator"],  # TODO(larryliu0820): pybindings:operator doesn't build in OSS yet
+            "ovr_config//os:linux": [] if runtime.is_oss else ["//executorch/codegen/tools/pybindings:selective_build"],  # TODO(larryliu0820): pybindings:selective_build doesn't build in OSS yet
         }),
     )
 
