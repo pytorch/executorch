@@ -22,6 +22,21 @@
 #include <ostream>
 #endif
 
+#define ET_LOG_KERNEL_KEY(k)      \
+  ET_LOG(                         \
+      Error,                      \
+      "key: %s, is_fallback: %s", \
+      k.data(),                   \
+      k.is_fallback() ? "true" : "false");
+#define ET_LOG_TENSOR_META(meta_list)                                 \
+  for (const auto& meta : meta_list) {                                \
+    ET_LOG(Error, "dtype: %d | dim order: [", int(meta.dtype_));      \
+    for (int i = 0; i < meta.dim_order_.size(); i++) {                \
+      ET_LOG(Error, "%d,", static_cast<int32_t>(meta.dim_order_[i])); \
+    }                                                                 \
+    ET_LOG(Error, "]");                                               \
+  }
+
 namespace torch {
 namespace executor {
 
@@ -31,7 +46,7 @@ using OpFunction = FunctionRef<void(KernelRuntimeContext&, EValue**)>;
 
 /**
  * Dtype and dim order metadata for a Tensor argument to an operator.
- * Used by the Executor to hold the tensor metadata info.
+ * Used by the Executor to hold the tensor metadata info and retrieve kernel.
  */
 struct TensorMeta {
   exec_aten::ScalarType dtype_;
@@ -144,6 +159,10 @@ struct KernelKey {
     return is_fallback_;
   }
 
+  const char* data() const {
+    return kernel_key_data_;
+  }
+
 #if defined(ET_OP_REGISTRY_DEBUG)
   friend std::ostream& operator<<(std::ostream& os, const KernelKey& key) {
     os << key.kernel_key_data_ << std::endl;
@@ -182,78 +201,12 @@ struct Kernel {
   Kernel() {}
 };
 
+// Maximum number of operators and their associated kernels that can be
+// registered.
 constexpr uint32_t kOperatorTableMaxSize = 250;
 constexpr uint32_t kMaxNumOfKernelPerOp = 8;
 constexpr uint32_t kMaxNumOfKernels =
     kOperatorTableMaxSize * kMaxNumOfKernelPerOp;
-
-/**
- * Struct that represents an operator at runtime. This object and the `Operator`
- * field in the program should be 1-to-1 mapping. During static initialization,
- * all kernels will be registered from the generated C++ code. Then during the
- * kernel resolution step in runtime initialization, the target kernel will be
- * looked up and stored along with `Chain`.
- */
-struct Operator {
- public:
-  const char* name_;
-  explicit Operator(const char* name) : name_(name), num_kernels_(0) {}
-
-  // constructor that takes a kernel with its kernel key.
-  explicit Operator(const char* name, KernelKey key, OpFunction func)
-      : name_(name), num_kernels_(1) {
-    kernels_[0] = Kernel(name, key, func);
-  }
-  explicit Operator(const char* name, OpFunction func)
-      : name_(name), num_kernels_(1) {
-    kernels_[0] = Kernel(name, {}, func);
-  }
-  Operator() {}
-
-  // check if this operator contains a kernel with a particular kernel key.
-  bool contains(KernelKey key) const {
-    for (auto i = 0; i < num_kernels_; i++) {
-      if (kernels_[i].kernel_key_ == key) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  // returns an `OpFunction` from either a kernel key match, or fallback kernel
-  // if not matched.
-  const OpFunction& find_or_fallback(KernelKey key) const {
-    int32_t fallback_index = -1;
-    for (auto i = 0; i < num_kernels_; i++) {
-      if (kernels_[i].kernel_key_ == key) {
-        return kernels_[i].op_;
-      }
-      if (kernels_[i].kernel_key_.is_fallback()) {
-        fallback_index = i;
-      }
-    }
-    if (fallback_index != -1) {
-      return kernels_[fallback_index].op_;
-    }
-    ET_CHECK_MSG(false, "kernel key not found.");
-  }
-
-  bool has_fallback() const {
-    return contains({});
-  }
-
-  bool register_kernel(Kernel kernel) {
-    if (num_kernels_ == kMaxNumOfKernelPerOp) {
-      return false;
-    }
-    kernels_[num_kernels_++] = kernel;
-    return true;
-  }
-
- private:
-  Kernel kernels_[kMaxNumOfKernelPerOp];
-  uint32_t num_kernels_;
-};
 
 /**
  * See OperatorRegistry::hasOpsFn()
@@ -268,17 +221,9 @@ const OpFunction& getOpsFn(
     ArrayRef<TensorMeta> meta_list = {});
 
 /**
- * See OperatorRegistry::getOpsArray()
+ * See OperatorRegistry::get_kernels()
  */
-ArrayRef<Operator> getOpsArray();
-
-/**
- * DEPRECATED: Use register_kernels() instead.
- * See OperatorRegistry::register_operators(). Notice that the returned Error
- * object should be handled internally and the reason for keep returning is to
- * satisfy the requirement to run this in static initialization time.
- */
-__ET_NODISCARD Error register_operators(const ArrayRef<Operator>&);
+ArrayRef<Kernel> get_kernels();
 
 /**
  * See OperatorRegistry::register_kernels(). Notice that the returned Error
@@ -289,18 +234,7 @@ __ET_NODISCARD Error register_kernels(const ArrayRef<Kernel>&);
 
 struct OperatorRegistry {
  public:
-  OperatorRegistry() : operatorRegSize_(0) {}
-
-  /**
-   * DEPRECATED: Use register_kernels() instead. TODO: (larryliu) Remove.
-   * Registers the Operator object (which may contain one or more function
-   * references) so that it could be called via the name during the runtime.
-   * WARNING: only use this when we are confident that there are no duplicates
-   * in Operator name.
-   * @param[in] operators Operator object
-   * @retval Error code representing whether registration was successful.
-   */
-  __ET_NODISCARD Error register_operators(const ArrayRef<Operator>&);
+  OperatorRegistry() : num_kernels_(0) {}
 
   /**
    * Registers the Kernels object (i.e. string name and function reference
@@ -326,11 +260,11 @@ struct OperatorRegistry {
   /**
    * Return all registered operators.
    */
-  ArrayRef<Operator> getOpsArray();
+  ArrayRef<Kernel> get_kernels();
 
  private:
-  Operator operators_table_[kOperatorTableMaxSize];
-  uint32_t operatorRegSize_;
+  Kernel kernels_[kMaxNumOfKernels];
+  uint32_t num_kernels_;
 };
 
 } // namespace executor

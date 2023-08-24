@@ -28,19 +28,19 @@ class OperatorRegistryTest : public ::testing::Test {
 };
 
 TEST_F(OperatorRegistryTest, Basic) {
-  Operator ops[] = {Operator("foo", [](RuntimeContext&, EValue**) {})};
-  ArrayRef<Operator> ops_array = ArrayRef<Operator>(ops);
-  auto s1 = register_operators(ops_array);
+  Kernel kernels[] = {Kernel("foo", [](RuntimeContext&, EValue**) {})};
+  ArrayRef<Kernel> kernels_array = ArrayRef<Kernel>(kernels);
+  auto s1 = register_kernels(kernels_array);
   EXPECT_FALSE(hasOpsFn("fpp"));
   EXPECT_TRUE(hasOpsFn("foo"));
 }
 
 TEST_F(OperatorRegistryTest, RegisterOpsMoreThanOnceDie) {
-  Operator ops[] = {
-      Operator("foo", [](RuntimeContext&, EValue**) {}),
-      Operator("foo", [](RuntimeContext&, EValue**) {})};
-  ArrayRef<Operator> ops_array = ArrayRef<Operator>(ops);
-  ET_EXPECT_DEATH({ auto res = register_operators(ops_array); }, "");
+  Kernel kernels[] = {
+      Kernel("foo", [](RuntimeContext&, EValue**) {}),
+      Kernel("foo", [](RuntimeContext&, EValue**) {})};
+  ArrayRef<Kernel> kernels_array = ArrayRef<Kernel>(kernels);
+  ET_EXPECT_DEATH({ auto res = register_kernels(kernels_array); }, "");
 }
 
 void make_kernel_key(
@@ -87,40 +87,6 @@ TEST_F(OperatorRegistryTest, KernelKeyEquals) {
   KernelKey long_key_3 = KernelKey(buf_channel_first);
 
   EXPECT_NE(long_key_1, long_key_3);
-}
-
-TEST_F(OperatorRegistryTest, RegisterOpWithKernelKey) {
-  char buf_long_contiguous[BUF_SIZE];
-  make_kernel_key({{ScalarType::Long, {0, 1, 2, 3}}}, buf_long_contiguous);
-  KernelKey long_contiguous = KernelKey(buf_long_contiguous);
-
-  KernelKey key = KernelKey(long_contiguous);
-  Operator op =
-      Operator("test::boo", key, [](RuntimeContext& context, EValue** stack) {
-        (void)context;
-        *(stack[0]) = Scalar(100);
-      });
-  auto s1 = register_operators({op});
-  EXPECT_EQ(s1, torch::executor::Error::Ok);
-
-  Tensor::DimOrderType dims[] = {0, 1, 2, 3};
-  auto dim_order_type = ArrayRef<Tensor::DimOrderType>(dims, 4);
-  TensorMeta meta[] = {TensorMeta(ScalarType::Long, dim_order_type)};
-  ArrayRef<TensorMeta> user_kernel_key = ArrayRef<TensorMeta>(meta, 1);
-  EXPECT_TRUE(hasOpsFn("test::boo", user_kernel_key));
-  // no fallback kernel is registered
-  EXPECT_FALSE(hasOpsFn("test::boo", {}));
-  OpFunction func = getOpsFn("test::boo", user_kernel_key);
-
-  EValue values[1];
-  values[0] = Scalar(0);
-  EValue* kernels[1];
-  kernels[0] = &values[0];
-  RuntimeContext context{};
-  func(context, kernels);
-
-  auto val = values[0].toScalar().to<int64_t>();
-  ASSERT_EQ(val, 100);
 }
 
 TEST_F(OperatorRegistryTest, RegisterKernels) {
