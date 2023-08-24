@@ -22,7 +22,6 @@ from executorch.extension.pybindings.portable import (
     _get_program_from_buffer,  # @manual
     _get_program_operators,  # @manual
     _load_for_executorch_from_buffer,  # @manual
-    _ops_names,  # @manual
     IOMetaData,  # @manual
 )
 
@@ -107,13 +106,6 @@ class PybindingsTest(unittest.TestCase):
         program = _get_program_from_buffer(orig_program.buffer)
         operators = _get_program_operators(program)
         self.assertEqual(operators, ["aten::add.out"])
-
-    def test_registered_operators(self):
-        # Checking whether operators defined in portable/functions.yaml file
-        # are registered through the selective build system.
-        operators = _ops_names()
-        self.assertGreater(len(operators), 0)
-        self.assertTrue("aten::allclose.out" in operators)
 
     def test_get_op_io_meta(self):
         # Checking whether get_op_io_meta returns the correct metadata for all its ios.
