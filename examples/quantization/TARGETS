@@ -7,7 +7,7 @@ runtime.python_binary(
     deps = [
         ":quant_utils",
         "//caffe2:torch",
-        "//executorch/examples/export:export_example",
+        "//executorch/examples/export:lib",
         "//executorch/examples/models:models",
     ],
 )
