@@ -7,7 +7,7 @@
 
 # Test the end-to-end quantization flow.
 
-set -e
+set -eu
 
 get_shared_lib_ext() {
   UNAME=$(uname)
@@ -30,6 +30,14 @@ test_buck2_quantization() {
 
   echo "Run example.py"
   ${PYTHON_EXECUTABLE} -m "examples.quantization.example" --so_library="$SO_LIB" --model_name="$1"
+
+  echo 'Running executor_runner'
+  buck2 run //examples/executor_runner:executor_runner \
+    --config=executorch.register_quantized_ops=1 -- --model_path="./$1.pte"
+  # should give correct result
+
+  echo "Removing $1.pte"
+  rm "./$1.pte"
 }
 
 test_cmake_quantization() {
@@ -52,6 +60,13 @@ test_cmake_quantization() {
 
   echo "Run example.py, shared library $SO_LIB"
   ${PYTHON_EXECUTABLE} -m "examples.quantization.example" --so_library="$SO_LIB" --model_name="$1"
+
+  echo 'Running executor_runner'
+  cmake-out/executor_runner --model_path="./$1.pte"
+  # should give correct result
+
+  echo "Removing $1.pte"
+  rm "./$1.pte"
 }
 
 if [[ -z $PYTHON_EXECUTABLE ]];

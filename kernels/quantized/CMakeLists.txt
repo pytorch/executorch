@@ -52,5 +52,5 @@ gen_custom_ops_aot_lib("quantized_ops_aot_lib" "${_quantized_sources}")
 
 # Build a library for _quantized_kernels_srcs
 #
-# quantized_kernels: Pure-C++ kernel library for quantized ops
-gen_operators_lib("quantized_kernels" "${_quantized_kernels__srcs}")
+# quantized_ops_lib: Register quantized ops kernels into Executorch runtime
+gen_operators_lib("quantized_ops_lib" "${_quantized_kernels__srcs}")
