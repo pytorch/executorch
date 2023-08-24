@@ -60,9 +60,17 @@ Here is the [Quantization Flow Docs](/docs/website/docs/tutorials/quantization_f
 
 You can run quantization test with the following command:
 ```bash
-python3 -m examples.quantization.example --model_name "mv2" # for MobileNetv2
+python3 -m examples.quantization.example --model_name "mv2" --so-library "<path/to/so/lib>" # for MobileNetv2
 ```
-It will print both the original model after capture and quantized model.
+
+Note that the shared library being passed into `example.py` is required to register the out variants of the quantized operators (e.g., `quantized_decomposed::add.out`)into EXIR. To build this library, run the following command if using buck2:
+```bash
+buck2 build //kernels/quantized:aot_lib --show-output
+```
+
+If on cmake, follow the instructions in `test_quantize.sh` to build it, the default path is `cmake-out/kernels/quantized/libquantized_ops_lib.so`.
+
+This command will print both the original model after capture and quantized model.
 
 The flow produces a quantized model that could be lowered through partitioner or the runtime directly.
 

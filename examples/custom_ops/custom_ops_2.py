@@ -37,7 +37,24 @@ if __name__ == "__main__":
         help="Provide path to so library. E.g., cmake-out/examples/custom_ops/libcustom_ops_aot_lib.so",
     )
     args = parser.parse_args()
-    torch.ops.load_library(args.so_library)
+    # See if we have custom op my_ops::mul4.out registered
+    has_out_ops = True
+    try:
+        op = torch.ops.my_ops.mul4.out
+    except AttributeError:
+        print("No registered custom op my_ops::mul4.out")
+        has_out_ops = False
+    if not has_out_ops:
+        if args.so_library:
+            torch.ops.load_library(args.so_library)
+        else:
+            raise RuntimeError(
+                "Need to specify shared library path to register custom op my_ops::mul4.out into"
+                "EXIR. The required shared library is defined as `custom_ops_aot_lib` in "
+                "examples/custom_ops/CMakeLists.txt if you are using CMake build, or `custom_ops_aot_lib_2` in "
+                "examples/custom_ops/targets.bzl for buck2. One example path would be cmake-out/examples/custom_ops/"
+                "libcustom_ops_aot_lib.[so|dylib]."
+            )
     print(args.so_library)
 
     main()

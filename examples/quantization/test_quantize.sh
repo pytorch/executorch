@@ -7,7 +7,7 @@
 
 # Test the end-to-end quantization flow.
 
-set -eu
+set -e
 
 get_shared_lib_ext() {
   UNAME=$(uname)

@@ -99,8 +99,24 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    if args.so_library:
-        torch.ops.load_library(args.so_library)
+    # See if we have quantized op out variants registered
+    has_out_ops = True
+    try:
+        op = torch.ops.quantized_decomposed.add.out
+    except AttributeError:
+        print("No registered quantized ops")
+        has_out_ops = False
+    if not has_out_ops:
+        if args.so_library:
+            torch.ops.load_library(args.so_library)
+        else:
+            raise RuntimeError(
+                "Need to specify shared library path to register quantized ops (and their out variants) into"
+                "EXIR. The required shared library is defined as `quantized_ops_aot_lib` in "
+                "kernels/quantized/CMakeLists.txt if you are using CMake build, or `aot_lib` in "
+                "kernels/quantized/targets.bzl for buck2. One example path would be cmake-out/kernels/quantized/"
+                "libquantized_ops_aot_lib.[so|dylib]."
+            )
     if not args.verify and args.model_name not in MODEL_NAME_TO_OPTIONS:
         raise RuntimeError(
             f"Model {args.model_name} is not a valid name. or not quantizable right now, "
