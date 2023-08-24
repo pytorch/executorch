@@ -50,8 +50,6 @@ test_model() {
   fi
 }
 
-python -m examples.backend.xnnpack_examples --model_name="mv2" --delegate && buck2 run //executorch/examples/backend:xnn_executor_runner -- --model_path mv2_xnnpack_.pte
-
 test_model_with_xnnpack() {
   WITH_QUANTIZATION=$1
   if [[ ${WITH_QUANTIZATION} == true ]]; then
