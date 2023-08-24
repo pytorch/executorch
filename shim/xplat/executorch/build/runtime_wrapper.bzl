@@ -270,6 +270,8 @@ def _cxx_test(*args, **kwargs):
 def _cxx_python_extension(*args, **kwargs):
     _patch_kwargs_common(kwargs)
     kwargs["srcs"] = _patch_executorch_references(kwargs["srcs"])
+    if "types" in kwargs:
+        kwargs["types"] = _patch_executorch_references(kwargs["types"])
     env.cxx_python_extension(*args, **kwargs)
 
 def _export_file(*args, **kwargs):
