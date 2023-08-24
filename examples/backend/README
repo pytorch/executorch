@@ -1,0 +1,22 @@
+This README gives some examples on backend-specific model workflow.
+
+# XNNPACK Backend
+
+[XNNPACK](https://github.com/google/XNNPACK) is a library of optimized of neural network inference operators for ARM and x86 platforms. Our delegate
+lowers models to run using these highly optimized CPU operators. You can try out lowering and running some example
+models using the following command:
+
+```
+python3 -m examples.backend.xnnpack_examples --model_name="mv2" --delegate
+# For quantized model
+python3 -m examples.backend.xnnpack_examples --model_name="mv2" --quantize --delegate
+```
+
+This will produce an xnnpack_mv2.pte model that can be run using XNNPACK's operators. This will also print out
+the lowered graph, showing what parts of the models have been lowered to XNNPACK via executorch_call_delegate.
+
+You can run the model by running:
+
+```
+buck2 run examples/backend:xnn_executor_runner --model_name="mv2"
+```

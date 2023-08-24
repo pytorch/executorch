@@ -7,6 +7,7 @@ It also includes a list of modules, from a simple `Add` to a full model like `Mo
 ## Directory structure
 ```bash
 examples
+|── backend         # Contains examples for exporting delegate models and running them using custom executor runners
 ├── custom_ops      # Contains examples to register custom operators into PyTorch as well as register its kernels into Executorch runtime
 ├── executor_runner # This is an example C++ wrapper around the ET runtime
 ├── export          # Python helper scripts to illustrate export workflow
@@ -70,6 +71,9 @@ you can also find the valid quantized example models by running:
 ```bash
 buck2 run executorch/examples/quantization:example -- --help
 ```
+
+## XNNPACK Backend
+Please see [Backend README](backend/README) for XNNPACK quantization, export, and run workflow.
 
 ## Dependencies
 

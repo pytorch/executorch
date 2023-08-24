@@ -5,8 +5,22 @@ runtime.python_binary(
     main_src = "example.py",
     preload_deps = ["//executorch/kernels/quantized:aot_lib"],
     deps = [
+        ":quant_utils",
         "//caffe2:torch",
         "//executorch/examples/export:export_example",
         "//executorch/examples/models:models",
+    ],
+)
+
+runtime.python_library(
+    name = "quant_utils",
+    srcs = [
+        "utils.py",
+    ],
+    visibility = [
+        "//executorch/examples/...",
+    ],
+    deps = [
+        "//caffe2:torch",
     ],
 )

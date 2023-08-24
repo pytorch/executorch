@@ -1,0 +1,19 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+runtime.python_binary(
+    name = "xnnpack_examples",
+    main_src = "xnnpack_examples.py",
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack:xnnpack_preprocess",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/examples/models:models",
+        "//executorch/examples/quantization:quant_utils",
+        "//executorch/exir/backend:backend_api",
+    ],
+)
