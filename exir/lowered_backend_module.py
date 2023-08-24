@@ -132,20 +132,29 @@ def arrange_graph_placeholders(
     graph_sign = owning_program.graph_signature
 
     # Add all placeholders into the graph first:
+    param_nodes = []
+    buffer_nodes = []
+    input_nodes = []
     for node in gm.graph.nodes:
         if node.op != "placeholder":
             continue
 
-        if (
-            node.name in graph_sign.inputs_to_parameters
-            or node.name in graph_sign.inputs_to_buffers
-        ):
-            # Insert place holder at at beginning if it is parameter
-            with new_graph.inserting_before():
-                new_node = new_graph.node_copy(node)
+        if node.name in graph_sign.inputs_to_parameters:
+            param_nodes.append(node)
+        elif node.name in graph_sign.inputs_to_buffers:
+            buffer_nodes.append(node)
         else:
-            new_node = new_graph.node_copy(node)
-        node_map[node] = new_node
+            input_nodes.append(node)
+
+    for param_node in param_nodes:
+        new_node = new_graph.node_copy(param_node, lambda x: node_map[x])
+        node_map[param_node] = new_node
+    for buffer_node in buffer_nodes:
+        new_node = new_graph.node_copy(buffer_node, lambda x: node_map[x])
+        node_map[buffer_node] = new_node
+    for input_node in input_nodes:
+        new_node = new_graph.node_copy(input_node, lambda x: node_map[x])
+        node_map[input_node] = new_node
 
     # Now add all the other nodes in order
     for node in gm.graph.nodes:
