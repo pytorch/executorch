@@ -13,7 +13,6 @@ import torch
 from executorch.examples.export.utils import export_to_edge
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 
-# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
 from executorch.extension.pybindings.portable import (  # @manual
     _load_for_executorch_from_buffer,
 )
@@ -37,7 +36,7 @@ class ExportTest(unittest.TestCase):
         edge_model = export_to_edge(eager_model, example_inputs)
 
         executorch_prog = edge_model.to_executorch()
-        # pyre-ignore
+
         pte_model = _load_for_executorch_from_buffer(executorch_prog.buffer)
 
         with torch.no_grad():
