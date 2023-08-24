@@ -26,7 +26,8 @@ get_shared_lib_ext() {
 
 test_buck2_quantization() {
   echo "Building quantized ops shared library"
-  SO_LIB=$(buck2 build //kernels/quantized:aot_lib --show-output | grep "buck-out" | cut -d" " -f2)
+  # TODO: DEBUG flaky MacOS issue
+  SO_LIB=$(buck2 build //kernels/quantized:aot_lib -v 3 --show-output | grep "buck-out" | cut -d" " -f2)
 
   echo "Run example.py"
   ${PYTHON_EXECUTABLE} -m "examples.quantization.example" --so_library="$SO_LIB" --model_name="$1"
