@@ -38,7 +38,7 @@ def _handle_exported_program(
     etrecord_zip: ZipFile, module_name: str, method_name: str, ep: ExportedProgram
 ) -> None:
     assert isinstance(ep, ExportedProgram)
-    serialized_ep, serialized_state_dict = serialize(ep)
+    serialized_ep, serialized_state_dict, _ = serialize(ep)
     etrecord_zip.writestr(f"{module_name}/{method_name}", serialized_ep)
     etrecord_zip.writestr(
         f"{module_name}/{method_name}_state_dict", serialized_state_dict
@@ -217,6 +217,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
         graph_map[serialized_file] = deserialize(
             etrecord_zip.read(serialized_file),
             etrecord_zip.read(serialized_state_dict_file),
+            b"",
         )
 
     return ETRecord(

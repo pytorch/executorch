@@ -291,6 +291,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         (
             serialized_original_module,
             serialized_original_state_dict,
+            _,
         ) = ExportedProgramSerializer().serialize(lowered_module.original_module)
 
         serialized_processed_bytes = serialize_bytes(lowered_module.processed_bytes)
@@ -312,8 +313,8 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
 class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
     def serialize(
-        self, exported_program: torch._export.ExportedProgram
-    ) -> Tuple[schema.ExportedProgram, bytes]:
+        self, exported_program: ep.ExportedProgram
+    ) -> Tuple[schema.ExportedProgram, bytes, bytes]:
         assert isinstance(exported_program, torch._export.ExportedProgram)
         gm_serializer = GraphModuleSerializer(
             exported_program.graph_signature, exported_program.call_spec
@@ -337,7 +338,8 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
                 equality_constraints=serialized_equality_constraints,
                 schema_version=schema.SCHEMA_VERSION,
             ),
-            export_serialize.serialize_state_dict(gm_serializer.state_dict),
+            export_serialize.serialize_torch_artifact(gm_serializer.state_dict),
+            b"",
         )
 
 
@@ -595,6 +597,7 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         original_module = ExportedProgramDeserializer().deserialize(
             serialized_lowered_module.original_module,
             base64.b64decode(serialized_lowered_module.original_state_dict),
+            b"",
         )
 
         lowered_module = ExirLoweredBackendModule(
@@ -612,6 +615,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
         self,
         serialized_exported_program: schema.ExportedProgram,
         serialized_state_dict: bytes,
+        serialized_original_traced_args: bytes,
     ) -> exir.ExportedProgram:
         symbol_name_to_range = {
             k: symbolic_shapes.ValueRanges(
@@ -620,7 +624,8 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             )
             for k, v in serialized_exported_program.range_constraints.items()
         }
-        state_dict = export_serialize.deserialize_state_dict(serialized_state_dict)
+        state_dict = export_serialize.deserialize_torch_artifact(serialized_state_dict)
+        assert isinstance(state_dict, dict)
         (
             graph_module,
             sig,
@@ -656,14 +661,15 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             range_constraints,
             equality_constraints,
             [],
+            (),
         )
 
 
 def serialize(
     exported_program: torch._export.ExportedProgram,
     opset_version: Optional[Dict[str, int]] = None,
-) -> Tuple[bytes, bytes]:
-    serialized_exported_program, serialized_state_dict = ExportedProgramSerializer(
+) -> Tuple[bytes, bytes, bytes]:
+    serialized_exported_program, *_ = ExportedProgramSerializer(
         opset_version
     ).serialize(exported_program)
     json_program = json.dumps(
@@ -671,12 +677,13 @@ def serialize(
         cls=export_serialize.EnumEncoder,
     )
     json_bytes = json_program.encode("utf-8")
-    return json_bytes, serialized_state_dict
+    return json_bytes, *_
 
 
 def deserialize(
     exported_program_bytes: bytes,
     state_dict: bytes,
+    original_traced_args: bytes,
     expected_opset_version: Optional[Dict[str, int]] = None,
 ) -> exir.ExportedProgram:
     exported_program_str = exported_program_bytes.decode("utf-8")
@@ -689,5 +696,7 @@ def deserialize(
         schema.ExportedProgram, exported_program_dict
     )
     return ExportedProgramDeserializer(expected_opset_version).deserialize(
-        serialized_exported_program, state_dict
+        serialized_exported_program,
+        state_dict,
+        original_traced_args,
     )

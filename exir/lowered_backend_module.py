@@ -253,6 +253,7 @@ def create_exported_program_from_submodule(
         range_constraints=copy.deepcopy(owning_program.range_constraints),
         equality_constraints=[],
         module_call_graph=[],
+        original_traced_arguments=(),
     )
 
 
