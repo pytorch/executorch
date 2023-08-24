@@ -23,66 +23,6 @@ OperatorRegistry& getOperatorRegistry() {
   return operator_registry;
 }
 
-Error register_operators(const ArrayRef<Operator>& operators) {
-  Error success_with_op_reg =
-      getOperatorRegistry().register_operators(operators);
-  if (success_with_op_reg == Error::InvalidArgument ||
-      success_with_op_reg == Error::Internal) {
-    ET_CHECK_MSG(
-        false,
-        "Operator registration failed with error %" PRIu32
-        ", see error log for details.",
-        success_with_op_reg);
-  }
-  return success_with_op_reg;
-}
-
-Error OperatorRegistry::register_operators(
-    const ArrayRef<Operator>& operators) {
-  // Operator registration happens in static initialization time when PAL init
-  // may or may not happen already. Here we are assuming et_pal_init() doesn't
-  // have any side effect even if falled multiple times.
-  ::et_pal_init();
-  // Error out if number of operators exceeds the limit. Print all op name for
-  // debugging
-  if (this->operatorRegSize_ + operators.size() >= kOperatorTableMaxSize) {
-    ET_LOG(Error, "======== Operators already in the registry: ========");
-    for (size_t i = 0; i < this->operatorRegSize_; i++) {
-      ET_LOG(Error, "%s", this->operators_table_[i].name_);
-    }
-    ET_LOG(Error, "======== Operators being registered: ========");
-    for (size_t i = 0; i < operators.size(); i++) {
-      ET_LOG(Error, "%s", operators[i].name_);
-    }
-    ET_LOG(
-        Error,
-        "The total number of operators to be registered is larger than the limit %" PRIu32
-        ". %" PRIu32
-        " operators are already registered and we're trying to register another %" PRIu32
-        " operators.",
-        kOperatorTableMaxSize,
-        (uint32_t)this->operatorRegSize_,
-        (uint32_t)operators.size());
-    return Error::Internal;
-  }
-  // for debugging purpose
-  const char* lib_name = et_pal_get_shared_library_name(operators.data());
-
-  for (const auto& op : operators) {
-    if (this->hasOpsFn(op.name_, {})) {
-      ET_LOG(Error, "Re-registering %s. From: %s", op.name_, lib_name);
-      return Error::InvalidArgument;
-    }
-    this->operators_table_[this->operatorRegSize_++] = op;
-  }
-  ET_LOG(
-      Debug,
-      "Successfully registered all ops from shared library: %s",
-      lib_name);
-
-  return Error::Ok;
-}
-
 Error register_kernels(const ArrayRef<Kernel>& kernels) {
   Error success = getOperatorRegistry().register_kernels(kernels);
   if (success == Error::InvalidArgument || success == Error::Internal) {
@@ -101,39 +41,48 @@ Error OperatorRegistry::register_kernels(const ArrayRef<Kernel>& kernels) {
   // have any side effect even if falled multiple times.
   ::et_pal_init();
 
+  if (kernels.size() + this->num_kernels_ >= kMaxNumOfKernels) {
+    ET_LOG(
+        Error,
+        "The total number of kernels to be registered is larger than the limit %" PRIu32
+        ". %" PRIu32
+        " kernels are already registered and we're trying to register another %" PRIu32
+        " kernels.",
+        kMaxNumOfKernels,
+        (uint32_t)this->num_kernels_,
+        (uint32_t)kernels.size());
+    ET_LOG(Error, "======== Kernels already in the registry: ========");
+    for (size_t i = 0; i < this->num_kernels_; i++) {
+      ET_LOG(Error, "%s", this->kernels_[i].name_);
+      ET_LOG_KERNEL_KEY(this->kernels_[i].kernel_key_);
+    }
+    ET_LOG(Error, "======== Kernels being registered: ========");
+    for (size_t i = 0; i < kernels.size(); i++) {
+      ET_LOG(Error, "%s", kernels[i].name_);
+      ET_LOG_KERNEL_KEY(kernels[i].kernel_key_);
+    }
+    return Error::Internal;
+  }
   // for debugging purpose
   const char* lib_name = et_pal_get_shared_library_name(kernels.data());
 
   for (const auto& kernel : kernels) {
-    bool result = false;
-    for (size_t idx = 0; idx < operatorRegSize_; idx++) {
-      if (strcmp(operators_table_[idx].name_, kernel.name_) == 0) {
-        // re-registering kernel
-        if (operators_table_[idx].contains(kernel.kernel_key_)) {
-          ET_LOG(Error, "Re-registering %s. From: %s", kernel.name_, lib_name);
-          return Error::InvalidArgument;
-        }
-        result = operators_table_[idx].register_kernel(kernel);
-        // more kernels than what's supported
-        if (!result) {
-          ET_LOG(
-              Error,
-              "More than %d kernels are being registered to %s",
-              kMaxNumOfKernelPerOp,
-              kernel.name_);
-          return Error::Internal;
-        }
+    // linear search. This is fine if the number of kernels are small.
+    for (int32_t i = 0; i < this->num_kernels_; i++) {
+      Kernel k = this->kernels_[i];
+      if (strcmp(kernel.name_, k.name_) == 0 &&
+          kernel.kernel_key_ == k.kernel_key_) {
+        ET_LOG(Error, "Re-registering %s, from %s", k.name_, lib_name);
+        ET_LOG_KERNEL_KEY(k.kernel_key_);
+        return Error::InvalidArgument;
       }
     }
-    // no such operator in registry yet, create a new one
-    if (!result) {
-      Operator op = Operator(kernel.name_, kernel.kernel_key_, kernel.op_);
-      Error err = register_operators({op});
-      if (err != Error::Ok) {
-        return err;
-      }
-    }
+    this->kernels_[this->num_kernels_++] = kernel;
   }
+  ET_LOG(
+      Debug,
+      "Successfully registered all kernels from shared library: %s",
+      lib_name);
 
   return Error::Ok;
 }
@@ -168,30 +117,19 @@ constexpr int BUF_SIZE = 307;
 bool OperatorRegistry::hasOpsFn(
     const char* name,
     ArrayRef<TensorMeta> meta_list) {
-  for (size_t idx = 0; idx < this->operatorRegSize_; idx++) {
-    if (strcmp(this->operators_table_[idx].name_, name) == 0) {
-      if (this->operators_table_[idx].has_fallback()) {
-        return true;
-      }
-    }
-  }
-
-  if (meta_list.empty()) {
-    // If no tensor is present (fallback is required) but no fallback is
-    // available, return false
-    return false;
-  }
-
   char buf[BUF_SIZE] = {0};
   make_kernel_key_string(meta_list, buf);
   KernelKey kernel_key = KernelKey(buf);
-  for (size_t idx = 0; idx < this->operatorRegSize_; idx++) {
-    if (strcmp(this->operators_table_[idx].name_, name) == 0) {
-      if (this->operators_table_[idx].contains(kernel_key)) {
+
+  for (size_t idx = 0; idx < this->num_kernels_; idx++) {
+    if (strcmp(this->kernels_[idx].name_, name) == 0) {
+      if (this->kernels_[idx].kernel_key_.is_fallback() ||
+          this->kernels_[idx].kernel_key_ == kernel_key) {
         return true;
       }
     }
   }
+
   return false;
 }
 
@@ -205,20 +143,31 @@ const OpFunction& OperatorRegistry::getOpsFn(
   char buf[BUF_SIZE] = {0};
   make_kernel_key_string(meta_list, buf);
   KernelKey kernel_key = KernelKey(buf);
-  for (size_t idx = 0; idx < this->operatorRegSize_; idx++) {
-    if (strcmp(this->operators_table_[idx].name_, name) == 0) {
-      return this->operators_table_[idx].find_or_fallback(kernel_key);
+
+  int32_t fallback_idx = -1;
+  for (size_t idx = 0; idx < this->num_kernels_; idx++) {
+    if (strcmp(this->kernels_[idx].name_, name) == 0) {
+      if (this->kernels_[idx].kernel_key_ == kernel_key) {
+        return this->kernels_[idx].op_;
+      }
+      if (this->kernels_[idx].kernel_key_.is_fallback()) {
+        fallback_idx = idx;
+      }
     }
   }
-  ET_CHECK_MSG(false, "operator '%s' not found.", name);
+  if (fallback_idx != -1) {
+    return this->kernels_[fallback_idx].op_;
+  }
+  ET_CHECK_MSG(false, "kernel '%s' not found.", name);
+  ET_LOG_TENSOR_META(meta_list);
 }
 
-ArrayRef<Operator> getOpsArray() {
-  return getOperatorRegistry().getOpsArray();
+ArrayRef<Kernel> get_kernels() {
+  return getOperatorRegistry().get_kernels();
 }
 
-ArrayRef<Operator> OperatorRegistry::getOpsArray() {
-  return ArrayRef<Operator>(this->operators_table_, this->operatorRegSize_);
+ArrayRef<Kernel> OperatorRegistry::get_kernels() {
+  return ArrayRef<Kernel>(this->kernels_, this->num_kernels_);
 }
 
 } // namespace executor

@@ -153,25 +153,25 @@ TEST_F(ExecutorTest, EValueToScalar) {
 void test_op(KernelRuntimeContext& /*unused*/, EValue** /*unused*/) {}
 
 TEST_F(ExecutorTest, OpRegistration) {
-  auto s1 = register_operators({Operator("test", test_op)});
-  auto s2 = register_operators({Operator("test_2", test_op)});
+  auto s1 = register_kernels({Kernel("test", test_op)});
+  auto s2 = register_kernels({Kernel("test_2", test_op)});
   ASSERT_EQ(Error::Ok, s1);
   ASSERT_EQ(Error::Ok, s2);
   ET_EXPECT_DEATH(
-      { auto s3 = register_operators({Operator("test", test_op)}); }, "");
+      { auto s3 = register_kernels({Kernel("test", test_op)}); }, "");
 
   ASSERT_TRUE(hasOpsFn("test"));
   ASSERT_TRUE(hasOpsFn("test_2"));
 }
 
 TEST_F(ExecutorTest, OpRegistrationWithContext) {
-  auto op = Operator(
+  auto op = Kernel(
       "test_op_with_context",
       [](KernelRuntimeContext& context, EValue** values) {
         (void)context;
         *(values[0]) = Scalar(100);
       });
-  auto s1 = register_operators({op});
+  auto s1 = register_kernels({op});
   ASSERT_EQ(Error::Ok, s1);
   ASSERT_TRUE(hasOpsFn("test_op_with_context"));
 

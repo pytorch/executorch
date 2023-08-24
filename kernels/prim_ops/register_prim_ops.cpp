@@ -11,7 +11,7 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 
-using OpArrayRef = ::torch::executor::ArrayRef<::torch::executor::Operator>;
+using KernelArrayRef = ::torch::executor::ArrayRef<::torch::executor::Kernel>;
 using torch::executor::function::et_copy_index;
 
 namespace torch {
@@ -20,9 +20,9 @@ namespace function {
 
 namespace {
 
-static Operator prim_ops[] = {
+static Kernel prim_ops[] = {
     // aten::sym_size.int(Tensor self, int dim) -> SymInt
-    Operator(
+    Kernel(
         "aten::sym_size.int",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -35,7 +35,7 @@ static Operator prim_ops[] = {
           out = EValue(size);
         }),
     // aten::sym_numel(Tensor self) -> SymInt
-    Operator(
+    Kernel(
         "aten::sym_numel",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -46,7 +46,7 @@ static Operator prim_ops[] = {
           out = EValue(numel);
         }),
     // executorch_prim::add.Scalar(Scalar, Scalar) -> Scalar
-    Operator(
+    Kernel(
         "executorch_prim::add.Scalar",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -64,7 +64,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::sub.Scalar(Scalar, Scalar) -> Scalar
-    Operator(
+    Kernel(
         "executorch_prim::sub.Scalar",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -82,7 +82,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::mul.Scalar(Scalar, Scalar) -> Scalar
-    Operator(
+    Kernel(
         "executorch_prim::mul.Scalar",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -100,7 +100,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::floordiv.Scalar(Scalar, Scalar) -> Scalar
-    Operator(
+    Kernel(
         "executorch_prim::floordiv.Scalar",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -118,7 +118,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::eq.Scalar(Scalar, Scalar) -> bool
-    Operator(
+    Kernel(
         "executorch_prim::eq.Scalar",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -138,7 +138,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::gt.Scalar(Scalar, Scalar) -> bool
-    Operator(
+    Kernel(
         "executorch_prim::gt.Scalar",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -158,7 +158,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::lt.Scalar(Scalar, Scalar) -> bool
-    Operator(
+    Kernel(
         "executorch_prim::lt.Scalar",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -178,7 +178,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::ge.Scalar(Scalar, Scalar) -> bool
-    Operator(
+    Kernel(
         "executorch_prim::ge.Scalar",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -198,7 +198,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::le.Scalar(Scalar, Scalar) -> bool
-    Operator(
+    Kernel(
         "executorch_prim::le.Scalar",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -220,7 +220,7 @@ static Operator prim_ops[] = {
     // TODO(T159977211): wait a little bit so older models with these ops are
     // regenerated and then delete them
     // executorch_prim::add.int(int, int) -> int
-    Operator(
+    Kernel(
         "executorch_prim::add.int",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -231,7 +231,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::sub.int(int, int) -> int
-    Operator(
+    Kernel(
         "executorch_prim::sub.int",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -242,7 +242,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::mul.int(int, int) -> int
-    Operator(
+    Kernel(
         "executorch_prim::mul.int",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -253,7 +253,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::floordiv.int(int, int) -> int
-    Operator(
+    Kernel(
         "executorch_prim::floordiv.int",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -264,7 +264,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::eq.int(int, int) -> bool
-    Operator(
+    Kernel(
         "executorch_prim::eq.int",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -275,7 +275,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::gt.int(int, int) -> bool
-    Operator(
+    Kernel(
         "executorch_prim::gt.int",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -286,7 +286,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::lt.int(int, int) -> bool
-    Operator(
+    Kernel(
         "executorch_prim::lt.int",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -297,7 +297,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::ge.int(int, int) -> bool
-    Operator(
+    Kernel(
         "executorch_prim::ge.int",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -308,7 +308,7 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::le.int(int, int) -> bool
-    Operator(
+    Kernel(
         "executorch_prim::le.int",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
@@ -319,17 +319,17 @@ static Operator prim_ops[] = {
         }),
 
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
-    Operator("executorch_prim::et_copy_index.tensor", &et_copy_index),
+    Kernel("executorch_prim::et_copy_index.tensor", &et_copy_index),
 
 };
 
-static OpArrayRef op_array_ref(
+static KernelArrayRef kernel_array_ref(
     prim_ops,
-    prim_ops + sizeof(prim_ops) / sizeof(Operator));
+    prim_ops + sizeof(prim_ops) / sizeof(Kernel));
 
 // Return value not used. Keep the static variable assignment to register
 // operators in static initialization time.
-static auto success_with_op_reg = register_operators(op_array_ref);
+static auto success_with_kernel_reg = register_kernels(kernel_array_ref);
 
 } // namespace
 } // namespace function
