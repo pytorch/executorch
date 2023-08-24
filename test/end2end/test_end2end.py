@@ -59,7 +59,6 @@ from functorch.experimental.control_flow import cond
 
 kernel_mode = None  # either aten mode or lean mode
 try:
-    # pyre-fixme[21]: Could not find module `executorch.extension.pybindings.portable`.
     from executorch.extension.pybindings.portable import (
         _load_bundled_program_from_buffer,
         _load_for_executorch_from_buffer,
@@ -72,7 +71,6 @@ except:
     pass
 
 try:
-    # pyre-fixme[21]: Could not find module `executorch.extension.pybindings.portable`.
     from executorch.extension.pybindings.aten_mode_lib import (
         _load_bundled_program_from_buffer,
         _load_for_executorch_from_buffer,
@@ -554,7 +552,6 @@ def maketest(
 
         if run_executor:
             print("Running on the runtime")
-            # pyre-fixme[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
             executorch_module = _load_for_executorch_from_buffer(buff)
             # compare the result between eager module and executor
             for idx, inputs in enumerate(inputs_list):
@@ -607,7 +604,6 @@ def maketest(
                 executorch_bundled_program
             )
 
-            # pyre-fixme[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
             default_execution_plan_id = Module.FORWARD_METHOD_INDEX
 
             # TODO(T144329357): check bundled attachment correctness

@@ -17,7 +17,6 @@ from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
 )
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 
-# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
 from executorch.extension.pybindings.portable import (  # @manual
     _load_for_executorch_from_buffer,
 )

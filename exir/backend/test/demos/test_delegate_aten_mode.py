@@ -15,7 +15,6 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
 
-# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
 from executorch.extension.pybindings.aten_mode_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
