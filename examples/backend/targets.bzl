@@ -7,7 +7,29 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    # executor runner for XNNPACK Backend and portable kernels.
+    runtime.python_binary(
+        name = "xnnpack_examples",
+        main_module = "executorch.examples.backend.xnnpack_examples",
+        deps = [
+            ":xnnpack_examples_lib",
+        ],
+    )
+
+    runtime.python_library(
+        name = "xnnpack_examples_lib",
+        srcs = [
+            "xnnpack_examples.py",
+        ],
+        deps = [
+            "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+            "//executorch/examples/models:models",
+            "//executorch/examples/quantization:quant_utils",
+            "//executorch/exir:lib",
+            "//executorch/exir/backend:backend_api",
+        ],
+    )
+
+    # executor_runner for XNNPACK Backend and portable kernels.
     runtime.cxx_binary(
         name = "xnn_executor_runner",
         srcs = [],
