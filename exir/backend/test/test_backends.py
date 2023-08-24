@@ -46,7 +46,6 @@ from executorch.exir.schema import (
     Program,
 )
 
-# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
 from executorch.extension.pybindings.portable import (  # @manual
     _load_for_executorch_from_buffer,
 )
@@ -224,7 +223,6 @@ class TestBackends(unittest.TestCase):
         )
         buff = exec_prog.buffer
 
-        # pyre-ignore[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         executorch_module = _load_for_executorch_from_buffer(buff)
         model_inputs = torch.ones(1)
         model_outputs = executorch_module.forward([model_inputs])
@@ -281,7 +279,6 @@ class TestBackends(unittest.TestCase):
         )
         buff = exec_prog.buffer
 
-        # pyre-ignore[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         executorch_module = _load_for_executorch_from_buffer(buff)
 
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
@@ -338,7 +335,6 @@ class TestBackends(unittest.TestCase):
 
         # This line should raise an exception like
         # RuntimeError: failed with error 0x12
-        # pyre-ignore[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         _load_for_executorch_from_buffer(buff)
 
     @vary_segments
@@ -434,7 +430,6 @@ class TestBackends(unittest.TestCase):
             )
         )
 
-        # pyre-ignore[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         executorch_module = _load_for_executorch_from_buffer(buff)
         model_inputs = torch.ones(1)
 
@@ -561,7 +556,6 @@ class TestBackends(unittest.TestCase):
         )
         flatbuffer = exec_prog.buffer
 
-        # pyre-ignore[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         executorch_module = _load_for_executorch_from_buffer(flatbuffer)
         model_outputs = executorch_module.forward([*model_inputs])
 
@@ -858,7 +852,6 @@ class TestBackends(unittest.TestCase):
         # There should be 2 delegated modules
         self.assertEqual(counter, 2)
 
-        # pyre-ignore[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         executorch_module = _load_for_executorch_from_buffer(executorch_prog.buffer)
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(inputs)

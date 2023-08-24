@@ -49,7 +49,6 @@ from executorch.exir.schema import (
     Program,
 )
 
-# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
 from executorch.extension.pybindings.portable import (  # @manual
     _load_for_executorch_from_buffer,
 )

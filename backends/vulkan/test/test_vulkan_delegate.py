@@ -19,7 +19,7 @@ from executorch.exir.backend.backend_api import to_backend
 
 ctypes.CDLL("libvulkan.so.1")
 
-# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
+
 from executorch.extension.pybindings.portable import (  # @manual
     _load_for_executorch_from_buffer,
 )
@@ -85,7 +85,6 @@ class TestBackends(unittest.TestCase):
         )
 
         # Test the model with executor
-        # pyre-ignore[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(sample_inputs)

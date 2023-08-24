@@ -37,7 +37,6 @@ from executorch.exir.backend.backend_api import to_backend, validation_disabled
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.tracer import _default_decomposition_table
 
-# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
 from executorch.extension.pybindings.portable import (  # @manual
     _load_for_executorch_from_buffer,
 )
@@ -230,7 +229,6 @@ class TestXNNPACK(unittest.TestCase):
             )
 
         # Test the model with executor
-        # pyre-ignore[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
         executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(sample_inputs)
