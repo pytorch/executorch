@@ -27,30 +27,9 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
 
 from ..export.export_example import export_to_pte
 
-from ..models import MODEL_NAME_TO_MODEL
+from ..models import MODEL_NAME_TO_MODEL, MODEL_NAME_TO_OPTIONS
 
-# Note: for mv3, the mul op is not supported in XNNPACKQuantizer, that could be supported soon
-QUANT_MODEL_NAME_TO_MODEL = {
-    name: MODEL_NAME_TO_MODEL[name] for name in ["linear", "add", "add_mul", "mv2"]
-}
-
-
-def quantize(model_name, model, example_inputs):
-    """This is the official recommended flow for quantization in pytorch 2.0 export"""
-    m = model.eval()
-    m = export.capture_pre_autograd_graph(m, copy.deepcopy(example_inputs))
-    print("original model:", m)
-    quantizer = XNNPACKQuantizer()
-    # if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel
-    operator_config = get_symmetric_quantization_config(is_per_channel=False)
-    quantizer.set_global(operator_config)
-    m = prepare_pt2e(m, quantizer)
-    # calibration
-    m(*example_inputs)
-    m = convert_pt2e(m)
-    print("quantized model:", m)
-    # make sure we can export to flat buffer
-    export_to_pte(model_name, m, copy.deepcopy(example_inputs))
+from .utils import quantize
 
 
 def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_inputs):
@@ -102,7 +81,7 @@ if __name__ == "__main__":
         "-m",
         "--model_name",
         required=True,
-        help=f"Provide model name. Valid ones: {list(QUANT_MODEL_NAME_TO_MODEL.keys())}",
+        help=f"Provide model name. Valid ones: {list(MODEL_NAME_TO_OPTIONS.keys())}",
     )
     parser.add_argument(
         "-ve",
@@ -122,12 +101,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.so_library:
         torch.ops.load_library(args.so_library)
-    if not args.verify and args.model_name not in QUANT_MODEL_NAME_TO_MODEL:
+    if not args.verify and args.model_name not in MODEL_NAME_TO_OPTIONS:
         raise RuntimeError(
             f"Model {args.model_name} is not a valid name. or not quantizable right now, "
             "please contact executorch team if you want to learn why or how to support "
             "quantization for the requested model"
-            f"Available models are {list(QUANT_MODEL_NAME_TO_MODEL.keys())}."
+            f"Available models are {list(MODEL_NAME_TO_OPTIONS.keys())}."
         )
 
     model, example_inputs = MODEL_NAME_TO_MODEL[args.model_name]()
@@ -137,5 +116,6 @@ if __name__ == "__main__":
             args.model_name, model, example_inputs
         )
 
-    quantize(args.model_name, model, example_inputs)
+    quantized_model = quantize(model, example_inputs)
+    export_to_pte(args.model_name, quantized_model, copy.deepcopy(example_inputs))
     print("finished")

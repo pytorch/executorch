@@ -7,6 +7,8 @@
 # @file models.py
 # Simple models for demonstration purposes.
 
+from dataclasses import dataclass
+
 from typing import Any, Tuple
 
 import torch
@@ -139,4 +141,18 @@ MODEL_NAME_TO_MODEL = {
     "ic4": gen_inception_v4_model_and_inputs,
     "resnet18": gen_resnet18_model_and_inputs,
     "resnet50": gen_resnet50_model_and_inputs,
+}
+
+
+@dataclass
+class OptimizationOptions(object):
+    quantization: bool
+    xnnpack_delegation: bool
+
+
+MODEL_NAME_TO_OPTIONS = {
+    "linear": OptimizationOptions(True, True),
+    "add": OptimizationOptions(True, True),
+    "add_mul": OptimizationOptions(True, True),
+    "mv2": OptimizationOptions(True, True),
 }
