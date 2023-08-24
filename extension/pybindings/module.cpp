@@ -434,16 +434,6 @@ void create_profile_block(const std::string& name) {
   EXECUTORCH_PROFILE_CREATE_BLOCK(name.c_str());
 }
 
-// Returns the list of all available ops in the Executorch runtime.
-py::list get_ops_names() {
-  const auto& ops_array = getOpsArray();
-  py::list list(ops_array.size());
-  for (size_t i = 0; i < ops_array.size(); ++i) {
-    list[i] = std::string(ops_array[i].name_);
-  }
-  return list;
-}
-
 } // namespace
 
 void init_module_functions(py::module_& m) {
@@ -461,7 +451,6 @@ void init_module_functions(py::module_& m) {
       &PyBundledModule::load_from_buffer,
       py::arg("buffer"),
       py::arg("non_const_pool_size") = kDEFAULT_BUNDLED_INPUT_POOL_SIZE);
-  m.def("_ops_names", &get_ops_names);
   m.def("_dump_profile_results", []() {
     prof_result_t prof_result;
     EXECUTORCH_DUMP_PROFILE_RESULTS(&prof_result);
