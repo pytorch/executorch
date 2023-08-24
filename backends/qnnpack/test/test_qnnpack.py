@@ -19,7 +19,6 @@ from executorch.exir import CaptureConfig, ExecutorchProgram
 
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 
-# pyre-ignore[21]: Could not find module `executorch.extension.pybindings.portable`.
 from executorch.extension.pybindings.portable import (  # @manual
     _load_for_executorch_from_buffer,
 )

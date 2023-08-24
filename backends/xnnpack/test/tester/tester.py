@@ -30,10 +30,7 @@ from executorch.exir.backend.backend_api import to_backend, validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 
-# pyre-ignore[21]: Could not find module `executorch.pybindings.portable`.
-from executorch.extension.pybindings.portable import (  # @manual
-    _load_for_executorch_from_buffer,
-)
+from executorch.extension.pybindings.portable import _load_for_executorch_from_buffer
 from torch.ao.quantization.backend_config import BackendConfig
 from torch.ao.quantization.backend_config.executorch import (
     get_executorch_backend_config,
