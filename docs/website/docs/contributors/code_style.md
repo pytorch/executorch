@@ -1,3 +1,5 @@
 # Code Style
 
-Coding Guidelines: https://www.fburl.com/executorch-coding-guidelines
+See the top-level
+[CONTRIBUTING.md](https://github.com/pytorch/executorch/blob/main/CONTRIBUTING.md)
+file.
