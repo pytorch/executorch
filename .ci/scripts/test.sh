@@ -27,14 +27,22 @@ if [[ -z "${QUANTIZATION:-}" ]]; then
   QUANTIZATION=false
 fi
 
+XNNPACK_DELEGATION=$4
+if [[ -z "${XNNPACK_DELEGATION:-}" ]]; then
+  XNNPACK_DELEGATION=false
+fi
+
+which "${PYTHON_EXECUTABLE}"
+# Just set this variable here, it's cheap even if we use buck2
+CMAKE_OUTPUT_DIR=cmake-out
+
 test_model() {
-  python -m examples.export.export_example --model_name="${MODEL_NAME}"
+  "${PYTHON_EXECUTABLE}" -m examples.export.export_example --model_name="${MODEL_NAME}"
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
     buck2 run //examples/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
-    CMAKE_OUTPUT_DIR=cmake-out
     ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./${MODEL_NAME}.pte"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
@@ -42,22 +50,50 @@ test_model() {
   fi
 }
 
-which python
+python -m examples.backend.xnnpack_examples --model_name="mv2" --delegate && buck2 run //executorch/examples/backend:xnn_executor_runner -- --model_path mv2_xnnpack_.pte
 
-echo "Testing ${MODEL_NAME} with ${BUILD_TOOL}..."
-# Test the select model
-test_model
+test_model_with_xnnpack() {
+  WITH_QUANTIZATION=$1
+  if [[ ${WITH_QUANTIZATION} == true ]]; then
+    QUANTIZATION_PARAM="--quantize"
+    OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_quantize.pte"
+  else
+    QUANTIZATION_PARAM=""
+    OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_.pte"
+  fi
 
-if [[ "${QUANTIZATION}" == true ]]; then
+  "${PYTHON_EXECUTABLE}" -m examples.backend.xnnpack_examples --model_name="${MODEL_NAME}" --delegate "${QUANTIZATION_PARAM}"
+
+  # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-    bash examples/quantization/test_quantize.sh buck2 "${MODEL_NAME}"
+    buck2 run //executorch/examples/backend:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
-    CMAKE_OUTPUT_DIR=cmake-out
-    bash examples/quantization/test_quantize.sh cmake "${MODEL_NAME}"
+    echo "TODO"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
     exit 1
   fi
+}
+
+echo "Testing ${MODEL_NAME} (fp32, quantized, xnnpack) with ${BUILD_TOOL}..."
+# Test the select model without XNNPACK or quantization
+test_model
+
+# Test quantization
+if [[ "${QUANTIZATION}" == true ]]; then
+  bash examples/quantization/test_quantize.sh "${BUILD_TOOL}" "${MODEL_NAME}"
 else
   echo "The model ${MODEL_NAME} doesn't support quantization yet"
+fi
+
+# Test XNNPACK without quantization
+if [[ "${XNNPACK_DELEGATION}" == true ]]; then
+  test_model_with_xnnpack false
+else
+  echo "The model ${MODEL_NAME} doesn't support XNNPACK yet"
+fi
+
+# Test XNNPACK with quantization
+if [[ "${XNNPACK_DELEGATION}" == true ]] && [[ "${QUANTIZATION}" == true ]]; then
+  test_model_with_xnnpack true
 fi

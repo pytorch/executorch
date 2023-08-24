@@ -56,10 +56,11 @@ jobs:
         MODEL_NAME=${{ matrix.model }}
         BUILD_TOOL=${{ matrix.build-tool }}
         QUANTIZATION=${{ matrix.quantization }}
+        XNNPACK_DELEGATION=${{ matrix.xnnpack_delegation }}
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Build and test Executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}" "${XNNPACK_DELEGATION}"
 
   test-models-macos:
     name: test-models-macos
@@ -79,11 +80,12 @@ jobs:
         MODEL_NAME=${{ matrix.model }}
         BUILD_TOOL=${{ matrix.build-tool }}
         QUANTIZATION=${{ matrix.quantization }}
+        XNNPACK_DELEGATION=${{ matrix.xnnpack_delegation }}
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test Executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}" "${XNNPACK_DELEGATION}"
         popd
 
   test-custom-ops-linux:
