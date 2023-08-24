@@ -46,12 +46,13 @@ MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB = [
     "//executorch/kernels/aten:generated_lib_aten",
 ]
 
-def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibility = ["//executorch/..."]):
+def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibility = ["//executorch/..."], types = []):
     runtime.cxx_python_extension(
         name = python_module_name,
         srcs = [
             "//executorch/extension/pybindings:pybindings.cpp",
         ] + srcs,
+        types = types,
         base_module = "executorch.extension.pybindings",
         preprocessor_flags = [
             "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(python_module_name),
@@ -85,6 +86,15 @@ def define_common_targets():
 
     runtime.export_file(
         name = "module.cpp",
+        visibility = ["//executorch/extension/pybindings/..."],
+    )
+
+    # cxx_python_extension kwarg 'types' can't take export_file rules directly and we need to rename the .pyi
+    # file to match the lib anyway, so we just expose the file like this and then have genrules consume and
+    # rename it before passing it to executorch pybindings.
+    runtime.filegroup(
+        name = "pybinding_types",
+        srcs = ["pybindings.pyi"],
         visibility = ["//executorch/extension/pybindings/..."],
     )
 

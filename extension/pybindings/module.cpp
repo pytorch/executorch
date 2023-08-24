@@ -403,15 +403,17 @@ struct PyModule final {
     return std::make_unique<PyModule>(m.get_program_ptr(), m.get_program_len());
   }
 
-  py::list run_method(const std::string& name, const py::sequence& pyinputs) {
-    std::vector<EValue> inputs;
-    const auto inputs_size = py::len(pyinputs);
-    inputs.reserve(inputs_size);
+  py::list run_method(
+      const std::string& method_name,
+      const py::sequence& inputs) {
+    std::vector<EValue> cpp_inputs;
+    const auto inputs_size = py::len(inputs);
+    cpp_inputs.reserve(inputs_size);
     for (size_t i = 0; i < inputs_size; ++i) {
-      inputs.emplace_back(pyToEValue(pyinputs[i], keep_alive_));
+      cpp_inputs.emplace_back(pyToEValue(inputs[i], keep_alive_));
     }
 
-    auto outputs = module_->run_method(name, inputs);
+    auto outputs = module_->run_method(method_name, cpp_inputs);
 
     const auto outputs_size = outputs.size();
     py::list list(outputs_size);
@@ -421,8 +423,8 @@ struct PyModule final {
     return list;
   }
 
-  py::list forward(const py::sequence& pyinputs) {
-    return run_method("forward", pyinputs);
+  py::list forward(const py::sequence& inputs) {
+    return run_method("forward", inputs);
   }
 
  private:
@@ -461,7 +463,7 @@ void init_module_functions(py::module_& m) {
   m.def("_create_profile_block", &create_profile_block);
   m.def("_reset_profile_results", []() { EXECUTORCH_RESET_PROFILE_RESULTS(); });
 
-  py::class_<PyModule>(m, "Module")
+  py::class_<PyModule>(m, "ExecutorchModule")
       .def("run_method", &PyModule::run_method)
       .def("forward", &PyModule::forward);
 
