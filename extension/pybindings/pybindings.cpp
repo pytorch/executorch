@@ -245,83 +245,28 @@ void init_module_functions(py::module_&);
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   init_module_functions(m);
+
+  py::class_<executorch_flatbuffer::Program>(m, "Program");
+
   m.def(
       "_get_program_from_buffer",
       &_get_program_from_buffer,
       py::return_value_policy::reference);
+
   m.def(
       "_get_program_operators",
       &_get_program_operators,
       py::return_value_policy::copy);
+
   m.def(
       "_get_io_metadata_for_program_operators",
       &_get_io_metadata_for_program_operators,
       py::return_value_policy::copy);
 
-  py::class_<executorch_flatbuffer::Chain>(m, "Chain")
-      .def(
-          "stacktraces",
-          [](const executorch_flatbuffer::Chain& self) -> py::object {
-            if (!self.stacktrace()) {
-              return py::none();
-            }
-            auto stacktraces_size = self.stacktrace()->size();
-            py::list stacktraces;
-            for (size_t i = 0; i < stacktraces_size; ++i) {
-              auto frames = self.stacktrace()->Get(i)->items();
-              py::list frame_list;
-              for (size_t fi = 0; fi < frames->size(); ++fi) {
-                auto frame = frames->Get(fi);
-                frame_list.append(py::make_tuple(
-                    std::string(
-                        frame->filename()->c_str(), frame->filename()->size()),
-                    frame->lineno(),
-                    std::string(frame->name()->c_str(), frame->name()->size()),
-                    std::string(
-                        frame->context()->c_str(), frame->context()->size())));
-              }
-
-              stacktraces.append(frame_list);
-            }
-            return std::move(stacktraces);
-          },
-          py::return_value_policy::copy);
-
   py::class_<IOMetaData>(m, "IOMetaData")
       .def_readwrite("type", &IOMetaData::type)
       .def_readwrite("dtype", &IOMetaData::dtype)
       .def_readwrite("dim_order", &IOMetaData::dim_order);
-
-  py::class_<executorch_flatbuffer::ExecutionPlan>(m, "ExecutionPlan")
-      .def(
-          "chain",
-          [](const executorch_flatbuffer::ExecutionPlan& self, py::int_ index) {
-            return self.chains()->Get(index);
-          },
-          py::return_value_policy::reference)
-      .def(
-          "inputs_size",
-          [](const executorch_flatbuffer::ExecutionPlan& self) -> int32_t {
-            if (!self.inputs()) {
-              return -1;
-            } else {
-              return self.inputs()->size();
-            }
-          })
-      .def(
-          "operators",
-          [](const executorch_flatbuffer::ExecutionPlan& self) -> py::list {
-            return py::cast(get_operators_from_execution_plan(self));
-          },
-          py::return_value_policy::reference);
-
-  py::class_<executorch_flatbuffer::Program>(m, "Program")
-      .def(
-          "execution_plan",
-          [](const executorch_flatbuffer::Program& self, py::int_ index) {
-            return self.execution_plan()->Get(index);
-          },
-          py::return_value_policy::reference);
 }
 
 } // namespace executor
