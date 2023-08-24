@@ -280,6 +280,7 @@ endif()
 # Generate lib to register quantized ops
 if(REGISTER_QUANTIZED_OPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
+  list(APPEND _libs quantized_ops_lib)
 endif()
 
 # ios can only build library but not binary
