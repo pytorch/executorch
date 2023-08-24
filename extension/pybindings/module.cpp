@@ -6,7 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <algorithm>
 #include <cstdio>
+#include <memory>
 #include <stdexcept>
 #include <unordered_map>
 
@@ -15,6 +17,7 @@
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
+#include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/executor/program.h>
@@ -43,7 +46,7 @@
 /// Throws a runtime_error with the provided message if `error` is not `Ok`.
 #define THROW_IF_ERROR(error, message, ...)                       \
   ({                                                              \
-    if ((error) != torch::executor::Error::Ok) {                  \
+    if ((error) != Error::Ok) {                                   \
       char msg_buf[128];                                          \
       snprintf(msg_buf, sizeof(msg_buf), message, ##__VA_ARGS__); \
       /* pybind will convert this to a python exception. */       \
@@ -59,16 +62,14 @@ namespace executor {
 namespace {
 
 using util::BufferDataLoader;
+using util::MallocMemoryAllocator;
 using util::MmapDataLoader;
 
 class Module final {
-  using run_method_inputs_type = const std::vector<EValue>&;
-  using run_method_return_type = std::vector<EValue>;
-
  public:
-  Module(std::unique_ptr<DataLoader> loader, MemoryManager* memory_manager)
+  explicit Module(std::unique_ptr<DataLoader> loader)
       : loader_(std::move(loader)) {
-    torch::executor::runtime_init();
+    runtime_init();
     Result<Program> program = Program::Load(
         loader_.get(), Program::Verification::InternalConsistency);
     THROW_IF_ERROR(
@@ -76,12 +77,45 @@ class Module final {
         "loading program failed with error: 0x%" PRIx32,
         program.error());
     program_ = std::make_unique<Program>(std::move(program.get()));
+
+    // Figure out the size of each non_const layer we need to support every
+    // method in the program. Map will be easier to use than a list because we
+    // dont know how many non_const arenas there will be
+    std::map<size_t, int64_t> non_const_buffer_sizes;
+    for (size_t i = 0; i < program_->num_methods(); ++i) {
+      auto name = program_->get_method_name(i).get();
+      auto method_meta = program_->method_meta(name).get();
+      // 1 on purpose because non-const are 1 indexed
+      for (size_t j = 1; j < method_meta.num_non_const_buffers(); j++) {
+        int64_t buffer_size = method_meta.non_const_buffer_size(j).get();
+        if (non_const_buffer_sizes.find(j) == non_const_buffer_sizes.end()) {
+          non_const_buffer_sizes.insert({j, buffer_size});
+        } else {
+          non_const_buffer_sizes[j] =
+              std::max(non_const_buffer_sizes[j], buffer_size);
+        }
+      }
+    }
+
+    // Allocate the arenas. Using vector because we need to remember the size as
+    // well, so vector is easier then unique_ptr.
+    std::vector<std::vector<uint8_t>> non_const_buffers_;
+    for (std::map<size_t, int64_t>::iterator i = non_const_buffer_sizes.begin();
+         i != non_const_buffer_sizes.end();
+         i++) {
+      non_const_buffers_.push_back(std::vector<uint8_t>(i->second));
+    }
+
+    memory_ = std::make_unique<Memory>(std::move(non_const_buffers_));
+
+    // Load methods
     for (size_t i = 0; i < program_->num_methods(); ++i) {
       auto name = program_->get_method_name(i).get();
       // It's safe to use the same memory manager for all modules because
       // we can guarantee that only one will be executing at a time.
       // Everything in this module runs on a single thread.
-      Result<Method> method = program_->load_method(name, memory_manager);
+      Result<Method> method =
+          program_->load_method(name, memory_->mem_manager());
       THROW_IF_ERROR(
           method.error(),
           "loading method %s failed with error 0x%" PRIx32,
@@ -98,26 +132,19 @@ class Module final {
   Module(Module&&) = default;
   Module& operator=(Module&&) = default;
 
+  /// Executes the specified method on the provided inputs and returns its
+  /// outputs.
   template <typename... Types>
-  run_method_return_type run_method(
+  std::vector<EValue> run_method(
       const std::string& method_name,
       Types&&... args) {
     return run_method_internal(method_name, std::vector<EValue>{args...});
   }
 
-  run_method_return_type forward(run_method_inputs_type args) {
-    return run_method("forward", args);
-  }
-
-  template <typename... Types>
-  run_method_return_type forward(Types&&... args) {
-    return run_method("forward", std::forward<Types>(args)...);
-  }
-
  private:
-  run_method_return_type run_method_internal(
+  std::vector<EValue> run_method_internal(
       const std::string& method_name,
-      run_method_inputs_type args) {
+      const std::vector<EValue>& args) {
     auto& method = methods_[method_name];
     exec_aten::ArrayRef<EValue> input_evalue_list(args.data(), args.size());
 
@@ -131,13 +158,13 @@ class Module final {
 #ifdef USE_ATEN_LIB
     // [TLS handling] This is to workaround an assertion failure
     // (https://fburl.com/code/302jyn8d) running `gelu` in ATen mode in fbcode
-    // (such as bento). The problem is Executorch ATen mode doesn't have Thread
-    // Local State, but `torch-cpp` is assuming tls init is done. There are two
-    // more checks: MKLDNN disabled and C10_MOBILE, if any of them is true we
-    // won't be hitting this assertion error. However in `torch-cpp` lib both
-    // checks are false. Production impact: this should not make any impact in
-    // production environment, given that in xplat we are depending on a library
-    // that enables C10_MOBILE (`torch_mobile_core`).
+    // (such as bento). The problem is Executorch ATen mode doesn't have
+    // Thread Local State, but `torch-cpp` is assuming tls init is done. There
+    // are two more checks: MKLDNN disabled and C10_MOBILE, if any of them is
+    // true we won't be hitting this assertion error. However in `torch-cpp`
+    // lib both checks are false. Production impact: this should not make any
+    // impact in production environment, given that in xplat we are depending
+    // on a library that enables C10_MOBILE (`torch_mobile_core`).
     c10::impl::ExcludeDispatchKeyGuard no_autograd(
         c10::autograd_dispatch_keyset);
 #endif
@@ -160,6 +187,57 @@ class Module final {
     return result;
   }
 
+  /// A wrapper/util class for executorch memory allocations/manager.
+  class Memory {
+   public:
+    explicit Memory(std::vector<std::vector<uint8_t>>&& non_const_buffers)
+        : runtime_allocator_(),
+          non_const_buffers_(std::move(non_const_buffers)),
+          non_const_allocator_list_(create_non_const_allocators()),
+          non_const_allocator_(
+              non_const_allocator_list_.size(),
+              non_const_allocator_list_.data()),
+          mem_manager_(
+              &const_allocator_,
+              &non_const_allocator_,
+              &runtime_allocator_,
+              &temp_allocator_) {}
+
+    /// Returns a pointer to the internal memory manager, the Memory instance
+    /// must outlive this pointer.
+    MemoryManager* mem_manager() {
+      return &mem_manager_;
+    }
+
+    Memory(const Memory&) = delete;
+    Memory& operator=(const Memory&) = delete;
+
+   private:
+    MemoryAllocator const_allocator_{MemoryAllocator(0, nullptr)};
+
+    MallocMemoryAllocator runtime_allocator_;
+
+    MemoryAllocator temp_allocator_{MemoryAllocator(0, nullptr)};
+
+    std::vector<std::vector<uint8_t>> non_const_buffers_;
+
+    std::vector<MemoryAllocator> non_const_allocator_list_;
+
+    HierarchicalAllocator non_const_allocator_;
+
+    MemoryManager mem_manager_;
+
+    std::vector<MemoryAllocator> create_non_const_allocators() {
+      std::vector<MemoryAllocator> result;
+      for (size_t i = 0; i < non_const_buffers_.size(); i++) {
+        result.push_back(MemoryAllocator(
+            non_const_buffers_[i].size(), non_const_buffers_[i].data()));
+      }
+      return result;
+    }
+  };
+
+  std::unique_ptr<Memory> memory_;
   std::unique_ptr<DataLoader> loader_; // program_ points to this.
   std::unique_ptr<const Program> program_; // methods_ entries points to this.
   std::unordered_map<std::string, std::unique_ptr<Method>> methods_;
@@ -167,16 +245,13 @@ class Module final {
 
 inline std::unique_ptr<Module> load_from_buffer(
     const void* ptr,
-    size_t ptr_len,
-    MemoryManager* memory_manager) {
+    size_t ptr_len) {
   EXECUTORCH_SCOPE_PROF("load_from_buffer");
   auto loader = std::make_unique<BufferDataLoader>(ptr, ptr_len);
-  return std::make_unique<Module>(std::move(loader), memory_manager);
+  return std::make_unique<Module>(std::move(loader));
 }
 
-inline std::unique_ptr<Module> load_from_file(
-    const std::string& path,
-    MemoryManager* memory_manager) {
+inline std::unique_ptr<Module> load_from_file(const std::string& path) {
   EXECUTORCH_SCOPE_PROF("load_from_file");
 
   Result<MmapDataLoader> res = MmapDataLoader::From(
@@ -188,7 +263,7 @@ inline std::unique_ptr<Module> load_from_file(
       res.error());
 
   auto loader = std::make_unique<MmapDataLoader>(std::move(res.get()));
-  return std::make_unique<Module>(std::move(loader), memory_manager);
+  return std::make_unique<Module>(std::move(loader));
 }
 
 // Struct used to manage the memory of tensors allocated in lean (not aten) mode
@@ -251,9 +326,6 @@ py::object pyFromEValue(const EValue& v, KeepAlive& keep_alive) {
   ET_ASSERT_UNREACHABLE();
 }
 
-static constexpr size_t kDEFAULT_NON_CONSTANT_POOL_SIZE =
-    2 * 256 * 1024U * 1024U; // 512 MB
-static constexpr size_t kRUNTIME_POOL_SIZE = 256 * 1024U * 1024U; // 256 MB
 static constexpr size_t kDEFAULT_BUNDLED_INPUT_POOL_SIZE = 16 * 1024U;
 
 struct PyBundledModule final {
@@ -302,66 +374,33 @@ struct PyBundledModule final {
 };
 
 struct PyModule final {
-  explicit PyModule(
-      const py::bytes& buffer,
-      const py::int_ non_const_pool_size,
-      const py::int_ runtime_pool_size)
-      : memory_manager_creator_(non_const_pool_size, runtime_pool_size),
-        memory_manager_(memory_manager_creator_.get_memory_manager()),
-        module_(torch::executor::load_from_buffer(
+  explicit PyModule(const py::bytes& buffer)
+      : module_(torch::executor::load_from_buffer(
             buffer.cast<std::string_view>().data(),
-            py::len(buffer),
-            memory_manager_)) {}
+            py::len(buffer))) {}
 
-  explicit PyModule(
-      const void* ptr,
-      size_t ptr_len,
-      const py::int_ non_const_pool_size,
-      const py::int_ runtime_pool_size)
-      : memory_manager_creator_(non_const_pool_size, runtime_pool_size),
-        memory_manager_(memory_manager_creator_.get_memory_manager()),
-        module_(
-            torch::executor::load_from_buffer(ptr, ptr_len, memory_manager_)) {}
+  explicit PyModule(const void* ptr, size_t ptr_len)
+      : module_(torch::executor::load_from_buffer(ptr, ptr_len)) {}
 
-  explicit PyModule(
-      const std::string& path,
-      const py::int_ non_const_pool_size,
-      const py::int_ runtime_pool_size)
-      : memory_manager_creator_(non_const_pool_size, runtime_pool_size),
-        memory_manager_(memory_manager_creator_.get_memory_manager()),
-        module_(torch::executor::load_from_file(path, memory_manager_)) {}
+  explicit PyModule(const std::string& path)
+      : module_(torch::executor::load_from_file(path)) {}
 
   PyModule(const PyModule&) = delete;
   PyModule& operator=(const PyModule&) = delete;
   PyModule(PyModule&&) = default;
   PyModule& operator=(PyModule&&) = default;
 
-  // Module is valid until buffer element is not destructed, take ownership/copy
-  // of the buffer?
-  static std::unique_ptr<PyModule> load_from_buffer(
-      const py::bytes& buffer,
-      const py::int_ non_const_pool_size = kDEFAULT_NON_CONSTANT_POOL_SIZE,
-      const py::int_ runtime_pool_size = kRUNTIME_POOL_SIZE) {
-    return std::make_unique<PyModule>(
-        buffer, non_const_pool_size, runtime_pool_size);
+  // Module is only valid as long as the python buffer is alive.
+  static std::unique_ptr<PyModule> load_from_buffer(const py::bytes& buffer) {
+    return std::make_unique<PyModule>(buffer);
   }
-  static std::unique_ptr<PyModule> load_from_file(
-      const std::string& path,
-      const py::int_ non_const_pool_size = kDEFAULT_NON_CONSTANT_POOL_SIZE,
-      const py::int_ runtime_pool_size = kRUNTIME_POOL_SIZE) {
-    return std::make_unique<PyModule>(
-        path, non_const_pool_size, runtime_pool_size);
+  static std::unique_ptr<PyModule> load_from_file(const std::string& path) {
+    return std::make_unique<PyModule>(path);
   }
 
   static std::unique_ptr<PyModule> load_from_bundled_program(
-      PyBundledModule& m,
-      const py::int_ non_const_pool_size = kDEFAULT_NON_CONSTANT_POOL_SIZE,
-      const py::int_ runtime_pool_size = kRUNTIME_POOL_SIZE) {
-    return std::make_unique<PyModule>(
-        m.get_program_ptr(),
-        m.get_program_len(),
-        non_const_pool_size,
-        runtime_pool_size);
+      PyBundledModule& m) {
+    return std::make_unique<PyModule>(m.get_program_ptr(), m.get_program_len());
   }
 
   py::list run_method(const std::string& name, const py::sequence& pyinputs) {
@@ -386,21 +425,16 @@ struct PyModule final {
     return run_method("forward", pyinputs);
   }
 
-  const Module& module() {
-    return *module_;
-  }
-
  private:
-  MemoryManagerCreatorDynamic memory_manager_creator_;
-  MemoryManager* memory_manager_;
-  std::unique_ptr<Module> module_;
   KeepAlive keep_alive_;
+  std::unique_ptr<Module> module_;
 };
 
 void create_profile_block(const std::string& name) {
   EXECUTORCH_PROFILE_CREATE_BLOCK(name.c_str());
 }
 
+// Returns the list of all available ops in the Executorch runtime.
 py::list get_ops_names() {
   const auto& ops_array = getOpsArray();
   py::list list(ops_array.size());
@@ -413,24 +447,15 @@ py::list get_ops_names() {
 } // namespace
 
 void init_module_functions(py::module_& m) {
-  m.def(
-      "_load_for_executorch",
-      PyModule::load_from_file,
-      py::arg("path"),
-      py::arg("non_const_pool_size") = kDEFAULT_NON_CONSTANT_POOL_SIZE,
-      py::arg("runtime_pool_size") = kRUNTIME_POOL_SIZE);
+  m.def("_load_for_executorch", PyModule::load_from_file, py::arg("path"));
   m.def(
       "_load_for_executorch_from_buffer",
       &PyModule::load_from_buffer,
-      py::arg("buffer"),
-      py::arg("non_const_pool_size") = kDEFAULT_NON_CONSTANT_POOL_SIZE,
-      py::arg("runtime_pool_size") = kRUNTIME_POOL_SIZE);
+      py::arg("buffer"));
   m.def(
       "_load_for_executorch_from_bundled_program",
       &PyModule::load_from_bundled_program,
-      py::arg("ptr"),
-      py::arg("non_const_pool_size") = kDEFAULT_NON_CONSTANT_POOL_SIZE,
-      py::arg("runtime_pool_size") = kRUNTIME_POOL_SIZE);
+      py::arg("ptr"));
   m.def(
       "_load_bundled_program_from_buffer",
       &PyBundledModule::load_from_buffer,
