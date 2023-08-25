@@ -41,9 +41,18 @@ def export_models_for_ci() -> None:
         quantization = (
             name in MODEL_NAME_TO_OPTIONS and MODEL_NAME_TO_OPTIONS[name].quantization
         )
+        xnnpack_delegation = (
+            name in MODEL_NAME_TO_OPTIONS
+            and MODEL_NAME_TO_OPTIONS[name].xnnpack_delegation
+        )
         for build_tool in BUILD_TOOLS:
             models["include"].append(
-                {"build-tool": build_tool, "model": name, "quantization": quantization}
+                {
+                    "build-tool": build_tool,
+                    "model": name,
+                    "quantization": quantization,
+                    "xnnpack_delegation": xnnpack_delegation,
+                }
             )
     set_output("models", json.dumps(models))
 
