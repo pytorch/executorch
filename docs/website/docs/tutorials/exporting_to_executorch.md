@@ -92,7 +92,7 @@ ExportedProgram:
 ```
 
 At this point, users can choose to run additional passes through the
-`exported_program.transform(passes)` function. A tutorial on how to write
+`exported_program._transform(passes)` function. A tutorial on how to write
 transformations can be found [here](./passes.md).
 
 Additionally, users can run quantization at this step. A tutorial for doing so can be found [here](./quantization_flow.md).
@@ -128,7 +128,7 @@ ExportedProgram:
 ```
 
 Users can also choose to run additional passes through the
-`exported_program.transform(passes)` function. A tutorial on how to write
+`exported_program._transform(passes)` function. A tutorial on how to write
 transformations can be found [here](./passes.md). Note that since the graph is
 now in Edge Dialect, all passes must also result in a valid Edge Dialect graph
 (specifically one thing to point out is that the operators are now in the
