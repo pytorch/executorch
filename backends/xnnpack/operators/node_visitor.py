@@ -230,6 +230,7 @@ class NodeVisitor:
         # Get new xnn id for tensor value
         ext_id, id_out, flag = self.gen_ids_and_flags(tensor, xnn_graph, quant_params)
         dims = get_shape(tensor)
+        dims = [1] if len(dims) == 0 else dims
 
         # constant values serialize data
         buffer_idx = self.get_serialized_buffer(
@@ -336,6 +337,10 @@ class NodeVisitor:
         # Quantize buffer if static data is indeed quantized
         if quant_params is not None and not quant_params.is_dynamic:
             const_val = quant_params.quantize_tensor(const_val).contiguous()
+        else:
+            # ensure that the const is fp32
+            const_val = const_val.to(dtype=torch.float32).contiguous()
+
         if swap_nc_for_depthwise_weights:
             const_val = const_val.permute(
                 dims=((1, 0) + tuple(range(2, const_val.dim())))
