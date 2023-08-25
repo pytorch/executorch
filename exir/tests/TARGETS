@@ -204,6 +204,8 @@ python_unittest(
         ":lib",
         ":models",
         "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
+        "//executorch/exir:graph_module",
         "//executorch/exir:lib",
         "//executorch/exir:memory",
         "//executorch/exir:memory_planning",
