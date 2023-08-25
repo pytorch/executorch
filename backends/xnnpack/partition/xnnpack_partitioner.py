@@ -17,6 +17,7 @@ from executorch.backends.xnnpack.partition.configs import (
     SUPPORTED_OPS,
     SUPPORTED_QUANT_MODULES,
     SUPPORTED_QUANT_OPS,
+    UNSUPPORTED_QUANT_MODULES,
 )
 from executorch.backends.xnnpack.partition.support_patterns import (
     get_add_graphs,
@@ -103,6 +104,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
             Any, Callable[[torch.fx.Node], bool]
         ] = _OP_SUPPORT_CONSTRAINTS,
         supported_ops: Optional[List] = None,
+        unsupported_modules: Optional[List] = None,
     ):
         """
         @Arg constraints_dict: Dict mapping each node to a lambda function that
@@ -110,9 +112,16 @@ class XnnpackOperatorSupport(OperatorSupportBase):
              node.
         @Arg supported_ops: List of supported operators for partitioning
         """
+        self.unsupported_modules = unsupported_modules
         self.supported_ops = supported_ops
         self.constraints = constraints_dict
         assert len(self.constraints)
+
+    def check_common_constraints(self, node) -> bool:
+        if self.unsupported_modules and "source_fn" in node.meta:
+            return not node.meta["source_fn"][1] in self.unsupported_modules
+
+        return True
 
     @staticmethod
     def check_constraint(node) -> bool:
@@ -132,7 +141,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         if self.supported_ops and node.target not in self.supported_ops:
             return False
 
-        return self.check_constraint(node)
+        return self.check_constraint(node) and self.check_common_constraints(node)
 
     def _constraint(target):  # noqa
         """
@@ -540,10 +549,11 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         self,
         supported_modules: List[Callable] = SUPPORTED_MODULES,
         supported_ops: Optional[List[Callable]] = SUPPORTED_OPS,
+        unsupported_modules: Optional[List[Callable]] = None,
     ):
         super().__init__()
         self.supported_modules = set(supported_modules)
-
+        self.unsupported_modules = unsupported_modules
         self.supported_ops = set(supported_ops or [])
 
         self.delegation_spec = DelegationSpec(XnnpackBackend.__name__, [])
@@ -614,7 +624,10 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         return generate_partitions_from_list_of_nodes(
             graph_module,
             matched_module_nodes,
-            XnnpackOperatorSupport(supported_ops=self.supported_ops),
+            XnnpackOperatorSupport(
+                supported_ops=self.supported_ops,
+                unsupported_modules=self.unsupported_modules,
+            ),
         )
 
     def tag_nodes(self, partitions: List[Partition]) -> None:
@@ -668,9 +681,12 @@ class XnnpackQuantizedPartitioner2(XnnpackFloatingPointPartitioner):
         self,
         supported_modules=SUPPORTED_QUANT_MODULES,
         supported_ops=SUPPORTED_QUANT_OPS,
+        unsupported_modules=UNSUPPORTED_QUANT_MODULES,
     ):
         supported_ops = supported_ops or []
-        super().__init__(supported_modules, supported_ops + self._QUANT_OPS)
+        super().__init__(
+            supported_modules, supported_ops + self._QUANT_OPS, unsupported_modules
+        )
 
     # TODO Refactor this
     # TODO Don't be greedy when pulling q->dq pairs for a given op, add convert tracker pass
