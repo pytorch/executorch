@@ -307,7 +307,8 @@ class TestXNNPACK(unittest.TestCase):
         module.eval()
         # program capture
         m = torch._export.capture_pre_autograd_graph(
-            module, example_inputs, decomp_table=_default_decomposition_table()
+            module,
+            example_inputs,
         )
 
         quantizer = XNNPACKQuantizer()
