@@ -115,31 +115,6 @@ class TestBackends(unittest.TestCase):
             program.backend_delegate_data[processed.index].data, expected_processed
         )
 
-    def test_simple(self):
-        class SinModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                return torch.sin(x)
-
-        sin_module = SinModule()
-        model_inputs = (torch.ones(1),)
-        expected_res = sin_module(*model_inputs)
-        edgeir_m = exir.capture(
-            sin_module, model_inputs, exir.CaptureConfig()
-        ).to_edge()
-
-        lowered_sin_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m.exported_program, []
-        )
-        new_res = lowered_sin_module(*model_inputs)
-
-        self.assertTrue(torch.allclose(new_res, expected_res))
-
-        # TODO(tkaruturi): emitting single LoweredBackendModule
-        # program = exir.capture(graph_module).to_edge().to_exectorch().program
-
     @vary_segments
     def test_backend_with_compiler(self, extract_segments: bool):
         class SinModule(torch.nn.Module):
