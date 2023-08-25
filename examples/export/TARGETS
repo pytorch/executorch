@@ -11,15 +11,22 @@ python_library(
     ],
 )
 
-python_binary(
-    name = "export_example",
+python_library(
+    name = "lib",
     srcs = [
         "export_example.py",
     ],
-    main_module = "executorch.examples.export.export_example",
     deps = [
         ":utils",
         "//executorch/examples/models:models",
         "//executorch/exir:lib",
+    ],
+)
+
+python_binary(
+    name = "export_example",
+    main_module = "executorch.examples.export.export_example",
+    deps = [
+        ":lib",
     ],
 )
