@@ -58,7 +58,6 @@ test_model_with_xnnpack() {
   else
     SUFFIX="fp32"
     "${PYTHON_EXECUTABLE}" -m examples.backend.xnnpack_examples --model_name="${MODEL_NAME}" --delegate
-    OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_.pte"
   fi
 
   OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_${SUFFIX}.pte"
