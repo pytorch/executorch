@@ -30,7 +30,7 @@ def is_same_node(
             and all(
                 is_same_node(arg_left, arg_right)
                 for arg_left, arg_right in zip(
-                    node_left.all_input_nodes, node_right.all_input_nodes, strict=True
+                    node_left.all_input_nodes, node_right.all_input_nodes
                 )
             )
         ):
@@ -38,7 +38,7 @@ def is_same_node(
     else:
         if len(list(node_left)) != len(list(node_right)):
             return False
-        for n_left, n_right in zip(node_left, node_right, strict=True):
+        for n_left, n_right in zip(node_left, node_right):
             # pyre-fixme[6]: For 1st argument expected `Iterable[Node]` but got `Node`.
             # pyre-fixme[6]: For 2nd argument expected `Iterable[Node]` but got `Node`.
             if not is_same_node(n_left, n_right):
@@ -55,9 +55,7 @@ def is_identical_graph(
     # is not the same.
     if len(list(graph_left.graph.nodes)) != len(list(graph_right.graph.nodes)):
         return False
-    for node_left, node_right in zip(
-        graph_left.graph.nodes, graph_right.graph.nodes, strict=True
-    ):
+    for node_left, node_right in zip(graph_left.graph.nodes, graph_right.graph.nodes):
         if not (is_same_node(node_left, node_right)):
             return False
     return True
@@ -90,7 +88,6 @@ def replace_quantized_partition_with_op(
     partition: SourcePartition,
     replacement_op: torch._ops.OpOverloadPacket,
 ) -> Tuple[torch.fx.Node, List[torch.fx.Node], List[torch.fx.Node]]:
-
     """
     Replaces partition with the op specified by replacement_op. It's also expected that
     the nodes contained in partition are sourced from a quantized module as this function
