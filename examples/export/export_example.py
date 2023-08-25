@@ -11,7 +11,7 @@ import argparse
 import executorch.exir as exir
 
 from ..models import MODEL_NAME_TO_MODEL
-
+from ..models.model_factory import EagerModelFactory
 from .utils import export_to_edge
 
 
@@ -44,6 +44,6 @@ if __name__ == "__main__":
             f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}."
         )
 
-    model, example_inputs = MODEL_NAME_TO_MODEL[args.model_name]()
+    model, example_inputs = EagerModelFactory.create_model(*MODEL_NAME_TO_MODEL[args.model_name])
 
     export_to_pte(args.model_name, model, example_inputs)

@@ -1,10 +1,10 @@
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 python_library(
-    name = "w2l_export",
+    name = "w2l_model",
     srcs = [
         "__init__.py",
-        "export.py",
+        "model.py",
     ],
     base_module = "executorch.examples.models.wav2letter",
     deps = [

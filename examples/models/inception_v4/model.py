@@ -7,24 +7,22 @@
 import logging
 
 import torch
+from ..model_base import EagerModelBase
 from timm.models import inception_v4
 
 FORMAT = "[%(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(format=FORMAT)
 
 
-# will refactor this in a separate file.
-class InceptionV4Model:
+class InceptionV4Model(EagerModelBase):
     def __init__(self):
         pass
 
-    @staticmethod
-    def get_model():
+    def get_eager_model(self) -> torch.nn.Module:
         logging.info("loading inception_v4 model")
         m = inception_v4(pretrained=True)
         logging.info("loaded inception_v4 model")
         return m
 
-    @staticmethod
-    def get_example_inputs():
+    def get_example_inputs(self):
         return (torch.randn(3, 299, 299).unsqueeze(0),)

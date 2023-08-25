@@ -7,24 +7,23 @@
 import logging
 
 import torch
-from torchaudio import models
+from ..model_base import EagerModelBase
+from torchvision import models
 
 FORMAT = "[%(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(format=FORMAT)
 
 
-class Wav2LetterModel:
+class TorchVisionViTModel(EagerModelBase):
     def __init__(self):
-        self.batch_size = 10
-        self.input_frames = 700
-        self.vocab_size = 4096
+        pass
 
-    def get_model(self):
-        logging.info("loading wav2letter model")
-        wav2letter = models.Wav2Letter(num_classes=self.vocab_size)
-        logging.info("loaded wav2letter model")
-        return wav2letter
+    def get_eager_model(self) -> torch.nn.Module:
+        logging.info("loading torchvision vit_b_16 model")
+        vit_b_16 = models.vit_b_16(weights="IMAGENET1K_V1")
+        logging.info("loaded torchvision vit_b_16 model")
+        return vit_b_16
 
     def get_example_inputs(self):
-        input_shape = (self.batch_size, 1, self.input_frames)
+        input_shape = (1, 3, 224, 224)
         return (torch.randn(input_shape),)

@@ -7,24 +7,23 @@
 import logging
 
 import torch
+from ..model_base import EagerModelBase
 from torchvision import models
 
 FORMAT = "[%(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(format=FORMAT)
 
 
-class InceptionV3Model:
+class InceptionV3Model(EagerModelBase):
     def __init__(self):
         pass
 
-    @staticmethod
-    def get_model():
+    def get_eager_model(self) -> torch.nn.Module:
         logging.info("loading torchvision inception_v3 model")
         inception_v3 = models.inception_v3(weights="IMAGENET1K_V1")
         logging.info("loaded torchvision inception_v3 model")
         return inception_v3
 
-    @staticmethod
-    def get_example_inputs():
+    def get_example_inputs(self):
         input_shape = (1, 3, 224, 224)
         return (torch.randn(input_shape),)
