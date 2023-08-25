@@ -130,21 +130,33 @@ class NodeVisitor:
         # This will break if we change the way q/dq are partitioned
 
         # Tensor can still be input if its quantizing node is an input
-        is_input = (self).is_graph_input(tensor)
-        # Tensor can still be output if its quantizing node is an output
-        is_output = self.is_graph_output(tensor)
-        # handle logic for input/output tensors
-        if is_input or is_output:
+        if self.is_graph_input(tensor) or (
+            quant_params.is_input if quant_params else False
+        ):
+            tensor_input = tensor
+            if quant_params:
+                if quant_params.is_input and not self.is_graph_input(tensor):
+                    tensor_input = quant_params.q_input
             assert (
-                tensor in self.external_ids.keys()
-            ), f"Tensor {tensor}, is_input: {is_input}, is_output: {is_output}, ext_ids: {self.external_ids.keys()}"
-            ext_id = self.external_ids[tensor].external_id
-            if is_input:
-                xnn_graph.input_ids.append(id_out)
-                flag = XNN_VALUE_FLAG_EXTERNAL_INPUT
-            if is_output:
-                xnn_graph.output_ids.append(id_out)
-                flag = XNN_VALUE_FLAG_EXTERNAL_OUTPUT
+                tensor_input in self.external_ids.keys()
+            ), f"Tensor {tensor_input}, is_input. ext_ids: {self.external_ids.keys()}"
+            ext_id = self.external_ids[tensor_input].external_id
+            xnn_graph.input_ids.append(id_out)
+            flag = self.external_ids[tensor_input].io_type
+        # Tensor can still be output if its quantizing node is an output
+        elif self.is_graph_output(tensor) or (
+            quant_params.is_output if quant_params else False
+        ):
+            tensor_output = tensor
+            if quant_params:
+                if quant_params.is_output and not self.is_graph_output(tensor):
+                    tensor_output = list(tensor.users)[0]
+            assert (
+                tensor_output in self.external_ids.keys()
+            ), f"Tensor {tensor_output} is_output: ext_ids: {self.external_ids.keys()}"
+            ext_id = self.external_ids[tensor_output].external_id
+            xnn_graph.output_ids.append(id_out)
+            flag = self.external_ids[tensor_output].io_type
 
         return ext_id, id_out, flag
 
