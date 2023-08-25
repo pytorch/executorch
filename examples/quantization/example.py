@@ -46,6 +46,7 @@ def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_
     m = prepare_pt2e(m, quantizer)
     # calibration
     after_prepare_result = m(*example_inputs)
+    print("pt2e prepare:", m)
     m = convert_pt2e(m)
     after_quant_result = m(*example_inputs)
 
@@ -57,6 +58,7 @@ def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_
         m_copy, qconfig_mapping, example_inputs, backend_config=backend_config
     )
     after_prepare_result_fx = m_fx(*example_inputs)
+    print("fx prepare:", m_fx)
     m_fx = _convert_to_reference_decomposed_fx(m_fx, backend_config=backend_config)
     after_quant_result_fx = m_fx(*example_inputs)
 
@@ -69,10 +71,10 @@ def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_
     print("m_fx:", m_fx)
     print("prepare sqnr:", compute_sqnr(after_prepare_result, after_prepare_result_fx))
     assert compute_sqnr(after_prepare_result, after_prepare_result_fx) > 100
-    print("quant diff max:", torch.max(after_quant_result - after_quant_result_fx))
+    print("diff max:", torch.max(after_quant_result - after_quant_result_fx))
+    print("sqnr:", compute_sqnr(after_quant_result, after_quant_result_fx))
     assert torch.max(after_quant_result - after_quant_result_fx) < 1e-1
-    print("quant sqnr:", compute_sqnr(after_quant_result, after_quant_result_fx))
-    assert compute_sqnr(after_quant_result, after_quant_result_fx) > 30
+    assert compute_sqnr(after_quant_result, after_quant_result_fx) > 35
 
 
 if __name__ == "__main__":
@@ -121,7 +123,7 @@ if __name__ == "__main__":
         raise RuntimeError(
             f"Model {args.model_name} is not a valid name. or not quantizable right now, "
             "please contact executorch team if you want to learn why or how to support "
-            "quantization for the requested model"
+            "quantization for the requested model "
             f"Available models are {list(MODEL_NAME_TO_OPTIONS.keys())}."
         )
 
