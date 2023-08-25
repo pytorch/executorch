@@ -80,7 +80,7 @@ class ArrayRef final {
       : Data(&OneElt), Length(1) {}
 
   /// Construct a ArrayRef from a pointer and length.
-  constexpr ArrayRef(const T* data, size_t length)
+  ArrayRef(const T* data, size_t length)
       : Data(data), Length(length) {
     ET_DCHECK(Data != nullptr || Length == 0);
   }
@@ -141,7 +141,7 @@ class ArrayRef final {
   }
 
   /// equals - Check for element-wise equality.
-  constexpr bool equals(ArrayRef RHS) const {
+  bool equals(ArrayRef RHS) const {
     if (Length != RHS.Length) {
       return false;
     }
