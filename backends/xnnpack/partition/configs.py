@@ -81,6 +81,11 @@ SUPPORTED_IMPLICIT_Q_DQ_OP_NAMES_SET = {
     )
 }
 
+UNSUPPORTED_QUANT_MODULES = [
+    torch.nn.Hardswish,
+    torch.nn.Hardsigmoid,
+]
+
 # TODO delete this and should use SUPPORTED_MODULES instead once we align fp32 and quant support
 SUPPORTED_QUANT_MODULES = [
     torch.clamp,
