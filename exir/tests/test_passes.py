@@ -20,6 +20,7 @@ from executorch.exir import CaptureConfig, EdgeCompileConfig, memory
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops, ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.emit import emit_program
+from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (
@@ -45,6 +46,7 @@ from executorch.exir.tensor import TensorSpec
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.control_flow_models import FTCondDeadCode, FTMapBasic
 from executorch.exir.tests.models import MLP, Mul
+from functorch.experimental import control_flow
 
 from torch import nn
 from torch.fx import GraphModule, subgraph_rewriter
@@ -825,6 +827,70 @@ class TestPasses(unittest.TestCase):
         ScalarToTensorPass()(graph_module)
         for node in graph_module.graph.nodes:
             self.assertIn("debug_handle", node.meta)
+
+    def test_debug_handle_generator_pass_with_control_flow(self) -> None:
+        def true_nested(y: torch.Tensor) -> torch.Tensor:
+            y = y + y
+            y = torch.mm(y, y)
+            return y
+
+        def false_nested(y: torch.Tensor) -> torch.Tensor:
+            return torch.mm(y, y)
+
+        def true_fn(x: torch.Tensor, pred2: torch.Tensor) -> torch.Tensor:
+            z = control_flow.cond(pred2, true_nested, false_nested, [x])
+            return x + z
+
+        def false_fn(x: torch.Tensor, _) -> torch.Tensor:
+            return x.cos()
+
+        def map_fn(
+            x: torch.Tensor, pred1: torch.Tensor, pred2: torch.Tensor, y: torch.Tensor
+        ) -> torch.Tensor:
+            x = x.cos()
+            y = control_flow.cond(pred1, true_fn, false_fn, [y, pred2])
+            x = x + y
+            return x.sin()
+
+        def f(
+            xs: torch.Tensor, pred1: torch.Tensor, pred2: torch.Tensor, y: torch.Tensor
+        ) -> torch.Tensor:
+            y = torch.mm(y, y)
+            return control_flow.map(map_fn, xs, pred1, pred2, y)
+
+        inputs = (
+            torch.ones(2, 2),
+            torch.tensor([False]),
+            torch.tensor([False]),
+            torch.ones(2, 2),
+        )
+
+        graph_module = exir.capture(
+            f,
+            inputs,
+            exir.CaptureConfig(),
+        ).exported_program.graph_module
+
+        def check_debug_handle_metadata(graph_module: torch.fx.GraphModule) -> None:
+            queue = [graph_module]
+            while queue:
+                current_graph_module = queue.pop(0)
+                for node in current_graph_module.graph.nodes:
+                    self.assertIn("debug_handle", node.meta)
+                control_flow_submodules = [
+                    submodule
+                    for _, submodule, _ in get_control_flow_submodules(
+                        current_graph_module
+                    )
+                ]
+                queue.extend(control_flow_submodules)
+
+        DebugHandleGeneratorPass()(graph_module)
+        check_debug_handle_metadata(graph_module)
+
+        # Check debug handle still preserved after ScalarToTensorPass
+        ScalarToTensorPass()(graph_module)
+        check_debug_handle_metadata(graph_module)
 
     def test_symint_conversion(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:
