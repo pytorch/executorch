@@ -9,7 +9,8 @@ import json
 import os
 from typing import Any
 
-from examples.models import MODEL_NAME_TO_MODEL, MODEL_NAME_TO_OPTIONS
+from examples.models import MODEL_NAME_TO_MODEL
+from examples.recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS
 
 BUILD_TOOLS = [
     "buck2",
