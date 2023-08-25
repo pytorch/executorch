@@ -55,7 +55,6 @@
   })
 
 namespace py = pybind11;
-using ATTensor = at::Tensor;
 namespace torch {
 namespace executor {
 
@@ -134,15 +133,7 @@ class Module final {
 
   /// Executes the specified method on the provided inputs and returns its
   /// outputs.
-  template <typename... Types>
   std::vector<EValue> run_method(
-      const std::string& method_name,
-      Types&&... args) {
-    return run_method_internal(method_name, std::vector<EValue>{args...});
-  }
-
- private:
-  std::vector<EValue> run_method_internal(
       const std::string& method_name,
       const std::vector<EValue>& args) {
     auto& method = methods_[method_name];
@@ -187,6 +178,7 @@ class Module final {
     return result;
   }
 
+ private:
   /// A wrapper/util class for executorch memory allocations/manager.
   class Memory {
    public:
@@ -264,66 +256,6 @@ inline std::unique_ptr<Module> load_from_file(const std::string& path) {
 
   auto loader = std::make_unique<MmapDataLoader>(std::move(res.get()));
   return std::make_unique<Module>(std::move(loader));
-}
-
-// Struct used to manage the memory of tensors allocated in lean (not aten) mode
-#ifdef USE_ATEN_LIB
-struct KeepAlive {};
-#else
-struct KeepAlive {
-  std::vector<std::unique_ptr<exec_aten::TensorImpl>> tensors;
-  torch::util::KeepAliveSizes sizes;
-};
-#endif
-
-EValue pyToEValue(py::handle h, KeepAlive& keep_alive) {
-  const std::string& type_str = py::str(h.get_type());
-  EXECUTORCH_SCOPE_PROF("pyToEValue");
-  if (type_str == "<class 'torch.Tensor'>") {
-    auto atTensor = h.cast<ATTensor>();
-#ifdef USE_ATEN_LIB
-    EValue evalue(atTensor);
-#else
-    auto etensorImpl =
-        torch::util::eTensorFromAtTensor(atTensor, keep_alive.sizes);
-    EValue evalue(torch::executor::Tensor(etensorImpl.get()));
-    keep_alive.tensors.push_back(std::move(etensorImpl));
-#endif
-    return evalue;
-  } else if (py::isinstance<py::none>(h)) {
-    return EValue();
-  } else if (py::isinstance<py::bool_>(h)) {
-    return EValue(py::cast<bool>(h));
-  } else if (py::isinstance<py::int_>(h)) {
-    return EValue(py::cast<int64_t>(h));
-  } else {
-    // Unsupported pytype
-    ET_ASSERT_UNREACHABLE_MSG(type_str.c_str());
-  }
-}
-
-py::object pyFromEValue(const EValue& v, KeepAlive& keep_alive) {
-  EXECUTORCH_SCOPE_PROF("pyFromEValue");
-  if (Tag::None == v.tag) {
-    return py::none();
-  } else if (Tag::Int == v.tag) {
-    return py::cast(v.toInt());
-  } else if (Tag::Double == v.tag) {
-    return py::cast(v.toDouble());
-  } else if (Tag::Bool == v.tag) {
-    return py::cast(v.toBool());
-  } else if (Tag::Tensor == v.tag) {
-#ifdef USE_ATEN_LIB
-    return py::cast(v.toTensor().clone());
-#else
-    // Clone so the outputs in python do not share a lifetime with the module
-    // object
-    return py::cast(torch::util::atTensorFromETensor(
-                        v.toTensor().unsafeGetTensorImpl(), keep_alive.sizes)
-                        .clone());
-#endif
-  }
-  ET_ASSERT_UNREACHABLE();
 }
 
 static constexpr size_t kDEFAULT_BUNDLED_INPUT_POOL_SIZE = 16 * 1024U;
@@ -406,19 +338,113 @@ struct PyModule final {
   py::list run_method(
       const std::string& method_name,
       const py::sequence& inputs) {
-    std::vector<EValue> cpp_inputs;
     const auto inputs_size = py::len(inputs);
+    std::vector<EValue> cpp_inputs;
     cpp_inputs.reserve(inputs_size);
+
+#ifndef USE_ATEN_LIB // Portable mode
+    // So the ETensors and their metadata stay in scope for Module->run_method.
+    std::vector<torch::executor::TensorImpl> input_tensors;
+    std::vector<std::vector<torch::executor::Tensor::SizesType>> input_sizes;
+    std::vector<std::vector<torch::executor::Tensor::StridesType>>
+        input_strides;
+    std::vector<std::vector<torch::executor::Tensor::DimOrderType>>
+        input_dim_order;
+    // We store pointers to these vector elements so important to reserve so
+    // that we don't lose those on a vector resize. Don't need to do this for
+    // the others since they are vectors of vectors, and we don't store a
+    // pointer to the root level vector data.
+    input_tensors.reserve(inputs_size);
+#endif
+
+    // Convert python objects into EValues.
     for (size_t i = 0; i < inputs_size; ++i) {
-      cpp_inputs.emplace_back(pyToEValue(inputs[i], keep_alive_));
+      auto python_input = inputs[i];
+      const std::string& type_str = py::str(python_input.get_type());
+      if (type_str == "<class 'torch.Tensor'>") {
+        auto at_tensor = python_input.cast<at::Tensor>();
+        // alias_etensor_to_attensor will assert on this later, so to better
+        // propogate up to python we check early and throw an exception.
+        if (!at_tensor.is_contiguous()) {
+          auto error_msg = "Input " + std::to_string(i) + "for method " +
+              method_name + " is not contiguous.";
+          throw std::runtime_error(error_msg);
+        }
+
+#ifdef USE_ATEN_LIB
+        EValue evalue(at_tensor);
+#else
+        // convert at::Tensor to torch::executor::Tensor
+        auto type = torch::util::torchToExecuTorchScalarType(
+            at_tensor.options().dtype());
+        size_t dim = at_tensor.dim();
+        // cant directly alias at::Tensor sizes and strides due to int64 vs
+        // int32 typing conflict
+        input_sizes.emplace_back(
+            at_tensor.sizes().begin(), at_tensor.sizes().end());
+        input_strides.emplace_back(
+            at_tensor.strides().begin(), at_tensor.strides().end());
+
+        // Only works for MemoryFormat::Contiguous inputs
+        std::vector<torch::executor::Tensor::DimOrderType> dim_order;
+        for (size_t cur_dim = 0; cur_dim < dim; cur_dim++) {
+          dim_order.push_back(cur_dim);
+        }
+        input_dim_order.push_back(std::move(dim_order));
+        input_tensors.emplace_back(
+            type,
+            dim,
+            input_sizes[i].data(),
+            nullptr,
+            input_dim_order[i].data(),
+            input_strides[i].data());
+
+        torch::executor::Tensor temp =
+            torch::executor::Tensor(&input_tensors[i]);
+        torch::util::alias_etensor_to_attensor(at_tensor, temp);
+        EValue evalue(temp);
+#endif
+
+        cpp_inputs.push_back(evalue);
+      } else if (py::isinstance<py::none>(python_input)) {
+        cpp_inputs.push_back(EValue());
+      } else if (py::isinstance<py::bool_>(python_input)) {
+        cpp_inputs.push_back(EValue(py::cast<bool>(python_input)));
+      } else if (py::isinstance<py::int_>(python_input)) {
+        cpp_inputs.push_back(EValue(py::cast<int64_t>(python_input)));
+      } else {
+        // Unsupported pytype
+        ET_ASSERT_UNREACHABLE_MSG(type_str.c_str());
+      }
     }
 
     auto outputs = module_->run_method(method_name, cpp_inputs);
 
+    // Retrieve outputs
     const auto outputs_size = outputs.size();
     py::list list(outputs_size);
     for (size_t i = 0; i < outputs_size; ++i) {
-      list[i] = pyFromEValue(outputs[i], keep_alive_);
+      auto& v = outputs[i];
+      if (Tag::None == v.tag) {
+        list[i] = py::none();
+      } else if (Tag::Int == v.tag) {
+        list[i] = py::cast(v.toInt());
+      } else if (Tag::Double == v.tag) {
+        list[i] = py::cast(v.toDouble());
+      } else if (Tag::Bool == v.tag) {
+        list[i] = py::cast(v.toBool());
+      } else if (Tag::Tensor == v.tag) {
+#ifdef USE_ATEN_LIB
+        // Clone so the outputs in python do not share a lifetime with the
+        // module object
+        list[i] = py::cast(v.toTensor().clone());
+#else
+        list[i] = py::cast(
+            torch::util::alias_attensor_to_etensor(v.toTensor()).clone());
+#endif
+      } else {
+        ET_ASSERT_UNREACHABLE_MSG("Invalid model output type");
+      }
     }
     return list;
   }
@@ -428,7 +454,6 @@ struct PyModule final {
   }
 
  private:
-  KeepAlive keep_alive_;
   std::unique_ptr<Module> module_;
 };
 
