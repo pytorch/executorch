@@ -7,18 +7,29 @@
 # pyre-strict
 
 import copy
-from typing import Dict, List, Tuple, Union
+import operator
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.utils._pytree as pytree
-from executorch.exir import CallSpec, ExportGraphSignature
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.delegate import executorch_call_delegate
+from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
+from executorch.exir.emit import emit_program
 
 from executorch.exir.graph_module import _get_submodule
 
+from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
+from executorch.exir.passes.spec_prop_pass import make_spec, SpecPropPass
+from executorch.exir.schema import Program
+from executorch.exir.serialize import serialize_to_flatbuffer
+
 from executorch.exir.tracer import Value
-from torch._export.exported_program import ExportedProgram
+
+from torch._export.exported_program import (
+    CallSpec,
+    ExportedProgram,
+    ExportGraphSignature,
+)
 from torch._subclasses import FakeTensor
 from torch.fx.passes.utils.fuser_utils import (
     erase_nodes,
@@ -76,6 +87,168 @@ class LoweredBackendModule(torch.nn.Module):
     @property
     def original_module(self) -> ExportedProgram:
         return self._original_module
+
+    # TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api
+    def buffer(
+        self,
+        extract_segments: bool = False,
+        segment_alignment: int = 4096,
+        constant_tensor_alignment: Optional[int] = None,
+        delegate_alignment: Optional[int] = None,
+    ) -> bytes:
+        out = serialize_to_flatbuffer(
+            program=self.program(),
+            extract_segments=extract_segments,
+            segment_alignment=segment_alignment,
+            constant_tensor_alignment=constant_tensor_alignment,
+            delegate_alignment=delegate_alignment,
+        )
+        return out
+
+    # TODO(chenlai): re-consider recapture instead of manually constructing the program because
+    # the meta data construction is done manually.
+    def program(self, emit_stacktrace: bool = False) -> Program:
+        """
+        The idea in this function is to create a module based on the original module. The original module will
+        look something like following:
+
+        opcode         name                 target            args                                        kwargs
+        -------------  -------------------  ----------------  ------------------------------------------  --------
+        placeholder    arg0_1               arg0_1            ()                                          {}
+        placeholder    arg1_1               arg1_1            ()                                          {}
+        call_function  aten_repeat_default  *                 (arg1_1, [4, 1])                            {}
+        call_function  aten_mul_tensor      *                 (aten_repeat_default, aten_repeat_default)  {}
+        call_function  aten_add_tensor      *                 (arg1_1, arg1_1)                            {}
+        output         output               output            ([aten_mul_tensor, aten_add_tensor],)       {}
+
+        if the whole module is lowered, the resulting lowered module look like
+
+        opcode         name                      target                       args                                kwargs
+        -------------  ------------------------  ---------------------------  ----------------------------------  --------
+        placeholder    arg0_1                    arg0_1                       ()                                  {}
+        placeholder    arg1_1                    arg1_1                       ()                                  {}
+        get_attr       lowered_module_0          lowered_module_0             ()                                  {}
+        call_function  executorch_call_delegate  executorch_call_delegate     (lowered_module_0, arg0_1, arg1_1)  {}
+        call_function  getitem                   <built-in function getitem>  (executorch_call_delegate, 0)       {}
+        call_function  getitem_1                 <built-in function getitem>  (executorch_call_delegate, 1)       {}
+        output         output_1                  output                       ([getitem, getitem_1],)             {}
+
+        We'll remove all call_function nodes, insert an call_delegate node, inserting getitems nodes to get the result for call_delegate node
+        and return the list of getitems as the output
+        """
+        lowered_exported_program = copy.deepcopy(self.original_module)
+
+        # The real input nodes are the ones not buffer or parameter
+        all_input_nodes = [
+            node
+            for node in lowered_exported_program.graph.nodes
+            if (
+                node.op == "placeholder"
+                and node.name
+                not in lowered_exported_program.graph_signature.inputs_to_buffers
+                and node.name
+                not in lowered_exported_program.graph_signature.inputs_to_parameters
+            )
+        ]
+
+        output_node = [
+            node for node in lowered_exported_program.graph.nodes if node.op == "output"
+        ]
+        assert len(output_node) == 1, "There should be only one output node"
+
+        # Step 1. Cleaning up the graph before inserting the call_delegate node
+        # Remove the original output node
+        lowered_exported_program.graph.erase_node(output_node[0])
+
+        # Remove all the everything else except the input
+        for node in reversed(lowered_exported_program.graph.nodes):
+            if node.op != "placeholder":
+                lowered_exported_program.graph.erase_node(node)
+
+        # Find placeholders that are parameters or buffers, remove them from the main graph
+        for node in lowered_exported_program.graph.nodes:
+            if node.op == "placeholder" and (
+                node.name in lowered_exported_program.graph_signature.inputs_to_buffers
+                or node.name
+                in lowered_exported_program.graph_signature.inputs_to_parameters
+            ):
+                lowered_exported_program.graph.erase_node(node)
+
+        # Step 2. Start constructing the graph
+        lowered_name = get_lowered_module_name(
+            lowered_exported_program.graph_module, self
+        )
+        # Insert the lowered module to the graph module as an attibute
+        lowered_node = lowered_exported_program.graph.get_attr(lowered_name)
+
+        # Insert a call_delegate node to the graph module, with arguments from the arg list
+        delegate_node = lowered_exported_program.graph.call_function(
+            executorch_call_delegate, (lowered_node, *all_input_nodes)
+        )
+        # Get the output list. Since the output node is a tuple of list, like ([aten_mul_tensor, aten_add_tensor],)
+        # We add some handling logic to get the list `[aten_mul_tensor, aten_add_tensor]` properly
+        original_output_nodes = [
+            node for node in self.original_module.graph.nodes if node.op == "output"
+        ][0].args[0]
+
+        delegate_node.meta["spec"] = tuple(
+            [make_spec(node.meta["val"]) for node in original_output_nodes]
+        )
+
+        # The getitem nodes that are going to be inserted to the lowered graph module
+        getitem_nodes = []
+        for i in range(len(original_output_nodes)):
+            getitem_node = lowered_exported_program.graph.call_function(
+                operator.getitem,
+                args=(delegate_node, i),
+            )
+            getitem_nodes.append(getitem_node)
+        lowered_exported_program.graph.output(getitem_nodes)
+
+        lowered_exported_program.graph_module.recompile()
+        lowered_exported_program.graph.lint()
+
+        # Users output will be the get items nodes instead
+        lowered_exported_program.graph_signature.user_outputs = [
+            getitem_node.name for getitem_node in getitem_nodes
+        ]
+        # All data are consumed by the delegates so they should be removed from the state dict.
+        inputs_to_parameters = (
+            lowered_exported_program.graph_signature.inputs_to_parameters
+        )
+        inputs_to_buffers = lowered_exported_program.graph_signature.inputs_to_buffers
+        lowered_exported_program.graph_signature.user_inputs = [
+            user_input
+            for user_input in lowered_exported_program.graph_signature.user_inputs
+            if user_input in inputs_to_parameters or user_input in inputs_to_buffers
+        ]
+        lowered_exported_program.graph_signature.buffers = {}
+        lowered_exported_program.graph_signature.parameters = {}
+        lowered_exported_program.graph_signature.inputs_to_parameters = {}
+        lowered_exported_program.graph_signature.inputs_to_buffers = {}
+
+        # Double check the ExportedProgram data(especially everything except graph) is good
+        exported_program = ExportedProgram(
+            root=lowered_exported_program.graph_module,
+            graph=lowered_exported_program.graph,
+            graph_signature=lowered_exported_program.graph_signature,
+            # TODO: May need to set lowered_exported_program.call_spec = CallSpec(None, None)
+            # somewhere as we should pass it a list of tensors to the lowered module and output a
+            # list of tensors. Putting call_spec=lowered_exported_program.call_spec is correct here as the
+            # inputs/outputs to the toplevel program will be in the format of the eager module.
+            call_spec=lowered_exported_program.call_spec,
+            state_dict={},  # None because all data are consumed by delegate
+            range_constraints=lowered_exported_program.range_constraints,
+            equality_constraints=lowered_exported_program.equality_constraints,
+            module_call_graph=lowered_exported_program.module_call_graph,
+        )
+        exported_program = exported_program.transform(
+            SpecPropPass(), MemoryPlanningPass("greedy")
+        )
+        emitted_program = emit_program(
+            exported_program, emit_stacktrace=emit_stacktrace
+        ).program
+        return emitted_program
 
     # Used to patch each delegated function with a call_delegate call
     # @staticmethod
