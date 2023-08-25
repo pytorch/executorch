@@ -125,13 +125,14 @@ def _patch_pp_flags(kwargs):
     return kwargs
 
 def _patch_cxx_compiler_flags(kwargs):
-    """CXX Compiler flags to enable C++17 features."""
-    if "lang_compiler_flags" not in kwargs:
-        kwargs["lang_compiler_flags"] = {"cxx_cpp_output": ["-std=c++17"]}
-    elif "cxx_cpp_output" not in kwargs["lang_compiler_flags"]:
-        kwargs["lang_compiler_flags"]["cxx_cpp_output"] = ["-std=c++17"]
-    else:
-        kwargs["lang_compiler_flags"]["cxx_cpp_output"].append("-std=c++17")
+    lang_compiler_flags = kwargs.get("lang_compiler_flags", {})
+    cxx_cpp_output = lang_compiler_flags.get("cxx_cpp_output", [])
+
+    # @lint-ignore BUCKLINT: cpp_fbcode_language_standard
+    cxx_cpp_output.append("-std=c++11")
+
+    lang_compiler_flags["cxx_cpp_output"] = cxx_cpp_output
+    kwargs["lang_compiler_flags"] = lang_compiler_flags
     return kwargs
 
 # buildifier: disable=unused-variable

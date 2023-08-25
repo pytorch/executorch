@@ -52,12 +52,13 @@ for detailed advice.
 
 #### C++ language version
 
-**C++11.**
-
-NOTE: The code does not yet fully conform to this, and some files require C++17.
+**C++11 for code that is intended to run on devices.**
 
 Rationale: This is a compromise between being compatible with older, proprietary
 toolchains, and having access to relatively modern C++ features.
+
+C++ code that is only intended to run on the host (e.g., build tools, tests,
+python bindings) may use more modern versions of C++.
 
 #### C/C++ standard library usage
 

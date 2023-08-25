@@ -114,7 +114,7 @@ int main(int argc, char** argv) {
   // These buffers correspond to different hardware memory banks. Most mobile
   // environments will only have a single buffer. Some embedded environments may
   // have more than one for, e.g., slow/large DRAM and fast/small SRAM.
-  std::vector<std::unique_ptr<uint8_t[]>> non_const_buffers;
+  std::vector<std::vector<uint8_t>> non_const_buffers;
   std::vector<MemoryAllocator> non_const_allocators;
   size_t num_non_const_buffers = 0;
   {
@@ -138,11 +138,11 @@ int main(int argc, char** argv) {
         (unsigned int)buffer_size.error());
     ET_LOG(
         Info, "Setting up non-const buffer %zu, size %zu.", id, *buffer_size);
-    non_const_buffers.push_back(std::make_unique<uint8_t[]>(*buffer_size));
+    non_const_buffers.push_back(std::vector<uint8_t>(*buffer_size, 0));
     // Since the list of allocators began empty, buffer ID N will live at index
     // N-1.
     non_const_allocators.push_back(
-        MemoryAllocator(*buffer_size, non_const_buffers.back().get()));
+        MemoryAllocator(*buffer_size, non_const_buffers.back().data()));
     non_const_allocators.back().enable_profiling("non_const_allocators");
   }
   HierarchicalAllocator non_const_allocator(
