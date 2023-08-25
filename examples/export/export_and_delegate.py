@@ -8,7 +8,6 @@
 
 import argparse
 
-import executorch.exir as exir
 import torch
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.test.backend_with_compiler_demo import (
@@ -157,11 +156,17 @@ def export_and_lower_the_whole_graph():
 
     # Lower AddMulModule to the demo backend
     print("Lowering to the demo backend...")
-    _ = to_backend(
-        BackendWithCompilerDemo.__name__, edge.exported_program, m.get_compile_spec()
+    lowered_module = to_backend(
+        BackendWithCompilerDemo.__name__, edge, m.get_compile_spec()
     )
 
-    # TODO(chenlai): emit the lowered graph
+    buffer = lowered_module.buffer()
+
+    model_name = "whole"
+    filename = f"{model_name}.pte"
+    print(f"Saving exported program to {filename}")
+    with open(filename, "wb") as file:
+        file.write(buffer)
 
 
 OPTIONS_TO_LOWER = {
