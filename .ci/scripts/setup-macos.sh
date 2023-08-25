@@ -27,7 +27,20 @@ install_buck() {
     brew install wget
   fi
 
+  BUCK2_NOT_AVAILABLE=false
   if ! command -v buck2 &> /dev/null; then
+    BUCK2_NOT_AVAILABLE=true
+  else
+    BUCK2_BINARY=$(which buck2)
+    BUCK2_ARCH=$(file -b "${BUCK2_BINARY}")
+
+    if [[ "${BUCK2_ARCH}" != "Mach-O 64-bit executable arm64" ]]; then
+      echo "Reinstall buck2 because ${BUCK2_BINARY} is ${BUCK2_ARCH}, not 64-bit arm64"
+      BUCK2_NOT_AVAILABLE=true
+    fi
+  fi
+
+  if [[ "${BUCK2_NOT_AVAILABLE}" == true ]]; then
     pushd .ci/docker
 
     BUCK2=buck2-aarch64-apple-darwin.zst
