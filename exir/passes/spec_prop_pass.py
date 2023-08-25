@@ -86,10 +86,12 @@ class SpecPropPass(ExportPass):
         args_data, kwargs_data = pytree.tree_map_only(
             ProxyValue, lambda x: x.data, (args, kwargs)
         )
-        meta["spec"] = pytree.tree_map(
-            make_spec,
-            executorch_call_delegate(lowered_module, *args_data),
-        )
+        # If spec is missing, re-genenrate it with args data
+        if "spec" not in meta:
+            meta["spec"] = pytree.tree_map(
+                make_spec,
+                executorch_call_delegate(lowered_module, *args_data),
+            )
         return super().call_delegate(lowered_module, args, kwargs, meta)
 
     # pyre-ignore
