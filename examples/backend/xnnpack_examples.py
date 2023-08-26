@@ -16,8 +16,9 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
 )
 from executorch.exir.backend.backend_api import to_backend
 
-from ..models import MODEL_NAME_TO_MODEL, MODEL_NAME_TO_OPTIONS
+from ..models import MODEL_NAME_TO_MODEL
 from ..quantization.utils import quantize
+from ..recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
