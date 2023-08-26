@@ -26,9 +26,8 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
 )
 
 from ..export.export_example import export_to_pte
-
-from ..models import MODEL_NAME_TO_MODEL, MODEL_NAME_TO_OPTIONS
-
+from ..models import MODEL_NAME_TO_MODEL
+from ..recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS
 from .utils import quantize
 
 

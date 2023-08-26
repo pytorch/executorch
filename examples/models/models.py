@@ -142,17 +142,3 @@ MODEL_NAME_TO_MODEL = {
     "resnet18": gen_resnet18_model_and_inputs,
     "resnet50": gen_resnet50_model_and_inputs,
 }
-
-
-@dataclass
-class OptimizationOptions(object):
-    quantization: bool
-    xnnpack_delegation: bool
-
-
-MODEL_NAME_TO_OPTIONS = {
-    "linear": OptimizationOptions(True, True),
-    "add": OptimizationOptions(True, True),
-    "add_mul": OptimizationOptions(True, True),
-    "mv2": OptimizationOptions(True, True),
-}
