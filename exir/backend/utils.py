@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from functools import lru_cache
 from typing import Iterable, List, Tuple
 
 import torch
@@ -16,6 +17,7 @@ T_QuantPerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.defaul
 T_DQuantPerTensor = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 
 
+@lru_cache(maxsize=128)
 def is_same_node(
     node_left: Iterable[torch.fx.Node],
     node_right: Iterable[torch.fx.Node],
@@ -39,8 +41,6 @@ def is_same_node(
         if len(list(node_left)) != len(list(node_right)):
             return False
         for n_left, n_right in zip(node_left, node_right):
-            # pyre-fixme[6]: For 1st argument expected `Iterable[Node]` but got `Node`.
-            # pyre-fixme[6]: For 2nd argument expected `Iterable[Node]` but got `Node`.
             if not is_same_node(n_left, n_right):
                 return False
     return True
