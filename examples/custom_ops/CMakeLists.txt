@@ -66,4 +66,9 @@ if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 1)
 elseif(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
   set(kernel_sources ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2_out.cpp)
 endif()
-gen_operators_lib("custom_ops_lib" "${kernel_sources}")
+
+add_library(custom_kernels ${kernel_sources})
+target_link_libraries(custom_kernels PRIVATE executorch)
+target_compile_options(custom_kernels PUBLIC ${_common_compile_options})
+
+gen_operators_lib("custom_ops_lib" custom_kernels executorch)
