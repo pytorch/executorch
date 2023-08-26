@@ -15,6 +15,9 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackQuantizedPartitioner2,
 )
 from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
+    DuplicateDequantNodePass,
+)
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..quantization.utils import quantize
@@ -78,7 +81,13 @@ if __name__ == "__main__":
     # It will eventually be changed to a lifted graph, in which _unlift=False,
     edge = exir.capture(
         model, example_inputs, exir.CaptureConfig(enable_aot=True, _unlift=True)
-    ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+    ).to_edge(
+        exir.EdgeCompileConfig(
+            # TODO(T162080278): Duplicated Dequant nodes will be in quantizer spec
+            _check_ir_validity=False,
+            passes=[DuplicateDequantNodePass()],
+        )
+    )
     logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
     edge.exported_program = to_backend(edge.exported_program, partitioner)
