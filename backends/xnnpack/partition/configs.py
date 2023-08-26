@@ -37,6 +37,9 @@ SUPPORTED_OPS = [
 
 SUPPORTED_MODULES = [
     torch.nn.Conv1d,
+    # TODO(T161981984) recomposed hardswish into a single node
+    torch.nn.Hardswish,
+    torch.nn.Hardsigmoid,
     torch.nn.Conv2d,
     torch.nn.ReLU,
     torch.nn.Sigmoid,
