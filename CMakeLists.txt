@@ -127,38 +127,7 @@ add_subdirectory(third-party/gflags)
 #
 # program_schema: Generated .h files from schema/*.fbs inputs
 #
-
-# The include directory that will contain the generated schema headers.
-set(_program_schema__include_dir "${CMAKE_CURRENT_BINARY_DIR}/schema/include")
-
-# Paths to headers generated from the .fbs files.
-set(_program_schema__outputs)
-foreach(fbs_file ${_program_schema__srcs})
-  string(REGEX REPLACE "[.]fbs$" "_generated.h" generated "${fbs_file}")
-  list(APPEND _program_schema__outputs
-       "${_program_schema__include_dir}/executorch/${generated}")
-endforeach()
-
-# Generate the headers from the .fbs files.
-add_custom_command(
-  OUTPUT ${_program_schema__outputs}
-  COMMAND
-    flatc --cpp --cpp-std c++11 --gen-mutable --scoped-enums
-    # Add a subdirectory to the include dir so the files can be included as
-    # <executorch/schema/x_generated.h>
-    -o "${_program_schema__include_dir}/executorch/schema"
-    ${_program_schema__srcs}
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  DEPENDS flatc ${_program_schema__srcs}
-  COMMENT "Generating program_schema headers"
-  VERBATIM)
-
-add_library(program_schema INTERFACE ${_program_schema__outputs})
-set_target_properties(program_schema PROPERTIES LINKER_LANGUAGE CXX)
-target_include_directories(
-  program_schema
-  INTERFACE ${_program_schema__include_dir}
-            ${CMAKE_CURRENT_SOURCE_DIR}/third-party/flatbuffers/include)
+add_subdirectory(schema)
 
 #
 # executorch: Core runtime library
