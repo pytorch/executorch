@@ -10,7 +10,7 @@
 # ~~~
 
 # The include directory that will contain the generated schema headers.
-set(_program_schema__include_dir "${CMAKE_CURRENT_BINARY_DIR}/schema/include")
+set(_program_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
