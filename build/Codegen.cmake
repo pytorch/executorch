@@ -101,31 +101,20 @@ function(gen_custom_ops_aot_lib lib_name kernel_sources)
 
   include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
-  # Ensure that the load-time constructor functions run. By default, the linker
-  # would remove them since there are no other references to them.
-  if(APPLE)
-    macos_kernel_link_options(${lib_name})
-  else()
-    kernel_link_options(${lib_name})
-  endif()
+  target_link_options_shared_lib(${lib_name})
 endfunction()
 
 # Generate a runtime lib for registering operators in Executorch
-function(gen_operators_lib lib_name kernel_sources)
-  add_library(
-    ${lib_name} SHARED
-    ${CMAKE_CURRENT_BINARY_DIR}/RegisterCodegenUnboxedKernelsEverything.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/Functions.h
-    ${CMAKE_CURRENT_BINARY_DIR}/NativeFunctions.h ${kernel_sources})
-  target_link_libraries(${lib_name} PRIVATE executorch)
+function(gen_operators_lib lib_name kernel_lib deps)
+  add_library(${lib_name})
+  target_sources(
+    ${lib_name}
+    PRIVATE
+      ${CMAKE_CURRENT_BINARY_DIR}/RegisterCodegenUnboxedKernelsEverything.cpp
+      ${CMAKE_CURRENT_BINARY_DIR}/Functions.h
+      ${CMAKE_CURRENT_BINARY_DIR}/NativeFunctions.h)
+  target_link_libraries(${lib_name} PRIVATE ${deps})
+  target_link_libraries(${lib_name} INTERFACE ${kernel_lib})
 
-  include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-
-  # Ensure that the load-time constructor functions run. By default, the linker
-  # would remove them since there are no other references to them.
-  if(APPLE)
-    macos_kernel_link_options(${lib_name})
-  else()
-    kernel_link_options(${lib_name})
-  endif()
+  target_link_options_shared_lib(${lib_name})
 endfunction()
