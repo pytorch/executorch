@@ -3,11 +3,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-
-# Kernel library for quantized operators. Please this file formatted by running:
-# ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
-# ~~~
 cmake_minimum_required(VERSION 3.19)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -24,7 +19,6 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(_common_compile_options -Wno-deprecated-declarations)
@@ -57,7 +51,7 @@ target_include_directories(
   INTERFACE ${_xnnpack_schema__include_dir}
             ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
 
-set(xnnback_backend_libs portable_kernels_bindings gflags xnnpack_schema)
+set(xnn_executor_runner_libs ${_libs} xnnpack_schema)
 
 list(TRANSFORM _dynamic_quant_utils__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(dynamic_quant_utils ${_dynamic_quant_utils__srcs})
@@ -66,35 +60,36 @@ target_include_directories(dynamic_quant_utils PUBLIC ${_common_include_director
 target_compile_options(dynamic_quant_utils PUBLIC ${_common_compile_options})
 
 if(ENABLE_DYNAMIC_QUANTIZATION)
-  list(APPEND xnnback_backend_libs dynamic_quant_utils)
+  list(APPEND xnn_executor_runner_libs dynamic_quant_utils)
 endif()
 
 include(cmake/Dependencies.cmake)
 
-list(TRANSFORM _xnnpack_threadpool__srcs PREPEND "${EXECUTORCH_ROOT}/")
-add_library(xnnpack_threadpool ${_xnnpack_threadpool__srcs})
-target_link_libraries(xnnpack_threadpool PRIVATE ${xnnback_backend_libs})
-set_target_properties(xnnpack_threadpool PROPERTIES LINKER_LANGUAGE CXX)
-target_include_directories(xnnpack_threadpool PUBLIC ${_common_include_directories})
-target_compile_options(xnnpack_threadpool PUBLIC ${_common_compile_options})
-list(APPEND xnnback_backend_libs xnnpack_threadpool)
-
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(xnnpack_backend ${_xnnpack_backend__srcs})
-target_link_libraries(xnnpack_backend PRIVATE ${xnnback_backend_libs})
+target_link_libraries(xnnpack_backend PRIVATE ${xnn_executor_runner_libs})
 target_include_directories(xnnpack_backend PUBLIC ${_common_include_directories})
 target_include_directories(xnnpack_backend PUBLIC ${XNNPACK_INCLUDE_DIR})
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
-list(APPEND xnnback_backend_libs xnnpack_backend)
+
+# Ensure that the load-time constructor functions run. By default, the linker
+# would remove them since there are no other references to them.
+if(APPLE)
+  macos_kernel_link_options(xnnpack_backend)
+else()
+  kernel_link_options(xnnpack_backend)
+endif()
+
+list(APPEND xnn_executor_runner_libs xnnpack_backend)
 
 # ios can only build library but not binary
-#if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
-#  message(">>>>>:${_xnnpack_backend__srcs}")
-#  #
-#  # xnn_executor_runner: Like executor_runner but with XNNPACK
-#  #
-#  list(TRANSFORM _xnn_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
-#  add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
-#  target_link_libraries(xnn_executor_runner ${xnnback_backend_libs})
-#  target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
-#endif()
+if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
+  #
+  # xnn_executor_runner: Like executor_runner but with XNNPACK, the binary
+  # will be at ${CMAKE_BINARY_DIR}/backends/xnnpack
+  #
+  list(TRANSFORM _xnn_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
+  add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
+  target_link_libraries(xnn_executor_runner ${xnn_executor_runner_libs})
+  target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
+endif()

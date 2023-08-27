@@ -17,7 +17,7 @@ set(CPUINFO_LIBRARY_TYPE "static" CACHE STRING "")
 set(CPUINFO_LOG_LEVEL "error" CACHE STRING "")
 set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
 add_subdirectory("${CPUINFO_SOURCE_DIR}")
-list(APPEND xnnback_backend_libs cpuinfo)
+list(APPEND xnn_executor_runner_libs cpuinfo)
 
 # --- pthreadpool
 set(PTHREADPOOL_SOURCE_DIR "${THIRD_PARTY_ROOT}/pthreadpool")
@@ -26,7 +26,7 @@ set(PTHREADPOOL_BUILD_BENCHMARKS OFF CACHE BOOL "")
 set(PTHREADPOOL_LIBRARY_TYPE "static" CACHE STRING "")
 set(PTHREADPOOL_ALLOW_DEPRECATED_API ON CACHE BOOL "")
 add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
-list(APPEND xnnback_backend_libs pthreadpool)
+list(APPEND xnn_executor_runner_libs pthreadpool)
 
 # --- XNNPACK
 set(XNNPACK_SOURCE_DIR "${THIRD_PARTY_ROOT}/XNNPACK")
@@ -36,4 +36,4 @@ set(XNNPACK_BUILD_BENCHMARKS OFF CACHE BOOL "")
 set(XNNPACK_BUILD_TESTS OFF CACHE BOOL "")
 add_subdirectory("${XNNPACK_SOURCE_DIR}")
 include_directories(SYSTEM ${XNNPACK_INCLUDE_DIR})
-list(APPEND xnnback_backend_libs XNNPACK)
+list(APPEND xnn_executor_runner_libs XNNPACK)

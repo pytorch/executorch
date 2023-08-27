@@ -8,6 +8,9 @@ build/lib/
 exir/serialize/scalar_type.fbs
 exir/serialize/program.fbs
 
+# Any exported models
+*.pte
+
 # Editor temporaries
 *.swa
 *.swb
