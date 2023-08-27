@@ -10,6 +10,9 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
+if(NOT PYTHON_EXECUTABLE)
+  set(PYTHON_EXECUTABLE python3)
+endif()
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
@@ -67,14 +70,7 @@ target_link_libraries(xnnpack_backend PRIVATE ${xnn_executor_runner_libs})
 target_include_directories(xnnpack_backend PUBLIC ${_common_include_directories})
 target_include_directories(xnnpack_backend PUBLIC ${XNNPACK_INCLUDE_DIR})
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
-
-# Ensure that the load-time constructor functions run. By default, the linker
-# would remove them since there are no other references to them.
-if(APPLE)
-  macos_kernel_link_options(xnnpack_backend)
-else()
-  kernel_link_options(xnnpack_backend)
-endif()
+target_link_options_shared_lib(xnnpack_backend)
 
 list(APPEND xnn_executor_runner_libs xnnpack_backend)
 
