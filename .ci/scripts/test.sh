@@ -65,8 +65,7 @@ test_model_with_xnnpack() {
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
     buck2 run //examples/backend:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
-    # TODO: Add cmake support for xnn_executor_runner
-    echo "XNNPACK doesn't support cmake yet, skipping..."
+    ./${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner --model_path "${OUTPUT_MODEL_PATH}"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
     exit 1

@@ -28,7 +28,7 @@ def define_common_targets():
         # file. Use `outs` so that `${OUT}` is expanded as the containing
         # directory instead of the file itself.
         outs = {
-            "xnnpack_schema_generated.h": ["schema_generated.h"],
+            "schema_generated.h": ["schema_generated.h"],
         },
         cmd = " ".join([
             "$(exe {})".format(runtime.external_dep_location("flatc")),
@@ -45,7 +45,7 @@ def define_common_targets():
         name = "xnnpack_schema",
         srcs = [],
         exported_headers = {
-            "xnnpack_schema_generated.h": ":gen_xnnpack_schema[xnnpack_schema_generated.h]",
+            "schema_generated.h": ":gen_xnnpack_schema[schema_generated.h]",
         },
         exported_external_deps = ["flatbuffers-api"],
     )
