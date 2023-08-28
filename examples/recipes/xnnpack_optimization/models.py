@@ -18,4 +18,5 @@ MODEL_NAME_TO_OPTIONS = {
     "add": OptimizationOptions(True, True),
     "add_mul": OptimizationOptions(True, True),
     "mv2": OptimizationOptions(True, True),
+    "mv3": OptimizationOptions(False, True),
 }
