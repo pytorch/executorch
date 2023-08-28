@@ -21,13 +21,10 @@ namespace torch {
 namespace executor {
 
 namespace {
-
 /**
  * Compute the number of elements based on the sizes of a tensor.
  */
-constexpr ssize_t compute_numel(
-    const TensorImpl::SizesType* sizes,
-    ssize_t dim) {
+ssize_t compute_numel(const TensorImpl::SizesType* sizes, ssize_t dim) {
   ssize_t n = 1;
   for (ssize_t i = 0; i < dim; i++) {
     n *= sizes[i];

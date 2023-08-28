@@ -47,7 +47,8 @@ namespace executor {
 
 template <typename T>
 struct remove_cvref {
-  using type = std::remove_cv_t<std::remove_reference_t<T>>;
+  using type =
+      typename std::remove_cv<typename std::remove_reference<T>::type>::type;
 };
 
 template <typename T>
@@ -76,24 +77,24 @@ class FunctionRef<Ret(Params...)> {
   template <
       typename Callable,
       // This is not the copy-constructor.
-      std::enable_if_t<
+      typename std::enable_if<
           !std::is_same<remove_cvref_t<Callable>, FunctionRef>::value,
-          int32_t> = 0,
+          int32_t>::type = 0,
       // Avoid lvalue reference to non-capturing lambda.
-      std::enable_if_t<
+      typename std::enable_if<
           !std::is_convertible<Callable, Ret (*)(Params...)>::value,
-          int32_t> = 0,
+          int32_t>::type = 0,
       // Functor must be callable and return a suitable type.
       // To make this container type safe, we need to ensure either:
       // 1. The return type is void.
       // 2. Or the resulting type from calling the callable is convertible to
       // the declared return type.
-      std::enable_if_t<
+      typename std::enable_if<
           std::is_void<Ret>::value ||
               std::is_convertible<
                   decltype(std::declval<Callable>()(std::declval<Params>()...)),
                   Ret>::value,
-          int32_t> = 0>
+          int32_t>::type = 0>
   explicit FunctionRef(Callable& callable)
       : callback_([](const void* memory, Params... params) {
           auto& storage = *static_cast<const Storage*>(memory);
@@ -132,12 +133,13 @@ class FunctionRef<Ret(Params...)> {
   template <
       typename Function,
       // This is not the copy-constructor.
-      std::enable_if_t<!std::is_same<Function, FunctionRef>::value, int32_t> =
-          0,
+      typename std::enable_if<
+          !std::is_same<Function, FunctionRef>::value,
+          int32_t>::type = 0,
       // Function is convertible to pointer of (Params...) -> Ret.
-      std::enable_if_t<
+      typename std::enable_if<
           std::is_convertible<Function, Ret (*)(Params...)>::value,
-          int32_t> = 0>
+          int32_t>::type = 0>
   /* implicit */ FunctionRef(const Function& function)
       : FunctionRef(static_cast<Ret (*)(Params...)>(function)) {}
 

@@ -118,7 +118,7 @@ using IntArrayRef = torch::executor::IntArrayRef;
 
 #endif // Use executor types
 
-inline constexpr nullopt_t nullopt{0};
+static constexpr nullopt_t nullopt{0};
 
 } // namespace exec_aten
 namespace torch {

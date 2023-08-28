@@ -59,6 +59,8 @@ class KernelRuntimeContext {
 namespace exec_aten {
 using RuntimeContext = torch::executor::KernelRuntimeContext;
 } // namespace exec_aten
-namespace torch::executor {
+namespace torch {
+namespace executor {
 using RuntimeContext = torch::executor::KernelRuntimeContext;
-} // namespace torch::executor
+} // namespace executor
+} // namespace torch
