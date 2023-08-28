@@ -7,6 +7,7 @@
  */
 
 #include <cstring>
+#include <tuple>
 
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
