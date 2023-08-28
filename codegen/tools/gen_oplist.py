@@ -78,9 +78,7 @@ class KernelType(IntEnum):
 
 
 def _get_operators(model_file: str) -> List[str]:
-    # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.extension.pybindings.operator`.
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`
-    from executorch.extension.pybindings.operator import (
+    from executorch.codegen.tools.selective_build import (
         _get_program_from_buffer,
         _get_program_operators,
     )
@@ -88,9 +86,8 @@ def _get_operators(model_file: str) -> List[str]:
     print("Processing model file: ", model_file)
     with open(model_file, "rb") as f:
         buf = f.read()
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`.
+
     program = _get_program_from_buffer(buf)
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`.
     operators = _get_program_operators(program)
     print(f"Model file loaded, operators are: {operators}")
     return operators
@@ -98,23 +95,21 @@ def _get_operators(model_file: str) -> List[str]:
 
 def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
 
-    from executorch.extension.pybindings.operator import (
+    from executorch.codegen.tools.selective_build import (
         _get_io_metadata_for_program_operators,
         _get_program_from_buffer,
-        IOMetaData,
+        _IOMetaData,
     )
 
     with open(model_file, "rb") as f:
         buf = f.read()
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`.
+
     program = _get_program_from_buffer(buf)
-    # pyre-ignore: Undefined attribute [16]: Module `executorch.extension.pybindings` has no attribute `operator`.
     operators_with_io_metadata = _get_io_metadata_for_program_operators(program)
 
     op_kernel_key_list: Dict[str, List[str]] = {}
 
-    # pyre-ignore: Undefined or invalid type [11]: Annotation `IOMetaData` is not defined as a type.Pyre
-    specialized_kernels: Set[List[IOMetaData]]
+    specialized_kernels: Set[List[_IOMetaData]]
     for op_name, specialized_kernels in operators_with_io_metadata.items():
         print(op_name)
         if op_name not in op_kernel_key_list:
@@ -124,7 +119,7 @@ def _get_kernel_metadata_for_model(model_file: str) -> Dict[str, List[str]]:
             version = "v1"
             kernel_key = version + "/"
             for io_metadata in specialized_kernel:
-                if io_metadata.type in [
+                if io_metadata.kernel_type in [
                     KernelType.TENSOR,
                     KernelType.TENSOR_LIST,
                     KernelType.OPTIONAL_TENSOR_LIST,
