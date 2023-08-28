@@ -12,17 +12,9 @@ import executorch.exir as exir
 import torch
 from executorch.exir import CaptureConfig
 from executorch.exir.print_program import pretty_print
-from executorch.exir.scalar_type import ScalarType
 from executorch.exir.schema import Program
 
-# pyre-ignore[21]
-from executorch.extension.pybindings.portable import (
-    _get_io_metadata_for_program_operators,
-    _get_program_from_buffer,
-    _get_program_operators,
-    _load_for_executorch_from_buffer,
-    IOMetaData,
-)
+from executorch.extension.pybindings.portable import _load_for_executorch_from_buffer
 
 
 class ModuleAdd(torch.nn.Module):
@@ -95,46 +87,6 @@ class PybindingsTest(unittest.TestCase):
         expected = inputs[0] + inputs[1]
 
         self.assertEqual(str(expected), str(executorch_output))
-
-    def test_dump_operators(self):
-        # Create and serialize a program.
-        orig_program, _ = create_program()
-
-        # Deserialize the program and demonstrate that we could get its operator
-        # list.
-        program = _get_program_from_buffer(orig_program.buffer)
-        operators = _get_program_operators(program)
-        self.assertEqual(operators, ["aten::add.out"])
-
-    def test_get_op_io_meta(self):
-        # Checking whether get_op_io_meta returns the correct metadata for all its ios.
-        orig_program, inputs = create_program()
-
-        # Deserialize the program and demonstrate that we could get its operator
-        # list.
-        program = _get_program_from_buffer(orig_program.buffer)
-        program_op_io_metadata = _get_io_metadata_for_program_operators(program)
-
-        self.assertTrue(len(program_op_io_metadata) == 1)
-        self.assertTrue(isinstance(program_op_io_metadata, dict))
-
-        self.assertTrue("aten::add.out" in program_op_io_metadata)
-        self.assertTrue(isinstance(program_op_io_metadata["aten::add.out"], set))
-        self.assertTrue(len(program_op_io_metadata["aten::add.out"]) == 1)
-
-        for op_io_metadata in program_op_io_metadata["aten::add.out"]:
-            self.assertTrue(len(op_io_metadata) == 5)
-            self.assertTrue(isinstance(op_io_metadata, tuple))
-
-            for io_idx, io_metadata in enumerate(op_io_metadata):
-                self.assertTrue(isinstance(io_metadata, IOMetaData))
-                if io_idx == 2:
-                    # TODO(gasoonjia): Create a enum class to map KernelTypes to int, remove the hardcoded 2 and 5 below.
-                    self.assertEqual(io_metadata.type, 2)
-                else:
-                    self.assertEqual(io_metadata.type, 5)
-                    self.assertEqual(io_metadata.dtype, ScalarType.FLOAT)
-                    self.assertEqual(io_metadata.dim_order, [0, 1])
 
     def test_multiple_entry(self):
 

@@ -110,6 +110,7 @@ def _remove_platform_specific_args(kwargs):
 def _remove_unsupported_kwargs(kwargs):
     """Removes environment unsupported kwargs
     """
+    kwargs.pop("types", None)  # will have to find a different way to handle .pyi files in oss
     return kwargs
 
 def _patch_headers(kwargs):
