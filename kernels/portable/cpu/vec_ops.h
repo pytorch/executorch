@@ -151,6 +151,17 @@ inline void vec_softmax(T* __restrict__ y, const U* __restrict__ x, int n) {
   }
 }
 
+namespace internal {
+template <class T>
+constexpr const T& clamp(const T& v, const T& lo, const T& hi) {
+#ifdef __cpp_lib_clamp
+  return std::clamp(v, lo, hi);
+#else
+  return v < lo ? lo : hi < v ? hi : v;
+#endif
+}
+} // namespace internal
+
 /// Quantizes the elements of `x` into `y`, both of which must have `size`
 /// elements. Inverse of `dequantize_i8_f32()`.
 inline void quantize_i8_f32(
@@ -161,7 +172,7 @@ inline void quantize_i8_f32(
     size_t size) {
   for (size_t i = 0; i < size; ++i) {
     float tmp = roundf(x[i] * scale + zero_point);
-    y[i] = std::clamp(tmp, -128.f, 127.f);
+    y[i] = internal::clamp(tmp, -128.f, 127.f);
   }
 }
 
