@@ -13,7 +13,6 @@ PORTABLE_MODULE_DEPS = [
     "//executorch/runtime/kernel:operator_registry",
     "//executorch/runtime/executor:executor",
     "//executorch/schema:bundled_program_schema",
-    "//executorch/schema:program",
     "//executorch/extension/aten_util:aten_bridge",
     "//executorch/util:bundled_program_verification",
     "//executorch/extension/data_loader:buffer_data_loader",
@@ -29,7 +28,6 @@ ATEN_MODULE_DEPS = [
     "//executorch/runtime/executor:executor_aten",
     "//executorch/runtime/core/exec_aten:lib",
     "//executorch/schema:bundled_program_schema",
-    "//executorch/schema:program",
     "//executorch/extension/data_loader:buffer_data_loader",
     "//executorch/extension/data_loader:mmap_data_loader",
     "//executorch/extension/memory_allocator:malloc_memory_allocator",
@@ -49,9 +47,7 @@ MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB = [
 def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibility = ["//executorch/..."], types = []):
     runtime.cxx_python_extension(
         name = python_module_name,
-        srcs = [
-            "//executorch/extension/pybindings:pybindings.cpp",
-        ] + srcs,
+        srcs = srcs,
         types = types,
         base_module = "executorch.extension.pybindings",
         preprocessor_flags = [
@@ -59,7 +55,6 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
         ],
         deps = [
             "//executorch/runtime/core:core",
-            "//executorch/schema:program",
             "//executorch/util:read_file",
         ] + cppdeps,
         external_deps = [
@@ -77,13 +72,8 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    # Export these so the internal fb/ subdir can create pybindings with custom internal deps
+    # Export this so the internal fb/ subdir can create pybindings with custom internal deps
     # without forking the pybinding source.
-    runtime.export_file(
-        name = "pybindings.cpp",
-        visibility = ["//executorch/extension/pybindings/..."],
-    )
-
     runtime.export_file(
         name = "module.cpp",
         visibility = ["//executorch/extension/pybindings/..."],
@@ -96,11 +86,4 @@ def define_common_targets():
         name = "pybinding_types",
         srcs = ["pybindings.pyi"],
         visibility = ["//executorch/extension/pybindings/..."],
-    )
-
-    executorch_pybindings(
-        srcs = [
-            "module_stub.cpp",
-        ],
-        python_module_name = "operator",
     )

@@ -26,7 +26,6 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/schema/bundled_program_schema_generated.h>
-#include <executorch/schema/program_generated.h>
 #include <executorch/util/TestMemoryConfig.h>
 #include <executorch/util/bundled_program_verification.h>
 #include <executorch/util/read_file.h>
@@ -463,7 +462,7 @@ void create_profile_block(const std::string& name) {
 
 } // namespace
 
-void init_module_functions(py::module_& m) {
+PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   m.def("_load_for_executorch", PyModule::load_from_file, py::arg("path"));
   m.def(
       "_load_for_executorch_from_buffer",

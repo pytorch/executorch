@@ -159,6 +159,7 @@ def _patch_kwargs_common(kwargs):
 
     Returns the possibly-modified `kwargs` parameter for chaining.
     """
+    env.remove_unsupported_kwargs(kwargs)
 
     # Be careful about dependencies on executorch targets for now, so that we
     # don't pick up unexpected clients while things are still in flux.
@@ -208,7 +209,6 @@ def _patch_kwargs_common(kwargs):
     return kwargs
 
 def _patch_kwargs_cxx(kwargs):
-    env.remove_unsupported_kwargs(kwargs)
     env.patch_platforms(kwargs)
     env.remove_platform_specific_args(kwargs)
     return _patch_kwargs_common(kwargs)
