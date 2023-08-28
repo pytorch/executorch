@@ -59,7 +59,7 @@ if __name__ == "__main__":
             "T161880157: Quantization-only without delegation is not supported yet"
         )
 
-    if args.model_name not in MODEL_NAME_TO_OPTIONS:
+    if args.model_name not in MODEL_NAME_TO_OPTIONS and args.quantize:
         raise RuntimeError(
             f"Model {args.model_name} is not a valid name. or not quantizable right now, "
             "please contact executorch team if you want to learn why or how to support "

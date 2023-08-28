@@ -62,3 +62,42 @@ deps = [
   "executorch",
   "portable_kernels",
 ]
+
+[targets.xnnpack_schema]
+buck_targets = [
+  "//backends/xnnpack:xnnpack_schema"
+]
+filters = [
+  ".fbs$",
+]
+
+[targets.dynamic_quant_utils]
+buck_targets = [
+  "//backends/xnnpack:dynamic_quant_utils"
+]
+filters = [
+  ".cpp$",
+]
+
+[targets.xnnpack_backend]
+buck_targets = [
+  "//backends/xnnpack:xnnpack_backend"
+]
+filters = [
+  ".cpp$",
+]
+
+[targets.xnn_executor_runner]
+buck_targets = [
+  "//examples/backend:xnn_executor_runner",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "xnnpack_backend",
+  "portable_kernels",
+]

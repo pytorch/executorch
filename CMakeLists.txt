@@ -171,5 +171,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+
 # Print all summary
 executorch_print_configuration_summary()
