@@ -8,7 +8,7 @@ runtime.python_binary(
         ":quant_utils",
         "//caffe2:torch",
         "//executorch/examples/export:lib",
-        "//executorch/examples/models:models",
+        "//executorch/examples/recipes/xnnpack_optimization:models",
     ],
 )
 
