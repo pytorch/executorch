@@ -24,7 +24,8 @@ namespace {
 
 template <
     typename FLOAT_T,
-    std::enable_if_t<std::is_floating_point<FLOAT_T>::value, bool> = true>
+    typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
+        type = true>
 FLOAT_T min_override(FLOAT_T a, FLOAT_T b) {
   if (std::isnan(a)) {
     return a;
@@ -37,7 +38,8 @@ FLOAT_T min_override(FLOAT_T a, FLOAT_T b) {
 
 template <
     typename FLOAT_T,
-    std::enable_if_t<std::is_floating_point<FLOAT_T>::value, bool> = true>
+    typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
+        type = true>
 FLOAT_T max_override(FLOAT_T a, FLOAT_T b) {
   if (std::isnan(a)) {
     return a;
@@ -50,14 +52,14 @@ FLOAT_T max_override(FLOAT_T a, FLOAT_T b) {
 
 template <
     typename INT_T,
-    std::enable_if_t<std::is_integral<INT_T>::value, bool> = true>
+    typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
 INT_T min_override(INT_T a, INT_T b) {
   return std::min(a, b);
 }
 
 template <
     typename INT_T,
-    std::enable_if_t<std::is_integral<INT_T>::value, bool> = true>
+    typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
 INT_T max_override(INT_T a, INT_T b) {
   return std::max(a, b);
 }
