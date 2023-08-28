@@ -29,7 +29,7 @@ class Scalar {
 
   template <
       typename T,
-      std::enable_if_t<std::is_integral<T>::value, bool> = true>
+      typename std::enable_if<std::is_integral<T>::value, bool>::type = true>
   /*implicit*/ Scalar(T val) : tag(Tag::Int) {
     v.as_int = static_cast<int64_t>(val);
   }

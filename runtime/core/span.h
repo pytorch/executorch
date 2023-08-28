@@ -43,7 +43,7 @@ class Span final {
   /* implicit */ constexpr Span() noexcept : data_(nullptr), length_(0) {}
 
   /// Construct a Span from a pointer and length.
-  constexpr Span(T* data, size_t length) : data_(data), length_(length) {
+  Span(T* data, size_t length) : data_(data), length_(length) {
     ET_DCHECK(data_ != nullptr || length_ == 0);
   }
 
