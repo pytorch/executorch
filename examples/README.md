@@ -58,7 +58,9 @@ buck2 run examples/executor_runner:executor_runner -- --model_path mv2.pte
 ## Quantization
 Here is the [Quantization Flow Docs](/docs/website/docs/tutorials/quantization_flow.md).
 
-You can run quantization test with the following command:
+### Generating quantized model
+
+You can generate quantized model with the following command (following example is for mv2, aka MobileNetV2):
 ```bash
 python3 -m examples.quantization.example --model_name "mv2" --so-library "<path/to/so/lib>" # for MobileNetv2
 ```
@@ -79,6 +81,16 @@ you can also find the valid quantized example models by running:
 ```bash
 buck2 run executorch/examples/quantization:example -- --help
 ```
+
+### Running quantized model
+
+Quantized model can be run via executor_runner, similar to floating point model, via, as shown above:
+
+```bash
+buck2 run examples/executor_runner:executor_runner -- --model_path mv2.pte
+```
+
+Note that, running quantized model, requires various quantized/dequantize operators, available in [quantized kernel lib](/kernels/quantized).
 
 ## XNNPACK Backend
 Please see [Backend README](backend/README) for XNNPACK quantization, export, and run workflow.
