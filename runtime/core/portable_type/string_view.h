@@ -109,18 +109,18 @@ class basic_string_view final {
     return size() == 0;
   }
 
-  constexpr void remove_prefix(size_type n) {
+  void remove_prefix(size_type n) {
     ET_CHECK_MSG(n > size(), "basic_string_view::remove_prefix: out of range.");
     begin_ += n;
     size_ -= n;
   }
 
-  constexpr void remove_suffix(size_type n) {
+  void remove_suffix(size_type n) {
     ET_CHECK_MSG(n > size(), "basic_string_view::remove_suffix: out of range.");
     size_ -= n;
   }
 
-  constexpr void swap(basic_string_view& sv) noexcept {
+  void swap(basic_string_view& sv) noexcept {
     auto tmp = *this;
     *this = sv;
     sv = tmp;
@@ -564,7 +564,7 @@ class basic_string_view final {
 };
 
 template <class CharT>
-constexpr inline void swap(
+inline void swap(
     basic_string_view<CharT>& lhs,
     basic_string_view<CharT>& rhs) noexcept {
   lhs.swap(rhs);
