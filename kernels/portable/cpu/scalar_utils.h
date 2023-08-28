@@ -128,9 +128,9 @@ inline ScalarType promote_type_with_scalar(ScalarType t, Scalar scalar) {
  */
 template <
     typename INT_T,
-    std::enable_if_t<
-        std::is_integral_v<INT_T> && !std::is_same_v<INT_T, bool>,
-        bool> = true>
+    typename std::enable_if<
+        std::is_integral<INT_T>::value && !std::is_same<INT_T, bool>::value,
+        bool>::type = true>
 bool extract_scalar(Scalar scalar, INT_T* out_val) {
   if (!scalar.isIntegral(/*includeBool=*/false)) {
     return false;
@@ -158,7 +158,8 @@ bool extract_scalar(Scalar scalar, INT_T* out_val) {
  */
 template <
     typename FLOAT_T,
-    std::enable_if_t<std::is_floating_point_v<FLOAT_T>, bool> = true>
+    typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
+        type = true>
 bool extract_scalar(Scalar scalar, FLOAT_T* out_val) {
   double val;
   if (scalar.isFloatingPoint()) {
@@ -193,7 +194,8 @@ bool extract_scalar(Scalar scalar, FLOAT_T* out_val) {
  */
 template <
     typename BOOL_T,
-    std::enable_if_t<std::is_same_v<BOOL_T, bool>, bool> = true>
+    typename std::enable_if<std::is_same<BOOL_T, bool>::value, bool>::type =
+        true>
 bool extract_scalar(Scalar scalar, BOOL_T* out_val) {
   if (scalar.isIntegral(false)) {
     *out_val = static_cast<bool>(scalar.to<int64_t>());

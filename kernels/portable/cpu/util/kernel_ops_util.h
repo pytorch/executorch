@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <tuple>
+
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {

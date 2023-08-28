@@ -28,26 +28,32 @@ namespace {
  * So, instead it is calculated as: a // b = (a - remainder(a, b)) / b
  * With some additional fix-ups added to the result.
  */
-template <typename CTYPE>
-CTYPE floor_divide(CTYPE a, CTYPE b) {
-  if constexpr (std::is_integral_v<CTYPE>) {
-    const auto quot = a / b;
-    if (std::signbit(a) == std::signbit(b)) {
-      return quot;
-    }
-    const auto rem = a % b;
-    return rem ? quot - 1 : quot;
-  } else {
-    if (b == 0) {
-      return std::signbit(a) ? -INFINITY : INFINITY;
-    }
-    const auto mod = std::fmod(a, b);
-    auto div = (a - mod) / b;
-    if ((mod != 0) && std::signbit(b) != std::signbit(mod)) {
-      return div - 1;
-    }
-    return div;
+template <
+    typename INT_T,
+    typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
+INT_T floor_divide(INT_T a, INT_T b) {
+  const auto quot = a / b;
+  if (std::signbit(a) == std::signbit(b)) {
+    return quot;
   }
+  const auto rem = a % b;
+  return rem ? quot - 1 : quot;
+}
+
+template <
+    typename FLOAT_T,
+    typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
+        type = true>
+FLOAT_T floor_divide(FLOAT_T a, FLOAT_T b) {
+  if (b == 0) {
+    return std::signbit(a) ? -INFINITY : INFINITY;
+  }
+  const auto mod = std::fmod(a, b);
+  auto div = (a - mod) / b;
+  if ((mod != 0) && std::signbit(b) != std::signbit(mod)) {
+    return div - 1;
+  }
+  return div;
 }
 
 } // namespace
