@@ -3,6 +3,12 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+# Please this file formatted by running:
+# ~~~
+# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# ~~~
+
 cmake_minimum_required(VERSION 3.19)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -27,7 +33,8 @@ set(_xnnpack_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 # Paths to headers generated from the .fbs files.
 set(_xnnpack_schema__outputs)
 foreach(fbs_file ${_xnnpack_schema__srcs})
-  string(REGEX REPLACE "serialization/([^/]+)[.]fbs$" "\\1_generated.h" generated "${fbs_file}")
+  string(REGEX REPLACE "serialization/([^/]+)[.]fbs$" "\\1_generated.h"
+                       generated "${fbs_file}")
   list(APPEND _xnnpack_schema__outputs
        "${_xnnpack_schema__include_dir}/executorch/${generated}")
 endforeach()
@@ -36,8 +43,8 @@ endforeach()
 add_custom_command(
   OUTPUT ${_xnnpack_schema__outputs}
   COMMAND
-    flatc --cpp --cpp-std c++11 --scoped-enums
-    -o "${_xnnpack_schema__include_dir}/executorch/backends/xnnpack"
+    flatc --cpp --cpp-std c++11 --scoped-enums -o
+    "${_xnnpack_schema__include_dir}/executorch/backends/xnnpack"
     ${_xnnpack_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   COMMENT "Generating xnnpack_schema headers"
@@ -46,16 +53,16 @@ add_custom_command(
 add_library(xnnpack_schema INTERFACE ${_xnnpack_schema__outputs})
 set_target_properties(xnnpack_schema PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(
-  xnnpack_schema
-  INTERFACE ${_xnnpack_schema__include_dir}
-            ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
+  xnnpack_schema INTERFACE ${_xnnpack_schema__include_dir}
+                           ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
 
 set(xnn_executor_runner_libs ${_libs} xnnpack_schema)
 
 list(TRANSFORM _dynamic_quant_utils__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(dynamic_quant_utils ${_dynamic_quant_utils__srcs})
 set_target_properties(dynamic_quant_utils PROPERTIES LINKER_LANGUAGE CXX)
-target_include_directories(dynamic_quant_utils PUBLIC ${_common_include_directories})
+target_include_directories(dynamic_quant_utils
+                           PUBLIC ${_common_include_directories})
 target_compile_options(dynamic_quant_utils PUBLIC ${_common_compile_options})
 
 if(ENABLE_DYNAMIC_QUANTIZATION)
@@ -67,7 +74,8 @@ include(cmake/Dependencies.cmake)
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(xnnpack_backend ${_xnnpack_backend__srcs})
 target_link_libraries(xnnpack_backend PRIVATE ${xnn_executor_runner_libs})
-target_include_directories(xnnpack_backend PUBLIC ${_common_include_directories})
+target_include_directories(xnnpack_backend
+                           PUBLIC ${_common_include_directories})
 target_include_directories(xnnpack_backend PUBLIC ${XNNPACK_INCLUDE_DIR})
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(xnnpack_backend)
@@ -77,8 +85,8 @@ list(APPEND xnn_executor_runner_libs xnnpack_backend)
 # ios can only build library but not binary
 if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
   #
-  # xnn_executor_runner: Like executor_runner but with XNNPACK, the binary
-  # will be at ${CMAKE_BINARY_DIR}/backends/xnnpack
+  # xnn_executor_runner: Like executor_runner but with XNNPACK, the binary will
+  # be at ${CMAKE_BINARY_DIR}/backends/xnnpack
   #
   list(TRANSFORM _xnn_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
   add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
