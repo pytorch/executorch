@@ -7,24 +7,15 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
-
-import executorch.exir as exir
+import logging
 
 from ..models import MODEL_NAME_TO_MODEL
+from ..models.model_factory import EagerModelFactory
+from .utils import export_to_edge, export_to_pte, save_pte_program  # noqa
 
-from .utils import export_to_edge
 
-
-def export_to_pte(model_name, model, example_inputs):
-    edge = export_to_edge(model, example_inputs)
-    exec_prog = edge.to_executorch()
-
-    buffer = exec_prog.buffer
-
-    filename = f"{model_name}.pte"
-    print(f"Saving exported program to {filename}")
-    with open(filename, "wb") as file:
-        file.write(buffer)
+FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 if __name__ == "__main__":
@@ -44,6 +35,9 @@ if __name__ == "__main__":
             f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}."
         )
 
-    model, example_inputs = MODEL_NAME_TO_MODEL[args.model_name]()
+    model, example_inputs = EagerModelFactory.create_model(
+        *MODEL_NAME_TO_MODEL[args.model_name]
+    )
 
-    export_to_pte(args.model_name, model, example_inputs)
+    buffer = export_to_pte(args.model_name, model, example_inputs)
+    save_pte_program(buffer, args.model_name)

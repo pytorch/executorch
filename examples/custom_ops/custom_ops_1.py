@@ -7,7 +7,7 @@
 """Example of showcasing registering custom operator through torch library API."""
 import torch
 
-from examples.export.export_example import export_to_pte
+from examples.export.export_example import export_to_pte, save_pte_program
 from torch.library import impl, Library
 
 my_op_lib = Library("my_ops", "DEF")
@@ -44,7 +44,9 @@ def main():
     m = Model()
     input = torch.randn(2, 3)
     # capture and lower
-    export_to_pte("custom_ops_1", m, (input,))
+    model_name = "custom_ops_1"
+    buffer = export_to_pte(model_name, m, (input,))
+    save_pte_program(buffer, model_name)
 
 
 if __name__ == "__main__":
