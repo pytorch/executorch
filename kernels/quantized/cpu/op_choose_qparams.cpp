@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
+#include <tuple>
 /**
  * For an input tensor, use the scale and zero_point arguments to quantize it.
  */
