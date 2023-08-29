@@ -336,8 +336,9 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
                 range_constraints=serialized_range_constraints,
                 equality_constraints=serialized_equality_constraints,
                 schema_version=schema.SCHEMA_VERSION,
+                example_inputs=None,
             ),
-            export_serialize.serialize_state_dict(gm_serializer.state_dict),
+            export_serialize.serialize_torch_artifact(gm_serializer.state_dict),
         )
 
 
@@ -620,14 +621,16 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             )
             for k, v in serialized_exported_program.range_constraints.items()
         }
-        state_dict = export_serialize.deserialize_state_dict(serialized_state_dict)
+        state_dict = export_serialize.deserialize_torch_artifact(serialized_state_dict)
         (
             graph_module,
             sig,
             call_spec,
             module_call_graph,
             symbol_name_to_symbol,
-        ) = GraphModuleDeserializer(state_dict).deserialize(
+        ) = GraphModuleDeserializer(
+            state_dict  # pyre-ignore
+        ).deserialize(
             serialized_exported_program.graph_module,
             symbol_name_to_range,
         )
@@ -648,7 +651,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
         )
 
         return exir.ExportedProgram(
-            state_dict,
+            state_dict,  # pyre-ignore
             graph_module.graph,
             sig,
             call_spec,
