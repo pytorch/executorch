@@ -217,41 +217,6 @@ static Kernel prim_ops[] = {
           }
         }),
 
-    // TODO(T159977211): wait a little bit so older models with these ops are
-    // regenerated and then delete them
-    // executorch_prim::add.int(int, int) -> int
-    Kernel(
-        "executorch_prim::add.int",
-        [](RuntimeContext& context, EValue** stack) {
-          (void)context;
-          EValue& a = *stack[0];
-          EValue& b = *stack[1];
-          EValue& out = *stack[2];
-          out = EValue(a.toInt() + b.toInt());
-        }),
-
-    // executorch_prim::sub.int(int, int) -> int
-    Kernel(
-        "executorch_prim::sub.int",
-        [](RuntimeContext& context, EValue** stack) {
-          (void)context;
-          EValue& a = *stack[0];
-          EValue& b = *stack[1];
-          EValue& out = *stack[2];
-          out = EValue(a.toInt() - b.toInt());
-        }),
-
-    // executorch_prim::mul.int(int, int) -> int
-    Kernel(
-        "executorch_prim::mul.int",
-        [](RuntimeContext& context, EValue** stack) {
-          (void)context;
-          EValue& a = *stack[0];
-          EValue& b = *stack[1];
-          EValue& out = *stack[2];
-          out = EValue(a.toInt() * b.toInt());
-        }),
-
     // executorch_prim::floordiv.int(int, int) -> int
     Kernel(
         "executorch_prim::floordiv.int",
@@ -261,61 +226,6 @@ static Kernel prim_ops[] = {
           EValue& b = *stack[1];
           EValue& out = *stack[2];
           out = EValue(a.toInt() / b.toInt());
-        }),
-
-    // executorch_prim::eq.int(int, int) -> bool
-    Kernel(
-        "executorch_prim::eq.int",
-        [](RuntimeContext& context, EValue** stack) {
-          (void)context;
-          EValue& a = *stack[0];
-          EValue& b = *stack[1];
-          EValue& out = *stack[2];
-          out = EValue(a.toInt() == b.toInt());
-        }),
-
-    // executorch_prim::gt.int(int, int) -> bool
-    Kernel(
-        "executorch_prim::gt.int",
-        [](RuntimeContext& context, EValue** stack) {
-          (void)context;
-          EValue& a = *stack[0];
-          EValue& b = *stack[1];
-          EValue& out = *stack[2];
-          out = EValue(a.toInt() > b.toInt());
-        }),
-
-    // executorch_prim::lt.int(int, int) -> bool
-    Kernel(
-        "executorch_prim::lt.int",
-        [](RuntimeContext& context, EValue** stack) {
-          (void)context;
-          EValue& a = *stack[0];
-          EValue& b = *stack[1];
-          EValue& out = *stack[2];
-          out = EValue(a.toInt() < b.toInt());
-        }),
-
-    // executorch_prim::ge.int(int, int) -> bool
-    Kernel(
-        "executorch_prim::ge.int",
-        [](RuntimeContext& context, EValue** stack) {
-          (void)context;
-          EValue& a = *stack[0];
-          EValue& b = *stack[1];
-          EValue& out = *stack[2];
-          out = EValue(a.toInt() >= b.toInt());
-        }),
-
-    // executorch_prim::le.int(int, int) -> bool
-    Kernel(
-        "executorch_prim::le.int",
-        [](RuntimeContext& context, EValue** stack) {
-          (void)context;
-          EValue& a = *stack[0];
-          EValue& b = *stack[1];
-          EValue& out = *stack[2];
-          out = EValue(a.toInt() <= b.toInt());
         }),
 
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
