@@ -28,13 +28,13 @@ def define_common_targets():
 
     register_custom_op = native.read_config("executorch", "register_custom_op", "0")
     register_quantized_ops = native.read_config("executorch", "register_quantized_ops", "0")
-    custom_ops_lib = []
+
+    # Include quantized ops to be able to run quantized model with portable ops
+    custom_ops_lib = ["//executorch/kernels/quantized:generated_lib"]
     if register_custom_op == "1":
         custom_ops_lib.append("//executorch/examples/custom_ops:lib_1")
     elif register_custom_op == "2":
         custom_ops_lib.append("//executorch/examples/custom_ops:lib_2")
-    if register_quantized_ops == "1":
-        custom_ops_lib.append("//executorch/kernels/quantized:generated_lib")
 
     # Test driver for models, uses all portable kernels and a demo backend. This
     # is intended to have minimal dependencies. If you want a runner that links
