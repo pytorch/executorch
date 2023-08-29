@@ -58,6 +58,20 @@ option(
 option(REGISTER_QUANTIZED_OPS
        "Register quantized ops defined in kernels/quantized/" OFF)
 
+option(BUILD_SELECTIVE_BUILD_TEST
+       "Whether to build binary for demo selective build" OFF)
+
+if(BUILD_SELECTIVE_BUILD_TEST)
+  option(SELECT_ALL_OPS
+         "Whether to register all ops defined in portable kernel library." OFF)
+
+  # Option to register op list
+  option(SELECT_OPS_LIST "Register the following list of ops" OFF)
+
+  # Option to register ops from yaml file
+  option(SELECT_OPS_YAML "Register all the ops from a given yaml file" OFF)
+endif()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -87,20 +101,7 @@ if(NOT EXECUTORCH_SRCS_FILE)
   # if the buck2 targets change.
   message(STATUS "executorch: Generating source lists")
   set(EXECUTORCH_SRCS_FILE "${CMAKE_CURRENT_BINARY_DIR}/executorch_srcs.cmake")
-  execute_process(
-    COMMAND ${PYTHON_EXECUTABLE} build/extract_sources.py --buck2=${BUCK2}
-            --config=build/cmake_deps.toml --out=${EXECUTORCH_SRCS_FILE}
-    OUTPUT_VARIABLE gen_srcs_output
-    ERROR_VARIABLE gen_srcs_error
-    RESULT_VARIABLE gen_srcs_exit_code
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-  if(NOT gen_srcs_exit_code EQUAL 0)
-    message("Error while generating ${EXECUTORCH_SRCS_FILE}. "
-            "Exit code: ${gen_srcs_exit_code}")
-    message("Output:\n${gen_srcs_output}")
-    message("Error:\n${gen_srcs_error}")
-    message(FATAL_ERROR "executorch: source list generation failed")
-  endif()
+  extract_sources(${EXECUTORCH_SRCS_FILE})
 endif()
 
 # This file defines the `_<target>__srcs` variables used below.
@@ -173,5 +174,9 @@ endif()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
 
+# Add selective build subdirectory
+if(BUILD_SELECTIVE_BUILD_TEST)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/selective_build)
+endif()
 # Print all summary
 executorch_print_configuration_summary()
