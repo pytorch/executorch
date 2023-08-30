@@ -17,6 +17,11 @@ def custom_command():
     src_dst_list = [
         ("schema/scalar_type.fbs", "exir/serialize/scalar_type.fbs"),
         ("schema/program.fbs", "exir/serialize/program.fbs"),
+        (
+            "schema/bundled_program_schema.fbs",
+            "bundled_program/serialize/bundled_program_schema.fbs",
+        ),
+        ("schema/scalar_type.fbs", "bundled_program/serialize/scalar_type.fbs"),
     ]
     for src, dst in src_dst_list:
         print(f"copying from {src} to {dst}")
@@ -53,6 +58,7 @@ setup(
         "executorch/exir": "exir",
         "executorch/schema": "schema",
         "executorch/extension": "extension",
+        "executorch/bundled_program": "bundled_program",
     },
     cmdclass={
         "install": CustomInstallCommand,
