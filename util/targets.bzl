@@ -46,7 +46,6 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             deps = [
-                "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:dim_order_util" + aten_suffix,
                 "//executorch/schema:bundled_program_schema",
                 "//executorch/schema:program",
