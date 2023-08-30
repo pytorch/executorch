@@ -2,16 +2,29 @@
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 
-load("@fbcode//executorch/extension/pybindings:targets.bzl", "ATEN_MODULE_DEPS", "MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB", "MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB", "PORTABLE_MODULE_DEPS", "define_common_targets", "executorch_pybindings")
-load("@fbcode_macros//build_defs:native_rules.bzl", "buck_genrule")
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbcode//executorch/extension/pybindings:pybindings.bzl", "ATEN_MODULE_DEPS", "MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB", "MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB", "PORTABLE_MODULE_DEPS", "executorch_pybindings")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-define_common_targets()
+# Export this so the internal fb/ subdir can create pybindings with custom internal deps
+# without forking the pybinding source.
+runtime.export_file(
+    name = "pybindings.cpp",
+    visibility = ["//executorch/extension/pybindings/..."],
+)
+
+# cxx_python_extension kwarg 'types' can't take export_file rules directly and we need to rename the .pyi
+# file to match the lib anyway, so we just expose the file like this and then have genrules consume and
+# rename it before passing it to executorch pybindings.
+runtime.filegroup(
+    name = "pybinding_types",
+    srcs = ["pybindings.pyi"],
+    visibility = ["//executorch/extension/pybindings/..."],
+)
 
 # In order to have pyre recognize the pybindings module, the name of the .pyi must exactly match the
 # name of the lib. To avoid copy pasting the pyi file in tree a whole bunch of times we use genrules
 # to do it for us
-buck_genrule(
+runtime.genrule(
     name = "pybindings_types_gen",
     srcs = [":pybinding_types"],
     outs = {
@@ -23,18 +36,12 @@ buck_genrule(
 )
 
 executorch_pybindings(
-    srcs = [
-        "module.cpp",
-    ],
     cppdeps = PORTABLE_MODULE_DEPS,
     python_module_name = "core",
     visibility = ["PUBLIC"],
 )
 
 executorch_pybindings(
-    srcs = [
-        "module.cpp",
-    ],
     cppdeps = PORTABLE_MODULE_DEPS + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB,
     python_module_name = "portable",
     types = ["//executorch/extension/pybindings:pybindings_types_gen[portable.pyi]"],
@@ -42,23 +49,8 @@ executorch_pybindings(
 )
 
 executorch_pybindings(
-    srcs = [
-        "module.cpp",
-    ],
     cppdeps = ATEN_MODULE_DEPS + MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB,
     python_module_name = "aten_mode_lib",
     types = ["//executorch/extension/pybindings:pybindings_types_gen[aten_mode_lib.pyi]"],
     visibility = ["PUBLIC"],
-)
-
-python_library(
-    name = "stacktraces",
-    srcs = [
-        "stacktraces.py",
-    ],
-    base_module = "executorch.extension.pybindings",
-    deps = [
-        ":core",
-        "//executorch/exir:schema",
-    ],
 )
