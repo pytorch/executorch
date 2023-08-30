@@ -16,7 +16,7 @@ test_buck2_select_all_ops() {
     echo "Exporting MobilenetV3"
     ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="mv3"
 
-    echo "Running executor_runner"
+    echo "Running selective build test"
     buck2 run //examples/selective_build:selective_build_test \
         --config=executorch.select_ops=all -- --model_path=./mv3.pte
 
@@ -28,7 +28,7 @@ test_buck2_select_ops_in_list() {
     echo "Exporting add_mul"
     ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="add_mul"
 
-    echo "Running executor_runner"
+    echo "Running selective build test"
     buck2 run //examples/selective_build:selective_build_test \
         --config=executorch.select_ops=list -- --model_path=./add_mul.pte
 
@@ -40,7 +40,7 @@ test_buck2_select_ops_from_yaml() {
     echo "Exporting custom_op_1"
     ${PYTHON_EXECUTABLE} -m examples.custom_ops.custom_ops_1
 
-    echo "Running executor_runner"
+    echo "Running selective build test"
     buck2 run //examples/selective_build:selective_build_test \
         --config=executorch.select_ops=yaml -- --model_path=./custom_ops_1.pte
 
@@ -48,14 +48,85 @@ test_buck2_select_ops_from_yaml() {
     rm "./custom_ops_1.pte"
 }
 
-# TODO(larryliu0820) Add example to select ops from model.
+test_cmake_select_all_ops() {
+    echo "Exporting MobilenetV3"
+    ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="mv3"
+
+    (rm -rf cmake-out \
+        && mkdir cmake-out \
+        && cd cmake-out \
+        && cmake -DBUCK2=buck2 \
+            -DBUILD_SELECTIVE_BUILD_TEST=ON \
+            -DSELECT_ALL_OPS=ON \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+
+    echo "Build selective build test"
+    cmake --build cmake-out -j9
+
+    echo 'Running selective build test'
+    cmake-out/examples/selective_build/selective_build_test --model_path="./mv3.pte"
+
+    echo "Removing mv3.pte"
+    rm "./mv3.pte"
+}
+
+test_cmake_select_ops_in_list() {
+    echo "Exporting add_mul"
+    ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="add_mul"
+
+    (rm -rf cmake-out \
+        && mkdir cmake-out \
+        && cd cmake-out \
+        && cmake -DBUCK2=buck2 \
+            -DBUILD_SELECTIVE_BUILD_TEST=ON \
+            -DSELECT_OPS_LIST="aten::add.out;aten::mm.out" \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+
+    echo "Build selective build test"
+    cmake --build cmake-out -j9
+
+    echo 'Running selective build test'
+    cmake-out/examples/selective_build/selective_build_test --model_path="./add_mul.pte"
+
+    echo "Removing add_mul.pte"
+    rm "./add_mul.pte"
+}
+
+test_cmake_select_ops_in_yaml() {
+    echo "Exporting custom_op_1"
+    ${PYTHON_EXECUTABLE} -m examples.custom_ops.custom_ops_1
+
+    (rm -rf cmake-out \
+        && mkdir cmake-out \
+        && cd cmake-out \
+        && cmake -DBUCK2=buck2 \
+            -DBUILD_SELECTIVE_BUILD_TEST=ON \
+            -DSELECT_OPS_YAML=ON \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+
+    echo "Build selective build test"
+    cmake --build cmake-out -j9
+
+    echo 'Running selective build test'
+    cmake-out/examples/selective_build/selective_build_test --model_path="./custom_ops_1.pte"
+
+    echo "Removing custom_ops_1.pte"
+    rm "./custom_ops_1.pte"
+}
 
 if [[ -z $PYTHON_EXECUTABLE ]];
 then
   PYTHON_EXECUTABLE=python3
 fi
 
-
-test_buck2_select_all_ops
-test_buck2_select_ops_in_list
-test_buck2_select_ops_from_yaml
+if [[ $1 == "cmake" ]];
+then
+    test_cmake_select_all_ops
+    test_cmake_select_ops_in_list
+    test_cmake_select_ops_in_yaml
+elif [[ $1 == "buck2" ]];
+then
+    test_buck2_select_all_ops
+    test_buck2_select_ops_in_list
+    test_buck2_select_ops_from_yaml
+fi

@@ -23,10 +23,9 @@ function(gen_selected_ops ops_schema_yaml root_ops include_all_ops)
     list(APPEND _gen_oplist_command --root_ops="${root_ops}")
   endif()
   if(include_all_ops)
-    list(APPEND _gen_oplist_command
-         --include_all_operators="${include_all_ops}")
+    list(APPEND _gen_oplist_command --include_all_operators)
   endif()
-
+  message("Command - ${_gen_oplist_command}")
   add_custom_command(
     COMMENT "Generating selected_operators.yaml for custom ops"
     OUTPUT ${_oplist_yaml}
