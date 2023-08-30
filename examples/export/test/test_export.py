@@ -12,6 +12,7 @@ import torch
 
 from executorch.examples.export.utils import export_to_edge
 from executorch.examples.models import MODEL_NAME_TO_MODEL
+from executorch.examples.models.model_factory import EagerModelFactory
 
 from executorch.extension.pybindings.portable import (  # @manual
     _load_for_executorch_from_buffer,
@@ -56,7 +57,9 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_mv3_export_to_executorch(self):
-        eager_model, example_inputs = MODEL_NAME_TO_MODEL["mv3"]()
+        eager_model, example_inputs = EagerModelFactory.create_model(
+            *MODEL_NAME_TO_MODEL["mv3"]
+        )
         eager_model = eager_model.eval()
 
         self._assert_eager_lowered_same_result(
@@ -64,7 +67,9 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_mv2_export_to_executorch(self):
-        eager_model, example_inputs = MODEL_NAME_TO_MODEL["mv2"]()
+        eager_model, example_inputs = EagerModelFactory.create_model(
+            *MODEL_NAME_TO_MODEL["mv2"]
+        )
         eager_model = eager_model.eval()
 
         self._assert_eager_lowered_same_result(
@@ -72,7 +77,9 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_vit_export_to_executorch(self):
-        eager_model, example_inputs = MODEL_NAME_TO_MODEL["vit"]()
+        eager_model, example_inputs = EagerModelFactory.create_model(
+            *MODEL_NAME_TO_MODEL["vit"]
+        )
         eager_model = eager_model.eval()
 
         self._assert_eager_lowered_same_result(
@@ -80,7 +87,9 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_w2l_export_to_executorch(self):
-        eager_model, example_inputs = MODEL_NAME_TO_MODEL["w2l"]()
+        eager_model, example_inputs = EagerModelFactory.create_model(
+            *MODEL_NAME_TO_MODEL["w2l"]
+        )
         eager_model = eager_model.eval()
 
         self._assert_eager_lowered_same_result(
@@ -88,7 +97,9 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_ic3_export_to_executorch(self):
-        eager_model, example_inputs = MODEL_NAME_TO_MODEL["ic3"]()
+        eager_model, example_inputs = EagerModelFactory.create_model(
+            *MODEL_NAME_TO_MODEL["ic3"]
+        )
         eager_model = eager_model.eval()
 
         self._assert_eager_lowered_same_result(
@@ -96,7 +107,9 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_resnet18_export_to_executorch(self):
-        eager_model, example_inputs = MODEL_NAME_TO_MODEL["resnet18"]()
+        eager_model, example_inputs = EagerModelFactory.create_model(
+            *MODEL_NAME_TO_MODEL["resnet18"]
+        )
         eager_model = eager_model.eval()
 
         self._assert_eager_lowered_same_result(
@@ -104,7 +117,9 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_resnet50_export_to_executorch(self):
-        eager_model, example_inputs = MODEL_NAME_TO_MODEL["resnet50"]()
+        eager_model, example_inputs = EagerModelFactory.create_model(
+            *MODEL_NAME_TO_MODEL["resnet50"]
+        )
         eager_model = eager_model.eval()
 
         self._assert_eager_lowered_same_result(

@@ -4,17 +4,28 @@ python_library(
     name = "models",
     srcs = [
         "__init__.py",
-        "models.py",
+        "model_factory.py",
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/examples/models/inception_v3:ic3_export",
-        "//executorch/examples/models/inception_v4:ic4_export",
-        "//executorch/examples/models/mobilenet_v2:mv2_export",
-        "//executorch/examples/models/mobilenet_v3:mv3_export",
-        "//executorch/examples/models/resnet:resnet_export",
-        "//executorch/examples/models/torchvision_vit:vit_export",
-        "//executorch/examples/models/wav2letter:w2l_export",
-        "//executorch/exir/backend:compile_spec_schema",
+        "//executorch/examples/models:model_base",  # @manual
+        "//executorch/examples/models/inception_v3:ic3_model",  # @manual
+        "//executorch/examples/models/inception_v4:ic4_model",  # @manual
+        "//executorch/examples/models/mobilenet_v2:mv2_model",  # @manual
+        "//executorch/examples/models/mobilenet_v3:mv3_model",  # @manual
+        "//executorch/examples/models/resnet:resnet_model",  # @manual
+        "//executorch/examples/models/torchvision_vit:vit_model",  # @manual
+        "//executorch/examples/models/toy_model:toy_model",  # @manual
+        "//executorch/examples/models/wav2letter:w2l_model",  # @manual
+    ],
+)
+
+python_library(
+    name = "model_base",
+    srcs = [
+        "model_base.py",
+    ],
+    deps = [
+        "//caffe2:torch",
     ],
 )

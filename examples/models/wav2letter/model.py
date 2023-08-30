@@ -9,20 +9,19 @@ import logging
 import torch
 from torchaudio import models
 
-FORMAT = "[%(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(format=FORMAT)
+from ..model_base import EagerModelBase
 
 
-class Wav2LetterModel:
+class Wav2LetterModel(EagerModelBase):
     def __init__(self):
         self.batch_size = 10
         self.input_frames = 700
         self.vocab_size = 4096
 
-    def get_model(self):
-        logging.info("loading wav2letter model")
+    def get_eager_model(self) -> torch.nn.Module:
+        logging.info("Loading wav2letter model")
         wav2letter = models.Wav2Letter(num_classes=self.vocab_size)
-        logging.info("loaded wav2letter model")
+        logging.info("Loaded wav2letter model")
         return wav2letter
 
     def get_example_inputs(self):

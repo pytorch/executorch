@@ -7,6 +7,7 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
+import logging
 
 import torch
 from executorch.exir.backend.backend_api import to_backend
@@ -18,6 +19,11 @@ from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDe
 from ..models import MODEL_NAME_TO_MODEL
 
 from .utils import export_to_edge
+
+
+FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+logging.basicConfig(level=logging.INFO, format=FORMAT)
+
 
 """
 BackendWithCompilerDemo is a test demo backend, only supports torch.mm and torch.add, here are some examples
@@ -47,15 +53,17 @@ def export_compsite_module_with_lower_graph():
                |--------  composite module    -------|
 
     """
-    print("Running the example to export a composite module with lowered graph...")
+    logging.info(
+        "Running the example to export a composite module with lowered graph..."
+    )
     m, m_inputs = MODEL_NAME_TO_MODEL.get("add_mul")()
     m = m.eval()
     m_inputs = m.get_example_inputs()
     edge = export_to_edge(m, m_inputs)
-    print("Exported graph:\n", edge.exported_program.graph)
+    logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
     # Lower AddMulModule to the demo backend
-    print("Lowering to the demo backend...")
+    logging.info("Lowering to the demo backend...")
     lowered_graph = to_backend(
         BackendWithCompilerDemo.__name__, edge.exported_program, m.get_compile_spec()
     )
@@ -75,14 +83,14 @@ def export_compsite_module_with_lower_graph():
     # The graph module is still runnerable
     composited_edge.exported_program.graph_module(*m_inputs)
 
-    print("Lowered graph:\n", composited_edge.exported_program.graph)
+    logging.info(f"Lowered graph:\n{composited_edge.exported_program.graph}")
 
     exec_prog = composited_edge.to_executorch()
     buffer = exec_prog.buffer
 
     model_name = "composite_model"
     filename = f"{model_name}.pte"
-    print(f"Saving exported program to {filename}")
+    logging.info(f"Saving exported program to {filename}")
     with open(filename, "wb") as file:
         file.write(buffer)
 
@@ -99,7 +107,7 @@ def export_and_lower_partitioned_graph():
         input -> [lowered module (delegate)] -> torch.sub -> [lowered module (delegate)] -> output
     """
 
-    print("Running the example to export and lower the whole graph...")
+    logging.info("Running the example to export and lower the whole graph...")
 
     class Model(torch.nn.Module):
         def __init__(self):
@@ -118,19 +126,19 @@ def export_and_lower_partitioned_graph():
 
     m = Model()
     edge = export_to_edge(m, m.get_example_inputs())
-    print("Exported graph:\n", edge.exported_program.graph)
+    logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
     # Lower to backend_with_compiler_demo
-    print("Lowering to the demo backend...")
+    logging.info("Lowering to the demo backend...")
     edge.exported_program = to_backend(edge.exported_program, AddMulPartitionerDemo)
-    print("Lowered graph:\n", edge.exported_program.graph)
+    logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
 
     exec_prog = edge.to_executorch()
     buffer = exec_prog.buffer
 
     model_name = "partition_lowered_model"
     filename = f"{model_name}.pte"
-    print(f"Saving exported program to {filename}")
+    logging.info(f"Saving exported program to {filename}")
     with open(filename, "wb") as file:
         file.write(buffer)
 
@@ -146,16 +154,16 @@ def export_and_lower_the_whole_graph():
 
         input -> [lowered module (delegate)] -> output
     """
-    print("Running the example to export and lower the whole graph...")
+    logging.info("Running the example to export and lower the whole graph...")
 
     m, m_inputs = MODEL_NAME_TO_MODEL.get("add_mul")()
     m = m.eval()
     m_inputs = m.get_example_inputs()
     edge = export_to_edge(m, m_inputs)
-    print("Exported graph:\n", edge.exported_program.graph)
+    logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
     # Lower AddMulModule to the demo backend
-    print("Lowering to the demo backend...")
+    logging.info("Lowering to the demo backend...")
     lowered_module = to_backend(
         BackendWithCompilerDemo.__name__, edge, m.get_compile_spec()
     )
@@ -164,7 +172,7 @@ def export_and_lower_the_whole_graph():
 
     model_name = "whole"
     filename = f"{model_name}.pte"
-    print(f"Saving exported program to {filename}")
+    logging.info(f"Saving exported program to {filename}")
     with open(filename, "wb") as file:
         file.write(buffer)
 

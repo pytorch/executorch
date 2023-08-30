@@ -7,25 +7,25 @@
 import logging
 
 import torch
-from torchvision import models
+
+# pyre-ignore
+from torchvision.models import mobilenet_v2  # @manual
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
-FORMAT = "[%(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(format=FORMAT)
+from ..model_base import EagerModelBase
 
-# will refactor this in a separate file.
-class MV2Model:
+
+class MV2Model(EagerModelBase):
     def __init__(self):
         pass
 
-    @staticmethod
-    def get_model():
-        logging.info("loading mobilenet_v2 model")
-        mv2 = models.mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
-        logging.info("loaded mobilenet_v2 model")
+    def get_eager_model(self) -> torch.nn.Module:
+        logging.info("Loading mobilenet_v2 model")
+        # pyre-ignore
+        mv2 = mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
+        logging.info("Loaded mobilenet_v2 model")
         return mv2
 
-    @staticmethod
-    def get_example_inputs():
+    def get_example_inputs(self):
         tensor_size = (1, 3, 224, 224)
         return (torch.randn(tensor_size),)
