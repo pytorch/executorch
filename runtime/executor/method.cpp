@@ -116,6 +116,7 @@ class BackendDelegate final {
   }
 
   Error Execute(EValue** args) const {
+    EXECUTORCH_SCOPE_PROF("delegate_execute");
     return backend_->execute(handle_, args);
   }
 
