@@ -20,7 +20,7 @@ from executorch.exir.backend.backend_api import to_backend
 ctypes.CDLL("libvulkan.so.1")
 
 
-from executorch.extension.pybindings.portable import (  # @manual
+from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from executorch.extension.pytree import tree_flatten

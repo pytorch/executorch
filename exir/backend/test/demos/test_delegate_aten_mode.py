@@ -15,7 +15,7 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
 
-from executorch.extension.pybindings.aten_mode_lib import (  # @manual
+from executorch.extension.pybindings.aten_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 

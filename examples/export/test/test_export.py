@@ -14,7 +14,7 @@ from executorch.examples.export.utils import export_to_edge
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 
-from executorch.extension.pybindings.portable import (  # @manual
+from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 
