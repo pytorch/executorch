@@ -47,7 +47,9 @@ MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB = [
 def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibility = ["//executorch/..."], types = []):
     runtime.cxx_python_extension(
         name = python_module_name,
-        srcs = srcs,
+        srcs = [
+            "//executorch/extension/pybindings:pybindings.cpp",
+        ] + srcs,
         types = types,
         base_module = "executorch.extension.pybindings",
         preprocessor_flags = [
@@ -63,27 +65,4 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
         use_static_deps = True,
         _is_external_target = bool(visibility != ["//executorch/..."]),
         visibility = visibility,
-    )
-
-def define_common_targets():
-    """Defines targets that should be shared between fbcode and xplat.
-
-    The directory containing this targets.bzl file should also contain both
-    TARGETS and BUCK files that call this function.
-    """
-
-    # Export this so the internal fb/ subdir can create pybindings with custom internal deps
-    # without forking the pybinding source.
-    runtime.export_file(
-        name = "module.cpp",
-        visibility = ["//executorch/extension/pybindings/..."],
-    )
-
-    # cxx_python_extension kwarg 'types' can't take export_file rules directly and we need to rename the .pyi
-    # file to match the lib anyway, so we just expose the file like this and then have genrules consume and
-    # rename it before passing it to executorch pybindings.
-    runtime.filegroup(
-        name = "pybinding_types",
-        srcs = ["pybindings.pyi"],
-        visibility = ["//executorch/extension/pybindings/..."],
     )
