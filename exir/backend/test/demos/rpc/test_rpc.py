@@ -17,7 +17,7 @@ from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
 )
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 
-from executorch.extension.pybindings.portable import (  # @manual
+from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from torch.utils._pytree import tree_flatten

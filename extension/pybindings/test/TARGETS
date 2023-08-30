@@ -1,16 +1,17 @@
-load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
 
-python_unittest(
+runtime.python_library(
     # @autodeps-skip
     # autodeps has a real hard time tracking the owner of the pybindings
     # from portable and the suggested fixes I could find didnt work, so
     # just disabling for now
-    name = "test",
+    name = "make_test",
     srcs = [
-        "test.py",
+        "make_test.py",
     ],
+    visibility = ["//executorch/extension/pybindings/..."],
     deps = [
         "//caffe2:torch",
         "//caffe2:torch_fx",
@@ -20,7 +21,24 @@ python_unittest(
         "//executorch/exir/emit:lib",
         "//executorch/exir/passes:lib",
         "//executorch/exir/serialize:lib",
-        "//executorch/extension/pybindings:portable",
         "//executorch/runtime/core:core",
+    ],
+)
+
+runtime.python_test(
+    name = "test_pybindings_portable_lib",
+    srcs = ["test_pybindings.py"],
+    deps = [
+        ":make_test",
+        "//executorch/extension/pybindings:portable_lib",
+    ],
+)
+
+runtime.python_test(
+    name = "test_pybindings_aten_lib",
+    srcs = ["test_pybindings.py"],
+    deps = [
+        ":make_test",
+        "//executorch/extension/pybindings:aten_lib",
     ],
 )

@@ -37,7 +37,7 @@ from executorch.exir.backend.backend_api import to_backend, validation_disabled
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.tracer import _default_decomposition_table
 
-from executorch.extension.pybindings.portable import (  # @manual
+from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from executorch.extension.pytree import tree_flatten
