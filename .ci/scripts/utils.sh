@@ -58,14 +58,14 @@ build_executorch_runner_cmake() {
   else
     CMAKE_JOBS=$(( $(nproc) - 1 ))
   fi
-  cmake --build "${CMAKE_OUTPUT_DIR}" -j "${CMAKE_JOBS}"
+  BUILD_XNNPACK=$1 cmake --build "${CMAKE_OUTPUT_DIR}" -j "${CMAKE_JOBS}"
 }
 
 build_executorch_runner() {
   if [[ $1 == "buck2" ]]; then
     build_executorch_runner_buck2
   elif [[ $1 == "cmake" ]]; then
-    build_executorch_runner_cmake
+    build_executorch_runner_cmake $2
   else
     echo "Invalid build tool $1. Only buck2 and cmake are supported atm"
     exit 1
