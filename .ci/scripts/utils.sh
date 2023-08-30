@@ -58,7 +58,7 @@ build_executorch_runner_cmake() {
   else
     CMAKE_JOBS=$(( $(nproc) - 1 ))
   fi
-  BUILD_XNNPACK=$1 cmake --build "${CMAKE_OUTPUT_DIR}" -j "${CMAKE_JOBS}"
+  cmake -DBUILD_XNNPACK=$1 --build "${CMAKE_OUTPUT_DIR}" -j "${CMAKE_JOBS}"
 }
 
 build_executorch_runner() {
