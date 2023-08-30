@@ -97,7 +97,7 @@ class ProfileEvent:
 @dataclasses.dataclass
 class ProfileEventFrameworkTax:
     exec_time: List[int]
-    kernel_time: List[int]
+    kernel_and_delegate_time: List[int]
     framework_tax: List[float]
 
 
@@ -377,29 +377,31 @@ def profile_aggregate_framework_tax(
 
     for name, prof_data_list in prof_data.items():
         execute_max = []
-        native_calls_sum = []
+        kernel_and_delegate_sum = []
 
         for d in prof_data_list:
             if "Method::execute" in d.name:
                 execute_max = max(execute_max, d.duration)
 
-            if "native_call" in d.name:
+            if "native_call" in d.name or "delegate_execute" in d.name:
                 for idx in range(len(d.duration)):
-                    if idx < len(native_calls_sum):
-                        native_calls_sum[idx] += d.duration[idx]
+                    if idx < len(kernel_and_delegate_sum):
+                        kernel_and_delegate_sum[idx] += d.duration[idx]
                     else:
-                        native_calls_sum.append(d.duration[idx])
+                        kernel_and_delegate_sum.append(d.duration[idx])
 
-        if len(execute_max) == 0 or len(native_calls_sum) == 0:
+        if len(execute_max) == 0 or len(kernel_and_delegate_sum) == 0:
             continue
 
         framework_tax_list = [
-            round((execute_time - native_call) / execute_time, 4) * 100
-            for execute_time, native_call in zip(execute_max, native_calls_sum)
+            round((execute_time - kernel_delegate_call) / execute_time, 4) * 100
+            for execute_time, kernel_delegate_call in zip(
+                execute_max, kernel_and_delegate_sum
+            )
         ]
 
         prof_framework_tax[name] = ProfileEventFrameworkTax(
-            execute_max, native_calls_sum, framework_tax_list
+            execute_max, kernel_and_delegate_sum, framework_tax_list
         )
 
     return prof_framework_tax
@@ -417,7 +419,10 @@ def profile_framework_tax_table(
         table_agg.add_rows(
             [
                 ("Model execution time", *prof_data_list.exec_time),
-                ("Time spent in kernels", *prof_data_list.kernel_time),
+                (
+                    "Time spent in kernels and delegates",
+                    *prof_data_list.kernel_and_delegate_time,
+                ),
                 ("Framework tax (%)", *prof_data_list.framework_tax),
             ]
         )
