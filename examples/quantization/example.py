@@ -6,6 +6,7 @@
 
 import argparse
 import copy
+import logging
 
 import torch
 import torch._export as export
@@ -25,14 +26,21 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from ..export.export_example import export_to_pte
+from ..export.export_example import export_to_pte, save_pte_program
 from ..models import MODEL_NAME_TO_MODEL
+from ..models.model_factory import EagerModelFactory
 from ..recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS
+
 from .utils import quantize
+
+
+FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_inputs):
     """This is a verification against fx graph mode quantization flow as a sanity check"""
+
     model.eval()
     m_copy = copy.deepcopy(model)
     m = model
@@ -64,13 +72,19 @@ def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_
     # output of a model, so it's just testing the numerical difference for different captures in PTQ
     # for QAT it is also testing whether the fake quant placement match or not
     # not exactly the same due to capture changing numerics, but still really close
-    print("m:", m)
-    print("m_fx:", m_fx)
-    print("prepare sqnr:", compute_sqnr(after_prepare_result, after_prepare_result_fx))
+    logging.info(f"m: {m}")
+    logging.info(f"m_fx: {m_fx}")
+    logging.info(
+        f"prepare sqnr: {compute_sqnr(after_prepare_result, after_prepare_result_fx)}"
+    )
     assert compute_sqnr(after_prepare_result, after_prepare_result_fx) > 100
-    print("quant diff max:", torch.max(after_quant_result - after_quant_result_fx))
+    logging.info(
+        f"quant diff max: {torch.max(after_quant_result - after_quant_result_fx)}"
+    )
     assert torch.max(after_quant_result - after_quant_result_fx) < 1e-1
-    print("quant sqnr:", compute_sqnr(after_quant_result, after_quant_result_fx))
+    logging.info(
+        f"quant sqnr: {compute_sqnr(after_quant_result, after_quant_result_fx)}"
+    )
     assert compute_sqnr(after_quant_result, after_quant_result_fx) > 30
 
 
@@ -103,7 +117,7 @@ if __name__ == "__main__":
     try:
         op = torch.ops.quantized_decomposed.add.out
     except AttributeError:
-        print("No registered quantized ops")
+        logging.info("No registered quantized ops")
         has_out_ops = False
     if not has_out_ops:
         if args.so_library:
@@ -124,7 +138,9 @@ if __name__ == "__main__":
             f"Available models are {list(MODEL_NAME_TO_OPTIONS.keys())}."
         )
 
-    model, example_inputs = MODEL_NAME_TO_MODEL[args.model_name]()
+    model, example_inputs = EagerModelFactory.create_model(
+        *MODEL_NAME_TO_MODEL[args.model_name]
+    )
 
     if args.verify:
         verify_xnnpack_quantizer_matching_fx_quant_model(
@@ -132,5 +148,8 @@ if __name__ == "__main__":
         )
 
     quantized_model = quantize(model, example_inputs)
-    export_to_pte(args.model_name, quantized_model, copy.deepcopy(example_inputs))
-    print("finished")
+    buffer = export_to_pte(
+        args.model_name, quantized_model, copy.deepcopy(example_inputs)
+    )
+    save_pte_program(buffer, f"{args.model_name}_quantized")
+    logging.info("finished")

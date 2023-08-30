@@ -20,11 +20,13 @@ from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass 
 )
 
 from ..models import MODEL_NAME_TO_MODEL
+from ..models.model_factory import EagerModelFactory
 from ..quantization.utils import quantize
 from ..recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+
+FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 if __name__ == "__main__":
@@ -67,7 +69,10 @@ if __name__ == "__main__":
             f"Available models are {list(MODEL_NAME_TO_OPTIONS.keys())}."
         )
 
-    model, example_inputs = MODEL_NAME_TO_MODEL[args.model_name]()
+    model, example_inputs = EagerModelFactory.create_model(
+        *MODEL_NAME_TO_MODEL[args.model_name]
+    )
+
     model = model.eval()
 
     partitioner = XnnpackFloatingPointPartitioner

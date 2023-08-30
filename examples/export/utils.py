@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+
 import executorch.exir as exir
 
 # Using dynamic shape does not allow us to run graph_module returned by
@@ -22,5 +24,21 @@ def export_to_edge(model, example_inputs):
     edge = exir.capture(m, example_inputs, _CAPTURE_CONFIG).to_edge(
         _EDGE_COMPILE_CONFIG
     )
-    print("Exported graph:\n", edge.exported_program.graph)
+    logging.info(f"Exported graph:\n{edge.exported_program.graph}")
     return edge
+
+
+def export_to_pte(model_name, model, example_inputs):
+    edge = export_to_edge(model, example_inputs)
+    exec_prog = edge.to_executorch()
+    return exec_prog.buffer
+
+
+def save_pte_program(buffer, model_name):
+    filename = f"{model_name}.pte"
+    try:
+        with open(filename, "wb") as file:
+            file.write(buffer)
+            logging.info(f"Saved exported program to {filename}")
+    except Exception as e:
+        logging.error(f"Error while saving to {filename}: {e}")
