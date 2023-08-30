@@ -8,6 +8,7 @@
 
 #include <executorch/util/bundled_program_verification.h>
 
+#include <cmath>
 #include <cstddef>
 #include <cstring>
 
@@ -15,7 +16,6 @@
 #include <ATen/ATen.h>
 #endif // USE_ATEN_LIB
 
-#include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/method.h>
@@ -76,6 +76,96 @@ TensorImpl impl_like(
   return TensorImpl(scalar_type, dim, sizes, data, dim_order, strides);
 }
 #endif
+
+/**
+ * Returns true if the two arrays are close according to the description on
+ * `tensors_are_close()`.
+ *
+ * T must be a floating point type. Non-floating point data should be compared
+ * directly.
+ */
+template <
+    typename T,
+    typename = std::enable_if_t<std::is_floating_point<T>::value>>
+bool data_is_close(
+    const T* a,
+    const T* b,
+    size_t numel,
+    double rtol,
+    double atol) {
+  for (size_t i = 0; i < numel; i++) {
+    const auto ai = a[i];
+    const auto bi = b[i];
+
+    if (std::isnan(ai) && std::isnan(bi)) {
+      // NaN == NaN
+    } else if (
+        !std::isfinite(ai) && !std::isfinite(bi) && ((ai > 0) == (bi > 0))) {
+      // -Inf == -Inf
+      // +Inf == +Inf
+    } else if (rtol == 0 && atol == 0) {
+      // Exact comparison; avoid unnecessary math.
+      if (ai != bi) {
+        return false;
+      }
+    } else {
+      auto allowed_error = atol + std::abs(rtol * bi);
+      auto actual_error = std::abs(ai - bi);
+      if (!std::isfinite(actual_error) || actual_error > allowed_error) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool tensors_are_close(
+    const Tensor& a,
+    const Tensor& b,
+    double rtol,
+    double atol) {
+  if (a.scalar_type() != b.scalar_type() || a.sizes() != b.sizes()) {
+    return false;
+  }
+
+  // TODO(T132992348): support comparison between tensors of different strides
+  ET_CHECK_MSG(
+      a.strides() == b.strides(),
+      "The two inputs of `tensors_are_close` function shall have same strides");
+
+  // Since the two tensors have same shape and strides, any two elements that
+  // share same index from underlying data perspective will also share same
+  // index from tensor perspective, whatever the size and strides really are.
+  // e.g. if a[i_1, i_2, ... i_n] = a.const_data_ptr()[m], we can assert
+  // b[i_1, i_2, ... i_n] = b.const_data_ptr()[m])
+  // So we can just compare the two underlying data sequentially to figure out
+  // if the two tensors are same.
+
+  if (a.nbytes() == 0) {
+    // Note that this case is important. It's valid for a zero-size tensor to
+    // have a null data pointer, but in some environments it's invalid to pass a
+    // null pointer to memcmp() even when the size is zero.
+    return true;
+  } else if (a.scalar_type() == ScalarType::Float) {
+    return data_is_close<float>(
+        a.const_data_ptr<float>(),
+        b.const_data_ptr<float>(),
+        a.numel(),
+        rtol,
+        atol);
+  } else if (a.scalar_type() == ScalarType::Double) {
+    return data_is_close<double>(
+        a.const_data_ptr<double>(),
+        b.const_data_ptr<double>(),
+        a.numel(),
+        rtol,
+        atol);
+  } else {
+    // Non-floating-point types can be compared bitwise.
+    return memcmp(a.const_data_ptr(), b.const_data_ptr(), a.nbytes()) == 0;
+  }
+}
+
 } // namespace
 
 // Load testset_idx-th bundled data into the Method
@@ -211,7 +301,7 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
         Tensor t = Tensor(&impl);
 #endif
         ET_CHECK_OR_RETURN_ERROR(
-            testing::tensors_are_close(t, method_output_tensor, rtol, atol),
+            tensors_are_close(t, method_output_tensor, rtol, atol),
             NotFound, // maybe some new error tag?
             "Method's output data mismatched the expected one.");
         break;
