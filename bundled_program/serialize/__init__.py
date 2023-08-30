@@ -12,14 +12,13 @@ import json
 import os
 import tempfile
 
-# pyre-ignore[21]: Could not find module `executorch.exir.serialize.bindings`.
-import executorch.exir.serialize.bindings as bindings  # @manual=//executorch/exir/serialize:bindings
-
 # @manual=fbsource//third-party/pypi/setuptools:setuptools
 import pkg_resources
 from executorch.bundled_program.schema import BundledProgram
 
 from executorch.exir.serialize._dataclass import _DataclassEncoder, _json_to_dataclass
+
+from executorch.exir.serialize._flatbuffer import _flatc_compile, _flatc_decompile
 
 # The prefix of schema files used for bundled program
 BUNDLED_PROGRAM_SCHEMA_NAME = "bundled_program_schema"
@@ -54,9 +53,7 @@ def convert_to_flatbuffer(program_json: str) -> bytes:
         json_path = os.path.join(d, "{}.json".format(BUNDLED_PROGRAM_SCHEMA_NAME))
         with open(json_path, "wb") as json_file:
             json_file.write(program_json.encode("ascii"))
-
-        # pyre-ignore
-        bindings.flatc_compile(d, schema_path, json_path)
+        _flatc_compile(d, schema_path, json_path)
         output_path = os.path.join(d, "{}.bp".format(BUNDLED_PROGRAM_SCHEMA_NAME))
         with open(output_path, "rb") as output_file:
             return output_file.read()
@@ -71,8 +68,7 @@ def convert_from_flatbuffer(program_flatbuffer: bytes) -> bytes:
         bin_path = os.path.join(d, "schema.bin")
         with open(bin_path, "wb") as bin_file:
             bin_file.write(program_flatbuffer)
-        # pyre-ignore
-        bindings.flatc_decompile(d, schema_path, bin_path)
+        _flatc_decompile(d, schema_path, bin_path)
         output_path = os.path.join(d, "schema.json")
         with open(output_path, "rb") as output_file:
             return output_file.read()
