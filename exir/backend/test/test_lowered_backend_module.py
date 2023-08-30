@@ -18,7 +18,7 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
 from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
 from executorch.exir.schema import DelegateCall, Program
 
-from executorch.extension.pybindings.portable import (  # @manual
+from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from hypothesis import given, settings, strategies as st

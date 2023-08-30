@@ -15,7 +15,7 @@ import torch
 
 from executorch import exir
 
-from executorch.extension.pybindings.portable import (
+from executorch.extension.pybindings.portable_lib import (
     _create_profile_block,
     _dump_profile_results,
     _load_for_executorch_from_buffer,

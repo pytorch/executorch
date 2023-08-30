@@ -34,7 +34,9 @@ ATEN_MODULE_DEPS = [
     "//executorch/util:read_file",
     "//executorch/util:test_memory_config",
     "//executorch/util:bundled_program_verification_aten",
-    "//caffe2:torch-cpp",
+    "//caffe2:torch",
+    "//caffe2:torch_extension",
+    "//caffe2:ATen",
     "//executorch/runtime/executor/test:test_backend_compiler_lib_aten",
 ]
 

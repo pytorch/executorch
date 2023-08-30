@@ -200,7 +200,7 @@ with open("model.pte", "wb") as file:
     file.write(buffer)
 
 # Or you can run the Executorch runtime in python to try it out
-from executorch.extension.pybindings.portable import (
+from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
 
