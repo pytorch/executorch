@@ -98,7 +98,7 @@ class TestCustomOps(unittest.TestCase):
         prof_agg_data = profile_aggregate_framework_tax(self.prof_results)
         for name, framework_tax in prof_agg_data.items():
             self.assertTrue(len(framework_tax.exec_time) == 1)
-            self.assertTrue(len(framework_tax.kernel_time) == 1)
+            self.assertTrue(len(framework_tax.kernel_and_delegate_time) == 1)
             self.assertTrue(len(framework_tax.framework_tax) == 1)
             self.assertTrue(float(framework_tax.framework_tax[0]) < 100)
             self.assertTrue(name == "default")
