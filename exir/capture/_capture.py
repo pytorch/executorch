@@ -202,7 +202,7 @@ def capture(
         graph_module = dispatch_trace(f, args)
         in_spec, out_spec = graph_module.in_spec, graph_module.out_spec
 
-    _instantiate_missing_placeholder_val_with_real_inputs(graph_module, flat_args)
+    _instantiate_missing_placeholder_val_with_fake_inputs(graph_module, flat_args)
     graph_module._apply(torch.Tensor.contiguous)
 
     ep = ExportedProgram(
@@ -339,13 +339,25 @@ def capture_multiple(
 
 # This is to bootstrap the missing meta["val"] when 1. ph consists of scalar
 # 2. meta["val"] is not properly set in dispatch_trace.
-def _instantiate_missing_placeholder_val_with_real_inputs(gm, args):
+def _instantiate_missing_placeholder_val_with_fake_inputs(gm, args):
     phs = [node for node in gm.graph.nodes if node.op == "placeholder"]
     if len(phs) != len(args):
         raise ExportError(
             ExportErrorType.NOT_SUPPORTED,
             "Expect number of placeholders to be the same as user inputs.",
         )
+
+    fake_tensor_mode = FakeTensorMode(
+        allow_fallback_kernels=False,
+        allow_non_fake_inputs=True,
+        shape_env=ShapeEnv(),
+    )
+
+    if fake_mode := _guards.detect_fake_mode():
+        fake_tensor_mode = fake_mode
     for node, arg in zip(phs, args):
         if "val" not in node.meta or node.meta["val"] is None:
-            node.meta["val"] = arg
+            if isinstance(arg, torch.Tensor):
+                node.meta["val"] = fake_tensor_mode.from_tensor(arg)
+            else:
+                node.meta["val"] = arg
