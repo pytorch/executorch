@@ -145,7 +145,7 @@ jobs:
       matrix:
         include:
           - build-tool: buck2
-          # - build-tool: cmake (TODO)
+          - build-tool: cmake
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -170,7 +170,7 @@ jobs:
       matrix:
         include:
           - build-tool: buck2
-          # - build-tool: cmake (TODO)
+          - build-tool: cmake
       fail-fast: false
     with:
       runner: macos-m1-12

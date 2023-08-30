@@ -60,9 +60,14 @@ endfunction()
 # Extract source files based on toml config. This is useful to keep buck2 and
 # cmake aligned.
 function(extract_sources sources_file)
+  if(NOT EXECUTORCH_ROOT)
+    set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+  endif()
   execute_process(
-    COMMAND ${PYTHON_EXECUTABLE} build/extract_sources.py --buck2=${BUCK2}
-            --config=build/cmake_deps.toml --out=${sources_file}
+    COMMAND
+      ${PYTHON_EXECUTABLE} ${EXECUTORCH_ROOT}/build/extract_sources.py
+      --buck2=${BUCK2} --config=${EXECUTORCH_ROOT}/build/cmake_deps.toml
+      --out=${sources_file}
     OUTPUT_VARIABLE gen_srcs_output
     ERROR_VARIABLE gen_srcs_error
     RESULT_VARIABLE gen_srcs_exit_code

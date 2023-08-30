@@ -8,18 +8,22 @@ Prerequisite: finish the [setting up wiki](https://github.com/pytorch/executorch
 Run:
 
 ```bash
-bash test_selective_build.sh
+bash test_selective_build.sh [cmake|buck2]
 ```
 
 ## BUCK2 examples
 
 Check out `targets.bzl` for demo of 3 selective build APIs:
-1. Select all ops from the dependency kernel libraries, register all of them into Executorch runtime.
-2. Only select ops from `ops` kwarg in `et_operator_library` macro.
-3. Only select from a yaml file from `ops_schema_yaml_target` kwarg in `et_operator_library` macro.
+1. `--config executorch.select_ops=all`: Select all ops from the dependency kernel libraries, register all of them into Executorch runtime.
+2. `--config executorch.select_ops=list`: Only select ops from `ops` kwarg in `et_operator_library` macro.
+3. `--config executorch.select_ops=yaml`:Only select from a yaml file from `ops_schema_yaml_target` kwarg in `et_operator_library` macro.
 
-We have one more API incoming: only select from an exported model file (.pte).
 
 ## CMake examples
 
-TODO
+Check out `CMakeLists.txt` for demo of 3 selective build APIs:
+1. `SELECT_ALL_OPS`
+2. `SELECT_OPS_LIST`
+3. `SELECT_OPS_YAML`
+
+We have one more API incoming: only select from an exported model file (.pte).
