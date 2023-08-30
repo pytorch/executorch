@@ -69,7 +69,7 @@ Tensor& lt_scalar_out(
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);
-  ScalarType common_type = promoteTypes(a_type, b_type);
+  ScalarType common_type = utils::promote_type_with_scalar(a_type, b);
   ScalarType out_type = out.scalar_type();
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "lt", CTYPE_A, [&]() {
