@@ -11,8 +11,8 @@ library that calls PyTorch C++ op registration API.
 import argparse
 
 import torch
-
-from examples.export.export_example import export_to_pte, save_pte_program
+from examples.export.export_example import export_to_exec_prog, save_pte_program
+from executorch.exir import EdgeCompileConfig
 
 
 # example model
@@ -27,8 +27,12 @@ def main():
 
     # capture and lower
     model_name = "custom_ops_2"
-    buffer = export_to_pte(model_name, m, (input,))
-    save_pte_program(buffer, model_name)
+    prog = export_to_exec_prog(
+        m,
+        (input,),
+        edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
+    save_pte_program(prog.buffer, model_name)
 
 
 if __name__ == "__main__":
