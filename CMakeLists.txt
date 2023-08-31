@@ -172,7 +172,9 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+if (BUILD_XNNPACK)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+endif()
 
 # Add selective build subdirectory
 if(BUILD_SELECTIVE_BUILD_TEST)
