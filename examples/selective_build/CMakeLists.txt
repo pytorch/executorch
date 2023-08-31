@@ -28,14 +28,14 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 #
 set(_kernel_lib)
 if(SELECT_ALL_OPS)
-  gen_selected_ops("" "" ${SELECT_ALL_OPS})
+  gen_selected_ops("" "" "${SELECT_ALL_OPS}")
   list(APPEND _kernel_lib portable_kernels)
 elseif(SELECT_OPS_LIST)
-  gen_selected_ops("" ${SELECT_OPS_LIST} "")
+  gen_selected_ops("" "${SELECT_OPS_LIST}" "")
   list(APPEND _kernel_lib portable_kernels)
 elseif(SELECT_OPS_YAML)
   set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/custom_ops/custom_ops.yaml)
-  gen_selected_ops(${_custom_ops_yaml} "" "")
+  gen_selected_ops("${_custom_ops_yaml}" "" "")
   set(kernel_sources
       ${EXECUTORCH_ROOT}/examples/custom_ops/custom_ops_1_out.cpp
       ${EXECUTORCH_ROOT}/examples/custom_ops/custom_ops_2_out.cpp)

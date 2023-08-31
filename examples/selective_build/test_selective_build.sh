@@ -79,7 +79,7 @@ test_cmake_select_ops_in_list() {
         && cd cmake-out \
         && cmake -DBUCK2=buck2 \
             -DBUILD_SELECTIVE_BUILD_TEST=ON \
-            -DSELECT_OPS_LIST="aten::add.out;aten::mm.out" \
+            -DSELECT_OPS_LIST="aten::add.out,aten::mm.out" \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
     echo "Build selective build test"
