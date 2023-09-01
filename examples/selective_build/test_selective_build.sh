@@ -12,6 +12,9 @@
 # 4. (TODO) Select from a serialized model (.pte)
 set -e
 
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
+
 test_buck2_select_all_ops() {
     echo "Exporting MobilenetV3"
     ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="mv3"
@@ -55,7 +58,7 @@ test_cmake_select_all_ops() {
     (rm -rf cmake-out \
         && mkdir cmake-out \
         && cd cmake-out \
-        && cmake -DBUCK2=buck2 \
+        && retry cmake -DBUCK2=buck2 \
             -DBUILD_SELECTIVE_BUILD_TEST=ON \
             -DSELECT_ALL_OPS=ON \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
@@ -77,7 +80,7 @@ test_cmake_select_ops_in_list() {
     (rm -rf cmake-out \
         && mkdir cmake-out \
         && cd cmake-out \
-        && cmake -DBUCK2=buck2 \
+        && retry cmake -DBUCK2=buck2 \
             -DBUILD_SELECTIVE_BUILD_TEST=ON \
             -DSELECT_OPS_LIST="aten::add.out,aten::mm.out" \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
@@ -99,7 +102,7 @@ test_cmake_select_ops_in_yaml() {
     (rm -rf cmake-out \
         && mkdir cmake-out \
         && cd cmake-out \
-        && cmake -DBUCK2=buck2 \
+        && retry cmake -DBUCK2=buck2 \
             -DBUILD_SELECTIVE_BUILD_TEST=ON \
             -DSELECT_OPS_YAML=ON \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
