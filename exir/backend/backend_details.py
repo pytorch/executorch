@@ -5,8 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
-from typing import List
+from typing import Dict, List, Optional, Tuple, Union
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._export.exported_program import ExportedProgram
@@ -15,6 +16,14 @@ from torch._export.exported_program import ExportedProgram
 def enforcedmethod(func):
     func.__enforcedmethod__ = True
     return func
+
+
+@dataclass
+class PreprocessResult:
+    processed_bytes: bytes = bytes()
+    debug_handle_map: Optional[
+        Union[Dict[int, Tuple[int]], Dict[int, Tuple[int]]]
+    ] = None
 
 
 """
@@ -40,7 +49,10 @@ class BackendDetails(ABC):
         compile_specs: List of values needed for compilation
 
     Returns:
-        Bytes: A compiled blob - a binary that can run the desired program in the backend.
+        PreprocessResult: It wraps the following information:
+            processed_bytes -> bytes: A compiled blob - a binary that can run the desired program in the backend.
+            debug_handle_map (Optional[Dict[int, Tuple[int]]]): For profiling purposes, a map from the node_id in the final graph (either EXIR or the user's self-defined IR)
+            to debug handle id attached in the original exported program.
     """
 
     @staticmethod
@@ -51,7 +63,7 @@ class BackendDetails(ABC):
     def preprocess(
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
-    ) -> bytes:
+    ) -> PreprocessResult:
         # Users should return a compiled blob - a binary that can run the desired
         # program in the backend.
         pass

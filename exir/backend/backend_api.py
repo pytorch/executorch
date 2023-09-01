@@ -13,7 +13,7 @@ from typing import Dict, Generator, List, Type, Union
 import torch
 from executorch.exir import MultiMethodExirExportedProgram
 
-from executorch.exir.backend.backend_details import BackendDetails
+from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.backend.partitioner import Partitioner, TPartitioner
@@ -97,16 +97,19 @@ def _(
     for cls in BackendDetails.__subclasses__():
         if backend_id == cls.__name__:
             copied_edge_program = copy.deepcopy(edge_program)
-            processed_bytes = cls.preprocess(
+            preprocess_result: PreprocessResult = cls.preprocess(
                 copied_edge_program,
                 compile_specs,
             )
             lowered_module = LoweredBackendModule(
-                edge_program,
-                backend_id,
-                processed_bytes,
-                compile_specs,
+                edge_program=edge_program,
+                backend_id=backend_id,
+                processed_bytes=preprocess_result.processed_bytes,
+                compile_specs=compile_specs,
             )
+            lowered_module.meta = {
+                "debug_handle_map": preprocess_result.debug_handle_map
+            }
             return lowered_module
     raise NotImplementedError(f"Backend {backend_id} was not found.")
 
@@ -159,7 +162,14 @@ def _partition_and_lower(
         submodule, call_module_node = create_submodule_from_nodes(
             tagged_graph_module, node_list, tag
         )
-
+        tagged_graph_module_output_node = [
+            node for node in tagged_graph_module.graph.nodes if node.op == "output"
+        ]
+        submodule_output_node = [
+            node for node in submodule.graph.nodes if node.op == "output"
+        ]
+        # Copy the output node meta from the original output node, because create_submodule_from_nodes doesn't cover the meta field
+        submodule_output_node[0].meta = tagged_graph_module_output_node[0].meta
         logging.debug(f"Partitioned graph module: {tagged_graph_module}")
 
         submodule_program = create_exported_program_from_submodule(
@@ -189,6 +199,9 @@ def _partition_and_lower(
                 executorch_call_delegate,
                 (lowered_node,) + tuple(call_delegate_args),
                 call_module_node.kwargs,
+            )
+            call_delegate_node.meta["debug_handle"] = len(
+                tagged_graph_module.graph.nodes
             )
             call_module_node.replace_all_uses_with(call_delegate_node)
             tagged_graph_module.graph.erase_node(call_module_node)
