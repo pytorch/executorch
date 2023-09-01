@@ -4,17 +4,22 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
+from collections import defaultdict
 from functools import lru_cache
-from typing import Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.lowered_backend_module import create_submodule_from_nodes
+from torch.fx.node import Node
 from torch.fx.passes.utils.source_matcher_utils import SourcePartition
 
 T_QuantPerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
 T_DQuantPerTensor = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+
+log: logging.Logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=128)
@@ -158,3 +163,100 @@ def replace_quantized_partition_with_op(
     graph_module.recompile()
 
     return (replaced_op, dequant_nodes, quant_nodes)
+
+
+# TODO - style: use templated types
+class DelegateMappingBuilder:
+    """
+    Profiling helper class for building Delegate Maps.
+    Delegate Maps are a mapping from log entry identifiers to node
+    debug handles. Specifically this is used to log within backend delegates
+
+    Args:
+        generated_identifiers (bool, optional): Whether delegate map keys are
+            generated automatically. Defaults to False.
+    """
+
+    def __init__(self, generated_identifiers: bool = False):
+        self._generated_identifiers = generated_identifiers
+
+        # Note that the internal struct has a Set value, while the getter
+        # function returns the values as a tuple
+        self._debug_handle_map: Union[
+            Dict[int, Set[int]], Dict[str, Set[int]]
+        ] = defaultdict(set)
+        self._next_index: int = 0
+
+    def get_delegate_mapping(
+        self,
+    ) -> Union[Dict[int, Tuple[int]], Dict[str, Tuple[int]]]:
+        """
+        Returns:
+           Union[Dict[int, Tuple[int]], Dict[str, Tuple[int]]]:
+                A map of delegate debug identifier to a list of debug handles
+                The keys (identifier) are either integers or strings
+                The values are a sorted tuple of integer debug handles
+        """
+        # pyre-ignore Warning between Union[Dict[K, V], Dict[K2, V]] vs Dict[Union[K, K2], V]
+        return {k: tuple(sorted(v)) for k, v in self._debug_handle_map.items()}
+
+    def upsert_delegate_mapping_entry(
+        self,
+        nodes: Union[Node, List[Node]],
+        identifier: Optional[Union[int, str]] = None,
+    ) -> Union[int, str]:
+        """
+        Add or append to an existing delegate mapping entry
+
+        If self._generated_identifiers = False:
+            - An identifier must be provided, else this is no-op
+
+        If self._generated_identifiers = True:
+            - NEW identifiers cannot be manually provided. Existing identifier
+                can be provided
+            - New identifiers are generated incrementally, 0 indexed
+
+        If a provided identifier already exists, node entries are appended
+
+        Args:
+            nodes (Union[Node, List[Node]]): A (list of) Node(s)
+            identifier (Optional[Union[int, str]]):
+                Debug identifier corresponding to the Node(s)
+
+        Returns:
+            Optional[Union[int, str]]:
+                Delegate debug identifier corresponding to the node group
+                    None is returned, if no identifier is associated
+        """
+
+        # Check for manual addition of identifier (with generated identifiers enabled)
+        if (
+            self._generated_identifiers
+            and identifier is not None
+            and identifier not in self._debug_handle_map
+        ):
+            raise Exception(
+                f"Builders using generated identifiers can't manually add identifiers: {identifier}. Failed to add or update entry"
+            )
+
+        # Resolve Identifier
+        if identifier is None:
+            if self._generated_identifiers:
+                identifier = self._next_index
+                self._next_index += 1
+            else:
+                raise Exception(
+                    "No identifier provided. Failed to add or update entry."
+                )
+
+        # Get all debug handles found in the nodes
+        # Note that missing debug handles are not surfaced
+        new_debug_handles = {
+            handle
+            for node in (nodes if isinstance(nodes, List) else [nodes])
+            if (handle := node.meta.get("debug_handle")) is not None
+        }
+
+        # pyre-ignore Warning from Union[int, st] keys
+        self._debug_handle_map[identifier].update(new_debug_handles)
+        return identifier

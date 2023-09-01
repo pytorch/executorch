@@ -212,6 +212,18 @@ python_unittest(
 )
 
 python_unittest(
+    name = "test_delegate_map_builder",
+    srcs = [
+        "test_delegate_map_builder.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:utils",
+    ],
+)
+
+python_unittest(
     name = "test_utils",
     srcs = [
         "test_utils.py",
