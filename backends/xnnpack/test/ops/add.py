@@ -8,7 +8,7 @@ import unittest
 
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackQuantizedPartitioner2,
+    XnnpackQuantizedPartitioner,
 )
 from executorch.backends.xnnpack.test.tester import Partition, Tester
 
@@ -59,7 +59,7 @@ class TestXNNPACKAdd(unittest.TestCase):
             .check_count({"torch.ops.aten.add.Tensor": 4})
             .to_edge()
             .check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 4})
-            .partition(Partition(partitioner=XnnpackQuantizedPartitioner2))
+            .partition(Partition(partitioner=XnnpackQuantizedPartitioner))
             .check_count({"torch.ops.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
             .check_not(["torch.ops.quantized_decomposed"])
@@ -81,7 +81,7 @@ class TestXNNPACKAdd(unittest.TestCase):
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 4})
-            .partition(Partition(partitioner=XnnpackQuantizedPartitioner2))
+            .partition(Partition(partitioner=XnnpackQuantizedPartitioner))
             .check_count({"torch.ops.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
             .check_not(["torch.ops.quantized_decomposed"])

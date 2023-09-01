@@ -11,7 +11,7 @@ import logging
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackFloatingPointPartitioner,
-    XnnpackQuantizedPartitioner2,
+    XnnpackQuantizedPartitioner,
 )
 
 from executorch.exir import CaptureConfig, EdgeCompileConfig
@@ -83,7 +83,7 @@ if __name__ == "__main__":
         logging.info("Quantizing Model...")
         model = quantize(model, example_inputs)
         # TODO(T161849167): Partitioner will eventually be a single partitioner for both fp32 and quantized models
-        partitioner = XnnpackQuantizedPartitioner2
+        partitioner = XnnpackQuantizedPartitioner
 
     # TODO(T161852812): Delegate implementation is currently on an unlifted graph.
     # It will eventually be changed to a lifted graph, in which _unlift=False,
