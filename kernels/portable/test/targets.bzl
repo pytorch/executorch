@@ -9,4 +9,5 @@ def define_common_targets():
     define_supported_features_lib()
 
     op_test(name = "op_allclose_test", aten_compatible = False)
+    op_test(name = "op_div_test")
     op_test(name = "op_mul_test")
