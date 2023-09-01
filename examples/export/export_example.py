@@ -11,7 +11,7 @@ import logging
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
-from .utils import export_to_edge, export_to_pte, save_pte_program  # noqa
+from .utils import export_to_exec_prog, save_pte_program
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -39,5 +39,5 @@ if __name__ == "__main__":
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
-    buffer = export_to_pte(args.model_name, model, example_inputs)
-    save_pte_program(buffer, args.model_name)
+    prog = export_to_exec_prog(model, example_inputs)
+    save_pte_program(prog.buffer, args.model_name)

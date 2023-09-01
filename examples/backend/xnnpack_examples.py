@@ -9,15 +9,18 @@
 import argparse
 import logging
 
-import executorch.exir as exir
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackFloatingPointPartitioner,
     XnnpackQuantizedPartitioner2,
 )
+
+from executorch.exir import CaptureConfig, EdgeCompileConfig
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
     DuplicateDequantNodePass,
 )
+
+from ..export.utils import export_to_edge, save_pte_program
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
@@ -82,16 +85,17 @@ if __name__ == "__main__":
         # TODO(T161849167): Partitioner will eventually be a single partitioner for both fp32 and quantized models
         partitioner = XnnpackQuantizedPartitioner2
 
-    # TODO(T161852812): use export.utils.export_to_edge Delegate implementation is currently on an unlifted graph.
+    # TODO(T161852812): Delegate implementation is currently on an unlifted graph.
     # It will eventually be changed to a lifted graph, in which _unlift=False,
-    edge = exir.capture(
-        model, example_inputs, exir.CaptureConfig(enable_aot=True, _unlift=True)
-    ).to_edge(
-        exir.EdgeCompileConfig(
+    edge = export_to_edge(
+        model,
+        example_inputs,
+        capture_config=CaptureConfig(enable_aot=True, _unlift=True),
+        edge_compile_config=EdgeCompileConfig(
             # TODO(T162080278): Duplicated Dequant nodes will be in quantizer spec
-            _check_ir_validity=False,
+            _check_ir_validity=False if args.quantize else True,
             passes=[DuplicateDequantNodePass()],
-        )
+        ),
     )
     logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
@@ -99,10 +103,7 @@ if __name__ == "__main__":
     logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
 
     exec_prog = edge.to_executorch()
-    buffer = exec_prog.buffer
 
     quant_tag = "q8" if args.quantize else "fp32"
-    filename = f"{args.model_name}_xnnpack_{quant_tag}.pte"
-    logging.info(f"Saving exported program to {filename}.")
-    with open(filename, "wb") as f:
-        f.write(buffer)
+    model_name = f"{args.model_name}_xnnpack_{quant_tag}"
+    save_pte_program(exec_prog.buffer, model_name)
