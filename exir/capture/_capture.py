@@ -15,6 +15,7 @@ import torch._export
 from executorch.exir.capture._config import CaptureConfig
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.program import ExirExportedProgram, MultiMethodExirExportedProgram
+from executorch.exir.program._program import HackedUpExportedProgramDONOTUSE
 from executorch.exir.tracer import (
     _default_decomposition_table,
     dispatch_trace,
@@ -41,6 +42,38 @@ Val = Any
 CompileSpec = namedtuple(
     "CompileSpec", ["method_name", "callable", "args", "constraints"]
 )
+
+
+@compatibility(is_backward_compatible=False)
+def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
+    """
+    This is a legacy API that should be avoided. Prefer to use capture() instead.
+    """
+    warnings.warn(
+        "This function is now deprecated, please use `capture` instead. "
+        "See https://github.com/pytorch/functorch for more details.",
+        DeprecationWarning,
+    )
+
+    graph_module = dispatch_trace(f, args)
+    flat_args = tuple(pytree.tree_flatten(args)[0])
+    in_spec, out_spec = graph_module.in_spec, graph_module.out_spec
+
+    _instantiate_missing_placeholder_val_with_real_inputs(graph_module, flat_args)
+    graph_module._apply(torch.Tensor.contiguous)
+
+    ep = HackedUpExportedProgramDONOTUSE(
+        graph_module,
+        graph_module.graph,
+        ExportGraphSignature([], [], [], [], {}, {}, {}, None),
+        CallSpec(in_spec, out_spec),
+        {},
+        {},
+        [],
+        [],
+        None,
+    )
+    return ExirExportedProgram(ep, False)
 
 
 @compatibility(is_backward_compatible=False)
@@ -183,23 +216,7 @@ def capture(
         flatten_output(graph_module)
 
     else:
-        warnings.warn(
-            "exir.capture with pt2_mode=False is deprecated. Please use the default () instead."
-        )
-        if not config.enable_functionalization:
-            raise InternalError(
-                "Can only disable functionalization under exir.capture() pt2 mode."
-            )
-        if config.enable_dynamic_shape:
-            raise InternalError(
-                "Can only enable dynamic shape tracing under exir.capture() pt2 mode."
-            )
-        if config.enable_aot:
-            raise InternalError(
-                "Using AOT mode is not supported for leagacy capture mode, please use  instead."
-            )
-        graph_module = dispatch_trace(f, args)
-        in_spec, out_spec = graph_module.in_spec, graph_module.out_spec
+        raise InternalError("pt2=False path is officially deprecated")
 
     _instantiate_missing_placeholder_val_with_real_inputs(graph_module, flat_args)
     graph_module._apply(torch.Tensor.contiguous)
