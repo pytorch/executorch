@@ -5,6 +5,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+retry () {
+    "$@" || (sleep 10 && "$@") || (sleep 20 && "$@") || (sleep 40 && "$@")
+}
+
 install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the
@@ -40,8 +44,8 @@ install_pip_dependencies() {
 }
 
 build_executorch_runner_buck2() {
-  # Build executorch runtime
-  buck2 build //examples/executor_runner:executor_runner
+  # Build executorch runtime with retry as this step is flaky on macos CI
+  retry buck2 build //examples/executor_runner:executor_runner
 }
 
 build_executorch_runner_cmake() {
