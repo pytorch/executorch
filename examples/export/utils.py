@@ -8,30 +8,37 @@ import logging
 
 import executorch.exir as exir
 
-# Using dynamic shape does not allow us to run graph_module returned by
-# to_executorch for mobilenet_v3.
-# Reason is that there memory allocation ops with symbolic shape nodes.
-# and when evaulating shape, it doesnt seem that we presenting them with shape env
-# that contain those variables.
+
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
+
+# Explicitly force the activation of the IR validator
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
-    _check_ir_validity=False,
+    _check_ir_validity=True,
 )
 
 
-def export_to_edge(model, example_inputs):
+def export_to_edge(
+    model,
+    example_inputs,
+    capture_config=_CAPTURE_CONFIG,
+    edge_compile_config=_EDGE_COMPILE_CONFIG,
+):
     m = model.eval()
-    edge = exir.capture(m, example_inputs, _CAPTURE_CONFIG).to_edge(
-        _EDGE_COMPILE_CONFIG
-    )
+    edge = exir.capture(m, example_inputs, capture_config).to_edge(edge_compile_config)
     logging.info(f"Exported graph:\n{edge.exported_program.graph}")
     return edge
 
 
-def export_to_pte(model_name, model, example_inputs):
-    edge = export_to_edge(model, example_inputs)
-    exec_prog = edge.to_executorch()
-    return exec_prog.buffer
+def export_to_exec_prog(
+    model,
+    example_inputs,
+    capture_config=_CAPTURE_CONFIG,
+    edge_compile_config=_EDGE_COMPILE_CONFIG,
+    backend_config=None,
+):
+    edge_m = export_to_edge(model, example_inputs, capture_config, edge_compile_config)
+    exec_prog = edge_m.to_executorch(backend_config)
+    return exec_prog
 
 
 def save_pte_program(buffer, model_name):

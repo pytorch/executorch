@@ -10,6 +10,7 @@ import logging
 
 import torch
 import torch._export as export
+from executorch.exir import EdgeCompileConfig
 from torch.ao.ns.fx.utils import compute_sqnr
 from torch.ao.quantization import (  # @manual
     default_per_channel_symmetric_qnnpack_qconfig,
@@ -26,7 +27,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from ..export.export_example import export_to_pte, save_pte_program
+from ..export.export_example import export_to_exec_prog, save_pte_program
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
 from ..recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS
@@ -148,8 +149,10 @@ if __name__ == "__main__":
         )
 
     quantized_model = quantize(model, example_inputs)
-    buffer = export_to_pte(
-        args.model_name, quantized_model, copy.deepcopy(example_inputs)
+    prog = export_to_exec_prog(
+        quantized_model,
+        copy.deepcopy(example_inputs),
+        edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
-    save_pte_program(buffer, f"{args.model_name}_quantized")
+    save_pte_program(prog.buffer, f"{args.model_name}_quantized")
     logging.info("finished")
