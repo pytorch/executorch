@@ -19,49 +19,18 @@ from executorch.backends.xnnpack.partition.configs import (
     SUPPORTED_QUANT_OPS,
     UNSUPPORTED_QUANT_MODULES,
 )
-from executorch.backends.xnnpack.partition.support_patterns import (
-    get_add_graphs,
-    get_all_dynamically_quantized_linear_pattern,
-    get_all_fp_linear_pattern,
-    get_all_quantized_linear_pattern,
-    get_batch_norm_graphs,
-    get_clamp_graph,
-    get_conv2d_graphs,
-    get_div_graph,
-    get_floor_graph,
-    get_hardtanh_graph,
-    get_max_dim_graph,
-    get_max_pool2d_graph,
-    get_mean_dim_graphs,
-    get_minimum_graph,
-    get_multiply_graph,
-    get_quantized_add_graphs,
-    get_quantized_add_relu_graphs,
-    get_quantized_conv_graphs,
-    get_quantized_conv_relu_graphs,
-    get_quantized_hardtanh_graphs,
-    get_quantized_max_pool_2d_graphs,
-    get_quantized_mean_dim_graphs,
-    get_relu_graph,
-    get_sigmoid_graph,
-    get_softmax_graph,
-    get_static_constant_pad_graph,
-    get_sub_graph,
-)
 from executorch.backends.xnnpack.utils.utils import get_input_node
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
-    generate_pattern_op_partitions,
 )
 
 from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.infra.partitioner import Partition
-from torch.fx.passes.operator_support import chain, OperatorSupportBase
+from torch.fx.passes.operator_support import OperatorSupportBase
 
-from torch.fx.passes.utils.matcher_utils import SubgraphMatcher
 from torch.fx.passes.utils.source_matcher_utils import (
     get_source_partitions,
     SourcePartition,
@@ -326,219 +295,6 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         return True
 
 
-###
-### Graph pattern based partitioners
-###
-
-FLOATING_POINT_PATTERNS = (
-    [
-        get_div_graph(),
-        get_sigmoid_graph(),
-        get_softmax_graph(),
-        get_hardtanh_graph(),
-        get_relu_graph(),
-        get_static_constant_pad_graph(),
-        get_clamp_graph(),
-        get_minimum_graph(),
-        get_max_pool2d_graph(),
-        get_max_dim_graph(),
-        get_multiply_graph(),
-        get_sub_graph(),
-        get_floor_graph(),
-    ]
-    + get_add_graphs()
-    + get_all_fp_linear_pattern()
-    + get_conv2d_graphs()
-    # + get_static_resize_bilinear_2d_graphs() TODO(T148779166) recompose bilinear
-    + get_batch_norm_graphs()
-    + get_mean_dim_graphs()
-)
-
-QUANTIZED_PATTERNS = (
-    get_all_quantized_linear_pattern()
-    + get_quantized_conv_graphs()
-    + get_quantized_hardtanh_graphs()
-    + get_quantized_mean_dim_graphs()
-    + get_quantized_add_graphs()
-    + get_quantized_max_pool_2d_graphs()
-    + get_quantized_conv_relu_graphs()
-    + get_quantized_add_relu_graphs()
-)
-
-
-class _BasePartitioner(Partitioner):
-    """
-    Graph based partitioner base for on XNNPACK backend.
-    """
-
-    def __init__(self, delegate_name, patterns):
-        self.patterns = patterns
-
-        self.delegation_spec = DelegationSpec(delegate_name, [])
-        self.partition_tags: Dict[str, DelegationSpec] = {}
-
-    @staticmethod
-    def check_partitions(partitions: Union[dict, list]) -> None:
-        """
-        Warn users if there aren't any matches
-        """
-        pl = len(partitions)
-        if pl == 0:
-            log.warning("Nothing can be partitioned!")
-        else:
-            log.info(f"Found {pl} subgraphs to be partitioned.")
-
-    def partition(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        class MatchTag(OperatorSupportBase):
-            def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
-                return node.meta.get("match", False)
-
-        partition_list = generate_pattern_op_partitions(
-            graph_module,
-            self.patterns,
-            op_support=chain(XnnpackOperatorSupport(), MatchTag()),
-            ignore_literals=True,
-        )
-
-        self.check_partitions(partition_list)
-
-        for partition in partition_list:
-            # Add delegation tags
-            for node in partition.nodes:
-                delegation_tag = f"tag{partition.id}"
-                node.meta["delegation_tag"] = delegation_tag
-                self.partition_tags[delegation_tag] = self.delegation_spec
-        return graph_module
-
-
-# TODO - Update pye/.../test_xnnpack_asr.py to use dqlinear
-class XnnpackPartitioner(_BasePartitioner):
-    """
-    Graph based partitioner base for on XNNPACK backend given patterns
-    """
-
-    def __init__(self, patterns):
-        super().__init__(XnnpackBackend.__name__, patterns)
-
-
-class XnnpackModelPartitioner(_BasePartitioner):
-    """
-    Graph based partitioner base for on XNNPACK backend for quantized as well as floating point patterns
-    listed in QUANTIZED_PATTERNS and FLOATING_POINT_PATTERNS.
-    """
-
-    def __init__(self):
-        super().__init__(
-            XnnpackBackend.__name__, QUANTIZED_PATTERNS + FLOATING_POINT_PATTERNS
-        )
-
-
-# TODO(T143912091): Merge XnnpackQuantizedPartitioner and XnnpackFloatingPointPartitioner
-# when capturing quantized model is faster. Right now it's too slow, so we separate them
-# as we mainly focus on fp operators right now.
-class XnnpackQuantizedPartitioner(_BasePartitioner):
-    """
-    Graph based partitioner base for XNNPACK backend for quantize ops only.
-    """
-
-    def __init__(self):
-        super().__init__(XnnpackBackend.__name__, QUANTIZED_PATTERNS)
-
-
-class _SingleOpDelegatePartitioner(_BasePartitioner):
-    """
-    Graph based partitioner base for a single "op" or "node" or a pattern match for XNNPACK backend.
-    This is tailored for DQLinear where XNNPACK (and also QNNPACK) delegates prefers to have a single DQLinear node in the graph.
-    This is a base class given XNNPACK and QNNPACK currently share this.
-    """
-
-    def __init__(
-        self,
-        delegate_name,
-        patterns,
-        transforms: Optional[List[Callable[[torch.fx.Graph], torch.fx.Graph]]] = None,
-    ):
-        """
-        @param transforms: Optional list of transforms that will be applied to the graph before running the partitioner.
-        """
-        super().__init__(delegate_name, patterns)
-        self.transforms = transforms
-
-    # override
-    def partition(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        # TODO delete this since we are not allowed to do this
-        if self.transforms is not None:
-            for transform in self.transforms:  # pyre-ignore
-                graph_module.graph = transform(graph_module.graph)
-
-        matches = [
-            match
-            for matches in (
-                SubgraphMatcher(pattern, ignore_literals=True).match(graph_module.graph)
-                for pattern in self.patterns
-            )
-            for match in matches
-        ]
-
-        match_sets = [
-            {
-                node_in_graph
-                for (node_in_pattern, node_in_graph) in match.nodes_map.items()
-                if (
-                    node_in_pattern.op != "placeholder"
-                    and node_in_graph.op != "placeholder"
-                )
-            }
-            for match in matches
-        ]
-
-        # Sort match sets in descending order of length so that any match sets
-        # which are supersets of other match sets are processed first
-        match_sets = sorted(match_sets, key=len, reverse=True)
-
-        self.check_partitions(match_sets)
-
-        # Mapping from delegation tag to match set
-        tag_mapping = {}
-
-        for (partition_id, match_set) in enumerate(match_sets):
-            delegation_tag = f"tag{partition_id}"
-            for node in match_set:
-                if "delegation_tag" in node.meta:
-                    # This node already has delegation tag assigned.
-                    # Check that the current match set is a subset of the one
-                    # used to assign its delegation tag, then skip this match
-                    # set. We have this check to ensure there are no pairs of
-                    # match sets where they are overlapping but neither is a
-                    # subset of the other.
-                    if not match_set.issubset(tag_mapping[node.meta["delegation_tag"]]):
-                        raise AssertionError(
-                            f"Found match sets which are overlapping but neither is a subset of the other: {match_set}, {tag_mapping[node.meta['delegation_tag']]}"
-                        )
-                    break
-                node.meta["delegation_tag"] = delegation_tag
-            self.partition_tags[delegation_tag] = self.delegation_spec
-            tag_mapping[delegation_tag] = match_set
-
-        return graph_module
-
-
-class XnnpackDynamicallyQuantizedPartitioner(_SingleOpDelegatePartitioner):
-    """
-    For XnnpackDynamicallyQuantizedPartitioner, we want to manually
-    use SubgraphMatcher to assign partitions. This is because the default
-    partitioning process causes addmm/mm partitions within close proximity
-    of each other to be merged together. We don't want this merging to
-    happening because there is only support for having exactly one addmm
-    or mm per dqlinear.
-    """
-
-    def __init__(self):
-        super().__init__(
-            XnnpackBackend.__name__, get_all_dynamically_quantized_linear_pattern()
-        )
-
-
 class XnnpackFloatingPointPartitioner(Partitioner):
     """
     Module and Opname based partitioner for FP32 modules/ops listed in
@@ -654,7 +410,7 @@ class XnnpackFloatingPointPartitioner(Partitioner):
 
 
 # TODO: Merge XnnpackQuantizedPartitioner and XnnpackFloatingPointPartitioner
-class XnnpackQuantizedPartitioner2(XnnpackFloatingPointPartitioner):
+class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
     """
     Module and Opname based partitioner for statically quantized modules/ops listed in SUPPORTED_QUANT_MODULES and SUPPORTED_QUANT_OPS.
     """
@@ -772,7 +528,7 @@ class XnnpackQuantizedPartitioner2(XnnpackFloatingPointPartitioner):
         )
 
 
-class XnnpackDynamicallyQuantizedPartitioner2(XnnpackQuantizedPartitioner2):
+class XnnpackDynamicallyQuantizedPartitioner(XnnpackQuantizedPartitioner):
     def __init__(
         self,
         supported_modules=SUPPORTED_DYN_QUANT_MODULES,

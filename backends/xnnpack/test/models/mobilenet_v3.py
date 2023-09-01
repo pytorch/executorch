@@ -9,7 +9,7 @@ import unittest
 import torch
 import torchvision.models as models
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackQuantizedPartitioner2,
+    XnnpackQuantizedPartitioner,
 )
 from executorch.backends.xnnpack.test.tester import Partition, Tester
 from executorch.backends.xnnpack.test.tester.tester import Export
@@ -72,7 +72,7 @@ class TestMobileNetV3(unittest.TestCase):
             .export(self.export_stage)
             .to_edge()
             .check(list(ops_after_quantization))
-            .partition(Partition(partitioner=XnnpackQuantizedPartitioner2))
+            .partition(Partition(partitioner=XnnpackQuantizedPartitioner))
             .check(["torch.ops.executorch_call_delegate"])
             .check_not(list(ops_after_lowering))
             .to_executorch()

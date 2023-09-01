@@ -13,9 +13,9 @@ import torch.nn.functional as F
 from executorch import exir
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackDynamicallyQuantizedPartitioner2,
+    XnnpackDynamicallyQuantizedPartitioner,
     XnnpackFloatingPointPartitioner,
-    XnnpackQuantizedPartitioner2,
+    XnnpackQuantizedPartitioner,
 )
 from executorch.backends.xnnpack.utils.configs import (
     get_xnnpack_edge_compile_config,
@@ -182,9 +182,9 @@ class TestXNNPACK(unittest.TestCase):
         partitioner = None
         if quantized:
             if quantized_dynamic:
-                partitioner = XnnpackDynamicallyQuantizedPartitioner2
+                partitioner = XnnpackDynamicallyQuantizedPartitioner
             else:
-                partitioner = XnnpackQuantizedPartitioner2
+                partitioner = XnnpackQuantizedPartitioner
         else:
             partitioner = XnnpackFloatingPointPartitioner
 

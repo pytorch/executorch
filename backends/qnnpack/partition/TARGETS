@@ -29,7 +29,6 @@ runtime.python_library(
         ":support_patterns",
         "//executorch/backends/qnnpack:qnnpack_preprocess",
         "//executorch/backends/transforms:lib",
-        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/exir:delegate",
         "//executorch/exir:lib",
         "//executorch/exir/backend:partitioner",
