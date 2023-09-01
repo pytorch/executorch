@@ -58,7 +58,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/core:core",
             "//executorch/kernels/portable:generated_lib_all_ops",
-            "//executorch/runtime/executor:executor",
+            "//executorch/runtime/executor:program",
             "//executorch/runtime/executor/test:managed_memory_manager",
             "//executorch/extension/data_loader:buffer_data_loader",
             "//executorch/util:read_file",

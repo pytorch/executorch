@@ -32,7 +32,8 @@
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
-#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/method.h>
+#include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -59,10 +60,10 @@ DEFINE_validator(num_instances, &validate_positive_int32);
 namespace {
 using torch::executor::DataLoader;
 using torch::executor::Error;
-using torch::executor::Executor;
 using torch::executor::FreeableBuffer;
 using torch::executor::MemoryAllocator;
 using torch::executor::MemoryManager;
+using torch::executor::Method;
 using torch::executor::Program;
 using torch::executor::Result;
 using torch::executor::testing::ManagedMemoryManager;
@@ -86,22 +87,16 @@ class PreparedModel final {
         loader_(model_data, model_data_size),
         program_(load_program_or_die(loader_)),
         memory_manager_(non_const_mem_bytes, runtime_mem_bytes),
-        executor_(&program_, &memory_manager_.get()),
+        method_(load_method_or_die(program_, &memory_manager_.get())),
         has_run_(false) {
-    Error status = executor_.init_execution_plan();
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "init_execution_plan() failed with status 0x%" PRIx32,
-        status);
-    inputs_ =
-        torch::executor::util::PrepareInputTensors(executor_.execution_plan());
+    inputs_ = torch::executor::util::PrepareInputTensors(method_);
   }
 
   void run() {
     ET_CHECK_MSG(!has_run_, "A PreparedModel may only be run once");
     has_run_ = true;
 
-    Error status = executor_.execution_plan().execute();
+    Error status = method_.execute();
     ET_CHECK_MSG(
         status == Error::Ok,
         "plan.execute() failed with status 0x%" PRIx32,
@@ -125,11 +120,19 @@ class PreparedModel final {
     return std::move(program.get());
   }
 
+  static Method load_method_or_die(
+      const Program& program,
+      MemoryManager* memory_manager) {
+    Result<Method> method = program.load_method("forward", memory_manager);
+    ET_CHECK(method.ok());
+    return std::move(method.get());
+  }
+
   const std::string name_;
   BufferDataLoader loader_; // Needs to outlive program_
   Program program_; // Needs to outlive executor_
   ManagedMemoryManager memory_manager_; // Needs to outlive executor_
-  Executor executor_;
+  Method method_;
   exec_aten::ArrayRef<void*> inputs_;
 
   bool has_run_;
