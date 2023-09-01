@@ -24,7 +24,7 @@ Setting up PyTorch
 # Install the nightly builds
 # Note: if you are behind a firewall an appropriate proxy server must be setup
 # for all subsequent steps.
-TORCH_VERSION=2.1.0.dev20230813
+TORCH_VERSION=2.1.0.dev20230831
 pip install --force-reinstall --pre torch=="${TORCH_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
 ```
 
