@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 retry () {
-    "$@" || (sleep 10 && "$@") || (sleep 20 && "$@") || (sleep 40 && "$@")
+    "$@" || (sleep 30 && buck2 clean && "$@") || (sleep 60 && buck2 clean && "$@")
 }
 
 install_executorch() {
