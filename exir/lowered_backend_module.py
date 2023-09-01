@@ -242,7 +242,7 @@ class LoweredBackendModule(torch.nn.Module):
             equality_constraints=lowered_exported_program.equality_constraints,
             module_call_graph=lowered_exported_program.module_call_graph,
         )
-        exported_program = exported_program.transform(
+        exported_program = exported_program._transform(
             SpecPropPass(), MemoryPlanningPass("greedy")
         )
         emitted_program = emit_program(
