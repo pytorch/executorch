@@ -5,8 +5,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+reset_buck() {
+  # On MacOS, buck2 daemon can get into a weird non-responsive state
+  buck2 clean
+  rm -rf ~/.buck/buckd
+}
+
 retry () {
-    "$@" || (sleep 30 && buck2 clean && "$@") || (sleep 60 && buck2 clean && "$@")
+    "$@" || (sleep 30 && reset_buck && "$@") || (sleep 60 && reset_buck && "$@")
 }
 
 install_executorch() {
