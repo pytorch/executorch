@@ -112,6 +112,8 @@
 
 - op: div.Scalar_out
 
+- op: div.out_mode
+
 - op: embedding.out
 
 - op: empty.out

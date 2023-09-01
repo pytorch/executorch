@@ -11,6 +11,7 @@
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
+#include <cmath>
 
 namespace torch {
 namespace executor {
@@ -59,6 +60,52 @@ div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
                 CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
                 CTYPE_IN value = a_casted / b_casted;
 
+                return static_cast<CTYPE_OUT>(value);
+              },
+              a,
+              b,
+              out);
+        });
+      });
+    });
+  });
+
+  return out;
+}
+
+Tensor& div_out_mode(
+    RuntimeContext& ctx,
+    const Tensor& a,
+    const Tensor& b,
+    exec_aten::optional<exec_aten::string_view> mode,
+    Tensor& out) {
+  (void)ctx;
+
+  resize_to_broadcast_target_size(a, b, out);
+
+  ScalarType a_type = a.scalar_type();
+  ScalarType b_type = b.scalar_type();
+  ScalarType common_type = get_compute_type(a_type, b_type);
+  ScalarType out_type = out.scalar_type();
+
+  // Allow casting float -> integral here
+  // non-bool -> bool is still disallowed
+  ET_CHECK(!(common_type != ScalarType::Bool && out_type == ScalarType::Bool));
+
+  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div", CTYPE_A, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div", CTYPE_B, [&]() {
+      ET_SWITCH_FLOAT_TYPES(common_type, ctx, "div", CTYPE_IN, [&]() {
+        ET_SWITCH_REAL_TYPES(out_type, ctx, "div", CTYPE_OUT, [&]() {
+          apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
+              [mode](const CTYPE_A val_a, const CTYPE_B val_b) {
+                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+                CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+                CTYPE_IN value = a_casted / b_casted;
+                if (mode.has_value() && mode.value() == "trunc") {
+                  value = std::trunc(value);
+                } else if (mode.has_value() && mode.value() == "floor") {
+                  value = std::floor(value);
+                }
                 return static_cast<CTYPE_OUT>(value);
               },
               a,
