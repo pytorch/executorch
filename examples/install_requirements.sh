@@ -26,5 +26,5 @@ pip install --force-reinstall --pre torchaudio=="${TORCH_AUDIO_VERSION}" -i http
 TIMM_VERSION=0.6.13
 pip install --pre timm==${TIMM_VERSION}
 
-TRANSFORMERS_VERSION=4.32.1
+TRANSFORMERS_VERSION=4.31.0
 pip install --pre transformers==${TRANSFORMERS_VERSION}
