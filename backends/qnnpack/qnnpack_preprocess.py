@@ -19,7 +19,11 @@ from executorch.backends.qnnpack.serialization.qnnpack_graph_serialize import (
 
 from executorch.backends.transforms import get_shape
 
-from executorch.exir.backend.backend_details import BackendDetails, CompileSpec
+from executorch.exir.backend.backend_details import (
+    BackendDetails,
+    CompileSpec,
+    PreprocessResult,
+)
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._export.exported_program import ExportedProgram
@@ -44,7 +48,7 @@ class QnnpackBackend(BackendDetails):
     def preprocess(
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
-    ) -> bytes:
+    ) -> PreprocessResult:
 
         for node in edge_program.graph.nodes:
             # TODO(maxren): Follow this up by removing addm and mm nodes
@@ -179,7 +183,9 @@ class QnnpackBackend(BackendDetails):
                         weights_scale=weight_scale,
                     )
 
-                    return convert_to_flatbuffer(dynamic_linear)
+                    return PreprocessResult(
+                        processed_bytes=convert_to_flatbuffer(dynamic_linear),
+                    )
 
         raise RuntimeError("QNNPACK preprocess failed to lower the partitioned graph")
-        return b""
+        return PreprocessResult(processed_bytes=b"")

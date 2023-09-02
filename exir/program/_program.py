@@ -179,7 +179,15 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
             raise
 
     op_replace_pass = [OpReplacePass()] if config._use_edge_ops else []
-    passes = aten_to_edge_passes.passes + op_replace_pass + config.passes
+    # TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -> debug_handle_generator. After enable
+    # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
+    # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
+    # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
+    passes = (
+        aten_to_edge_passes.passes[:-2]
+        + op_replace_pass
+        + aten_to_edge_passes.passes[-2:]
+    ) + config.passes
     new_ep = copy.deepcopy(ep).transform(*passes)
     if config._check_ir_validity:
         EXIREdgeDialectVerifier(check_edge_ops=config._use_edge_ops)(

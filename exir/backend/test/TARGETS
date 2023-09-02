@@ -114,6 +114,23 @@ python_unittest(
 )
 
 python_unittest(
+    name = "test_debug_handle_map",
+    srcs = [
+        "test_debug_handle_map.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/hypothesis:hypothesis",
+        ":op_partitioner_demo",
+        ":qnn_backend_demo",
+        "//caffe2:torch",
+        "//executorch/exir:delegate",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_api",
+        "//executorch/exir/tests:models",
+    ],
+)
+
+python_unittest(
     name = "test_backends_lifted",
     srcs = [
         "test_backends_lifted.py",

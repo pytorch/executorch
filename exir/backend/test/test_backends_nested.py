@@ -12,7 +12,7 @@ import executorch.exir as exir
 
 import torch
 from executorch.exir.backend.backend_api import ExportedProgram, to_backend
-from executorch.exir.backend.backend_details import BackendDetails
+from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,
 )
@@ -71,12 +71,14 @@ class Backend2Demo(BackendDetails):
     def preprocess(
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
-    ) -> bytes:
+    ) -> PreprocessResult:
         processed_bytes = "Backend2::"
         for node in edge_program.graph.nodes:
             if node.op == "call_function":
                 processed_bytes += f"{node.target.__name__};"
-        return bytes(processed_bytes, encoding="utf8")
+        return PreprocessResult(
+            processed_bytes=bytes(processed_bytes, encoding="utf8"),
+        )
 
 
 @final
@@ -114,7 +116,7 @@ class Backend1Demo(BackendDetails):
     def preprocess(
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
-    ) -> bytes:
+    ) -> PreprocessResult:
         assert isinstance(edge_program, ExportedProgram)
         partitioned_module = to_backend(edge_program, Backend2PartitionerDemo)
 
@@ -136,7 +138,9 @@ class Backend1Demo(BackendDetails):
             return processed_bytes
 
         processed_bytes = f"Backend1::({process(partitioned_module.graph_module)})"
-        return bytes(processed_bytes, encoding="utf8")
+        return PreprocessResult(
+            processed_bytes=bytes(processed_bytes, encoding="utf8"),
+        )
 
 
 class CondOperatorSupport(OperatorSupportBase):

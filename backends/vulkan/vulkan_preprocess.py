@@ -16,6 +16,7 @@ from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
     ExportedProgram,
+    PreprocessResult,
 )
 from torch import dtype, float32, Tensor
 from torch.fx import Node
@@ -53,7 +54,7 @@ class VulkanBackend(BackendDetails):
         cls,
         edge_program: ExportedProgram,
         module_compile_spec: List[CompileSpec],
-    ) -> bytes:
+    ) -> PreprocessResult:
         vk_nodes = []
         vk_values = []
         vk_input_ids = []
@@ -141,4 +142,6 @@ class VulkanBackend(BackendDetails):
             output_ids=vk_output_ids,
             constant_buffer=vk_const_buffers,
         )
-        return convert_to_flatbuffer(vk_graph)
+        return PreprocessResult(
+            processed_bytes=convert_to_flatbuffer(vk_graph),
+        )
