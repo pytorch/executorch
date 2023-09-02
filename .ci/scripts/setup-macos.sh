@@ -63,10 +63,6 @@ print_cmake_info() {
   CMAKE_EXEC=$(which cmake)
   echo "$CMAKE_EXEC"
 
-  CONDA_INSTALLATION_DIR=$(dirname "$CMAKE_EXEC")
-  # Print all libraries under cmake rpath for debugging
-  ls -la "$CONDA_INSTALLATION_DIR/../lib"
-
   export CMAKE_EXEC
   # Explicitly add conda env lib folder to cmake rpath to address the flaky issue
   # where cmake dependencies couldn't be found. This seems to point to how conda
