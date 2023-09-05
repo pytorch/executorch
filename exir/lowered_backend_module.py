@@ -220,7 +220,8 @@ class LoweredBackendModule(torch.nn.Module):
         lowered_exported_program.graph_signature.user_inputs = [
             user_input
             for user_input in lowered_exported_program.graph_signature.user_inputs
-            if user_input in inputs_to_parameters or user_input in inputs_to_buffers
+            if user_input not in inputs_to_parameters
+            and user_input not in inputs_to_buffers
         ]
         lowered_exported_program.graph_signature.buffers = {}
         lowered_exported_program.graph_signature.parameters = {}
