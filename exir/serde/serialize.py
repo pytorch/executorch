@@ -628,9 +628,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             call_spec,
             module_call_graph,
             symbol_name_to_symbol,
-        ) = GraphModuleDeserializer(
-            state_dict  # pyre-ignore
-        ).deserialize(
+        ) = GraphModuleDeserializer(state_dict).deserialize(
             serialized_exported_program.graph_module,
             symbol_name_to_range,
         )
@@ -651,7 +649,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
         )
 
         return exir.ExportedProgram(
-            state_dict,  # pyre-ignore
+            state_dict,
             graph_module.graph,
             sig,
             call_spec,
