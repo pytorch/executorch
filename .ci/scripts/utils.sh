@@ -7,7 +7,7 @@
 
 reset_buck() {
   # On MacOS, buck2 daemon can get into a weird non-responsive state
-  buck2 clean
+  buck2 kill && buck2 clean
   rm -rf ~/.buck/buckd
 }
 
