@@ -19,24 +19,27 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 
 def export_to_edge(
     model,
+    method_name,
     example_inputs,
     capture_config=_CAPTURE_CONFIG,
     edge_compile_config=_EDGE_COMPILE_CONFIG,
 ):
     m = model.eval()
-    edge = exir.capture(m, example_inputs, capture_config).to_edge(edge_compile_config)
+    f = getattr(m, method_name)
+    edge = exir.capture(f, example_inputs, capture_config).to_edge(edge_compile_config)
     logging.info(f"Exported graph:\n{edge.exported_program.graph}")
     return edge
 
 
 def export_to_exec_prog(
     model,
+    method_name,
     example_inputs,
     capture_config=_CAPTURE_CONFIG,
     edge_compile_config=_EDGE_COMPILE_CONFIG,
     backend_config=None,
 ):
-    edge_m = export_to_edge(model, example_inputs, capture_config, edge_compile_config)
+    edge_m = export_to_edge(model, method_name, example_inputs, capture_config, edge_compile_config)
     exec_prog = edge_m.to_executorch(backend_config)
     return exec_prog
 
