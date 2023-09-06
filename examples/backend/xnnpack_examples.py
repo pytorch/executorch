@@ -9,6 +9,8 @@
 import argparse
 import logging
 
+import torch
+
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackFloatingPointPartitioner,
     XnnpackQuantizedPartitioner,
@@ -25,7 +27,7 @@ from ..export.utils import export_to_edge, save_pte_program
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
 from ..quantization.utils import quantize
-from ..recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS
+from ..recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS, OptimizationOptions
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -53,24 +55,62 @@ if __name__ == "__main__":
         "--delegate",
         action="store_true",
         required=False,
-        default=True,
+        default=False,
         help="Flag for producing XNNPACK delegated model",
+    )
+    parser.add_argument(
+        "-s",
+        "--so_library",
+        required=False,
+        help="shared library for quantized operators",
     )
 
     args = parser.parse_args()
 
-    if not args.delegate:
-        raise NotImplementedError(
-            "T161880157: Quantization-only without delegation is not supported yet"
-        )
-
-    if args.model_name not in MODEL_NAME_TO_OPTIONS and args.quantize:
+    if (
+        args.quantize
+        and not MODEL_NAME_TO_OPTIONS.get(
+            args.model_name, OptimizationOptions()
+        ).quantization
+    ):
         raise RuntimeError(
             f"Model {args.model_name} is not a valid name. or not quantizable right now, "
             "please contact executorch team if you want to learn why or how to support "
             "quantization for the requested model"
-            f"Available models are {list(MODEL_NAME_TO_OPTIONS.keys())}."
+            f"Available models are {list(filter(lambda k: MODEL_NAME_TO_OPTIONS[k].quantization, MODEL_NAME_TO_OPTIONS.keys()))}."
         )
+
+    if (
+        args.delegate
+        and not MODEL_NAME_TO_OPTIONS.get(
+            args.model_name, OptimizationOptions()
+        ).xnnpack_delegation
+    ):
+        raise RuntimeError(
+            f"Model {args.model_name} is not a valid name. or not delegatable right now, "
+            "please contact executorch team if you want to learn why or how to support "
+            "delegation for the requested model"
+            f"Available models are {list(filter(lambda k: MODEL_NAME_TO_OPTIONS[k].xnnpack_delegation, MODEL_NAME_TO_OPTIONS.keys()))}."
+        )
+
+    if args.quantize and not args.delegate:
+        has_out_ops = True
+        try:
+            op = torch.ops.quantized_decomposed.add.out
+        except AttributeError:
+            logging.info("No registered quantized ops")
+            has_out_ops = False
+        if not has_out_ops:
+            if args.so_library:
+                torch.ops.load_library(args.so_library)
+            else:
+                raise RuntimeError(
+                    "Need to specify shared library path to register quantized ops (and their out variants) into"
+                    "EXIR. The required shared library is defined as `quantized_ops_aot_lib` in "
+                    "kernels/quantized/CMakeLists.txt if you are using CMake build, or `aot_lib` in "
+                    "kernels/quantized/targets.bzl for buck2. One example path would be cmake-out/kernels/quantized/"
+                    "libquantized_ops_aot_lib.[so|dylib]."
+                )
 
     model, example_inputs = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
@@ -99,11 +139,13 @@ if __name__ == "__main__":
     )
     logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
-    edge.exported_program = to_backend(edge.exported_program, partitioner)
-    logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
+    if args.delegate:
+        edge.exported_program = to_backend(edge.exported_program, partitioner)
+        logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
 
     exec_prog = edge.to_executorch()
 
-    quant_tag = "q8" if args.quantize else "fp32"
-    model_name = f"{args.model_name}_xnnpack_{quant_tag}"
+    quant_tag = "_q8" if args.quantize else "_fp32"
+    backend_tag = "_xnnpack" if args.delegate else ""
+    model_name = f"{args.model_name}{backend_tag}{quant_tag}"
     save_pte_program(exec_prog.buffer, model_name)
