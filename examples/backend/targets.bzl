@@ -10,6 +10,7 @@ def define_common_targets():
     runtime.python_binary(
         name = "xnnpack_examples",
         main_module = "executorch.examples.backend.xnnpack_examples",
+        preload_deps = ["//executorch/kernels/quantized:aot_lib"],
         deps = [
             ":xnnpack_examples_lib",
         ],
@@ -22,6 +23,7 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+            "//executorch/examples/export:lib",
             "//executorch/examples/recipes/xnnpack_optimization:models",
             "//executorch/examples/quantization:quant_utils",
             "//executorch/exir:lib",

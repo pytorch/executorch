@@ -9,8 +9,8 @@ from dataclasses import dataclass
 
 @dataclass
 class OptimizationOptions(object):
-    quantization: bool
-    xnnpack_delegation: bool
+    quantization: bool = False
+    xnnpack_delegation: bool = False
 
 
 MODEL_NAME_TO_OPTIONS = {
