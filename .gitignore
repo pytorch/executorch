@@ -32,3 +32,8 @@ bundled_program/serialize/scalar_type.fbs
 *.swp
 *~
 .~lock.*
+
+# clang tooling storage location
+.clang-format-bin
+.clang-tidy-bin
+.lintbin
