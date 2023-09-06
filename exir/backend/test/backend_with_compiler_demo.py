@@ -8,7 +8,7 @@ from typing import final, List, NamedTuple
 
 import torch
 
-from executorch.exir.backend.backend_details import BackendDetails
+from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._export.exported_program import ExportedProgram
@@ -79,9 +79,10 @@ class BackendWithCompilerDemo(BackendDetails):
     def preprocess(
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
-    ) -> bytes:
+    ) -> PreprocessResult:
         processed_bytes = ""
         number_of_instruction = 0
+        debug_handle_map = {}
         for node in edge_program.graph.nodes:
             if node.op == "call_function":
                 # TODO(gasoonjia): remove the support of torch.ops.aten.sin.default after migrate serde to edge dialect.
@@ -117,7 +118,13 @@ class BackendWithCompilerDemo(BackendDetails):
                 raise RuntimeError(
                     f"{node.op} is not supported in backend BackendWithCompilerDemo"
                 )
-
-        return bytes(
-            str(number_of_instruction) + "#" + processed_bytes, encoding="utf8"
+            # Since the graph remains the same, debug handle remains the same.
+            original_debug_id = node.meta["debug_handle"]
+            new_debug_id = original_debug_id
+            debug_handle_map[new_debug_id] = (original_debug_id,)
+        return PreprocessResult(
+            processed_bytes=bytes(
+                str(number_of_instruction) + "#" + processed_bytes, encoding="utf8"
+            ),
+            debug_handle_map=debug_handle_map,
         )

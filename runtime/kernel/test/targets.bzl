@@ -19,6 +19,17 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_test(
+        name = "operator_registry_max_kernel_num_test",
+        srcs = [
+            "operator_registry_max_kernel_num_test.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/kernel:operator_registry_TWO_KERNELS_TEST_ONLY",
+            "//executorch/runtime/kernel:kernel_runtime_context",
+        ],
+    )
+
     et_operator_library(
         name = "executorch_all_ops",
         include_all_operators = True,

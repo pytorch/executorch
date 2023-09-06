@@ -32,7 +32,9 @@ test_buck2_select_ops_in_list() {
     ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="add_mul"
 
     echo "Running selective build test"
+    # set max_kernel_num=16: 13 primops, add, mul
     buck2 run //examples/selective_build:selective_build_test \
+        --config=executorch.max_kernel_num=16 \
         --config=executorch.select_ops=list -- --model_path=./add_mul.pte
 
     echo "Removing add_mul.pte"
@@ -77,10 +79,12 @@ test_cmake_select_ops_in_list() {
     echo "Exporting add_mul"
     ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="add_mul"
 
+    # set MAX_KERNEL_NUM=16: 13 primops, add, mul
     (rm -rf cmake-out \
         && mkdir cmake-out \
         && cd cmake-out \
         && retry cmake -DBUCK2=buck2 \
+            -DMAX_KERNEL_NUM=16 \
             -DBUILD_SELECTIVE_BUILD_TEST=ON \
             -DSELECT_OPS_LIST="aten::add.out,aten::mm.out" \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)

@@ -205,9 +205,12 @@ struct Kernel {
 // registered.
 constexpr uint32_t kOperatorTableMaxSize = 250;
 constexpr uint32_t kMaxNumOfKernelPerOp = 8;
+#ifdef MAX_KERNEL_NUM
+constexpr uint32_t kMaxNumOfKernels = MAX_KERNEL_NUM;
+#else
 constexpr uint32_t kMaxNumOfKernels =
     kOperatorTableMaxSize * kMaxNumOfKernelPerOp;
-
+#endif
 /**
  * See OperatorRegistry::hasOpsFn()
  */

@@ -7,7 +7,11 @@
 # The fake qnnback
 from typing import final, List
 
-from executorch.exir.backend.backend_details import BackendDetails, ExportedProgram
+from executorch.exir.backend.backend_details import (
+    BackendDetails,
+    ExportedProgram,
+    PreprocessResult,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
@@ -17,7 +21,13 @@ class QnnBackend(BackendDetails):
     def preprocess(
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
-    ) -> bytes:
-        print("entering the lowerable parts in QnnBackend.preprocess....")
+    ) -> PreprocessResult:
         processed_bytes = "imqnncompiled"
-        return bytes(processed_bytes, encoding="utf8")
+        all_nodes_debug_handle = [
+            node.meta["debug_handle"] for node in edge_program.graph.nodes
+        ]
+        return PreprocessResult(
+            processed_bytes=bytes(processed_bytes, encoding="utf8"),
+            # Assuming all nodes are fused as one op
+            debug_handle_map={1: tuple(all_nodes_debug_handle)},
+        )

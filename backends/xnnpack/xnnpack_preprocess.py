@@ -31,7 +31,11 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
     convert_to_flatbuffer,
 )
 
-from executorch.exir.backend.backend_details import BackendDetails, CompileSpec
+from executorch.exir.backend.backend_details import (
+    BackendDetails,
+    CompileSpec,
+    PreprocessResult,
+)
 from torch._export.exported_program import ExportedProgram
 
 XNN_VALUE_FLAG_NON_EXTERNAL = 0
@@ -178,7 +182,7 @@ class XnnpackBackend(BackendDetails):
     def preprocess(
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
-    ) -> bytes:
+    ) -> PreprocessResult:
         edge_ir_copy = copy.deepcopy(edge_program.graph_module)
 
         # XNNPACK Delegate Specific Passes
@@ -224,4 +228,4 @@ class XnnpackBackend(BackendDetails):
                 continue
             else:
                 raise RuntimeError(f"{node.op} is not supported in XNNPack")
-        return convert_to_flatbuffer(xnnpack_graph)
+        return PreprocessResult(processed_bytes=convert_to_flatbuffer(xnnpack_graph))

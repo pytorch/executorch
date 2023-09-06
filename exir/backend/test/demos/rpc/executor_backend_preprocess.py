@@ -7,7 +7,11 @@
 from typing import final, List
 
 from executorch.exir import ExirExportedProgram
-from executorch.exir.backend.backend_details import BackendDetails, ExportedProgram
+from executorch.exir.backend.backend_details import (
+    BackendDetails,
+    ExportedProgram,
+    PreprocessResult,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
@@ -17,13 +21,13 @@ class ExecutorBackend(BackendDetails):
     def preprocess(
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
-    ) -> bytes:
-        return (
-            ExirExportedProgram(
+    ) -> PreprocessResult:
+        return PreprocessResult(
+            processed_bytes=ExirExportedProgram(
                 exported_program=edge_program,
                 # Indicates that edge_program is already in edge dialect.
                 after_to_edge_passes=True,
             )
             .to_executorch()
-            .buffer
+            .buffer,
         )

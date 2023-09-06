@@ -19,7 +19,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from executorch.exir import CaptureConfig
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.backend_details import BackendDetails
+from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,
 )
@@ -448,7 +448,7 @@ class ConvAddBackendDemo(BackendDetails):
     def preprocess(
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
-    ) -> bytes:
+    ) -> PreprocessResult:
         sub_module = copy.deepcopy(edge_program.graph_module)
         modified_sub_module_with_delegate = ReplaceQuantizedOperatorsWithQualcommNPU()(
             sub_module
@@ -459,7 +459,9 @@ class ConvAddBackendDemo(BackendDetails):
             for node in sub_module_with_delegate.graph.nodes:
                 if node.op == "call_function":
                     processed_bytes += node.target.__name__ + ","
-        return bytes(processed_bytes, encoding="utf8")
+        return PreprocessResult(
+            processed_bytes=bytes(processed_bytes, encoding="utf8"),
+        )
 
 
 @final

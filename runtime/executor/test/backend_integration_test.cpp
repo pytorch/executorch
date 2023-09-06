@@ -17,7 +17,7 @@
 #include <executorch/runtime/backend/backend_registry.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
-#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -34,9 +34,9 @@ using torch::executor::DataLoader;
 using torch::executor::DelegateHandle;
 using torch::executor::Error;
 using torch::executor::EValue;
-using torch::executor::Executor;
 using torch::executor::FreeableBuffer;
 using torch::executor::MemoryAllocator;
+using torch::executor::Method;
 using torch::executor::Program;
 using torch::executor::PyTorchBackendInterface;
 using torch::executor::Result;
@@ -293,10 +293,8 @@ TEST_P(BackendIntegrationTest, BasicInitSucceeds) {
   ASSERT_EQ(program.error(), Error::Ok);
 
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Executor executor(&program.get(), &mmm.get());
-
-  Error err = executor.init_execution_plan("forward");
-  EXPECT_EQ(err, Error::Ok);
+  Result<Method> method_res = program->load_method("forward", &mmm.get());
+  EXPECT_EQ(method_res.error(), Error::Ok);
 }
 
 TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
@@ -325,11 +323,8 @@ TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
   Result<Program> program = Program::Load(&spy_loader);
   ASSERT_EQ(program.error(), Error::Ok);
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Executor executor(&program.get(), &mmm.get());
-
-  // Initialize.
-  Error err = executor.init_execution_plan("forward");
-  EXPECT_EQ(err, Error::Ok);
+  Result<Method> method_res = program->load_method("forward", &mmm.get());
+  EXPECT_EQ(method_res.error(), Error::Ok);
 
   // Demonstrate that our installed init was called.
   EXPECT_EQ(init_called, true);
@@ -399,11 +394,8 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   // Add a scope so we can watch executor be destroyed.
   {
     ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-    Executor executor(&program.get(), &mmm.get());
-
-    // Initialize.
-    Error err = executor.init_execution_plan("forward");
-    EXPECT_EQ(err, Error::Ok);
+    Result<Method> method_res = program->load_method("forward", &mmm.get());
+    EXPECT_TRUE(method_res.ok());
 
     // Demonstrate that our installed init was called.
     EXPECT_NE(init_processed, nullptr);
@@ -414,11 +406,11 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
 
     // The processed data should not have been freed during init.
     EXPECT_FALSE(spy_loader.WasFreed(init_processed->data()));
-
+    auto method(std::move(method_res.get()));
     // Execute the model.
     exec_aten::ArrayRef<void*> inputs =
-        torch::executor::util::PrepareInputTensors(executor.execution_plan());
-    err = executor.execution_plan().execute();
+        torch::executor::util::PrepareInputTensors(method);
+    auto err = method.execute();
     torch::executor::util::FreeInputs(inputs);
     EXPECT_EQ(err, Error::Ok);
 
@@ -543,11 +535,8 @@ TEST_P(DelegateDataAlignmentTest, ExpectedDataAlignment) {
   Result<Program> program = Program::Load(&spy_loader);
   ASSERT_EQ(program.error(), Error::Ok);
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Executor executor(&program.get(), &mmm.get());
-
-  // Initialize.
-  Error err = executor.init_execution_plan("forward");
-  EXPECT_EQ(err, Error::Ok);
+  Result<Method> method = program->load_method("forward", &mmm.get());
+  EXPECT_TRUE(method.ok());
 
   // Demonstrate that our installed init was called.
   EXPECT_NE(processed_data, nullptr);

@@ -637,7 +637,9 @@ def _default_decomposition_table(
             torch.ops.aten.arange.start,
             torch.ops.aten.transpose,
         ]
+        # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.e...
         return get_decompositions(decomp_opset)
+    # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.exir....
     return core_aten_decompositions()
 
 

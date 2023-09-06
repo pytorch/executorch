@@ -14,7 +14,7 @@ import executorch.exir as exir
 
 import torch
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.backend_details import BackendDetails
+from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
@@ -60,8 +60,8 @@ class StubBackend(BackendDetails):
     """No-op backend to test serialization/init."""
 
     @staticmethod
-    def preprocess(*args, **kwargs) -> bytes:
-        return b"StubBackend:data"
+    def preprocess(*args, **kwargs) -> PreprocessResult:
+        return PreprocessResult(processed_bytes=b"StubBackend:data")
 
 
 #
