@@ -81,6 +81,7 @@ x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 for k in range(max_new_tokens):
     y = model.generate_one(x)
     x = torch.cat((x, y), dim=1)
+    print(x)
 print(enc.decode(x[0].tolist()))
 print('---------------')
 
