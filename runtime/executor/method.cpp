@@ -790,16 +790,27 @@ Error Method::execute_instruction() {
       // TODO(T147221312): Also expose the temp allocator and tensor resizer
       // via the context.
       KernelRuntimeContext context;
-      chain.kernels_[step_state_.instr_idx](
-          context, chain.argument_lists_[step_state_.instr_idx].data());
+      auto args = chain.argument_lists_[step_state_.instr_idx];
+      chain.kernels_[step_state_.instr_idx](context, args.data());
       Error err = context.failure_state();
       if (err != Error::Ok) {
+        auto op_index = instruction->instr_args_as_KernelCall()->op_index();
+        auto op = serialization_plan_->operators()->Get(op_index);
         ET_LOG(
             Error,
-            "KernelCall failed at instruction %zu:%zu: 0x%x",
+            "KernelCall failed at instruction %zu:%zu in operator %s.%s: 0x%x",
             step_state_.chain_idx,
             step_state_.instr_idx,
+            op->name()->c_str(),
+            op->overload()->c_str(),
             (unsigned int)err);
+        for (size_t i = 0; i < args.size(); ++i) {
+          ET_LOG(
+              Error,
+              "arg %u with type id %u",
+              (unsigned int)i,
+              (unsigned int)args[i]->tag);
+        }
         // TODO(T153804650): Consider logging the EValues to help with
         // debugging. This is a failure path, and it doesn't matter if it's a
         // little slow. Do the same for DelegateCall errors.
