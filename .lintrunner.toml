@@ -1,0 +1,24 @@
+merge_base_with = "origin/main"
+
+[[linter]]
+code = 'FLAKE8'
+include_patterns = ['**/*.py']
+exclude_patterns = []
+command = [
+    'python3',
+    'third-party/pytorch/tools/linter/adapters/flake8_linter.py',
+    '--',
+    '@{{PATHSFILE}}'
+]
+init_command = [
+    'python3',
+    'third-party/pytorch/tools/linter/adapters/pip_init.py',
+    '--dry-run={{DRYRUN}}',
+    'flake8==6.0.0',
+    'flake8-breakpoint==1.1.0',
+    'flake8-bugbear==23.6.5',
+    'flake8-comprehensions==3.12.0',
+    'flake8-pyi==23.5.0',
+    'mccabe==0.7.0',
+    'pycodestyle==2.10.0',
+]
