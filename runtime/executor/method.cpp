@@ -708,10 +708,63 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         "Error setting data_ptr %zu: 0x%" PRIx32,
         input_idx,
         error);
-  }
-
-  else { // Evalue is int, bool or double
-    mutable_input(input_idx) = input_evalue;
+    // Prims have to be the same as what was traced
+  } else if (e.isInt()) {
+    ET_CHECK_OR_RETURN_ERROR(
+        e.toInt() == input_evalue.toInt(),
+        InvalidArgument,
+        "The %zu-th input of method should have the same value as the input_evalue, but got %" PRId64
+        " and %" PRId64,
+        input_idx,
+        e.toInt(),
+        input_evalue.toInt());
+  } else if (e.isBool()) {
+    ET_CHECK_OR_RETURN_ERROR(
+        e.toBool() == input_evalue.toBool(),
+        InvalidArgument,
+        "The %zu-th input of method should have the same value as the input_evalue, but got %" PRId64
+        " and %" PRId64,
+        input_idx,
+        (int64_t)e.toBool(),
+        (int64_t)input_evalue.toBool());
+  } else if (e.isDouble()) {
+    double lhs = input_evalue.toDouble();
+    double rhs = e.toDouble();
+    double atol = 1e-4;
+    double rtol = 1e-5;
+    bool is_equal = true;
+    if (std::isnan(lhs) && std::isnan(rhs)) {
+      // NaN == NaN
+    } else if (
+        !std::isfinite(lhs) && !std::isfinite(rhs) &&
+        ((lhs > 0) == (rhs > 0))) {
+      // -Inf == -Inf
+      // +Inf == +Inf
+    } else {
+      auto allowed_error = atol + std::abs(rtol * rhs);
+      auto actual_error = std::abs(lhs - rhs);
+      if (!std::isfinite(actual_error) || actual_error > allowed_error) {
+        is_equal = false;
+      }
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        is_equal,
+        InvalidArgument,
+        "The %zu-th input of method should have the same value as the input_evalue, but get %f and %f",
+        input_idx,
+        lhs,
+        rhs);
+  } else if (e.isString()) {
+    ET_CHECK_OR_RETURN_ERROR(
+        e.toString() == input_evalue.toString(),
+        InvalidArgument,
+        "The %zu-th input of method should have the same value as the input_evalue, but get %s and %s",
+        input_idx,
+        e.toString().data(),
+        input_evalue.toString().data());
+  } else {
+    ET_LOG(Error, "Unsupported input type: %d", (int32_t)e.tag);
+    return Error::InvalidArgument;
   }
   return Error::Ok;
 }

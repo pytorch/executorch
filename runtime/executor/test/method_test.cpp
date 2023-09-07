@@ -95,6 +95,32 @@ TEST_F(MethodTest, MoveTest) {
   torch::executor::util::FreeInputs(inputs);
 }
 
+TEST_F(MethodTest, SetPrimInputTest) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = add_program_->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // Can execute the method.
+  exec_aten::ArrayRef<void*> inputs =
+      torch::executor::util::PrepareInputTensors(*method);
+
+  // The args to the method are x, y, alpha. x and y are tensors handled above
+  // alpha is a prim.
+
+  // Traced prim input was '1.0' so 3.0 should error.
+  auto input_err = method->set_input(EValue(3.0), 2);
+  EXPECT_EQ(input_err, Error::InvalidArgument);
+
+  // Traced prim input was '1.0' so '1.0' should be ok.
+  input_err = method->set_input(EValue(1.0), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
+  Error err = method->execute();
+  EXPECT_EQ(err, Error::Ok);
+
+  torch::executor::util::FreeInputs(inputs);
+}
+
 // TODO(T161163608): Test is disabled due to a resize bug in tensor_index_out of
 // the portable op lib
 

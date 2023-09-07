@@ -75,11 +75,11 @@ class ModuleAdd(nn.Module):
     def __init__(self):
         super(ModuleAdd, self).__init__()
 
-    def forward(self, x, y):
-        return torch.add(x, y)
+    def forward(self, x, y, alpha):
+        return torch.add(x, y, alpha=alpha)
 
     def get_random_inputs(self):
-        return (torch.randn(2, 2), torch.randn(2, 2))
+        return (torch.randn(2, 2), torch.randn(2, 2), 1.0)
 
 
 class ModuleLinear(torch.nn.Module):
