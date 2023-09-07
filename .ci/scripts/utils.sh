@@ -5,6 +5,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+reset_buck() {
+  # On MacOS, buck2 daemon can get into a weird non-responsive state
+  buck2 kill && buck2 clean
+  rm -rf ~/.buck/buckd
+}
+
+retry () {
+    "$@" || (sleep 30 && reset_buck && "$@") || (sleep 60 && reset_buck && "$@")
+}
+
 install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the
@@ -40,8 +50,8 @@ install_pip_dependencies() {
 }
 
 build_executorch_runner_buck2() {
-  # Build executorch runtime
-  buck2 build //examples/executor_runner:executor_runner
+  # Build executorch runtime with retry as this step is flaky on macos CI
+  retry buck2 build //examples/executor_runner:executor_runner
 }
 
 build_executorch_runner_cmake() {
@@ -50,7 +60,9 @@ build_executorch_runner_cmake() {
   rm -rf "${CMAKE_OUTPUT_DIR}" && mkdir "${CMAKE_OUTPUT_DIR}"
 
   pushd "${CMAKE_OUTPUT_DIR}" || return
-  cmake -DBUCK2=buck2 -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" ..
+  # This command uses buck2 to gather source files and buck2 could crash flakily
+  # on MacOS
+  retry cmake -DBUCK2=buck2 -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" ..
   popd || return
 
   if [ "$(uname)" == "Darwin" ]; then

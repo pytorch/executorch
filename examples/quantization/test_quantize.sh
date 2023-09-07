@@ -9,6 +9,9 @@
 
 set -e
 
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
+
 get_shared_lib_ext() {
   UNAME=$(uname)
   if [[ $UNAME == "Darwin" ]];
@@ -47,7 +50,7 @@ test_cmake_quantization() {
   (rm -rf cmake-out \
     && mkdir cmake-out \
     && cd cmake-out \
-    && cmake -DBUCK2=buck2 \
+    && retry cmake -DBUCK2=buck2 \
       -DREGISTER_QUANTIZED_OPS=ON \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
