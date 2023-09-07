@@ -10,7 +10,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>How it works &mdash; ExecuTorch  documentation</title>
+  <title>Markdown in Sphinx Tips and Tricks &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -39,8 +39,6 @@
   <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="High-level Architecture and Components of ExecuTorch" href="getting-started-architecture.html" />
-    <link rel="prev" title="ExecuTorch Overview" href="intro-overview.html" />
   <!-- Google Tag Manager -->
     <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
     new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
@@ -243,9 +241,9 @@
             
             
               <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
-<ul class="current">
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">How it works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How it works</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul>
@@ -339,13 +337,13 @@
       </li>
 
         
-      <li>How it works</li>
+      <li>Markdown in Sphinx Tips and Tricks</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/intro-how-it-works.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/markdown-sphinx-tips-tricks.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -377,9 +375,169 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <section id="how-it-works">
-<h1>How it works<a class="headerlink" href="#how-it-works" title="Permalink to this heading">¶</a></h1>
-<p>TBA</p>
+  <section id="markdown-in-sphinx-tips-and-tricks">
+<h1>Markdown in Sphinx Tips and Tricks<a class="headerlink" href="#markdown-in-sphinx-tips-and-tricks" title="Permalink to this heading">¶</a></h1>
+<p>In this repository, you can use both markdown and reSTructuredText to author
+your content. This section lists most common examples of how you can use
+Sphinx directives in your markdown files to expand your contributions.
+For more information, see
+<a class="reference external" href="https://myst-parser.readthedocs.io/en/v0.17.1/sphinx/intro.html">MyST Parser Documentation</a>
+and <a class="reference external" href="https://myst-parser.readthedocs.io/en/v0.17.1/syntax/syntax.html#syntax-directives">reSTructuredText to Markdown mapping</a>.</p>
+<section id="admonitions">
+<h2>Admonitions<a class="headerlink" href="#admonitions" title="Permalink to this heading">¶</a></h2>
+<p>Here is an example of how you can add a note. Similarly, you can add
+<code class="docutils literal notranslate"><span class="pre">{tip}</span></code> and <code class="docutils literal notranslate"><span class="pre">{warning}</span></code>.</p>
+<div class="sd-tab-set docutils">
+<input checked="checked" id="sd-tab-item-0" name="sd-tab-set-0" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-0">
+Example</label><div class="sd-tab-content docutils">
+<a class="bg-primary reference internal image-reference" href="_images/s_demo_note_render.png"><img alt="note" class="bg-primary align-center" src="_images/s_demo_note_render.png" style="width: 210px;" /></a>
+</div>
+<input id="sd-tab-item-1" name="sd-tab-set-0" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-1">
+Source</label><div class="sd-tab-content docutils">
+<a class="bg-primary reference internal image-reference" href="_images/s_demo_note_source.png"><img alt="note" class="bg-primary align-center" src="_images/s_demo_note_source.png" style="width: 170px;" /></a>
+</div>
+</div>
+</section>
+<section id="images">
+<h2>Images<a class="headerlink" href="#images" title="Permalink to this heading">¶</a></h2>
+<p><a class="reference external" href="https://myst-parser.readthedocs.io/en/latest/syntax/images_and_figures.html">This page</a>
+has extensive reference on how to add an image. You can use the standard markdown
+syntax as well as an extended one that allows you to modify width, alignment, and
+other parameters of an image.</p>
+<div class="sd-tab-set docutils">
+<input checked="checked" id="sd-tab-item-2" name="sd-tab-set-1" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-2">
+Standard syntax</label><div class="sd-tab-content docutils">
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>![image example][/_static/img/example-image.png]
+</pre></div>
+</div>
+</div>
+<input id="sd-tab-item-3" name="sd-tab-set-1" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-3">
+Extended Syntax</label><div class="sd-tab-content docutils">
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>```{image} img/s_demo_note_source.png
+:alt: example
+:class: bg-primary
+:width: 150px
+:align: center
+```
+</pre></div>
+</div>
+</div>
+</div>
+</section>
+<section id="code-block">
+<h2>Code Block<a class="headerlink" href="#code-block" title="Permalink to this heading">¶</a></h2>
+<p>You can use standard code blocks as well as the extended syntax and
+include the code from other files as. More information can be
+found on <a class="reference external" href="https://myst-parser.readthedocs.io/en/latest/syntax/code_and_apis.html">this page</a>.
+Examples:</p>
+<div class="sd-tab-set docutils">
+<input checked="checked" id="sd-tab-item-4" name="sd-tab-set-2" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-4">
+Standard syntax</label><div class="sd-tab-content docutils">
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>```python
+a = 1
+b = 2
+c = a + b
+print(c)
+```
+</pre></div>
+</div>
+</div>
+<input id="sd-tab-item-5" name="sd-tab-set-2" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-5">
+Output</label><div class="sd-tab-content docutils">
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">a</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="n">b</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="n">c</span> <span class="o">=</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="sd-tab-set docutils">
+<input checked="checked" id="sd-tab-item-6" name="sd-tab-set-3" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-6">
+Extended Syntax</label><div class="sd-tab-content docutils">
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>```{code-block} python
+:caption: My example code
+:emphasize-lines: 4
+:lineno-start: 1
+
+a = 1
+b = 2
+c = a + b
+print(c)
+```
+</pre></div>
+</div>
+</div>
+<input id="sd-tab-item-7" name="sd-tab-set-3" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-7">
+Output</label><div class="sd-tab-content docutils">
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-text">My example code</span><a class="headerlink" href="#id1" title="Permalink to this code">¶</a></div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">a</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="n">b</span> <span class="o">=</span> <span class="mi">2</span>
+<span class="n">c</span> <span class="o">=</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">c</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+<div class="sd-tab-set docutils">
+<input checked="checked" id="sd-tab-item-8" name="sd-tab-set-4" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-8">
+Include from other files</label><div class="sd-tab-content docutils">
+<p>Here is how you can include the code from another file.
+In this example, we will only include the code between
+the <code class="docutils literal notranslate"><span class="pre">start-after</span></code> and <code class="docutils literal notranslate"><span class="pre">end-before</span></code> markers.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>```{literalinclude} _static/example.py
+:start-after: start
+:end-before: end
+```
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">example.py</span></code> file looks like this:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">A sample python file</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="k">class</span> <span class="nc">Person</span><span class="p">:</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">age</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">age</span> <span class="o">=</span> <span class="n">age</span>
+
+    <span class="c1"># start</span>
+
+    <span class="k">def</span> <span class="nf">introduce</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Hello, my name is&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;I am&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">age</span><span class="p">,</span> <span class="s2">&quot;years old&quot;</span><span class="p">)</span>
+
+    <span class="c1"># end</span>
+
+<span class="n">person</span> <span class="o">=</span> <span class="n">Person</span><span class="p">(</span><span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="mi">25</span><span class="p">)</span>
+<span class="n">person</span><span class="o">.</span><span class="n">introduce</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<input id="sd-tab-item-9" name="sd-tab-set-4" type="radio">
+</input><label class="sd-tab-label" for="sd-tab-item-9">
+Output</label><div class="sd-tab-content docutils">
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>
+    <span class="k">def</span> <span class="nf">introduce</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Hello, my name is&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;I am&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">age</span><span class="p">,</span> <span class="s2">&quot;years old&quot;</span><span class="p">)</span>
+
+</pre></div>
+</div>
+</div>
+</div>
+</section>
 </section>
 
 
@@ -387,15 +545,6 @@
              
             </div>
             <footer>
-  
-    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-      
-        <a href="getting-started-architecture.html" class="btn btn-neutral float-right" title="High-level Architecture and Components of ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
-      
-      
-        <a href="intro-overview.html" class="btn btn-neutral" title="ExecuTorch Overview" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
-      
-    </div>
   
 
   
@@ -427,7 +576,12 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">How it works</a></li>
+<li><a class="reference internal" href="#">Markdown in Sphinx Tips and Tricks</a><ul>
+<li><a class="reference internal" href="#admonitions">Admonitions</a></li>
+<li><a class="reference internal" href="#images">Images</a></li>
+<li><a class="reference internal" href="#code-block">Code Block</a></li>
+</ul>
+</li>
 </ul>
 
             </div>
