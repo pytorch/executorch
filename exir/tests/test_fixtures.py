@@ -34,7 +34,7 @@ from typing import Any
 import executorch.exir as exir
 import executorch.exir.tests.models as models
 import torch
-from executorch.exir.serialize._program import _program_flatbuffer_to_json
+from executorch.exir._serialize._program import _program_flatbuffer_to_json
 from executorch.exir.tests.common import register_additional_test_aten_ops
 
 from parameterized import parameterized

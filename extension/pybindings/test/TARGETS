@@ -18,9 +18,9 @@ runtime.python_library(
         "//executorch/exir:lib",
         "//executorch/exir:pass_manager",
         "//executorch/exir:scalar_type",
+        "//executorch/exir/_serialize:lib",
         "//executorch/exir/emit:lib",
         "//executorch/exir/passes:lib",
-        "//executorch/exir/serialize:lib",
         "//executorch/runtime/core:core",
     ],
 )

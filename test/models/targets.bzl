@@ -26,7 +26,7 @@ def define_common_targets():
             "//executorch/bundled_program:core",
             "//executorch/bundled_program/serialize:lib",
             "//executorch/exir:lib",
-            "//executorch/exir/serialize:lib",
+            "//executorch/exir/_serialize:lib",
         ],
     )
 

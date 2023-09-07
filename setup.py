@@ -15,8 +15,8 @@ from setuptools.command.install import install
 
 def custom_command():
     src_dst_list = [
-        ("schema/scalar_type.fbs", "exir/serialize/scalar_type.fbs"),
-        ("schema/program.fbs", "exir/serialize/program.fbs"),
+        ("schema/scalar_type.fbs", "exir/_serialize/scalar_type.fbs"),
+        ("schema/program.fbs", "exir/_serialize/program.fbs"),
         (
             "schema/bundled_program_schema.fbs",
             "bundled_program/serialize/bundled_program_schema.fbs",
