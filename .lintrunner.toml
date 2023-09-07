@@ -3,7 +3,10 @@ merge_base_with = "origin/main"
 [[linter]]
 code = 'FLAKE8'
 include_patterns = ['**/*.py']
-exclude_patterns = []
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
 command = [
     'python3',
     'third-party/pytorch/tools/linter/adapters/flake8_linter.py',
@@ -22,3 +25,31 @@ init_command = [
     'mccabe==0.7.0',
     'pycodestyle==2.10.0',
 ]
+
+# Black + usort
+[[linter]]
+code = 'UFMT'
+include_patterns = [
+    '**/*.py',
+    '**/*.pyi',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python3',
+    'third-party/pytorch/tools/linter/adapters/ufmt_linter.py',
+    '--',
+    '@{{PATHSFILE}}'
+]
+init_command = [
+    'python3',
+    'third-party/pytorch/tools/linter/adapters/pip_init.py',
+    '--dry-run={{DRYRUN}}',
+    '--no-black-binary',
+    'black==22.12.0',
+    'ufmt==2.0.1',
+    'usort==1.0.5',
+]
+is_formatter = true
