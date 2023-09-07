@@ -7,6 +7,7 @@
 from typing import Any
 
 from executorch.exir.capture import (
+    _capture_legacy_do_not_use,
     capture,
     capture_multiple,
     CaptureConfig,
@@ -38,6 +39,7 @@ __all__ = [
     "EmitterOutput",
     "capture",
     "capture_multiple",
+    "_capture_legacy_do_not_use",
     "CallSpec",
     "ExportedProgram",
     "ExirExportedProgram",
