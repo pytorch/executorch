@@ -44,6 +44,15 @@ cmake_minimum_required(VERSION 3.19)
 project(executorch)
 include(build/Utils.cmake)
 
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Debug)
+endif()
+# -Os: Optimize for size -ffunction-sections -fdata-sections: breaks function
+# and data into sections so they can be properly gc'd -s: strip symbols
+set(CMAKE_CXX_FLAGS_RELEASE
+    "-Os -ffunction-sections -fdata-sections -s -fno-exceptions -fno-rtti")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
+
 # Option to register custom operator `my_ops::mul3` or `my_ops::mul4` or no
 # custom ops at all. Custom ops are defined in
 # `examples/custom_ops/custom_ops_1.py` and
@@ -142,6 +151,9 @@ target_link_libraries(executorch PRIVATE program_schema)
 target_link_libraries(executorch PRIVATE dl) # For dladdr()
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_options(executorch PUBLIC ${_common_compile_options})
+if(MAX_KERNEL_NUM)
+  target_compile_definitions(executorch PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM})
+endif()
 
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
@@ -168,6 +180,9 @@ endif()
 # ios can only build library but not binary
 if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
   add_executable(executor_runner ${_executor_runner__srcs})
+  if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
+    target_link_options(executor_runner PRIVATE "LINKER:--gc-sections")
+  endif()
   target_link_libraries(executor_runner ${_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
