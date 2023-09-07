@@ -194,6 +194,15 @@ endif()
 
 # Add XNNPACK subdirectory
 if(EXECUTORCH_BUILD_XNNPACK)
+  set(XNNPACK_LIBRARY_TYPE "static" CACHE STRING "")
+  set(XNNPACK_BUILD_BENCHMARKS OFF CACHE BOOL "")
+  set(XNNPACK_BUILD_TESTS OFF CACHE BOOL "")
+
+  # Disable ARM BF16 and FP16 vector for now; unused and causes build failures because
+  # these new ISA features may not be supported on older compilers
+  set(XNNPACK_ENABLE_ARM_BF16 OFF CACHE BOOL "")
+  set(XNNPACK_ENABLE_ARM_FP16_VECTOR OFF CACHE BOOL "")
+
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
 endif()
 
