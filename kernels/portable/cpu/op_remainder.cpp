@@ -24,7 +24,11 @@ template <
     typename std::enable_if<std::is_floating_point<CTYPE>::value, int>::type =
         0>
 CTYPE remainder_override(CTYPE a, CTYPE b) {
-  return std::fmod(a, b);
+  float rem = std::fmod(a, b);
+  if (((a < 0) ^ (b < 0)) && rem != 0) {
+    rem += b;
+  }
+  return rem;
 }
 
 template <
