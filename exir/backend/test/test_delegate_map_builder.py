@@ -40,12 +40,12 @@ class TestDelegateMapBuilder(unittest.TestCase):
         delegate_builder = DelegateMappingBuilder(generated_identifiers=True)
 
         expected_mapping = {0: (0, 1, 2, 3)}
-        self.assertEqual(delegate_builder.upsert_delegate_mapping_entry(self.nodes), 0)
+        self.assertEqual(delegate_builder.insert_delegate_mapping_entry(self.nodes), 0)
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
 
         expected_mapping = {0: (0, 1, 2, 3), 1: (0,)}
         self.assertEqual(
-            delegate_builder.upsert_delegate_mapping_entry(self.nodes[0]), 1
+            delegate_builder.insert_delegate_mapping_entry(self.nodes[0]), 1
         )
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
 
@@ -60,37 +60,34 @@ class TestDelegateMapBuilder(unittest.TestCase):
 
         expected_mapping = {0: (0,)}
         self.assertEqual(
-            delegate_builder.upsert_delegate_mapping_entry(self.nodes[0]), 0
+            delegate_builder.insert_delegate_mapping_entry(self.nodes[0]), 0
         )
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
-        self._test_appending_nodes(delegate_builder, 0)
 
     def test_appending_nodes_manual_int_identifier(self):
         delegate_builder = DelegateMappingBuilder()
 
         expected_mapping = {22: (0,)}
         self.assertEqual(
-            delegate_builder.upsert_delegate_mapping_entry(self.nodes[0], 22), 22
+            delegate_builder.insert_delegate_mapping_entry(self.nodes[0], 22), 22
         )
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
-        self._test_appending_nodes(delegate_builder, 22)
 
     def test_appending_nodes_manual_string_identifier(self):
         delegate_builder = DelegateMappingBuilder()
 
         expected_mapping = {"22": (0,)}
         self.assertEqual(
-            delegate_builder.upsert_delegate_mapping_entry(self.nodes[0], "22"), "22"
+            delegate_builder.insert_delegate_mapping_entry(self.nodes[0], "22"), "22"
         )
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
-        self._test_appending_nodes(delegate_builder, "22")
 
     def test_adding_manual_identifier_when_generated(self):
         delegate_builder = DelegateMappingBuilder(generated_identifiers=True)
 
         self.assertRaises(
             Exception,
-            lambda: delegate_builder.upsert_delegate_mapping_entry(self.nodes, "22"),
+            lambda: delegate_builder.insert_delegate_mapping_entry(self.nodes, "22"),
         )
 
     def test_omitting_identifier_when_not_generated(self):
@@ -98,7 +95,15 @@ class TestDelegateMapBuilder(unittest.TestCase):
 
         self.assertRaises(
             Exception,
-            lambda: delegate_builder.upsert_delegate_mapping_entry(self.nodes),
+            lambda: delegate_builder.insert_delegate_mapping_entry(self.nodes),
+        )
+
+    def test_resinsert_delegate_debug_identifier(self):
+        delegate_builder = DelegateMappingBuilder()
+        delegate_builder.insert_delegate_mapping_entry(self.nodes[0], "1")
+        self.assertRaises(
+            Exception,
+            lambda: delegate_builder.insert_delegate_mapping_entry(self.nodes[0], "1"),
         )
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -118,7 +123,7 @@ class TestDelegateMapBuilder(unittest.TestCase):
         iden_1 = next(identifiers)
         expected_mapping = {iden_1: (0, 1, 2, 3)}
         self.assertEqual(
-            delegate_builder.upsert_delegate_mapping_entry(self.nodes, iden_1), iden_1
+            delegate_builder.insert_delegate_mapping_entry(self.nodes, iden_1), iden_1
         )
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
 
@@ -126,42 +131,7 @@ class TestDelegateMapBuilder(unittest.TestCase):
         iden_2 = next(identifiers)
         expected_mapping = {iden_1: (0, 1, 2, 3), iden_2: (0,)}
         self.assertEqual(
-            delegate_builder.upsert_delegate_mapping_entry(self.nodes[0], iden_2),
+            delegate_builder.insert_delegate_mapping_entry(self.nodes[0], iden_2),
             iden_2,
-        )
-        self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
-
-    def _test_appending_nodes(
-        self, delegate_builder: DelegateMappingBuilder, identifier: Union[int, str]
-    ):
-        """
-        For the provided delegate_builder and identifier:
-        1) Append a duplicate Node (previously in builder)
-        2) Append a list of Nodes
-        3) Append a single Node
-
-        Verify behavior results
-        """
-        # Add a duplicate node
-        expected_mapping = {identifier: (0,)}
-        self.assertEqual(
-            delegate_builder.upsert_delegate_mapping_entry(self.nodes[0], identifier),
-            identifier,
-        )
-        self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
-
-        # Add a list of nodes
-        expected_mapping = {identifier: (0, 1, 2)}
-        self.assertEqual(
-            delegate_builder.upsert_delegate_mapping_entry(self.nodes[1:5], identifier),
-            identifier,
-        )
-        self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
-
-        # Add a single node
-        expected_mapping = {identifier: (0, 1, 2, 3)}
-        self.assertEqual(
-            delegate_builder.upsert_delegate_mapping_entry(self.nodes[5], identifier),
-            identifier,
         )
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
