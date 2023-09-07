@@ -10,13 +10,12 @@ import json
 import os
 import tempfile
 
-# pyre-ignore[21]: Could not find module `executorch.exir.serialize.bindings`.
-import executorch.exir.serialize.bindings as bindings  # @manual=//executorch/exir/serialize:bindings
+# pyre-ignore[21]: Could not find module `executorch.exir._serialize._bindings`.
+import executorch.exir._serialize._bindings as bindings  # @manual=//executorch/exir/_serialize:_bindings
 
-# @manual=fbsource//third-party/pypi/setuptools:setuptools
 import pkg_resources
 
-from executorch.exir.serialize._dataclass import _DataclassEncoder, _json_to_dataclass
+from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 from executorch.sdk.etdump.schema import ETDump
 
 # The prefix of schema files used for etdump

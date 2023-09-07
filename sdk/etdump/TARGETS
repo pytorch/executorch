@@ -27,7 +27,7 @@ python_library(
     deps = [
         "fbsource//third-party/pypi/setuptools:setuptools",
         ":schema",
-        "//executorch/exir/serialize:bindings",
-        "//executorch/exir/serialize:lib",
+        "//executorch/exir/_serialize:_bindings",
+        "//executorch/exir/_serialize:lib",
     ],
 )

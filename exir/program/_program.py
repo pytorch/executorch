@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import torch
 import torch._export
+from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.error import ExportError
@@ -23,7 +24,6 @@ from executorch.exir.passes import (
 from executorch.exir.passes.remove_assert_async_pass import RemoveAssertAsyncPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.schema import Program
-from executorch.exir.serialize import serialize_to_flatbuffer
 from executorch.exir.verification.verifier import (
     EXIRATenDialectVerifier,
     EXIREdgeDialectVerifier,
@@ -228,7 +228,7 @@ class ExecutorchProgram:
     @property
     def buffer(self) -> bytes:
         if self._buffer is None:
-            self._buffer = serialize_to_flatbuffer(
+            self._buffer = _serialize_pte_binary(
                 program=self.program,
                 extract_segments=self._extract_segments,
                 segment_alignment=self._segment_alignment,
@@ -307,9 +307,6 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
     return passes
 
 
-######## MULTI METHOD STUFF BELOW HERE. TO BE MERGED INTO ExirExportedProgram and ExecutorchProgram AND THEN DELETED ##########
-
-
 # MultiMethodExirExportedProgram represents an exported program that contains
 # multiple methods, all as valid entry points to the program.
 #
@@ -318,6 +315,8 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
 # ensure that each is self-contained. This is important because transformation
 # passes can be local and do not need to concern themselves about other methods
 # that exists on the same MultiMethodExirExportedProgram.
+#
+# TODO(T152006915): Merge this into ExirExportedProgram and then delete it.
 @compatibility(is_backward_compatible=False)
 class MultiMethodExirExportedProgram:
     def __init__(
@@ -450,6 +449,7 @@ class MultiMethodExirExportedProgram:
         return multi_method_program_to_executorch(self, config)
 
 
+# TODO(T152006915): Merge this into ExecutorchProgram and then delete it.
 @compatibility(is_backward_compatible=False)
 class MultiMethodExecutorchProgram:
     def __init__(
@@ -481,7 +481,7 @@ class MultiMethodExecutorchProgram:
     @property
     def buffer(self) -> bytes:
         if self._buffer is None:
-            self._buffer = serialize_to_flatbuffer(
+            self._buffer = _serialize_pte_binary(
                 program=self._emitter_output.program,
                 extract_segments=self._extract_segments,
                 segment_alignment=self._segment_alignment,
@@ -506,6 +506,7 @@ class MultiMethodExecutorchProgram:
         return self._executorch_dialect_ir_program
 
 
+# TODO(T152006915): Merge this into to_executorch and then delete it.
 def multi_method_program_to_executorch(
     edge_dialect_program: MultiMethodExirExportedProgram,
     config: Optional[ExecutorchBackendConfig] = None,

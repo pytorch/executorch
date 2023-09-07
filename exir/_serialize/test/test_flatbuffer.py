@@ -11,8 +11,8 @@ import unittest
 from typing import Dict, Optional, Sequence
 from unittest.mock import patch
 
-from executorch.exir.serialize import _flatbuffer
-from executorch.exir.serialize._flatbuffer import _ResourceFiles, _SchemaInfo
+from executorch.exir._serialize import _flatbuffer
+from executorch.exir._serialize._flatbuffer import _ResourceFiles, _SchemaInfo
 
 
 def read_file(dir: str, filename: str) -> bytes:

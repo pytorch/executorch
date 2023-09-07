@@ -8,15 +8,15 @@ import json
 import os
 import tempfile
 
-# pyre-ignore[21]: Could not find module `executorch.exir.serialize.bindings`.
-import executorch.exir.serialize.bindings as bindings  # @manual=//executorch/exir/serialize:bindings
+# pyre-ignore[21]: Could not find module `executorch.exir._serialize._bindings`.
+import executorch.exir._serialize._bindings as bindings  # @manual=//executorch/exir/_serialize:_bindings
 
 import pkg_resources
 
 from executorch.backends.qnnpack.serialization.qnnpack_graph_schema import (
     QNNDynamicLinear,
 )
-from executorch.exir.serialize._dataclass import _DataclassEncoder
+from executorch.exir._serialize._dataclass import _DataclassEncoder
 
 
 def convert_to_flatbuffer(qnn_dynamic_linear: QNNDynamicLinear) -> bytes:

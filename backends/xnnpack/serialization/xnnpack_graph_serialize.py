@@ -10,9 +10,9 @@ import tempfile
 
 import pkg_resources
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import XNNGraph
-from executorch.exir.serialize._dataclass import _DataclassEncoder
+from executorch.exir._serialize._dataclass import _DataclassEncoder
 
-from executorch.exir.serialize._flatbuffer import _flatc_compile
+from executorch.exir._serialize._flatbuffer import _flatc_compile
 
 
 def convert_to_flatbuffer(xnnpack_graph: XNNGraph) -> bytes:

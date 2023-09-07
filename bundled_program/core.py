@@ -26,6 +26,7 @@ from executorch.bundled_program.schema import (
     BundledValue,
 )
 from executorch.bundled_program.version import BUNDLED_PROGRAM_SCHEMA_VERSION
+from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir.schema import (
     Bool,
     Double,
@@ -35,7 +36,6 @@ from executorch.exir.schema import (
     Program,
     Tensor,
 )
-from executorch.exir.serialize import serialize_to_flatbuffer
 from executorch.exir.tensor import get_scalar_type, scalar_type_enum, TensorSpec
 
 # pyre-ignore
@@ -287,7 +287,7 @@ def create_bundled_program(
             BundledExecutionPlanTest(test_sets=test_sets, metadata=plan_test.metadata)
         )
 
-    program_bytes: bytes = serialize_to_flatbuffer(program)
+    program_bytes: bytes = _serialize_pte_binary(program)
 
     return BundledProgram(
         version=BUNDLED_PROGRAM_SCHEMA_VERSION,

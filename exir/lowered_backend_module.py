@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.utils._pytree as pytree
+from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
 from executorch.exir.emit import emit_program
@@ -21,7 +22,6 @@ from executorch.exir.graph_module import _get_submodule
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.spec_prop_pass import make_spec, SpecPropPass
 from executorch.exir.schema import Program
-from executorch.exir.serialize import serialize_to_flatbuffer
 
 from executorch.exir.tracer import Value
 
@@ -96,7 +96,7 @@ class LoweredBackendModule(torch.nn.Module):
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
     ) -> bytes:
-        out = serialize_to_flatbuffer(
+        out = _serialize_pte_binary(
             program=self.program(),
             extract_segments=extract_segments,
             segment_alignment=segment_alignment,
