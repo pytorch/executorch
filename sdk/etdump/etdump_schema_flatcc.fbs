@@ -33,7 +33,6 @@ table String {
 }
 
 enum ValueType : byte { Null, Int, Bool, Double, Tensor, String,}
-enum EventType : byte { ProfileEvent, AllocationEvent, DebugEvent }
 
 // This table is only necessary because flatbuffer can't support a list of
 // union elements directly, they need to be wrapped in a table.
@@ -103,9 +102,9 @@ table ProfileEvent {
 // Since we can only keep one vector open at a time when building the flatbuffer, using a
 // generic Event type (as opposed to separate arrays for each type) allows us to add
 // different events as they occur.
+//
+// Exactly one of these fields must be non-null, and the rest must be set to null.
 table Event {
-  event_type : EventType;
-
   profile_event: ProfileEvent;
 
   allocation_event: AllocationEvent;
