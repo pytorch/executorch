@@ -49,6 +49,7 @@ extensions = [
     "sphinx.ext.autosummary",
     "sphinx.ext.coverage",
     "sphinx.ext.doctest",
+    "sphinx_copybutton",
     "sphinx.ext.napoleon",
     "sphinx.ext.todo",
     "sphinx.ext.viewcode",
@@ -57,6 +58,7 @@ extensions = [
     "myst_parser",
     "sphinx_design",
     "sphinx_gallery.gen_gallery",
+    "executorch_custom_versions",
 ]
 
 templates_path = ["_templates"]
@@ -128,7 +130,7 @@ intersphinx_mapping = {
     "torch": ("https://pytorch.org/docs/stable/", None),
 }
 
-# Custom directives defintions to create cards on main TorchServe page
+# Custom directives defintions to create cards on main landing page
 
 from custom_directives import (
     CustomCardEnd,
