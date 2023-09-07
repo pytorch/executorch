@@ -29,9 +29,105 @@ from executorch.exir.verification.verifier import (
     EXIREdgeDialectVerifier,
 )
 from torch._export import ExportedProgram
+from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
+from torch.utils import _pytree as pytree
 
 Val = Any
+
+
+# Stub to ease migration from `transform` to private `_transform`
+def transform_exported_program(ep, *passes: PassType) -> ExportedProgram:
+    if hasattr(ep, "_transform"):
+        return ep._transform(*passes)
+    else:
+        return ep.transform(*passes)
+
+
+class HackedUpExportedProgramDONOTUSE(ExportedProgram):
+    def __init__(
+        self,
+        root,
+        graph,
+        graph_signature,
+        call_spec,
+        state_dict,
+        range_constraints,
+        equality_constraints,
+        module_call_graph,
+        example_inputs,
+    ):
+        super().__init__(
+            root,
+            graph,
+            graph_signature,
+            call_spec,
+            state_dict,
+            range_constraints,
+            equality_constraints,
+            module_call_graph,
+            example_inputs,
+        )
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        import torch._export.error as error
+        from torch._export import combine_args_kwargs
+
+        if self.call_spec.in_spec is not None:
+            user_args = combine_args_kwargs(args, kwargs)
+            try:
+                args = fx_pytree.tree_flatten_spec(user_args, self.call_spec.in_spec)  # type: ignore[assignment]
+            except Exception:
+                _, received_spec = pytree.tree_flatten(user_args)
+                raise error.InternalError(
+                    "Trying to flatten user inputs with exported input tree spec: \n"
+                    f"{self.call_spec.in_spec}\n"
+                    "but actually got inputs with tree spec of: \n"
+                    f"{received_spec}"
+                )
+
+        ordered_params = tuple(
+            self.state_dict[name] for name in self.graph_signature.parameters
+        )
+        ordered_buffers = tuple(
+            self.state_dict[name] for name in self.graph_signature.buffers
+        )
+
+        with torch.no_grad():
+            # NOTE: calling convention is first params, then buffers, then args as user supplied them.
+            # See: torch/_functorch/aot_autograd.py#L1034
+            res = torch.fx.Interpreter(self.graph_module).run(
+                *ordered_params, *ordered_buffers, *args, enable_io_processing=False
+            )
+
+        if self.call_spec.out_spec is not None:
+            mutation = self.graph_signature.buffers_to_mutate
+            num_mutated = len(mutation)
+            mutated_buffers = res[:num_mutated]
+
+            # Exclude dependency token from final result.
+            assertion_dep_token = self.graph_signature.assertion_dep_token
+            if assertion_dep_token is not None:
+                assertion_dep_token_index = list(assertion_dep_token.keys())[0]
+                res = res[:assertion_dep_token_index]
+
+            res = res[num_mutated:]
+            try:
+                res = pytree.tree_unflatten(res, self.call_spec.out_spec)
+            except Exception:
+                _, received_spec = pytree.tree_flatten(res)
+                raise error.InternalError(
+                    "Trying to flatten user outputs with exported output tree spec: \n"
+                    f"{self.call_spec.out_spec}\n"
+                    "but actually got outputs with tree spec of: \n"
+                    f"{received_spec}"
+                )
+            finally:
+                ix = 0
+                for buffer in self.graph_signature.buffers_to_mutate.values():
+                    self.state_dict[buffer] = mutated_buffers[ix]
+                    ix += 1
+        return res
 
 
 @compatibility(is_backward_compatible=False)
