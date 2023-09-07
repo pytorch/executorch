@@ -62,6 +62,9 @@ endforeach()
 # link to
 #
 add_executable(selective_build_test ${_updated__srcs})
+if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
+  target_link_options(selective_build_test PRIVATE "LINKER:--gc-sections")
+endif()
 target_link_libraries(selective_build_test executorch gflags select_build_lib)
 target_compile_options(selective_build_test PUBLIC ${_common_compile_options})
 
