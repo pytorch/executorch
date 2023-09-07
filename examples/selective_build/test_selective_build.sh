@@ -12,6 +12,9 @@
 # 4. (TODO) Select from a serialized model (.pte)
 set -e
 
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
+
 test_buck2_select_all_ops() {
     echo "Exporting MobilenetV3"
     ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="mv3"
@@ -57,7 +60,7 @@ test_cmake_select_all_ops() {
     (rm -rf cmake-out \
         && mkdir cmake-out \
         && cd cmake-out \
-        && cmake -DBUCK2="$BUCK" \
+        && retry cmake -DBUCK2="$BUCK" \
             -DBUILD_SELECTIVE_BUILD_TEST=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DSELECT_ALL_OPS=ON \
@@ -81,7 +84,7 @@ test_cmake_select_ops_in_list() {
     (rm -rf cmake-out \
         && mkdir cmake-out \
         && cd cmake-out \
-        && cmake -DBUCK2="$BUCK" \
+        && retry cmake -DBUCK2="$BUCK" \
             -DMAX_KERNEL_NUM=16 \
             -DBUILD_SELECTIVE_BUILD_TEST=ON \
             -DCMAKE_BUILD_TYPE=Release \
@@ -108,7 +111,7 @@ test_cmake_select_ops_in_yaml() {
     (rm -rf cmake-out \
         && mkdir cmake-out \
         && cd cmake-out \
-        && cmake -DBUCK2="$BUCK" \
+        && retry cmake -DBUCK2="$BUCK" \
             -DBUILD_SELECTIVE_BUILD_TEST=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DSELECT_OPS_YAML=ON \
