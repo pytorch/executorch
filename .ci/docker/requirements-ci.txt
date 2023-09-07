@@ -17,3 +17,4 @@ matplotlib
 -e git+https://github.com/pytorch/pytorch_sphinx_theme.git#egg=pytorch_sphinx_theme
 myst-parser
 sphinx_design
+sphinx-copybutton
