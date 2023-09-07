@@ -25,11 +25,11 @@ Tensor mul4_impl(const Tensor& in) {
 }
 
 TORCH_LIBRARY_FRAGMENT(my_ops, m) {
-  m.def(TORCH_SELECTIVE_SCHEMA("my_ops::mul4(Tensor input) -> Tensor"));
+  m.def("my_ops::mul4(Tensor input) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(my_ops, CompositeExplicitAutograd, m) {
-  m.impl(TORCH_SELECTIVE_NAME("my_ops::mul4"), TORCH_FN(mul4_impl));
+  m.impl("mul4", TORCH_FN(mul4_impl));
 }
 } // namespace native
 } // namespace custom
