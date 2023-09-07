@@ -204,10 +204,17 @@ def capture(
     _instantiate_missing_placeholder_val_with_real_inputs(graph_module, flat_args)
     graph_module._apply(torch.Tensor.contiguous)
 
+    user_inputs = [
+        node.name for node in graph_module.graph.nodes if node.op == "placeholder"
+    ]
+    output_node = list(graph_module.graph.nodes)[-1]
+    assert output_node.op == "output"
+    user_outputs = [arg.name for arg in output_node.args[0]]
+
     ep = ExportedProgram(
         graph_module,
         graph_module.graph,
-        ExportGraphSignature([], [], [], [], {}, {}, {}, None),
+        ExportGraphSignature([], [], user_inputs, user_outputs, {}, {}, {}, None),
         CallSpec(in_spec, out_spec),
         {},
         {},
