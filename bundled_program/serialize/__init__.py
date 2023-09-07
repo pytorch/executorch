@@ -16,9 +16,8 @@ import tempfile
 import pkg_resources
 from executorch.bundled_program.schema import BundledProgram
 
-from executorch.exir.serialize._dataclass import _DataclassEncoder, _json_to_dataclass
-
-from executorch.exir.serialize._flatbuffer import _flatc_compile, _flatc_decompile
+from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
+from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 
 # The prefix of schema files used for bundled program
 BUNDLED_PROGRAM_SCHEMA_NAME = "bundled_program_schema"

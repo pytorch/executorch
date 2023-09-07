@@ -134,7 +134,7 @@ def define_common_targets(is_fbcode = False):
                 ":yaml_util",
                 "//caffe2:torch",
                 "//executorch/exir:schema",
-                "//executorch/exir/serialize:lib",
+                "//executorch/exir/_serialize:lib",
             ],
         )
 

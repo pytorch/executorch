@@ -12,6 +12,16 @@ import unittest
 
 from typing import List, Sequence
 
+from executorch.exir._serialize._flatbuffer import _program_flatbuffer_to_json
+from executorch.exir._serialize._program import (
+    _ExtendedHeader,
+    _get_extended_header,
+    _json_to_program,
+    _program_to_json,
+    deserialize_pte_binary,
+    serialize_pte_binary,
+)
+
 from executorch.exir.schema import (
     BackendDelegate,
     BackendDelegateDataReference,
@@ -21,17 +31,6 @@ from executorch.exir.schema import (
     DataSegment,
     ExecutionPlan,
     Program,
-)
-from executorch.exir.serialize import (
-    deserialize_from_flatbuffer,
-    serialize_to_flatbuffer,
-)
-from executorch.exir.serialize._flatbuffer import _program_flatbuffer_to_json
-from executorch.exir.serialize._program import (
-    _ExtendedHeader,
-    _get_extended_header,
-    _json_to_program,
-    _program_to_json,
 )
 from executorch.exir.tests.common import get_test_program
 
@@ -250,18 +249,18 @@ class TestProgram(unittest.TestCase):
         deserializing.
         """
         program = get_test_program()
-        fb_data = serialize_to_flatbuffer(program)
-        self.assertGreater(len(fb_data), 16)
+        pte_data = serialize_pte_binary(program)
+        self.assertGreater(len(pte_data), 16)
 
         # File magic should be present at the expected offset.
-        self.assert_file_magic_present(fb_data)
+        self.assert_file_magic_present(pte_data)
 
         # Extended header should not be present.
-        eh = _get_extended_header(fb_data)
+        eh = _get_extended_header(pte_data)
         self.assertIsNone(eh)
 
         # Convert back.
-        program2 = deserialize_from_flatbuffer(fb_data)
+        program2 = deserialize_pte_binary(pte_data)
 
         # Programs should be the same.
         self.assert_programs_equal(program, program2)
@@ -273,32 +272,30 @@ class TestProgram(unittest.TestCase):
         """
         program = get_test_program()
         program.execution_plan[0].non_const_buffer_sizes = [0, 2**48]
-        flatbuffer_from_py = serialize_to_flatbuffer(program)
-        self.assert_programs_equal(
-            program, deserialize_from_flatbuffer(flatbuffer_from_py)
-        )
+        flatbuffer_from_py = serialize_pte_binary(program)
+        self.assert_programs_equal(program, deserialize_pte_binary(flatbuffer_from_py))
 
     def test_round_trip_with_header_no_segments(self) -> None:
         """Tests that a Program remains the same after serializing and
         deserializing, even when it contains an extended header.
         """
         program = get_test_program()
-        fb_data = serialize_to_flatbuffer(program, extract_segments=True)
-        self.assertGreater(len(fb_data), 16)
+        pte_data = serialize_pte_binary(program, extract_segments=True)
+        self.assertGreater(len(pte_data), 16)
 
         # File magic should be present at the expected offset.
-        self.assert_file_magic_present(fb_data)
+        self.assert_file_magic_present(pte_data)
 
         # Extended header should be present.
-        eh = _get_extended_header(fb_data)
+        eh = _get_extended_header(pte_data)
         self.assertIsNotNone(eh)
         self.assertTrue(eh.is_valid())
-        self.assertEqual(eh.program_size, len(fb_data))
+        self.assertEqual(eh.program_size, len(pte_data))
         # Zero when there are no segments.
         self.assertEqual(eh.segment_base_offset, 0)
 
         # Convert back.
-        program2 = deserialize_from_flatbuffer(fb_data)
+        program2 = deserialize_pte_binary(pte_data)
 
         # Programs should be the same.
         self.assert_programs_equal(program, program2)
@@ -329,7 +326,7 @@ class TestProgram(unittest.TestCase):
         add_delegate_data(program, program.execution_plan[0], blobs)
 
         # Extract the blobs into segments during serialization.
-        fb_data = serialize_to_flatbuffer(
+        pte_data = serialize_pte_binary(
             program, extract_segments=True, segment_alignment=SEGMENT_ALIGNMENT
         )
 
@@ -341,21 +338,21 @@ class TestProgram(unittest.TestCase):
         )
 
         # Extended header should be present in the serialized data.
-        eh = _get_extended_header(fb_data)
+        eh = _get_extended_header(pte_data)
         self.assertIsNotNone(eh)
         self.assertTrue(eh.is_valid())
-        self.assertLess(eh.program_size, len(fb_data))
+        self.assertLess(eh.program_size, len(pte_data))
         # Segment offset should be non-zero since there are segments. It
         # should point past the end of the program data, but not beyond
         # the end of the file.
         self.assertGreaterEqual(eh.segment_base_offset, eh.program_size)
-        self.assertLess(eh.segment_base_offset, len(fb_data))
+        self.assertLess(eh.segment_base_offset, len(pte_data))
 
         # Peek inside the actual flatbuffer data to see the segments. Note that
         # this also implicity tests the case where we try parsing the entire
         # file with segment data following it, demonstrating that the extra data
         # doesn't upset the flatbuffer parsing path.
-        program_with_segments = _json_to_program(_program_flatbuffer_to_json(fb_data))
+        program_with_segments = _json_to_program(_program_flatbuffer_to_json(pte_data))
 
         # The delegate blobs we added to the program should appear as segments.
         # The one empty blob should have been ignored, hence the `- 1`.
@@ -387,14 +384,14 @@ class TestProgram(unittest.TestCase):
         # The final segment should not point past the end of the file.
         self.assertLessEqual(
             segment_table[-1].offset + segment_table[-1].size,
-            len(fb_data),
+            len(pte_data),
             f"{segment_table}",
         )
 
         # Check the segment base offset boundary.
         segment_base_offset = eh.segment_base_offset
         self.assertEqual(
-            fb_data[segment_base_offset - 2 : segment_base_offset + 3],
+            pte_data[segment_base_offset - 2 : segment_base_offset + 3],
             # The padding before the first segment.
             b"\x00\x00"
             # The first few bytes of the first segment.
@@ -403,7 +400,7 @@ class TestProgram(unittest.TestCase):
 
         # Now that we've shown that the base offset is correct, slice off the
         # front so that all segment offsets are relative to zero.
-        segment_data: bytes = fb_data[segment_base_offset:]
+        segment_data: bytes = pte_data[segment_base_offset:]
 
         # End of the first segment. It's much smaller than the alignment,
         # so we know that it's followed by zeros.
@@ -430,7 +427,7 @@ class TestProgram(unittest.TestCase):
         # meaning that the segments were moved back to inline. This also
         # demonstrates that the contents of all segments survived, and weren't
         # truncated or corrupted.
-        program2 = deserialize_from_flatbuffer(fb_data)
+        program2 = deserialize_pte_binary(pte_data)
         self.assert_programs_equal(program, program2)
 
     def test_unused_inline_delegate_blobs_with_segments(self) -> None:
@@ -443,10 +440,10 @@ class TestProgram(unittest.TestCase):
         add_delegate_data(program, program.execution_plan[0], blobs)
 
         # Extract the blobs into segments should succeeed.
-        fb_data = serialize_to_flatbuffer(
+        pte_data = serialize_pte_binary(
             program, extract_segments=True, segment_alignment=SEGMENT_ALIGNMENT
         )
-        self.assertGreater(len(fb_data), 16)
+        self.assertGreater(len(pte_data), 16)
 
         # Add another inline blob that is not pointed to by a delegate.
         program.backend_delegate_data.append(
@@ -455,7 +452,7 @@ class TestProgram(unittest.TestCase):
 
         # Should cause serialization to fail.
         with self.assertRaises(ValueError):
-            serialize_to_flatbuffer(
+            serialize_pte_binary(
                 program, extract_segments=True, segment_alignment=SEGMENT_ALIGNMENT
             )
 
