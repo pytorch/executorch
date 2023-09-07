@@ -33,6 +33,30 @@ def define_common_targets(is_fbcode = False):
             link_whole = True,
         )
 
+        runtime.cxx_library(
+            name = "test_backend_with_delegate_mapping" + aten_suffix,
+            srcs = [
+                "test_backend_with_delegate_mapping.cpp",
+            ],
+            visibility = [
+                "//executorch/exir/backend/test/...",
+                "//executorch/runtime/backend/...",
+                "//executorch/extension/pybindings/...",
+                "//executorch/sdk/runners/...",
+                "//executorch/test/...",
+                "//executorch/examples/...",
+            ],
+            # registration of backends is done through a static global
+            compiler_flags = ["-Wno-global-constructors"],
+            preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
+            exported_deps = [
+                "//executorch/runtime/backend:backend_registry" + aten_suffix,
+            ],
+            # TestBackendCompilerLib.cpp needs to compile with executor as whole
+            # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
+            link_whole = True,
+        )
+
     runtime.cxx_test(
         name = "executor_test",
         srcs = [

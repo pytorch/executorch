@@ -21,6 +21,7 @@ def define_common_targets():
             srcs = ["executor_runner.cpp"],
             deps = [
                 "//executorch/runtime/executor/test:test_backend_compiler_lib" + aten_suffix,
+                "//executorch/runtime/executor/test:test_backend_with_delegate_mapping" + aten_suffix,
                 "//executorch/runtime/executor:program" + aten_suffix,
                 "//executorch/sdk/etdump:etdump",
                 "//executorch/util:bundled_program_verification" + aten_suffix,
