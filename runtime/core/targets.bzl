@@ -1,5 +1,14 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+def event_tracer_enabled():
+    return native.read_config("executorch", "event_tracer_enabled", "false") == "true"
+
+def get_event_tracer_flags():
+    event_tracer_flags = []
+    if event_tracer_enabled():
+        event_tracer_flags += ["-DEVENT_TRACER_ENABLED"]
+    return event_tracer_flags
+
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
 
@@ -13,6 +22,7 @@ def define_common_targets():
             "array_ref.h",  # TODO(T157717874): Migrate all users to span and then move this to portable_type
             "data_loader.h",
             "error.h",
+            "event_tracer.h",
             "freeable_buffer.h",
             "function_ref.h",
             "result.h",
@@ -22,6 +32,7 @@ def define_common_targets():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
+        exported_preprocessor_flags = get_event_tracer_flags(),
         exported_deps = [
             "//executorch/runtime/platform:platform",
         ],
