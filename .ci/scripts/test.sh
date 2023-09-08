@@ -36,6 +36,17 @@ which "${PYTHON_EXECUTABLE}"
 # Just set this variable here, it's cheap even if we use buck2
 CMAKE_OUTPUT_DIR=cmake-out
 
+build_cmake_executor_runner() {
+  echo "Building executor_runner"
+  (rm -rf ${CMAKE_OUTPUT_DIR} \
+    && mkdir ${CMAKE_OUTPUT_DIR} \
+    && cd ${CMAKE_OUTPUT_DIR} \
+    && retry cmake -DBUCK2=buck2 \
+      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+
+  cmake --build ${CMAKE_OUTPUT_DIR} -j4
+}
+
 test_model() {
   "${PYTHON_EXECUTABLE}" -m examples.export.export_example --model_name="${MODEL_NAME}"
 
@@ -43,11 +54,31 @@ test_model() {
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
     buck2 run //examples/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
+    if [[ ! -f ${CMAKE_OUTPUT_DIR}/executor_runner ]]; then
+      build_cmake_executor_runner
+    fi
     ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./${MODEL_NAME}.pte"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
     exit 1
   fi
+}
+
+build_cmake_xnn_executor_runner() {
+  echo "Building xnn_executor_runner"
+  SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
+  CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
+
+  (rm -rf ${CMAKE_OUTPUT_DIR} \
+    && mkdir ${CMAKE_OUTPUT_DIR} \
+    && cd ${CMAKE_OUTPUT_DIR} \
+    && retry cmake -DBUCK2=buck2 \
+      -DEXECUTORCH_BUILD_XNNPACK=ON \
+      -DREGISTER_QUANTIZED_OPS=ON \
+      -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+
+  cmake --build ${CMAKE_OUTPUT_DIR} -j4
 }
 
 test_model_with_xnnpack() {
@@ -65,6 +96,9 @@ test_model_with_xnnpack() {
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
     buck2 run //examples/backend:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
+    if [[ ! -f ${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner ]]; then
+      build_cmake_xnn_executor_runner
+    fi
     ./${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner --model_path "${OUTPUT_MODEL_PATH}"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
