@@ -25,3 +25,6 @@ dependencies=[
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc"]
+
+[tool.usort]
+first_party_detection = false
