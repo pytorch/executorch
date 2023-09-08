@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -46,11 +47,15 @@ using InstructionArgs = Span<EValue*>;
  */
 class Method final {
  public:
-  Method(const Program* program, MemoryManager* memory_manager)
+  Method(
+      const Program* program,
+      MemoryManager* memory_manager,
+      EventTracer* event_tracer)
       : step_state_(),
         program_(program),
         memory_manager_(memory_manager),
         serialization_plan_(nullptr),
+        event_tracer_(event_tracer),
         n_value_(0),
         values_(nullptr),
         n_delegate_(0),
@@ -69,6 +74,7 @@ class Method final {
         program_(rhs.program_),
         memory_manager_(rhs.memory_manager_),
         serialization_plan_(rhs.serialization_plan_),
+        event_tracer_(rhs.event_tracer_),
         n_value_(rhs.n_value_),
         values_(rhs.values_),
         n_delegate_(rhs.n_delegate_),
@@ -94,6 +100,7 @@ class Method final {
     rhs.n_chains_ = 0;
     rhs.chains_ = nullptr;
     rhs.pre_allocated_input_ = false;
+    rhs.event_tracer_ = nullptr;
   }
 
   /**
@@ -228,7 +235,8 @@ class Method final {
   __ET_NODISCARD static Result<Method> load(
       executorch_flatbuffer::ExecutionPlan* s_plan,
       const Program* program,
-      MemoryManager* memory_manager);
+      MemoryManager* memory_manager,
+      EventTracer* event_tracer);
 
   /// Returns true if the Method was successfully initialized.
   inline bool initialized() const {
@@ -242,6 +250,7 @@ class Method final {
   const Program* program_;
   MemoryManager* memory_manager_;
   executorch_flatbuffer::ExecutionPlan* serialization_plan_;
+  EventTracer* event_tracer_;
 
   size_t n_value_;
   EValue* values_;
