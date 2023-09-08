@@ -5,12 +5,17 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.backends.xnnpack.utils.utils import check_or_raise
+from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack.utils.utils import (
+    check_or_raise,
+    get_param_tensor,
+    is_param_node,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import PassResult
 
 
-class PReLUReshapePass(ExportPass):
+class PReLUReshapePass(XNNPACKPass):
     """
     This pass is used to modify the args of a PReLU node to make it compatible
     with running via XNNPACK delegate. If there is only one parameter in the
@@ -28,13 +33,15 @@ class PReLUReshapePass(ExportPass):
                     weight_node = node.args[1]
 
                     check_or_raise(
-                        weight_node.op == "get_attr",
+                        is_param_node(self.exported_program, weight_node),
                         "Only constant weight PReLU is supported by XNNPACK",
                     )
 
-                    weight_data = getattr(
-                        weight_node.graph.owning_module, weight_node.target
-                    ).data.contiguous()
+                    weight_data = get_param_tensor(self.exported_program, weight_node)
+                    if weight_data is None:
+                        raise AssertionError("Expected weight tensor to be not None")
+
+                    weight_data = weight_data.data.contiguous()
 
                     check_or_raise(
                         weight_data.dim() == 4,
