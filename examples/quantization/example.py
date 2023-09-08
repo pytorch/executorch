@@ -7,6 +7,7 @@
 import argparse
 import copy
 import logging
+import time
 
 import torch
 import torch._export as export
@@ -139,20 +140,37 @@ if __name__ == "__main__":
             f"Available models are {list(MODEL_NAME_TO_OPTIONS.keys())}."
         )
 
+    start = time.perf_counter()
     model, example_inputs = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
-
+    end = time.perf_counter()
+    # logging.info(f"Model init time: {end - start}s")
     if args.verify:
+        start = time.perf_counter()
         verify_xnnpack_quantizer_matching_fx_quant_model(
             args.model_name, model, example_inputs
         )
+        end = time.perf_counter()
+        # logging.info(f"Verify time: {end - start}s")
 
+    start = time.perf_counter()
     quantized_model = quantize(model, example_inputs)
-    prog = export_to_exec_prog(
-        quantized_model,
-        copy.deepcopy(example_inputs),
-        edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
-    )
-    save_pte_program(prog.buffer, f"{args.model_name}_quantized")
+    end = time.perf_counter()
+    # logging.info(f"Quantize time: {end - start}s")
+
+    # TODO[T163161310]: takes a long time to export to exec prog and save inception_v4 quantized model
+    if args.model_name != "ic4":
+        start = time.perf_counter()
+        prog = export_to_exec_prog(
+            quantized_model,
+            copy.deepcopy(example_inputs),
+            edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        end = time.perf_counter()
+        # logging.info(f"export_to_exec_prog time: {end - start}s")
+        start = time.perf_counter()
+        save_pte_program(prog.buffer, f"{args.model_name}_quantized")
+        end = time.perf_counter()
+        # logging.info(f"save_pte_program time: {end - start}s")
     logging.info("finished")
