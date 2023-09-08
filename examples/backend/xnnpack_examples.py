@@ -85,12 +85,10 @@ if __name__ == "__main__":
         # TODO(T161849167): Partitioner will eventually be a single partitioner for both fp32 and quantized models
         partitioner = XnnpackQuantizedPartitioner
 
-    # TODO(T161852812): Delegate implementation is currently on an unlifted graph.
-    # It will eventually be changed to a lifted graph, in which _unlift=False,
     edge = export_to_edge(
         model,
         example_inputs,
-        capture_config=CaptureConfig(enable_aot=True, _unlift=True),
+        capture_config=CaptureConfig(enable_aot=True),
         edge_compile_config=EdgeCompileConfig(
             # TODO(T162080278): Duplicated Dequant nodes will be in quantizer spec
             _check_ir_validity=False if args.quantize else True,

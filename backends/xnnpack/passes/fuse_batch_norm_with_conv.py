@@ -7,27 +7,17 @@
 import operator
 
 import torch
+
+from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
+
+from executorch.backends.xnnpack.utils.utils import get_param_tensor, is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import PassResult
 
 from torch.nn.utils.fusion import fuse_conv_bn_weights
 
 
-def get_tensor_from_attr(
-    graph_module: torch.fx.GraphModule, node: torch.fx.Node
-) -> torch.Tensor:
-    """
-    For an input node that is a named buffer or parameter, return
-    the underlying tensor.
-    """
-    if node is None:
-        # pyre-fixme[7]: Expected `Tensor` but got `None`.
-        return None
-    assert node.op == "get_attr"
-    return getattr(graph_module, node.target)
-
-
-class FuseBatchNormWithConvPass(ExportPass):
+class FuseBatchNormWithConvPass(XNNPACKPass):
     """
     Batch Norm can be implemented using 1x1 Depthwise Convolution. However doing so will increase
     memory usage since we serialize new weights to represent the convolution. In most cases,
@@ -68,15 +58,16 @@ class FuseBatchNormWithConvPass(ExportPass):
                 continue
 
             # Check that the weights for conv and batchnorm are both params
-            if [node.op == "get_attr" for node in {conv.args[1], bn.args[1]}].count(
-                False
-            ):
+            if [
+                is_param_node(self.exported_program, node)
+                for node in {conv.args[1], bn.args[1]}
+            ].count(False):
                 continue
 
             # Get the parameters from conv op
             assert len(conv.args) == 9
-            conv_weight = get_tensor_from_attr(graph_module, conv.args[1])
-            conv_bias = get_tensor_from_attr(graph_module, conv.args[2])
+            conv_weight = get_param_tensor(self.exported_program, conv.args[1])
+            conv_bias = get_param_tensor(self.exported_program, conv.args[2])
 
             # Get the parameters from the batchnorm op
             assert (
@@ -87,10 +78,10 @@ class FuseBatchNormWithConvPass(ExportPass):
                 == exir_ops.edge.aten._native_batch_norm_legit_no_training.default
                 and len(bn.args) == 7
             )
-            bn_weight = get_tensor_from_attr(graph_module, bn.args[1])
-            bn_bias = get_tensor_from_attr(graph_module, bn.args[2])
-            running_mean = get_tensor_from_attr(graph_module, bn.args[3])
-            running_var = get_tensor_from_attr(graph_module, bn.args[4])
+            bn_weight = get_param_tensor(self.exported_program, bn.args[1])
+            bn_bias = get_param_tensor(self.exported_program, bn.args[2])
+            running_mean = get_param_tensor(self.exported_program, bn.args[3])
+            running_var = get_param_tensor(self.exported_program, bn.args[4])
 
             # args[7] for native_batch_norm, but args[6] for
             # _native_batch_norm_legit_no_training (which doesn't have training

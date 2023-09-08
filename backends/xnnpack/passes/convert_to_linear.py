@@ -10,8 +10,8 @@ from typing import List
 import torch
 
 from executorch.backends.transforms import get_shape
+from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass
 
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.fx.passes.utils.source_matcher_utils import (
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
 
-class ConvertToLinearPass(ExportPass):
+class ConvertToLinearPass(XNNPACKPass):
     linear_modules = [
         torch.nn.Linear,
         torch.nn.functional.linear,
@@ -41,7 +41,7 @@ class ConvertToLinearPass(ExportPass):
         kind: str = "args",
         index: int = 0,
     ):
-        if not node or node in args:
+        if not node or node in args or node.op == "placeholder":
             return node
         if kind == "args":
             other = node.args[index]
@@ -108,6 +108,7 @@ class ConvertToLinearPass(ExportPass):
         node: torch.fx.Node,
         src_partition: SourcePartition,
     ):
+        logger.debug(f"Source Partition: {src_partition}")
         linear_input = self.find(
             self.get_arg(node, "input"),
             src_partition.input_nodes,
@@ -134,7 +135,7 @@ class ConvertToLinearPass(ExportPass):
         outputs = [
             node
             for node in src_partition.output_nodes
-            if node.target != torch.ops.aten.sym_size.int
+            if node.target != torch.ops.aten.sym_size.int and node.op != "placeholder"
         ]
         assert (
             len(outputs) == 1
@@ -179,7 +180,7 @@ class ConvertToLinearPass(ExportPass):
             logger.debug(
                 "Did not find any [add]mm target in source partitions, skipping the pass."
             )
-            return graph_module
+            return PassResult(graph_module, False)
 
         logger.debug("Converting [add]mm into Linear")
 

@@ -15,7 +15,7 @@ import torch
 from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.node_visitor import get_node_visitors
 
-from executorch.backends.xnnpack.passes import xnnpack_delegation_passes
+from executorch.backends.xnnpack.passes import XNNPACKPassManager
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     Buffer,
@@ -30,6 +30,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
 from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
     convert_to_flatbuffer,
 )
+from executorch.backends.xnnpack.utils.utils import is_param_node
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -153,6 +154,7 @@ def node_to_per_channel_quantized_xvalue(
 
 
 def generate_node_to_external_map(
+    exported_program: ExportedProgram,
     edge_graph_module: torch.fx.GraphModule,
 ) -> Dict[torch.fx.Node, ExternalMeta]:
     node_to_external_map = {}
@@ -160,7 +162,10 @@ def generate_node_to_external_map(
         # The order in which we visit the placeholder node is same as the *args
         # order for the forward(*args) signature for this gm. Using the order of
         # the nodes as external_id to extract the right arg from *args at runtime
-        if node.op == "placeholder":
+        #
+        # Removing parameters/buffers since they will disappear from the signature
+        # at runtime
+        if node.op == "placeholder" and not is_param_node(exported_program, node):
             node_to_external_map[node] = ExternalMeta(
                 external_id=len(node_to_external_map),
                 io_type=XNN_VALUE_FLAG_EXTERNAL_INPUT,
@@ -183,14 +188,16 @@ class XnnpackBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
-        edge_ir_copy = copy.deepcopy(edge_program.graph_module)
+        ep = copy.deepcopy(edge_program)
 
         # XNNPACK Delegate Specific Passes
-        pass_result = xnnpack_delegation_passes(edge_ir_copy)
-        assert pass_result is not None
-        graph_module = pass_result.graph_module
+        ep = XNNPACKPassManager(ep).transform()
+        graph_module = ep.graph_module
 
-        node_to_external_map = generate_node_to_external_map(graph_module)
+        node_to_external_map = generate_node_to_external_map(ep, graph_module)
+
+        # TODO retrace the graph module to lift the new params may have
+        # been added to the graph in passes
 
         vals_to_ids = {}
         xnnpack_graph = XNNGraph(
@@ -204,7 +211,7 @@ class XnnpackBackend(BackendDetails):
             mem_buffer_sizes=[0],
         )
 
-        node_visitors = get_node_visitors(node_to_external_map)
+        node_visitors = get_node_visitors(ep, node_to_external_map)
 
         for node in graph_module.graph.nodes:
             if node.op == "call_function":

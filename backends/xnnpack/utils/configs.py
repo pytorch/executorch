@@ -32,12 +32,15 @@ def get_xnnpack_executorch_backend_config(
     )
 
 
-def get_xnnpack_capture_config(dynamic_shape=False, enable_aot: Optional[bool] = None):
+def get_xnnpack_capture_config(
+    dynamic_shape=False,
+    enable_aot: Optional[bool] = None,
+    unlift: Optional[bool] = None,
+):
     if enable_aot is None:
         return CaptureConfig(enable_dynamic_shape=dynamic_shape)
     else:
+        unlift = unlift if unlift is not None else enable_aot
         return CaptureConfig(
-            enable_dynamic_shape=dynamic_shape,
-            enable_aot=enable_aot,
-            _unlift=enable_aot,
+            enable_dynamic_shape=dynamic_shape, enable_aot=enable_aot, _unlift=unlift
         )
