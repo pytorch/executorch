@@ -861,7 +861,7 @@ class _Emitter(torch.fx.Interpreter):
             self.node.meta["spec"],
         )
 
-        if target is control_flow.cond:
+        if target is torch.ops.higher_order.cond:
             return self._emit_cond(args, subemitter_binding_output_values)
         elif target is torch.ops.map_impl:
             return self._emit_map(args, subemitter_binding_output_values)
@@ -1212,7 +1212,7 @@ class _Emitter(torch.fx.Interpreter):
             # pyre-ignore
             return self._emit_free(args[0])
 
-        elif target is control_flow.cond:
+        elif target is torch.ops.higher_order.cond:
             return self._emit_control_flow(target, args, kwargs)
 
         elif target is torch.ops.map_impl:
