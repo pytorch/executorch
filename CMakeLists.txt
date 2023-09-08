@@ -59,7 +59,8 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 # `examples/custom_ops/custom_ops_2.cpp`.
 option(
   REGISTER_EXAMPLE_CUSTOM_OP
-  "Register whether custom op 1 (my_ops::mul3) or custom op 2 (my_ops::mul4) or no custom op at all."
+  "Register whether custom op 1 (my_ops::mul3) or custom op 2 (my_ops::mul4) \
+  or no custom op at all."
   OFF)
 
 # Option to register quantized ops with quantized kernels. See
