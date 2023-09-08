@@ -17,13 +17,15 @@ pip install .
 # models in executorch/examples/models.
 # The version in this file will be the correct version for the
 # corresponsing version of the repo.
-TORCH_VERSION=2.1.0.dev20230831
+NIGHTLY_VERSION=dev20230907
+
+TORCH_VERSION=2.2.0.${NIGHTLY_VERSION}
 pip install --force-reinstall --pre torch=="${TORCH_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
 
-TORCH_VISION_VERSION=0.16.0.dev20230831
+TORCH_VISION_VERSION=0.17.0.${NIGHTLY_VERSION}
 pip install --force-reinstall --pre torchvision=="${TORCH_VISION_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
 
-TORCH_AUDIO_VERSION=2.2.0.dev20230831
+TORCH_AUDIO_VERSION=2.2.0.${NIGHTLY_VERSION}
 pip install --force-reinstall --pre torchaudio=="${TORCH_AUDIO_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
 
 TIMM_VERSION=0.6.13
