@@ -37,7 +37,9 @@ function(kernel_link_options target_name)
   target_link_options(
     ${target_name}
     INTERFACE
-    "SHELL:LINKER:--whole-archive $<TARGET_FILE:${target_name}> LINKER:--no-whole-archive"
+    "SHELL:LINKER:--whole-archive \
+    $<TARGET_FILE:${target_name}> \
+    LINKER:--no-whole-archive"
   )
 endfunction()
 

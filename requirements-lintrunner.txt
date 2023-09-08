@@ -13,3 +13,5 @@ ufmt==2.0.1
 usort==1.0.5
 
 clang-format==12.0.1
+
+cmakelint==1.4.1
