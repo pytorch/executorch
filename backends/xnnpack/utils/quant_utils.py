@@ -133,6 +133,7 @@ class QuantParams:
         if per_channel:
             assert isinstance(scale, torch.fx.Node) and isinstance(scale.target, str)
             assert isinstance(zp, torch.fx.Node) and isinstance(zp.target, str)
+            # TODO: use get_param_tensor()
             scale = getattr(quant_node.graph.owning_module, scale.target)
             zp = getattr(quant_node.graph.owning_module, zp.target)
             axis = cast(int, quant_node.args[3])
@@ -189,8 +190,8 @@ class QuantParams:
         # replace this with pointing to the actual weight value.
         # if no one else uses this weight value then take it out of the toplevel module
         check_or_raise(
-            q.all_input_nodes[0].op == "get_attr",
-            "q->dq->permute_copy not derived from static weight",
+            q.all_input_nodes[0].op in ["get_attr", "placeholder"],
+            f"q->dq->permute_copy not derived from static weight, input to the q node: {q.all_input_nodes[0]}",
         )
 
         return cls.from_q_dq_node(q)

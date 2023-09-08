@@ -373,7 +373,6 @@ class TestXNNPACKQuantized(TestXNNPACK):
         width = 8
         height = 8
         batches = 1
-        example_inputs = (torch.randn(batches, in_channels, height, width),)
 
         class ModelConvReLU(torch.nn.Module):
             def __init__(self):
@@ -396,7 +395,7 @@ class TestXNNPACKQuantized(TestXNNPACK):
                 return y
 
         model = ModelConvReLU().eval()
-        example_inputs = (torch.randn(batches, in_channels, height, width),)
+        example_inputs = (torch.randn(batches, in_channels, height, width) * 11,)
         self.quantize_and_test_model(model, example_inputs)
 
     def test_xnnpack_qconv_relu_sequence(self):
