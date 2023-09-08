@@ -20,8 +20,11 @@
 namespace torch {
 namespace executor {
 
-Executor::Executor(const Program* program, MemoryManager* memory_manager)
-    : program_(program), plan_(program, memory_manager) {}
+Executor::Executor(
+    const Program* program,
+    MemoryManager* memory_manager,
+    EventTracer* event_tracer)
+    : program_(program), plan_(program, memory_manager, event_tracer) {}
 
 Error Executor::init_execution_plan(size_t index) {
   EXECUTORCH_SCOPE_PROF("ExecPlan::init_execution_plan");

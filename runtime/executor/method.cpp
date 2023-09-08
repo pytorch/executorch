@@ -487,8 +487,9 @@ Error Method::resolve_operator(
 Result<Method> Method::load(
     executorch_flatbuffer::ExecutionPlan* s_plan,
     const Program* program,
-    MemoryManager* memory_manager) {
-  Method method(program, memory_manager);
+    MemoryManager* memory_manager,
+    EventTracer* event_tracer) {
+  Method method(program, memory_manager, event_tracer);
   Error err = method.init(s_plan);
   if (err != Error::Ok) {
     return err;
