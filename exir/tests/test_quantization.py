@@ -9,6 +9,7 @@
 import unittest
 
 import torch
+import torch._export as export
 import torchvision
 from executorch import exir
 from executorch.exir import EdgeCompileConfig
@@ -16,8 +17,14 @@ from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from torch.ao.ns.fx.utils import compute_sqnr
 from torch.ao.quantization import get_default_qconfig, QConfigMapping  # @manual
+from torch.ao.quantization.backend_config import get_executorch_backend_config
+from torch.ao.quantization.qconfig import default_per_channel_symmetric_qnnpack_qconfig
 from torch.ao.quantization.quantize_fx import convert_to_reference_fx, prepare_fx
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantize_pt2e import (
+    _convert_to_reference_decomposed_fx,
+    convert_pt2e,
+    prepare_pt2e,
+)
 
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
@@ -37,7 +44,6 @@ class TestQuantization(unittest.TestCase):
     APIs for now, but we plan to open source them in the future
     """
 
-    @skipIfNoQNNPACK
     def test_resnet(self) -> None:
         import copy
 
@@ -47,13 +53,7 @@ class TestQuantization(unittest.TestCase):
             m = torchvision.models.resnet18().eval()  # pyre-ignore[16]
             m_copy = copy.deepcopy(m)
             # program capture
-            exported_program = exir.capture(m, example_inputs)
-            # TODO: probably need to support exported_program.to_aten()
-            m = exported_program.to_edge(
-                exir.EdgeCompileConfig(
-                    _check_ir_validity=False,
-                ),
-            ).graph_module
+            m = export.capture_pre_autograd_graph(m, copy.deepcopy(example_inputs))
 
             quantizer = XNNPACKQuantizer()
             operator_config = get_symmetric_quantization_config(is_per_channel=True)
@@ -64,7 +64,7 @@ class TestQuantization(unittest.TestCase):
             )
             after_prepare_result = m(*example_inputs)[0]
             m = convert_pt2e(m)
-            after_quant_result = m(*example_inputs)[0]
+
             # TODO: conv, conv_relu, linear delegation
             # quantized ops to implement: add_relu
             compile_config = EdgeCompileConfig(
@@ -72,14 +72,13 @@ class TestQuantization(unittest.TestCase):
                 _check_ir_validity=False,
             )
             m = exir.capture(m, example_inputs).to_edge(config=compile_config)
+            after_quant_result = m(*example_inputs)[0]
             FileCheck().check(
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor"
             ).check(
-                "executorch_exir_dialects_edge__ops_quantized_decomposed_add_relu_default"
-            ).check(
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor"
             ).run(
-                m.code
+                m.exported_program.graph_module.code
             )
             # after_quant_fusion_result = m(*example_inputs)[0]
 
@@ -92,11 +91,16 @@ class TestQuantization(unittest.TestCase):
             # self.assertEqual(compute_sqnr(after_quant_fusion_result, after_to_executorch), torch.tensor(float("inf")))
 
             # comparing with existing fx graph mode quantization reference flow
-            qconfig = get_default_qconfig("qnnpack")
+            qconfig = default_per_channel_symmetric_qnnpack_qconfig
             qconfig_mapping = QConfigMapping().set_global(qconfig)
-            m_fx = prepare_fx(m_copy, qconfig_mapping, example_inputs)
+            backend_config = get_executorch_backend_config()
+            m_fx = prepare_fx(
+                m_copy, qconfig_mapping, example_inputs, backend_config=backend_config
+            )
             after_prepare_result_fx = m_fx(*example_inputs)
-            m_fx = convert_to_reference_fx(m_fx)  # , backend_config=backend_config)
+            m_fx = _convert_to_reference_decomposed_fx(
+                m_fx, backend_config=backend_config
+            )
             after_quant_result_fx = m_fx(*example_inputs)
 
             # the result matches exactly after prepare
