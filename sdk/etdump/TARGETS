@@ -16,6 +16,16 @@ python_library(
 )
 
 python_library(
+    name = "schema_flatcc",
+    srcs = [
+        "schema_flatcc.py",
+    ],
+    deps = [
+        "//executorch/exir:scalar_type",
+    ],
+)
+
+python_library(
     name = "serialize",
     srcs = [
         "serialize.py",
@@ -23,10 +33,12 @@ python_library(
     resources = {
         "//executorch/schema:scalar_type.fbs": "scalar_type.fbs",
         "//executorch/sdk/etdump:etdump_schema.fbs": "etdump_schema.fbs",
+        "//executorch/sdk/etdump:etdump_schema_flatcc.fbs": "etdump_schema_flatcc.fbs",
     },
     deps = [
         "fbsource//third-party/pypi/setuptools:setuptools",
         ":schema",
+        ":schema_flatcc",
         "//executorch/exir/_serialize:_bindings",
         "//executorch/exir/_serialize:lib",
     ],

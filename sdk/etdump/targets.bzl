@@ -131,6 +131,11 @@ def define_common_targets():
         ],
     )
 
+    export_file(
+        name = ETDUMP_SCHEMA_FLATCC,
+        visibility = ["//executorch/..."],
+    )
+
     generate_schema_header_flatcc(
         ETDUMP_GEN_RULE_NAME_FLATCC,
         [ETDUMP_SCHEMA_FLATCC, SCALAR_TYPE],
