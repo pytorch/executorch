@@ -199,8 +199,6 @@ class TestXNNPACKQuantized(TestXNNPACK):
 
         self.quantize_and_test_model(LeakyReLUModule(), example_inputs)
 
-    # TODO(T158652796)
-    @unittest.expectedFailure
     def test_xnnpack_leaky_relu2(self):
         example_inputs = (torch.randn(1, 3, 3),)
 
