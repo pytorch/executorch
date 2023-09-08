@@ -632,6 +632,17 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     }
   }
 
+  pre_allocated_output_ = false;
+
+  // Get pre_allocation info for output tensors
+  for (int i = 0; i < outputs_size(); i++) {
+    if (get_output(i).isTensor()) {
+      pre_allocated_output_ =
+          get_output(i).toTensor().const_data_ptr() != nullptr;
+      break;
+    }
+  }
+
   ET_CHECK_OR_RETURN_ERROR(
       n_chains_ > 0,
       Internal,
@@ -797,6 +808,51 @@ Method::set_inputs(const exec_aten::ArrayRef<EValue>& input_evalues) {
     }
   }
   return Error::Ok;
+}
+
+__ET_NODISCARD Error
+Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
+  // Check method state
+  ET_CHECK_OR_RETURN_ERROR(
+      initialized(),
+      InvalidState,
+      "Outputs can not be retrieved until method has been initialized.");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      !pre_allocated_output_,
+      InvalidState,
+      "Overriding output data pointer allocated by memory plan is not allowed.");
+
+  // Check the args
+  ET_CHECK_OR_RETURN_ERROR(
+      output_idx <= outputs_size(),
+      InvalidArgument,
+      "output_idx: %zu num_outputs: %zu",
+      output_idx,
+      outputs_size());
+
+  auto& output = mutable_output(output_idx);
+  ET_CHECK_OR_RETURN_ERROR(
+      output.isTensor(),
+      InvalidArgument,
+      "output type: %zu is not tensor",
+      (size_t)output.tag);
+
+  auto& t = output.toTensor();
+  ET_CHECK_OR_RETURN_ERROR(
+      output.isTensor(),
+      InvalidArgument,
+      "output type: %zu is not tensor",
+      (size_t)output.tag);
+  ET_CHECK_OR_RETURN_ERROR(
+      t.nbytes() <= size,
+      InvalidArgument,
+      "buffer size: %zu is smaller then expected tensor size: %zu",
+      size,
+      t.nbytes());
+
+  // Set data
+  return internal::set_tensor_data(t, buffer, size);
 }
 
 __ET_NODISCARD Error
