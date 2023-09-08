@@ -9,6 +9,10 @@ from typing import Iterator, Union
 
 import torch
 from executorch import exir
+from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.test.backend_with_delegate_mapping_demo import (
+    BackendWithDelegateMappingDemo,
+)
 
 from executorch.exir.backend.utils import DelegateMappingBuilder
 
@@ -105,6 +109,24 @@ class TestDelegateMapBuilder(unittest.TestCase):
             Exception,
             lambda: delegate_builder.insert_delegate_mapping_entry(self.nodes[0], "1"),
         )
+
+    def test_backend_with_delegate_mapping(self) -> None:
+        model, inputs = BackendWithDelegateMappingDemo.get_test_model_and_inputs()
+        edgeir_m = exir.capture(model, inputs, exir.CaptureConfig()).to_edge(
+            exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
+        lowered_module = to_backend(
+            "BackendWithDelegateMappingDemo", edgeir_m.exported_program, []
+        )
+        debug_handle_map = lowered_module.meta.get("debug_handle_map")
+        self.assertIsNotNone(debug_handle_map)
+        # There should be 3 backend ops in this model.
+        self.assertEqual(len(debug_handle_map), 4)
+        # Check to see that all the delegate debug indexes in the range [0,2] are present.
+        self.assertTrue(
+            all(element in debug_handle_map.keys() for element in [0, 1, 2, 3])
+        )
+        lowered_module.program()
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
