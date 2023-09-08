@@ -8,22 +8,22 @@ exclude_patterns = [
     '**/third-party/**',
 ]
 command = [
-    'python3',
-    'third-party/pytorch/tools/linter/adapters/flake8_linter.py',
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'flake8_linter',
     '--',
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python3',
-    'third-party/pytorch/tools/linter/adapters/pip_init.py',
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
     '--dry-run={{DRYRUN}}',
-    'flake8==6.0.0',
-    'flake8-breakpoint==1.1.0',
-    'flake8-bugbear==23.6.5',
-    'flake8-comprehensions==3.12.0',
-    'flake8-pyi==23.5.0',
-    'mccabe==0.7.0',
-    'pycodestyle==2.10.0',
+    '--requirement=requirements-lintrunner.txt',
 ]
 
 # Black + usort
@@ -38,18 +38,22 @@ exclude_patterns = [
     '**/third-party/**',
 ]
 command = [
-    'python3',
-    'third-party/pytorch/tools/linter/adapters/ufmt_linter.py',
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'ufmt_linter',
     '--',
     '@{{PATHSFILE}}'
 ]
 init_command = [
-    'python3',
-    'third-party/pytorch/tools/linter/adapters/pip_init.py',
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'pip_init',
     '--dry-run={{DRYRUN}}',
     '--no-black-binary',
-    'black==22.12.0',
-    'ufmt==2.0.1',
-    'usort==1.0.5',
+    '--requirement=requirements-lintrunner.txt',
 ]
 is_formatter = true
