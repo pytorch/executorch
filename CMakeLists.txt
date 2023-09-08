@@ -81,6 +81,10 @@ if(BUILD_SELECTIVE_BUILD_TEST)
   option(SELECT_OPS_YAML "Register all the ops from a given yaml file" OFF)
 endif()
 
+# Build xnn_executor_runner which depends on XNNPACK
+option(EXECUTORCH_BUILD_XNNPACK
+       "Build xnn_executor_runner which depends on XNNPACK" OFF)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -152,7 +156,8 @@ target_link_libraries(executorch PRIVATE dl) # For dladdr()
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_options(executorch PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
-  target_compile_definitions(executorch PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM})
+  target_compile_definitions(executorch
+                             PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM})
 endif()
 
 #
@@ -187,7 +192,10 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+# Add XNNPACK subdirectory
+if(EXECUTORCH_BUILD_XNNPACK)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+endif()
 
 # Add selective build subdirectory
 if(BUILD_SELECTIVE_BUILD_TEST)
