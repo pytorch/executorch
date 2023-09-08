@@ -15,7 +15,7 @@
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
-#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/kernel/operator_registry.h>
@@ -27,10 +27,10 @@
 using namespace ::testing;
 using torch::executor::Error;
 using torch::executor::EValue;
-using torch::executor::Executor;
 using torch::executor::Kernel;
 using torch::executor::KernelKey;
 using torch::executor::KernelRuntimeContext;
+using torch::executor::Method;
 using torch::executor::Program;
 using torch::executor::register_kernels;
 using torch::executor::Result;
@@ -81,11 +81,8 @@ TEST_F(KernelResolutionTest, InitExecutionPlanSuccess) {
   EXPECT_EQ(s1, torch::executor::Error::Ok);
 
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Executor executor(program_.get(), &mmm.get());
-
-  // Should initialize successfully.
-  auto err = executor.init_execution_plan("forward");
-  ASSERT_EQ(err, Error::Ok);
+  auto method = program_->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
 }
 
 /**
@@ -117,9 +114,6 @@ TEST_F(KernelResolutionTest, ResolveKernelKeySuccess) {
   EXPECT_EQ(s1, torch::executor::Error::Ok);
 
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Executor executor(program_.get(), &mmm.get());
-
-  // Should initialize successfully.
-  auto err = executor.init_execution_plan("forward");
-  ASSERT_EQ(err, Error::Ok);
+  auto method = program_->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
 }
