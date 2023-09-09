@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import dataclasses
-import logging
 from typing import Any, Dict, List, Optional, Set, Union
 
 import pkg_resources
@@ -13,15 +11,12 @@ import pkg_resources
 import torch
 
 from executorch.exir.dialects.edge.dtype.supported import regular_tensor_str_to_dtypes
-from executorch.exir.dialects.edge.spec.utils import (
-    get_tensor_variable_names,
-    get_torch_op_overload,
-)
-from executorch.exir.operator.convert import _pybind_schema_to_native_schema
+from executorch.exir.dialects.edge.op.api import to_variant
+from executorch.exir.dialects.edge.spec.utils import get_tensor_variable_names
 
 # pyre-ignore
 from ruamel.yaml import YAML
-from torchgen.model import FunctionSchema
+from torchgen.model import SchemaKind
 
 
 class AllowedDtypeSet:
@@ -324,53 +319,9 @@ class EdgeOpOverload:
         # return if already found
         if "_out_variant" in self.__dict__ and self._out_variant:
             return self._out_variant
-        # first check if the current operator is an out-variant
-        native_schema: Optional[FunctionSchema] = _pybind_schema_to_native_schema(
-            self._schema.schema
-        )
-        assert (
-            native_schema is not None
-        ), f"Schema: {self._schema} cannot be converted to torch.FunctionSchema"
-        if native_schema.is_out_fn():
-            out = get_torch_op_overload(
-                self.namespace,
-                self._schema.name.split("::")[1],
-                self._schema.overload_name,
-            )
-            self._out_variant = out
-            return out
-        # get all overloads
-        torch_packet = getattr(
-            getattr(torch.ops, self.namespace), self._schema.name.split("::")[1]
-        )
-        schemas: List[torch._C.FunctionSchema] = [
-            getattr(torch_packet, o)._schema
-            for o in torch._C._jit_get_operation(self._schema.name)[1]
-        ]
-        # compare the signature of out variant overload with the signature of the original overload
-        signature = dataclasses.replace(native_schema.signature(), returns=())
-        for schema in schemas:
-            # ignore self
-            if str(schema) == str(self._schema):
-                continue
-            native_s: Optional[FunctionSchema] = _pybind_schema_to_native_schema(schema)
-            if native_s is None:
-                logging.warning(
-                    f"Schema: {schema} cannot be converted to torch.FunctionSchema"
-                )
-                continue
-            if (
-                native_s.is_out_fn()
-                and dataclasses.replace(native_s.signature(), returns=()) == signature
-            ):
-                out = get_torch_op_overload(
-                    self.namespace, schema.name.split("::")[1], schema.overload_name
-                )
-                self._out_variant = out
-                return out
-        raise RuntimeError(
-            f"Out variant of operator {self.name()} can't be found. We've found the schemas of all the overloads: {[str(s) for s in schemas]}"
-        )
+        out_variant = to_variant(self._op, SchemaKind.out)
+        self._out_variant = out_variant
+        return out_variant
 
     def __getattr__(self, name):
         if name == "_schema":

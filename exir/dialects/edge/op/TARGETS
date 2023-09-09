@@ -1,4 +1,5 @@
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("ai_infra_mobile_platform")
 
@@ -9,5 +10,19 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
+        "//caffe2/torchgen:torchgen",
+        "//executorch/exir/operator:convert",
+    ],
+)
+
+python_unittest(
+    name = "test_api",
+    srcs = [
+        "test/test_api.py",
+    ],
+    deps = [
+        ":lib",
+        "//caffe2:torch",
+        "//caffe2/torchgen:torchgen",
     ],
 )
