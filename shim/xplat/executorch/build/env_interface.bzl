@@ -30,6 +30,7 @@ _EXTERNAL_DEPS = {
     # Commandline flags library
     "gflags": "//third-party:gflags",
     "gmock": [],  # TODO(larryliu0820): Add support
+    "gtest": "//third-party:gtest",
     "libtorch": "//third-party:libtorch",
     "prettytable": "//third-party:prettytable",
     "pybind11": [],  # TODO(larryliu0820): Add support

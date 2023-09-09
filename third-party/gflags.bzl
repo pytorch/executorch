@@ -1,4 +1,4 @@
-# Cpoy from third-party/gflags/BUCK
+# Copied from third-party/gflags/BUCK
 load(":gflags_defs.bzl", "gflags_library", "gflags_sources")
 
 def define_gflags():
