@@ -140,7 +140,10 @@ class ExecutorBackend final : public PyTorchBackendInterface {
     return client_method;
   }
 
-  Error execute(DelegateHandle* handle, EValue** args) const override {
+  Error execute(
+      __ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override {
     Method* client_method = static_cast<Method*>(handle);
     auto num_inputs = client_method->inputs_size();
     Error status = Error::Ok;
