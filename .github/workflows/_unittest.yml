@@ -31,4 +31,5 @@ jobs:
         set -eux
         export PATH="/opt/conda/envs/py_${{ inputs.python-version }}/bin:${PATH}"
 
+        bash install_requirements.sh
         pytest --cov=./ --cov-report=xml
