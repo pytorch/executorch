@@ -7,9 +7,13 @@ timm==0.6.13
 tomli==2.0.1
 transformers==4.31.0
 zstd==1.5.5.1
+pytest==7.2.0
+pytest-cov==4.1.0
+expecttest==0.1.6
+hypothesis==6.84.2
+parameterized==0.9.0
 
 # Doc build requirements
-
 sphinx==5.0.0
 sphinx-gallery
 matplotlib
