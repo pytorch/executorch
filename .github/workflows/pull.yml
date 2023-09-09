@@ -189,3 +189,9 @@ jobs:
         # Build and test selective build
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
         popd
+
+  unittest:
+    uses: ./.github/workflows/_unittest.yml
+    with:
+      docker-image: executorch-ubuntu-22.04-clang12
+      runner: linux.2xlarge
