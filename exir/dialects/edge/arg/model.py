@@ -359,6 +359,8 @@ class Return(BaseKwarg):
             fill=self.fill,
             size=self.size,
             dtype=self.dtype,
+            value=self.value,
+            deps=self.deps,
         )
 
 
