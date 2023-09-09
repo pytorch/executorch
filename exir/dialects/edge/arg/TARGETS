@@ -5,6 +5,7 @@ oncall("ai_infra_mobile_platform")
 python_library(
     name = "lib",
     srcs = [
+        "constraints.py",
         "model.py",
         "type.py",
     ],
