@@ -24,6 +24,7 @@ def define_common_targets():
             "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
             "//executorch/examples/recipes/xnnpack_optimization:models",
             "//executorch/examples/quantization:quant_utils",
+            "//executorch/examples/export:utils",
             "//executorch/exir:lib",
             "//executorch/exir/backend:backend_api",
         ],
