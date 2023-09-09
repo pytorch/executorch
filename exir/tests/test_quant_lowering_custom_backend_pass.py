@@ -546,7 +546,6 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
             converted_mod, example_inputs, exir.CaptureConfig()
         ).to_edge(
             exir.EdgeCompileConfig(
-                passes=[DuplicateDequantNodePass()],
                 _check_ir_validity=False,
             )
         )
@@ -562,7 +561,8 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
 
         # Step 3.1: Partitioning and delegation using to_backend()
         delegated_mod = to_backend(
-            captured_program.exported_program, QuantizedConvAddOpPartitioner
+            captured_program.transform(DuplicateDequantNodePass()).exported_program,
+            QuantizedConvAddOpPartitioner,
         )
         lowered_module_0 = delegated_mod.graph_module.lowered_module_0
 

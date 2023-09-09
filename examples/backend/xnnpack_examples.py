@@ -91,13 +91,16 @@ if __name__ == "__main__":
         capture_config=CaptureConfig(enable_aot=True),
         edge_compile_config=EdgeCompileConfig(
             # TODO(T162080278): Duplicated Dequant nodes will be in quantizer spec
-            _check_ir_validity=False if args.quantize else True,
-            passes=[DuplicateDequantNodePass()],
+            _check_ir_validity=False
+            if args.quantize
+            else True,
         ),
     )
     logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
-    edge.exported_program = to_backend(edge.exported_program, partitioner)
+    edge.exported_program = to_backend(
+        edge.transform(DuplicateDequantNodePass()).exported_program, partitioner
+    )
     logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
 
     exec_prog = edge.to_executorch()

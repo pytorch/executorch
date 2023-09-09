@@ -781,10 +781,9 @@ class TestPasses(unittest.TestCase):
 
         gm_lowered = gm.to_edge(
             EdgeCompileConfig(
-                passes=[AddReluFusionPass()],
                 _check_ir_validity=False,
             ),
-        ).transform(OpReplacePass())
+        ).transform(AddReluFusionPass(), OpReplacePass())
 
         FileCheck().check(
             "executorch_exir_dialects_backend__ops_DO_NOT_USE_TEST_ONLY_add_relu_default"
@@ -959,11 +958,10 @@ class TestPasses(unittest.TestCase):
 
         lowered_prog = prog.to_edge(
             EdgeCompileConfig(
-                passes=[AddReluFusionPass()],
                 _check_ir_validity=False,
                 _use_edge_ops=False,  # doesn't work with it enabled
             ),
-        ).transform(EdgeToBackendOpsPass())
+        ).transform(AddReluFusionPass(), EdgeToBackendOpsPass())
 
         FileCheck().check(
             "executorch_exir_dialects_backend__ops_DO_NOT_USE_TEST_ONLY_add_relu2_default"

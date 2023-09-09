@@ -68,10 +68,14 @@ class TestQuantization(unittest.TestCase):
             # TODO: conv, conv_relu, linear delegation
             # quantized ops to implement: add_relu
             compile_config = EdgeCompileConfig(
-                passes=[QuantFusionPass(), SpecPropPass()],
                 _check_ir_validity=False,
             )
-            m = exir.capture(m, example_inputs).to_edge(config=compile_config)
+            m = (
+                exir.capture(m, example_inputs)
+                .to_edge(config=compile_config)
+                .transform(QuantFusionPass(), SpecPropPass())
+            )
+
             after_quant_result = m(*example_inputs)[0]
             FileCheck().check(
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor"
