@@ -1,0 +1,14 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("ai_infra_mobile_platform")
+
+python_library(
+    name = "lib",
+    srcs = [
+        "model.py",
+        "type.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
