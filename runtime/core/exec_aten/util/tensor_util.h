@@ -911,6 +911,12 @@ __ET_NODISCARD Error copy_tensor_data(
     const exec_aten::Tensor& t_src);
 
 /**
+ * Set the data_ptr of t to buffer.
+ */
+__ET_NODISCARD Error
+set_tensor_data(const exec_aten::Tensor& t, void* buffer, size_t buffer_size);
+
+/**
  * Reset tensor's data_ptr, clear all the storage for at::Tensor.
  */
 void reset_data_ptr(const exec_aten::Tensor& tensor);

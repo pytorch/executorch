@@ -11,8 +11,11 @@ import sys
 from typing import Any, Dict, List, Type
 
 import torch
+from executorch.exir import CaptureConfig
+from executorch.exir.passes import MemoryPlanningPass
 from executorch.test.end2end.exported_module import ExportedModule
 from torch import nn
+from torch._export import dynamic_dim
 
 """Traces and exports nn.Modules to Executorch .pte program files.
 
@@ -80,6 +83,36 @@ class ModuleAdd(nn.Module):
 
     def get_random_inputs(self):
         return (torch.randn(2, 2), torch.randn(2, 2), 1.0)
+
+
+class ModuleDynamicCatUnallocatedIO(nn.Module):
+    def __init__(self):
+        super(ModuleDynamicCatUnallocatedIO, self).__init__()
+        # TODO(T163238401)
+        self._inputs = (torch.randn(3, 4),)
+
+    def forward(self, k):
+        k = torch.cat((k, torch.ones(1, 4)))
+        return k
+
+    def get_random_inputs(self):
+        return self._inputs
+
+    def get_constraints(self):
+        return [
+            dynamic_dim(self._inputs[0], 0) <= 3,
+        ]
+
+    def get_memory_planning_pass(self):
+        return MemoryPlanningPass(
+            memory_planning_algo="greedy",
+            alloc_graph_input=False,
+            alloc_graph_output=False,
+        )
+
+    @staticmethod
+    def get_export_kwargs():
+        return {"capture_config": CaptureConfig(pt2_mode=True, enable_aot=True)}
 
 
 class ModuleLinear(torch.nn.Module):

@@ -130,12 +130,26 @@ class ExportedModule:
         for method in methods:
             method_name_to_args[method] = trace_inputs
 
+        method_name_to_constraints = None
+        if hasattr(eager_module, "get_constraints"):
+            assert capture_config is not None
+            assert capture_config.enable_aot is True
+            trace_constraints = eager_module.get_constraints()
+            method_name_to_constraints = {}
+            for method in methods:
+                method_name_to_constraints[method] = trace_constraints
+
+        memory_planning_pass = MemoryPlanningPass("greedy")
+        if hasattr(eager_module, "get_memory_planning_pass"):
+            memory_planning_pass = eager_module.get_memory_planning_pass()
+
         # Capture an executorch program.
         executorch_program = (
             exir.capture_multiple(
                 eager_module,
                 method_name_to_args,
                 capture_config,
+                constraints=method_name_to_constraints,
             )
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
             .to_executorch(
@@ -150,7 +164,7 @@ class ExportedModule:
                         to_scratch_op_pass,
                     ],
                     dynamic_memory_planning_mode=dynamic_memory_planning_mode,
-                    memory_planning_pass=MemoryPlanningPass("greedy"),
+                    memory_planning_pass=memory_planning_pass,
                     to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure),
                 )
             )
