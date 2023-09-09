@@ -195,7 +195,10 @@ class QnnpackBackend final : public PyTorchBackendInterface {
     return executor;
   }
 
-  Error execute(DelegateHandle* handle, EValue** args) const override {
+  Error execute(
+      __ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override {
     static constexpr size_t kMaxDims = 16;
 
     QNNExecutor* etor = static_cast<QNNExecutor*>(handle);

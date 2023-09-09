@@ -115,9 +115,11 @@ class BackendDelegate final {
     }
   }
 
-  Error Execute(EValue** args) const {
+  Error Execute(
+      BackendExecutionContext& backend_execution_context,
+      EValue** args) const {
     EXECUTORCH_SCOPE_PROF("delegate_execute");
-    return backend_->execute(handle_, args);
+    return backend_->execute(backend_execution_context, handle_, args);
   }
 
  private:
@@ -939,7 +941,9 @@ Error Method::execute_instruction() {
           delegate_idx,
           n_delegate_,
           step_state_.instr_idx);
+      BackendExecutionContext backend_execution_context;
       Error err = delegates_[delegate_idx].Execute(
+          backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx].data());
       ET_CHECK_MSG(
           err == Error::Ok,

@@ -110,7 +110,10 @@ class BackendWithDelegateMapping final : public PyTorchBackendInterface {
 
   // This function doesn't actually execute the op but just prints out the op
   // name and the corresponding delegate debug identifier.
-  Error execute(DelegateHandle* handle, EValue** args) const override {
+  Error execute(
+      __ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override {
     (void)args;
     // example: [('prim::Constant#1', 14), ('aten::add', 15)]
     auto op_list = static_cast<const DemoOpList*>(handle);

@@ -10,6 +10,7 @@
 
 #include <cstring>
 
+#include <executorch/runtime/backend/backend_execution_context.h>
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
@@ -88,8 +89,10 @@ class PyTorchBackendInterface {
    * @param[in] args The method’s inputs and outputs.
    * @retval Error::Ok if successful.
    */
-  __ET_NODISCARD virtual Error execute(DelegateHandle* handle, EValue** args)
-      const = 0;
+  __ET_NODISCARD virtual Error execute(
+      BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const = 0;
 
   /**
    * Responsible for destroying a handle, if it's required for some backend.

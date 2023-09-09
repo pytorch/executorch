@@ -49,7 +49,10 @@ class XnnpackBackend final : public PyTorchBackendInterface {
     return executor;
   }
 
-  Error execute(DelegateHandle* handle, EValue** args) const override {
+  Error execute(
+      __ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override {
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
     std::vector<Tensor*> input_pointers;

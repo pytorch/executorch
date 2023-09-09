@@ -136,7 +136,10 @@ class BackendWithCompiler final : public PyTorchBackendInterface {
   // execute and it only supports add, subtract, and constant. In a non toy
   // backend you can imagine how this function could be used to actually
   // dispatch the inputs to the relevant backend/device.
-  Error execute(DelegateHandle* handle, EValue** args) const override {
+  Error execute(
+      __ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override {
     EXECUTORCH_SCOPE_PROF("BackendWithCompiler::execute");
 
     // example: [('prim::Constant#1', 14), ('aten::add', 15)]

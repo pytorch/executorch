@@ -29,6 +29,7 @@
 
 using namespace ::testing;
 using exec_aten::ArrayRef;
+using torch::executor::BackendExecutionContext;
 using torch::executor::CompileSpec;
 using torch::executor::DataLoader;
 using torch::executor::DelegateHandle;
@@ -91,7 +92,10 @@ class StubBackend final : public PyTorchBackendInterface {
     execute_fn_ = fn;
   }
 
-  Error execute(DelegateHandle* handle, EValue** args) const override {
+  Error execute(
+      __ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override {
     if (execute_fn_) {
       return execute_fn_.value()(handle, args);
     }
