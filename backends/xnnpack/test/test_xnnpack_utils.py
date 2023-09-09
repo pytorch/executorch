@@ -18,6 +18,7 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackQuantizedPartitioner,
 )
 from executorch.backends.xnnpack.utils.configs import (
+    get_transform_passes,
     get_xnnpack_edge_compile_config,
     get_xnnpack_executorch_backend_config,
 )
@@ -323,7 +324,9 @@ class TestXNNPACK(unittest.TestCase):
             config=exir.CaptureConfig(enable_aot=True, _unlift=True),
         )
 
-        edge_program = captured_program.to_edge(get_xnnpack_edge_compile_config())
+        edge_program = captured_program.to_edge(
+            get_xnnpack_edge_compile_config()
+        ).transform(*get_transform_passes())
         delegated_module = self.lower_module_and_test_output(
             module=edge_program,
             sample_inputs=example_inputs,

@@ -104,6 +104,7 @@ python_unittest(
         "//executorch/backends/xnnpack/passes:xnnpack_passes",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/exir:lib",
+        "//executorch/exir:pass_base",
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir/dialects:lib",
     ],
@@ -130,7 +131,7 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/test/tester:tester",
-        "//executorch/backends/xnnpack/utils:xnnpack_utils",
+        "//executorch/exir:lib",
         "//pytorch/vision:torchvision",
     ],
 )

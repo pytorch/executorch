@@ -179,7 +179,8 @@ class TestEmit(unittest.TestCase):
 
         program = (
             exir.capture(f, (torch.randn(100),), exir.CaptureConfig())
-            .to_edge(exir.EdgeCompileConfig(passes=[ConstPropPass()]))
+            .to_edge()
+            .transform(ConstPropPass())
             .to_executorch()
             .program
         )
@@ -641,7 +642,8 @@ class TestEmit(unittest.TestCase):
         x = (torch.randn(1, 1, 2, 2),)
         program = (
             exir.capture(M(), x, exir.CaptureConfig())
-            .to_edge(exir.EdgeCompileConfig(passes=[ConstPropPass()]))
+            .to_edge()
+            .transform(ConstPropPass())
             .to_executorch()
             .program
         )
