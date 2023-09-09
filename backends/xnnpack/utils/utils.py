@@ -10,6 +10,7 @@ import executorch.exir as exir
 import torch
 
 from executorch.backends.xnnpack.utils.configs import (
+    get_transform_passes,
     get_xnnpack_capture_config,
     get_xnnpack_edge_compile_config,
 )
@@ -25,11 +26,15 @@ def capture_graph_for_xnnpack(
     enable_aot: Optional[bool] = None,
     unlift: Optional[bool] = None,
 ) -> exir.ExirExportedProgram:
-    return exir.capture(
-        module,
-        inputs,
-        get_xnnpack_capture_config(enable_aot=enable_aot, unlift=unlift),
-    ).to_edge(get_xnnpack_edge_compile_config())
+    return (
+        exir.capture(
+            module,
+            inputs,
+            get_xnnpack_capture_config(enable_aot=enable_aot, unlift=unlift),
+        )
+        .to_edge(get_xnnpack_edge_compile_config())
+        .transform(*get_transform_passes())
+    )
 
 
 ### XNNPACK Utils ###
