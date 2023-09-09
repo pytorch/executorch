@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from collections import defaultdict
+from functools import partial
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import torch
@@ -94,21 +95,23 @@ def group_by_format(
 
     grouped_combinations: Set[Tuple[int, Tuple[Tuple[str]]]] = set()
 
+    def almost_same_except(b: Tuple[str], combination: Tuple[str], index: int):
+        """Check if a and b share same format"""
+        for i, (aa, bb) in enumerate(zip(combination, b)):
+            if (i == index and aa == bb) or (i != index and aa != bb):
+                return False
+        return True
+
     for combination in all_combinations:
         # filter out combinations that only differ at index
         has_same_comb: bool = False
         for index in range(len(combination)):
             filtered: Set[Tuple[str]] = set()
             filtered.add(combination)
-
-            def almost_same_except(b: Tuple[str]):
-                """Check if a and b share same format"""
-                for i, (aa, bb) in enumerate(zip(combination, b)):
-                    if (i == index and aa == bb) or (i != index and aa != bb):
-                        return False
-                return True
-
-            filtered.update(set(filter(almost_same_except, all_combinations)))
+            combo_filter = partial(
+                almost_same_except, combination=combination, index=index
+            )
+            filtered.update(set(filter(combo_filter, all_combinations)))
             if len(filtered) > 1:
                 has_same_comb = True
                 grouped_combinations.add((index, tuple(sorted(filtered))))

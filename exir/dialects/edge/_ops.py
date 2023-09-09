@@ -12,8 +12,8 @@ import pkg_resources
 
 import torch
 
-from executorch.exir.dialects.edge.support_dtypes import regular_tensor_str_to_dtypes
-from executorch.exir.dialects.edge.utils import (
+from executorch.exir.dialects.edge.dtype.supported import regular_tensor_str_to_dtypes
+from executorch.exir.dialects.edge.spec.utils import (
     get_tensor_variable_names,
     get_torch_op_overload,
 )
