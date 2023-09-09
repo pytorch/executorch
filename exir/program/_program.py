@@ -283,7 +283,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         aten_to_edge_passes.passes[:-2]
         + op_replace_pass
         + aten_to_edge_passes.passes[-2:]
-    ) + config.passes
+    )
     new_ep = copy.deepcopy(ep).transform(*passes)
     if config._check_ir_validity:
         EXIREdgeDialectVerifier(check_edge_ops=config._use_edge_ops)(
