@@ -12,9 +12,6 @@ from transformers import AutoTokenizer, MobileBertModel  # @manual
 
 from ..model_base import EagerModelBase
 
-FORMAT = "[%(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(format=FORMAT)
-
 
 class MobileBertModelExample(EagerModelBase):
     def __init__(self):
