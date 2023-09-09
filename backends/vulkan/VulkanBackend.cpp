@@ -270,7 +270,10 @@ class VulkanBackend final : public PyTorchBackendInterface {
     return compute_graph;
   }
 
-  Error execute(DelegateHandle* handle, EValue** args) const override {
+  Error execute(
+      __ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override {
     EXECUTORCH_SCOPE_PROF("VulkanBackend::execute");
 
     at::native::vulkan::ComputeGraph* compute_graph =
