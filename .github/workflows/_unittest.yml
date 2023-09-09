@@ -1,0 +1,34 @@
+name: Run all unittests
+
+on:
+  workflow_call:
+    inputs:
+      docker-image:
+        required: true
+        type: string
+        description: Name of the docker image to use.
+      runner:
+        required: false
+        type: string
+        default: 'linux.2xlarge'
+        description: The default runner for PyTorch infra.
+      python-version:
+        required: false
+        type: string
+        default: '3.10'
+
+jobs:
+  unittest:
+    name: unittest
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    with:
+      runner: ${{ inputs.runner }}
+      docker-image: ${{ inputs.docker-image }}
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
+      script: |
+        set -eux
+        export PATH="/opt/conda/envs/py_${{ inputs.python-version }}/bin:${PATH}"
+
+        pytest --cov=./ --cov-report=xml
