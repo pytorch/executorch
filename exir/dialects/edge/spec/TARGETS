@@ -1,0 +1,27 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("ai_infra_mobile_platform")
+
+python_library(
+    name = "lib",
+    srcs = [
+        "gen.py",
+        "utils.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/ruamel-yaml:ruamel-yaml",
+        "//caffe2:torch",
+        "//executorch/exir/dialects/edge/dtype:lib",
+    ],
+)
+
+python_binary(
+    name = "gen",
+    srcs = [],
+    main_module = "executorch.exir.dialects.edge.spec.gen",
+    deps = [
+        "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
+        ":lib",
+    ],
+)

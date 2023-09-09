@@ -9,9 +9,9 @@ import unittest
 from typing import Any, Dict, List, Set
 
 import torch
-from executorch.exir.dialects.edge.support_dtypes import regular_tensor_dtypes_to_str
+from executorch.exir.dialects.edge.dtype.supported import regular_tensor_dtypes_to_str
 
-from executorch.exir.dialects.edge.yaml_generator import (
+from executorch.exir.dialects.edge.spec.gen import (
     EdgeOpYamlInfo,
     gen_op_yaml,
     get_sample_input,
