@@ -48,6 +48,8 @@ docker build \
   --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}.${NIGHTLY}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   --build-arg "LINTRUNNER=${LINTRUNNER}" \
+  # NB: The token can be removed once Executorch becomes public
+  --build-arg "GITHUB_TOKEN=${GITHUB_TOKEN}" \
   -f "${OS}"/Dockerfile \
   "$@" \
   .

@@ -11,7 +11,7 @@ set -eux
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 # Do shallow clone of Executorch so that we can init lintrunner in Docker build context
-git clone https://github.com/pytorch/executorch.git --depth 1
+git clone "https://${GITHUB_TOKEN}@github.com/pytorch/executorch.git" --depth 1
 chown -R ci-user executorch
 
 pushd executorch

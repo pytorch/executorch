@@ -39,6 +39,7 @@ COPY ./common/utils.sh utils.sh
 RUN bash ./install_conda.sh && rm install_conda.sh utils.sh /opt/conda/requirements-ci.txt /opt/conda/conda-env-ci.txt
 
 ARG LINTRUNNER
+ARG GITHUB_TOKEN
 # Install lintrunner if needed
 COPY ./common/install_linter.sh install_linter.sh
 COPY ./common/utils.sh utils.sh
