@@ -36,7 +36,6 @@ TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
 TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
 TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
 
-# NB: The GITHUB_TOKEN can be removed once Executorch becomes public
 docker build \
   --no-cache \
   --progress=plain \
@@ -49,7 +48,6 @@ docker build \
   --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}.${NIGHTLY}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   --build-arg "LINTRUNNER=${LINTRUNNER}" \
-  --build-arg "GITHUB_TOKEN=${GITHUB_TOKEN}" \
   -f "${OS}"/Dockerfile \
   "$@" \
   .
