@@ -76,7 +76,7 @@ def define_common_targets():
         srcs = ["relocatable_runner.cpp"],
         deps = [
             "//executorch/kernels/portable:generated_lib_all_ops",
-            "//executorch/runtime/executor:executor",
+            "//executorch/runtime/executor:program",
             "//executorch/configurations:executor_cpu_optimized",
             "//executorch/extension/data_loader:buffer_data_loader",
             "//executorch/util:read_file",
