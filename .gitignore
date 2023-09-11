@@ -1,3 +1,4 @@
+.hypothesis
 buck-out/
 cmake-out/
 cmake-android-out/
