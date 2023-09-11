@@ -10,7 +10,8 @@
 #include <vector>
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
-#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/method.h>
+#include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/read_file.h>
@@ -30,7 +31,7 @@ using namespace torch::executor;
  * For ExecuTorch to work efficiently in these environments, we want to
  * initialize the execution plan once once for the model and avoid
  * re-initializing it for every inference. This can be achieved by restricting
- * the runtime contexts (torch::executor::Program and torch::executor::Executor)
+ * the runtime contexts (torch::executor::Program and torch::executor::Method)
  * to live in a pre-allocated, shared, and persistent memory.
  *
  * This tool demonstrates that the memory can be managed this way.
@@ -123,7 +124,7 @@ MemoryManager* create_memory_manager(
   ET_CHECK(temp_allocator != nullptr);
   new (temp_allocator) MemoryAllocator(0, nullptr);
 
-  // Assemble all of the allocators into the MemoryManager that the Executor
+  // Assemble all of the allocators into the MemoryManager that the Method
   // will use.
   auto* memory_manager = worker_allocator.allocateInstance<MemoryManager>();
   ET_CHECK(memory_manager != nullptr);
@@ -133,7 +134,7 @@ MemoryManager* create_memory_manager(
   return memory_manager;
 }
 
-ExecutionPlan* init_method(
+Method* init_method(
     Program* program,
     const char* method_name,
     MemoryAllocator& worker_allocator,
@@ -143,47 +144,46 @@ ExecutionPlan* init_method(
       create_memory_manager(program, method_name, worker_allocator);
 
   //
-  // Create an Executor and ExecutionPlan from the program, using the provided
-  // allocators. The ExecutionPlan is what actually runs the model. It is
+  // Create and load a method from the program, using the provided
+  // allocators. The Method is what actually runs the model. It is
   // mutable, so should only be used by a single thread at at time, but it can
   // be reused.
   //
 
-  auto* executor = worker_allocator.allocateInstance<Executor>();
-  ET_CHECK(executor != nullptr);
-  new (executor) Executor(program, memory_manager);
-
-  Error status = executor->init_execution_plan(method_name);
+  auto* method = worker_allocator.allocateInstance<Method>();
+  ET_CHECK(method != nullptr);
+  auto method_res = program->load_method(method_name, memory_manager);
   ET_CHECK_MSG(
-      status == Error::Ok,
-      "init_execution_plan('%s') failed with status 0x%" PRIx32,
+      method_res.error() == Error::Ok,
+      "loading method('%s') failed with status 0x%" PRIx32,
       method_name,
-      status);
+      method_res.error());
+  new (method) Method(std::move(method_res.get()));
+
   ET_LOG(Info, "Model method '%s' initialized.", method_name);
-  auto& plan = executor->execution_plan();
 
   // Gather the byte size of each input/output tensor.
-  const size_t input_size = plan.inputs_size();
+  const size_t input_size = method->inputs_size();
   for (size_t i = 0; i < input_size; i++) {
-    if (!plan.get_input(i).isTensor()) {
+    if (!method->get_input(i).isTensor()) {
       ET_LOG(Info, "input %zu is not a tensor, skipping", i);
       continue;
     }
-    const auto& t = plan.get_input(i).toTensor();
+    const auto& t = method->get_input(i).toTensor();
     input_sizes.push_back(t.nbytes());
   }
 
-  const size_t output_size = plan.outputs_size();
+  const size_t output_size = method->outputs_size();
   for (size_t i = 0; i < output_size; i++) {
-    const auto& t = plan.get_output(i).toTensor();
+    const auto& t = method->get_output(i).toTensor();
     output_sizes.push_back(t.nbytes());
   }
 
-  return &plan;
+  return method;
 }
 
 void inference_loop(
-    ExecutionPlan* plan,
+    Method* method,
     const std::vector<void*>& input_buffers,
     const std::vector<void*>& output_buffers) {
   ET_LOG(
@@ -194,12 +194,12 @@ void inference_loop(
   // Prepare the inputs.
   {
     size_t bufi = 0;
-    for (size_t i = 0; i < plan->inputs_size(); i++) {
-      if (!plan->get_input(i).isTensor()) {
+    for (size_t i = 0; i < method->inputs_size(); i++) {
+      if (!method->get_input(i).isTensor()) {
         ET_LOG(Info, "input %zu is not a tensor, skipping", i);
         continue;
       }
-      const auto& t = plan->get_input(i).toTensor();
+      const auto& t = method->get_input(i).toTensor();
       ET_CHECK_MSG(
           bufi < input_buffers.size(), "Not enough input buffers for model");
       t.set_data(input_buffers[bufi++]);
@@ -210,12 +210,12 @@ void inference_loop(
   // Prepare the outputs.
   {
     size_t bufi = 0;
-    for (size_t i = 0; i < plan->outputs_size(); i++) {
-      if (!plan->get_output(i).isTensor()) {
+    for (size_t i = 0; i < method->outputs_size(); i++) {
+      if (!method->get_output(i).isTensor()) {
         ET_LOG(Info, "output %zu is not a tensor, skipping", i);
         continue;
       }
-      const auto& t = plan->get_output(i).toTensor();
+      const auto& t = method->get_output(i).toTensor();
       ET_CHECK_MSG(
           bufi < output_buffers.size(), "Not enough output buffers for model");
       t.set_data(output_buffers[bufi++]);
@@ -224,7 +224,7 @@ void inference_loop(
   ET_LOG(Info, "Outputs prepared.");
 
   // Run the model.
-  Error status = plan->execute();
+  Error status = method->execute();
   ET_CHECK_MSG(
       status == Error::Ok,
       "plan->execute() failed with status 0x%" PRIx32,
@@ -275,10 +275,10 @@ int main(int argc, char** argv) {
   ET_CHECK(program != nullptr);
 
   /*
-   * Step 4: The worker core sets up the Executor and initalizes the execution
-   * plan. Here we let the control core read out the I/O info from the
-   * execution plan. This can also be done on the control core from the
-   * program flatbuffer, though there is no direct API at the moment.
+   * Step 4: The worker core sets up the Method. Here we let the control
+   * core read out the I/O info from the Method. This can also be done on
+   * the control core from the program flatbuffer, though there is no
+   * direct API at the moment.
    */
 
   // Get the method name to execute.
@@ -295,7 +295,7 @@ int main(int argc, char** argv) {
   std::vector<size_t> input_sizes;
   std::vector<size_t> output_sizes;
 
-  ExecutionPlan* plan = worker::init_method(
+  Method* method = worker::init_method(
       program, method_name, worker_allocator, input_sizes, output_sizes);
 
   ET_LOG(
@@ -331,7 +331,7 @@ int main(int argc, char** argv) {
    */
 
   // Run the inference on the inputs. CHECK-fails on error.
-  worker::inference_loop(plan, input_buffers, output_buffers);
+  worker::inference_loop(method, input_buffers, output_buffers);
 
   for (void* buffer : input_buffers) {
     free(buffer);
