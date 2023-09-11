@@ -43,7 +43,7 @@ ARG LINTRUNNER
 COPY ./common/install_linter.sh install_linter.sh
 COPY ./common/utils.sh utils.sh
 COPY ./requirements-lintrunner.txt requirements-lintrunner.txt
-RUN if [ -n "${LINTRUNNER}" ]; then bash ./install_linter.sh; fi
+RUN if [ "${LINTRUNNER:-}" == yes ]; then bash ./install_linter.sh; fi
 RUN rm install_linter.sh utils.sh requirements-lintrunner.txt
 
 USER ci-user
