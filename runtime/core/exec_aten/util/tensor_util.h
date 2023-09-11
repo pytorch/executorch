@@ -927,6 +927,7 @@ void reset_data_ptr(const exec_aten::Tensor& tensor);
 __ET_NODISCARD Error resize_tensor_impl(
     exec_aten::TensorImpl* impl,
     exec_aten::ArrayRef<exec_aten::SizesType> new_sizes);
+
 } // namespace internal
 
 /**
@@ -1023,26 +1024,5 @@ inline size_t calculate_linear_index(
   return index;
 }
 
-/// These APIs should not be used outside of Executor.cpp.
-namespace internal {
-/**
- * Share t_src's data_ptr with t_dst.
- */
-__ET_NODISCARD Error share_tensor_data(
-    const exec_aten::Tensor& t_dst,
-    const exec_aten::Tensor& t_src);
-
-/**
- * Copy t_src's data_ptr to t_dst.
- */
-__ET_NODISCARD Error copy_tensor_data(
-    const exec_aten::Tensor& t_dst,
-    const exec_aten::Tensor& t_src);
-
-/**
- * Reset tensor's data_ptr, clear all the storage for at::Tensor.
- */
-void reset_data_ptr(const exec_aten::Tensor& tensor);
-} // namespace internal
 } // namespace executor
 } // namespace torch
