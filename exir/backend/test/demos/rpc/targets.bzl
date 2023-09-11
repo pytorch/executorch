@@ -23,7 +23,7 @@ def define_common_targets():
         ],
         platforms = [ANDROID, CXX],
         deps = [
-            "//executorch/runtime/executor:executor",
+            "//executorch/runtime/executor:program",
             "//executorch/kernels/portable:generated_lib",
             "//executorch/runtime/backend:backend_registry",
             "//executorch/extension/data_loader:buffer_data_loader",
