@@ -93,11 +93,11 @@ class ModelWithDifferentTensorSizes(torch.nn.Module):
 
     def forward(self, i: torch.Tensor) -> torch.Tensor:
         o1 = i
-        for l in self.linears:
-            o1 = l(o1)
+        for linear in self.linears:
+            o1 = linear(o1)
         o2 = i
-        for l in self.linears:
-            o2 = l(o2)
+        for linear in self.linears:
+            o2 = linear(o2)
         return o1 + o2
 
     def get_random_inputs(self) -> Tuple[torch.Tensor, ...]:

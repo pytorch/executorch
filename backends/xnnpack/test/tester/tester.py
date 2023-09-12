@@ -290,7 +290,7 @@ class Tester:
             self._stage_name(Serialize): [],
         }
         assert all(
-            [stage in self.pipeline for stage in self.stages]
+            stage in self.pipeline for stage in self.stages
         ), "Invalid Tester internal state!"
 
         # Current stage name

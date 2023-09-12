@@ -10,7 +10,7 @@
 This module contains APIs to manipulate ops.
 """
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict
 
 import torch
 from executorch.exir.tensor import TensorSpec

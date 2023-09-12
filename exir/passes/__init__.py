@@ -310,7 +310,7 @@ class ToOutVarPass(PassBase):
         if (not self.ignore_to_out_var_failure) and len(self.missing_out_vars) > 0:
             raise RuntimeError(f"Missing out variants: {self.missing_out_vars}")
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         """
         Converts all of the functions to contain an out variant if it does not exist
         """

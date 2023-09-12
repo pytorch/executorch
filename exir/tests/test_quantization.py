@@ -16,10 +16,10 @@ from executorch.exir import EdgeCompileConfig
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from torch.ao.ns.fx.utils import compute_sqnr
-from torch.ao.quantization import get_default_qconfig, QConfigMapping  # @manual
+from torch.ao.quantization import QConfigMapping  # @manual
 from torch.ao.quantization.backend_config import get_executorch_backend_config
 from torch.ao.quantization.qconfig import default_per_channel_symmetric_qnnpack_qconfig
-from torch.ao.quantization.quantize_fx import convert_to_reference_fx, prepare_fx
+from torch.ao.quantization.quantize_fx import prepare_fx
 from torch.ao.quantization.quantize_pt2e import (
     _convert_to_reference_decomposed_fx,
     convert_pt2e,
@@ -31,7 +31,6 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 from torch.testing import FileCheck
-from torch.testing._internal.common_quantization import skipIfNoQNNPACK
 from torch.testing._internal.common_quantized import override_quantized_engine
 
 # load executorch out variant ops
