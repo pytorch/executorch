@@ -169,7 +169,7 @@ TEST(BroadcastUtilTest, LinearizeIndex) {
     size_t test_indexes[] = {0, 0, 0, i};
     ArrayRef<size_t> broadcast_to_indexes(test_indexes);
     size_t linear_index = linearize_access_indexes(
-        broadcast_to_indexes, broadcast_to, broadcast_from);
+        broadcast_to_indexes, broadcast_to.dim(), broadcast_from);
     EXPECT_EQ(linear_index, 0);
   }
 
@@ -179,7 +179,7 @@ TEST(BroadcastUtilTest, LinearizeIndex) {
     size_t test_indexes[] = {0, i, 2, 3};
     ArrayRef<size_t> broadcast_to_indexes(test_indexes);
     size_t linear_index = linearize_access_indexes(
-        broadcast_to_indexes, broadcast_to, broadcast_from);
+        broadcast_to_indexes, broadcast_to.dim(), broadcast_from);
     EXPECT_EQ(linear_index, 2);
   }
 }
