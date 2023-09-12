@@ -7,9 +7,28 @@
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 
-###
-### Module based partitioners
-###
+"""
+** How to incorporate a new op into the XNNPACK Partitioner? **
+
+[1] When the new edge op being added is direct descendent of a core-aten op,
+and is also supported* by XNNPACK, prefer partitioning it via SUPPORTED_OPS
+mechanism e.g. torch.add
+
+[2] When the new op being added is not a core-aten op,
+
+[2.1] If the original torch op is supported* by XNNPACK, prefer partitioning it
+via SUPPORTED_MODULES. This will require "recomposing" the op before lowering
+it to XNNPACK e.g. torch.nn.Linear. Make sure to include all variants of the
+modules in the SUPPORTED_MODULES list.
+
+[2.2] If the original torch op is not supported by XNNPACK, then it is assumed
+that out of all the decomposed core-aten ops, SUPPORTED_OPS will be lowered to
+XNNPACK.
+
+* - Supported fully or partially. The partial support does not mean only few
+ops from the decomposition but means only some variants of the op "modes"
+possible with the arg combinations.
+"""
 
 SUPPORTED_OPS = [
     exir_ops.edge.aten.div.Tensor,
