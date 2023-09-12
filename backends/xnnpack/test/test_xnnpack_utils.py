@@ -14,8 +14,7 @@ from executorch import exir
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
-    XnnpackFloatingPointPartitioner,
-    XnnpackQuantizedPartitioner,
+    XnnpackPartitioner,
 )
 from executorch.backends.xnnpack.utils.configs import (
     get_transform_passes,
@@ -185,9 +184,9 @@ class TestXNNPACK(unittest.TestCase):
             if quantized_dynamic:
                 partitioner = XnnpackDynamicallyQuantizedPartitioner
             else:
-                partitioner = XnnpackQuantizedPartitioner
+                partitioner = XnnpackPartitioner
         else:
-            partitioner = XnnpackFloatingPointPartitioner
+            partitioner = XnnpackPartitioner
 
         if use_partitioner:
             with validation_disabled():
