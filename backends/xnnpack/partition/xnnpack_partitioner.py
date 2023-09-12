@@ -347,7 +347,7 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         Disqualify the whole module if one of the nodes fails to satisfy.
         """
         return all(
-            [XnnpackOperatorSupport.check_constraint(node) for node in input_nodes]
+            XnnpackOperatorSupport.check_constraint(node) for node in input_nodes
         )
 
     def get_module_partitions(

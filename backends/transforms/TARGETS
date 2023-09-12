@@ -20,5 +20,6 @@ python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:sym_util",
+        "//executorch/exir/dialects:lib",
     ],
 )

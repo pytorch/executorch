@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
-None
 import os
 import tempfile
 import unittest
@@ -22,12 +21,10 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.emit import emit_program
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.pass_base import ExportPass, PassResult
-from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (
     dead_code_elimination_pass,
     DebugPass,
     MemoryPlanningPass,
-    NormalizeTransposePass,
     propagate_dynamic_shape,
     RemoveNoopPass,
     ReplaceSymSizeOpPass,

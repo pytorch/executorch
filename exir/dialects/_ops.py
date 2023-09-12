@@ -62,7 +62,7 @@ def bind_pattern_to_op(library: Library, schema_or_name: str):
             DispatchKey.CompositeImplicitAutograd,
             DispatchKey.Meta,
         ]
-        if not any([torch_op.has_kernel_for_dispatch_key(k) for k in keys]):
+        if not any(torch_op.has_kernel_for_dispatch_key(k) for k in keys):
             library.impl(opname, f, "CompositeImplicitAutograd")
         op = getattr(getattr(getattr(ops.backend, library.ns), name), overload_name)
         op._equivalent_callable = f

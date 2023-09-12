@@ -33,7 +33,6 @@ class ExportTest(unittest.TestCase):
         takes the eager mode output and ET output, and returns True if they
         match.
         """
-
         eager_model = eager_model.eval()
         model = export.capture_pre_autograd_graph(eager_model, example_inputs)
         edge_model = export_to_edge(model, example_inputs)

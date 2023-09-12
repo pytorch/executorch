@@ -89,7 +89,6 @@ from executorch.exir.tensor import (
     TensorSpec,
 )
 from executorch.exir.types import LeafValueSpec, ValueSpec
-from functorch.experimental import control_flow
 from torch._export.exported_program import ExportedProgram
 from torch.utils import _pytree as pytree
 
@@ -449,7 +448,7 @@ class _Emitter(torch.fx.Interpreter):
         # For constant tensors, allocation_info = None.
         return EValue(make_tensor_value(buffer_idx, None, spec))
 
-    def _constant_to_evalue(
+    def _constant_to_evalue(  # noqa: C901
         self,
         val: _Argument,
         val_type: Optional[_SchemaType],
@@ -979,7 +978,7 @@ class _Emitter(torch.fx.Interpreter):
         self.emitter_state.operator_cache[key] = op_index
         return op_index, operator
 
-    def _emit_operator(
+    def _emit_operator(  # noqa: C901
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
     ) -> _EmitterValue:
         """Emits an operator (aten or custom), directly translates to a call_kernel instruction."""
