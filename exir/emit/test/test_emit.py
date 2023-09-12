@@ -16,6 +16,8 @@ import executorch.exir.schema as schema
 import executorch.exir.tests.models as models
 import torch
 from executorch.exir import CaptureConfig, EdgeCompileConfig, ExecutorchProgram
+from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.error import InternalError
 from executorch.exir.passes.const_prop_pass import ConstPropPass
@@ -42,6 +44,7 @@ from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
 from functorch.experimental import control_flow
+from torch import nn
 
 
 class TestEmit(unittest.TestCase):
@@ -1197,3 +1200,47 @@ class TestEmit(unittest.TestCase):
             idx,
             node.meta.get("debug_handle"),
         )
+
+    def test_delegate_with_input_list(self) -> None:
+        class BackendWithCompilerDemo(BackendDetails):
+            @staticmethod
+            def preprocess(
+                edge_program,
+                compile_specs,
+            ) -> bytes:
+                return PreprocessResult(
+                    processed_bytes=bytes(str("test"), encoding="utf8"),
+                    debug_handle_map=None,
+                )
+
+        class TestModel(nn.Module):
+            def __init__(self):
+                super(TestModel, self).__init__()
+
+            def forward(self, x):
+                return torch.cat(x)
+
+        inputs = ([torch.ones(2, 2), torch.ones(2, 2)],)
+        model = TestModel()
+        edgeir_m = exir.capture(model, inputs, exir.CaptureConfig()).to_edge(
+            exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
+        lowered_module = to_backend(
+            "BackendWithCompilerDemo", edgeir_m.exported_program, None
+        )
+
+        class CompositeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered_module = lowered_module
+
+            def forward(self, list_a):
+                return self.lowered_module(list_a)
+
+        composite_model = CompositeModule()
+        exec_prog = (
+            exir.capture(composite_model, inputs, exir.CaptureConfig())
+            .to_edge()
+            .to_executorch()
+        )
+        exec_prog.buffer
