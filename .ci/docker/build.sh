@@ -19,6 +19,18 @@ PYTHON_VERSION=3.10
 MINICONDA_VERSION=23.5.1-0
 BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
+case "${IMAGE_NAME}" in
+  executorch-ubuntu-22.04-clang12)
+    LINTRUNNER=""
+    ;;
+  executorch-ubuntu-22.04-linter)
+    LINTRUNNER=yes
+    ;;
+  *)
+    echo "Invalid image name ${IMAGE_NAME}"
+    exit 1
+esac
+
 NIGHTLY=$(cat ci_commit_pins/nightly.txt)
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
 TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
@@ -35,6 +47,7 @@ docker build \
   --build-arg "TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION}.${NIGHTLY}" \
   --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}.${NIGHTLY}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
+  --build-arg "LINTRUNNER=${LINTRUNNER}" \
   -f "${OS}"/Dockerfile \
   "$@" \
   .
