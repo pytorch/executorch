@@ -77,9 +77,10 @@ class BackendWithDelegateMapping final : public PyTorchBackendInterface {
   }
 
   Result<DelegateHandle*> init(
+      BackendInitContext& context,
       FreeableBuffer* processed,
-      ArrayRef<CompileSpec> compile_specs,
-      MemoryAllocator* runtime_allocator) const override {
+      ArrayRef<CompileSpec> compile_specs) const override {
+    MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
     (void)compile_specs;
     const char* kSignLiteral = "#";
     // The first number is the number of total instruction
