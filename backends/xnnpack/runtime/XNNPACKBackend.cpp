@@ -88,6 +88,9 @@ class XnnpackBackend final : public PyTorchBackendInterface {
     }
 
     err = executor->forward();
+#ifdef ENABLE_XNNPACK_PROFILING
+    executor->log_op_timings(); // Log the op execution time.
+#endif
 
     for (int i = executor->getNumInputs();
          i < executor->getNumInputs() + executor->getNumOutputs();
@@ -113,6 +116,9 @@ class XnnpackBackend final : public PyTorchBackendInterface {
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
       auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
+#ifdef ENABLE_XNNPACK_PROFILING
+      executor->print_avg_op_timings();
+#endif
       // XNNExecutor is not trivially destructible. Since this was constructed
       // manually in init(), we must destroy it manually here.
       executor->~XNNExecutor();

@@ -38,8 +38,27 @@ class XNNExecutor {
 
   Error set_external_input(uint32_t id, Tensor* input);
 
+  // XNNPACK Profiling
+  // Used to hold profiling data
+  //  * To hold op names and duration (in usec) for each operator execution
+  //  * Both indexed with xnn_node_idx (0.. node_id)
+  using microsecond_t = uint64_t;
+  size_t num_ops_;
+  std::vector<char> op_names_;
+  // op_timings[i][j] represents the runtime of operator j on the ith run
+  std::vector<std::vector<microsecond_t>> op_timings_;
+
+  void get_runtime_operator_names(std::vector<char>& operator_names);
+  void get_runtime_num_operators(size_t& num_operators);
+  void get_runtime_operator_timings(std::vector<uint64_t>& timing_stats);
+
  public:
   XNNExecutor() = default;
+
+  // XNNPACK Profiling public fn
+  void init_profiler();
+  void log_op_timings();
+  void print_avg_op_timings();
 
   inline void append_arg(uint32_t id) {
     external_id_args_.push_back(id);

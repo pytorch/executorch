@@ -65,7 +65,9 @@ def define_common_targets():
             "//executorch/extension/pybindings/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        preprocessor_flags = [] if runtime.is_oss else ["-DENABLE_DYNAMIC_QUANTIZATION"],
+        preprocessor_flags = [
+            # "-DENABLE_XNNPACK_PROFILING",
+        ] + ([] if runtime.is_oss else ["-DENABLE_DYNAMIC_QUANTIZATION"]),
         deps = [
             third_party_dep("XNNPACK"),
             ":xnnpack_schema",
