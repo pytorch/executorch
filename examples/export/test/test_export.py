@@ -9,6 +9,7 @@ import unittest
 from typing import Any, Callable
 
 import torch
+import torch._export as export
 
 from executorch.examples.export.utils import export_to_edge
 from executorch.examples.models import MODEL_NAME_TO_MODEL
@@ -32,9 +33,9 @@ class ExportTest(unittest.TestCase):
         takes the eager mode output and ET output, and returns True if they
         match.
         """
-        import executorch.exir as exir
-
-        edge_model = export_to_edge(eager_model, example_inputs)
+        eager_model = eager_model.eval()
+        model = export.capture_pre_autograd_graph(eager_model, example_inputs)
+        edge_model = export_to_edge(model, example_inputs)
 
         executorch_prog = edge_model.to_executorch()
 

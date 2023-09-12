@@ -52,7 +52,7 @@ class BackendDelegate final {
   static Error Init(
       const executorch_flatbuffer::BackendDelegate& delegate,
       const Program* program,
-      MemoryAllocator* runtime_allocator,
+      BackendInitContext& backend_init_context,
       BackendDelegate* out) {
     // Look up the backend.
     const char* backend_id = delegate.id()->c_str();
@@ -78,7 +78,7 @@ class BackendDelegate final {
     // Parse compilation specs from program
     CompileSpec* compile_specs;
     Error err = PopulateCompileSpecs(
-        delegate.compile_specs(), runtime_allocator, &compile_specs);
+        delegate.compile_specs(), backend_init_context, &compile_specs);
     if (err != Error::Ok) {
       ET_LOG(Error, "Failed to get compile specs for backend %s", backend_id);
       return err;
@@ -93,9 +93,9 @@ class BackendDelegate final {
 
     // Initialize the delegate.
     Result<DelegateHandle*> handle = backend->init(
+        backend_init_context,
         &out->segment_,
-        ArrayRef<CompileSpec>(compile_specs, num_compile_specs),
-        runtime_allocator);
+        ArrayRef<CompileSpec>(compile_specs, num_compile_specs));
     if (!handle.ok()) {
       ET_LOG(
           Error,
@@ -135,12 +135,14 @@ class BackendDelegate final {
   static Error PopulateCompileSpecs(
       const flatbuffers::Vector<flatbuffers::Offset<
           executorch_flatbuffer::CompileSpec>>* compile_specs_in_program,
-      torch::executor::MemoryAllocator* runtime_allocator,
+      BackendInitContext& backend_init_context,
       CompileSpec** out_spec) {
     auto number_of_compile_specs = compile_specs_in_program->size();
 
     CompileSpec* compile_specs_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        runtime_allocator, CompileSpec, number_of_compile_specs);
+        backend_init_context.get_runtime_allocator(),
+        CompileSpec,
+        number_of_compile_specs);
 
     // Initialize the spec list for each method spec
     for (size_t j = 0; j < number_of_compile_specs; j++) {
@@ -537,14 +539,15 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
 
     for (size_t i = 0; i < n_delegate; ++i) {
       const auto& delegate = *delegates->Get(i);
+      BackendInitContext backend_init_context(runtime_allocator);
       Error err = BackendDelegate::Init(
-          delegate, program_, runtime_allocator, &delegates_[i]);
+          delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
         return err;
       }
       // ~Method() will try to clean up n_delegate_ entries in the delegates_
-      // array. Only increment this once we know the entry is valid, so that we
-      // don't try to clean up an uninitialized entry.
+      // array. Only increment this once we know the entry is valid, so that
+      // we don't try to clean up an uninitialized entry.
       n_delegate_ = i + 1;
     }
   }
@@ -1035,8 +1038,8 @@ Error Method::execute() {
       NotSupported,
       "Cannot execute until method has been initialized.");
 
-  // Chains are executed sequentially today, but future async designs may branch
-  // and run many in parallel or out of order.
+  // Chains are executed sequentially today, but future async designs may
+  // branch and run many in parallel or out of order.
   for (step_state_.chain_idx = 0; step_state_.chain_idx < n_chains_;
        ++step_state_.chain_idx) {
     Chain& chain = chains_[step_state_.chain_idx];

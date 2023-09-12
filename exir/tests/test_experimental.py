@@ -6,20 +6,15 @@
 
 # pyre-strict
 
-import copy
 import unittest
 from typing import Optional
 
 import executorch.exir as exir
-import executorch.exir.tests.models as models
 
 import torch
 from executorch.exir import CaptureConfig
 from executorch.exir.error import ExportError
-from executorch.exir.experimental import (
-    add_assertions,
-    convert_fake_tensor_to_tensor_meta,
-)
+from executorch.exir.experimental import add_assertions
 from executorch.exir.experimental.export_pt2 import (
     ExportSession,
     Guard,
@@ -28,8 +23,6 @@ from executorch.exir.experimental.export_pt2 import (
     Trace,
     trace,
 )
-from functorch.experimental import control_flow
-from torch._subclasses.fake_tensor import FakeTensor
 
 
 class TestExperimental(unittest.TestCase):

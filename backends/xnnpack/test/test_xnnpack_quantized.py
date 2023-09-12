@@ -46,18 +46,17 @@ class TestXNNPACKQuantized(TestXNNPACK):
         self.lower_module_and_test_output(just_quant, sample_input)
 
     def test_xnnpack_qmax_pool_2d(self):
+        class maxpool(torch.nn.Module):
+            def __init__(self, maxpool_params):
+                super().__init__()
+                self.max = torch.nn.MaxPool2d(*maxpool_params)
+
+            def forward(self, x):
+                return self.max(x)
+
         for maxpool_params in [(4,), (4, 2), (4, 2, 2)]:
-
-            class maxpool(torch.nn.Module):
-                def __init__(self):
-                    super().__init__()
-                    self.max = torch.nn.MaxPool2d(*maxpool_params)
-
-                def forward(self, x):
-                    return self.max(x)
-
             example_input = (torch.ones(1, 2, 8, 8),)
-            self.quantize_and_test_model(maxpool(), example_input)
+            self.quantize_and_test_model(maxpool(maxpool_params), example_input)
 
     def test_xnnpack_qadd(self):
         class Add(torch.nn.Module):

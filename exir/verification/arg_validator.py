@@ -62,7 +62,7 @@ class EdgeOpArgValidator(torch.fx.Interpreter):
 
         return kernel_arg
 
-    def call_function(
+    def call_function(  # noqa: C901
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
     ) -> Any:
         """

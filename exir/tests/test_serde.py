@@ -12,7 +12,6 @@ from typing import Tuple
 import executorch.exir as exir
 
 import torch
-from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.backend_api import CompileSpec, to_backend
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,

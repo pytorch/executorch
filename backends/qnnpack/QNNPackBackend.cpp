@@ -112,9 +112,10 @@ class QnnpackBackend final : public PyTorchBackendInterface {
   }
 
   Result<DelegateHandle*> init(
+      BackendInitContext& context,
       FreeableBuffer* processed,
-      ArrayRef<CompileSpec> compile_specs,
-      MemoryAllocator* runtime_allocator) const override {
+      ArrayRef<CompileSpec> compile_specs) const override {
+    MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
     auto dynamic_linear = fb_qnnpack::GetQNNDynamicLinear(processed->data());
     auto bias = dynamic_linear->bias();
 

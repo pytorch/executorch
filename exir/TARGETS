@@ -232,7 +232,6 @@ python_library(
         ":error",
         ":memory",
         "//caffe2:torch",
-        "//caffe2/functorch:functorch_src",
         "//executorch/exir/dialects/edge:lib",
     ],
 )

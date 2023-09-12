@@ -12,7 +12,7 @@ Please refer to fbcode/caffe2/executorch/backends/vulkan/serialization/schema/sc
 
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import List, Union
+from typing import List
 
 
 class VkDatatype(IntEnum):

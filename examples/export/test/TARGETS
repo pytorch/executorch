@@ -10,7 +10,6 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/examples/export:utils",
         "//executorch/examples/models:models",
-        "//executorch/exir:lib",
         "//executorch/extension/pybindings:portable_lib",  # @manual
     ],
 )

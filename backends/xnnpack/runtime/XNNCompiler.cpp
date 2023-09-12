@@ -1485,12 +1485,17 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
       return err;
     }
   }
+  uint32_t runtime_flags = 0;
+
+#ifdef ENABLE_XNNPACK_PROFILING
+  runtime_flags |= XNN_FLAG_BASIC_PROFILING;
+#endif
 
   xnn_runtime_t runtime_ptr = nullptr;
   status = xnn_create_runtime_v2(
       subgraph.get(),
       torch::executorch::threadpool::get_pthreadpool(),
-      0,
+      runtime_flags,
       &runtime_ptr);
   ET_CHECK_OR_RETURN_ERROR(
       xnn_status_success == status,
@@ -1501,6 +1506,10 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
   executor->runtime_ =
       std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)>(
           runtime_ptr, xnn_delete_runtime);
+
+#ifdef ENABLE_XNNPACK_PROFILING
+  executor->init_profiler();
+#endif
 
   for (auto old_id : *flatbuffer_graph->input_ids()) {
     executor->input_ids_.emplace_back(remapped_ids.at(old_id));

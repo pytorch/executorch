@@ -25,7 +25,6 @@ python_unittest(
         "//executorch/bundled_program:core",
         "//executorch/bundled_program/serialize:lib",
         "//executorch/exir:lib",
-        "//executorch/exir:tracer",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/extension/pybindings:portable_lib",  # @manual
@@ -54,7 +53,6 @@ python_unittest(
         "//executorch/bundled_program:core",
         "//executorch/bundled_program/serialize:lib",
         "//executorch/exir:lib",
-        "//executorch/exir:tracer",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/passes:spec_prop_pass",
@@ -84,7 +82,6 @@ python_unittest(
         "//executorch/bundled_program:core",
         "//executorch/bundled_program/serialize:lib",
         "//executorch/exir:lib",
-        "//executorch/exir:tracer",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/extension/pybindings:portable_lib",  # @manual
