@@ -28,7 +28,9 @@ class PermuteMemoryFormatsPass(ExportPass):
         after pass: x -> to_dim(channel_last) -> conv -> to_dim_(contiguous) -> to_dim(channel_last) -> linear -> to_dim_(contiguous) -> out
     """
 
-    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+    def call(  # noqa: suprress function is too complex (13)
+        self, graph_module: torch.fx.GraphModule
+    ) -> PassResult:
         for pattern in list(module_to_annotator.keys()):
             pattern_op = module_to_annotator[pattern]
             if pattern_op.permuate_memory_format:
