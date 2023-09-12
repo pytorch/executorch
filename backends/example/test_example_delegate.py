@@ -25,7 +25,7 @@ from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torchvision.models.quantization import mobilenet_v2
 
 
-class TestQualCommDelegate(unittest.TestCase):
+class TestExampleDelegate(unittest.TestCase):
     def test_delegate_linear(self):
         class Conv2dModule(torch.nn.Module):
             def __init__(self):
