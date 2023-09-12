@@ -10,109 +10,528 @@
 #include <cstdint>
 #include <cstring>
 
+#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-
-#include <executorch/kernels/portable/cpu/util/index_util.h>
 
 namespace torch {
 namespace executor {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
+using TensorOptList = exec_aten::ArrayRef<exec_aten::optional<Tensor>>;
 
-namespace {
+bool check_indices_dtypes(TensorOptList indices) {
+  for (auto i = 0; i < indices.size(); i++) {
+    if (indices[i].has_value()) {
+      const Tensor& index = indices[i].value();
+      ScalarType ix_type = index.scalar_type();
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          ix_type == ScalarType::Long || ix_type == ScalarType::Int ||
+              ix_type == ScalarType::Byte || ix_type == ScalarType::Bool,
+          "Index tensors should be Long, Int, Byte or Bool");
+    }
+  }
+  return true;
+}
 
-template <typename CTYPE_IN, typename CTYPE_OUT>
-void index_out_impl_mask(
+size_t count_index_blocks(TensorOptList indices) {
+  size_t block_count = 0;
+  bool in_block = false;
+  for (size_t i = 0; i < indices.size(); i++) {
+    if (indices[i].has_value()) {
+      if (!in_block) {
+        in_block = true;
+        block_count++;
+      }
+    } else {
+      in_block = false;
+    }
+  }
+  return block_count;
+}
+
+bool is_mask_index(const Tensor& index) {
+  if (index.scalar_type() == ScalarType::Bool ||
+      index.scalar_type() == ScalarType::Byte) {
+    return true;
+  }
+  return false;
+}
+
+template <typename CTYPE_IX>
+size_t _count_trues_in_mask_index(const Tensor& index) {
+  const CTYPE_IX* const index_ptr = index.const_data_ptr<CTYPE_IX>();
+  size_t sum = 0;
+  for (size_t i = 0; i < index.numel(); ++i) {
+    if (index_ptr[i]) {
+      sum += 1;
+    }
+  }
+  return sum;
+}
+
+size_t count_trues_in_mask_index(const Tensor& index) {
+  if (index.scalar_type() == ScalarType::Bool) {
+    return _count_trues_in_mask_index<bool>(index);
+  } else {
+    return _count_trues_in_mask_index<uint8_t>(index);
+  }
+}
+
+bool check_mask_indices(const Tensor& in, TensorOptList indices) {
+  size_t in_i = 0;
+  for (auto i = 0; i < indices.size(); i++) {
+    if (indices[i].has_value()) {
+      const Tensor& index = indices[i].value();
+      if (is_mask_index(index)) {
+        ET_LOG_MSG_AND_RETURN_IF_FALSE(
+            index.dim() > 0, "Zero-dimensional mask index not allowed");
+        for (auto j = 0; j < index.dim(); j++) {
+          ET_LOG_MSG_AND_RETURN_IF_FALSE(
+              index.size(j) == in.size(in_i + j),
+              "The shape of mask index must match the sizes of the corresponding input dimensions.");
+        }
+        in_i += index.dim();
+      } else {
+        in_i += 1;
+      }
+    } else {
+      in_i += 1;
+    }
+  }
+  return true;
+}
+
+bool get_indices_broadcast_shape(
+    TensorOptList indices,
+    Tensor::SizesType* ix_sizes,
+    size_t* ix_ndim) {
+  // Holds the (reversed) broadcasted shape of the indices.
+  Tensor::SizesType rev_ix_sizes[kTensorDimensionLimit];
+  size_t curr_ndim = 0;
+
+  for (size_t i = 0; i < indices.size(); i++) {
+    if (indices[i].has_value()) {
+      const Tensor& index = indices[i].value();
+      if (is_mask_index(index)) {
+        size_t len = count_trues_in_mask_index(index);
+        if (curr_ndim == 0) {
+          curr_ndim = 1;
+          rev_ix_sizes[0] = len;
+        } else if (rev_ix_sizes[0] == 1) {
+          rev_ix_sizes[0] = len;
+        } else if (len != 1 && rev_ix_sizes[0] != len) {
+          ET_LOG_MSG_AND_RETURN_IF_FALSE(
+              false, "Broadcast of mask index failed.");
+        }
+      } else {
+        for (size_t j = 0; j < index.dim(); j++) {
+          size_t rev_j_size = index.size(index.dim() - j - 1);
+          if (j >= curr_ndim) {
+            curr_ndim = j + 1;
+            rev_ix_sizes[j] = rev_j_size;
+          } else if (rev_ix_sizes[j] == 1) {
+            rev_ix_sizes[j] = rev_j_size;
+          } else if (rev_j_size != 1 && rev_ix_sizes[j] != rev_j_size) {
+            ET_LOG_MSG_AND_RETURN_IF_FALSE(false, "Broadcast of index failed.");
+          }
+        }
+      }
+    }
+  }
+
+  for (size_t i = 0; i < curr_ndim; i++) {
+    ix_sizes[i] = rev_ix_sizes[curr_ndim - i - 1];
+  }
+  (*ix_ndim) = curr_ndim;
+  return true;
+}
+
+size_t get_indices_broadcast_ndim(TensorOptList indices) {
+  size_t ndim = 0;
+  for (size_t i = 0; i < indices.size(); i++) {
+    if (indices[i].has_value()) {
+      const Tensor& index = indices[i].value();
+      if (is_mask_index(index)) {
+        if (ndim == 0) {
+          ndim = 1;
+        }
+      } else {
+        if (ndim < index.dim()) {
+          ndim = index.dim();
+        }
+      }
+    }
+  }
+  return ndim;
+}
+
+size_t get_num_indexed_dims(TensorOptList indices) {
+  size_t num_indexed_dims = 0;
+  for (size_t i = 0; i < indices.size(); i++) {
+    if (indices[i].has_value()) {
+      const Tensor& index = indices[i].value();
+      if (is_mask_index(index)) {
+        num_indexed_dims += index.dim();
+      } else {
+        num_indexed_dims += 1;
+      }
+    }
+  }
+  return num_indexed_dims;
+}
+
+size_t get_num_null_indices(TensorOptList indices) {
+  size_t num_null_indices = 0;
+  for (size_t i = 0; i < indices.size(); i++) {
+    if (!indices[i].has_value()) {
+      num_null_indices += 1;
+    }
+  }
+  return num_null_indices;
+}
+
+size_t get_num_leading_null_indices(TensorOptList indices) {
+  size_t start = 0;
+  while (!indices[start].has_value()) {
+    start += 1;
+  }
+  return start;
+}
+
+bool compute_target_size(
+    const Tensor& in,
+    TensorOptList indices,
+    bool adjacent,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim) {
+  Tensor::SizesType broadcast_sizes[kTensorDimensionLimit];
+  size_t broadcast_ndim = 0;
+  if (!get_indices_broadcast_shape(indices, broadcast_sizes, &broadcast_ndim)) {
+    return false;
+  }
+
+  size_t num_null_indices = get_num_null_indices(indices);
+  size_t num_indexed_dims = get_num_indexed_dims(indices);
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      num_null_indices + num_indexed_dims <= in.dim(),
+      "Indexing too many dimensions");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      in.dim() + broadcast_ndim - num_indexed_dims <= kTensorDimensionLimit,
+      "Out tensor would exceed number of allowed dimensions");
+
+  (*out_ndim) = in.dim() + broadcast_ndim - num_indexed_dims;
+
+  if (adjacent) {
+    size_t start = get_num_leading_null_indices(indices);
+    for (size_t i = 0; i < start; i++) {
+      out_sizes[i] = in.size(i);
+    }
+    for (size_t i = 0; i < broadcast_ndim; i++) {
+      out_sizes[i + start] = broadcast_sizes[i];
+    }
+    for (size_t i = num_indexed_dims + start; i < in.dim(); i++) {
+      out_sizes[i + broadcast_ndim - num_indexed_dims] = in.size(i);
+    }
+  } else {
+    for (size_t i = 0; i < broadcast_ndim; i++) {
+      out_sizes[i] = broadcast_sizes[i];
+    }
+    size_t in_i = 0;
+    size_t out_i = broadcast_ndim;
+    for (size_t i = 0; i < indices.size(); i++) {
+      if (!indices[i].has_value()) {
+        out_sizes[out_i++] = in.size(in_i++);
+      } else {
+        const Tensor& index = indices[i].value();
+        if (is_mask_index(index)) {
+          in_i += index.dim();
+        } else {
+          in_i += 1;
+        }
+      }
+    }
+    for (size_t i = num_indexed_dims + num_null_indices; i < in.dim(); i++) {
+      out_sizes[i + broadcast_ndim - num_indexed_dims] = in.size(i);
+    }
+  }
+  return true;
+}
+
+void resize_index_out(
+    RuntimeContext ctx,
     const Tensor& in,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
+    size_t block_count,
     Tensor& out) {
-  // Data pointers
-  const CTYPE_IN* const in_data = in.const_data_ptr<CTYPE_IN>();
-  CTYPE_OUT* const out_data = out.mutable_data_ptr<CTYPE_OUT>();
+  if (block_count == 0) {
+    ET_KERNEL_CHECK(
+        ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
+  } else {
+    size_t expected_ndim = 0;
+    Tensor::SizesType expected_size[kTensorDimensionLimit];
 
-  const Tensor& mask = indices[0].value();
-  const bool* const mask_ptr = mask.const_data_ptr<bool>();
+    bool adjacent = (block_count == 1);
+    bool success = compute_target_size(
+        in, indices, adjacent, expected_size, &expected_ndim);
+    ET_KERNEL_CHECK(ctx, success, InvalidArgument, out);
+
+    ET_KERNEL_CHECK(
+        ctx,
+        resize_tensor(out, {expected_size, expected_ndim}) == Error::Ok,
+        InvalidArgument,
+        out);
+  }
+}
+
+// dim_map maps non-indexed input dimensions to the corresponding output
+// dimensions. Indexed dimensions are mapped to -1.
+void compute_dim_map(
+    const Tensor& in,
+    TensorOptList indices,
+    int32_t* dim_map,
+    bool adjacent) {
+  size_t broadcast_ndim = get_indices_broadcast_ndim(indices);
+  size_t start = get_num_leading_null_indices(indices);
+  size_t num_indexed_dims = get_num_indexed_dims(indices);
+  size_t num_null_indices = get_num_null_indices(indices);
+
+  if (adjacent) {
+    for (auto i = 0; i < start; i++) {
+      dim_map[i] = i;
+    }
+    for (auto i = start; i < start + num_indexed_dims; i++) {
+      dim_map[i] = -1;
+    }
+    for (auto i = start + num_indexed_dims; i < in.dim(); i++) {
+      dim_map[i] = i - num_indexed_dims + broadcast_ndim;
+    }
+  } else {
+    size_t in_i = 0;
+    size_t out_i = broadcast_ndim;
+    for (size_t i = 0; i < indices.size(); i++) {
+      if (!indices[i].has_value()) {
+        dim_map[in_i++] = out_i++;
+      } else {
+        const Tensor& index = indices[i].value();
+        if (is_mask_index(index)) {
+          for (auto j = 0; j < index.dim(); j++) {
+            dim_map[in_i++] = -1;
+          }
+        } else {
+          dim_map[in_i++] = -1;
+        }
+      }
+    }
+    for (size_t i = num_indexed_dims + num_null_indices; i < in.dim(); i++) {
+      dim_map[i] = i - num_indexed_dims + broadcast_ndim;
+    }
+  }
+}
+
+// ix_map maps indexed input dimensions to the corresponding index.
+// Non-indexed dimensions are mapped to -1.
+void compute_index_map(
+    const Tensor& in,
+    TensorOptList indices,
+    int32_t* ix_map) {
+  for (size_t i = 0; i < in.dim(); i++) {
+    ix_map[i] = -1;
+  }
+  size_t in_i = 0;
+  for (size_t i = 0; i < indices.size(); i++) {
+    if (indices[i].has_value()) {
+      const Tensor& index = indices[i].value();
+      if (is_mask_index(index)) {
+        for (auto j = 0; j < index.dim(); j++) {
+          ix_map[in_i++] = i;
+        }
+      } else {
+        ix_map[in_i++] = i;
+      }
+    } else {
+      in_i++;
+    }
+  }
+}
+
+int64_t query_integral_index(
+    const Tensor& index,
+    size_t* ix_coord,
+    size_t broadcast_ndim) {
+  size_t flat_ix = linearize_access_indexes(
+      {ix_coord, broadcast_ndim}, broadcast_ndim, index);
+
+  ScalarType idx_type = index.scalar_type();
+  int64_t index_val = 0;
+  // Extract the index value
+  if (idx_type == ScalarType::Int) {
+    const int32_t* const index_ptr = index.const_data_ptr<int32_t>();
+    index_val = static_cast<int64_t>(index_ptr[flat_ix]);
+  } else {
+    const int64_t* const index_ptr = index.const_data_ptr<int64_t>();
+    index_val = index_ptr[flat_ix];
+  }
+  return index_val;
+}
+
+template <typename CTYPE_IX>
+void _query_mask_index(const Tensor& index, size_t query_idx, size_t* res) {
+  const CTYPE_IX* const index_ptr = index.const_data_ptr<CTYPE_IX>();
+  // Broadcasting for mask index tensors
+  size_t num_true = _count_trues_in_mask_index<CTYPE_IX>(index);
+  if (num_true == 1) {
+    query_idx = 0;
+  }
+  // Extract the index value by finding the idx-th element that is set to
+  // true.
   size_t count = 0;
-  for (int i = 0; i < mask.numel(); ++i) {
-    if (mask_ptr[i]) {
-      out_data[count] = static_cast<CTYPE_OUT>(in_data[i]);
-      count++;
+  size_t flat_ix = 0;
+  for (size_t i = 0; i < index.numel(); ++i) {
+    if (index_ptr[i]) {
+      if (count == query_idx) {
+        flat_ix = i;
+        break;
+      } else {
+        count++;
+      }
     }
+  }
+  delinearize_index(flat_ix, index, res, kTensorDimensionLimit);
+}
+
+void query_mask_index(const Tensor& index, size_t query_idx, size_t* res) {
+  if (index.scalar_type() == ScalarType::Bool) {
+    _query_mask_index<bool>(index, query_idx, res);
+  } else {
+    _query_mask_index<uint8_t>(index, query_idx, res);
   }
 }
 
-template <typename CTYPE_IN, typename CTYPE_OUT>
-void index_out_impl_list(
+bool get_in_coord(
     const Tensor& in,
-    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
-    Tensor& out) {
-  // Data pointers
-  const CTYPE_IN* const in_data = in.const_data_ptr<CTYPE_IN>();
-  CTYPE_OUT* dst = out.mutable_data_ptr<CTYPE_OUT>();
+    TensorOptList indices,
+    size_t start,
+    size_t broadcast_ndim,
+    int32_t* dim_map,
+    int32_t* ix_map,
+    size_t* out_coord,
+    size_t* in_coord) {
+  for (ssize_t i = 0; i < in.dim(); i++) {
+    if (dim_map[i] >= 0) {
+      in_coord[i] = out_coord[dim_map[i]];
+    } else {
+      const Tensor& index = indices[ix_map[i]].value();
 
-  size_t num_idx_queries = get_indices_broadcast_len(indices);
-  for (size_t idx = 0; idx < num_idx_queries; idx++) {
-    const CTYPE_IN* src = in_data;
+      size_t ix_coord[kTensorDimensionLimit];
+      for (auto j = 0; j < broadcast_ndim; j++) {
+        ix_coord[j] = out_coord[j + start];
+      }
 
-    // For each index query, align the src and dst pointers to the position
-    // described by the query.
-    size_t offset = get_index_query_pos_offset(idx, in, indices);
-    src += offset;
-
-    // Calculate the region of data to copy for this query.
-    // For example, a 2x4x3x5 tensor indexing at [1, 1, :, :] should copy 15
-    // elements.
-    size_t copy_len = getTrailingDims(in, indices.size() - 1);
-
-    for (size_t i = 0; i < copy_len; ++i) {
-      dst[i] = static_cast<CTYPE_OUT>(src[i]);
+      if (is_mask_index(index)) {
+        size_t query_ix = ix_coord[broadcast_ndim - 1];
+        size_t query_result[kTensorDimensionLimit];
+        query_mask_index(index, query_ix, query_result);
+        for (auto j = 0; j < index.dim(); j++) {
+          in_coord[i + j] = query_result[j];
+        }
+        i += index.dim() - 1;
+      } else {
+        int64_t index_val =
+            query_integral_index(index, ix_coord, broadcast_ndim);
+        if (index_val < 0) {
+          index_val += in.size(i);
+        }
+        ET_LOG_MSG_AND_RETURN_IF_FALSE(
+            index_val >= 0 && index_val < in.size(i),
+            "Index %" PRId64
+            " is out of bounds for input dimension %zd with size %zd.",
+            index_val,
+            i,
+            in.size(i));
+        in_coord[i] = static_cast<size_t>(index_val);
+      }
     }
-    dst += copy_len;
   }
+  return true;
 }
 
-} // namespace
+size_t get_in_ix(
+    RuntimeContext ctx,
+    const Tensor& in,
+    TensorOptList indices,
+    Tensor& out,
+    size_t out_ix,
+    size_t start,
+    size_t broadcast_ndim,
+    int32_t* dim_map,
+    int32_t* ix_map) {
+  size_t out_coord[kTensorDimensionLimit];
+  delinearize_index(out_ix, out, out_coord, kTensorDimensionLimit);
+
+  size_t in_coord[kTensorDimensionLimit];
+  bool success = get_in_coord(
+      in, indices, start, broadcast_ndim, dim_map, ix_map, out_coord, in_coord);
+  ET_KERNEL_CHECK(ctx, success, InvalidArgument, out);
+
+  return coordinateToIndex(in, in_coord);
+}
 
 Tensor& index_Tensor_out(
     RuntimeContext& ctx,
     const Tensor& in,
-    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
+    TensorOptList indices,
     Tensor& out) {
-  ET_KERNEL_CHECK(
-      ctx, check_index_args(in, indices, out), InvalidArgument, out);
+  (void)ctx;
 
-  if (indices.empty()) {
-    ET_KERNEL_CHECK(
-        ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
-    memcpy(
-        out.mutable_data_ptr<char>(), in.const_data_ptr<char>(), in.nbytes());
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      indices.size() <= in.dim(),
+      InvalidArgument,
+      out,
+      "Indexing too many dimensions");
+
+  ET_KERNEL_CHECK(ctx, check_indices_dtypes(indices), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, check_mask_indices(in, indices), InvalidArgument, out);
+
+  size_t block_count = count_index_blocks(indices);
+
+  resize_index_out(ctx, in, indices, block_count, out);
+
+  if (out.numel() == 0) {
     return out;
   }
 
-  size_t expected_ndim = 0;
-  Tensor::SizesType expected_size[kTensorDimensionLimit];
-  get_index_out_target_size(in, indices, expected_size, &expected_ndim);
-  ET_KERNEL_CHECK(
-      ctx,
-      resize_tensor(out, {expected_size, expected_ndim}) == Error::Ok,
-      InvalidArgument,
-      out);
+  int32_t dim_map[kTensorDimensionLimit];
+  int32_t ix_map[kTensorDimensionLimit];
+  size_t start = 0;
+  size_t xdim = 0;
 
-  check_index_args(in, indices, out);
-
-  if (in.numel() == 0) {
-    return out;
+  if (block_count > 0) {
+    if (block_count == 1) {
+      start = get_num_leading_null_indices(indices);
+    }
+    xdim = get_indices_broadcast_ndim(indices);
+    compute_dim_map(in, indices, dim_map, block_count == 1);
+    compute_index_map(in, indices, ix_map);
   }
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
   ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "index", CTYPE_IN, [&]() {
     ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "index", CTYPE_OUT, [&]() {
-      if (is_index_mask(in, indices)) {
-        index_out_impl_mask<CTYPE_IN, CTYPE_OUT>(in, indices, out);
-      } else {
-        index_out_impl_list<CTYPE_IN, CTYPE_OUT>(in, indices, out);
+      const CTYPE_IN* const in_data = in.const_data_ptr<CTYPE_IN>();
+      CTYPE_OUT* const out_data = out.mutable_data_ptr<CTYPE_OUT>();
+
+      for (auto out_ix = 0; out_ix < out.numel(); out_ix++) {
+        size_t in_ix = block_count == 0
+            ? out_ix
+            : get_in_ix(
+                  ctx, in, indices, out, out_ix, start, xdim, dim_map, ix_map);
+        out_data[out_ix] = static_cast<CTYPE_OUT>(in_data[in_ix]);
       }
     });
   });
