@@ -344,7 +344,7 @@ class ChannelsLastTaggedReshapePass(XNNPACKPass):
             target_node=target_node,
         )
 
-    def call(self, graph_module: torch.fx.GraphModule):
+    def call(self, graph_module: torch.fx.GraphModule):  # noqa: C901
         graph = graph_module.graph
         original_nodes = list(graph.nodes)
         for node in original_nodes:

@@ -278,10 +278,8 @@ class EdgeOpYamlInfo:
         self.custom = custom
 
         assert all(
-            [
-                len(self.tensor_variable_names) == len(type_combination)
-                for type_combination in allowed_types
-            ]
+            len(self.tensor_variable_names) == len(type_combination)
+            for type_combination in allowed_types
         ), "{}'s tensor_variable_names length must be the same as number of allowed types, but got {} vs {}: {}.".format(
             self.inherits,
             self.tensor_variable_names,

@@ -15,10 +15,7 @@ import torch._export
 from executorch.exir.capture._config import CaptureConfig
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.program import ExirExportedProgram, MultiMethodExirExportedProgram
-from executorch.exir.program._program import (
-    HackedUpExportedProgramDONOTUSE,
-    transform_exported_program,
-)
+from executorch.exir.program._program import HackedUpExportedProgramDONOTUSE
 from executorch.exir.tracer import (
     _default_decomposition_table,
     dispatch_trace,
@@ -56,6 +53,7 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
         "This function is now deprecated, please use `capture` instead. "
         "See https://github.com/pytorch/functorch for more details.",
         DeprecationWarning,
+        stacklevel=1,
     )
 
     graph_module = dispatch_trace(f, args)
@@ -87,7 +85,7 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
 
 
 @compatibility(is_backward_compatible=False)
-def capture(
+def capture(  # noqa: C901
     f: Callable[..., Any],
     args: Tuple[Value, ...],
     config: Optional[CaptureConfig] = None,

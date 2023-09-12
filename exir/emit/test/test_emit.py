@@ -238,11 +238,11 @@ class TestEmit(unittest.TestCase):
         program = edge.to_executorch().program
         for opname in removed_ops:
             self.assertTrue(
-                all([op.name != opname for op in program.execution_plan[0].operators])
+                all(op.name != opname for op in program.execution_plan[0].operators)
             )
         for opname in expected_ops:
             self.assertTrue(
-                any([op.name == opname for op in program.execution_plan[0].operators])
+                any(op.name == opname for op in program.execution_plan[0].operators)
             )
 
     def test_operators_unique(self) -> None:

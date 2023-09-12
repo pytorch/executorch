@@ -60,7 +60,8 @@ class PassRegistry:
 
         if pass_name in cls.registry:
             warnings.warn(
-                f"Pass {pass_name} already exists inside of the PassRegistry. Will ignore."
+                f"Pass {pass_name} already exists inside of the PassRegistry. Will ignore.",
+                stacklevel=1,
             )
             return
 

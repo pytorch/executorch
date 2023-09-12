@@ -271,7 +271,7 @@ def get_graph_output_tensors(nodes: Iterable[Node]) -> Set[TensorSpec]:
     return graph_output_tensors
 
 
-def collect_specs_from_nodes(
+def collect_specs_from_nodes(  # noqa: C901
     nodes: Iterable[Node],
     ignore_graph_input: bool = False,
     ignore_graph_output: bool = False,

@@ -18,7 +18,7 @@ definitions_yaml = "fbcode/executorch/kernels/test/supported_features.yaml"
 
 
 def gen_overriden_values():
-    overriden_values = dict()
+    overriden_values = {}
     for name, path in kernels.items():
         with open(path) as f:
             overrides = yaml.full_load(f)
