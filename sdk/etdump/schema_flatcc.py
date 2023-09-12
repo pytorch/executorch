@@ -91,8 +91,10 @@ class PROFILE_EVENT_ENUM(Enum):
 @dataclass
 class ProfileEvent:
     name: str
-    chain_idx: int
-    debug_handle: int
+    chain_id: int
+    instruction_id: int
+    delegate_debug_id_int: int
+    delegate_debug_id_str: str
     start_time: int
     end_time: int
 
@@ -118,8 +120,9 @@ class Event:
 
 @dataclass
 class RunData:
-    allocators: List[Allocator]
-    events: List[Event]
+    name: str
+    allocators: Optional[List[Allocator]]
+    events: Optional[List[Event]]
 
 
 @dataclass
