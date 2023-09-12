@@ -10,7 +10,7 @@ as_ci_user() {
   #     https://github.com/conda/conda/issues/6576
   # NB: Pass on PATH and LD_LIBRARY_PATH to sudo invocation
   # NB: This must be run from a directory that the user has access to
-  sudo -E -H -u ci-user env -u SUDO_UID -u SUDO_GID -u SUDO_COMMAND -u SUDO_USER env "PATH=${PATH}" "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" "$@"
+  sudo -E -H -u ci-user env -u SUDO_UID -u SUDO_GID -u SUDO_COMMAND -u SUDO_USER env "PATH=${PATH}" "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}" "$@"
 }
 
 conda_install() {
