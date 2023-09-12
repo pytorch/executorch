@@ -16,6 +16,11 @@ BUILD_TOOLS = [
     "buck2",
     "cmake",
 ]
+DEFAULT_RUNNER = "linux.2xlarge"
+RUNNERS = {
+    # This one runs OOM on smaller runner, the root cause is unclear (T163016365)
+    "w2l": "linux.12xlarge"
+}
 
 
 def set_output(name: str, val: Any) -> None:
@@ -53,6 +58,7 @@ def export_models_for_ci() -> None:
                     "model": name,
                     "quantization": quantization,
                     "xnnpack_delegation": xnnpack_delegation,
+                    "runner": RUNNERS.get(name, DEFAULT_RUNNER),
                 }
             )
     set_output("models", json.dumps(models))
