@@ -13,6 +13,7 @@ python_unittest(
         "//executorch/exir:lib",
         "//executorch/exir:print_program",
         "//executorch/exir:schema",
+        "//executorch/exir/backend:backend_api",
         "//executorch/exir/emit:lib",
         "//executorch/exir/passes:const_prop_pass",
         "//executorch/exir/tests:lib",
