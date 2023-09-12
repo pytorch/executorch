@@ -28,7 +28,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from ..export.export_example import export_to_exec_prog, save_pte_program
+from ..export.utils import export_to_edge, save_pte_program
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
 from ..recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS
@@ -154,6 +154,9 @@ if __name__ == "__main__":
         end = time.perf_counter()
         # logging.info(f"Verify time: {end - start}s")
 
+    model = model.eval()
+    # pre-autograd export. eventually this will become torch.export
+    model = export.capture_pre_autograd_graph(model, example_inputs)
     start = time.perf_counter()
     quantized_model = quantize(model, example_inputs)
     end = time.perf_counter()
@@ -161,16 +164,16 @@ if __name__ == "__main__":
 
     # TODO[T163161310]: takes a long time to export to exec prog and save inception_v4 quantized model
     if args.model_name != "ic4":
+
         start = time.perf_counter()
-        prog = export_to_exec_prog(
-            quantized_model,
-            copy.deepcopy(example_inputs),
-            edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+        edge_m = export_to_edge(
+            quantized_model, example_inputs, edge_compile_config=edge_compile_config
         )
         end = time.perf_counter()
-        # logging.info(f"export_to_exec_prog time: {end - start}s")
+
         start = time.perf_counter()
+        prog = edge_m.to_executorch(None)
         save_pte_program(prog.buffer, f"{args.model_name}_quantized")
         end = time.perf_counter()
-        # logging.info(f"save_pte_program time: {end - start}s")
     logging.info("finished")
