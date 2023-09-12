@@ -44,11 +44,12 @@ class ExecutorBackend final : public PyTorchBackendInterface {
   }
 
   Result<DelegateHandle*> init(
+      BackendInitContext& context,
       FreeableBuffer* processed,
-      __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-      MemoryAllocator* runtime_allocator) const override {
+      __ET_UNUSED ArrayRef<CompileSpec> compile_specs) const override {
     // `processed` contains an executorch program. Wrap it in a DataLoader that
     // will return the data directly without copying it.
+    MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
     auto loader = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
         runtime_allocator, util::BufferDataLoader);
     new (loader) util::BufferDataLoader(processed->data(), processed->size());

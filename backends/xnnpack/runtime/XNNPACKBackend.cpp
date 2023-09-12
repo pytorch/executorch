@@ -25,11 +25,11 @@ class XnnpackBackend final : public PyTorchBackendInterface {
   }
 
   Result<DelegateHandle*> init(
+      BackendInitContext& context,
       FreeableBuffer* processed,
-      ArrayRef<CompileSpec> compile_specs,
-      MemoryAllocator* runtime_allocator) const override {
+      ArrayRef<CompileSpec> compile_specs) const override {
     auto executor = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        runtime_allocator, xnnpack::delegate::XNNExecutor);
+        context.get_runtime_allocator(), xnnpack::delegate::XNNExecutor);
 
     // Executor has been allocated but not constructed, ensure that runtime_ is
     // nullptr by constructing it in place here. NOTE: Since we use placement
@@ -38,7 +38,10 @@ class XnnpackBackend final : public PyTorchBackendInterface {
     new (executor) xnnpack::delegate::XNNExecutor;
 
     Error err = xnnpack::delegate::XNNCompiler::compileModel(
-        processed->data(), processed->size(), executor, runtime_allocator);
+        processed->data(),
+        processed->size(),
+        executor,
+        context.get_runtime_allocator());
     if (err != Error::Ok) {
       ET_LOG(Error, "XNNCompiler::compleModel failed: 0x%x", (unsigned int)err);
     }
