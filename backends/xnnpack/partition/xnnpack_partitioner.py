@@ -7,7 +7,7 @@
 import itertools
 import logging
 import operator
-from typing import Any, Callable, cast, Dict, List, Optional, Union
+from typing import Any, Callable, cast, Dict, List, Optional, Set, Union
 
 import torch
 
@@ -526,6 +526,274 @@ class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
             + self.get_input_deps(src_partition.input_nodes)
             + self.get_output_deps(src_partition.output_nodes)
         )
+
+
+class XnnpackPartitioner(Partitioner):
+    """
+    Module and Opname based partitioner for FP32 modules/ops listed in
+    SUPPORTED_MODULES and SUPPORTED_OPS and statically quantized modules/ops listed in
+    SUPPORTED_QUANT_MODULES and SUPPORTED_QUANT_OPS.
+    """
+
+    _Q_OPS = [
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    ]
+
+    _DQ_OPS = [
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+    ]
+
+    _QPARAM_OPS = [
+        exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
+    ]
+
+    _QUANT_OPS = _Q_OPS + _DQ_OPS + _QPARAM_OPS
+
+    def __init__(
+        self,
+        *,
+        supported_modules: List[Callable] = SUPPORTED_MODULES,
+        supported_ops: Optional[List[Callable]] = SUPPORTED_OPS,
+        supported_quant_modules: List[Callable] = SUPPORTED_QUANT_MODULES,
+        supported_quant_ops: Optional[List[Callable]] = SUPPORTED_QUANT_OPS,
+        quant: Optional[bool] = None,
+    ):
+        super().__init__()
+        self.supported_modules = set(supported_modules)
+        self.supported_ops = set(supported_ops or [])
+        self.supported_quant_modules = set(supported_quant_modules)
+        supported_quant_ops = supported_quant_ops or []
+        self.supported_quant_ops = set(supported_quant_ops + self._QUANT_OPS)
+
+        self.quant = quant
+
+        self.delegation_spec = DelegationSpec(XnnpackBackend.__name__, [])
+        self.partition_tags: Dict[str, DelegationSpec] = {}
+
+    def get_supported_modules(self, quant: bool) -> Set[Callable]:
+        """
+        Get supported modules
+        """
+        if quant is True:
+            return self.supported_quant_modules
+        elif quant is False:
+            return self.supported_modules
+        else:
+            return self.supported_modules | self.supported_quant_modules
+
+    def get_supported_ops(self, quant: Optional[bool]) -> Set[Callable]:
+        """
+        Get supported ops
+        """
+        if quant is True:
+            return self.supported_quant_ops
+        elif quant is False:
+            return self.supported_ops
+        else:
+            return self.supported_ops | self.supported_quant_ops
+
+    @staticmethod
+    def check_partitions(partitions: Union[dict, list]) -> bool:
+        """
+        Warn users if there aren't any matches
+
+        TODO: convert this into a stronger validation, may need a flag in
+        `to_backend()` or partitioner __init__()
+        """
+        pl = len(partitions)
+        if pl == 0:
+            log.warning("Nothing can be partitioned!")
+        else:
+            log.info(f"Found {pl} subgraphs to be partitioned.")
+        return pl != 0
+
+    def get_input_deps(  # noqa
+        self, input_nodes: List[torch.fx.Node]
+    ) -> List[torch.fx.Node]:
+        """
+        For each input node, walk up and pull necessary quant/attr nodes in the partition
+        """
+        nodes = set()
+        for inp in input_nodes:
+            if inp.target in self._DQ_OPS:
+                # dequant node
+                nodes.add(inp)
+
+                # possible per_channel scale/zp for the dequant node args{1, 2}
+                for i in [1, 2]:
+                    node = inp.args[i]
+                    if isinstance(node, torch.fx.Node) and node.op == "get_attr":
+                        nodes.add(node)
+
+                # quant node
+                q_prod = inp.args[0]
+                assert (
+                    isinstance(q_prod, torch.fx.Node) and q_prod.target in self._Q_OPS
+                )
+                nodes.add(q_prod)
+
+                # possible weight for the quant node arg{0}
+                node = q_prod.args[0]
+                if isinstance(node, torch.fx.Node) and node.op == "get_attr":
+                    nodes.add(node)
+
+                # possible nodes for quant node args{1, 2}
+                for i in [1, 2]:
+                    node = q_prod.args[i]
+                    # possible choose_qparam
+                    if (
+                        isinstance(node, torch.fx.Node)
+                        and node.op == "call_function"
+                        and node.target == operator.getitem
+                    ):
+                        parent = node.args[0]
+                        if (
+                            isinstance(parent, torch.fx.Node)
+                            and parent.op == "call_function"
+                            and parent.target in self._QPARAM_OPS
+                        ):
+                            nodes.add(node)
+                            nodes.add(parent)
+
+                    # possible per_channel scale/zp for the quant node
+                    elif isinstance(node, torch.fx.Node) and node.op == "get_attr":
+                        nodes.add(node)
+        return list(nodes)
+
+    def get_output_deps(self, output_nodes: List[torch.fx.Node]) -> List[torch.fx.Node]:
+        """
+        For each output node, check all the users and insert them into the partition if needed
+        """
+        nodes = []
+        for output in output_nodes:
+            for node in output.users:
+                if node.target in self._Q_OPS:
+                    nodes.append(node)
+                    users = list(node.users.keys())
+                    for dq_user in users:
+                        assert (
+                            dq_user.target in self._DQ_OPS
+                        ), "Expecting a dq node(s) after a q node, but got target {dq_user.target} for {dq_user} node"
+                        nodes.append(dq_user)
+        return nodes
+
+    def get_nodes(
+        self, src_partition: SourcePartition, quant: bool
+    ) -> List[torch.fx.Node]:
+        """
+        Return nodes from the source partition.
+        """
+        if quant:
+            # Insert quantization ops into src_partition by following the input, output node.
+            return (
+                src_partition.nodes
+                + self.get_input_deps(src_partition.input_nodes)
+                + self.get_output_deps(src_partition.output_nodes)
+            )
+        else:
+            return src_partition.nodes
+
+    def qualify_nodes(self, input_nodes: List[torch.fx.Node]) -> bool:
+        """
+        Each node in the module (post decomposition) must satisfy the
+        constraints specified for XNNPACK.
+
+        Disqualify the whole module if one of the nodes fails to satisfy.
+        """
+        return all(
+            XnnpackOperatorSupport.check_constraint(node) for node in input_nodes
+        )
+
+    def get_module_partitions(
+        self, graph_module: torch.fx.GraphModule, quant: Optional[bool]
+    ) -> List[List[torch.fx.Node]]:
+        """
+        Get all partitions in the torch.fx.GraphModule for the supported
+        modules.
+        """
+
+        if quant is None:
+            module_partitions = self.get_module_partitions(graph_module, True)
+            for node_list in module_partitions:
+                for node in node_list:
+                    node.meta["quant_match"] = True
+            fp32_module_partitions = self.get_module_partitions(graph_module, False)
+            for node_list in fp32_module_partitions:
+                for node in node_list:
+                    if node.meta.get("quant_match", False):
+                        break
+                else:
+                    module_partitions.append(node_list)
+            for node_list in module_partitions:
+                for node in node_list:
+                    node.meta.pop("quant_match", False)
+            return module_partitions
+
+        src_partition_dict = get_source_partitions(
+            graph_module.graph, self.get_supported_modules(quant)
+        )
+        all_partitions = src_partition_dict.values()
+
+        module_partitions = []
+        for src_partitions in all_partitions:
+            for src_partition in src_partitions:
+                partition_nodes = self.get_nodes(src_partition, quant)
+                if self.qualify_nodes(partition_nodes):
+                    module_partitions.append(partition_nodes)
+
+        return module_partitions
+
+    def generate_partitions(
+        self, graph_module: torch.fx.GraphModule, quant: Optional[bool]
+    ) -> List[Any]:
+        """
+        Generate a list of partitions for an torch.fx.GraphModule.
+        Also pass the supported ops to match.
+        """
+        matched_module_nodes = self.get_module_partitions(graph_module, quant)
+        return generate_partitions_from_list_of_nodes(
+            graph_module,
+            matched_module_nodes,
+            XnnpackOperatorSupport(supported_ops=list(self.get_supported_ops(quant))),
+        )
+
+    def tag_nodes(self, partitions: List[Partition]) -> None:
+        """
+        Tag each partition in the list with its delegation tag.
+        """
+        for partition in partitions:
+            # Add delegation tags
+            skip = False
+            for node in partition.nodes:
+                if "delegation_tag" in node.meta:
+                    skip = True
+            if skip:
+                continue
+            for node in partition.nodes:
+                delegation_tag = f"tag{partition.id}"
+                node.meta["delegation_tag"] = delegation_tag
+                self.partition_tags[delegation_tag] = self.delegation_spec
+
+    # override
+    def _partition(
+        self, graph_module: torch.fx.GraphModule, quant: Optional[bool]
+    ) -> torch.fx.GraphModule:
+        """
+        Run the partitioner on the given graph module, then tag each partition
+        with its delegation tag (and partition id)
+        """
+        partitions = self.generate_partitions(graph_module, quant)
+        if self.check_partitions(partitions):
+            self.tag_nodes(partitions)
+        return graph_module
+
+    def partition(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
+        ret = self._partition(graph_module, self.quant)
+        return ret
 
 
 class XnnpackDynamicallyQuantizedPartitioner(XnnpackQuantizedPartitioner):
