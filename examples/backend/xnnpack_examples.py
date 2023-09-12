@@ -9,11 +9,12 @@
 import argparse
 import logging
 
+import torch._export as export
+
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackFloatingPointPartitioner,
     XnnpackQuantizedPartitioner,
 )
-
 from executorch.exir import CaptureConfig, EdgeCompileConfig
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
@@ -77,6 +78,8 @@ if __name__ == "__main__":
     )
 
     model = model.eval()
+    # pre-autograd export. eventually this will become torch.export
+    model = export.capture_pre_autograd_graph(model, example_inputs)
 
     partitioner = XnnpackFloatingPointPartitioner
     if args.quantize:
@@ -85,10 +88,11 @@ if __name__ == "__main__":
         # TODO(T161849167): Partitioner will eventually be a single partitioner for both fp32 and quantized models
         partitioner = XnnpackQuantizedPartitioner
 
+    capture_config = CaptureConfig(enable_aot=True)
+
     edge = export_to_edge(
         model,
         example_inputs,
-        capture_config=CaptureConfig(enable_aot=True),
         edge_compile_config=EdgeCompileConfig(
             # TODO(T162080278): Duplicated Dequant nodes will be in quantizer spec
             _check_ir_validity=False
