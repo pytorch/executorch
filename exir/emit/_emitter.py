@@ -448,6 +448,30 @@ class _Emitter(torch.fx.Interpreter):
         # For constant tensors, allocation_info = None.
         return EValue(make_tensor_value(buffer_idx, None, spec))
 
+    def _get_list_jit_type(self, val: List[_Argument]) -> _SchemaType:
+        """Returns the JIT type for the given python type."""
+        assert isinstance(
+            val, list
+        ), f"Input to _get_list_jit_type was expected to be an instance of list but received {type(val)}"
+        is_tensor_type = all(
+            isinstance(v, _AbstractValue) and v.tensor is not None for v in val
+        )
+        if is_tensor_type:
+            return torch.TensorType.get()
+        elif isinstance(val[0], int):
+            return torch.IntType.get()
+        elif isinstance(val[0], bool):
+            return torch.BoolType.get()
+        elif isinstance(val[0], float):
+            return torch.FloatType.get()
+
+        raise InternalError(
+            self._emit_node_specific_error(
+                self.node,
+                "Couldn't determine JitType for list of elements. Only supports int, float, bool, and Tensor.",
+            )
+        )
+
     def _constant_to_evalue(  # noqa: C901
         self,
         val: _Argument,
@@ -465,6 +489,8 @@ class _Emitter(torch.fx.Interpreter):
         if isinstance(val, list):
             # Refine Optional[List[T]] -> List[T] This works because if the val was None it would
             # have converted to Null before this function call.
+            if val_type is None:
+                val_type = torch.ListType(self._get_list_jit_type(val))  # pyre-ignore
             if type(val_type) == torch.OptionalType:
                 val_type = val_type.getElementType()
             assert type(val_type) == torch.ListType
