@@ -24,7 +24,11 @@ from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner impor
     generate_pattern_op_partitions,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
+from executorch.exir.backend.partitioner import (
+    DelegationSpec,
+    Partitioner,
+    PartitionResult,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.pass_base import ExportPass, map_args
@@ -474,11 +478,9 @@ class QuantizedConvAddOpPartitioner(Partitioner):
         ]
 
         self.delegation_spec = DelegationSpec(ConvAddBackendDemo.__name__, [])
-        self.partition_tags: Dict[str, DelegationSpec] = {}
 
-    def partition(
-        self, edge_graph_module: torch.fx.GraphModule
-    ) -> torch.fx.GraphModule:
+    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
+        partition_tags: Dict[str, DelegationSpec] = {}
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, patterns=self.patterns
         )
@@ -487,8 +489,10 @@ class QuantizedConvAddOpPartitioner(Partitioner):
             for node in partition.nodes:
                 delegation_tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
-                self.partition_tags[delegation_tag] = self.delegation_spec
-        return edge_graph_module
+                partition_tags[delegation_tag] = self.delegation_spec
+        return PartitionResult(
+            tagged_graph=edge_graph_module, partition_tags=partition_tags
+        )
 
 
 class TestQuantLoweringCustomBackendPass(unittest.TestCase):

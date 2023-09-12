@@ -26,7 +26,11 @@ from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner impor
     generate_partitions_from_list_of_nodes,
 )
 
-from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
+from executorch.exir.backend.partitioner import (
+    DelegationSpec,
+    Partitioner,
+    PartitionResult,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -313,7 +317,6 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         self.supported_ops = set(supported_ops or [])
 
         self.delegation_spec = DelegationSpec(XnnpackBackend.__name__, [])
-        self.partition_tags: Dict[str, DelegationSpec] = {}
 
     @staticmethod
     def check_partitions(partitions: Union[dict, list]) -> bool:
@@ -386,27 +389,30 @@ class XnnpackFloatingPointPartitioner(Partitioner):
             ),
         )
 
-    def tag_nodes(self, partitions: List[Partition]) -> None:
+    def tag_nodes(self, partitions: List[Partition]) -> Dict[str, DelegationSpec]:
         """
         Tag each partition in the list with its delegation tag.
         """
+        partition_tags: Dict[str, DelegationSpec] = {}
         for partition in partitions:
             # Add delegation tags
             for node in partition.nodes:
                 delegation_tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
-                self.partition_tags[delegation_tag] = self.delegation_spec
+                partition_tags[delegation_tag] = self.delegation_spec
+        return partition_tags
 
     # override
-    def partition(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
+    def partition(self, graph_module: torch.fx.GraphModule) -> PartitionResult:
         """
         Run the partitioner on the given graph module, then tag each partition
         with its delegation tag (and partition id)
         """
         partitions = self.generate_partitions(graph_module)
+        partition_tags: Dict[str, DelegationSpec] = {}
         if self.check_partitions(partitions):
-            self.tag_nodes(partitions)
-        return graph_module
+            partition_tags = self.tag_nodes(partitions)
+        return PartitionResult(tagged_graph=graph_module, partition_tags=partition_tags)
 
 
 # TODO: Merge XnnpackQuantizedPartitioner and XnnpackFloatingPointPartitioner
@@ -761,10 +767,11 @@ class XnnpackPartitioner(Partitioner):
             XnnpackOperatorSupport(supported_ops=list(self.get_supported_ops(quant))),
         )
 
-    def tag_nodes(self, partitions: List[Partition]) -> None:
+    def tag_nodes(self, partitions: List[Partition]) -> Dict[str, DelegationSpec]:
         """
         Tag each partition in the list with its delegation tag.
         """
+        partition_tags: Dict[str, DelegationSpec] = {}
         for partition in partitions:
             # Add delegation tags
             skip = False
@@ -776,23 +783,25 @@ class XnnpackPartitioner(Partitioner):
             for node in partition.nodes:
                 delegation_tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
-                self.partition_tags[delegation_tag] = self.delegation_spec
+                partition_tags[delegation_tag] = self.delegation_spec
+        return partition_tags
 
     # override
     def _partition(
         self, graph_module: torch.fx.GraphModule, quant: Optional[bool]
-    ) -> torch.fx.GraphModule:
+    ) -> PartitionResult:
         """
         Run the partitioner on the given graph module, then tag each partition
         with its delegation tag (and partition id)
         """
         partitions = self.generate_partitions(graph_module, quant)
+        partition_tags: Dict[str, DelegationSpec] = {}
         if self.check_partitions(partitions):
-            self.tag_nodes(partitions)
-        return graph_module
+            partition_tags = self.tag_nodes(partitions)
+        return PartitionResult(tagged_graph=graph_module, partition_tags=partition_tags)
 
-    def partition(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
-        ret = self._partition(graph_module, self.quant)
+    def partition(self, graph_module: torch.fx.GraphModule) -> PartitionResult:
+        ret: PartitionResult = self._partition(graph_module, self.quant)
         return ret
 
 
@@ -805,7 +814,7 @@ class XnnpackDynamicallyQuantizedPartitioner(XnnpackQuantizedPartitioner):
         super().__init__(supported_modules, supported_ops)
 
     # override
-    def partition(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
+    def partition(self, graph_module: torch.fx.GraphModule) -> PartitionResult:
         """
         Run the partitioner on the given graph module, then tag each partition with its delegegation tag (and partition id)
 
@@ -819,7 +828,8 @@ class XnnpackDynamicallyQuantizedPartitioner(XnnpackQuantizedPartitioner):
             )
             for match in self.get_module_partitions(graph_module)
         ]
+        partition_tags: Dict[str, DelegationSpec] = {}
 
         if self.check_partitions(partitions):
-            self.tag_nodes(partitions)
-        return graph_module
+            partition_tags = self.tag_nodes(partitions)
+        return PartitionResult(tagged_graph=graph_module, partition_tags=partition_tags)

@@ -205,7 +205,7 @@ def to_backend(
 ```
 
 This function takes in a `Partitioner` which adds a tag to all the nodes that
-are meant to be lowered. It will also contain a `partition_tags` mapping tags to
+are meant to be lowered. The `Partitioner.partition` function will return both the tagged graph module and the `partition_tags` mapping tags to
 backend names and module compile specs. The tagged nodes will then be
 partitioned and lowered to their mapped backends using Flow 1's process.
 Available helper partitioner are documented [here](./passes.md#partitioner). These
@@ -371,24 +371,25 @@ class Backend_1_2_Partitioner(Partitioner):
     def __init__(self) -> None:
         self.delegation_spec_1 = DelegationSpec("Backend1", [])
         self.delegation_spec_2 = DelegationSpec("Backend2", [])
-        self.partition_tags = {}
 
     def partition(
         self, edge_graph_module: torch.fx.GraphModule
-    ) -> torch.fx.GraphModule:
-
+    ) -> PartitionResult:
+        partition_tags: Dict[str, DelegationSpec] = {}
         # Tag all nodes in the first partiton to backend 1
         node_to_backend_1 = ... # some logic to select the nodes from the graph
         delegation_tag = f"backend2_tag{partitioner_1.id}"
         node.meta["delegation_tag"] = delegation_tag
-        self.partition_tags[delegation_tag] = self.delegation_spec_1
+        partition_tags[delegation_tag] = self.delegation_spec_1
 
         # Tag all nodes in the first partiton to backend 2
         node_to_backend_2 = ... # some logic to select the nodes from the graph
         delegation_tag = f"backend2_tag{partitioner_2.id}"
         node.meta["delegation_tag"] = delegation_tag
-        self.partition_tags[delegation_tag] = self.delegation_spec_2
-        return edge_graph_module
+        partition_tags[delegation_tag] = self.delegation_spec_2
+        return PartitionResult(
+            tagged_graph=edge_graph_module, partition_tags=partition_tags
+        )
 ```
 
 6. Is there an easy way to write partitioner?
