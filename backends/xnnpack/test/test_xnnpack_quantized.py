@@ -46,18 +46,17 @@ class TestXNNPACKQuantized(TestXNNPACK):
         self.lower_module_and_test_output(just_quant, sample_input)
 
     def test_xnnpack_qmax_pool_2d(self):
+        class maxpool(torch.nn.Module):
+            def __init__(self, maxpool_params):
+                super().__init__()
+                self.max = torch.nn.MaxPool2d(*maxpool_params)
+
+            def forward(self, x):
+                return self.max(x)
+
         for maxpool_params in [(4,), (4, 2), (4, 2, 2)]:
-
-            class maxpool(torch.nn.Module):
-                def __init__(self):
-                    super().__init__()
-                    self.max = torch.nn.MaxPool2d(*maxpool_params)
-
-                def forward(self, x):
-                    return self.max(x)
-
             example_input = (torch.ones(1, 2, 8, 8),)
-            self.quantize_and_test_model(maxpool(), example_input)
+            self.quantize_and_test_model(maxpool(maxpool_params), example_input)
 
     def test_xnnpack_qadd(self):
         class Add(torch.nn.Module):
@@ -199,8 +198,6 @@ class TestXNNPACKQuantized(TestXNNPACK):
 
         self.quantize_and_test_model(LeakyReLUModule(), example_inputs)
 
-    # TODO(T158652796)
-    @unittest.expectedFailure
     def test_xnnpack_leaky_relu2(self):
         example_inputs = (torch.randn(1, 3, 3),)
 
@@ -373,7 +370,6 @@ class TestXNNPACKQuantized(TestXNNPACK):
         width = 8
         height = 8
         batches = 1
-        example_inputs = (torch.randn(batches, in_channels, height, width),)
 
         class ModelConvReLU(torch.nn.Module):
             def __init__(self):
@@ -396,7 +392,7 @@ class TestXNNPACKQuantized(TestXNNPACK):
                 return y
 
         model = ModelConvReLU().eval()
-        example_inputs = (torch.randn(batches, in_channels, height, width),)
+        example_inputs = (torch.randn(batches, in_channels, height, width) * 11,)
         self.quantize_and_test_model(model, example_inputs)
 
     def test_xnnpack_qconv_relu_sequence(self):

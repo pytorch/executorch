@@ -1,12 +1,15 @@
+.hypothesis
 buck-out/
 cmake-out/
+cmake-build-debug/
 cmake-android-out/
 cmake-ios-out/
+.idea/
 executorch.egg-info
 __pycache__/
 build/lib/
-exir/serialize/scalar_type.fbs
-exir/serialize/program.fbs
+exir/_serialize/scalar_type.fbs
+exir/_serialize/program.fbs
 bundled_program/serialize/bundled_program_schema.fbs
 bundled_program/serialize/scalar_type.fbs
 
@@ -32,3 +35,4 @@ bundled_program/serialize/scalar_type.fbs
 *.swp
 *~
 .~lock.*
+*.DS_Store

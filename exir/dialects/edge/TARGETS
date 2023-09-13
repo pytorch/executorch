@@ -1,39 +1,7 @@
 load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
-load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 oncall("executorch")
-
-python_library(
-    name = "yaml_generator_lib",
-    srcs = [
-        "yaml_generator.py",
-    ],
-    deps = [
-        "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
-        "fbsource//third-party/pypi/ruamel-yaml:ruamel-yaml",
-        ":support_dtypes",
-        ":utils",
-        "//caffe2:torch",
-        "//pye/lib:eager_model_base",
-    ],
-)
-
-python_binary(
-    name = "yaml_generator",
-    srcs = [
-        "yaml_generator.py",
-    ],
-    main_module = "executorch.exir.dialects.edge.yaml_generator",
-    deps = [
-        "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
-        "fbsource//third-party/pypi/ruamel-yaml:ruamel-yaml",
-        ":support_dtypes",
-        ":utils",
-        "//caffe2:torch",
-        "//pye/lib:eager_model_base",
-    ],
-)
 
 python_library(
     name = "lib",
@@ -46,21 +14,11 @@ python_library(
     deps = [
         "fbsource//third-party/pypi/ruamel-yaml:ruamel-yaml",
         "fbsource//third-party/pypi/setuptools:setuptools",
-        ":support_dtypes",
-        ":utils",
         "//caffe2:torch",
         "//caffe2/torchgen:torchgen",
-        "//executorch/exir/operator:convert",
-    ],
-)
-
-python_library(
-    name = "support_dtypes",
-    srcs = [
-        "support_dtypes.py",
-    ],
-    deps = [
-        "//caffe2:torch",
+        "//executorch/exir/dialects/edge/dtype:lib",
+        "//executorch/exir/dialects/edge/op:lib",
+        "//executorch/exir/dialects/edge/spec:lib",
     ],
 )
 
@@ -68,14 +26,4 @@ export_file(
     name = "edge_yaml",
     src = "edge.yaml",
     visibility = ["//executorch/..."],
-)
-
-python_library(
-    name = "utils",
-    srcs = [
-        "utils.py",
-    ],
-    deps = [
-        "//caffe2:torch",
-    ],
 )

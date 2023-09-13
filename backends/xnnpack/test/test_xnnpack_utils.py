@@ -14,10 +14,10 @@ from executorch import exir
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
-    XnnpackFloatingPointPartitioner,
-    XnnpackQuantizedPartitioner,
+    XnnpackPartitioner,
 )
 from executorch.backends.xnnpack.utils.configs import (
+    get_transform_passes,
     get_xnnpack_edge_compile_config,
     get_xnnpack_executorch_backend_config,
 )
@@ -35,7 +35,6 @@ from executorch.exir import ExecutorchProgram, ExirExportedProgram
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
-from executorch.exir.tracer import _default_decomposition_table
 
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
@@ -184,9 +183,9 @@ class TestXNNPACK(unittest.TestCase):
             if quantized_dynamic:
                 partitioner = XnnpackDynamicallyQuantizedPartitioner
             else:
-                partitioner = XnnpackQuantizedPartitioner
+                partitioner = XnnpackPartitioner
         else:
-            partitioner = XnnpackFloatingPointPartitioner
+            partitioner = XnnpackPartitioner
 
         if use_partitioner:
             with validation_disabled():
@@ -323,7 +322,9 @@ class TestXNNPACK(unittest.TestCase):
             config=exir.CaptureConfig(enable_aot=True, _unlift=True),
         )
 
-        edge_program = captured_program.to_edge(get_xnnpack_edge_compile_config())
+        edge_program = captured_program.to_edge(
+            get_xnnpack_edge_compile_config()
+        ).transform(*get_transform_passes())
         delegated_module = self.lower_module_and_test_output(
             module=edge_program,
             sample_inputs=example_inputs,

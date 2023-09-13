@@ -14,7 +14,7 @@ python_binary(
     main_module = "executorch.profiler.test.test_profiler_e2e",
     deps = [
         "//executorch/exir:lib",
-        "//executorch/exir/serialize:lib",
+        "//executorch/exir/_serialize:lib",
         "//executorch/extension/pybindings:portable_lib",
         "//executorch/profiler/fb:parse_profiler_library",
     ],

@@ -187,6 +187,7 @@ int main(int argc, char** argv) {
 
   // Run the model.
   Error status = method->execute();
+  auto output = method->get_output(0);
   ET_CHECK_MSG(
       status == Error::Ok,
       "Execution of method %s failed with status 0x%" PRIx32,
@@ -205,9 +206,10 @@ int main(int argc, char** argv) {
   // TODO for the above at T159700776
   for (size_t i = 0; i < method->outputs_size(); i++) {
     auto output_tensor = output_list[i].toTensor();
-    auto data_output = output_tensor.const_data_ptr<float>();
+    auto data_output = output_tensor.const_data_ptr<int64_t>();
     for (size_t j = 0; j < output_list[i].toTensor().numel(); ++j) {
-      ET_LOG(Info, "%f", data_output[j]);
+      ET_LOG(Info, "%d", data_output[j]);
+      printf("%ld", data_output[j]);
     }
   }
 

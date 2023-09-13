@@ -29,7 +29,6 @@ class CaptureConfig:
 @compatibility(is_backward_compatible=False)
 @dataclass
 class EdgeCompileConfig:
-    passes: List[PassType] = field(default_factory=list)
     # TODO(qihan): remove ability to opt out
     _check_ir_validity: bool = True
     # TODO(larryliu): remove this

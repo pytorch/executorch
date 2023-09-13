@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import torch
 import torch._export
+from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.error import ExportError
@@ -23,15 +24,110 @@ from executorch.exir.passes import (
 from executorch.exir.passes.remove_assert_async_pass import RemoveAssertAsyncPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.schema import Program
-from executorch.exir.serialize import serialize_to_flatbuffer
 from executorch.exir.verification.verifier import (
     EXIRATenDialectVerifier,
     EXIREdgeDialectVerifier,
 )
 from torch._export import ExportedProgram
+from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
+from torch.utils import _pytree as pytree
 
 Val = Any
+
+
+# Stub to ease migration from `transform` to private `_transform`
+def transform_exported_program(ep, *passes: PassType) -> ExportedProgram:
+    if hasattr(ep, "_transform"):
+        return ep._transform(*passes)
+    else:
+        return ep.transform(*passes)
+
+
+class HackedUpExportedProgramDONOTUSE(ExportedProgram):
+    def __init__(
+        self,
+        root,
+        graph,
+        graph_signature,
+        call_spec,
+        state_dict,
+        range_constraints,
+        equality_constraints,
+        module_call_graph,
+        example_inputs,
+    ):
+        super().__init__(
+            root,
+            graph,
+            graph_signature,
+            call_spec,
+            state_dict,
+            range_constraints,
+            equality_constraints,
+            module_call_graph,
+            example_inputs,
+        )
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        import torch._export.error as error
+        from torch._export import combine_args_kwargs
+
+        if self.call_spec.in_spec is not None:
+            user_args = combine_args_kwargs(args, kwargs)
+            try:
+                args = fx_pytree.tree_flatten_spec(user_args, self.call_spec.in_spec)  # type: ignore[assignment]
+            except Exception:
+                _, received_spec = pytree.tree_flatten(user_args)
+                raise error.InternalError(
+                    "Trying to flatten user inputs with exported input tree spec: \n"
+                    f"{self.call_spec.in_spec}\n"
+                    "but actually got inputs with tree spec of: \n"
+                    f"{received_spec}"
+                )
+
+        ordered_params = tuple(
+            self.state_dict[name] for name in self.graph_signature.parameters
+        )
+        ordered_buffers = tuple(
+            self.state_dict[name] for name in self.graph_signature.buffers
+        )
+
+        with torch.no_grad():
+            # NOTE: calling convention is first params, then buffers, then args as user supplied them.
+            # See: torch/_functorch/aot_autograd.py#L1034
+            res = torch.fx.Interpreter(self.graph_module).run(
+                *ordered_params, *ordered_buffers, *args, enable_io_processing=False
+            )
+
+        if self.call_spec.out_spec is not None:
+            mutation = self.graph_signature.buffers_to_mutate
+            num_mutated = len(mutation)
+            mutated_buffers = res[:num_mutated]
+
+            # Exclude dependency token from final result.
+            assertion_dep_token = self.graph_signature.assertion_dep_token
+            if assertion_dep_token is not None:
+                assertion_dep_token_index = list(assertion_dep_token.keys())[0]
+                res = res[:assertion_dep_token_index]
+
+            res = res[num_mutated:]
+            try:
+                res = pytree.tree_unflatten(res, self.call_spec.out_spec)
+            except Exception:
+                _, received_spec = pytree.tree_flatten(res)
+                raise error.InternalError(
+                    "Trying to flatten user outputs with exported output tree spec: \n"
+                    f"{self.call_spec.out_spec}\n"
+                    "but actually got outputs with tree spec of: \n"
+                    f"{received_spec}"
+                )
+            finally:
+                ix = 0
+                for buffer in self.graph_signature.buffers_to_mutate.values():
+                    self.state_dict[buffer] = mutated_buffers[ix]
+                    ix += 1
+        return res
 
 
 @compatibility(is_backward_compatible=False)
@@ -132,7 +228,7 @@ class ExecutorchProgram:
     @property
     def buffer(self) -> bytes:
         if self._buffer is None:
-            self._buffer = serialize_to_flatbuffer(
+            self._buffer = _serialize_pte_binary(
                 program=self.program,
                 extract_segments=self._extract_segments,
                 segment_alignment=self._segment_alignment,
@@ -187,7 +283,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         aten_to_edge_passes.passes[:-2]
         + op_replace_pass
         + aten_to_edge_passes.passes[-2:]
-    ) + config.passes
+    )
     new_ep = copy.deepcopy(ep).transform(*passes)
     if config._check_ir_validity:
         EXIREdgeDialectVerifier(check_edge_ops=config._use_edge_ops)(
@@ -211,9 +307,6 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
     return passes
 
 
-######## MULTI METHOD STUFF BELOW HERE. TO BE MERGED INTO ExirExportedProgram and ExecutorchProgram AND THEN DELETED ##########
-
-
 # MultiMethodExirExportedProgram represents an exported program that contains
 # multiple methods, all as valid entry points to the program.
 #
@@ -222,6 +315,8 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
 # ensure that each is self-contained. This is important because transformation
 # passes can be local and do not need to concern themselves about other methods
 # that exists on the same MultiMethodExirExportedProgram.
+#
+# TODO(T152006915): Merge this into ExirExportedProgram and then delete it.
 @compatibility(is_backward_compatible=False)
 class MultiMethodExirExportedProgram:
     def __init__(
@@ -354,6 +449,7 @@ class MultiMethodExirExportedProgram:
         return multi_method_program_to_executorch(self, config)
 
 
+# TODO(T152006915): Merge this into ExecutorchProgram and then delete it.
 @compatibility(is_backward_compatible=False)
 class MultiMethodExecutorchProgram:
     def __init__(
@@ -385,7 +481,7 @@ class MultiMethodExecutorchProgram:
     @property
     def buffer(self) -> bytes:
         if self._buffer is None:
-            self._buffer = serialize_to_flatbuffer(
+            self._buffer = _serialize_pte_binary(
                 program=self._emitter_output.program,
                 extract_segments=self._extract_segments,
                 segment_alignment=self._segment_alignment,
@@ -410,6 +506,7 @@ class MultiMethodExecutorchProgram:
         return self._executorch_dialect_ir_program
 
 
+# TODO(T152006915): Merge this into to_executorch and then delete it.
 def multi_method_program_to_executorch(
     edge_dialect_program: MultiMethodExirExportedProgram,
     config: Optional[ExecutorchBackendConfig] = None,

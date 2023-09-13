@@ -94,9 +94,10 @@ class BackendWithCompiler final : public PyTorchBackendInterface {
   }
 
   Result<DelegateHandle*> init(
+      BackendInitContext& context,
       FreeableBuffer* processed,
-      ArrayRef<CompileSpec> compile_specs,
-      MemoryAllocator* runtime_allocator) const override {
+      ArrayRef<CompileSpec> compile_specs) const override {
+    MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
     int shape = *(int*)(compile_specs.at(0).value.buffer);
     ET_CHECK_OR_RETURN_ERROR(
         shape <= max_shape,
@@ -136,7 +137,10 @@ class BackendWithCompiler final : public PyTorchBackendInterface {
   // execute and it only supports add, subtract, and constant. In a non toy
   // backend you can imagine how this function could be used to actually
   // dispatch the inputs to the relevant backend/device.
-  Error execute(DelegateHandle* handle, EValue** args) const override {
+  Error execute(
+      __ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override {
     EXECUTORCH_SCOPE_PROF("BackendWithCompiler::execute");
 
     // example: [('prim::Constant#1', 14), ('aten::add', 15)]

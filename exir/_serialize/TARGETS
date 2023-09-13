@@ -6,7 +6,7 @@ oncall("executorch")
 # TODO(T157145817): Update other flatbuffer serializers to use flatc like
 # _flatbuffer.py does, and remove this.
 cpp_python_extension(
-    name = "bindings",
+    name = "_bindings",
     srcs = [
         "bindings.cpp",
     ],

@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from .model_factory import EagerModelFactory
 
 MODEL_NAME_TO_MODEL = {
     "mul": ("toy_model", "MulModule"),
@@ -22,5 +23,7 @@ MODEL_NAME_TO_MODEL = {
     "llama2": ("llama2", "LLAMA2Model"),
 }
 
-
-__all__ = [MODEL_NAME_TO_MODEL]
+__all__ = [
+    "EagerModelFactory",
+    "MODEL_NAME_TO_MODEL",
+]

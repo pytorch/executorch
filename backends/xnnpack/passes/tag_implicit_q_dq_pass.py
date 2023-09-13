@@ -11,19 +11,21 @@ from executorch.backends.xnnpack.partition.configs import (
     SUPPORTED_IMPLICIT_Q_DQ_MODULES_SET,
     SUPPORTED_IMPLICIT_Q_DQ_OP_NAMES_SET,
 )
+from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
+from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import PassResult
 
 
-class TagImplicitQDqPass(ExportPass):
+class TagImplicitQDqPass(XNNPACKPass):
     """
     This pass is used to tag "implicit" q/dq nodes, which should be ignored
     during preprocessing.
 
     A q or dq node is deemed to be "implicit" if any of the following hold:
-    a) All of its inputs are constants (get_attr nodes), since (de)quantizing
-       constants is done outside of executing the graph
+    a) All of its inputs are constants (get_attr nodes or parameter (placeholder) nodes),
+       since (de)quantizing constants is done outside of executing the graph
     b) It is the q or dq surrounding a "supported" group of nodes, ordered as
        dq -> [supported group] -> q. A "supported" group is comprised of one of
        the following:
@@ -64,9 +66,6 @@ class TagImplicitQDqPass(ExportPass):
         },
     }
     IS_IMPLICIT_Q_DQ_TAG = "IS_IMPLICIT_Q_DQ_TAG"
-
-    def is_param_node(self, node: torch.fx.Node) -> bool:
-        return node.op == "get_attr"
 
     def is_output_node(self, node: torch.fx.Node) -> bool:
         return node.op == "output"
@@ -169,7 +168,8 @@ class TagImplicitQDqPass(ExportPass):
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
         for first_node in graph_module.graph.nodes:
             if (is_dequant(first_node) or is_quant(first_node)) and all(
-                self.is_param_node(n) for n in first_node.all_input_nodes
+                is_param_node(self.exported_program, n)
+                for n in first_node.all_input_nodes
             ):
                 # All of the q or dq node's inputs are constants
                 self.tag_as_implicit_q_dq(first_node)

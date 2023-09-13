@@ -13,16 +13,16 @@ from examples.models import MODEL_NAME_TO_MODEL
 from examples.models.model_factory import EagerModelFactory
 from examples.export.utils import export_to_edge, export_to_exec_prog, save_pte_program
 
-def export_to_pte(model_name, model, method_name, example_inputs):
-    edge = export_to_edge(model, method_name, example_inputs)
-    exec_prog = edge.to_executorch()
-    for node in edge.exported_program.graph.nodes:
-        if str(node) == "aten_index_tensor":
-            print(node.meta)
-    # exir.print_program.pretty_print(exec_prog.program.execution_plan)
-
-FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(level=logging.INFO, format=FORMAT)
+# def export_to_pte(model_name, model, method_name, example_inputs):
+#     edge = export_to_edge(model, method_name, example_inputs)
+#     exec_prog = edge.to_executorch()
+#     for node in edge.exported_program.graph.nodes:
+#         if str(node) == "aten_index_tensor":
+#             print(node.meta)
+#     # exir.print_program.pretty_print(exec_prog.program.execution_plan)
+#
+# FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+# logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 if __name__ == "__main__":

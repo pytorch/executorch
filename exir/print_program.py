@@ -70,7 +70,7 @@ def _is_dynamic_shape_tensor(tensor: Tensor) -> bool:
     return tensor.shape_dynamism != TensorShapeDynamism.STATIC
 
 
-def _format_evalue(
+def _format_evalue(  # noqa: C901
     evalue: EValue, show_meminfo: bool, mark_dynamic_shape_tensor: bool
 ) -> str:
     evstr = "\033[34m"
@@ -140,7 +140,7 @@ def _format_evalue(
     return evstr
 
 
-def print_program(
+def print_program(  # noqa: C901
     program: Program, show_meminfo: bool = True, mark_dynamic_shape_tensor: bool = False
 ) -> None:
     """

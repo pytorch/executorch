@@ -10,22 +10,31 @@ import executorch.exir as exir
 import torch
 
 from executorch.backends.xnnpack.utils.configs import (
+    get_transform_passes,
     get_xnnpack_capture_config,
     get_xnnpack_edge_compile_config,
 )
+from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
+
+from torch._export.utils import get_buffer, get_param, is_buffer, is_param
 
 ### XNNPACK Capture ###
 def capture_graph_for_xnnpack(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
     enable_aot: Optional[bool] = None,
+    unlift: Optional[bool] = None,
 ) -> exir.ExirExportedProgram:
-    return exir.capture(
-        module,
-        inputs,
-        get_xnnpack_capture_config(enable_aot=enable_aot),
-    ).to_edge(get_xnnpack_edge_compile_config())
+    return (
+        exir.capture(
+            module,
+            inputs,
+            get_xnnpack_capture_config(enable_aot=enable_aot, unlift=unlift),
+        )
+        .to_edge(get_xnnpack_edge_compile_config())
+        .transform(*get_transform_passes())
+    )
 
 
 ### XNNPACK Utils ###
@@ -62,3 +71,34 @@ def get_relu_fused_node(node: torch.fx.Node) -> Optional[torch.fx.Node]:
         return relu_node
 
     return None
+
+
+def is_get_attr_node(node: torch.fx.Node) -> bool:
+    """
+    Returns true if the given node is a get attr node for a tensor of the model
+    """
+    return isinstance(node, torch.fx.Node) and node.op == "get_attr"
+
+
+def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
+    return (
+        is_get_attr_node(node) or is_param(exp_prog, node) or is_buffer(exp_prog, node)
+    )
+
+
+def get_param_tensor(
+    exp_prog: ExportedProgram, node: torch.fx.Node
+) -> Optional[torch.Tensor]:
+    if node is None:
+        return None
+    elif is_param(exp_prog, node):
+        return get_param(exp_prog, node)
+    elif is_buffer(exp_prog, node):
+        return get_buffer(exp_prog, node)
+    elif is_get_attr_node(node):
+        # This is a hack to support both lifted and unlifted graph
+        try:
+            return getattr(node.graph.owning_module, node.target)
+        except AttributeError:
+            return getattr(exp_prog.graph_module, node.target)
+    raise RuntimeError(f"unsupported param type, {node.op}.")

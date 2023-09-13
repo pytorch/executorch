@@ -5,14 +5,19 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "executorch"
 version = "0.1.0"
+# Python dependencies required for development
 dependencies=[
-  "ruamel.yaml",
-  "pyyaml",
-  "sympy",
+  "expecttest",
+  "hypothesis",
   "numpy",
-  "zstd",
-  "flatbuffers",
+  "packaging",
+  "parameterized",
+  "pytest",
+  "pyyaml",
+  "ruamel.yaml",
+  "sympy",
   "tomli",
+  "zstd",
 ]
 
 [tool.setuptools.package-data]
@@ -20,3 +25,6 @@ dependencies=[
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc"]
+
+[tool.usort]
+first_party_detection = false
