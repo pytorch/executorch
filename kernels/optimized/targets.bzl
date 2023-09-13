@@ -34,6 +34,9 @@ def define_common_targets():
     et_operator_library(
         name = "optimized_oplist",
         ops_schema_yaml_target = ":optimized.yaml",
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+        ],
     )
 
     # Used mainly for operator testing. In practice, a generated lib specific
