@@ -15,6 +15,7 @@ from executorch import exir
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackFloatingPointPartitioner,
 )
+from executorch.backends.xnnpack.passes import XNNPACKPassManager
 from executorch.backends.xnnpack.utils.configs import (
     get_xnnpack_capture_config,
     get_xnnpack_edge_compile_config,
@@ -33,6 +34,7 @@ from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
+from torch._export.pass_base import PassType
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.quantizer import Quantizer
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
@@ -160,6 +162,26 @@ class ToEdge(Stage):
 
 
 @register_stage
+class RunPasses(Stage):
+    def __init__(self, pass_list: Optional[List[PassType]] = None):
+        self.pass_list = pass_list
+        self.edge_dialect_program = None
+
+    def run(self, artifact: ExirExportedProgram, inputs=None) -> None:
+        pass_manager = XNNPACKPassManager(artifact.exported_program, self.pass_list)
+        self.edge_dialect_program = artifact
+        self.edge_dialect_program.exported_program = pass_manager.transform()
+
+    @property
+    def artifact(self) -> ExirExportedProgram:
+        return self.edge_dialect_program
+
+    @property
+    def graph_module(self) -> str:
+        return self.edge_dialect_program.exported_program.graph_module
+
+
+@register_stage
 class Partition(Stage):
     def __init__(self, partitioner: Optional[Partitioner] = None):
         self.partitioner = partitioner or XnnpackFloatingPointPartitioner
@@ -239,7 +261,11 @@ class Tester:
             self._stage_name(Export): [
                 self._stage_name(ToEdge),
             ],
-            self._stage_name(ToEdge): [self._stage_name(Partition)],
+            self._stage_name(ToEdge): [
+                self._stage_name(Partition),
+                self._stage_name(RunPasses),
+            ],
+            self._stage_name(RunPasses): [self._stage_name(Partition)],
             # TODO Make this Stage optional
             self._stage_name(Partition): [self._stage_name(ToExecutorch)],
             self._stage_name(ToExecutorch): [self._stage_name(Serialize)],
@@ -297,6 +323,9 @@ class Tester:
 
     def to_edge(self, to_edge_stage: Optional[ToEdge] = None):
         return self._run_stage(to_edge_stage or ToEdge())
+
+    def run_passes(self, run_passes_stage: Optional[RunPasses] = None):
+        return self._run_stage(run_passes_stage or RunPasses())
 
     def partition(self, partition_stage: Optional[Partition] = None):
         return self._run_stage(partition_stage or Partition())
