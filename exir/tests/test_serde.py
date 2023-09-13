@@ -19,6 +19,7 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
 
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.serde.serialize import deserialize, serialize
+from torch import nn
 from torch._export.exported_program import ExportedProgram as TorchExportedProgram
 from torch.utils import _pytree as pytree
 
@@ -191,3 +192,41 @@ class TestSerde(unittest.TestCase):
         edge = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
         edge_new = deserialize(*serialize(edge.exported_program))
         self.check_ep(edge, edge_new, inputs)
+
+    def test_meta_stack_trace_module_hierarchy(self) -> None:
+        class Model(nn.Module):
+            def __init__(self):
+                super(Model, self).__init__()
+                self.conv_layer = nn.Conv2d(
+                    in_channels=1, out_channels=64, kernel_size=3, padding=1
+                )
+
+            def forward(self, x):
+                return self.conv_layer(x)
+
+        m = Model()
+        inputs = (torch.randn(1, 1, 32, 32),)
+
+        metadata = ()
+        edge = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
+        for node in edge.exported_program.graph_module.graph.nodes:
+            if "convolution" in str(node.target):
+                metadata = (
+                    node.meta.get("stack_trace"),
+                    node.meta.get("nn_module_stack"),
+                )
+
+        metadata_serde = ()
+        edge_new = deserialize(*serialize(edge.exported_program))
+        for node in edge_new.graph_module.graph.nodes:
+            if "convolution" in str(node.target):
+                metadata_serde = (
+                    node.meta.get("stack_trace"),
+                    node.meta.get("nn_module_stack"),
+                )
+        self.assertTrue(len(metadata) != 0 and len(metadata_serde) != 0)
+        self.assertTrue(
+            all(val is not None for val in metadata)
+            and all(val is not None for val in metadata_serde)
+        )
+        self.assertEqual(metadata, metadata_serde)
