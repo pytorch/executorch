@@ -16,6 +16,7 @@ To install conda, you can look at the
 conda create -yn executorch python=3.10.0
 conda activate executorch
 
+conda install cmake
 conda install -c conda-forge flatbuffers
 ```
 
