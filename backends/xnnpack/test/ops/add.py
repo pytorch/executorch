@@ -46,7 +46,7 @@ class TestAdd(unittest.TestCase):
         inputs = (torch.ones(1), torch.ones(1))
         (
             Tester(self.Add(), inputs)
-            .quantize2()
+            .quantize()
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 4})
             .check(["torch.ops.quantized_decomposed"])
@@ -91,7 +91,7 @@ class TestAdd(unittest.TestCase):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
         (
             Tester(self.AddRelu(), inputs)
-            .quantize2()
+            .quantize()
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 1})
             .check_count({"torch.ops.aten.relu.default": 1})
