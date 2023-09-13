@@ -63,6 +63,12 @@ class Program final {
   };
 
   /**
+   * Index into the program's method list that corresponds to the forward()
+   * function of the captured program.
+   */
+  constexpr static size_t kForwardMethodIndex = 0;
+
+  /**
    * Loads a Program from the provided loader. The Program will hold a pointer
    * to the loader, which must outlive the returned Program instance.
    *
@@ -76,9 +82,36 @@ class Program final {
       DataLoader* loader,
       Verification verification = Verification::Minimal);
 
+  /**
+   * DEPRECATED: Use Program::Load().
+   *
+   * Construct the executor::Program from serilaized content. Callers must check
+   * is_valid() afterwards to see if the Program was deserialized correctly. If
+   * the Program is not valid, any calls to its methods will cause an ET_CHECK
+   * failure and panic.
+   *
+   * TODO(T144120904): Remove this once all clients have migrated to use Load.
+   *
+   * @param[in] serialized_content the ptr of serialized content the Program is
+   * contructed from
+   */
+  __ET_DEPRECATED explicit Program(const void* serialized_content);
+
   // Movable, to be compatible with Result.
   Program(Program&&) noexcept = default;
   ~Program() = default;
+
+  /**
+   * DEPRECATED: Use Program::Load(), which will return an error if the
+   * Program is invalid.
+   *
+   * Returns true if the Program was deserialized successfully.
+   *
+   * TODO(T144120904): Remove this once all clients have migrated to use Load.
+   */
+  __ET_DEPRECATED __ET_NODISCARD bool is_valid() const {
+    return internal_program_ != nullptr;
+  }
 
   /**
    * Get the constant buffer inside Program with index buffer_idx
@@ -95,13 +128,13 @@ class Program final {
   /**
    * Returns the name of the method at particular index.
    *
-   * @param[in] method_index The index of the method name to retrieve. Must be
+   * @param[in] method_idx The index of the method name to retrieve. Must be
    * less than the value returned by `num_methods()`.
    *
    * @returns The name of the requested method. The pointer is owned by the
    * Program, and has the same lifetime as the Program.
    */
-  Result<const char*> get_method_name(size_t method_index) const;
+  Result<const char*> get_method_name(size_t method_idx) const;
 
   /**
    * Loads the named method and prepares it for execution.
@@ -123,34 +156,75 @@ class Program final {
   Result<MethodMeta> method_meta(const char* method_name) const;
 
   /**
-   * DEPRECATED: Use MethodMeta instead.
+   * Get the size of constant buffer
+   * @return The size of whole constant buffer
+   */
+  size_t constant_buffer_size() const;
+
+  /**
+   * DEPRECATED: use get_non_const_buffer_size(size_t, const char*)
    *
-   * Get the size of the buffer with index buffer_index. Note that this function
+   * Get the size of the buffer with index buffer_idx. Note that this function
    * does not return the correct value for index 0 which denotes constant
    * memory. Only index >= 1 should be used to retrieve the size of
    * non-constant pools.
-   * @param[in] buffer_index the index of the buffer in the non_const_buffer
-   * list
-   * @param[in] method_name The name of the method to retrieve buffer
-   * information from.
-   * @return The size of the non_constant buffer corresponding to buffer_index,
-   * or Error if it cannot be retrieved.
+   * @param[in] buffer_idx the index of the buffer in the non_const_buffer list
+   * @param[in] execution_plan_idx The index of the entry point to use for this
+   * plan. Defaults to using the `forward()` method.
+   * @return The size of the non_constant buffer corresponding to buffer_idx.
    */
-  __ET_DEPRECATED Result<int64_t> get_non_const_buffer_size(
-      size_t buffer_index,
-      const char* method_name = "forward") const;
+  int64_t get_non_const_buffer_size(
+      size_t buffer_idx,
+      size_t execution_plan_idx = kForwardMethodIndex) const;
 
   /**
-   * DEPRECATED: Use MethodMeta instead.
+   * Get the size of the buffer with index buffer_idx. Note that this function
+   * does not return the correct value for index 0 which denotes constant
+   * memory. Only index >= 1 should be used to retrieve the size of
+   * non-constant pools.
+   * @param[in] buffer_idx the index of the buffer in the non_const_buffer list
+   * @param[in] method_name The name of the method to retrieve buffer
+   * information from.
+   * @return The size of the non_constant buffer corresponding to buffer_idx, or
+   * Error if it cannot be retrieved.
+   */
+  Result<int64_t> get_non_const_buffer_size(
+      size_t buffer_idx,
+      const char* method_name) const;
+
+  /**
+   * DEPRECATED: use num_non_const_buffers(const char*)
    *
+   * Get the number of non_constant buffers.
+   * @param[in] execution_plan_idx The index of the entry point to use for this
+   * plan. Defaults to using the `forward()` method.
+   * @return The number of non_constant buffers.
+   */
+  __ET_DEPRECATED size_t
+  num_non_const_buffers(size_t execution_plan_idx = kForwardMethodIndex) const;
+
+  /**
    * Get the number of non_constant buffers.
    * @param[in] method_name The name of the method to get the buffer amounts
    * for.
    * @return The number of non_constant buffers, or Error if it cannot be
    * retrieved.
    */
-  __ET_DEPRECATED Result<size_t> num_non_const_buffers(
-      const char* method_name = "forward") const;
+  Result<size_t> num_non_const_buffers(const char* method_name) const;
+
+  /**
+   * DEPRECATED: use get_output_flattening_encoding(const char*)
+   *
+   * Get the pytree encoding string for the output. Deprecated as
+   * this functionality will eventually move out of the core program into a
+   * higher level structure, but that does not exist at this time.
+   * @param[in] execution_plan_idx The index of the entry point to use for this
+   * plan. Defaults to using the `forward()` method.
+   *
+   * @return The pytree encoding string for the output
+   */
+  __ET_DEPRECATED const char* get_output_flattening_encoding(
+      size_t execution_plan_idx = kForwardMethodIndex) const;
 
   /**
    * DEPRECATED: Get the pytree encoding string for the output. Deprecated as
@@ -161,7 +235,7 @@ class Program final {
    * @return The pytree encoding string for the output
    */
   __ET_DEPRECATED Result<const char*> get_output_flattening_encoding(
-      const char* method_name = "forward") const;
+      const char* method_name) const;
 
   /**
    * Describes the presence of an executorch program header.

@@ -1,0 +1,1057 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXAggregateTarget section */
+		1B47E028111647F49A27B18C /* ALL_BUILD */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = D189154F5AFD41A0BC553E8D /* Build configuration list for PBXAggregateTarget "ALL_BUILD" */;
+			buildPhases = (
+				9D62F8A70521FE75EAB63886 /* Generate CMakeFiles/ALL_BUILD */,
+			);
+			dependencies = (
+				A81DF65701B840E282D658B2 /* PBXTargetDependency */,
+				0F9A258B8E804EFBA5C41B1B /* PBXTargetDependency */,
+			);
+			name = ALL_BUILD;
+			productName = ALL_BUILD;
+		};
+		8BD02C1947154E88BCADBDFC /* ZERO_CHECK */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 4F16BF77DCF649AA9792CC59 /* Build configuration list for PBXAggregateTarget "ZERO_CHECK" */;
+			buildPhases = (
+				C3103C0A8DA9B15FB0428EA6 /* Generate CMakeFiles/ZERO_CHECK */,
+			);
+			dependencies = (
+			);
+			name = ZERO_CHECK;
+			productName = ZERO_CHECK;
+		};
+		915D7364EC6F48519368BDD2 /* fp16 */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 74DB816DA5494769BAD5A14A /* Build configuration list for PBXAggregateTarget "fp16" */;
+			buildPhases = (
+				E5B7EEA6A07B540B258B7554 /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-mkdir */,
+				F0DD7A5CF9A872C514DBC24A /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-download */,
+				5CCD704B54A9C40125E4709B /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-update */,
+				4EC6203DF334A852018BBFA4 /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-patch */,
+				55292A339A517F04BAA65386 /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-configure */,
+				1EFD9D158B724943B300DC9E /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-build */,
+				F6DDAD0E0E39FEC612E5A1B2 /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-install */,
+				636DCFFBF6B9DA12EDBE5E28 /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-test */,
+				6C7A03209BD722DB5F2FB2FF /* Generate CMakeFiles/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-complete */,
+				925A6F1EF10534AF3669CB0F /* Generate CMakeFiles/fp16 */,
+			);
+			dependencies = (
+				D5B2ADD1DE574AC6BF3A14A3 /* PBXTargetDependency */,
+			);
+			name = fp16;
+			productName = fp16;
+		};
+/* End PBXAggregateTarget section */
+
+/* Begin PBXBuildStyle section */
+		53E1F9958C0F464980380022 /* Release */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+			};
+			name = Release;
+		};
+		B5797F0BEAF049128B19BDB1 /* Debug */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+			};
+			name = Debug;
+		};
+		C8D1EB3BD052442C92E81CFE /* MinSizeRel */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+			};
+			name = MinSizeRel;
+		};
+		EC5442C298FD401C873B77ED /* RelWithDebInfo */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+			};
+			name = RelWithDebInfo;
+		};
+/* End PBXBuildStyle section */
+
+/* Begin PBXContainerItemProxy section */
+		7B645898045B439AB3A0E9A3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5850ABE3DBB34147BC36CA84 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8BD02C1947154E88BCADBDFC;
+			remoteInfo = ZERO_CHECK;
+		};
+		A458FC2572A242BBA53C0BF8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5850ABE3DBB34147BC36CA84 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8BD02C1947154E88BCADBDFC;
+			remoteInfo = ZERO_CHECK;
+		};
+		BA0D5301CEB040848DF38DB0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5850ABE3DBB34147BC36CA84 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 915D7364EC6F48519368BDD2;
+			remoteInfo = fp16;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		18E714DD5D0D412FBBC90C0D /* /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = CMakeLists.txt; sourceTree = SOURCE_ROOT; };
+		B2AF891EB2CB45C7A13F151C /* /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = CMakeLists.txt; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		2B877979E3B9492798BB4779 /* ALL_BUILD */ = {
+			isa = PBXGroup;
+			children = (
+				930996B7CE574BD5AC4EC323 /* CMake Rules */,
+				B2AF891EB2CB45C7A13F151C /* /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeLists.txt */,
+			);
+			name = ALL_BUILD;
+			sourceTree = "<group>";
+		};
+		5D69330CDA1E425DABF3F8A1 /* CMake Rules */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = "CMake Rules";
+			sourceTree = "<group>";
+		};
+		6B562CA9BFCB42DF9F883DFD /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		7C7DAA5136074911930FB7CC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		8A4BA01D329E4E3B9C2936AF /* fp16 */ = {
+			isa = PBXGroup;
+			children = (
+				5D69330CDA1E425DABF3F8A1 /* CMake Rules */,
+				18E714DD5D0D412FBBC90C0D /* /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeLists.txt */,
+			);
+			name = fp16;
+			sourceTree = "<group>";
+		};
+		930996B7CE574BD5AC4EC323 /* CMake Rules */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = "CMake Rules";
+			sourceTree = "<group>";
+		};
+		ECA9FFB3B1C44185AD06F381 = {
+			isa = PBXGroup;
+			children = (
+				8A4BA01D329E4E3B9C2936AF /* fp16 */,
+				2B877979E3B9492798BB4779 /* ALL_BUILD */,
+				7C7DAA5136074911930FB7CC /* Products */,
+				6B562CA9BFCB42DF9F883DFD /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXProject section */
+		5850ABE3DBB34147BC36CA84 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1320;
+			};
+			buildConfigurationList = 417DE11645DB4F078A0DE9A8 /* Build configuration list for PBXProject "fp16-download" */;
+			buildSettings = {
+			};
+			buildStyles = (
+				B5797F0BEAF049128B19BDB1 /* Debug */,
+				53E1F9958C0F464980380022 /* Release */,
+				C8D1EB3BD052442C92E81CFE /* MinSizeRel */,
+				EC5442C298FD401C873B77ED /* RelWithDebInfo */,
+			);
+			compatibilityVersion = "Xcode 3.2";
+			hasScannedForEncodings = 0;
+			mainGroup = ECA9FFB3B1C44185AD06F381;
+			projectDirPath = .;
+			projectRoot = "";
+			targets = (
+				1B47E028111647F49A27B18C /* ALL_BUILD */,
+				8BD02C1947154E88BCADBDFC /* ZERO_CHECK */,
+				915D7364EC6F48519368BDD2 /* fp16 */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		1EFD9D158B724943B300DC9E /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-build */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-configure"			);
+			name = "Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-build";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-build"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-build
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-build
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-build
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-build
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		221C52B3A5F55CEE8F3BE72C = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# shell script goes here
+exit 0";
+			showEnvVarsInLog = 0;
+		};
+		3C0110FC8322DE7E50886E21 = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# shell script goes here
+exit 0";
+			showEnvVarsInLog = 0;
+		};
+		4EC6203DF334A852018BBFA4 /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-patch */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-update"			);
+			name = "Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-patch";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-patch"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-patch
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-patch
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-patch
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-patch
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		55292A339A517F04BAA65386 /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-configure */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-patch","/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/tmp/fp16-cfgcmd.txt"			);
+			name = "Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-configure";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-configure"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-configure
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-configure
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-configure
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-configure
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		5CCD704B54A9C40125E4709B /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-update */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-download"			);
+			name = "Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-update";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-update"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-update
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-update
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-update
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-update
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		636DCFFBF6B9DA12EDBE5E28 /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-test */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-install"			);
+			name = "Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-test";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-test"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-test
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-test
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-test
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-test
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		6C7A03209BD722DB5F2FB2FF /* Generate CMakeFiles/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-complete */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-build","/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-configure","/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-download","/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-install","/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-mkdir","/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-patch","/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-test","/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-update"			);
+			name = "Generate CMakeFiles/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-complete";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-complete"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-complete
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-done
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-complete
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-done
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-complete
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-done
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-complete
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-done
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		925A6F1EF10534AF3669CB0F /* Generate CMakeFiles/fp16 */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-complete"			);
+			name = "Generate CMakeFiles/fp16";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/fp16"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		9B50530E35CC49C82C2FACCF = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# shell script goes here
+exit 0";
+			showEnvVarsInLog = 0;
+		};
+		9D62F8A70521FE75EAB63886 /* Generate CMakeFiles/ALL_BUILD */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Generate CMakeFiles/ALL_BUILD";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/ALL_BUILD"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  echo Build\\ all\\ projects
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  echo Build\\ all\\ projects
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  echo Build\\ all\\ projects
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  echo Build\\ all\\ projects
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		C3103C0A8DA9B15FB0428EA6 /* Generate CMakeFiles/ZERO_CHECK */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Generate CMakeFiles/ZERO_CHECK";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/ZERO_CHECK"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  make -f /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeScripts/ReRunCMake.make
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  make -f /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeScripts/ReRunCMake.make
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  make -f /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeScripts/ReRunCMake.make
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  make -f /Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeScripts/ReRunCMake.make
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		E5B7EEA6A07B540B258B7554 /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-mkdir */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-mkdir";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-mkdir"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-source
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/tmp
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-mkdir
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-source
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/tmp
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-mkdir
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-source
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/tmp
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-mkdir
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-source
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/tmp
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-mkdir
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		F0DD7A5CF9A872C514DBC24A /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-download */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-mkdir","/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/fp16-urlinfo.txt"			);
+			name = "Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-download";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-download"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/download-fp16.cmake
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/verify-fp16.cmake
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/extract-fp16.cmake
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-download
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/download-fp16.cmake
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/verify-fp16.cmake
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/extract-fp16.cmake
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-download
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/download-fp16.cmake
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/verify-fp16.cmake
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/extract-fp16.cmake
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-download
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/download-fp16.cmake
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/verify-fp16.cmake
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/extract-fp16.cmake
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-download
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		F6DDAD0E0E39FEC612E5A1B2 /* Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-install */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-build"			);
+			name = "Generate fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-install";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fp16-install"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-install
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-install
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-install
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FP16
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fp16-install
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0F9A258B8E804EFBA5C41B1B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8BD02C1947154E88BCADBDFC /* ZERO_CHECK */;
+			targetProxy = A458FC2572A242BBA53C0BF8 /* PBXContainerItemProxy */;
+		};
+		A81DF65701B840E282D658B2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 915D7364EC6F48519368BDD2 /* fp16 */;
+			targetProxy = BA0D5301CEB040848DF38DB0 /* PBXContainerItemProxy */;
+		};
+		D5B2ADD1DE574AC6BF3A14A3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8BD02C1947154E88BCADBDFC /* ZERO_CHECK */;
+			targetProxy = 7B645898045B439AB3A0E9A3 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		078F5DCFE62C42329A3E97DA /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ZERO_CHECK;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		0A5E75A77EBA4EF390753FED /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ALL_BUILD;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		0B29139D1DAA486D99DC08F7 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = fp16;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		15E93121EBB44CF0AD864C17 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ALL_BUILD;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		235F5C5F5C404682BD190ACB /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = /Applications/Xcode_13.2.1_fb.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk;
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download/build";
+			};
+			name = MinSizeRel;
+		};
+		4167E0AD8A3547A685ECA855 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ZERO_CHECK;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		549C25EDB8124D2084F2724D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = fp16;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		66EA0A25C0114CF591701B1C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ZERO_CHECK;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		7B0B017A725A4975819D396F /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ALL_BUILD;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		7D45711F6DC84A119AA44E63 /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = fp16;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		8F9386E08BE54AA2932279B2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = fp16;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		98C807D1F67B4140B291840C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ALL_BUILD;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		9CFAF4509A1B434FB100A2C6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = /Applications/Xcode_13.2.1_fb.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk;
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download/build";
+			};
+			name = Debug;
+		};
+		A60247758D134243A26B090F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = /Applications/Xcode_13.2.1_fb.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk;
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download/build";
+			};
+			name = Release;
+		};
+		C43828D447EF4E2ABC9335F6 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = /Applications/Xcode_13.2.1_fb.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk;
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download/build";
+			};
+			name = RelWithDebInfo;
+		};
+		E9D324EA90624834B2A25A4F /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ZERO_CHECK;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FP16-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		417DE11645DB4F078A0DE9A8 /* Build configuration list for PBXProject "fp16-download" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9CFAF4509A1B434FB100A2C6 /* Debug */,
+				A60247758D134243A26B090F /* Release */,
+				235F5C5F5C404682BD190ACB /* MinSizeRel */,
+				C43828D447EF4E2ABC9335F6 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		4F16BF77DCF649AA9792CC59 /* Build configuration list for PBXAggregateTarget "ZERO_CHECK" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				66EA0A25C0114CF591701B1C /* Debug */,
+				4167E0AD8A3547A685ECA855 /* Release */,
+				E9D324EA90624834B2A25A4F /* MinSizeRel */,
+				078F5DCFE62C42329A3E97DA /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		74DB816DA5494769BAD5A14A /* Build configuration list for PBXAggregateTarget "fp16" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8F9386E08BE54AA2932279B2 /* Debug */,
+				549C25EDB8124D2084F2724D /* Release */,
+				7D45711F6DC84A119AA44E63 /* MinSizeRel */,
+				0B29139D1DAA486D99DC08F7 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D189154F5AFD41A0BC553E8D /* Build configuration list for PBXAggregateTarget "ALL_BUILD" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				98C807D1F67B4140B291840C /* Debug */,
+				0A5E75A77EBA4EF390753FED /* Release */,
+				7B0B017A725A4975819D396F /* MinSizeRel */,
+				15E93121EBB44CF0AD864C17 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 5850ABE3DBB34147BC36CA84 /* Project object */;
+}

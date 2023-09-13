@@ -102,7 +102,7 @@ if __name__ == "__main__":
     buffer = exec_prog.buffer
 
     quant_tag = "q8" if args.quantize else "fp32"
-    filename = f"{args.model_name}_xnnpack_{quant_tag}.pte"
+    filename = f"{args.model_name}_xnnpack_{quant_tag}_softmax.pte"
     logging.info(f"Saving exported program to {filename}.")
     with open(filename, "wb") as f:
         f.write(buffer)

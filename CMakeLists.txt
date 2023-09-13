@@ -80,7 +80,7 @@ if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
 if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
+  set(PYTHON_EXECUTABLE /Users/chenlai/miniconda/envs/executorch/bin/python3)
 endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.

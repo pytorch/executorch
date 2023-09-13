@@ -675,7 +675,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
       "The %zu-th input of method should have the same type as the input_evalue, but get tag %u and tag %u",
       input_idx,
       e.tag,
-      (unsigned int)input_evalue.tag);
+      input_evalue.tag);
 
   if (e.isTensor()) {
     const auto& t_dst = e.toTensor();

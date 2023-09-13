@@ -1,0 +1,1048 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXAggregateTarget section */
+		550E241E8F65434EA59A1C70 /* ZERO_CHECK */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = BAC7E272897841AE9A5A3D60 /* Build configuration list for PBXAggregateTarget "ZERO_CHECK" */;
+			buildPhases = (
+				ABE97DB0BEEBAF618073B991 /* Generate CMakeFiles/ZERO_CHECK */,
+			);
+			dependencies = (
+			);
+			name = ZERO_CHECK;
+			productName = ZERO_CHECK;
+		};
+		962AF346B15644B3BF535645 /* fxdiv */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 05EC939CC2024EEEA0124BE2 /* Build configuration list for PBXAggregateTarget "fxdiv" */;
+			buildPhases = (
+				A13F0989FF3637C82E6D05EC /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-mkdir */,
+				FD49EF74EA14FC3D8BE3EB25 /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-download */,
+				989C06B002181238A6460C6C /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-update */,
+				8BE3348B3541347D11700255 /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-patch */,
+				EF6D979DAE900CAE0C5BD916 /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-configure */,
+				67E8D9F6113BE25FC37E5B94 /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-build */,
+				CA23EC6A17F7A31C76797214 /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-install */,
+				3CC2AC126DC4A2FFB9B8D877 /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-test */,
+				D6C3A191F1F58B43FD7659C9 /* Generate CMakeFiles/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-complete */,
+				2A230AB144FA03E94C6D1370 /* Generate CMakeFiles/fxdiv */,
+			);
+			dependencies = (
+				433D89589AEE41EF94C3E45C /* PBXTargetDependency */,
+			);
+			name = fxdiv;
+			productName = fxdiv;
+		};
+		A2A726BAE4F8450CA44E17A3 /* ALL_BUILD */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = CD40B15131FF4CC88F63F328 /* Build configuration list for PBXAggregateTarget "ALL_BUILD" */;
+			buildPhases = (
+				DFA808EEF544D2A307B3E32C /* Generate CMakeFiles/ALL_BUILD */,
+			);
+			dependencies = (
+				9D76AE958A5C4184B917ECB3 /* PBXTargetDependency */,
+				43FCAE572A3C40F9A347CE35 /* PBXTargetDependency */,
+			);
+			name = ALL_BUILD;
+			productName = ALL_BUILD;
+		};
+/* End PBXAggregateTarget section */
+
+/* Begin PBXBuildStyle section */
+		27C0665A459B4992A8FB35FC /* RelWithDebInfo */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+			};
+			name = RelWithDebInfo;
+		};
+		3C5A152CB64F4BCB8B99E967 /* Release */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+			};
+			name = Release;
+		};
+		A4352374A1644E368D67542B /* Debug */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+			};
+			name = Debug;
+		};
+		AB1CD4D636B14936BB9B0298 /* MinSizeRel */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+			};
+			name = MinSizeRel;
+		};
+/* End PBXBuildStyle section */
+
+/* Begin PBXContainerItemProxy section */
+		43E395BA23534B15ADE20FA9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1FD0F99DD8AF48A4B298120D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 550E241E8F65434EA59A1C70;
+			remoteInfo = ZERO_CHECK;
+		};
+		597BE218E9B246379B1E6219 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1FD0F99DD8AF48A4B298120D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 962AF346B15644B3BF535645;
+			remoteInfo = fxdiv;
+		};
+		BBD3F141CA334E7481ACC203 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1FD0F99DD8AF48A4B298120D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 550E241E8F65434EA59A1C70;
+			remoteInfo = ZERO_CHECK;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		9F1C3A1C990540F3BFE390A3 /* /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = CMakeLists.txt; sourceTree = SOURCE_ROOT; };
+		C0BB94E5AE60449F8ED7CFE1 /* /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = CMakeLists.txt; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		44CDA7C48CB04CD98A595937 /* ALL_BUILD */ = {
+			isa = PBXGroup;
+			children = (
+				4D7AE0C2609F4B44B1D14C54 /* CMake Rules */,
+				9F1C3A1C990540F3BFE390A3 /* /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeLists.txt */,
+			);
+			name = ALL_BUILD;
+			sourceTree = "<group>";
+		};
+		4C6F456056A14E39ACEBF5D7 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4D7AE0C2609F4B44B1D14C54 /* CMake Rules */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = "CMake Rules";
+			sourceTree = "<group>";
+		};
+		5D52FF41F4C94561B15FD31A /* CMake Rules */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = "CMake Rules";
+			sourceTree = "<group>";
+		};
+		688A588E78B34B73A9FCF66F /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		CA350C82DF6041C39EA14986 /* fxdiv */ = {
+			isa = PBXGroup;
+			children = (
+				5D52FF41F4C94561B15FD31A /* CMake Rules */,
+				C0BB94E5AE60449F8ED7CFE1 /* /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeLists.txt */,
+			);
+			name = fxdiv;
+			sourceTree = "<group>";
+		};
+		FA5631310E13441785C25D34 = {
+			isa = PBXGroup;
+			children = (
+				CA350C82DF6041C39EA14986 /* fxdiv */,
+				44CDA7C48CB04CD98A595937 /* ALL_BUILD */,
+				4C6F456056A14E39ACEBF5D7 /* Products */,
+				688A588E78B34B73A9FCF66F /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXProject section */
+		1FD0F99DD8AF48A4B298120D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1320;
+			};
+			buildConfigurationList = 977EA4C46826439FA0ABDEAE /* Build configuration list for PBXProject "fxdiv-download" */;
+			buildSettings = {
+			};
+			buildStyles = (
+				A4352374A1644E368D67542B /* Debug */,
+				3C5A152CB64F4BCB8B99E967 /* Release */,
+				AB1CD4D636B14936BB9B0298 /* MinSizeRel */,
+				27C0665A459B4992A8FB35FC /* RelWithDebInfo */,
+			);
+			compatibilityVersion = "Xcode 3.2";
+			hasScannedForEncodings = 0;
+			mainGroup = FA5631310E13441785C25D34;
+			projectDirPath = .;
+			projectRoot = "";
+			targets = (
+				A2A726BAE4F8450CA44E17A3 /* ALL_BUILD */,
+				550E241E8F65434EA59A1C70 /* ZERO_CHECK */,
+				962AF346B15644B3BF535645 /* fxdiv */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		2A230AB144FA03E94C6D1370 /* Generate CMakeFiles/fxdiv */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-complete"			);
+			name = "Generate CMakeFiles/fxdiv";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/fxdiv"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		3C0110FC8322DE7E50886E21 = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# shell script goes here
+exit 0";
+			showEnvVarsInLog = 0;
+		};
+		3CC2AC126DC4A2FFB9B8D877 /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-test */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-install"			);
+			name = "Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-test";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-test"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-test
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-test
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-test
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-test
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		67E8D9F6113BE25FC37E5B94 /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-build */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-configure"			);
+			name = "Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-build";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-build"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-build
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-build
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-build
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-build
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		6E0E511D3980D50C96AD2269 = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# shell script goes here
+exit 0";
+			showEnvVarsInLog = 0;
+		};
+		8BE3348B3541347D11700255 /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-patch */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-update"			);
+			name = "Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-patch";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-patch"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-patch
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-patch
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-patch
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-patch
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		989C06B002181238A6460C6C /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-update */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-download"			);
+			name = "Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-update";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-update"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-source
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/tmp/fxdiv-gitupdate.cmake
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-source
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/tmp/fxdiv-gitupdate.cmake
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-source
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/tmp/fxdiv-gitupdate.cmake
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-source
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/tmp/fxdiv-gitupdate.cmake
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		9B50530E35CC49C82C2FACCF = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# shell script goes here
+exit 0";
+			showEnvVarsInLog = 0;
+		};
+		A13F0989FF3637C82E6D05EC /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-mkdir */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-mkdir";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-mkdir"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-source
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/tmp
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-mkdir
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-source
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/tmp
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-mkdir
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-source
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/tmp
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-mkdir
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-source
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/tmp
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-mkdir
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		ABE97DB0BEEBAF618073B991 /* Generate CMakeFiles/ZERO_CHECK */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Generate CMakeFiles/ZERO_CHECK";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/ZERO_CHECK"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  make -f /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeScripts/ReRunCMake.make
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  make -f /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeScripts/ReRunCMake.make
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  make -f /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeScripts/ReRunCMake.make
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  make -f /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeScripts/ReRunCMake.make
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		CA23EC6A17F7A31C76797214 /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-install */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-build"			);
+			name = "Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-install";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-install"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-install
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-install
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-install
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-install
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		D6C3A191F1F58B43FD7659C9 /* Generate CMakeFiles/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-complete */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-build","/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-configure","/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-download","/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-install","/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-mkdir","/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-patch","/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-test","/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-update"			);
+			name = "Generate CMakeFiles/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-complete";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-complete"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-complete
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-done
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-complete
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-done
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-complete
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-done
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  /Users/chenlai/miniconda/bin/cmake -E make_directory /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-complete
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-done
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		DFA808EEF544D2A307B3E32C /* Generate CMakeFiles/ALL_BUILD */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Generate CMakeFiles/ALL_BUILD";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/ALL_BUILD"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  echo Build\\ all\\ projects
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  echo Build\\ all\\ projects
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  echo Build\\ all\\ projects
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv-download
+  echo Build\\ all\\ projects
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		EF6D979DAE900CAE0C5BD916 /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-configure */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-patch","/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/tmp/fxdiv-cfgcmd.txt"			);
+			name = "Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-configure";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-configure"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-configure
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-configure
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-configure
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch/FXdiv
+  /Users/chenlai/miniconda/bin/cmake -E echo_append
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-configure
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		FD49EF74EA14FC3D8BE3EB25 /* Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-download */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-mkdir","/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/fxdiv-gitinfo.txt"			);
+			name = "Generate fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-download";
+			outputPaths = (
+"/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)/fxdiv-download"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/tmp/fxdiv-gitclone.cmake
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-download
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/tmp/fxdiv-gitclone.cmake
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-download
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/tmp/fxdiv-gitclone.cmake
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-download
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/chenlai/tmp_executorch/executorch
+  /Users/chenlai/miniconda/bin/cmake -P /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/tmp/fxdiv-gitclone.cmake
+  /Users/chenlai/miniconda/bin/cmake -E touch /Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/$CONFIGURATION$EFFECTIVE_PLATFORM_NAME/fxdiv-download
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		433D89589AEE41EF94C3E45C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 550E241E8F65434EA59A1C70 /* ZERO_CHECK */;
+			targetProxy = 43E395BA23534B15ADE20FA9 /* PBXContainerItemProxy */;
+		};
+		43FCAE572A3C40F9A347CE35 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 962AF346B15644B3BF535645 /* fxdiv */;
+			targetProxy = 597BE218E9B246379B1E6219 /* PBXContainerItemProxy */;
+		};
+		9D76AE958A5C4184B917ECB3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 550E241E8F65434EA59A1C70 /* ZERO_CHECK */;
+			targetProxy = BBD3F141CA334E7481ACC203 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1E21BDCB03B64D0A856C2A6D /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ZERO_CHECK;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		4B2DD855FCA14F1AABCE4B2B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ALL_BUILD;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		5B2FE1E15D314B72836F1DD5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ZERO_CHECK;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		5F8CC4F1954A4DBD93E7B3FD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ZERO_CHECK;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		67BC6061D4EE499A953F764C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = /Applications/Xcode_13.2.1_fb.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk;
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/build";
+			};
+			name = Debug;
+		};
+		719E9A11296C4ED9A840B8E4 /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ALL_BUILD;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		7DA4310ADADB40AAA929E0CE /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = fxdiv;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		977C3F78CC3F4AE482FB9A07 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ALL_BUILD;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		A2769ACC161D446A920B3679 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = fxdiv;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		AB977A6C878F435883D0ABE4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = fxdiv;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		AE7D91B10BCF4107A18E99F4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = /Applications/Xcode_13.2.1_fb.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk;
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/build";
+			};
+			name = Release;
+		};
+		C70A8DB5C64C4F48AB50477E /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ZERO_CHECK;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		C98B638A18594B42B1075EA0 /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = /Applications/Xcode_13.2.1_fb.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk;
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/build";
+			};
+			name = MinSizeRel;
+		};
+		D38446B68832405682F770DD /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ALL_BUILD;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		DBA91D3C3D7F4C488E1CD395 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = /Applications/Xcode_13.2.1_fb.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX12.1.sdk;
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/build";
+			};
+			name = RelWithDebInfo;
+		};
+		F2C24A8292BF481A840D21FC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				OTHER_LDFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = fxdiv;
+				SECTORDER_FLAGS = "";
+				SYMROOT = "/Users/chenlai/tmp_executorch/executorch/FXdiv-download";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		05EC939CC2024EEEA0124BE2 /* Build configuration list for PBXAggregateTarget "fxdiv" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F2C24A8292BF481A840D21FC /* Debug */,
+				AB977A6C878F435883D0ABE4 /* Release */,
+				7DA4310ADADB40AAA929E0CE /* MinSizeRel */,
+				A2769ACC161D446A920B3679 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		977EA4C46826439FA0ABDEAE /* Build configuration list for PBXProject "fxdiv-download" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				67BC6061D4EE499A953F764C /* Debug */,
+				AE7D91B10BCF4107A18E99F4 /* Release */,
+				C98B638A18594B42B1075EA0 /* MinSizeRel */,
+				DBA91D3C3D7F4C488E1CD395 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		BAC7E272897841AE9A5A3D60 /* Build configuration list for PBXAggregateTarget "ZERO_CHECK" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5B2FE1E15D314B72836F1DD5 /* Debug */,
+				5F8CC4F1954A4DBD93E7B3FD /* Release */,
+				1E21BDCB03B64D0A856C2A6D /* MinSizeRel */,
+				C70A8DB5C64C4F48AB50477E /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CD40B15131FF4CC88F63F328 /* Build configuration list for PBXAggregateTarget "ALL_BUILD" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4B2DD855FCA14F1AABCE4B2B /* Debug */,
+				977C3F78CC3F4AE482FB9A07 /* Release */,
+				719E9A11296C4ED9A840B8E4 /* MinSizeRel */,
+				D38446B68832405682F770DD /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1FD0F99DD8AF48A4B298120D /* Project object */;
+}

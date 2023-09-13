@@ -13,7 +13,7 @@ function(gen_selected_ops ops_schema_yaml root_ops include_all_ops)
   set(_oplist_yaml ${CMAKE_CURRENT_BINARY_DIR}/selected_operators.yaml)
   file(GLOB_RECURSE _codegen_tools_srcs "${EXECUTORCH_ROOT}/codegen/tools/*.py")
 
-  set(_gen_oplist_command "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_oplist
+  set(_gen_oplist_command /Users/chenlai/miniconda/envs/executorch/bin/python3 -m codegen.tools.gen_oplist
                           --output_path=${_oplist_yaml})
 
   if(ops_schema_yaml)

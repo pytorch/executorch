@@ -8,100 +8,78 @@
 
 #include <executorch/runtime/executor/tensor_parser.h>
 
+#include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
 
-#include <ATen/ATen.h> // @manual=//caffe2/aten:ATen-core
-
 namespace torch {
 namespace executor {
 namespace deserialization {
 
-using torch::executor::Error;
+__ET_NODISCARD Result<BoxedEvalueList<exec_aten::Tensor>> parseTensorList(
+    const flatbuffers::Vector<int32_t>* tensor_indices,
+    EValue* values_,
+    MemoryManager* memory_manager) {
+  EXECUTORCH_SCOPE_PROF("TensorParser::parseTensorList");
 
-namespace {
+  auto* tensor_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
+      memory_manager->get_runtime_allocator(),
+      exec_aten::Tensor,
+      tensor_indices->size());
+  auto* evalp_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
+      memory_manager->get_runtime_allocator(), EValue*, tensor_indices->size());
 
-void deleteNothing(void*);
-void deleteNothing(void*) {}
-
-} // namespace
-
-Result<at::Tensor> parseTensor(
-    const Program* program,
-    MemoryManager* memory_manager,
-    const executorch_flatbuffer::Tensor* s_tensor) {
-  EXECUTORCH_SCOPE_PROF("TensorParser::parseTensor");
-
-  ET_CHECK_OR_RETURN_ERROR(
-      s_tensor->storage_offset() == 0,
-      NotSupported,
-      "Non-zero storage offset %" PRId32 " not supported",
-      s_tensor->storage_offset());
-
-  // get metadata
-  at::ScalarType type = static_cast<at::ScalarType>(s_tensor->scalar_type());
-  auto options = at::CPU(type).options();
-
-  // convert int32 in serialization to int64 for aten
-  size_t ndim = s_tensor->sizes()->size();
-  std::vector<int64_t> sizes(
-      s_tensor->sizes()->begin(), s_tensor->sizes()->end());
-  std::vector<int64_t> strides(ndim);
-  auto status = torch::executor::dim_order_to_stride(
-      s_tensor->sizes()->data(),
-      s_tensor->dim_order()->data(),
-      ndim,
-      strides.data());
-  ET_CHECK_OR_RETURN_ERROR(
-      status == Error::Ok,
-      Internal,
-      "dim_order_to_stride returned invalid status");
-
-  // Create a tensor without data first so we can find its expected size before
-  // getting its memory.
-  at::Tensor tensor = at::from_blob(
-      /*data=*/nullptr,
-      sizes,
-      strides,
-      /*storage_offset=*/0,
-      deleteNothing,
-      options);
-
-  if (s_tensor->shape_dynamism() ==
-      executorch_flatbuffer::TensorShapeDynamism::DYNAMIC_UNBOUND) {
-    // Provide fully dynamic tensors with an allocator so they can be resized
-    // within aten kernels.
-    auto impl = tensor.unsafeGetTensorImpl();
-    at::StorageImpl* storage = impl->unsafe_storage().unsafeGetStorageImpl();
-    storage->set_allocator(getCPUAllocator());
-    storage->set_resizable(true);
-    storage->set_nbytes(0);
-    impl->set_sizes_contiguous(0);
-    // Leave the data as nullptr since it will be reallocated.
-  } else {
-    // Now that we know how big the tensor is, find and assign its memory.
-    Result<void*> data_ptr = getTensorDataPtr(
-        s_tensor,
-        program,
-        tensor.nbytes(),
-        memory_manager->get_non_constant_allocator());
-    if (!data_ptr.ok()) {
-      ET_LOG(Error, "getTensorDataPtr() failed: 0x%" PRIx32, data_ptr.error());
-      return data_ptr.error();
-    }
-    ET_CHECK_OR_RETURN_ERROR(
-        data_ptr.get() != nullptr,
-        Internal,
-        "Expected non-null data for tensor with shape dynamism %d",
-        int(s_tensor->shape_dynamism()));
-    tensor.unsafeGetTensorImpl()->unsafe_storage().set_data_ptr(
-        at::DataPtr(data_ptr.get(), DeviceType::CPU));
+  // For each tensor index look up the corresponding Tensor (which has been
+  // already allocated) and stick it in the list.
+  size_t output_idx = 0;
+  for (int32_t tensor_index : *tensor_indices) {
+    // Placement new as the list elements are not initialized, so calling
+    // copy assignment is not defined if its non trivial.
+    new (&tensor_list[output_idx]) exec_aten::Tensor(
+        values_[static_cast<size_t>(tensor_index)].toTensor());
+    evalp_list[output_idx] = &values_[static_cast<size_t>(tensor_index)];
+    output_idx++;
   }
 
-  return tensor;
+  return BoxedEvalueList<exec_aten::Tensor>(
+      evalp_list, tensor_list, tensor_indices->size());
+}
+
+__ET_NODISCARD Result<void*> getTensorDataPtr(
+    const executorch_flatbuffer::Tensor* s_tensor,
+    const Program* program,
+    size_t nbytes,
+    HierarchicalAllocator* allocator) {
+  if (s_tensor->constant_buffer_idx() > 0) {
+    auto data =
+        program->get_constant_buffer_data(s_tensor->constant_buffer_idx());
+    if (!data.ok()) {
+      return data.error();
+    }
+    // The const_cast is 'ok' here because the program and runtime should
+    // guarantee that this data is never modified.
+    return const_cast<void*>(data.get());
+  }
+
+  const executorch_flatbuffer::AllocationDetails* allocation_info =
+      s_tensor->allocation_info();
+  if (allocation_info != nullptr) {
+    // Normal non-constant Tensor. Allocate data using mem_id and offset.
+
+    // TODO(T142455629): make the allocator actually id based and not indexed
+    // based. -1 is a hack to get the memory ids 0 aligned because previously
+    // 0 was reserved
+    const uint32_t memory_id = allocation_info->memory_id() - 1;
+    return allocator->get_offset_address(
+        memory_id, allocation_info->memory_offset(), nbytes);
+  }
+
+  // The tensor's data will be allocated as part of execution.
+  return nullptr;
 }
 
 } // namespace deserialization

@@ -24,7 +24,19 @@ class MV2Model(EagerModelBase):
         # pyre-ignore
         mv2 = mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT)
         logging.info("Loaded mobilenet_v2 model")
-        return mv2
+        class MobileNetV2Wrapper(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.mv2 = mv2
+
+            def forward(self, x):
+                out = self.mv2(x)
+                return torch.nn.functional.softmax(out[0], dim=0)
+                # probabilities = torch.nn.functional.softmax(out[0], dim=0)
+                # return torch.topk(probabilities, 1)
+                # return self.preds
+
+        return MobileNetV2Wrapper()
 
     def get_example_inputs(self):
         tensor_size = (1, 3, 224, 224)

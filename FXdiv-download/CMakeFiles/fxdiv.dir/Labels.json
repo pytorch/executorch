@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/fxdiv"
+		},
+		{
+			"file" : "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/fxdiv.rule"
+		},
+		{
+			"file" : "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/CMakeFiles/CMakeFiles/fxdiv-complete.rule"
+		},
+		{
+			"file" : "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/CMakeFiles/fxdiv-install.rule"
+		},
+		{
+			"file" : "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/CMakeFiles/fxdiv-mkdir.rule"
+		},
+		{
+			"file" : "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/CMakeFiles/fxdiv-download.rule"
+		},
+		{
+			"file" : "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/CMakeFiles/fxdiv-update.rule"
+		},
+		{
+			"file" : "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/CMakeFiles/fxdiv-patch.rule"
+		},
+		{
+			"file" : "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/CMakeFiles/fxdiv-configure.rule"
+		},
+		{
+			"file" : "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/CMakeFiles/fxdiv-build.rule"
+		},
+		{
+			"file" : "/Users/chenlai/tmp_executorch/executorch/FXdiv-download/fxdiv-prefix/src/fxdiv-stamp/CMakeFiles/fxdiv-test.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"fxdiv"
+		],
+		"name" : "fxdiv"
+	}
+}

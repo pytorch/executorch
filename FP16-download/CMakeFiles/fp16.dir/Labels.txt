@@ -1,0 +1,14 @@
+# Target labels
+ fp16
+# Source files and their labels
+/Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/fp16
+/Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/fp16.rule
+/Users/chenlai/tmp_executorch/executorch/FP16-download/CMakeFiles/CMakeFiles/fp16-complete.rule
+/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/CMakeFiles/fp16-install.rule
+/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/CMakeFiles/fp16-mkdir.rule
+/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/CMakeFiles/fp16-download.rule
+/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/CMakeFiles/fp16-update.rule
+/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/CMakeFiles/fp16-patch.rule
+/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/CMakeFiles/fp16-configure.rule
+/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/CMakeFiles/fp16-build.rule
+/Users/chenlai/tmp_executorch/executorch/FP16-download/fp16-prefix/src/fp16-stamp/CMakeFiles/fp16-test.rule
