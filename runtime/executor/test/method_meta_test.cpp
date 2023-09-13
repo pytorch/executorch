@@ -76,14 +76,14 @@ TEST_F(MethodMetaTest, MethodMetaApi) {
   EXPECT_EQ(method_meta->num_outputs(), 1);
 
   // Appropriate amount of non_const_buffers
-  EXPECT_EQ(method_meta->num_non_const_buffers(), 2);
+  EXPECT_EQ(method_meta->num_non_const_buffers(), 1);
 
   // Appropriate content of non_const_buffers
-  EXPECT_EQ(method_meta->non_const_buffer_size(1).get(), 48);
+  EXPECT_EQ(method_meta->non_const_buffer_size(0).get(), 48);
 
   // Invalid index Errors
   EXPECT_EQ(
-      method_meta->non_const_buffer_size(2).error(), Error::InvalidArgument);
+      method_meta->non_const_buffer_size(1).error(), Error::InvalidArgument);
 
   EXPECT_EQ(
       program_->method_meta("not_a_method").error(), Error::InvalidArgument);
