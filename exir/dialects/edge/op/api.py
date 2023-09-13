@@ -28,7 +28,7 @@ def get_torch_op_overload(
         return packet.default
 
 
-def get_callable(name):
+def get_callable(name) -> torch._ops.OpOverload:
     main, suffix = name.split(".")
     return get_torch_op_overload("aten", main, suffix)
 

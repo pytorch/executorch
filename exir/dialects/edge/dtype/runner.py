@@ -10,14 +10,10 @@ from typing import Dict, Iterator, List, Optional, Tuple, Union
 
 import torch
 import torch.testing._internal.common_dtype as common_dtype
-from executorch.exir.dialects.edge.arg.model import (
-    ArgMode,
-    BaseArg,
-    BaseKwarg,
-    GenMode,
-    get_callable,
-)
+from executorch.exir.dialects.edge.arg.model import ArgMode, BaseArg, BaseKwarg, GenMode
 from executorch.exir.dialects.edge.arg.type import ArgType
+from executorch.exir.dialects.edge.dtype.utils import extract_return_dtype
+from executorch.exir.dialects.edge.op.api import get_callable
 
 
 class DtypeRunner:
@@ -92,12 +88,13 @@ class DtypeRunner:
         types = DtypeRunner._get_types(inputs)
 
         def mapping(t):
+            type_dtypes = []
             if t.is_optional():
-                return [None]
-            elif t.is_scalar():
-                return self.scalar_dtypes
+                type_dtypes = [None]
+            if t.is_scalar():
+                return type_dtypes + self.scalar_dtypes
             elif t.is_scalar_type() or t.is_tensor() or t.is_tensor_list():
-                return self.tensor_dtypes
+                return type_dtypes + self.tensor_dtypes
             else:
                 raise ValueError("Type {t.name} does not have dtype")
 
@@ -142,8 +139,15 @@ class DtypeRunner:
         args, kwargs = DtypeRunner._get_args_kwargs(inputs, dtypes, argmode)
         op = get_callable(name)
         try:
-            op(*args, **kwargs)
-            return (True, name, dtypes, args, kwargs)
+            res = op(*args, **kwargs)
+            ret_dtypes = ()
+            if "returns" in inputs:
+                ret_dtypes = tuple(extract_return_dtype(res, inputs["returns"]))
+            return (True, name, dtypes + ret_dtypes, args, kwargs)
+        except AssertionError as e:
+            raise RuntimeError(
+                f"opname: {name}, inputs: {inputs}, dtypes: {dtypes}, argmode {argmode}"
+            ) from e
         except Exception as e:
             if argmode == ArgMode.ONES:
                 return (False, name, dtypes, args, kwargs)
@@ -151,10 +155,13 @@ class DtypeRunner:
                 inputs, dtypes, ArgMode.ONES
             )
             try:
-                op(*ones_args, **ones_kwargs)
+                res = op(*args, **kwargs)
+                ret_dtypes = ()
+                if "returns" in inputs:
+                    ret_dtypes = tuple(extract_return_dtype(res, inputs["returns"]))
                 print(e)
                 print(name, dtypes, args, kwargs)
-                return (True, name, dtypes, ones_args, ones_kwargs)
+                return (True, name, dtypes + ret_dtypes, ones_args, ones_kwargs)
             except Exception:
                 return (False, name, dtypes, ones_args, ones_kwargs)
 

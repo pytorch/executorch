@@ -155,7 +155,7 @@ class TestEdgeYaml(unittest.TestCase):
 
     def test_optional_tensor_supported(self) -> None:
         # Two of three tensor inputs of native_layer_norm are in optional tensor type.
-        ret = gen_op_yaml("aten::native_layer_norm")
+        ret = gen_op_yaml("native_layer_norm.default")
         self.assertTrue(ret is not None)
         self.assertEqual(ret.func_name, "aten::native_layer_norm")
         self.assertEqual(ret.inherits, "aten::native_layer_norm")
@@ -169,7 +169,7 @@ class TestEdgeYaml(unittest.TestCase):
 
     def test_tensor_list_supported(self) -> None:
         # Input of cat is tensor list.
-        ret = gen_op_yaml("aten::cat")
+        ret = gen_op_yaml("cat.default")
         self.assertTrue(ret is not None)
         self.assertEqual(ret.func_name, "aten::cat")
         self.assertEqual(ret.inherits, "aten::cat")

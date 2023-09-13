@@ -87,15 +87,15 @@ class FunctionDtypeConstraint:
             alias: AllowedDtypeSet(set(types)) for alias, types in type_alias.items()
         }
         self.type_constraint: List[Dict[str, str]] = type_constraint
-        # type_constraint's non return entries should be same as all tensor args.
+        # type_constraint's non return entries should include all tensor-like arguments.
         for t_constraint in self.type_constraint:
             type_constraint_names = set(t_constraint)
             all_tensor_arg_names = set(
                 self.essential_tensor_io_names + self.optional_tensor_io_names
             )
-            if type_constraint_names != all_tensor_arg_names:
+            if not all_tensor_arg_names.issubset(type_constraint_names):
                 raise RuntimeError(
-                    "Each input entry of type_constraint must be tensor-like,"
+                    "Input entries of type_constraint must contain all tensor-like arguments, "
                     + f"but get {type_constraint_names} and {all_tensor_arg_names}"
                 )
 
