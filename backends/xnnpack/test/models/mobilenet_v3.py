@@ -16,7 +16,7 @@ from executorch.backends.xnnpack.test.tester.tester import Export
 from executorch.exir import CaptureConfig
 
 
-class TestXNNPACKMobileNetV3(unittest.TestCase):
+class TestMobileNetV3(unittest.TestCase):
     mv3 = models.mobilenetv3.mobilenet_v3_small(pretrained=True)
     mv3 = mv3.eval()
     model_inputs = (torch.ones(1, 3, 224, 244),)
@@ -35,7 +35,7 @@ class TestXNNPACKMobileNetV3(unittest.TestCase):
         "executorch_exir_dialects_edge__ops_aten_mean_dim",
     }
 
-    def test_mv3_fp32(self):
+    def test_fp32_mv3(self):
         (
             Tester(self.mv3, self.model_inputs)
             .export(Export(CaptureConfig(enable_aot=True)))
@@ -50,7 +50,7 @@ class TestXNNPACKMobileNetV3(unittest.TestCase):
             .compare_outputs()
         )
 
-    def test_mv3_qs8_pt2e(self):
+    def test_qs8_mv3(self):
         ops_after_quantization = self.all_operators - {
             "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
         }
@@ -66,7 +66,7 @@ class TestXNNPACKMobileNetV3(unittest.TestCase):
 
         (
             Tester(self.mv3, self.model_inputs)
-            .quantize2()
+            .quantize()
             .export(Export(CaptureConfig(enable_aot=True)))
             .to_edge()
             .check(list(ops_after_quantization))
