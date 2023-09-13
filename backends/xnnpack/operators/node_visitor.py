@@ -10,6 +10,8 @@ from typing import cast, Dict, Optional, Tuple
 import torch
 from executorch.backends.transforms import get_shape
 
+from executorch.backends.xnnpack.operators.quant_params import QuantParams
+
 from executorch.backends.xnnpack.passes.channels_last_tagged_reshape_pass import (
     ChannelsLastTaggedReshapePass,
 )
@@ -25,8 +27,6 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNTensorValue,
     XValue,
 )
-
-from executorch.backends.xnnpack.utils.quant_utils import QuantParams
 from executorch.backends.xnnpack.utils.utils import (
     check_or_raise,
     get_input_node,

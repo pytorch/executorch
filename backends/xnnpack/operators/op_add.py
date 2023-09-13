@@ -11,13 +11,13 @@ from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.xnnpack.operators.quant_params import QuantParams
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     OutputMinMax,
     XNNAdd,
     XNNGraph,
     XNode,
 )
-from executorch.backends.xnnpack.utils.quant_utils import QuantParams
 
 from executorch.backends.xnnpack.utils.utils import get_input_node, get_relu_fused_node
 from executorch.exir.dialects._ops import ops as exir_ops
