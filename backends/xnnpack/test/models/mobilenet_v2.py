@@ -11,8 +11,7 @@ import torchvision.models as models
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackQuantizedPartitioner,
 )
-from executorch.backends.xnnpack.test.tester import Partition, Tester
-from executorch.backends.xnnpack.test.tester.tester import Export
+from executorch.backends.xnnpack.test.tester import Export, Partition, Tester
 from executorch.exir import CaptureConfig
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
