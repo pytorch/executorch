@@ -11,12 +11,11 @@ import os
 import tempfile
 from typing import Union
 
-# pyre-ignore[21]: Could not find module `executorch.exir._serialize._bindings`.
-import executorch.exir._serialize._bindings as bindings  # @manual=//executorch/exir/_serialize:_bindings
-
 import pkg_resources
 
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
+
+from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
 from executorch.sdk.etdump.schema import ETDump
 from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC
 
@@ -55,8 +54,7 @@ def _convert_to_flatbuffer(etdump_json: str) -> bytes:
         with open(json_path, "wb") as json_file:
             json_file.write(etdump_json.encode("ascii"))
 
-        # pyre-ignore
-        bindings.flatc_compile(d, schema_path, json_path)
+        _flatc_compile(d, schema_path, json_path)
         output_path = os.path.join(d, "{}.etdp".format(ETDUMP_SCHEMA_NAME))
         with open(output_path, "rb") as output_file:
             return output_file.read()
@@ -71,8 +69,7 @@ def _convert_from_flatbuffer(etdump_flatbuffer: bytes) -> bytes:
         bin_path = os.path.join(d, "schema.bin")
         with open(bin_path, "wb") as bin_file:
             bin_file.write(etdump_flatbuffer)
-        # pyre-ignore
-        bindings.flatc_decompile(d, schema_path, bin_path)
+        _flatc_decompile(d, schema_path, bin_path)
         output_path = os.path.join(d, "schema.json")
         with open(output_path, "rb") as output_file:
             return output_file.read()
@@ -126,14 +123,13 @@ def _convert_to_flatcc(etdump_json: str) -> bytes:
         with open(json_path, "wb") as json_file:
             json_file.write(etdump_json.encode("ascii"))
 
-        # pyre-ignore
-        bindings.flatc_compile(d, schema_path, json_path)
+        _flatc_compile(d, schema_path, json_path)
         output_path = os.path.join(d, "{}.etdp".format(ETDUMP_FLATCC_SCHEMA_NAME))
         with open(output_path, "rb") as output_file:
             return output_file.read()
 
 
-def _convert_from_flatcc(etdump_flatbuffer: bytes) -> bytes:
+def _convert_from_flatcc(etdump_flatbuffer: bytes, size_prefixed: bool = True) -> bytes:
     with tempfile.TemporaryDirectory() as d:
         _write_schema(d, ETDUMP_FLATCC_SCHEMA_NAME)
         _write_schema(d, SCALAR_TYPE_SCHEMA_NAME)
@@ -142,8 +138,10 @@ def _convert_from_flatcc(etdump_flatbuffer: bytes) -> bytes:
         bin_path = os.path.join(d, "schema.bin")
         with open(bin_path, "wb") as bin_file:
             bin_file.write(etdump_flatbuffer)
-        # pyre-ignore
-        bindings.flatc_decompile(d, schema_path, bin_path)
+        additional_args = []
+        if size_prefixed:
+            additional_args = ["--size-prefixed"]
+        _flatc_decompile(d, schema_path, bin_path, additional_args)
         output_path = os.path.join(d, "schema.json")
         with open(output_path, "rb") as output_file:
             return output_file.read()
@@ -163,7 +161,9 @@ def serialize_to_etdump_flatcc(
     return _convert_to_flatcc(_serialize_from_etdump_to_json(etdump))
 
 
-def deserialize_from_etdump_flatcc(data: bytes) -> ETDumpFlatCC:
+def deserialize_from_etdump_flatcc(
+    data: bytes, size_prefixed: bool = True
+) -> ETDumpFlatCC:
     """
     Given an etdump binary blob (constructed using the FlatCC schema) this function will deserialize
     it and return the FlatCC python object representation of etdump.
@@ -172,4 +172,6 @@ def deserialize_from_etdump_flatcc(data: bytes) -> ETDumpFlatCC:
     Returns:
         Deserialized ETDump python object.
     """
-    return _deserialize_from_json_to_etdump_flatcc(_convert_from_flatcc(data))
+    return _deserialize_from_json_to_etdump_flatcc(
+        _convert_from_flatcc(data, size_prefixed)
+    )

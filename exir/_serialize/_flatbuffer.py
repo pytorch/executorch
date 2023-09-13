@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
 
 
 def _is_valid_alignment(alignment: int) -> bool:
@@ -212,7 +212,12 @@ def _flatc_compile(output_dir: str, schema_path: str, json_path: str) -> None:
     )
 
 
-def _flatc_decompile(output_dir: str, schema_path: str, bin_path: str) -> None:
+def _flatc_decompile(
+    output_dir: str,
+    schema_path: str,
+    bin_path: str,
+    flatc_additional_args: Optional[List[str]] = None,
+) -> None:
     """Deserializes binary flatbuffer data to a JSON file.
 
     Args:
@@ -223,8 +228,10 @@ def _flatc_decompile(output_dir: str, schema_path: str, bin_path: str) -> None:
         bin_path: Path to the data to deserialize, as binary data compatible
             with the schema.
     """
+    flatc_additional_args = flatc_additional_args if flatc_additional_args else []
     _run_flatc(
-        [
+        flatc_additional_args
+        + [
             "--json",
             "--defaults-json",
             "--strict-json",
