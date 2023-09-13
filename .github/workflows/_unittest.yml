@@ -20,11 +20,11 @@ on:
 jobs:
   unittest:
     name: unittest
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@increase-max_user_watches
     with:
       runner: ${{ inputs.runner }}
       docker-image: ${{ inputs.docker-image }}
-      submodules: 'true'
+      submodules: 'recursive'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 60
       script: |
@@ -38,3 +38,5 @@ jobs:
         pip install .
         # Run pytest with coverage
         pytest --cov=./ --cov-report=xml
+        # Run gtest
+        buck2 test runtime/core/... runtime/platform/...
