@@ -39,7 +39,6 @@ python_library(
         "fbsource//third-party/pypi/setuptools:setuptools",
         ":schema",
         ":schema_flatcc",
-        "//executorch/exir/_serialize:_bindings",
         "//executorch/exir/_serialize:lib",
     ],
 )
