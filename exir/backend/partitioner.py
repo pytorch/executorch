@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Dict, List, NamedTuple, TypeVar
 
 import torch.fx as fx
@@ -18,14 +19,27 @@ class DelegationSpec(NamedTuple):
     compile_specs: List[CompileSpec]
 
 
+@dataclass
+class PartitionResult:
+    """
+    tagged_graph: the graph with nodes that intend to be delegated containing a "DelegationSpec" metadata
+    partition_tags: A dictionary that will be used to keep track of the tags and it's corresponding DelegationSpec. The tag is defined by users and used
+    in the node.meta.
+    """
+
+    tagged_graph: fx.GraphModule
+    partition_tags: Dict[str, DelegationSpec]
+
+
 class Partitioner(ABC):
     """
-    Defines a callable interface for partitioning an exported Module (i.e. a program) for
+    Defines a callable interface for partitioning an exported module (i.e. a program) for
     backend delegation.
-    A partitioner implementation would receive an exported Module, determine what portions of
+    A partitioner implementation would receive an exported module, determine what portions of
     the it can be delegated to certain backend (though a partitioner can target multiple
-    backends as well), and return the same input Module with specific nodes in
-    the input graph tagged for delegation.
+    backends as well), and return the PartitionResult including:
+    - the same input module with specific nodes in the input graph tagged for delegation
+    - the "partition_tags" to indicate how the tag is mapped to Delegation Spec.
 
     The nodes that intend to be delegated must be tagged (by setting
     node.meta["delegation_tag"]) and this tag must be provided in the
@@ -40,14 +54,12 @@ class Partitioner(ABC):
         edge_graph_module: A module in Edge dialect to be partitioned for backend delegation.
     """
 
-    partition_tags: Dict[str, DelegationSpec]
-
-    def __call__(self, edge_graph_module: fx.GraphModule) -> fx.GraphModule:
+    def __call__(self, edge_graph_module: fx.GraphModule) -> PartitionResult:
         return self.partition(edge_graph_module)
 
     @enforcedmethod
     @abstractmethod
-    def partition(self, edge_graph_module: fx.GraphModule) -> fx.GraphModule:
+    def partition(self, edge_graph_module: fx.GraphModule) -> PartitionResult:
         """
         Returns the input exported program with newly created sub-Modules encapsulating
         specific portions of the input "tagged" for delegation.
@@ -66,8 +78,7 @@ class Partitioner(ABC):
             edge_graph_module: A module in Edge dialect to be partitioned for backend delegation.
 
         Returns:
-            GraphModule: Returns the input exported program with nodes that
-            intend to be delegated containing a "delegate_spec" metadata
+            PartitionResult: includes the tagged graph and the delegation spec to indicate what backend_id and compile_spec is used for each node and the tag created by the backend developers.
         """
         pass
 

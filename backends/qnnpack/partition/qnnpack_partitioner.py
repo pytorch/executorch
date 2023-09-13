@@ -19,7 +19,11 @@ from executorch.backends.qnnpack.qnnpack_preprocess import QnnpackBackend
 from executorch.backends.transforms.addmm_mm_to_linear import (
     apply_addmm_mm_to_linear_transform,
 )
-from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
+from executorch.exir.backend.partitioner import (
+    DelegationSpec,
+    Partitioner,
+    PartitionResult,
+)
 from torch.fx.passes.utils.matcher_utils import SubgraphMatcher
 
 logging.basicConfig(level=logging.INFO)
@@ -35,7 +39,6 @@ class _BasePartitioner(Partitioner):
         self.patterns = patterns
 
         self.delegation_spec = DelegationSpec(delegate_name, [])
-        self.partition_tags: Dict[str, DelegationSpec] = {}
 
     @staticmethod
     def check_partitions(partitions: Union[dict, list]) -> None:
@@ -48,9 +51,9 @@ class _BasePartitioner(Partitioner):
         else:
             log.info(f"Found {pl} subgraphs to be partitioned.")
 
-    def partition(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
+    def partition(self, graph_module: torch.fx.GraphModule) -> PartitionResult:
         raise NotImplementedError("This is not meant to be used directly.")
-        return graph_module
+        return PartitionResult(tagged_graph=graph_module, partition_tags={})
 
 
 class _SingleOpDelegatePartitioner(_BasePartitioner):
@@ -72,7 +75,7 @@ class _SingleOpDelegatePartitioner(_BasePartitioner):
         self.transforms = transforms
 
     # override
-    def partition(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
+    def partition(self, graph_module: torch.fx.GraphModule) -> PartitionResult:
         # TODO delete this since we are not allowed to do this
         if self.transforms is not None:
             for transform in self.transforms:  # pyre-ignore
@@ -107,7 +110,7 @@ class _SingleOpDelegatePartitioner(_BasePartitioner):
 
         # Mapping from delegation tag to match set
         tag_mapping = {}
-
+        partition_tags: Dict[str, DelegationSpec] = {}
         for (partition_id, match_set) in enumerate(match_sets):
             delegation_tag = f"tag{partition_id}"
             for node in match_set:
@@ -124,10 +127,10 @@ class _SingleOpDelegatePartitioner(_BasePartitioner):
                         )
                     break
                 node.meta["delegation_tag"] = delegation_tag
-            self.partition_tags[delegation_tag] = self.delegation_spec
+            partition_tags[delegation_tag] = self.delegation_spec
             tag_mapping[delegation_tag] = match_set
 
-        return graph_module
+        return PartitionResult(tagged_graph=graph_module, partition_tags=partition_tags)
 
 
 class QnnpackPartitioner(_SingleOpDelegatePartitioner):

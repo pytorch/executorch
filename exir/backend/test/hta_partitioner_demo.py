@@ -13,7 +13,11 @@ from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner impor
     generate_pattern_op_partitions,
 )
 
-from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
+from executorch.exir.backend.partitioner import (
+    DelegationSpec,
+    Partitioner,
+    PartitionResult,
+)
 from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
 from torch.fx import GraphModule
 from torch.fx.passes.infra.partitioner import Partition
@@ -114,8 +118,6 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
         backend_id = QnnBackend.__name__
         self.delegation_spec = DelegationSpec(backend_id, [])
 
-        self.partition_tags = {}
-
     def is_exclusive(self, partition_list_list: List[List[Partition]]) -> bool:
         """
         List[Partition] is generate from one pattern partitioner, and this partitioner
@@ -189,14 +191,15 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
 
         return flat_proposed_partitions_with_unique_id
 
-    def partition(self, graph_module: GraphModule) -> GraphModule:
+    def partition(self, graph_module: GraphModule) -> PartitionResult:
+        partition_tags = {}
         partition_list = self.generate_partition_list(graph_module)
         for partition in partition_list:
             for node in partition.nodes:
                 delegation_tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
-                self.partition_tags[delegation_tag] = self.delegation_spec
-        return graph_module
+                partition_tags[delegation_tag] = self.delegation_spec
+        return PartitionResult(tagged_graph=graph_module, partition_tags=partition_tags)
 
 
 @final
@@ -265,11 +268,8 @@ class HTAPartitionerOnePatternDemo(Partitioner):
         backend_id = QnnBackend.__name__
         self.delegation_spec = DelegationSpec(backend_id, [])
 
-        self.partition_tags = {}
-
-    def partition(
-        self, edge_graph_module: torch.fx.GraphModule
-    ) -> torch.fx.GraphModule:
+    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
+        partition_tags = {}
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, patterns=self.patterns
         )
@@ -277,5 +277,7 @@ class HTAPartitionerOnePatternDemo(Partitioner):
             for node in partition.nodes:
                 delegation_tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
-                self.partition_tags[delegation_tag] = self.delegation_spec
-        return edge_graph_module
+                partition_tags[delegation_tag] = self.delegation_spec
+        return PartitionResult(
+            tagged_graph=edge_graph_module, partition_tags=partition_tags
+        )
