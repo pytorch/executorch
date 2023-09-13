@@ -29,7 +29,7 @@ _EXTERNAL_DEPS = {
     "gen-oplist-lib": "//third-party:gen_oplist_lib",
     # Commandline flags library
     "gflags": "//third-party:gflags",
-    "gmock": [],  # TODO(larryliu0820): Add support
+    "gmock": "//third-party:gmock",
     "gtest": "//third-party:gtest",
     "libtorch": "//third-party:libtorch",
     "prettytable": "//third-party:prettytable",
