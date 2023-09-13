@@ -362,8 +362,3 @@ class Return(BaseKwarg):
             value=self.value,
             deps=self.deps,
         )
-
-
-def get_callable(name):
-    main, suffix = name.split(".")
-    return getattr(getattr(torch.ops.aten, main), suffix)
