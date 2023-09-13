@@ -8,11 +8,7 @@ import unittest
 
 import torch
 import torchvision.models as models
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackQuantizedPartitioner,
-)
-from executorch.backends.xnnpack.test.tester import Export, Partition, Tester
-from executorch.exir import CaptureConfig
+from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestMobileNetV3(unittest.TestCase):
@@ -53,15 +49,7 @@ class TestMobileNetV3(unittest.TestCase):
         ops_after_quantization = self.all_operators - {
             "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
         }
-        ops_after_lowering = self.all_operators - {
-            # TODO: unified partitioner since hardswish/hardsigmoid decomposed operators are not quantized
-            # They will not be partitioned by quantized partitioner
-            "executorch_exir_dialects_edge__ops_aten_add_Tensor",
-            "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
-            "executorch_exir_dialects_edge__ops_aten_div_Tensor",
-            "executorch_exir_dialects_edge__ops_aten_clamp_default",
-            "executorch_exir_dialects_edge__ops_aten__to_copy_default",
-        }
+        ops_after_lowering = self.all_operators
 
         (
             Tester(self.mv3, self.model_inputs)
@@ -69,7 +57,7 @@ class TestMobileNetV3(unittest.TestCase):
             .export()
             .to_edge()
             .check(list(ops_after_quantization))
-            .partition(Partition(partitioner=XnnpackQuantizedPartitioner))
+            .partition()
             .check(["torch.ops.executorch_call_delegate"])
             .check_not(list(ops_after_lowering))
             .to_executorch()
