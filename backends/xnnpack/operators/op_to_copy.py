@@ -12,13 +12,13 @@ from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.xnnpack.operators.quant_params import QuantParams
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNGraph,
     XNNStaticTranspose,
     XNode,
 )
-from executorch.backends.xnnpack.utils.quant_utils import QuantParams
 from executorch.backends.xnnpack.utils.utils import (
     check_or_raise,
     get_input_node,
