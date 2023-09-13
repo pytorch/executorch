@@ -45,7 +45,7 @@ project(executorch)
 include(build/Utils.cmake)
 
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Debug)
+  set(CMAKE_BUILD_TYPE Release)
 endif()
 # -Os: Optimize for size -ffunction-sections -fdata-sections: breaks function
 # and data into sections so they can be properly gc'd -s: strip symbols
