@@ -32,9 +32,10 @@ embedded devices. At a high level, the AOT steps are the following:
 
 ### 1.1 Exporting to EXIR ATen Dialect
 
-The entrypoint to Executorch is through the `exir.capture` API. This function
-utilizes [torch.export](https://pytorch.org/docs/main/export.html) to
-fully capture a PyTorch Model (either `torch.nn.Module` or a callable) into a
+NB: Export APIs are undergoing changes to align better with long term state of export. Please refer to https://github.com/pytorch/executorch/issues/290, for more details.
+
+The entrypoint to Executorch is through the `torch._export.capture_pre_autograd_graph` API, which is used
+to fully capture a PyTorch Model (either `torch.nn.Module` or a callable) into a
 `torch.fx` graph representation.
 
 In order for the model to
@@ -48,23 +49,26 @@ through registering the custom operator to a torch library and providing a meta
 kernel. To learn more about exporting a model or if you have trouble exporting,
 you can look at [these docs](../export/00_export_manual.md)
 
-To enable exporting input shape-dependent models, the `exir.capture` API also
+To enable exporting input shape-dependent models, this API also
 takes in a list of constraints, where users can specify which input shapes are
 dynamic and impose ranges on them. To learn more about constraints, you can look
 at [these docs](../export/constraint_apis.md)
 
-The output of `exir.capture` is a fully flattened graph (meaning the graph does
-not contain any module heirachy, except in the case of control flow operators)
-containing the
-[Core ATen Operators](https://pytorch.org/docs/main/ir.html), functional
-variants of custom
-operators (they do not do any mutations or aliasing), and control flow
-operators. The detailed specification for the result of `exir.capture` can be
+The output of `torch._export.capture_pre_autograd_graph` is a fully flattened graph (meaning the graph does
+not contain any module heirachy, except in the case of control flow operators).
+Furthermore, the captured graph is in ATen dialect with ATen opset which is autograd safe, i.e. safe for eager mode training.
+This is important for quantization as noted in https://github.com/pytorch/executorch/issues/290.
+
+ATen operator set of graph obtained via `torch._export.capture_pre_autograd_graph` is full set of ATen ops (~3000). This
+operator set is further refined into [Core ATen Operators](https://pytorch.org/docs/master/ir.html) via `exir.capture`.
+Resulting IR is functional, i.e. does not contain any mutations or aliasing on operator outputs.
+The detailed specification for the result of `exir.capture` can be
 found in the [EXIR Reference](../ir_spec/00_exir.md) and is specifically in the
 [EXIR ATen Dialect](../ir_spec/01_aten_dialect.md).
 
 ```python
 import torch
+from torch import _export as export
 import executorch.exir as exir
 
 class MyModule(torch.nn.Module):
@@ -76,7 +80,9 @@ class MyModule(torch.nn.Module):
     def forward(self, x):
         return self.linear(x + self.param).clamp(min=0.0, max=1.0)
 
-aten_dialect = exir.capture(MyModule(), (torch.randn(3, 4),), constraints)
+pre_autograd_aten_dialect = export.capture_pre_autograd_graph(MyModule(), (torch.randn(3, 4),), constraints)
+# Quantization APIs can optionally be invoked on top of pre_autograd_aten_dialect
+aten_dialect = exir.capture(pre_autograd_aten_dialect, (torch.randn(3, 4),), constraints)
 
 print(aten_dialect.exported_program)
 """
@@ -95,7 +101,7 @@ At this point, users can choose to run additional passes through the
 `exported_program._transform(passes)` function. A tutorial on how to write
 transformations can be found [here](./passes.md).
 
-Additionally, users can run quantization at this step. A tutorial for doing so can be found [here](./quantization_flow.md).
+For quantization API usage, a tutorial for doing so can be found [here](./quantization_flow.md).
 
 ### 1.2 Lower to EXIR Edge Dialect
 
@@ -111,7 +117,8 @@ documentation on the Edge Dialect can be found
 This lowering will be done through the `to_edge()` API.
 
 ```python
-aten_dialect = exir.capture(MyModule(), (torch.randn(3, 4),))
+pre_autograd_aten_dialect = export.capture_pre_autograd_graph(MyModule(), (torch.randn(3, 4),), constraints)
+aten_dialect = exir.capture(pre_autograd_aten_dialect, (torch.randn(3, 4),))
 edge_dialect = aten_dialect.to_edge()
 
 print(edge_dialect.exported_program)
@@ -162,7 +169,8 @@ planning pass can also be passed into `to_executorch`. A tutorial on how to
 write a memory plnaning pass is here (TODO).
 
 ```python
-aten_dialect = exir.capture(MyModule(), (torch.randn(3, 4),))
+pre_autograd_aten_dialect = export.capture_pre_autograd_graph(MyModule(), (torch.randn(3, 4),), constraints)
+aten_dialect = exir.capture(pre_autograd_aten_dialect, (torch.randn(3, 4),))
 edge_dialect = aten_dialect.to_edge()
 # edge_dialect = to_backend(edge_dialect.exported_program, CustomBackendPartitioner)
 executorch_program = edge_dialect.to_executorch(executorch_backend_config)
@@ -190,7 +198,8 @@ Finally, the exported and delegated graph can be saved to a flatbuffer file to
 be loaded in the Executorch runtime.
 
 ```python
-edge_dialect = exir.capture(MyModule(), (torch.randn(3, 4),)).to_edge()
+pre_autograd_aten_dialect = export.capture_pre_autograd_graph(MyModule(), (torch.randn(3, 4),), constraints)
+edge_dialect = exir.capture(pre_autograd_aten_dialect, (torch.randn(3, 4),)).to_edge()
 # edge_dialect = to_backend(edge_dialect.exported_program, CustomBackendPartitioner)
 executorch_program = edge_dialect.to_executorch(executorch_backend_config)
 buffer = executorch_program.buffer
