@@ -30,21 +30,8 @@ from executorch.exir.backend.backend_api import to_backend, validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 
-from executorch.extension.pybindings.portable_lib import (
+from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
-)
-from torch.ao.quantization.backend_config import BackendConfig
-from torch.ao.quantization.backend_config.executorch import (
-    get_executorch_backend_config,
-)
-from torch.ao.quantization.qconfig_mapping import (
-    _get_symmetric_qnnpack_qconfig_mapping,
-    QConfigMapping,
-)
-
-from torch.ao.quantization.quantize_fx import (
-    _convert_to_reference_decomposed_fx,
-    prepare_fx,
 )
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.quantizer import Quantizer
@@ -103,36 +90,6 @@ def register_stage(stage: Stage):
 
 @register_stage
 class Quantize(Stage):
-    def __init__(
-        self,
-        qconfig_mapping: Optional[QConfigMapping] = None,
-        backend_config: Optional[BackendConfig] = None,
-    ):
-        self.qconfig_mapping = (
-            qconfig_mapping or _get_symmetric_qnnpack_qconfig_mapping()
-        )
-        self.backend_config = backend_config or get_executorch_backend_config()
-        self.converted = None
-
-    def run(self, artifact: torch.nn.Module, inputs: Tuple[torch.Tensor]) -> None:
-        prepared = prepare_fx(
-            artifact, self.qconfig_mapping, inputs, backend_config=self.backend_config
-        )
-        self.converted = _convert_to_reference_decomposed_fx(
-            prepared, backend_config=self.backend_config
-        )
-
-    @property
-    def artifact(self) -> torch.fx.GraphModule:
-        return self.converted
-
-    @property
-    def graph_module(self) -> str:
-        return self.converted
-
-
-@register_stage
-class Quantize2(Stage):
     def __init__(
         self,
         quantizer: Optional[Quantizer] = None,
@@ -278,7 +235,6 @@ class Tester:
         self.inputs = inputs
         self.stages: Dict[str, Stage] = OrderedDict.fromkeys(list(_stages_.keys()))
         self.pipeline = {
-            self._stage_name(Quantize2): [self._stage_name(Export)],
             self._stage_name(Quantize): [self._stage_name(Export)],
             self._stage_name(Export): [
                 self._stage_name(ToEdge),
@@ -338,9 +294,6 @@ class Tester:
 
     def export(self, export_stage: Optional[Export] = None):
         return self._run_stage(export_stage or Export(), self.inputs)
-
-    def quantize2(self, quantize_stage: Optional[Quantize2] = None):
-        return self._run_stage(quantize_stage or Quantize2(), self.inputs)
 
     def to_edge(self, to_edge_stage: Optional[ToEdge] = None):
         return self._run_stage(to_edge_stage or ToEdge())
