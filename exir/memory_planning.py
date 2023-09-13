@@ -27,7 +27,6 @@ from executorch.exir.error import (
 from executorch.exir.operator.convert import is_out_variant
 from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
-from functorch.experimental import control_flow
 from torch import fx
 from torch.fx import Node
 from torch.utils._pytree import tree_flatten
@@ -272,7 +271,7 @@ def get_graph_output_tensors(nodes: Iterable[Node]) -> Set[TensorSpec]:
     return graph_output_tensors
 
 
-def collect_specs_from_nodes(
+def collect_specs_from_nodes(  # noqa: C901
     nodes: Iterable[Node],
     ignore_graph_input: bool = False,
     ignore_graph_output: bool = False,
@@ -320,7 +319,7 @@ def collect_specs_from_nodes(
                 in [
                     memory.alloc,
                     operator.getitem,
-                    control_flow.cond,
+                    torch.ops.higher_order.cond,
                     exir_while,
                     torch.ops.map_impl,
                     executorch_call_delegate,
@@ -551,7 +550,7 @@ def get_algo(algo_name: str) -> Callable[..., List[int]]:
 
 def get_cond_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
     for nd in graph_module.graph.nodes:
-        if nd.target is control_flow.cond:
+        if nd.target is torch.ops.higher_order.cond:
             yield nd
 
 

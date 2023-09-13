@@ -30,7 +30,7 @@ void Error(
 
 } // namespace
 
-PYBIND11_MODULE(bindings, m) {
+PYBIND11_MODULE(_bindings, m) {
   m.def(
        "flatc_compile",
        [&](const std::string& outputPath,

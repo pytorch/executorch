@@ -29,6 +29,8 @@
 
 using namespace ::testing;
 using exec_aten::ArrayRef;
+using torch::executor::BackendExecutionContext;
+using torch::executor::BackendInitContext;
 using torch::executor::CompileSpec;
 using torch::executor::DataLoader;
 using torch::executor::DelegateHandle;
@@ -77,11 +79,12 @@ class StubBackend final : public PyTorchBackendInterface {
   }
 
   Result<DelegateHandle*> init(
+      BackendInitContext& context,
       FreeableBuffer* processed,
-      ArrayRef<CompileSpec> compile_specs,
-      MemoryAllocator* runtime_allocator) const override {
+      ArrayRef<CompileSpec> compile_specs) const override {
     if (init_fn_) {
-      return init_fn_.value()(processed, compile_specs, runtime_allocator);
+      return init_fn_.value()(
+          processed, compile_specs, context.get_runtime_allocator());
     }
     // Return a benign value otherwise.
     return nullptr;
@@ -91,7 +94,10 @@ class StubBackend final : public PyTorchBackendInterface {
     execute_fn_ = fn;
   }
 
-  Error execute(DelegateHandle* handle, EValue** args) const override {
+  Error execute(
+      __ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override {
     if (execute_fn_) {
       return execute_fn_.value()(handle, args);
     }

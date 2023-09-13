@@ -15,7 +15,7 @@ from torch.utils._pytree import PyTree
 
 class RemoveMixedTypeOperators(ExportPass):
     # pyre-ignore
-    def call_operator(self, op, args, kwargs, meta: NodeMetadata):
+    def call_operator(self, op, args, kwargs, meta: NodeMetadata):  # noqa: C901
         if len(args) <= 1:
             # Unary Operators are not mixed type
             return super().call_operator(op, args, kwargs, meta)

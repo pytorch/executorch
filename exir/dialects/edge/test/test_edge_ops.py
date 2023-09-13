@@ -417,7 +417,8 @@ class TestEdgeOps(unittest.TestCase):
     def test_to_out_variant_raises_exception_when_no_out_variant(self) -> None:
         view_op = ops.edge.aten.view.default
         with self.assertRaisesRegex(
-            RuntimeError, "Out variant of operator aten::view can't be found"
+            RuntimeError,
+            "SchemaKind.out variant of operator aten::view can't be found.",
         ):
             view_op.to_out_variant()
 

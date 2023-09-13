@@ -70,7 +70,7 @@ TEST_F(MethodMetaTest, MethodMetaApi) {
   ASSERT_EQ(method_meta.error(), Error::Ok);
 
   // Appropriate amount of inputs
-  EXPECT_EQ(method_meta->num_inputs(), 2);
+  EXPECT_EQ(method_meta->num_inputs(), 3);
 
   // Appropriate amount of outputs
   EXPECT_EQ(method_meta->num_outputs(), 1);

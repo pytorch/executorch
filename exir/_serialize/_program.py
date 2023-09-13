@@ -13,18 +13,19 @@ import re
 from dataclasses import dataclass
 from typing import ClassVar, List, Literal, Optional, Tuple
 
+from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
+from executorch.exir._serialize._flatbuffer import (
+    _FlatbufferResult,
+    _program_flatbuffer_to_json,
+    _program_json_to_flatbuffer,
+)
+
 from executorch.exir.schema import (
     BackendDelegateDataReference,
     BackendDelegateInlineData,
     DataLocation,
     DataSegment,
     Program,
-)
-from executorch.exir.serialize._dataclass import _DataclassEncoder, _json_to_dataclass
-from executorch.exir.serialize._flatbuffer import (
-    _FlatbufferResult,
-    _program_flatbuffer_to_json,
-    _program_json_to_flatbuffer,
 )
 
 
@@ -416,7 +417,7 @@ def _append_segments(
     return b"".join(padded_segments)
 
 
-def serialize_to_flatbuffer(
+def serialize_pte_binary(
     program: Program,
     *,
     extract_segments: bool = False,
@@ -424,7 +425,7 @@ def serialize_to_flatbuffer(
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
 ) -> bytes:
-    """Returns the binary flatbuffer representation of the given Program.
+    """Returns the runtime binary representation of the given Program.
 
     Args:
         program: The Program to serialize.
@@ -443,6 +444,8 @@ def serialize_to_flatbuffer(
         delegate_alignment: If provided, the minimum alignment of delegate data
             in the program. Must be a power of 2. If not provided, uses the
             value in the schema file.
+    Returns:
+        The serialized form of the Program, ready for execution by the runtime.
     """
     # Segment data to be written to the file following the flatbuffer data.
     segments: List[bytes] = []
@@ -566,27 +569,27 @@ def _restore_segments(program: Program, segment_data: bytes) -> Program:
     return program
 
 
-def deserialize_from_flatbuffer(flatbuffer: bytes) -> Program:
-    """Returns a Program deserialized from the given binary flatbuffer."""
-    program_size = len(flatbuffer)
+def deserialize_pte_binary(program_data: bytes) -> Program:
+    """Returns a Program deserialized from the given runtime binary data."""
+    program_size = len(program_data)
     segment_base_offset = 0
 
     # Look for an extended header to see if segments follow the flatbuffer
     # data.
-    eh: Optional[_ExtendedHeader] = _get_extended_header(flatbuffer)
+    eh: Optional[_ExtendedHeader] = _get_extended_header(program_data)
     if eh and eh.is_valid():
         program_size = eh.program_size
         segment_base_offset = eh.segment_base_offset
 
     # Parse the flatbuffer data.
     program: Program = _json_to_program(
-        _program_flatbuffer_to_json(flatbuffer[:program_size])
+        _program_flatbuffer_to_json(program_data[:program_size])
     )
 
     if segment_base_offset != 0:
         # Move segment data back into the Program.
         program = _restore_segments(
-            program=program, segment_data=flatbuffer[segment_base_offset:]
+            program=program, segment_data=program_data[segment_base_offset:]
         )
 
     return program

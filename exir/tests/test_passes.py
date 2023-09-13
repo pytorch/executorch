@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
-None
 import os
 import tempfile
 import unittest
@@ -22,12 +21,10 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.emit import emit_program
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.pass_base import ExportPass, PassResult
-from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (
     dead_code_elimination_pass,
     DebugPass,
     MemoryPlanningPass,
-    NormalizeTransposePass,
     propagate_dynamic_shape,
     RemoveNoopPass,
     ReplaceSymSizeOpPass,
@@ -781,10 +778,9 @@ class TestPasses(unittest.TestCase):
 
         gm_lowered = gm.to_edge(
             EdgeCompileConfig(
-                passes=[AddReluFusionPass()],
                 _check_ir_validity=False,
             ),
-        ).transform(OpReplacePass())
+        ).transform(AddReluFusionPass(), OpReplacePass())
 
         FileCheck().check(
             "executorch_exir_dialects_backend__ops_DO_NOT_USE_TEST_ONLY_add_relu_default"
@@ -959,11 +955,10 @@ class TestPasses(unittest.TestCase):
 
         lowered_prog = prog.to_edge(
             EdgeCompileConfig(
-                passes=[AddReluFusionPass()],
                 _check_ir_validity=False,
                 _use_edge_ops=False,  # doesn't work with it enabled
             ),
-        ).transform(EdgeToBackendOpsPass())
+        ).transform(AddReluFusionPass(), EdgeToBackendOpsPass())
 
         FileCheck().check(
             "executorch_exir_dialects_backend__ops_DO_NOT_USE_TEST_ONLY_add_relu2_default"

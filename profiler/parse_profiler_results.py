@@ -9,8 +9,7 @@ import struct
 from collections import OrderedDict
 from enum import Enum
 
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from prettytable import PrettyTable
 

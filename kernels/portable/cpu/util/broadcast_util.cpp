@@ -263,11 +263,11 @@ void delinearize_index(
 
 size_t linearize_access_indexes(
     ArrayRef<size_t> indexes_broadcast_to,
-    const Tensor& broadcast_to,
+    ssize_t broadcast_to_ndim,
     const Tensor& broadcast_from) {
-  size_t num_skip_dims = broadcast_to.dim() - broadcast_from.dim();
+  size_t num_skip_dims = broadcast_to_ndim - broadcast_from.dim();
   ArrayRef<size_t> indexes_broadcast_from = indexes_broadcast_to.slice(
-      num_skip_dims, broadcast_to.dim() - num_skip_dims);
+      num_skip_dims, broadcast_to_ndim - num_skip_dims);
 
   ET_CHECK(indexes_broadcast_from.size() == broadcast_from.dim());
 

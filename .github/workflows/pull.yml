@@ -47,6 +47,7 @@ jobs:
       docker-image: executorch-ubuntu-22.04-clang12
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
       script: |
         PYTHON_VERSION=3.10
         # TODO: Figure out why /opt/conda/envs/py_$PYTHON_VERSION/bin is not in the path
@@ -73,6 +74,7 @@ jobs:
       runner: macos-m1-12
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
       script: |
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
@@ -187,3 +189,9 @@ jobs:
         # Build and test selective build
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
         popd
+
+  unittest:
+    uses: ./.github/workflows/_unittest.yml
+    with:
+      docker-image: executorch-ubuntu-22.04-clang12
+      runner: linux.2xlarge

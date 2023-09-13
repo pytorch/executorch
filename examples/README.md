@@ -36,8 +36,6 @@ model name from the list of available models in the `models` dir.
 ```bash
 cd executorch # To the top level dir
 
-bash examples/install_requirements.sh
-
 # To get a list of example models
 python3 -m examples.export.export_example -h
 
@@ -104,4 +102,10 @@ In order to make sure model's listed in examples are importable, e.g. via
 from executorch.examples.models.mobilenet_v3d import MV3Model
 m = MV3Model.get_model()
 ```
-we need to have appropriate packages installed. You should install these deps via install_requirements.sh.
+You need to follow the setup guide in [Setting up ExecuTorch from GitHub](/docs/website/docs/tutorials/00_setting_up_executorch.md) to have appropriate packages installed. If you haven't already, install these deps via
+
+```bash
+cd executorch
+
+bash ./install_requirements.sh
+```

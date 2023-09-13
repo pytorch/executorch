@@ -133,6 +133,19 @@ Error copy_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
   return Error::Ok;
 }
 
+__ET_NODISCARD Error
+set_tensor_data(const at::Tensor& t, void* buffer, size_t buffer_size) {
+  ET_CHECK_OR_RETURN_ERROR(
+      buffer_size >= t.nbytes(),
+      InvalidArgument,
+      "buffer_size %zu is smaller than smaller than tensor nbytes %zu",
+      buffer_size,
+      t.nbytes());
+  t.unsafeGetTensorImpl()->unsafe_storage().set_data_ptr(
+      at::DataPtr(buffer, DeviceType::CPU));
+  return Error::Ok;
+}
+
 void reset_data_ptr(const at::Tensor& tensor) {
   auto impl = tensor.unsafeGetTensorImpl();
   impl->set_sizes_contiguous(0);

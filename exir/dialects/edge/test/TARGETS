@@ -12,9 +12,10 @@ python_unittest(
     },
     tags = ["long_running"],
     deps = [
+        "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
         "//caffe2:torch",
-        "//executorch/exir/dialects/edge:support_dtypes",
-        "//executorch/exir/dialects/edge:yaml_generator_lib",
+        "//executorch/exir/dialects/edge/dtype:lib",
+        "//executorch/exir/dialects/edge/spec:lib",
     ],
 )
 

@@ -179,7 +179,8 @@ class TestEmit(unittest.TestCase):
 
         program = (
             exir.capture(f, (torch.randn(100),), exir.CaptureConfig())
-            .to_edge(exir.EdgeCompileConfig(passes=[ConstPropPass()]))
+            .to_edge()
+            .transform(ConstPropPass())
             .to_executorch()
             .program
         )
@@ -237,11 +238,11 @@ class TestEmit(unittest.TestCase):
         program = edge.to_executorch().program
         for opname in removed_ops:
             self.assertTrue(
-                all([op.name != opname for op in program.execution_plan[0].operators])
+                all(op.name != opname for op in program.execution_plan[0].operators)
             )
         for opname in expected_ops:
             self.assertTrue(
-                any([op.name == opname for op in program.execution_plan[0].operators])
+                any(op.name == opname for op in program.execution_plan[0].operators)
             )
 
     def test_operators_unique(self) -> None:
@@ -641,13 +642,56 @@ class TestEmit(unittest.TestCase):
         x = (torch.randn(1, 1, 2, 2),)
         program = (
             exir.capture(M(), x, exir.CaptureConfig())
-            .to_edge(exir.EdgeCompileConfig(passes=[ConstPropPass()]))
+            .to_edge()
+            .transform(ConstPropPass())
             .to_executorch()
             .program
         )
         self.assertIsInstance(
             program.execution_plan[0].values[4].val, schema.OptionalTensorList
         )
+
+    def test_emit_cond(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, pred, x):
+                def true_fn(y: torch.Tensor) -> torch.Tensor:
+                    y = y + y
+                    y = torch.mm(y, y)
+                    return y
+
+                def false_fn(y: torch.Tensor) -> torch.Tensor:
+                    return torch.mm(y, y)
+
+                ret = control_flow.cond(pred, true_fn, false_fn, [x])
+                return ret
+
+        module = exir.capture(M(), (torch.tensor(True), torch.ones(2, 2))).to_edge(
+            exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
+        program = module.to_executorch().program
+
+        num_mm = 0
+        num_add = 0
+        num_other = 0
+        for inst in program.execution_plan[0].chains[0].instructions:
+            if not isinstance(inst.instr_args, KernelCall):
+                continue
+
+            op = program.execution_plan[0].operators[inst.instr_args.op_index].name
+
+            if "mm" in op:
+                num_mm += 1
+            elif "add" in op:
+                num_add += 1
+            else:
+                num_other += 1
+
+        self.assertEqual(num_mm, 2)
+        self.assertEqual(num_add, 1)
+        self.assertEqual(num_other, 0)
 
     def test_emit_map(self) -> None:
         def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:

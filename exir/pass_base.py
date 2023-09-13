@@ -6,36 +6,27 @@
 
 # pyre-strict
 
-import logging
 import operator
-import typing
-from contextlib import nullcontext
 from typing import (
     Any,
     Callable,
     Dict,
     List,
     MutableMapping,
-    Optional,
     Protocol,
     runtime_checkable,
     Tuple,
-    Type,
     TypeVar,
-    Union,
 )
 
 import torch
-from executorch.exir import error, memory
+from executorch.exir import memory
 
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
-from functorch.experimental import control_flow
-from functorch.experimental._map import _unstack_pytree
 from torch import fx
-from torch._dispatch.python import enable_python_dispatcher
 from torch._export.pass_base import (  # noqa
     _ExportPassBase,
     Argument,
@@ -44,13 +35,6 @@ from torch._export.pass_base import (  # noqa
     PassResult,
     ProxyValue,
 )
-from torch._subclasses import FakeTensor, UnsupportedFakeTensorException
-from torch._subclasses.fake_tensor import FakeTensorMode
-from torch.fx import traceback as fx_traceback
-from torch.fx.experimental.proxy_tensor import PythonKeyTracer
-from torch.fx.graph import CodeGen
-from torch.fx.passes.shape_prop import _extract_tensor_metadata, TensorMetadata
-from torch.utils import _pytree as pytree
 from torch.utils._pytree import PyTree
 
 Fn = Callable[..., Any]  # pyre-ignore

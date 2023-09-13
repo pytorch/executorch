@@ -13,8 +13,8 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
 from executorch.backends.xnnpack.test.tester import Partition, Tester
 
 
-class TestXNNPACKAdd(unittest.TestCase):
-    class AddModule(torch.nn.Module):
+class TestAdd(unittest.TestCase):
+    class Add(torch.nn.Module):
         def __init__(self):
             super().__init__()
 
@@ -25,15 +25,10 @@ class TestXNNPACKAdd(unittest.TestCase):
             z = z + z
             return z
 
-    def test_add(self):
-        """
-        This test is the simplest test by manually lowering some submodules, we can use paritioner for auto detecting lowerable parts
-        """
-        add_module = self.AddModule()
-        model_inputs = (torch.ones(1), torch.ones(1))
-
+    def test_fp32_add(self):
+        inputs = (torch.ones(1), torch.ones(1))
         (
-            Tester(add_module, model_inputs)
+            Tester(self.Add(), inputs)
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 4})
             .to_edge()
@@ -47,16 +42,14 @@ class TestXNNPACKAdd(unittest.TestCase):
             .compare_outputs()
         )
 
-    def test_add_quantized(self):
-        add_module = self.AddModule()
-        model_inputs = (torch.ones(1), torch.ones(1))
-
+    def test_qs8_add(self):
+        inputs = (torch.ones(1), torch.ones(1))
         (
-            Tester(add_module, model_inputs)
-            .quantize()
-            .check(["torch.ops.quantized_decomposed"])
+            Tester(self.Add(), inputs)
+            .quantize2()
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 4})
+            .check(["torch.ops.quantized_decomposed"])
             .to_edge()
             .check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 4})
             .partition(Partition(partitioner=XnnpackQuantizedPartitioner))
@@ -69,22 +62,48 @@ class TestXNNPACKAdd(unittest.TestCase):
             .compare_outputs()
         )
 
-    def test_add_quantized_pt2e(self):
-        add_module = self.AddModule()
-        model_inputs = (torch.ones(1), torch.ones(1))
+    class AddRelu(torch.nn.Module):
+        def forward(self, x, y):
+            z = x + y
+            return torch.nn.functional.relu(z)
 
+    def test_fp32_add_relu(self):
+        inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
         (
-            Tester(add_module, model_inputs)
+            Tester(self.AddRelu(), inputs)
+            .export()
+            .check_count({"torch.ops.aten.add.Tensor": 1})
+            .check_count({"torch.ops.aten.relu.default": 1})
+            .to_edge()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 1})
+            .check_count({"executorch_exir_dialects_edge__ops_aten_relu_default": 1})
+            .partition()
+            .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
+            .check_not(["executorch_exir_dialects_edge__ops_aten_relu_default"])
+            .check_count({"torch.ops.executorch_call_delegate": 1})
+            .to_executorch()
+            .serialize()
+            .run_method()
+            .compare_outputs()
+        )
+
+    def test_qs8_add_relu(self):
+        inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
+        (
+            Tester(self.AddRelu(), inputs)
             .quantize2()
             .export()
-            .check_count({"torch.ops.aten.add.Tensor": 4})
+            .check_count({"torch.ops.aten.add.Tensor": 1})
+            .check_count({"torch.ops.aten.relu.default": 1})
             .check(["torch.ops.quantized_decomposed"])
             .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 4})
+            .check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 1})
+            .check_count({"executorch_exir_dialects_edge__ops_aten_relu_default": 1})
             .partition(Partition(partitioner=XnnpackQuantizedPartitioner))
-            .check_count({"torch.ops.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
+            .check_not(["executorch_exir_dialects_edge__ops_aten_relu_default"])
             .check_not(["torch.ops.quantized_decomposed"])
+            .check_count({"torch.ops.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
             .run_method()

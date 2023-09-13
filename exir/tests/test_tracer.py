@@ -96,10 +96,10 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
         )
         # Check that stacktrace is populated and retained (by checking twice)
         self.assertTrue(
-            any([node.meta.get("stack_trace", None) for node in traced_f.graph.nodes])
+            any(node.meta.get("stack_trace", None) for node in traced_f.graph.nodes)
         )
         self.assertTrue(
-            any([node.meta.get("stack_trace", None) for node in traced_f.graph.nodes])
+            any(node.meta.get("stack_trace", None) for node in traced_f.graph.nodes)
         )
 
     def test_possible_input_mutation(self) -> None:

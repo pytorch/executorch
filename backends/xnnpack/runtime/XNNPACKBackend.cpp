@@ -25,11 +25,11 @@ class XnnpackBackend final : public PyTorchBackendInterface {
   }
 
   Result<DelegateHandle*> init(
+      BackendInitContext& context,
       FreeableBuffer* processed,
-      ArrayRef<CompileSpec> compile_specs,
-      MemoryAllocator* runtime_allocator) const override {
+      ArrayRef<CompileSpec> compile_specs) const override {
     auto executor = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        runtime_allocator, xnnpack::delegate::XNNExecutor);
+        context.get_runtime_allocator(), xnnpack::delegate::XNNExecutor);
 
     // Executor has been allocated but not constructed, ensure that runtime_ is
     // nullptr by constructing it in place here. NOTE: Since we use placement
@@ -38,7 +38,10 @@ class XnnpackBackend final : public PyTorchBackendInterface {
     new (executor) xnnpack::delegate::XNNExecutor;
 
     Error err = xnnpack::delegate::XNNCompiler::compileModel(
-        processed->data(), processed->size(), executor, runtime_allocator);
+        processed->data(),
+        processed->size(),
+        executor,
+        context.get_runtime_allocator());
     if (err != Error::Ok) {
       ET_LOG(Error, "XNNCompiler::compleModel failed: 0x%x", (unsigned int)err);
     }
@@ -49,7 +52,10 @@ class XnnpackBackend final : public PyTorchBackendInterface {
     return executor;
   }
 
-  Error execute(DelegateHandle* handle, EValue** args) const override {
+  Error execute(
+      __ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override {
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
     std::vector<Tensor*> input_pointers;
@@ -85,6 +91,9 @@ class XnnpackBackend final : public PyTorchBackendInterface {
     }
 
     err = executor->forward();
+#ifdef ENABLE_XNNPACK_PROFILING
+    executor->log_op_timings(); // Log the op execution time.
+#endif
 
     for (int i = executor->getNumInputs();
          i < executor->getNumInputs() + executor->getNumOutputs();
@@ -110,6 +119,9 @@ class XnnpackBackend final : public PyTorchBackendInterface {
   void destroy(DelegateHandle* handle) const override {
     if (handle != nullptr) {
       auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
+#ifdef ENABLE_XNNPACK_PROFILING
+      executor->print_avg_op_timings();
+#endif
       // XNNExecutor is not trivially destructible. Since this was constructed
       // manually in init(), we must destroy it manually here.
       executor->~XNNExecutor();

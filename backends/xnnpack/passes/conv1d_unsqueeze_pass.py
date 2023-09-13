@@ -5,12 +5,14 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack.utils.utils import get_param_tensor, is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import PassResult
 from torch._ops import OpOverload
 
 
-class Conv1dUnsqueezePass(ExportPass):
+class Conv1dUnsqueezePass(XNNPACKPass):
     """
     This pass is used to change conv1d ops into conv2d since xnnpack only
     supports 2d convolution. This is done by modifying the graph to do the
@@ -42,17 +44,22 @@ class Conv1dUnsqueezePass(ExportPass):
                     kernel_node = node.args[1]
 
                     # TODO(T149925924): Support Quantized Conv 1d
-                    if kernel_node.op != "get_attr":
+                    if not is_param_node(self.exported_program, kernel_node):
                         raise AssertionError(
-                            "Expected op for convolution weight node to be get_attr"
+                            "Expected op for convolution weight node to be a get_attr node or a parameter"
                         )
 
                     # Modify graph such that the conv changes from 1d to 2d
 
                     # (a) Unsqueeze kernel (weight) from 3d to 4d
-                    kernel_param_3d = getattr(
-                        kernel_node.graph.owning_module, kernel_node.target
+                    kernel_param_3d = get_param_tensor(
+                        self.exported_program, kernel_node
                     )
+                    if kernel_param_3d is None:
+                        raise AssertionError(
+                            "Expected param tensor for the kernel node"
+                        )
+
                     kernel_param_4d = torch.nn.Parameter(
                         data=kernel_param_3d.data.contiguous().unsqueeze(dim=-1)
                     )

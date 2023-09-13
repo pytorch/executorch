@@ -11,7 +11,7 @@ PORTABLE_MODULE_DEPS = [
     "//caffe2:torch",
     "//caffe2:torch_extension",
     "//executorch/runtime/kernel:operator_registry",
-    "//executorch/runtime/executor:executor",
+    "//executorch/runtime/executor:program",
     "//executorch/schema:bundled_program_schema",
     "//executorch/extension/aten_util:aten_bridge",
     "//executorch/util:bundled_program_verification",
@@ -25,7 +25,7 @@ PORTABLE_MODULE_DEPS = [
 
 ATEN_MODULE_DEPS = [
     "//executorch/runtime/kernel:operator_registry",
-    "//executorch/runtime/executor:executor_aten",
+    "//executorch/runtime/executor:program_aten",
     "//executorch/runtime/core/exec_aten:lib",
     "//executorch/schema:bundled_program_schema",
     "//executorch/extension/data_loader:buffer_data_loader",

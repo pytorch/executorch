@@ -55,7 +55,7 @@ def define_common_targets():
     runtime.export_file(
         name = INPUT_PROGRAM,
         visibility = [
-            "//executorch/exir/serialize/...",
+            "//executorch/exir/_serialize/...",
         ],
     )
     runtime.export_file(
@@ -68,7 +68,7 @@ def define_common_targets():
         name = INPUT_SCALAR_TYPE,
         visibility = [
             "//executorch/bundled_program/serialize/...",
-            "//executorch/exir/serialize/...",
+            "//executorch/exir/_serialize/...",
             "//executorch/sdk/etdump/...",
         ],
     )

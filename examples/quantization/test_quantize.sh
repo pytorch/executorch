@@ -9,6 +9,9 @@
 
 set -e
 
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
+
 get_shared_lib_ext() {
   UNAME=$(uname)
   if [[ $UNAME == "Darwin" ]];
@@ -26,17 +29,17 @@ get_shared_lib_ext() {
 
 test_buck2_quantization() {
   echo "Building quantized ops shared library"
-  SO_LIB=$(buck2 build //kernels/quantized:aot_lib --show-output | grep "buck-out" | cut -d" " -f2)
+  SO_LIB=$($BUCK build //kernels/quantized:aot_lib --show-output | grep "buck-out" | cut -d" " -f2)
 
   echo "Run example.py"
   ${PYTHON_EXECUTABLE} -m "examples.quantization.example" --so_library="$SO_LIB" --model_name="$1"
 
   echo 'Running executor_runner'
-  buck2 run //examples/executor_runner:executor_runner -- --model_path="./$1.pte"
+  $BUCK run //examples/executor_runner:executor_runner -- --model_path="./${1}_quantized.pte"
   # should give correct result
 
-  echo "Removing $1.pte"
-  rm "./$1.pte"
+  echo "Removing ${1}_quantized.pte"
+  rm "./${1}_quantized.pte"
 }
 
 test_cmake_quantization() {
@@ -47,7 +50,8 @@ test_cmake_quantization() {
   (rm -rf cmake-out \
     && mkdir cmake-out \
     && cd cmake-out \
-    && cmake -DBUCK2=buck2 \
+    && retry cmake -DBUCK2="$BUCK" \
+      -DEXECUTORCH_BUILD_XNNPACK="$EXECUTORCH_BUILD_XNNPACK" \
       -DREGISTER_QUANTIZED_OPS=ON \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
@@ -61,16 +65,26 @@ test_cmake_quantization() {
   ${PYTHON_EXECUTABLE} -m "examples.quantization.example" --so_library="$SO_LIB" --model_name="$1"
 
   echo 'Running executor_runner'
-  cmake-out/executor_runner --model_path="./$1.pte"
+  cmake-out/executor_runner --model_path="./${1}_quantized.pte"
   # should give correct result
 
-  echo "Removing $1.pte"
-  rm "./$1.pte"
+  echo "Removing ${1}_quantized.pte"
+  rm "./${1}_quantized.pte"
 }
 
 if [[ -z $PYTHON_EXECUTABLE ]];
 then
   PYTHON_EXECUTABLE=python3
+fi
+if [[ -z $BUCK ]];
+then
+  BUCK=buck2
+fi
+if [[ "${XNNPACK_DELEGATION}" == true ]];
+then
+  EXECUTORCH_BUILD_XNNPACK=ON
+else
+  EXECUTORCH_BUILD_XNNPACK=OFF
 fi
 if [[ "$1" == "cmake" ]];
 then
