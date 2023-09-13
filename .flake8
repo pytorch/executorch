@@ -1,5 +1,5 @@
 [flake8]
-select = B,C,E,F,P,W,B9
+select = B,C,E,F,P,W,B9,TOR0,TOR1,TOR2
 max-line-length = 80
 ignore =
     # Black conflicts and overlaps.
