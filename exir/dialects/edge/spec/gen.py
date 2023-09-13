@@ -10,10 +10,12 @@ from typing import Any, Dict, IO, List, Optional, Set, Tuple
 import ruamel.yaml
 
 import torch
+from executorch.exir.dialects.edge.dtype.runner import DtypeRunner
 from executorch.exir.dialects.edge.dtype.supported import regular_tensor_dtypes_to_str
+from executorch.exir.dialects.edge.op.api import get_callable
+from executorch.exir.dialects.edge.op.sample_input import SAMPLE_INPUT
 from executorch.exir.dialects.edge.spec.utils import (
-    get_tensor_variable_names,
-    is_tensor_val,
+    get_names_for_args_with_dtype,
     type_aggregrate,
 )
 
@@ -23,12 +25,19 @@ from torch.testing._internal.opinfo.core import (
     generate_elementwise_binary_with_scalar_samples,
 )
 
+# Ops taking too long to run
+BLOCKLISTED_OPS = [
+    "_native_batch_norm_legit_no_training.default",
+]
+
 name_to_opinfo = {
     op.aten_name if op.aten_name is not None else op.name: op for op in op_db
 }
 
 # pyre-ignore
 yaml = ruamel.yaml.YAML()
+
+dtr = DtypeRunner()
 
 
 class test_case_generator:
@@ -389,98 +398,56 @@ class EdgeYamlInfo:
 
 
 def try_all_dtypes_input_samples(
-    test_gen_key: str, func_schema: torch._C.FunctionSchema, op: Any
-) -> Tuple[Set[Tuple[str]], List[Any], Dict[Any, Any]]:
+    op_name: str,
+) -> Set[Tuple[str]]:
     """Input samples given test generate key in all possible dtypes on given operation"""
     valid_type_combinations: Set[Tuple[str, ...]] = set()
-
+    assert (
+        op_name in SAMPLE_INPUT
+    ), f"{op_name} does not have a sample input in SAMPLE_INPUT."
+    inputs = SAMPLE_INPUT[op_name]
     sample_args: List[Any] = []
     sample_kwargs: Dict[Any, Any] = {}
 
-    for edge_type in regular_tensor_dtypes_to_str:
-        for sample_args, sample_kwargs in get_sample_input(
-            test_gen_key, func_schema.overload_name, edge_type
-        ):
-            if not in_legal_edge_type(sample_args + list(sample_kwargs.values())):
-                # Skip this combination due to illegal input type..
-                continue
-
-            # check if input is legal type for given function
-            try:
-                sample_outputs = op(*sample_args, **sample_kwargs)
-            except BaseException as e:
-                if is_not_dype_exception(e, regular_tensor_dtypes_to_str[edge_type]):
-                    # Print out the error message if e is noe illegal input type exeception.
-                    print(e)
-                    print("key we are using is", test_gen_key)
-                continue
-
-            if isinstance(sample_outputs, tuple):
-                sample_outputs = list(sample_outputs)
-            else:
-                sample_outputs = [sample_outputs]
-
-            if not in_legal_edge_type(sample_outputs):
-                # Skip this combination due to illegal output type.
-                continue
-
-            tensor_io = [
-                s
-                for s in (sample_args + list(sample_kwargs.values()) + sample_outputs)
-                if is_tensor_val(s)
-            ]
-
-            # t here can be either Tensor or TensorList.
+    result = dtr.run(op_name, inputs)
+    for success, _, valid_dtypes, _, _ in result:
+        if success and not any(dtype is None for dtype in valid_dtypes):
             valid_type_combinations.add(
-                tuple(
-                    regular_tensor_dtypes_to_str[
-                        t.dtype if isinstance(t, torch.Tensor) else t[0].dtype
-                    ]
-                    for t in tensor_io
-                )
+                tuple(regular_tensor_dtypes_to_str[t] for t in valid_dtypes)
             )
-
-    return valid_type_combinations, sample_args, sample_kwargs
-
-
-def gen_op_yaml(op_name: str) -> Optional[EdgeOpYamlInfo]:
-    """Generate yaml info for given operator.
-    Return the yaml info for given operator if generation succeed. Otherwise return None."""
-
-    try:
-        func_schema = get_func_schema(op_name)
-        op, _, _ = torch._C._get_operation_overload(
-            func_schema.name, func_schema.overload_name
-        )
-        test_gen_key = get_test_gen_key(func_schema.name)
-    except BaseException as e:
-        print(e)
-        # Can not find operator schema, or can not find operator based on op_name.
-        # Return None to append it into unsupport_funcs and skip.
-        return
-
-    (
-        valid_type_combinations,
-        sample_args,
-        sample_kwargs,
-    ) = try_all_dtypes_input_samples(test_gen_key, func_schema, op)
-
     if not valid_type_combinations:
         # current function is unsupported: error test case from opdb
         print(
-            "{} is unsupported: no illegal test case has been found from opdb".format(
-                op_name
-            )
+            f"{op_name} is unsupported: no legal test case has been found from runner.py"
         )
-        print("The operator schema is {}".format(func_schema))
         if (not sample_args) and (not sample_kwargs):
             print("Can not get sample input case.")
         else:
             print("One of the sample inputs is", sample_args, sample_kwargs)
+    return valid_type_combinations
+
+
+def gen_op_yaml(op_name: str) -> Optional[EdgeOpYamlInfo]:
+    """Generate yaml info for given operator.
+    Arguments:
+        op_name: The name of operator. Needs to conform the convention of "<name>.<overload_name>".
+                If no overload name for the operator, needs to use "default" as overload name.
+    Return the yaml info for given operator if generation succeed. Otherwise return None."""
+
+    try:
+        func_schema: torch._C.FunctionSchema = get_callable(op_name)._schema
+    except BaseException as e:
+        # Can not find operator schema, or can not find operator based on op_name.
+        # Return None to append it into unsupport_funcs and skip.
+        raise RuntimeError(f"Can not find operator schema for {op_name}") from e
+
+    valid_type_combinations = try_all_dtypes_input_samples(op_name)
+
+    if not valid_type_combinations:
         return
 
     func_name_yaml = get_func_name_yaml(func_schema)
-    _, _, tensor_variable_names = get_tensor_variable_names(func_schema)
+    tensor_variable_names = get_names_for_args_with_dtype(op_name, func_schema)
     inherits = func_schema.name + (
         ".{}".format(func_schema.overload_name) if func_schema.overload_name else ""
     )
@@ -526,12 +493,16 @@ def gen_edge_yaml(op_names: List[str], yaml_out_stream: IO) -> List[str]:
     # Record all functions in the model whose yaml file can not be auto-generated.
     unsupported_funcs: List[str] = []
 
-    for op_name in op_names:
+    for i, op_name in enumerate(op_names):
         ret = gen_op_yaml(op_name)
         if ret is None:
             # Skip this op. Return None means it cannot be auto-generated
+            print(f"Skipping op ({i+1}/{len(op_names)}): {op_name}")
             unsupported_funcs.append(op_name)
         else:
+            print(
+                f"Generating dtype constraints for op ({i+1}/{len(op_names)}): {op_name}"
+            )
             # Append the generated yaml info for op to edge_yaml_info
             edge_yaml_info.append(ret)
 
@@ -552,9 +523,8 @@ def main():
 
     yaml_path = "executorch/exir/dialects/edge/edge.yaml"
     if options.regenerate:
-        # op_names: List[str] = get_all_ops(model)
-        # TODO(T159593834) add aten core dialect here when coverage is better
-        raise Exception("Regenerate is not currently supported")
+        # TODO(larryliu0820): Use all core ATen ops here.
+        op_names = [op for op in SAMPLE_INPUT.keys() if op not in BLOCKLISTED_OPS]
     else:
         with open(yaml_path, "r") as f:
             obj = yaml.load(f)

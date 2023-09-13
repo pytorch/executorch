@@ -9,6 +9,9 @@ from functools import partial
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import torch
+from executorch.exir.dialects.edge.arg.model import BaseArg, BaseKwarg, Return
+from executorch.exir.dialects.edge.op.sample_input import SAMPLE_INPUT
+
 from torch._ops import OpOverloadPacket
 
 
@@ -71,6 +74,43 @@ def get_tensor_variable_names(
         optional_tensor_arg_names,
         all_tensor_arg_names + return_tensor_variable_names,
     )
+
+
+def get_args_rets(op_name: str) -> List[BaseArg]:
+    return SAMPLE_INPUT[op_name].get("args", []) + SAMPLE_INPUT[op_name].get(
+        "returns", []
+    )
+
+
+def get_names_for_args_with_dtype(
+    op_name: str, func_schema: torch._C.FunctionSchema
+) -> List[str]:
+    """Dtype runner is returning dtypes for more arguments than edge dialect cares about.
+    This function returns a list of booleans to select the dtypes matter to edge dialect.
+    """
+    args_rets: List[BaseArg] = get_args_rets(op_name)
+    names = []
+    arguments, returns = func_schema.arguments, func_schema.returns
+    args, kwargs, rets = [], [], []
+    for arg in args_rets:
+        if isinstance(arg, Return):
+            rets.append(arg)
+        elif isinstance(arg, BaseKwarg):
+            kwargs.append(arg)
+        else:
+            args.append(arg)
+    names.extend(
+        [
+            schema.name
+            for sample, schema in zip(args, arguments)
+            if sample.type.has_dtype()
+        ]
+    )
+    names.extend([sample.argname for sample in kwargs if sample.type.has_dtype()])
+    ret_name_base = "__ret_"
+    for ret_id, (_, schema) in enumerate(zip(rets, returns)):
+        names.append(schema.name if schema.name else f"{ret_name_base}{ret_id}")
+    return names
 
 
 def get_torch_op_overload(

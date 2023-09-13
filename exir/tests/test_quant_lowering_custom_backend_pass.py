@@ -11,6 +11,7 @@ import logging
 import unittest
 
 from typing import Callable, Dict, final, List, Tuple
+from unittest import skip
 
 import executorch.exir as exir
 
@@ -499,6 +500,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
 
+    @skip("This doesn't work in OSS")
     @torch.inference_mode()  # TODO Use  for capturing.
     def test(self) -> None:
         mod = TestModel(
