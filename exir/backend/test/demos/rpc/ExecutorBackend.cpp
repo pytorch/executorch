@@ -77,20 +77,19 @@ class ExecutorBackend final : public PyTorchBackendInterface {
         runtime_allocator, MemoryAllocator);
     new (client_const_allocator) MemoryAllocator(0, nullptr);
 
-    auto num_buffers = method_meta->num_non_const_buffers();
-    size_t num_non_const_buffers = num_buffers - 1;
+    auto num_non_const_buffers = method_meta->num_non_const_buffers();
 
     uint8_t** non_const_buffers = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
         runtime_allocator, uint8_t*, num_non_const_buffers);
     MemoryAllocator* non_const_allocators = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
         runtime_allocator, MemoryAllocator, num_non_const_buffers);
 
-    for (size_t id = 1; id < num_buffers; ++id) {
+    for (size_t id = 0; id < num_non_const_buffers; ++id) {
       auto buffer_size = method_meta->non_const_buffer_size(id);
       uint8_t* buffer_i = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
           runtime_allocator, uint8_t, buffer_size.get());
-      non_const_buffers[id - 1] = buffer_i;
-      new (&non_const_allocators[id - 1])
+      non_const_buffers[id] = buffer_i;
+      new (&non_const_allocators[id])
           MemoryAllocator(static_cast<uint32_t>(buffer_size.get()), buffer_i);
     }
 

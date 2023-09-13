@@ -83,8 +83,7 @@ class Module final {
     for (size_t i = 0; i < program_->num_methods(); ++i) {
       auto name = program_->get_method_name(i).get();
       auto method_meta = program_->method_meta(name).get();
-      // 1 on purpose because non-const are 1 indexed
-      for (size_t j = 1; j < method_meta.num_non_const_buffers(); j++) {
+      for (size_t j = 0; j < method_meta.num_non_const_buffers(); j++) {
         int64_t buffer_size = method_meta.non_const_buffer_size(j).get();
         if (non_const_buffer_sizes.find(j) == non_const_buffer_sizes.end()) {
           non_const_buffer_sizes.insert({j, buffer_size});

@@ -170,7 +170,10 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
 }
 
 size_t MethodMeta::num_non_const_buffers() const {
-  return s_plan_->non_const_buffer_sizes()->size();
+  // Index zero is reserved internally, and we hide it from users. The actual
+  // number of buffers is one fewer than the actual size of this list in the
+  // program.
+  return s_plan_->non_const_buffer_sizes()->size() - 1;
 }
 
 Result<int64_t> MethodMeta::non_const_buffer_size(size_t index) const {
@@ -181,7 +184,9 @@ Result<int64_t> MethodMeta::non_const_buffer_size(size_t index) const {
       "index %zu out of range. num_buffers: %zu",
       index,
       num_buffers);
-  return s_plan_->non_const_buffer_sizes()->Get(index);
+  // Index zero is reserved internally, and we hide it from users. Adjust the
+  // provided index to point to one of the actual buffers.
+  return s_plan_->non_const_buffer_sizes()->Get(index + 1);
 }
 
 } // namespace executor
