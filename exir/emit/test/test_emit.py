@@ -635,12 +635,8 @@ class TestEmit(unittest.TestCase):
 
     def test_optional_float_list(self) -> None:
         class M(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.upsample = torch.nn.UpsamplingNearest2d(scale_factor=2)
-
             def forward(self, x):
-                return self.upsample(x)
+                return torch.nn.functional.interpolate(x, scale_factor=2)
 
         x = (torch.randn(1, 1, 2, 2),)
         program = (
