@@ -5,6 +5,22 @@
 # LICENSE file in the root directory of this source tree.
 
 # TODO: Be more delibrate on module structure
-from executorch.backends.xnnpack.test.tester.tester import Partition, Tester
+from executorch.backends.xnnpack.test.tester.tester import (
+    Export,
+    Partition,
+    Quantize,
+    Serialize,
+    Tester,
+    ToEdge,
+    ToExecutorch,
+)
 
-__all__ = [Tester, Partition]
+__all__ = [
+    Tester,
+    Partition,
+    Quantize,
+    Export,
+    ToEdge,
+    ToExecutorch,
+    Serialize,
+]
