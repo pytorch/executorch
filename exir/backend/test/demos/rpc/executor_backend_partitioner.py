@@ -11,7 +11,11 @@ import torch
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,
 )
-from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
+from executorch.exir.backend.partitioner import (
+    DelegationSpec,
+    Partitioner,
+    PartitionResult,
+)
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
@@ -45,11 +49,8 @@ class ExecutorBackendPartitioner(Partitioner):
         self.op_support = any_chain(AnyOperatorSupport(), AnyDelegateSupport())
         self.delegation_spec = DelegationSpec("ExecutorBackend", [])
 
-        self.partition_tags = {}
-
-    def partition(
-        self, edge_graph_module: torch.fx.GraphModule
-    ) -> torch.fx.GraphModule:
+    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
+        partition_tags = {}
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, op_support=self.op_support
         )
@@ -57,11 +58,14 @@ class ExecutorBackendPartitioner(Partitioner):
             for node in partition.nodes:
                 delegation_tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
-                self.partition_tags[delegation_tag] = self.delegation_spec
+                partition_tags[delegation_tag] = self.delegation_spec
 
                 # Tag the delegate submodules
                 # pyre-ignore Undefined attribute [16]: Item `None` of `typing.Union[None, typing.Dict[str, typing.Any], typing.List[typing.Any], bool, complex, float, int, range, slice, str, torch._C.device, torch._C.dtype, torch._C.layout, torch._C.memory_format, torch._tensor.Tensor, torch.fx.node.Node, typing.Tuple[typing.Any, ...]]` has no attribute `op`.Pyre
                 if node.args[0].op == "get_attr":
                     # pyre-ignore Undefined attribute [16]: Item `None` of `typing.Union[None, typing.Dict[str, typing.Any], typing.List[typing.Any], bool, complex, float, int, range, slice, str, torch._C.device, torch._C.dtype, torch._C.layout, torch._C.memory_format, torch._tensor.Tensor, torch.fx.node.Node, typing.Tuple[typing.Any, ...]]` has no attribute `op`.Pyre
                     node.args[0].meta["delegation_tag"] = delegation_tag
-        return edge_graph_module
+
+        return PartitionResult(
+            tagged_graph=edge_graph_module, partition_tags=partition_tags
+        )

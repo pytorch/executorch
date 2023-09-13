@@ -10,7 +10,7 @@ import torch
 from executorch import exir
 from executorch.exir import CaptureConfig
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.partitioner import Partitioner
+from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.backend.utils import (
     is_identical_graph,
     remove_first_quant_and_last_dequant,
@@ -257,8 +257,10 @@ class TestPartitioners(unittest.TestCase):
 
             def partition(
                 self, edge_graph_module: torch.fx.GraphModule
-            ) -> torch.fx.GraphModule:
-                return edge_graph_module
+            ) -> PartitionResult:
+                return PartitionResult(
+                    tagged_graph=edge_graph_module, partition_tags=None
+                )
 
         exported_program = exir.capture(
             torch.nn.Linear(3, 3),

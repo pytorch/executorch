@@ -17,7 +17,11 @@ from executorch.exir.backend.backend_api import (
     to_backend_multiple,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
+from executorch.exir.backend.partitioner import (
+    DelegationSpec,
+    Partitioner,
+    PartitionResult,
+)
 
 # import the backend implementation
 from executorch.exir.backend.test.backend_with_compiler_demo import (
@@ -950,13 +954,16 @@ class TestBackends(unittest.TestCase):
 
             def partition(self, edge_graph_module):
                 # Partitioner should not modify the given graph module
+                partition_tags: Dict[str, DelegationSpec] = {}
                 for node in edge_graph_module.graph.nodes:
                     if (
                         node.op == "call_function"
                         and node.target == exir_ops.edge.aten.add.Tensor
                     ):
                         node.target = exir_ops.edge.aten.mul.Tensor
-                return edge_graph_module
+                return PartitionResult(
+                    tagged_graph=edge_graph_module, partition_tags=partition_tags
+                )
 
         ep = exir.capture(Model(), inputs, get_testing_capture_config()).to_edge()
         with self.assertRaises(AssertionError):

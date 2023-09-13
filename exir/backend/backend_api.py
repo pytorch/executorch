@@ -16,7 +16,11 @@ from executorch.exir import MultiMethodExirExportedProgram
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
-from executorch.exir.backend.partitioner import Partitioner, TPartitioner
+from executorch.exir.backend.partitioner import (
+    Partitioner,
+    PartitionResult,
+    TPartitioner,
+)
 from executorch.exir.backend.utils import is_identical_graph
 
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
@@ -142,10 +146,10 @@ def validation_disabled() -> Generator[None, None, None]:
 
 def _partition_and_lower(
     tagged_graph_module: torch.fx.GraphModule,
-    partitioner_instance: Partitioner,
+    partition_result: PartitionResult,
     owning_program: ExportedProgram,
 ) -> torch.fx.GraphModule:
-    for tag, delegation_spec in partitioner_instance.partition_tags.items():
+    for tag, delegation_spec in partition_result.partition_tags.items():
         # Create partition with nodes containing this tag. There should only be
         # one contained submodule per tag
         node_list = []
@@ -231,7 +235,7 @@ def _partition_and_lower(
     # Recursively partition and lower for submodules
     for name, submod, _node in get_control_flow_submodules(tagged_graph_module):
         partitioned_submodule = _partition_and_lower(
-            submod, partitioner_instance, owning_program
+            submod, partition_result, owning_program
         )
         tagged_graph_module.add_module(name, partitioned_submodule)
 
@@ -281,7 +285,8 @@ def _(
     copied_graph_module = copy.deepcopy(edge_graph_module)
     # Call the partitioner on the given graph module
     partitioner_instance: Partitioner = partitioner()
-    tagged_graph_module = partitioner_instance(copied_graph_module)
+    partitioner_result = partitioner_instance(copied_graph_module)
+    tagged_graph_module = partitioner_result.tagged_graph
 
     # Check that the partitioner did not modify the original graph
     if _ENABLE_VALIDATION:
@@ -293,12 +298,11 @@ def _(
         logging.warning("Disabled validating the partitioner.")
 
     assert (
-        hasattr(partitioner_instance, "partition_tags")
-        and partitioner_instance.partition_tags is not None
+        partitioner_result.partition_tags is not None
     ), f"Partitioner {partitioner} needs a `partition_tags` field containing a mapping of tags to delegate spec"
 
     tagged_graph_module = _partition_and_lower(
-        tagged_graph_module, partitioner_instance, edge_program
+        tagged_graph_module, partitioner_result, edge_program
     )
 
     # TODO(angelayi): Update this signature in a less manual way (maybe through
