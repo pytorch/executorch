@@ -11,8 +11,6 @@ import unittest
 
 from typing import List, Optional
 
-import executorch.exir as exir
-
 import executorch.exir.schema as schema
 
 import torch

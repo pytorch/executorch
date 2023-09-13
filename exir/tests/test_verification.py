@@ -28,7 +28,8 @@ class TestVerification(unittest.TestCase):
         # Generate program
         program = (
             exir.capture(f, (torch.randn(2),), exir.CaptureConfig())
-            .to_edge(exir.EdgeCompileConfig(passes=[ConstPropPass()]))
+            .to_edge()
+            .transform(ConstPropPass())
             .to_executorch()
             .program
         )

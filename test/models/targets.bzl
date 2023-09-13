@@ -26,7 +26,7 @@ def define_common_targets():
             "//executorch/bundled_program:core",
             "//executorch/bundled_program/serialize:lib",
             "//executorch/exir:lib",
-            "//executorch/exir/serialize:lib",
+            "//executorch/exir/_serialize:lib",
         ],
     )
 
@@ -64,6 +64,7 @@ def define_common_targets():
         "ModuleLinear",
         "ModuleMultipleEntry",
         "ModuleIndex",
+        "ModuleDynamicCatUnallocatedIO",
     ]
 
     # Generates Executorch .pte program files for various modules at build time.

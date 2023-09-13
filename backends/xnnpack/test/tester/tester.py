@@ -249,11 +249,15 @@ class ToExecutorch(Stage):
 
 @register_stage
 class Serialize(Stage):
-    def __init__(self):
+    def __init__(self, filename: Optional[str] = None):
         self.buffer = None
+        self.filename = filename
 
     def run(self, artifact: ExecutorchProgram, inputs=None) -> None:
         self.buffer = artifact.buffer
+        if self.filename is not None:
+            with open(self.filename, "wb") as f:
+                f.write(self.buffer)
 
     @property
     def artifact(self) -> bytes:
@@ -286,7 +290,7 @@ class Tester:
             self._stage_name(Serialize): [],
         }
         assert all(
-            [stage in self.pipeline for stage in self.stages]
+            stage in self.pipeline for stage in self.stages
         ), "Invalid Tester internal state!"
 
         # Current stage name

@@ -11,6 +11,9 @@
 
 set -e
 
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
+
 test_buck2_custom_op_1() {
   local model_name='custom_ops_1'
   echo "Exporting ${model_name}.pte"
@@ -34,7 +37,7 @@ test_cmake_custom_op_1() {
   (rm -rf cmake-out \
     && mkdir cmake-out \
     && cd cmake-out \
-    && cmake -DBUCK2=buck2 \
+    && retry cmake -DBUCK2=buck2 \
         -DREGISTER_EXAMPLE_CUSTOM_OP=1 \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
@@ -85,7 +88,7 @@ test_cmake_custom_op_2() {
   (rm -rf cmake-out \
     && mkdir cmake-out \
     && cd cmake-out \
-    && cmake -DBUCK2=buck2 \
+    && retry cmake -DBUCK2=buck2 \
       -DREGISTER_EXAMPLE_CUSTOM_OP=2 \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)

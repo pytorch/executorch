@@ -6,7 +6,14 @@
 
 # pyre-strict
 
+import difflib
+import json
 import unittest
+from pprint import pformat
+from typing import List
+
+import executorch.sdk.etdump.schema_flatcc as flatcc
+from executorch.exir._serialize._dataclass import _DataclassEncoder
 
 from executorch.sdk.etdump.schema import (
     AllocationEvent,
@@ -21,7 +28,21 @@ from executorch.sdk.etdump.schema import (
     Tensor,
     Value,
 )
-from executorch.sdk.etdump.serialize import deserialize_from_etdump, serialize_to_etdump
+from executorch.sdk.etdump.serialize import (
+    deserialize_from_etdump,
+    deserialize_from_etdump_flatcc,
+    serialize_to_etdump,
+    serialize_to_etdump_flatcc,
+)
+
+
+def diff_jsons(a: str, b: str) -> List[str]:
+    data_a = json.loads(a)
+    data_b = json.loads(b)
+
+    return list(
+        difflib.unified_diff(pformat(data_a).splitlines(), pformat(data_b).splitlines())
+    )
 
 
 def get_sample_etdump() -> ETDump:
@@ -74,8 +95,88 @@ def get_sample_etdump() -> ETDump:
     )
 
 
+def get_sample_etdump_flatcc() -> flatcc.ETDumpFlatCC:
+    return flatcc.ETDumpFlatCC(
+        version=0,
+        run_data=[
+            flatcc.RunData(
+                allocators=[
+                    flatcc.Allocator(
+                        name="test_allocator",
+                    )
+                ],
+                events=[
+                    flatcc.Event(
+                        profile_event=flatcc.ProfileEvent(
+                            name="test_profile_event",
+                            chain_idx=1,
+                            debug_handle=1,
+                            start_time=1001,
+                            end_time=2002,
+                        ),
+                        allocation_event=None,
+                        debug_event=None,
+                    ),
+                    flatcc.Event(
+                        profile_event=None,
+                        allocation_event=flatcc.AllocationEvent(
+                            allocator_id=1,
+                            allocation_size=8,
+                        ),
+                        debug_event=None,
+                    ),
+                    flatcc.Event(
+                        profile_event=None,
+                        allocation_event=None,
+                        debug_event=flatcc.DebugEvent(
+                            chain_idx=1,
+                            debug_handle=0,
+                            debug_entries=[
+                                flatcc.Value(
+                                    val=flatcc.ValueType.TENSOR.value,
+                                    offset=12345,
+                                )
+                            ],
+                        ),
+                    ),
+                ],
+            )
+        ],
+    )
+
+
 class TestSerialize(unittest.TestCase):
     def test_serialize(self) -> None:
         program = get_sample_etdump()
         flatbuffer_from_py = serialize_to_etdump(program)
-        self.assertEqual(program, deserialize_from_etdump(flatbuffer_from_py))
+        deserialized_obj = deserialize_from_etdump(flatbuffer_from_py)
+        self.assertEqual(
+            program,
+            deserialized_obj,
+            msg="\n".join(
+                diff_jsons(
+                    json.dumps(program, cls=_DataclassEncoder, indent=4),
+                    json.dumps(deserialized_obj, cls=_DataclassEncoder, indent=4),
+                )
+            ),
+        )
+
+
+class TestSerializeFlatCC(unittest.TestCase):
+    def test_serialize(self) -> None:
+        import json
+
+        program = get_sample_etdump_flatcc()
+
+        flatcc_from_py = serialize_to_etdump_flatcc(program)
+        deserialized_obj = deserialize_from_etdump_flatcc(flatcc_from_py)
+        self.assertEqual(
+            program,
+            deserialized_obj,
+            msg="\n".join(
+                diff_jsons(
+                    json.dumps(program, cls=_DataclassEncoder, indent=4),
+                    json.dumps(deserialized_obj, cls=_DataclassEncoder, indent=4),
+                )
+            ),
+        )

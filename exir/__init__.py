@@ -7,6 +7,7 @@
 from typing import Any
 
 from executorch.exir.capture import (
+    _capture_legacy_do_not_use,
     capture,
     capture_multiple,
     CaptureConfig,
@@ -23,7 +24,6 @@ from executorch.exir.program import (
     MultiMethodExecutorchProgram,
     MultiMethodExirExportedProgram,
 )
-from executorch.exir.serialize import serialize_to_flatbuffer
 from executorch.exir.tracer import ExirDynamoConfig
 from torch._export import (  # lots of people are doing from exir import CallSpec, ExportGraphSignature, ExportedProgram which seems wrong
     CallSpec,
@@ -38,6 +38,7 @@ __all__ = [
     "EmitterOutput",
     "capture",
     "capture_multiple",
+    "_capture_legacy_do_not_use",
     "CallSpec",
     "ExportedProgram",
     "ExirExportedProgram",
@@ -51,7 +52,6 @@ __all__ = [
     "EdgeCompileConfig",
     "ExecutorchBackendConfig",
     "Value",
-    "serialize_to_flatbuffer",
     "multi_method_program_to_executorch",
     "ExirDynamoConfig",
 ]

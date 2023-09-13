@@ -6,7 +6,12 @@
 
 # pyre-strict
 
-from executorch.exir.capture._capture import capture, capture_multiple
+from executorch.exir.capture._capture import (
+    _capture_legacy_do_not_use,
+    capture,
+    capture_multiple,
+)
+
 from executorch.exir.capture._config import (
     CaptureConfig,
     EdgeCompileConfig,
@@ -15,6 +20,7 @@ from executorch.exir.capture._config import (
 
 __all__ = [
     "capture",
+    "_capture_legacy_do_not_use",
     "capture_multiple",
     "CaptureConfig",
     "EdgeCompileConfig",

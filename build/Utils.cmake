@@ -14,6 +14,7 @@ function(executorch_print_configuration_summary)
   message(STATUS "")
   message(STATUS "******** Summary ********")
   message(STATUS "  BUCK                          : ${BUCK2}")
+  message(STATUS "  CMAKE_BUILD_TYPE              : ${CMAKE_BUILD_TYPE}")
   message(STATUS "  CMAKE_CXX_STANDARD            : ${CMAKE_CXX_STANDARD}")
   message(STATUS "  CMAKE_CXX_COMPILER_ID         : ${CMAKE_CXX_COMPILER_ID}")
   message(STATUS "  CMAKE_TOOLCHAIN_FILE          : ${CMAKE_TOOLCHAIN_FILE}")
@@ -36,7 +37,9 @@ function(kernel_link_options target_name)
   target_link_options(
     ${target_name}
     INTERFACE
-    "SHELL:LINKER:--whole-archive $<TARGET_FILE:${target_name}> LINKER:--no-whole-archive"
+    "SHELL:LINKER:--whole-archive \
+    $<TARGET_FILE:${target_name}> \
+    LINKER:--no-whole-archive"
   )
 endfunction()
 

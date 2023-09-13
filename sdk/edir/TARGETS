@@ -22,7 +22,7 @@ python_library(
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir:schema",
-        "//executorch/exir/serialize:lib",
+        "//executorch/exir/_serialize:lib",
         "//executorch/sdk/etdump:schema",
         "//executorch/sdk/etdump:serialize",
     ],

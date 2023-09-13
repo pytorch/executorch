@@ -11,6 +11,7 @@ python_library(
         "prelu_reshape_pass.py",
         "remove_getitem_op.py",
         "tag_implicit_q_dq_pass.py",
+        "xnnpack_pass.py",
     ],
     deps = [
         "//caffe2:torch",
@@ -20,6 +21,5 @@ python_library(
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/passes:const_prop_pass",
-        "//executorch/exir/passes:lib",
     ],
 )

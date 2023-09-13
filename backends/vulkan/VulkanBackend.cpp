@@ -245,9 +245,9 @@ class VulkanBackend final : public PyTorchBackendInterface {
   }
 
   Result<DelegateHandle*> init(
+      BackendInitContext& context,
       FreeableBuffer* processed,
-      ArrayRef<CompileSpec>,
-      MemoryAllocator* runtime_allocator) const override {
+      ArrayRef<CompileSpec>) const override {
     ET_CHECK_OR_RETURN_ERROR(
         at::vulkan::delegate::VkGraphBufferHasIdentifier(processed->data()),
         DelegateInvalidCompatibility,
@@ -257,7 +257,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
 
     at::native::vulkan::ComputeGraph* compute_graph =
         ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-            runtime_allocator, at::native::vulkan::ComputeGraph);
+            context.get_runtime_allocator(), at::native::vulkan::ComputeGraph);
 
     new (compute_graph) at::native::vulkan::ComputeGraph(generate_config());
 
@@ -270,7 +270,10 @@ class VulkanBackend final : public PyTorchBackendInterface {
     return compute_graph;
   }
 
-  Error execute(DelegateHandle* handle, EValue** args) const override {
+  Error execute(
+      __ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override {
     EXECUTORCH_SCOPE_PROF("VulkanBackend::execute");
 
     at::native::vulkan::ComputeGraph* compute_graph =

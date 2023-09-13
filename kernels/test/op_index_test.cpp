@@ -174,9 +174,6 @@ TEST(OpIndexTensorOutTest, SelectFrontDimAllIndexes) {
 }
 
 TEST(OpIndexTensorOutTest, SelectTwoValuesAtSameIndex) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel test fails";
-  }
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Long> tfl;
   // clang-format off
@@ -201,7 +198,7 @@ TEST(OpIndexTensorOutTest, SelectTwoValuesAtSameIndex) {
       optional<Tensor>(tfl.make({1, 2}, {1, 1})),
       optional<Tensor>(tfl.make({1, 2}, {2, 2}))};
 
-  std::vector<int32_t> out_size{2}; // In ATen the size is (1, 2)
+  std::vector<int32_t> out_size{1, 2}; // In ATen the size is (1, 2)
 
   // clang-format off
   Tensor expected = tf.make(
@@ -260,6 +257,96 @@ TEST(OpIndexTensorOutTest, IndicesFewerThanInputDimSupported) {
 
   run_test_cases(x, /*indices=*/indices, expected);
   run_test_cases(x, /*indices=*/indices_mixed, expected);
+}
+
+TEST(OpIndexTensorOutTest, IndicesWithNullTensorsSupported) {
+  TensorFactory<ScalarType::Double> tf;
+  TensorFactory<ScalarType::Long> tfl;
+  // clang-format off
+  Tensor x = tf.make(
+      {2, 3, 4},
+      {
+          // [0, :, :]
+          1.,   2.,   3.,   4., // [0, 0, :]
+          5.,   6.,   7.,   8., // [0, 1, :]
+          9.,  10.,  11.,  12., // [0, 2, :]
+
+          // [1, :, :]
+         -1.,  -2.,  -3.,  -4., // [1, 0, :]
+         -5.,  -6.,  -7.,  -8., // [1, 1, :]
+         -9., -10., -11., -12., // [1, 2, :]
+      });
+  // clang-format on
+
+  optional<Tensor> indices0[] = {
+      optional<Tensor>(),
+      optional<Tensor>(tfl.make({1}, {1})),
+      optional<Tensor>(tfl.make({2}, {0, 1}))};
+
+  // clang-format off
+  Tensor expected0 = tf.make(
+    {2, 2},
+    {
+       5.,   6.,
+      -5.,  -6.,
+    }
+  );
+  // clang-format on
+
+  run_test_cases(x, /*indices=*/indices0, expected0);
+
+  optional<Tensor> indices1[] = {
+      optional<Tensor>(tfl.make({1}, {1})),
+      optional<Tensor>(),
+      optional<Tensor>(tfl.make({2}, {0, 1}))};
+
+  // clang-format off
+  Tensor expected1 = tf.make(
+    {2, 3},
+    {
+      -1.,  -5.,  -9.,
+      -2.,  -6., -10.,
+    }
+  );
+  // clang-format on
+
+  run_test_cases(x, /*indices=*/indices1, expected1);
+
+  optional<Tensor> indices2[] = {
+      optional<Tensor>(tfl.make({1}, {1})),
+      optional<Tensor>(tfl.make({2}, {0, 1})),
+      optional<Tensor>()};
+
+  // clang-format off
+  Tensor expected2 = tf.make(
+    {2, 4},
+    {
+      -1.,  -2.,  -3.,  -4.,
+      -5.,  -6.,  -7.,  -8.,
+    }
+  );
+  // clang-format on
+
+  run_test_cases(x, /*indices=*/indices2, expected2);
+}
+
+TEST(OpIndexTensorOutTest, IndicesWithOnlyNullTensorsSupported) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "ATen kernel test fails";
+  }
+  TensorFactory<ScalarType::Double> tf;
+
+  Tensor x = tf.make({2, 3}, {1., 2., 3., 4., 5., 6.});
+  optional<Tensor> indices0[] = {optional<Tensor>()};
+  run_test_cases(x, indices0, x);
+
+  optional<Tensor> indices1[] = {optional<Tensor>(), optional<Tensor>()};
+  run_test_cases(x, indices1, x);
+
+  optional<Tensor> indices2[] = {
+      optional<Tensor>(), optional<Tensor>(), optional<Tensor>()};
+  Tensor out = tf.ones({2, 3});
+  ET_EXPECT_KERNEL_FAILURE_WITH_MSG(op_index_tensor_out(x, indices2, out), "");
 }
 
 TEST(OpIndexTensorOutTest, EmptyIndicesSupported) {
@@ -495,8 +582,6 @@ TEST(OpIndexTensorOutTest, InvalidIndicesShapeDies2) {
 // Dynamic Shape Tests
 //
 
-#if !defined(USE_ATEN_LIB)
-
 // Test whether resize works when out is having larger size
 TEST(OpIndexTensorOutTest, UpperBoundOutTensor) {
   TensorFactory<ScalarType::Double> tf;
@@ -525,10 +610,10 @@ TEST(OpIndexTensorOutTest, UpperBoundOutTensor) {
       optional<Tensor>(tfl.make({1, 2}, {2, 2}))};
 
   Tensor out =
-      tf.zeros({5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+      tf.zeros({5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
   // clang-format off
   Tensor expected = tf.make(
-    {2},
+    {1, 2},
     {
           11.,  -7.
     }
@@ -539,5 +624,3 @@ TEST(OpIndexTensorOutTest, UpperBoundOutTensor) {
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(ret, expected);
 }
-
-#endif

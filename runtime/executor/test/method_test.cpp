@@ -33,46 +33,41 @@ constexpr size_t kDefaultRuntimeMemBytes = 32 * 1024U;
 
 class MethodTest : public ::testing::Test {
  protected:
-  void SetUp() override {
-    // Create a loader for the serialized ModuleAdd program.
-    const char* path = std::getenv("ET_MODULE_ADD_PATH");
+  void load_program(const char* path, const char* module_name) {
+    // Create a loader for the serialized program.
     Result<FileDataLoader> loader = FileDataLoader::From(path);
     ASSERT_EQ(loader.error(), Error::Ok);
-    add_loader_ = std::make_unique<FileDataLoader>(std::move(loader.get()));
+    loaders_.insert(
+        {module_name,
+         std::make_unique<FileDataLoader>(std::move(loader.get()))});
 
     // Use it to load the program.
     Result<Program> program = Program::Load(
-        add_loader_.get(), Program::Verification::InternalConsistency);
+        loaders_[module_name].get(),
+        Program::Verification::InternalConsistency);
     ASSERT_EQ(program.error(), Error::Ok);
-    add_program_ = std::make_unique<Program>(std::move(program.get()));
+    programs_.insert(
+        {module_name, std::make_unique<Program>(std::move(program.get()))});
+  }
 
-    // Create a loader for the serialized ModuleIndex program.
-    const char* index_path = std::getenv("ET_MODULE_INDEX_PATH");
-    Result<FileDataLoader> index_loader = FileDataLoader::From(index_path);
-    ASSERT_EQ(index_loader.error(), Error::Ok);
-    index_loader_ =
-        std::make_unique<FileDataLoader>(std::move(index_loader.get()));
-
-    // Use it to load the program.
-    Result<Program> index_program = Program::Load(
-        index_loader_.get(), Program::Verification::InternalConsistency);
-    ASSERT_EQ(index_program.error(), Error::Ok);
-    index_program_ = std::make_unique<Program>(std::move(index_program.get()));
+  void SetUp() override {
+    load_program(std::getenv("ET_MODULE_ADD_PATH"), "add");
+    load_program(std::getenv("ET_MODULE_INDEX_PATH"), "index");
+    load_program(
+        std::getenv("ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH"), "cat");
   }
 
  private:
   // Must outlive program_, but tests shouldn't need to touch it.
-  std::unique_ptr<FileDataLoader> add_loader_;
-  std::unique_ptr<FileDataLoader> index_loader_;
+  std::unordered_map<std::string, std::unique_ptr<FileDataLoader>> loaders_;
 
  protected:
-  std::unique_ptr<Program> add_program_;
-  std::unique_ptr<Program> index_program_;
+  std::unordered_map<std::string, std::unique_ptr<Program>> programs_;
 };
 
 TEST_F(MethodTest, MoveTest) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Result<Method> method = add_program_->load_method("forward", &mmm.get());
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
   ASSERT_EQ(method.error(), Error::Ok);
 
   // Can execute the method.
@@ -93,6 +88,101 @@ TEST_F(MethodTest, MoveTest) {
   ASSERT_EQ(err, Error::Ok);
 
   torch::executor::util::FreeInputs(inputs);
+}
+
+TEST_F(MethodTest, SetPrimInputTest) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // Can execute the method.
+  exec_aten::ArrayRef<void*> inputs =
+      torch::executor::util::PrepareInputTensors(*method);
+
+  // The args to the method are x, y, alpha. x and y are tensors handled above
+  // alpha is a prim.
+
+  // Traced prim input was '1.0' so 3.0 should error.
+  auto input_err = method->set_input(EValue(3.0), 2);
+  EXPECT_EQ(input_err, Error::InvalidArgument);
+
+  // Traced prim input was '1.0' so '1.0' should be ok.
+  input_err = method->set_input(EValue(1.0), 2);
+  ASSERT_EQ(input_err, Error::Ok);
+
+  Error err = method->execute();
+  EXPECT_EQ(err, Error::Ok);
+
+  torch::executor::util::FreeInputs(inputs);
+}
+
+TEST_F(MethodTest, AliasedIOTest) {
+  // TODO(T163238401)
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["cat"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  // Set up io. Input and Output should share the same memory.
+  constexpr int buffer_size = 16;
+  float buffer[buffer_size]; // Initial input is (2,4) we then cat a (1,4) to it
+                             // twice for a final shape of (4,4)
+  for (int i = 0; i < buffer_size; ++i) {
+    buffer[i] = 0.f;
+  }
+  int32_t sizes[2] = {2, 4};
+  uint8_t dim_order[2] = {0, 1};
+  int32_t strides[2] = {4, 1};
+  torch::executor::TensorImpl impl(
+      torch::executor::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
+
+  auto input_err = method->set_input(EValue(torch::executor::Tensor(&impl)), 0);
+  ASSERT_EQ(input_err, Error::Ok);
+
+  auto output_err = method->set_output_data_ptr(buffer, sizeof(buffer), 0);
+  ASSERT_EQ(output_err, Error::Ok);
+  ASSERT_EQ(method->get_output(0).toTensor().const_data_ptr(), buffer);
+
+  // Execute the method once. Cat a 1x4 to a 2x4.
+  auto execute_error = method->execute();
+  ASSERT_EQ(execute_error, Error::Ok);
+
+  auto output = method->get_output(0);
+  ASSERT_TRUE(output.isTensor());
+  EXPECT_EQ(output.toTensor().sizes()[0], 3);
+  EXPECT_EQ(output.toTensor().sizes()[1], 4);
+  // Original input should be 0.
+  for (size_t i = 0; i < 2 * 4; i++) {
+    EXPECT_FLOAT_EQ(output.toTensor().const_data_ptr<float>()[i], 0.f);
+  }
+  // Section that was cat on should be 1.
+  for (size_t i = 0; i < 1 * 4; i++) {
+    EXPECT_FLOAT_EQ(
+        output.toTensor().const_data_ptr<float>()[(2 * 4) + i], 1.f);
+  }
+
+  // Set the input again to update the size.
+  sizes[0] = output.toTensor().sizes()[0];
+  torch::executor::TensorImpl impl_2(
+      torch::executor::ScalarType::Float, 2, sizes, buffer, dim_order, strides);
+  input_err = method->set_input(EValue(torch::executor::Tensor(&impl_2)), 0);
+  ASSERT_EQ(input_err, Error::Ok);
+
+  // Execute the method again. Cat a 1x4 to a 3x4.
+  execute_error = method->execute();
+  ASSERT_EQ(execute_error, Error::Ok);
+
+  output = method->get_output(0);
+  EXPECT_EQ(output.toTensor().sizes()[0], 4);
+  EXPECT_EQ(output.toTensor().sizes()[1], 4);
+  // Original input should be 0.
+  for (size_t i = 0; i < 2 * 4; i++) {
+    EXPECT_FLOAT_EQ(output.toTensor().const_data_ptr<float>()[i], 0.f);
+  }
+  // Previous section and the new one that were cat on should be 1.
+  for (size_t i = 0; i < 2 * 4; i++) {
+    EXPECT_FLOAT_EQ(
+        output.toTensor().const_data_ptr<float>()[(2 * 4) + i], 1.f);
+  }
 }
 
 // TODO(T161163608): Test is disabled due to a resize bug in tensor_index_out of

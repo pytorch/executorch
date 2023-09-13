@@ -52,8 +52,8 @@ class SymShapeEvalPass(PassBase):
                     if isinstance(spec, TensorSpec):
                         concrete_shape = eval_shape(spec.shape)
                         concrete_spec = eval_shape(spec.stride)
-                        if any([s is None for s in concrete_shape]) or any(
-                            [s is None for s in concrete_spec]
+                        if any(s is None for s in concrete_shape) or any(
+                            s is None for s in concrete_spec
                         ):
 
                             def get_val(arg):
@@ -79,9 +79,9 @@ class SymShapeEvalPass(PassBase):
                             # we cached the map between symbols and the concrete upper bounds. Can directly eval here.
                             concrete_spec = eval_shape(spec.stride)
 
-                        assert all(
-                            [isinstance(s, int) for s in concrete_shape]
-                        ) and all([isinstance(s, int) for s in concrete_spec])
+                        assert all(isinstance(s, int) for s in concrete_shape) and all(
+                            isinstance(s, int) for s in concrete_spec
+                        )
                         spec.shape = concrete_shape
                         spec.stride = concrete_spec
         return PassResult(graph_module, True)

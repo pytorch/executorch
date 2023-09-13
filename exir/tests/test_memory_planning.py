@@ -93,11 +93,11 @@ class ModelWithDifferentTensorSizes(torch.nn.Module):
 
     def forward(self, i: torch.Tensor) -> torch.Tensor:
         o1 = i
-        for l in self.linears:
-            o1 = l(o1)
+        for linear in self.linears:
+            o1 = linear(o1)
         o2 = i
-        for l in self.linears:
-            o2 = l(o2)
+        for linear in self.linears:
+            o2 = linear(o2)
         return o1 + o2
 
     def get_random_inputs(self) -> Tuple[torch.Tensor, ...]:
@@ -462,19 +462,20 @@ class TestMisc(unittest.TestCase):
     def test_asr_joiner(self) -> None:
         eager_model = self.quantize(ASRJoiner())
         inputs = eager_model.get_random_inputs()
-        edge_program = exir.capture(
-            eager_model,
-            inputs,
-            exir.CaptureConfig(
-                enable_dynamic_shape=True,
-            ),
-        ).to_edge(
-            exir.EdgeCompileConfig(
-                passes=[
-                    ConstPropPass(),
-                ],
-                _check_ir_validity=False,
+        edge_program = (
+            exir.capture(
+                eager_model,
+                inputs,
+                exir.CaptureConfig(
+                    enable_dynamic_shape=True,
+                ),
             )
+            .to_edge(
+                exir.EdgeCompileConfig(
+                    _check_ir_validity=False,
+                )
+            )
+            .transform(ConstPropPass())
         )
         with validation_disabled():
             backend_module = to_backend(

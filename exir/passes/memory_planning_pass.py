@@ -66,7 +66,8 @@ class MemoryPlanningPass(PassBase):
                         out_alloc_node = node.kwargs[out_arg]
                         if out_alloc_node is None:
                             warnings.warn(
-                                f"Function {node.target}'s {out_arg} kwarg value is None"
+                                f"Function {node.target}'s {out_arg} kwarg value is None",
+                                stacklevel=1,
                             )
                             continue
                         internal_assert(
