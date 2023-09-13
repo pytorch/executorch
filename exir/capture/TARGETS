@@ -22,6 +22,7 @@ python_library(
         "//executorch/exir:error",
         "//executorch/exir:tracer",
         "//executorch/exir/program:lib",
+        "//executorch/exir/program:program",
     ],
 )
 

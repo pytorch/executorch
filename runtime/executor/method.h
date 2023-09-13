@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/platform/compiler.h>
@@ -46,11 +47,15 @@ using InstructionArgs = Span<EValue*>;
  */
 class Method final {
  public:
-  Method(const Program* program, MemoryManager* memory_manager)
+  Method(
+      const Program* program,
+      MemoryManager* memory_manager,
+      EventTracer* event_tracer)
       : step_state_(),
         program_(program),
         memory_manager_(memory_manager),
         serialization_plan_(nullptr),
+        event_tracer_(event_tracer),
         n_value_(0),
         values_(nullptr),
         n_delegate_(0),
@@ -58,7 +63,8 @@ class Method final {
         n_chains_(0),
         chains_(nullptr),
         init_state_(InitializationState::Uninitialized),
-        pre_allocated_input_(false) {}
+        pre_allocated_input_(false),
+        pre_allocated_output_(false) {}
 
   /**
    * Move ctor. Takes ownership of resources previously owned by `rhs`,
@@ -69,6 +75,7 @@ class Method final {
         program_(rhs.program_),
         memory_manager_(rhs.memory_manager_),
         serialization_plan_(rhs.serialization_plan_),
+        event_tracer_(rhs.event_tracer_),
         n_value_(rhs.n_value_),
         values_(rhs.values_),
         n_delegate_(rhs.n_delegate_),
@@ -76,7 +83,8 @@ class Method final {
         n_chains_(rhs.n_chains_),
         chains_(rhs.chains_),
         init_state_(rhs.init_state_),
-        pre_allocated_input_(rhs.pre_allocated_input_) {
+        pre_allocated_input_(rhs.pre_allocated_input_),
+        pre_allocated_output_(rhs.pre_allocated_output_) {
     // Required: clear out fields that the dtor looks at, so that we don't free
     // anything twice.
     rhs.n_value_ = 0;
@@ -91,9 +99,11 @@ class Method final {
     rhs.program_ = nullptr;
     rhs.memory_manager_ = nullptr;
     rhs.serialization_plan_ = nullptr;
+    rhs.event_tracer_ = nullptr;
     rhs.n_chains_ = 0;
     rhs.chains_ = nullptr;
     rhs.pre_allocated_input_ = false;
+    rhs.pre_allocated_output_ = false;
   }
 
   /**
@@ -136,6 +146,28 @@ class Method final {
    */
   __ET_NODISCARD Error
   set_inputs(const exec_aten::ArrayRef<EValue>& input_evalues);
+
+  /**
+   * Sets the data buffer of the specified method output to the provided value.
+   *
+   * NOTE: Based on the memory plan of the method, the output tensors may not
+   * have buffer space pre-allocated for them, in this case the executor will
+   * point those tensors to the buffer provided here, so the user should take
+   * care that the life span of this memory outlasts the executor forward.
+   *
+   * @param[in] buffer The block of memory to point the specified tensor at.
+   *
+   * @param[in] size the length of buffer in bytes, must be >= the nbytes of the
+   * specified tensor.
+   *
+   * @param[in] output_idx The index of the output to set the data_ptr for. Must
+   *     correspond to a tensor, and that tensor must not have had a buffer
+   *     allocated by the memory plan.
+   *
+   * @returns Error::Ok on success, non-Ok on failure.
+   */
+  __ET_NODISCARD Error
+  set_output_data_ptr(void* buffer, size_t size, size_t output_idx);
 
   /**
    * Copies the method's outputs into the provided array.
@@ -228,7 +260,8 @@ class Method final {
   __ET_NODISCARD static Result<Method> load(
       executorch_flatbuffer::ExecutionPlan* s_plan,
       const Program* program,
-      MemoryManager* memory_manager);
+      MemoryManager* memory_manager,
+      EventTracer* event_tracer);
 
   /// Returns true if the Method was successfully initialized.
   inline bool initialized() const {
@@ -242,6 +275,7 @@ class Method final {
   const Program* program_;
   MemoryManager* memory_manager_;
   executorch_flatbuffer::ExecutionPlan* serialization_plan_;
+  EventTracer* event_tracer_;
 
   size_t n_value_;
   EValue* values_;
@@ -254,6 +288,7 @@ class Method final {
 
   InitializationState init_state_;
   bool pre_allocated_input_;
+  bool pre_allocated_output_;
 
   /**
    * Parses the elements of the values_ array. On error, n_value_ will be set to

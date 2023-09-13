@@ -64,7 +64,7 @@ class ExportGraph:
             try:
                 submod: torch.nn.Module = mod.get_submodule(module_path)
             except AttributeError:
-                warnings.warn(f"Failed to fetch module {module_path}!")
+                warnings.warn(f"Failed to fetch module {module_path}!", stacklevel=1)
                 return None
 
             # See if the value is a buffer

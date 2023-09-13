@@ -135,7 +135,7 @@ def while_loop(
     until cond_fn returns False.
     """
     flattened_inputs, _ = pytree.tree_flatten(init_val)
-    if not all([isinstance(i, torch.Tensor) for i in flattened_inputs]):
+    if not all(isinstance(i, torch.Tensor) for i in flattened_inputs):
         raise ExportError(
             ExportErrorType.INVALID_INPUT_TYPE,
             f"control_flow.while_loop() expects all inputs values to be tensors, actual inputs: {init_val}",
@@ -147,7 +147,7 @@ def while_loop(
             val = body_fn(*val)
 
     flattened_outputs, _ = pytree.tree_flatten(val)
-    if not all([isinstance(o, torch.Tensor) for o in flattened_outputs]):
+    if not all(isinstance(o, torch.Tensor) for o in flattened_outputs):
         raise ExportError(
             ExportErrorType.INVALID_OUTPUT_TYPE,
             f"control_flow.while_loop() expects all returned values to be tensors, actual outputs: {val}",

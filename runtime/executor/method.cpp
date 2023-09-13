@@ -52,7 +52,7 @@ class BackendDelegate final {
   static Error Init(
       const executorch_flatbuffer::BackendDelegate& delegate,
       const Program* program,
-      MemoryAllocator* runtime_allocator,
+      BackendInitContext& backend_init_context,
       BackendDelegate* out) {
     // Look up the backend.
     const char* backend_id = delegate.id()->c_str();
@@ -78,7 +78,7 @@ class BackendDelegate final {
     // Parse compilation specs from program
     CompileSpec* compile_specs;
     Error err = PopulateCompileSpecs(
-        delegate.compile_specs(), runtime_allocator, &compile_specs);
+        delegate.compile_specs(), backend_init_context, &compile_specs);
     if (err != Error::Ok) {
       ET_LOG(Error, "Failed to get compile specs for backend %s", backend_id);
       return err;
@@ -93,9 +93,9 @@ class BackendDelegate final {
 
     // Initialize the delegate.
     Result<DelegateHandle*> handle = backend->init(
+        backend_init_context,
         &out->segment_,
-        ArrayRef<CompileSpec>(compile_specs, num_compile_specs),
-        runtime_allocator);
+        ArrayRef<CompileSpec>(compile_specs, num_compile_specs));
     if (!handle.ok()) {
       ET_LOG(
           Error,
@@ -115,9 +115,11 @@ class BackendDelegate final {
     }
   }
 
-  Error Execute(EValue** args) const {
+  Error Execute(
+      BackendExecutionContext& backend_execution_context,
+      EValue** args) const {
     EXECUTORCH_SCOPE_PROF("delegate_execute");
-    return backend_->execute(handle_, args);
+    return backend_->execute(backend_execution_context, handle_, args);
   }
 
  private:
@@ -133,12 +135,14 @@ class BackendDelegate final {
   static Error PopulateCompileSpecs(
       const flatbuffers::Vector<flatbuffers::Offset<
           executorch_flatbuffer::CompileSpec>>* compile_specs_in_program,
-      torch::executor::MemoryAllocator* runtime_allocator,
+      BackendInitContext& backend_init_context,
       CompileSpec** out_spec) {
     auto number_of_compile_specs = compile_specs_in_program->size();
 
     CompileSpec* compile_specs_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        runtime_allocator, CompileSpec, number_of_compile_specs);
+        backend_init_context.get_runtime_allocator(),
+        CompileSpec,
+        number_of_compile_specs);
 
     // Initialize the spec list for each method spec
     for (size_t j = 0; j < number_of_compile_specs; j++) {
@@ -487,8 +491,9 @@ Error Method::resolve_operator(
 Result<Method> Method::load(
     executorch_flatbuffer::ExecutionPlan* s_plan,
     const Program* program,
-    MemoryManager* memory_manager) {
-  Method method(program, memory_manager);
+    MemoryManager* memory_manager,
+    EventTracer* event_tracer) {
+  Method method(program, memory_manager, event_tracer);
   Error err = method.init(s_plan);
   if (err != Error::Ok) {
     return err;
@@ -534,14 +539,15 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
 
     for (size_t i = 0; i < n_delegate; ++i) {
       const auto& delegate = *delegates->Get(i);
+      BackendInitContext backend_init_context(runtime_allocator);
       Error err = BackendDelegate::Init(
-          delegate, program_, runtime_allocator, &delegates_[i]);
+          delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
         return err;
       }
       // ~Method() will try to clean up n_delegate_ entries in the delegates_
-      // array. Only increment this once we know the entry is valid, so that we
-      // don't try to clean up an uninitialized entry.
+      // array. Only increment this once we know the entry is valid, so that
+      // we don't try to clean up an uninitialized entry.
       n_delegate_ = i + 1;
     }
   }
@@ -631,6 +637,17 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     }
   }
 
+  pre_allocated_output_ = false;
+
+  // Get pre_allocation info for output tensors
+  for (int i = 0; i < outputs_size(); i++) {
+    if (get_output(i).isTensor()) {
+      pre_allocated_output_ =
+          get_output(i).toTensor().const_data_ptr() != nullptr;
+      break;
+    }
+  }
+
   ET_CHECK_OR_RETURN_ERROR(
       n_chains_ > 0,
       Internal,
@@ -708,10 +725,63 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         "Error setting data_ptr %zu: 0x%" PRIx32,
         input_idx,
         error);
-  }
-
-  else { // Evalue is int, bool or double
-    mutable_input(input_idx) = input_evalue;
+    // Prims have to be the same as what was traced
+  } else if (e.isInt()) {
+    ET_CHECK_OR_RETURN_ERROR(
+        e.toInt() == input_evalue.toInt(),
+        InvalidArgument,
+        "The %zu-th input of method should have the same value as the input_evalue, but got %" PRId64
+        " and %" PRId64,
+        input_idx,
+        e.toInt(),
+        input_evalue.toInt());
+  } else if (e.isBool()) {
+    ET_CHECK_OR_RETURN_ERROR(
+        e.toBool() == input_evalue.toBool(),
+        InvalidArgument,
+        "The %zu-th input of method should have the same value as the input_evalue, but got %" PRId64
+        " and %" PRId64,
+        input_idx,
+        (int64_t)e.toBool(),
+        (int64_t)input_evalue.toBool());
+  } else if (e.isDouble()) {
+    double lhs = input_evalue.toDouble();
+    double rhs = e.toDouble();
+    double atol = 1e-4;
+    double rtol = 1e-5;
+    bool is_equal = true;
+    if (std::isnan(lhs) && std::isnan(rhs)) {
+      // NaN == NaN
+    } else if (
+        !std::isfinite(lhs) && !std::isfinite(rhs) &&
+        ((lhs > 0) == (rhs > 0))) {
+      // -Inf == -Inf
+      // +Inf == +Inf
+    } else {
+      auto allowed_error = atol + std::abs(rtol * rhs);
+      auto actual_error = std::abs(lhs - rhs);
+      if (!std::isfinite(actual_error) || actual_error > allowed_error) {
+        is_equal = false;
+      }
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        is_equal,
+        InvalidArgument,
+        "The %zu-th input of method should have the same value as the input_evalue, but get %f and %f",
+        input_idx,
+        lhs,
+        rhs);
+  } else if (e.isString()) {
+    ET_CHECK_OR_RETURN_ERROR(
+        e.toString() == input_evalue.toString(),
+        InvalidArgument,
+        "The %zu-th input of method should have the same value as the input_evalue, but get %s and %s",
+        input_idx,
+        e.toString().data(),
+        input_evalue.toString().data());
+  } else {
+    ET_LOG(Error, "Unsupported input type: %d", (int32_t)e.tag);
+    return Error::InvalidArgument;
   }
   return Error::Ok;
 }
@@ -743,6 +813,51 @@ Method::set_inputs(const exec_aten::ArrayRef<EValue>& input_evalues) {
     }
   }
   return Error::Ok;
+}
+
+__ET_NODISCARD Error
+Method::set_output_data_ptr(void* buffer, size_t size, size_t output_idx) {
+  // Check method state
+  ET_CHECK_OR_RETURN_ERROR(
+      initialized(),
+      InvalidState,
+      "Outputs can not be retrieved until method has been initialized.");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      !pre_allocated_output_,
+      InvalidState,
+      "Overriding output data pointer allocated by memory plan is not allowed.");
+
+  // Check the args
+  ET_CHECK_OR_RETURN_ERROR(
+      output_idx <= outputs_size(),
+      InvalidArgument,
+      "output_idx: %zu num_outputs: %zu",
+      output_idx,
+      outputs_size());
+
+  auto& output = mutable_output(output_idx);
+  ET_CHECK_OR_RETURN_ERROR(
+      output.isTensor(),
+      InvalidArgument,
+      "output type: %zu is not tensor",
+      (size_t)output.tag);
+
+  auto& t = output.toTensor();
+  ET_CHECK_OR_RETURN_ERROR(
+      output.isTensor(),
+      InvalidArgument,
+      "output type: %zu is not tensor",
+      (size_t)output.tag);
+  ET_CHECK_OR_RETURN_ERROR(
+      t.nbytes() <= size,
+      InvalidArgument,
+      "buffer size: %zu is smaller then expected tensor size: %zu",
+      size,
+      t.nbytes());
+
+  // Set data
+  return internal::set_tensor_data(t, buffer, size);
 }
 
 __ET_NODISCARD Error
@@ -795,20 +910,29 @@ Error Method::execute_instruction() {
       // via the context.
       KernelRuntimeContext context;
       auto args = chain.argument_lists_[step_state_.instr_idx];
-      auto params = args.data();
-      chain.kernels_[step_state_.instr_idx](
-          context, chain.argument_lists_[step_state_.instr_idx].data());
+      chain.kernels_[step_state_.instr_idx](context, args.data());
       Error err = context.failure_state();
       for (auto arg:args) {
         arg->tag
       }
       if (err != Error::Ok) {
+        auto op_index = instruction->instr_args_as_KernelCall()->op_index();
+        auto op = serialization_plan_->operators()->Get(op_index);
         ET_LOG(
             Error,
-            "KernelCall failed at instruction %zu:%zu: 0x%x",
+            "KernelCall failed at instruction %zu:%zu in operator %s.%s: 0x%x",
             step_state_.chain_idx,
             step_state_.instr_idx,
+            op->name()->c_str(),
+            op->overload()->c_str(),
             (unsigned int)err);
+        for (size_t i = 0; i < args.size(); ++i) {
+          ET_LOG(
+              Error,
+              "arg %u with type id %u",
+              (unsigned int)i,
+              (unsigned int)args[i]->tag);
+        }
         // TODO(T153804650): Consider logging the EValues to help with
         // debugging. This is a failure path, and it doesn't matter if it's a
         // little slow. Do the same for DelegateCall errors.
@@ -827,7 +951,9 @@ Error Method::execute_instruction() {
           delegate_idx,
           n_delegate_,
           step_state_.instr_idx);
+      BackendExecutionContext backend_execution_context;
       Error err = delegates_[delegate_idx].Execute(
+          backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx].data());
       ET_CHECK_MSG(
           err == Error::Ok,
@@ -919,8 +1045,8 @@ Error Method::execute() {
       NotSupported,
       "Cannot execute until method has been initialized.");
 
-  // Chains are executed sequentially today, but future async designs may branch
-  // and run many in parallel or out of order.
+  // Chains are executed sequentially today, but future async designs may
+  // branch and run many in parallel or out of order.
   for (step_state_.chain_idx = 0; step_state_.chain_idx < n_chains_;
        ++step_state_.chain_idx) {
     Chain& chain = chains_[step_state_.chain_idx];

@@ -98,7 +98,7 @@ def calculate_aligned_num_bytes(num: int, alignment: int) -> int:
 
 
 def determine_tensor_dynanism(shape: torch.Size) -> TensorShapeDynamism:
-    if all([isinstance(s, int) for s in shape]):
+    if all(isinstance(s, int) for s in shape):
         return TensorShapeDynamism.STATIC
     else:
         try:

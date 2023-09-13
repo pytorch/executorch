@@ -13,6 +13,7 @@
 
 #include <executorch/runtime/core/data_loader.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/freeable_buffer.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/memory_manager.h>
@@ -109,11 +110,14 @@ class Program final {
    * @param[in] method_name The name of the method to load.
    * @param[in] memory_manager The allocators to use during initialization and
    *     execution of the loaded method.
+   * @param[in] event_tracer The event tracer to use for this method run.
+   *
    * @returns The loaded method on success, or an error on failure.
    */
   Result<Method> load_method(
       const char* method_name,
-      MemoryManager* memory_manager) const;
+      MemoryManager* memory_manager,
+      EventTracer* event_tracer = nullptr) const;
 
   /**
    * Gathers metadata for the named method.

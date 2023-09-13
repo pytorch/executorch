@@ -4,14 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-strict
-
-from executorch.exir.serialize._program import (
-    deserialize_from_flatbuffer,
-    serialize_to_flatbuffer,
-)
+from .utils import export_to_edge, export_to_exec_prog, save_pte_program
 
 __all__ = [
-    "deserialize_from_flatbuffer",
-    "serialize_to_flatbuffer",
+    "export_to_edge",
+    "export_to_exec_prog",
+    "save_pte_program",
 ]

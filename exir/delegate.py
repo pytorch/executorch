@@ -86,7 +86,7 @@ def call_delegate_autograd(lowered_module, *args):
     # TODO: support autograd
     flat_operands, _ = tree_flatten([lowered_module, *args])
     requires_grad = any(
-        [f.requires_grad for f in flat_operands if isinstance(f, torch.Tensor)]
+        f.requires_grad for f in flat_operands if isinstance(f, torch.Tensor)
     )
 
     with torch._C._ExcludeDispatchKeyGuard(
@@ -95,10 +95,6 @@ def call_delegate_autograd(lowered_module, *args):
         res = executorch_call_delegate(lowered_module, *args)
 
         if requires_grad:
-            err_fn = torch._C._functions.DelayedError(
-                b"NYI: call_delegate doesn't support autograd",
-                1,
-            )
             # Create aliases of the output that has requires_grad=True. We need
             # at least one of the inputs to err_fn to require grad so that the
             # output will have a grad_fn.

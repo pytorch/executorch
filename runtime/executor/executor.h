@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
@@ -26,7 +27,10 @@ using ExecutionPlan __ET_DEPRECATED = Method;
 class __ET_DEPRECATED Executor {
  public:
   // Executes a PyTorch executor program.
-  Executor(const Program* program, MemoryManager* memory_manager);
+  Executor(
+      const Program* program,
+      MemoryManager* memory_manager,
+      EventTracer* event_tracer = nullptr);
 
   /**
    * DEPRECATED: Use `Program::load_method()` instead.

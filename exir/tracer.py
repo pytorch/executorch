@@ -291,7 +291,7 @@ class PythonTensor(torch.Tensor):
             return func(*args, **kwargs)
 
     @classmethod
-    def __torch_dispatch__(
+    def __torch_dispatch__(  # noqa: C901
         cls,
         func_overload: torch._ops.OpOverload,
         # pyre-ignore: Missing parameter annotation [2]
@@ -324,13 +324,6 @@ class PythonTensor(torch.Tensor):
                             out_arg_name, format_schema_name(func_overload._schema)
                         )
                     )
-
-        tensor_args = [
-            x
-            # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
-            for x in ex_pytree.tree_flatten(args)[0] + ex_pytree.tree_flatten(kwargs)[0]
-            if isinstance(x, torch.Tensor)
-        ]
 
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_map`.
         proxy_args = ex_pytree.tree_map(unwrap_proxy, args)
@@ -438,7 +431,7 @@ class DispatchTracer(fx.Tracer):
             return attr_val
         return attr_val
 
-    def create_arg(self, a: Value) -> torch.fx.Node:
+    def create_arg(self, a: Value) -> torch.fx.Node:  # noqa: C901
         if isinstance(a, torch.nn.Parameter):
             for n, p in self.root.named_parameters():
                 if a is p:
@@ -637,7 +630,9 @@ def _default_decomposition_table(
             torch.ops.aten.arange.start,
             torch.ops.aten.transpose,
         ]
+        # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.e...
         return get_decompositions(decomp_opset)
+    # pyre-fixme[7]: Expected `Dict[OpOverload, typing.Callable[..., executorch.exir....
     return core_aten_decompositions()
 
 

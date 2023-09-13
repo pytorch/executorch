@@ -167,13 +167,14 @@ Result<const char*> Program::get_method_name(size_t plan_index) const {
 
 Result<Method> Program::load_method(
     const char* method_name,
-    MemoryManager* memory_manager) const {
+    MemoryManager* memory_manager,
+    EventTracer* event_tracer) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
   auto plan = get_execution_plan(internal_program_, method_name);
   if (!plan.ok()) {
     return plan.error();
   }
-  return Method::load(plan.get(), this, memory_manager);
+  return Method::load(plan.get(), this, memory_manager, event_tracer);
 }
 
 Result<MethodMeta> Program::method_meta(const char* method_name) const {

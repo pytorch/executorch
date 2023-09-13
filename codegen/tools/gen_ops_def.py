@@ -15,15 +15,15 @@ from typing import Any, List
 import torch
 import yaml
 from executorch.codegen.tools.yaml_util import BlankLineDumper
+from executorch.exir._serialize import _deserialize_pte_binary
 from executorch.exir.schema import Operator
-from executorch.exir.serialize import deserialize_from_flatbuffer
 
 
 def get_operators(model_file: str) -> List[Operator]:
     print("Processing model file: ", model_file)
     with open(model_file, "rb") as f:
         flatbuffer = f.read()
-    program = deserialize_from_flatbuffer(flatbuffer)
+    program = _deserialize_pte_binary(flatbuffer)
     print(f"Program loaded from model file: {model_file}")
     operators = program.execution_plan[0].operators
     return operators

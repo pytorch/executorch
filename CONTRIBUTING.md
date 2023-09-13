@@ -8,6 +8,14 @@ contributing.
 Goal: Encourage standards that make it easier to read, edit, maintain, and debug
 the ExecuTorch code.
 
+You can see [lintrunner](https://pypi.org/project/lintrunner/) for making sure the code follows our standard. Here's how to set up `lintrunner`:
+
+```
+pip install lintrunner==0.11.0
+pip install lintrunner-adapters==0.9.0
+lintrunner init
+```
+
 ### Python Style
 
 ExecuTorch Python code follows the style used by the PyTorch core project.

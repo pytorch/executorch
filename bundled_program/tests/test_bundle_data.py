@@ -21,7 +21,7 @@ from executorch.bundled_program.schema import (
     BundledValue,
 )
 from executorch.bundled_program.tests.common import get_common_program
-from executorch.exir.serialize import serialize_to_flatbuffer
+from executorch.exir._serialize import _serialize_pte_binary
 
 
 class TestBundle(unittest.TestCase):
@@ -83,7 +83,7 @@ class TestBundle(unittest.TestCase):
                 bundled_plan_test.metadata, config_plan_test.metadata
             )
 
-        self.assertEqual(bundled_program.program, serialize_to_flatbuffer(program))
+        self.assertEqual(bundled_program.program, _serialize_pte_binary(program))
         self.assertAttachmentEqual(
             bundled_program.attachments, bundled_config.attachments
         )

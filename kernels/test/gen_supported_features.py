@@ -68,7 +68,7 @@ def generate_definition(d: dict):
 
 def generate_definition_entry(d: dict):
     if not d:
-        return []
+        return []  # noqa: B901
     for entry in d:
         namespace = entry["namespace"]
         for feature, value in entry.items():

@@ -23,8 +23,8 @@ import numpy as np
 import torch
 from executorch import exir
 from executorch.exir import schema
+from executorch.exir._serialize import _deserialize_pte_binary
 from executorch.exir.schema import KernelCall, Program, TensorList
-from executorch.exir.serialize import deserialize_from_flatbuffer
 from executorch.sdk.edir.base_schema import Node, OperatorGraph, OperatorNode, ValueNode
 from executorch.sdk.etdump.schema import ETDump, PROFILE_EVENT_ENUM
 from executorch.sdk.etdump.serialize import deserialize_from_etdump
@@ -222,7 +222,7 @@ class OperatorGraphWithStats(OperatorGraph):
         return header_row + data_rows
 
     # Generate summary stats grouped by operator type
-    def _gen_op_summary_stats(self) -> List[Any]:
+    def _gen_op_summary_stats(self) -> List[Any]:  # noqa: C901
         grouped_ops = {}
 
         def gen_stats(node):
@@ -472,7 +472,7 @@ class FXOperatorGraph(OperatorGraphWithStats):
             module_mapping[(source_fn[0], module_type)].append(node)
 
     @staticmethod
-    def _parse_args(
+    def _parse_args(  # noqa: C901
         node: torch.fx.Node,
         nodes: Dict[str, Node],
         const_count: int,
@@ -543,7 +543,9 @@ class FXOperatorGraph(OperatorGraphWithStats):
             ):
                 continue
             else:
-                warnings.warn(f"Unsupported kwarg encountered: {name}, {kwargs}")
+                warnings.warn(
+                    f"Unsupported kwarg encountered: {name}, {kwargs}", stacklevel=1
+                )
 
         return inputs, const_count
 
@@ -734,7 +736,7 @@ class ExportedETOperatorGraph(OperatorGraphWithStats):
         file_path: str, include_constant_nodes=True
     ) -> ExportedETOperatorGraph:
         with open(file_path, "rb") as fd:
-            program = deserialize_from_flatbuffer(fd.read())
+            program = _deserialize_pte_binary(fd.read())
             return ExportedETOperatorGraph.gen_operator_graph(
                 program, include_constant_nodes
             )

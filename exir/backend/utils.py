@@ -200,7 +200,7 @@ class DelegateMappingBuilder:
         # pyre-ignore Warning between Union[Dict[K, V], Dict[K2, V]] vs Dict[Union[K, K2], V]
         return {k: tuple(sorted(v)) for k, v in self._debug_handle_map.items()}
 
-    def upsert_delegate_mapping_entry(
+    def insert_delegate_mapping_entry(
         self,
         nodes: Union[Node, List[Node]],
         identifier: Optional[Union[int, str]] = None,
@@ -230,13 +230,14 @@ class DelegateMappingBuilder:
         """
 
         # Check for manual addition of identifier (with generated identifiers enabled)
-        if (
-            self._generated_identifiers
-            and identifier is not None
-            and identifier not in self._debug_handle_map
-        ):
+        if self._generated_identifiers and identifier is not None:
             raise Exception(
                 f"Builders using generated identifiers can't manually add identifiers: {identifier}. Failed to add or update entry"
+            )
+
+        if identifier is not None and identifier in self._debug_handle_map:
+            raise Exception(
+                "This delegate debug identifier was already inserted. Duplicate delegate debug identifiers are not allowed."
             )
 
         # Resolve Identifier

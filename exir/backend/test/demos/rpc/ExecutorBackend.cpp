@@ -17,7 +17,8 @@
 #include <executorch/runtime/backend/backend_registry.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
-#include <executorch/runtime/executor/executor.h>
+#include <executorch/runtime/executor/method.h>
+#include <executorch/runtime/executor/program.h>
 #include <executorch/util/util.h>
 
 namespace torch {
@@ -43,11 +44,12 @@ class ExecutorBackend final : public PyTorchBackendInterface {
   }
 
   Result<DelegateHandle*> init(
+      BackendInitContext& context,
       FreeableBuffer* processed,
-      __ET_UNUSED ArrayRef<CompileSpec> compile_specs,
-      MemoryAllocator* runtime_allocator) const override {
+      __ET_UNUSED ArrayRef<CompileSpec> compile_specs) const override {
     // `processed` contains an executorch program. Wrap it in a DataLoader that
     // will return the data directly without copying it.
+    MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
     auto loader = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
         runtime_allocator, util::BufferDataLoader);
     new (loader) util::BufferDataLoader(processed->data(), processed->size());
@@ -140,7 +142,10 @@ class ExecutorBackend final : public PyTorchBackendInterface {
     return client_method;
   }
 
-  Error execute(DelegateHandle* handle, EValue** args) const override {
+  Error execute(
+      __ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override {
     Method* client_method = static_cast<Method*>(handle);
     auto num_inputs = client_method->inputs_size();
     Error status = Error::Ok;

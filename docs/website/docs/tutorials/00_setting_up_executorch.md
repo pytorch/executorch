@@ -19,13 +19,30 @@ conda activate executorch
 conda install -c conda-forge flatbuffers
 ```
 
-Setting up PyTorch
+### Step 2: Clone the `executorch` repo
+
 ```bash
-# Install the nightly builds
+# Do one of these, depending on how your auth is set up
+git clone https://github.com/pytorch/executorch.git
+git clone git@github.com:pytorch/executorch.git
+```
+Ensure that git has fetched and updated the submodules. This is necessary anytime
+commit hash of any of the submodules changes. Thus it is safe and necessary at times to apply this step after you pull changes from upstream.
+
+```bash
+cd executorch
+git submodule sync
+git submodule update --init
+```
+
+### Step 3: Install `executorch` pip package and dependencies
+
+Install all required python dependencies and PyTorch dependencies.
+```bash
+cd executorch
 # Note: if you are behind a firewall an appropriate proxy server must be setup
 # for all subsequent steps.
-TORCH_VERSION=2.1.0.dev20230831
-pip install --force-reinstall --pre torch=="${TORCH_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
+bash ./install_requirements.sh
 ```
 
 When getting a new version of the executorch repo (via clone, fetch, or pull),
@@ -33,21 +50,7 @@ you may need to re-install a new version the PyTorch nightly pip package. The
 `TORCH_VERSION` value in this document will be the correct version for the
 corresponsing version of the repo.
 
-### Step 2: Install the `executorch` pip package
-
-This will install an  `executorch` pip package to your conda environment.
-
-```bash
-# Do one of these, depending on how your auth is set up
-git clone https://github.com/pytorch/executorch.git
-git clone git@github.com:pytorch/executorch.git
-
-# Install the pip package
-cd executorch
-pip install .
-```
-
-### Step 3: Generate a program file from an `nn.Module`
+### Step 4: Generate a program file from an `nn.Module`
 
 Via python script:
 ```bash
@@ -68,7 +71,11 @@ $ python3
 >>> open("mul.pte", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
 ```
 
+Please refer to the [More Examples](./00_setting_up_executorch.md#more-examples) section for running with more popular models.
+
 ## Runtime Setup
+
+Follow [AOT Setup: Step 2](./00_setting_up_executorch.md#step-2-clone-the-executorch-repo) above to clone the `executorch` repo if you haven't already.
 
 ### Step 1: Install buck2
 
@@ -83,26 +90,7 @@ zstd -cdq buck2-DOWNLOADED_FILENAME.zst > /tmp/buck2 && chmod +x /tmp/buck2
 
 You may want to copy the `buck2` binary into your `$PATH` so you can run it as `buck2`.
 
-### Step 2: Clone the `executorch` repo
-
-Clone the repo if you haven't already.
-
-```bash
-# Do one of these, depending on how your auth is set up
-git clone https://github.com/pytorch/executorch.git
-git clone git@github.com:pytorch/executorch.git
-```
-
-Ensure that git has fetched and updated the submodules. This is necessary anytime
-commit hash of any of the submodules changes. Thus it is safe and necessary at times to apply this step after you pull changes from upstream.
-
-```bash
-cd executorch
-git submodule sync
-git submodule update --init
-```
-
-### Step 3: Build a binary
+### Step 2: Build a binary
 
 `executor_runner` is an example wrapper around executorch runtime which includes all the operators and backends
 
@@ -133,7 +121,7 @@ or execute the binary directly from the `--show-output` path shown when building
 ./buck-out/.../executor_runner --model_path add.pte
 ```
 
-## More examples
+## More Examples
 
-The `executorch/examples` directory contains useful scripts with a guide to lower and run
-popular models like MobileNetv2 on Executorch.
+The [`executorch/examples`](https://github.com/pytorch/executorch/blob/main/examples) directory contains useful examples with a guide to lower and run
+popular models like MobileNet V3, Torchvision ViT, Wav2Letter, etc. on Executorch.

@@ -30,15 +30,14 @@ from executorch.backends.xnnpack.utils.quant_utils import QuantParams
 from executorch.backends.xnnpack.utils.utils import (
     check_or_raise,
     get_input_node,
+    get_param_tensor,
+    is_param_node,
     PERM_NCHW_TO_NHWC,
 )
 
-from executorch.backends.xnnpack.utils.xnnpack_constants import (
-    XNN_INVALID_VALUE_ID,
-    XNN_VALUE_FLAG_EXTERNAL_INPUT,
-    XNN_VALUE_FLAG_EXTERNAL_OUTPUT,
-)
+from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_INVALID_VALUE_ID
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export import ExportedProgram
 
 XNN_TYPE_MAP = {
     torch.float32: XNNDatatype.xnn_datatype_fp32,
@@ -75,8 +74,21 @@ class NodeVisitor:
     serializing them using the xnnpack serialization schema defined
     """
 
-    def __init__(self, external_ids) -> None:
-        self.external_ids = external_ids or {}
+    def __init__(
+        self,
+        exported_program: ExportedProgram,
+        external_ids: Dict,
+    ) -> None:
+        self._external_ids = external_ids or {}
+        self._exported_program = exported_program or None
+
+    @property
+    def external_ids(self) -> Dict:
+        return self._external_ids
+
+    @property
+    def exported_program(self) -> ExportedProgram:
+        return self._exported_program
 
     def is_graph_input(self, tensor: torch.fx.Node) -> bool:
         """
@@ -85,7 +97,9 @@ class NodeVisitor:
         Args:
             tensor: EdgeIR Tensor that is being checked for graph input
         """
-        return tensor.op == "placeholder"
+        return tensor.op == "placeholder" and not is_param_node(
+            self.exported_program, tensor
+        )
 
     def is_graph_output(self, tensor: torch.fx.Node) -> bool:
         """
@@ -130,30 +144,49 @@ class NodeVisitor:
         # This will break if we change the way q/dq are partitioned
 
         # Tensor can still be input if its quantizing node is an input
-        if self.is_graph_input(tensor) or (
-            quant_params.is_input if quant_params else False
-        ):
+        is_input = self.is_graph_input(tensor) or (
+            quant_params.is_input
+            and not is_param_node(self.exported_program, quant_params.q_input)
+            if quant_params
+            else False
+        )
+
+        # Tensor can still be output if its quantizing node is an output
+        is_output = self.is_graph_output(tensor) or (
+            quant_params.is_output if quant_params else False
+        )
+
+        if is_input:
             tensor_input = tensor
-            if quant_params:
-                if quant_params.is_input and not self.is_graph_input(tensor):
-                    tensor_input = quant_params.q_input
+            if (
+                quant_params
+                and quant_params.is_input
+                and not is_param_node(self.exported_program, quant_params.q_input)
+                and not self.is_graph_input(tensor)
+            ):
+                tensor_input = quant_params.q_input
+
             assert (
                 tensor_input in self.external_ids.keys()
             ), f"Tensor {tensor_input}, is_input. ext_ids: {self.external_ids.keys()}"
+
             ext_id = self.external_ids[tensor_input].external_id
             xnn_graph.input_ids.append(id_out)
             flag = self.external_ids[tensor_input].io_type
-        # Tensor can still be output if its quantizing node is an output
-        elif self.is_graph_output(tensor) or (
-            quant_params.is_output if quant_params else False
-        ):
+
+        elif is_output:
             tensor_output = tensor
-            if quant_params:
-                if quant_params.is_output and not self.is_graph_output(tensor):
-                    tensor_output = list(tensor.users)[0]
+            if (
+                quant_params
+                and quant_params.is_output
+                and not self.is_graph_output(tensor)
+            ):
+                tensor_output = list(tensor.users)[0]
+
             assert (
                 tensor_output in self.external_ids.keys()
-            ), f"Tensor {tensor_output} is_output: ext_ids: {self.external_ids.keys()}"
+            ), f"Tensor {tensor_output} is_output. ext_ids: {self.external_ids.keys()}"
+
             ext_id = self.external_ids[tensor_output].external_id
             xnn_graph.output_ids.append(id_out)
             flag = self.external_ids[tensor_output].io_type
@@ -331,7 +364,7 @@ class NodeVisitor:
         """
         # The get_attr node is the input to quant_params.
         get_attr_node = tensor if quant_params is None else quant_params.q_input
-        if get_attr_node.op != "get_attr":
+        if not is_param_node(self.exported_program, get_attr_node):
             check_or_raise(
                 not swap_nc_for_depthwise_weights,
                 "Swapping N and C dimensions is only valid for constant data tensors",
@@ -343,9 +376,10 @@ class NodeVisitor:
             "Internal Error: const_buffer and buffer_sizes length mismatch",
         )
         buffer_idx = len(xnn_graph.constant_buffer)
-        const_val = getattr(
-            get_attr_node.graph.owning_module, get_attr_node.target
-        ).contiguous()
+        const_val = get_param_tensor(self.exported_program, get_attr_node)
+        assert const_val is not None and isinstance(const_val, torch.Tensor)
+        const_val = const_val.contiguous()
+
         # Quantize buffer if static data is indeed quantized
         if quant_params is not None and not quant_params.is_dynamic:
             const_val = quant_params.quantize_tensor(const_val).contiguous()
@@ -358,9 +392,9 @@ class NodeVisitor:
                 dims=((1, 0) + tuple(range(2, const_val.dim())))
             ).contiguous()
         if convert_to_nhwc:
+            # pyre-ignore[28] Unexpected keyword argument `memory_format`
             const_val = const_val.to(memory_format=torch.channels_last)
 
-        # pyre-ignore
         array_type = ctypes.c_char * const_val.untyped_storage().nbytes()
         array = ctypes.cast(
             const_val.untyped_storage().data_ptr(),

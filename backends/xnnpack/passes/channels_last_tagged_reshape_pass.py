@@ -7,11 +7,13 @@
 from typing import Optional, Tuple
 
 import torch
+from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
-from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.pass_base import PassResult
 
 # TODO(T151254305) use subgraph_rewriter
-class ChannelsLastTaggedReshapePass(ExportPass):
+class ChannelsLastTaggedReshapePass(XNNPACKPass):
     """
     This pass is Internal to XNNPack only! It is meant to give a new representation
     of the edge graph to be consumed by XNNPack Preprocess. All added operators
@@ -74,9 +76,6 @@ class ChannelsLastTaggedReshapePass(ExportPass):
     # is done
     PARTNER_NODE = "XNN_CHANNELS_LAST_TAGGED_RESHAPE_PARTNER_NODE"
 
-    def __init__(self):
-        super(ChannelsLastTaggedReshapePass, self).__init__()
-
     def mark_as_nhwc_node(self, node: torch.fx.Node) -> None:
         node.meta[ChannelsLastTaggedReshapePass.XNN_NHWC_NODE] = True
 
@@ -103,7 +102,7 @@ class ChannelsLastTaggedReshapePass(ExportPass):
         #    in NCHW format somewhere
         is_4d = ("val" in node.meta) and (len(node.meta["val"].shape) == 4)
         is_nchw_constant = (
-            (node.op == "get_attr")
+            is_param_node(self.exported_program, node)
             and (ChannelsLastTaggedReshapePass.XNN_NHWC_NODE in node.meta)
             and (self.is_nchw_node(node))
         )
@@ -254,7 +253,7 @@ class ChannelsLastTaggedReshapePass(ExportPass):
         input_node: torch.fx.Node,
         target_node: torch.fx.Node,
     ) -> None:
-        if input_node.op == "get_attr":
+        if is_param_node(self.exported_program, input_node):
             if (
                 ChannelsLastTaggedReshapePass.XNN_NHWC_NODE in input_node.meta
                 and self.is_nchw_node(input_node)
@@ -305,7 +304,7 @@ class ChannelsLastTaggedReshapePass(ExportPass):
         input_node: torch.fx.Node,
         target_node: torch.fx.Node,
     ) -> None:
-        if input_node.op == "get_attr":
+        if is_param_node(self.exported_program, input_node):
             if (
                 ChannelsLastTaggedReshapePass.XNN_NHWC_NODE in input_node.meta
                 and self.is_nhwc_node(input_node)
@@ -345,7 +344,7 @@ class ChannelsLastTaggedReshapePass(ExportPass):
             target_node=target_node,
         )
 
-    def call(self, graph_module: torch.fx.GraphModule):
+    def call(self, graph_module: torch.fx.GraphModule):  # noqa: C901
         graph = graph_module.graph
         original_nodes = list(graph.nodes)
         for node in original_nodes:

@@ -200,13 +200,13 @@ void delinearize_index(
  * broadcast_to tensor and itself.
  *
  * @param[in] indexes The tensor access indexes of broadcast_to tensor
- * @param[in] broadcast_to The tensor with the broadcasted shape.
+ * @param[in] broadcast_to_ndim The number of dims of the broadcasted shape.
  * @param[in] broadcast_from The tensor to be broadcasted.
  * @returns The flattend index for broadcast_from tensor.
  */
 size_t linearize_access_indexes(
     ArrayRef<size_t> indexes_broadcast_to,
-    const Tensor& broadcast_to,
+    ssize_t broadcast_to_ndim,
     const Tensor& broadcast_from);
 
 //
@@ -241,10 +241,10 @@ inline void apply_binary_elementwise_fn(
       delinearize_index(i, out, out_indexes, kTensorDimensionLimit);
 
       if (a_is_broadcasted) {
-        a_linear_index = linearize_access_indexes(out_indexes, out, a);
+        a_linear_index = linearize_access_indexes(out_indexes, out.dim(), a);
       }
       if (b_is_broadcasted) {
-        b_linear_index = linearize_access_indexes(out_indexes, out, b);
+        b_linear_index = linearize_access_indexes(out_indexes, out.dim(), b);
       }
     }
 
@@ -290,13 +290,13 @@ inline void apply_ternary_elementwise_fn(
       delinearize_index(i, out, out_indexes, kTensorDimensionLimit);
 
       if (a_is_broadcasted) {
-        a_linear_index = linearize_access_indexes(out_indexes, out, a);
+        a_linear_index = linearize_access_indexes(out_indexes, out.dim(), a);
       }
       if (b_is_broadcasted) {
-        b_linear_index = linearize_access_indexes(out_indexes, out, b);
+        b_linear_index = linearize_access_indexes(out_indexes, out.dim(), b);
       }
       if (c_is_broadcasted) {
-        c_linear_index = linearize_access_indexes(out_indexes, out, c);
+        c_linear_index = linearize_access_indexes(out_indexes, out.dim(), c);
       }
     }
 
