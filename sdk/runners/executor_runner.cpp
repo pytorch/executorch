@@ -236,6 +236,14 @@ int main(int argc, char** argv) {
   }
   ET_LOG(Info, "Running method %s", method_name);
 
+  // MethodMeta describes the memory requirements of the method.
+  Result<MethodMeta> method_meta = program->method_meta(method_name);
+  ET_CHECK_MSG(
+      method_meta.ok(),
+      "Failed to get method_meta for %s: 0x%x",
+      method_name,
+      (unsigned int)method_meta.error());
+
   //
   // The runtime does not use malloc/new; it allocates all memory using the
   // MemoryManger provided by the client. Clients are responsible for allocating
@@ -265,35 +273,13 @@ int main(int argc, char** argv) {
   // have more than one for, e.g., slow/large DRAM and fast/small SRAM.
   std::vector<std::unique_ptr<uint8_t[]>> non_const_buffers;
   std::vector<MemoryAllocator> non_const_allocators;
-  size_t num_non_const_buffers = 0;
-  {
-    auto result = program->num_non_const_buffers(method_name);
-    ET_CHECK_MSG(
-        result.ok(),
-        "Failed to get number of non-const buffers for method %s: 0x%x",
-        method_name,
-        (unsigned int)result.error());
-    num_non_const_buffers = *result;
-  }
-  // Note that this loop starts at ID 1, because ID 0 is reserved. But, the
-  // HierarchicalAllocator indices are zero-based, so it's later adjusted by -1.
-  // TODO(T142455629): Make HierarchicalAllocator ID-based to avoid this
-  // memory_id-1.
-  for (size_t id = 1; id < num_non_const_buffers; ++id) {
-    auto buffer_size = program->get_non_const_buffer_size(id, method_name);
-    ET_CHECK_MSG(
-        buffer_size.ok(),
-        "Failed to get size of non-const buffer %zu for method %s: 0x%x",
-        id,
-        method_name,
-        (unsigned int)buffer_size.error());
-    ET_LOG(
-        Info, "Setting up non-const buffer %zu, size %zu.", id, *buffer_size);
-    non_const_buffers.push_back(std::make_unique<uint8_t[]>(*buffer_size));
-    // Since the list of allocators began empty, buffer ID N will live at index
-    // N-1.
+  size_t num_non_const_buffers = method_meta->num_non_const_buffers();
+  for (size_t id = 0; id < num_non_const_buffers; ++id) {
+    size_t buffer_size = method_meta->non_const_buffer_size(id).get();
+    ET_LOG(Info, "Setting up non-const buffer %zu, size %zu.", id, buffer_size);
+    non_const_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
     non_const_allocators.push_back(
-        MemoryAllocator(*buffer_size, non_const_buffers.back().get()));
+        MemoryAllocator(buffer_size, non_const_buffers.back().get()));
     non_const_allocators.back().enable_profiling("non_const_allocators");
   }
   HierarchicalAllocator non_const_allocator(
