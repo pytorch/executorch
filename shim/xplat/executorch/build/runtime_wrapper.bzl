@@ -115,8 +115,17 @@ def _patch_test_compiler_flags(kwargs):
     if "compiler_flags" not in kwargs:
         kwargs["compiler_flags"] = []
 
+    # Required globally by all c++ tests.
+    kwargs["compiler_flags"].extend([
+        "-std=c++17",
+    ])
+
     # Relaxing some constraints for tests
-    kwargs["compiler_flags"].extend(["-Wno-missing-prototypes", "-Wno-unused-variable", "-Wno-error"])
+    kwargs["compiler_flags"].extend([
+        "-Wno-missing-prototypes",
+        "-Wno-unused-variable",
+        "-Wno-error",
+    ])
     return kwargs
 
 def _external_dep_location(name):

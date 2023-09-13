@@ -24,13 +24,9 @@ def define_common_targets():
             "//executorch/runtime/platform:platform",
             "//executorch/runtime/core:core",
         ],
-        fbcode_exported_deps = [
-            "//common/init:init",
-            "//common/gtest:gtest",
-        ],
-        xplat_exported_deps = [
-            "//xplat/folly:init_init",
-            "//xplat/third-party/gmock:gmock",
+        exported_external_deps = [
+            "gtest",
+            "gmock",
         ],
     )
 
