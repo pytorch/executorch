@@ -56,6 +56,12 @@ void check_quantize_per_tensor_args(
         static_cast<int32_t>(std::numeric_limits<int8_t>::min());
     quant_max_upper_bound =
         static_cast<int32_t>(std::numeric_limits<int8_t>::max());
+  } else if (dtype == ScalarType::Short) {
+    quant_min_lower_bound = std::numeric_limits<int16_t>::min();
+    quant_max_upper_bound = std::numeric_limits<int16_t>::max();
+  } else if (dtype == ScalarType::Int) {
+    quant_min_lower_bound = std::numeric_limits<int32_t>::min();
+    quant_max_upper_bound = std::numeric_limits<int32_t>::max();
   } else {
     ET_CHECK_MSG(false, "Unsupported dtype: %hdd", out_dtype);
   }

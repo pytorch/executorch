@@ -37,7 +37,9 @@ void check_dequantize_per_tensor_args(
     Tensor& out) {
   ET_CHECK_MSG(
       input.scalar_type() == ScalarType::Byte ||
-          input.scalar_type() == ScalarType::Char,
+          input.scalar_type() == ScalarType::Char ||
+          input.scalar_type() == ScalarType::Short ||
+          input.scalar_type() == ScalarType::Int,
       "input.scalar_type() %hdd is not supported:",
       input.scalar_type());
 
