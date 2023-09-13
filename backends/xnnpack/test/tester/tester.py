@@ -14,10 +14,7 @@ import torch._export as export
 from executorch import exir
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
-from executorch.backends.xnnpack.utils.configs import (
-    get_xnnpack_capture_config,
-    get_xnnpack_edge_compile_config,
-)
+from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import (
     CaptureConfig,
     EdgeCompileConfig,
@@ -124,7 +121,7 @@ class Quantize(Stage):
 @register_stage
 class Export(Stage):
     def __init__(self, capture_config: Optional[CaptureConfig] = None):
-        self.capture_conf = capture_config or get_xnnpack_capture_config()
+        self.capture_conf = capture_config or CaptureConfig(enable_aot=True)
         self.exir_exported_program = None
 
     def run(self, artifact: torch.nn.Module, inputs) -> None:

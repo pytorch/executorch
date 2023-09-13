@@ -35,7 +35,7 @@ class TestMobileNetV2(unittest.TestCase):
 
         (
             Tester(self.mv2, self.model_inputs)
-            .export(Export(CaptureConfig(enable_aot=True)))
+            .export()
             .to_edge()
             .check(list(self.all_operators))
             .partition()
@@ -56,7 +56,7 @@ class TestMobileNetV2(unittest.TestCase):
         (
             Tester(self.mv2, self.model_inputs)
             .quantize()
-            .export(Export(CaptureConfig(enable_aot=True)))
+            .export()
             .to_edge()
             .check(list(ops_after_quantization))
             .partition(Partition(partitioner=XnnpackQuantizedPartitioner))
