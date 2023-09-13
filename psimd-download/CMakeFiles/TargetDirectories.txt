@@ -1,3 +1,0 @@
-/Users/chenlai/tmp_executorch/executorch/psimd-download/CMakeFiles/psimd.dir
-/Users/chenlai/tmp_executorch/executorch/psimd-download/CMakeFiles/ALL_BUILD.dir
-/Users/chenlai/tmp_executorch/executorch/psimd-download/CMakeFiles/ZERO_CHECK.dir

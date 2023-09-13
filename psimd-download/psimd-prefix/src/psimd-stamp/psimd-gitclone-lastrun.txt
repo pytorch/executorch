@@ -1,3 +1,0 @@
-repository='https://github.com/Maratyszcza/psimd.git'
-module=''
-tag='origin'

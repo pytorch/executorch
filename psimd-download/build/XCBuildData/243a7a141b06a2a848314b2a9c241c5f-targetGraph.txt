@@ -1,7 +1,0 @@
-Target dependency graph (3 targets)
-ZERO_CHECK in psimd-download, no dependencies
-psimd in psimd-download, depends on:
-ZERO_CHECK in psimd-download (explicit)
-ALL_BUILD in psimd-download, depends on:
-ZERO_CHECK in psimd-download (explicit)
-psimd in psimd-download (explicit)

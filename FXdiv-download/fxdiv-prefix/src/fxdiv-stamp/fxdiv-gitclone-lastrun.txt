@@ -1,3 +1,0 @@
-repository='https://github.com/Maratyszcza/FXdiv.git'
-module=''
-tag='origin'
