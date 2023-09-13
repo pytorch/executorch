@@ -19,7 +19,7 @@ from executorch.exir import CaptureConfig
 class TestMobileNetV3(unittest.TestCase):
     mv3 = models.mobilenetv3.mobilenet_v3_small(pretrained=True)
     mv3 = mv3.eval()
-    model_inputs = (torch.ones(1, 3, 224, 244),)
+    model_inputs = (torch.ones(1, 3, 224, 224),)
 
     all_operators = {
         "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
