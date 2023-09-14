@@ -18,3 +18,15 @@ def define_common_targets():
         ],
         preprocessor_flags = ["-DPROFILING_ENABLED"],
     )
+
+    runtime.cxx_test(
+        name = "etdump_test",
+        srcs = [
+            "etdump_test.cpp",
+        ],
+        deps = [
+            "//executorch/sdk/etdump:etdump_flatcc",
+            "//executorch/sdk/etdump:etdump_schema_flatcc",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
