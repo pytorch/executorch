@@ -8,7 +8,7 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/example/example_operators:example_operators_lib",
+        "//executorch/examples/example_quantizer_and_delegate/example_operators:example_operators_lib",
         "//executorch/exir:dim_order_utils",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",

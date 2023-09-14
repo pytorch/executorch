@@ -7,12 +7,20 @@
 from typing import Dict, final
 
 import torch
-from executorch.backends.example.example_backend import TosaBackend
-from executorch.backends.example.example_operators.ops import module_to_annotator
+from executorch.examples.example_quantizer_and_delegate.example_backend import (
+    TosaBackend,
+)
+from executorch.examples.example_quantizer_and_delegate.example_operators.ops import (
+    module_to_annotator,
+)
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
 )
-from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
+from executorch.exir.backend.partitioner import (
+    DelegationSpec,
+    Partitioner,
+    PartitionResult,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_control_flow_submodules
 from torch.ao.quantization.pt2e.graph_utils import find_sequential_partitions
@@ -28,7 +36,6 @@ class ExamplePartitioner(Partitioner):
     def __init__(self) -> None:
         self.patterns = module_to_annotator.keys()
         self.delegation_spec = DelegationSpec(TosaBackend.__name__, [])
-        self.partition_tags: Dict[str, DelegationSpec] = {}
 
         class DequantQuantOperatorSupport(OperatorSupportBase):
             def is_node_supported(self, _submodules, node: torch.fx.Node) -> bool:
@@ -39,9 +46,8 @@ class ExamplePartitioner(Partitioner):
 
         self.dequant_quant_support = DequantQuantOperatorSupport()
 
-    def partition(
-        self, edge_graph_module: torch.fx.GraphModule
-    ) -> torch.fx.GraphModule:
+    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
+        partition_tags: Dict[str, DelegationSpec] = {}
         partition_nodes = []
         for pattern in self.patterns:
             fused_partitions = find_sequential_partitions(
@@ -68,9 +74,11 @@ class ExamplePartitioner(Partitioner):
                             and arg_node.op == "get_attr"
                         ):
                             arg_node.meta["delegation_tag"] = delegation_tag
-                self.partition_tags[delegation_tag] = self.delegation_spec
+                partition_tags[delegation_tag] = self.delegation_spec
 
         for _, submodule, _ in get_control_flow_submodules(edge_graph_module):
             self.partition(submodule)
 
-        return edge_graph_module
+        return PartitionResult(
+            tagged_graph=edge_graph_module, partition_tags=partition_tags
+        )
