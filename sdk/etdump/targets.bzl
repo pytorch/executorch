@@ -174,3 +174,21 @@ def define_common_targets():
             "fbsource//arvr/third-party/flatcc:flatcc",
         ],
     )
+
+    runtime.cxx_library(
+        name = "etdump_flatcc",
+        srcs = [
+            "etdump_flatcc.cpp",
+        ],
+        headers = [
+            "etdump_flatcc.h",
+        ],
+        deps = [
+            "//executorch/runtime/platform:platform",
+        ],
+        exported_deps = [
+            ":etdump_schema_flatcc",
+            "//executorch/runtime/core:core",
+        ],
+        visibility = ["//executorch/..."],
+    )
