@@ -11,15 +11,9 @@ import logging
 
 import torch._export as export
 
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackFloatingPointPartitioner,
-    XnnpackQuantizedPartitioner,
-)
-from executorch.exir import CaptureConfig, EdgeCompileConfig
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
-    DuplicateDequantNodePass,
-)
 
 from ..export.utils import export_to_edge, save_pte_program
 
@@ -81,30 +75,20 @@ if __name__ == "__main__":
     # pre-autograd export. eventually this will become torch.export
     model = export.capture_pre_autograd_graph(model, example_inputs)
 
-    partitioner = XnnpackFloatingPointPartitioner
     if args.quantize:
         logging.info("Quantizing Model...")
         model = quantize(model, example_inputs)
-        # TODO(T161849167): Partitioner will eventually be a single partitioner for both fp32 and quantized models
-        partitioner = XnnpackQuantizedPartitioner
-
-    capture_config = CaptureConfig(enable_aot=True)
 
     edge = export_to_edge(
         model,
         example_inputs,
         edge_compile_config=EdgeCompileConfig(
-            # TODO(T162080278): Duplicated Dequant nodes will be in quantizer spec
-            _check_ir_validity=False
-            if args.quantize
-            else True,
+            _check_ir_validity=False if args.quantize else True,
         ),
     )
     logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
-    edge.exported_program = to_backend(
-        edge.transform(DuplicateDequantNodePass()).exported_program, partitioner
-    )
+    edge.exported_program = to_backend(edge.exported_program, XnnpackPartitioner)
     logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
 
     exec_prog = edge.to_executorch()
