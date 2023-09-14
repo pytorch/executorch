@@ -172,7 +172,10 @@ class DtypeRunner:
                 return (False, name, dtypes, ones_args, ones_kwargs)
 
     def run(
-        self, name: str, inputs: Dict[str, List[BaseArg]]
+        self,
+        name: str,
+        inputs: Dict[str, List[BaseArg]],
+        argmode: ArgMode = ArgMode.ONES,
     ) -> List[
         Tuple[
             bool, str, Tuple[Optional[torch.dtype]], List[BaseArg], Dict[str, BaseKwarg]
@@ -181,5 +184,5 @@ class DtypeRunner:
         results = []
         type_tuples = self._get_type_tuples(inputs)
         for element in itertools.product(*type_tuples):
-            results.append(self.run_dtypes(name, inputs, element))
+            results.append(self.run_dtypes(name, inputs, element, argmode))
         return results
