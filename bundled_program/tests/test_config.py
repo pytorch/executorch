@@ -6,13 +6,11 @@
 
 # pyre-strict
 
-import typing
 import unittest
-from typing import Any, get_args, List, Union
+from typing import get_args, List, Union
 
 import torch
-from executorch.bundled_program.config import BundledConfig, DataContainer
-from executorch.bundled_program.schema import BundledAttachment
+from executorch.bundled_program.config import DataContainer
 
 from executorch.bundled_program.tests.common import (
     get_random_config,
@@ -41,30 +39,11 @@ class TestConfig(unittest.TestCase):
             else:
                 self.assertTrue(t1 == t2)
 
-    def assertAttachmentDictEqual(
-        self,
-        attachments: List[BundledAttachment],
-        kwargs: typing.Dict[str, Any],
-    ) -> None:
-        self.assertEqual(len(attachments), len(kwargs))
-        for attachment, k in zip(attachments, kwargs):
-            self.assertEqual(attachment.key, k)
-            self.assertEqual(
-                attachment.val,
-                BundledConfig.convert_prim_val_to_attachement_val(kwargs[k]),
-            )
-
     def test_create_config(self) -> None:
         n_sets_per_plan_test = 10
         n_execution_plan_tests = 5
 
-        (
-            rand_inputs,
-            rand_expected_outpus,
-            metadatas,
-            attachment,
-            bundled_config,
-        ) = get_random_config(
+        (rand_inputs, rand_expected_outpus, bundled_config,) = get_random_config(
             n_model_inputs=2,
             model_input_sizes=[[2, 2], [2, 2]],
             n_model_outputs=1,
@@ -95,12 +74,6 @@ class TestConfig(unittest.TestCase):
                     .test_sets[testset_idx]
                     .expected_outputs,
                 )
-            self.assertAttachmentDictEqual(
-                bundled_config.execution_plan_tests[plan_test_idx].metadata,
-                metadatas[plan_test_idx],
-            )
-
-        self.assertAttachmentDictEqual(bundled_config.attachments, attachment)
 
     def test_create_config_from_eager_model(self) -> None:
         n_sets_per_plan_test = 10

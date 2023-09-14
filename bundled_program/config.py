@@ -7,18 +7,9 @@
 # pyre-strict
 
 from dataclasses import dataclass
-from typing import Any, Dict, get_args, List, Union
+from typing import Any, get_args, List, Union
 
 import torch
-from executorch.bundled_program.schema import (
-    BundledAttachment,
-    BundledAttachmentValue,
-    BundledBool,
-    BundledBytes,
-    BundledDouble,
-    BundledInt,
-    BundledString,
-)
 from executorch.extension.pytree import tree_flatten
 
 from typing_extensions import TypeAlias
@@ -44,12 +35,6 @@ Namedtuple is also supported and listed implicity since it is a subclass of tupl
 DataContainer: TypeAlias = Union[list, tuple, dict]
 
 
-"""
-All supported types for bundled attachment value.
-"""
-PrimTypeForAttachment: TypeAlias = Union[bool, bytes, int, float, str]
-
-
 @dataclass
 class ConfigIOSet:
     """Type of data BundledConfig stored for each validation set."""
@@ -63,7 +48,6 @@ class ConfigExecutionPlanTest:
     """All info related to verify execution plan"""
 
     test_sets: List[ConfigIOSet]
-    metadata: List[BundledAttachment]
 
 
 class BundledConfig:
@@ -80,10 +64,6 @@ class BundledConfig:
         inputs: List[List[Any]],
         # pyre-ignore
         expected_outputs: List[List[Any]],
-        # pyre-ignore
-        metadatas: List[Dict] = None,
-        # pyre-ignore
-        **kwargs,
     ) -> None:
         """Contruct the config given inputs and expected outputs
 
@@ -105,18 +85,6 @@ class BundledConfig:
 
             expected_outputs: Expected outputs for inputs sharing same index. The size of
                     expected_outputs should be the same as the size of inputs.
-
-            metadatas: Other info needs to specific verify each execution plan. Its length should
-                        be the same as the number of execution plans. Each dict in the list should
-                        be for the execution plan with same index. The key of each element
-                        should be in string. For the value, we now support multiple common types
-                        (bool, int, float, str) plus bytes. For other types, user should manually
-                        convert them to supported types (recommend bytes).
-
-                        Same as kwargs below.
-
-            **kwargs: Other info need to be attached. All given **kwargs will be
-                      transformed into attachment and saved into BundledConfig.
         """
         BundledConfig._check_io_type(inputs)
         BundledConfig._check_io_type(expected_outputs)
@@ -125,25 +93,9 @@ class BundledConfig:
             + " but got {} and {}".format(len(inputs), len(expected_outputs))
         )
 
-        if metadatas is None:
-            metadatas = [{} for _ in range(len(expected_outputs))]
-        for metadata_plan in metadatas:
-            BundledConfig._check_attachemnt_type(metadata_plan)
-        assert len(inputs) == len(
-            metadatas
-        ), "length of I/O and meta data should match," + " but got {} and {}".format(
-            len(inputs), len(metadatas)
-        )
-
-        BundledConfig._check_attachemnt_type(kwargs)
-
         self.execution_plan_tests: List[
             ConfigExecutionPlanTest
-        ] = BundledConfig._gen_execution_plan_tests(inputs, expected_outputs, metadatas)
-
-        self.attachments: List[
-            BundledAttachment
-        ] = BundledConfig._gen_bundled_attachment(kwargs)
+        ] = BundledConfig._gen_execution_plan_tests(inputs, expected_outputs)
 
     @staticmethod
     # TODO(T138930448): Give pyre-ignore commands appropriate warning type and comments.
@@ -192,34 +144,20 @@ class BundledConfig:
                 assert isinstance(test_set, get_args(DataContainer))
 
     @staticmethod
-    # pyre-ignore
-    def _check_attachemnt_type(attachment):
-        """Check the type of each attachment. Each attachment should be in Dict[str, Any]"""
-
-        assert type(attachment) is dict
-        for k in attachment:
-            assert (
-                type(k) is str
-            ), "key of attachment should be in str, but found {}".format(type(k))
-
-    @staticmethod
     def _gen_execution_plan_tests(
         # pyre-ignore
         inputs: List[List[Any]],
         # pyre-ignore
         expected_outputs: List[List[Any]],
-        # pyre-ignore
-        metadatas: List[Dict] = None,
     ) -> List[ConfigExecutionPlanTest]:
-        """Generate execution plan test given inputs, expected outputs and metadatas for verifying each execution plan"""
+        """Generate execution plan test given inputs, expected outputs for verifying each execution plan"""
 
         execution_plan_tests: List[ConfigExecutionPlanTest] = []
 
         for (
             inputs_per_plan_test,
             expect_outputs_per_plan_test,
-            metadata_per_plan_test,
-        ) in zip(inputs, expected_outputs, metadatas):
+        ) in zip(inputs, expected_outputs):
             test_sets: List[ConfigIOSet] = []
 
             # transfer I/O sets into ConfigIOSet for each execution plan
@@ -242,54 +180,9 @@ class BundledConfig:
                     )
                 )
 
-            # transfer meta data into BundledAttachment for each execution plan
-            metadata: List[BundledAttachment] = BundledConfig._gen_bundled_attachment(
-                metadata_per_plan_test
-            )
-
             execution_plan_tests.append(
                 ConfigExecutionPlanTest(
                     test_sets=test_sets,
-                    metadata=metadata,
                 )
             )
         return execution_plan_tests
-
-    @staticmethod
-    def convert_prim_val_to_attachement_val(
-        prim_val: PrimTypeForAttachment,
-    ) -> BundledAttachmentValue:
-        """Convert primitive value to bundled attachment value"""
-        if type(prim_val) is int:
-            v = BundledAttachmentValue(val=BundledInt(int_val=prim_val))
-        elif type(prim_val) is float:
-            v = BundledAttachmentValue(val=BundledDouble(double_val=prim_val))
-        elif type(prim_val) is bool:
-            v = BundledAttachmentValue(val=BundledBool(bool_val=prim_val))
-        elif type(prim_val) is str:
-            v = BundledAttachmentValue(val=BundledString(string_value=prim_val))
-        elif type(prim_val) is bytes:
-            v = BundledAttachmentValue(val=BundledBytes(bytes_value=prim_val))
-        else:
-            raise AssertionError(
-                "Bundled value should be one of the following types: string, float, int, bool, bytes,"
-                + "but got {}".format(type(prim_val))
-            )
-        return v
-
-    @staticmethod
-    def _gen_bundled_attachment(
-        attached_dict: Dict[str, Any]
-    ) -> List[BundledAttachment]:
-        """Generate bundle attachment from given dictionary"""
-
-        bundled_attachment: List[BundledAttachment] = []
-        for attached_key, attached_val in attached_dict.items():
-            bundled_attachment.append(
-                BundledAttachment(
-                    key=attached_key,
-                    val=BundledConfig.convert_prim_val_to_attachement_val(attached_val),
-                )
-            )
-
-        return bundled_attachment

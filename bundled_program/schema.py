@@ -70,50 +70,11 @@ class BundledIOSet:
 
 
 @dataclass
-class BundledString:
-    string_value: str
-
-
-@dataclass
-class BundledBytes:
-    bytes_value: bytes
-
-
-BundledAttachmentValueUnion = Union[
-    BundledBytes,
-    BundledInt,
-    BundledDouble,
-    BundledBool,
-    BundledString,
-]
-
-
-@dataclass
-class BundledAttachmentValue:
-    """Abstraction for BundledAttachment values"""
-
-    val: "BundledAttachmentValueUnion"
-
-
-@dataclass
-class BundledAttachment:
-    """Extra data or files need to be recorded in BundledProgram
-    for executing and verifying.
-    """
-
-    key: str
-    val: BundledAttachmentValue
-
-
-@dataclass
 class BundledExecutionPlanTest:
     """Context for testing and verifying an exceution plan."""
 
     # Sets of input/outputs to test with.
     test_sets: List[BundledIOSet]
-
-    # Optional extra data used for verification.
-    metadata: List[BundledAttachment]
 
 
 @dataclass
@@ -122,9 +83,6 @@ class BundledProgram:
 
     # Schema version.
     version: int
-
-    # Extra files or other data attached by user to verify the whole program.
-    attachments: List[BundledAttachment]
 
     # Test sets and other meta datas to verify the whole program.
     # Each BundledExecutionPlanTest should be used for the execution plan of program sharing same index.

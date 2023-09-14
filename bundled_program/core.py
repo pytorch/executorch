@@ -282,16 +282,13 @@ def create_bundled_program(
                 BundledIOSet(inputs=inputs, expected_outputs=expected_outputs)
             )
 
-        # emit meta data of each execution plan test, and emit the whole execution plan test
-        execution_plan_tests.append(
-            BundledExecutionPlanTest(test_sets=test_sets, metadata=plan_test.metadata)
-        )
+        # emit the whole execution plan test
+        execution_plan_tests.append(BundledExecutionPlanTest(test_sets=test_sets))
 
     program_bytes: bytes = _serialize_pte_binary(program)
 
     return BundledProgram(
         version=BUNDLED_PROGRAM_SCHEMA_VERSION,
-        attachments=bundled_config.attachments,
         execution_plan_tests=execution_plan_tests,
         program=program_bytes,
     )
