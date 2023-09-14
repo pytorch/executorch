@@ -13,6 +13,7 @@ dependencies=[
   "packaging",
   "parameterized",
   "pytest",
+  "pytest-xdist",
   "pyyaml",
   "ruamel.yaml",
   "sympy",
