@@ -9,7 +9,7 @@
 #pragma once
 
 #include <executorch/backends/xnnpack/runtime/XNNStatus.h>
-#include <executorch/runtime/backend/backend_registry.h>
+#include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 

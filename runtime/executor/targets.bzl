@@ -64,7 +64,7 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
-                "//executorch/runtime/backend:backend_registry",
+                "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core/exec_aten/util:dim_order_util",
                 "//executorch/runtime/core/exec_aten/util:scalar_type_util",
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,

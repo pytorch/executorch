@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 
-#include <executorch/runtime/backend/backend_registry.h>
+#include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
