@@ -18,9 +18,9 @@ from executorch.exir.tracer import Value
 
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
 
-# Explicitly force the activation of the IR validator
+# TODO(T163721729): Enable IR check after decomposing div.Tensor_mode
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
-    _check_ir_validity=True,
+    _check_ir_validity=False,
 )
 
 

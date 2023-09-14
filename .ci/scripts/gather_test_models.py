@@ -19,7 +19,9 @@ BUILD_TOOLS = [
 DEFAULT_RUNNER = "linux.2xlarge"
 RUNNERS = {
     # This one runs OOM on smaller runner, the root cause is unclear (T163016365)
-    "w2l": "linux.12xlarge"
+    "w2l": "linux.12xlarge",
+    # This one causes timeout on smaller runner, the root cause is unclear (T161064121)
+    "emformer_join": "linux.12xlarge",
 }
 
 
