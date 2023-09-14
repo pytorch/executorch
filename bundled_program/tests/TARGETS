@@ -55,7 +55,6 @@ python_unittest(
         ":lib",
         "//caffe2:torch",
         "//executorch/bundled_program:config",
-        "//executorch/bundled_program:schema",
         "//executorch/extension/pytree:pylib",
     ],
 )

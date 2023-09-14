@@ -65,30 +65,12 @@ def main() -> None:
         for _ in range(len(program.execution_plan))
     ]
 
-    arbitrary_attachments = {
-        "PROGRAM_ATTACHMENT_A_KEY": b"PROGRAM_ATTACHEMENT_A_VALUE",
-        "PROGRAM_ATTACHMENT_B_KEY": b"PROGRAM_ATTACHEMENT_B_VALUE",
-    }
-
-    metadatas = [
-        {
-            "metadata_{}_A_KEY_BYTES_VAL".format(i): b"metadata_A_VALUE",
-            "metadata_{}_B_KEY_INT_VAL".format(i): 1,
-            "metadata_{}_C_KEY_FLOAT_VAL".format(i): 1.0,
-            "metadata_{}_D_KEY_BOOL_VAL".format(i): False,
-            "metadata_{}_E_KEY_STR_VAL".format(i): "metadata_E_VALUE",
-        }
-        for i in range(len(program.execution_plan))
-    ]
-
     bundled_expected_outputs = [
         [[model(*x)] for x in bundled_inputs[i]]
         for i in range(len(program.execution_plan))
     ]
 
-    bundled_config = BundledConfig(
-        bundled_inputs, bundled_expected_outputs, metadatas, **arbitrary_attachments
-    )
+    bundled_config = BundledConfig(bundled_inputs, bundled_expected_outputs)
 
     bundled_program = create_bundled_program(program, bundled_config)
     pretty_print(bundled_program)
