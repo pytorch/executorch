@@ -11,6 +11,7 @@ MODEL_NAME_TO_MODEL = {
     "linear": ("toy_model", "LinearModule"),
     "add": ("toy_model", "AddModule"),
     "add_mul": ("toy_model", "AddMulModule"),
+    "dl3": ("deeplab_v3", "DeepLabV3ResNet50Model"),
     "mobilebert": ("mobilebert", "MobileBertModelExample"),
     "mv2": ("mobilenet_v2", "MV2Model"),
     "mv3": ("mobilenet_v3", "MV3Model"),
