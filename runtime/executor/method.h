@@ -47,25 +47,6 @@ using InstructionArgs = Span<EValue*>;
  */
 class Method final {
  public:
-  Method(
-      const Program* program,
-      MemoryManager* memory_manager,
-      EventTracer* event_tracer)
-      : step_state_(),
-        program_(program),
-        memory_manager_(memory_manager),
-        serialization_plan_(nullptr),
-        event_tracer_(event_tracer),
-        n_value_(0),
-        values_(nullptr),
-        n_delegate_(0),
-        delegates_(nullptr),
-        n_chains_(0),
-        chains_(nullptr),
-        init_state_(InitializationState::Uninitialized),
-        pre_allocated_input_(false),
-        pre_allocated_output_(false) {}
-
   /**
    * Move ctor. Takes ownership of resources previously owned by `rhs`,
    * and leaves `rhs` in an uninitialized state.
@@ -105,13 +86,6 @@ class Method final {
     rhs.pre_allocated_input_ = false;
     rhs.pre_allocated_output_ = false;
   }
-
-  /**
-   * Initialize the method from its serialized representation.
-   *
-   * @returns Error::Ok on success, non-Ok on failure.
-   */
-  __ET_NODISCARD Error init(executorch_flatbuffer::ExecutionPlan* s_plan);
 
   /**
    * Sets a specific method input to the provided value.
@@ -243,6 +217,8 @@ class Method final {
 
   // Let Program call load().
   friend class Program;
+  // Let Executor call the ctor and init().
+  friend class Executor;
 
   enum class InitializationState : uint8_t {
     Uninitialized,
@@ -256,12 +232,38 @@ class Method final {
     size_t instr_idx;
   };
 
+  Method(
+      const Program* program,
+      MemoryManager* memory_manager,
+      EventTracer* event_tracer)
+      : step_state_(),
+        program_(program),
+        memory_manager_(memory_manager),
+        serialization_plan_(nullptr),
+        event_tracer_(event_tracer),
+        n_value_(0),
+        values_(nullptr),
+        n_delegate_(0),
+        delegates_(nullptr),
+        n_chains_(0),
+        chains_(nullptr),
+        init_state_(InitializationState::Uninitialized),
+        pre_allocated_input_(false),
+        pre_allocated_output_(false) {}
+
   /// Static factory used by Program.
   __ET_NODISCARD static Result<Method> load(
       executorch_flatbuffer::ExecutionPlan* s_plan,
       const Program* program,
       MemoryManager* memory_manager,
       EventTracer* event_tracer);
+
+  /**
+   * Initialize the method from its serialized representation.
+   *
+   * @returns Error::Ok on success, non-Ok on failure.
+   */
+  __ET_NODISCARD Error init(executorch_flatbuffer::ExecutionPlan* s_plan);
 
   /// Returns true if the Method was successfully initialized.
   inline bool initialized() const {
