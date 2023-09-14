@@ -7,22 +7,16 @@ on:
         required: true
         type: string
         description: Name of the docker image to use.
-      runner:
-        required: false
-        type: string
-        default: 'linux.2xlarge'
-        description: The default runner for PyTorch infra.
       python-version:
         required: false
         type: string
         default: '3.10'
 
 jobs:
-  unittest:
-    name: unittest
+  linux:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     with:
-      runner: ${{ inputs.runner }}
+      runner: linux.2xlarge
       docker-image: ${{ inputs.docker-image }}
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -38,3 +32,32 @@ jobs:
         pip install .
         # Run pytest with coverage
         pytest -n auto --cov=./ --cov-report=xml
+
+  macos:
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: buck2
+    with:
+      runner: macos-m1-12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        set -eux
+
+        WORKSPACE=$(pwd)
+        pushd "${WORKSPACE}/pytorch/executorch"
+
+        BUILD_TOOL=${{ matrix.build-tool }}
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+
+        # Just need to install executorch, everything else has been setup
+        pip install .
+        # Run pytest with coverage
+        pytest -n auto --cov=./ --cov-report=xml
+        # Run gtest
+        buck2 test runtime/core/... runtime/platform/...
+
+        popd

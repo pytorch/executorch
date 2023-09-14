@@ -43,6 +43,6 @@ def define_common_targets():
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
             exported_external_deps = [
-                "gmock",
+                "gmock" + aten_suffix,
             ] + (["libtorch"] if aten_mode else []),
         )
