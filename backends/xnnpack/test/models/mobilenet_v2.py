@@ -17,7 +17,7 @@ from executorch.exir import CaptureConfig
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
 
-class TestXNNPACKMobileNetV2(unittest.TestCase):
+class TestMobileNetV2(unittest.TestCase):
     mv2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights)
     mv2 = mv2.eval()
     model_inputs = (torch.ones(1, 3, 224, 244),)
@@ -32,7 +32,7 @@ class TestXNNPACKMobileNetV2(unittest.TestCase):
         "executorch_exir_dialects_edge__ops_aten_convolution_default",
     }
 
-    def test_mv2_fp32(self):
+    def test_fp32_mv2(self):
 
         (
             Tester(self.mv2, self.model_inputs)
@@ -48,7 +48,7 @@ class TestXNNPACKMobileNetV2(unittest.TestCase):
             .compare_outputs()
         )
 
-    def test_mv2_qs8_pt2e(self):
+    def test_qs8_mv2(self):
         # Quantization fuses away batchnorm, so it is no longer in the graph
         ops_after_quantization = self.all_operators - {
             "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
@@ -56,7 +56,7 @@ class TestXNNPACKMobileNetV2(unittest.TestCase):
 
         (
             Tester(self.mv2, self.model_inputs)
-            .quantize2()
+            .quantize()
             .export(Export(CaptureConfig(enable_aot=True)))
             .to_edge()
             .check(list(ops_after_quantization))
