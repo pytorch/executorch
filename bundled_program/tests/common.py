@@ -5,8 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
-import random
-from typing import Any, Dict, List, Tuple, Union
+from typing import List, Tuple, Union
 
 import executorch.exir as exir
 import torch
@@ -97,32 +96,6 @@ def get_rand_output_values(
     ]
 
 
-def get_rand_attachement(n_kv_pairs: int = -1) -> Dict[str, Any]:
-    """Helper function to generate random bundled attachments."""
-
-    if n_kv_pairs == -1:
-        n_kv_pairs = random.randint(0, 10)
-
-    # This list cotains differnet possible values for generated random attachment.
-    # They are in differnet types on purpose, which demonstrate bundle program
-    # supports multiple types of attachment values. It is worth noting that it is
-    # just a hacky method to generate random bundled attachments. It does not mean
-    # bundled program can only support listed values.
-
-    rand_attachment_vals = [
-        b"BUNDLED_VALUE_IN_BYTES",  # random bytes array
-        "BUNDLED_VALUE_IN_STR",  # random strinåg
-        1.2345,  # random float
-        True,  # random bool
-        1,  # random int
-    ]
-
-    return {
-        "BUNDLED_ATTACHMENT_KEY_{}".format(i): random.choice(rand_attachment_vals)
-        for i in range(n_kv_pairs)
-    }
-
-
 # TODO(T143955558): make n_int and metadatas as its input;
 def get_random_config(
     n_model_inputs: int,
@@ -132,13 +105,7 @@ def get_random_config(
     dtype: torch.dtype,
     n_sets_per_plan_test: int,
     n_execution_plan_tests: int,
-) -> Tuple[
-    List[List[InputValues]],
-    List[List[OutputValues]],
-    List[Dict[str, Any]],
-    Dict[str, Any],
-    BundledConfig,
-]:
+) -> Tuple[List[List[InputValues]], List[List[OutputValues]], BundledConfig,]:
     """Helper function to generate config filled with random inputs and expected outputs.
 
     The return type of rand inputs is a List[List[InputValues]]. The inner list of
@@ -166,18 +133,10 @@ def get_random_config(
         n_execution_plan_tests=n_execution_plan_tests,
     )
 
-    rand_metadatas = [get_rand_attachement() for _ in range(n_execution_plan_tests)]
-
-    rand_attachment = get_rand_attachement()
-
     return (
         rand_inputs,
         rand_expected_outputs,
-        rand_metadatas,
-        rand_attachment,
-        BundledConfig(
-            rand_inputs, rand_expected_outputs, rand_metadatas, **rand_attachment
-        ),
+        BundledConfig(rand_inputs, rand_expected_outputs),
     )
 
 
@@ -212,11 +171,7 @@ def get_random_config_with_eager_model(
         [[eager_model(*x)] for x in inputs[i]] for i in range(n_execution_plan_tests)
     ]
 
-    metadatas = [get_rand_attachement() for _ in range(n_execution_plan_tests)]
-
-    attachment = get_rand_attachement()
-
-    return inputs, BundledConfig(inputs, expected_outputs, metadatas, **attachment)
+    return inputs, BundledConfig(inputs, expected_outputs)
 
 
 def get_common_program() -> Tuple[Program, BundledConfig]:

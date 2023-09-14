@@ -10,7 +10,7 @@ include "scalar_type.fbs";
 namespace executorch_flatbuffer;
 
 // Identifier of a valid bundled program schema.
-file_identifier "BP04";
+file_identifier "BP05";
 // Extension of written files.
 file_extension "bp";
 
@@ -63,52 +63,17 @@ table BundledIOSet {
 }
 
 
-table BundledString {
-  string_value: string;
-}
-
-table BundledBytes {
-  bytes_value: [ubyte];
-}
-
-union BundledAttachmentValueUnion {
-  BundledBytes,
-  BundledInt,
-  BundledDouble,
-  BundledBool,
-  BundledString,
-}
-
-// Abstraction for BundledAttachment values
-table BundledAttachmentValue {
-  val: BundledAttachmentValueUnion;
-}
-
-// Extra data or files need to be recorded in BundledProgram
-// for executing and verifying.
-table BundledAttachment {
-  key: string;
-  val: BundledAttachmentValue;
-}
-
-
 // Context for testing and verifying an exceution plan.
 table BundledExecutionPlanTest {
 
   // Sets of input/outputs to test with.
   test_sets: [BundledIOSet];
-
-  // Optional extra data used for verification.
-  metadata: [BundledAttachment];
 }
 
 // Executorch program bunlded with data for verification.
 table BundledProgram {
   // Schema version.
   version:uint;
-
-  // Extra files or other data attached by user for verification
-  attachments: [BundledAttachment];
 
   // Test sets and other meta datas to verify the whole program.
   // Each BundledExecutionPlanTest should be used for the execution plan of program sharing same index.
