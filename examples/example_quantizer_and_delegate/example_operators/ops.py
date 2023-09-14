@@ -6,16 +6,28 @@
 
 from collections import OrderedDict
 
-from executorch.backends.example.example_operators.adaptive_avg_pool2d import (
+from executorch.examples.example_quantizer_and_delegate.example_operators.adaptive_avg_pool2d import (
     AdaptiveAvgPool2dNode,
 )
 
-from executorch.backends.example.example_operators.add import AddNode
-from executorch.backends.example.example_operators.conv2d import Conv2DNode
-from executorch.backends.example.example_operators.conv_relu import ConvReluNode
-from executorch.backends.example.example_operators.dropout import DropOutNode
-from executorch.backends.example.example_operators.flatten import FlattenNode
-from executorch.backends.example.example_operators.linear import LinearNode
+from executorch.examples.example_quantizer_and_delegate.example_operators.add import (
+    AddNode,
+)
+from executorch.examples.example_quantizer_and_delegate.example_operators.conv2d import (
+    Conv2DNode,
+)
+from executorch.examples.example_quantizer_and_delegate.example_operators.conv_relu import (
+    ConvReluNode,
+)
+from executorch.examples.example_quantizer_and_delegate.example_operators.dropout import (
+    DropOutNode,
+)
+from executorch.examples.example_quantizer_and_delegate.example_operators.flatten import (
+    FlattenNode,
+)
+from executorch.examples.example_quantizer_and_delegate.example_operators.linear import (
+    LinearNode,
+)
 
 # The ordering of this is important as the quantizer will try to match the patterns in this order.
 # That's why we want to match the fused patterns first and then the non-fused ones.

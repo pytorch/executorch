@@ -10,8 +10,12 @@ import unittest
 import torch
 import torch._export as export
 from executorch import exir
-from executorch.backends.example.example_partitioner import ExamplePartitioner
-from executorch.backends.example.example_quantizer import ExampleQuantizer
+from executorch.examples.example_quantizer_and_delegate.example_partitioner import (
+    ExamplePartitioner,
+)
+from executorch.examples.example_quantizer_and_delegate.example_quantizer import (
+    ExampleQuantizer,
+)
 from executorch.exir.backend.backend_api import to_backend
 
 from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
