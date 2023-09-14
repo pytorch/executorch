@@ -111,7 +111,8 @@ class DtypeRunner:
 
         type_tuples = self._get_type_tuples(inputs)
         if genmode == GenMode.All:
-            return itertools.product(*type_tuples)  # noqa
+            for dtype_tuple in itertools.product(*type_tuples):
+                yield dtype_tuple
         elif genmode == GenMode.Partial:
             dtype_tuples_set = set()
             types = DtypeRunner._get_types(inputs)
