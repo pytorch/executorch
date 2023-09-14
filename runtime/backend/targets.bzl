@@ -10,14 +10,14 @@ def define_common_targets():
     for aten_mode in (True, False):
         aten_suffix = ("_aten" if aten_mode else "")
         runtime.cxx_library(
-            name = "backend_registry" + aten_suffix,
+            name = "interface" + aten_suffix,
             srcs = [
-                "backend_registry.cpp",
+                "interface.cpp",
             ],
             exported_headers = [
                 "backend_execution_context.h",
                 "backend_init_context.h",
-                "backend_registry.h",
+                "interface.h",
             ],
             preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             visibility = [

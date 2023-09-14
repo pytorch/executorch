@@ -10,7 +10,7 @@ def define_common_targets():
         exported_headers = ["runtime/utils/utils.h"],
         deps = [
             "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/backend:backend_registry",
+            "//executorch/runtime/backend:interface",
         ],
         visibility = [
             "//executorch/backends/xnnpack/...",
@@ -72,7 +72,7 @@ def define_common_targets():
             third_party_dep("XNNPACK"),
             ":xnnpack_schema",
             ":dynamic_quant_utils",  # TODO Use (1) portable for choose_qparams(), (2) xnnpack for quantize_per_tensor(),
-            "//executorch/runtime/backend:backend_registry",
+            "//executorch/runtime/backend:interface",
             "//executorch/backends/xnnpack/threadpool:threadpool",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],

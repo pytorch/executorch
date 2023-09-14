@@ -63,7 +63,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
-            "//executorch/runtime/backend:backend_registry",
+            "//executorch/runtime/backend:interface",
             "//executorch/backends/xnnpack/threadpool:threadpool",
             "//executorch/backends/xnnpack:dynamic_quant_utils",
             "//{prefix}caffe2/aten/src/ATen/native/quantized/cpu/qnnpack:pytorch_qnnpack".format(
