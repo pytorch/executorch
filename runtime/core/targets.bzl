@@ -6,7 +6,7 @@ def event_tracer_enabled():
 def get_event_tracer_flags():
     event_tracer_flags = []
     if event_tracer_enabled():
-        event_tracer_flags += ["-DEVENT_TRACER_ENABLED"]
+        event_tracer_flags += ["-DET_EVENT_TRACER_ENABLED"]
     return event_tracer_flags
 
 def define_common_targets():
@@ -23,6 +23,7 @@ def define_common_targets():
             "data_loader.h",
             "error.h",
             "event_tracer.h",
+            "event_tracer_hooks.h",
             "freeable_buffer.h",
             "function_ref.h",
             "result.h",

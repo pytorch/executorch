@@ -36,6 +36,16 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "event_tracer_test",
+        srcs = [
+            "event_tracer_test.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/core:core",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "freeable_buffer_test",
         srcs = [
             "freeable_buffer_test.cpp",
