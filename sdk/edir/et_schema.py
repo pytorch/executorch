@@ -35,7 +35,7 @@ class RESERVED_METADATA_ARG(Enum):
     DEBUG_HANDLE = "debug_handle"
     MODULE_STACK = "module_stack"
     SOURCE_FN = "source_fn"
-    MODULE_TYPE = "module_type"
+    MODULE_TYPE = "nn_module_type"
     PROFILE_START_TIME = "profile_start_time"
     PROFILE_END_TIME = "profile_end_time"
     LOAD_START_TIME = "load_start_time"
@@ -672,7 +672,7 @@ class FXOperatorGraph(OperatorGraphWithStats):
         # Generate Module Graphs
         module_graphs: List[OperatorGraph] = []
         for module_key, module_nodes in module_mapping.items():
-            module_element = OperatorGraph(
+            module_element = OperatorGraphWithStats(
                 graph_name=module_key[0],
                 elements=module_nodes,
                 metadata={"module_type": module_key[1]},
