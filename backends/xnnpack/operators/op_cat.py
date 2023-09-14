@@ -11,6 +11,7 @@ from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
+from executorch.backends.xnnpack.operators.quant_params import QuantParams
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNConcatenate2,
     XNNConcatenate3,
@@ -18,7 +19,6 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XNNGraph,
     XNode,
 )
-from executorch.backends.xnnpack.utils.quant_utils import QuantParams
 from executorch.backends.xnnpack.utils.utils import PERM_NHWC_TO_NCHW
 from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_INVALID_VALUE_ID
 
