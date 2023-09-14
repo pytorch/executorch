@@ -37,4 +37,4 @@ jobs:
         # Just need to install executorch, everything else has been setup
         pip install .
         # Run pytest with coverage
-        pytest --cov=./ --cov-report=xml
+        pytest -n auto --cov=./ --cov-report=xml
