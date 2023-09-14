@@ -29,7 +29,7 @@ class DtypeRunner:
     @staticmethod
     def _get_args_kwargs(
         inputs: Dict[str, List[Union[BaseArg]]],
-        dtypes: Tuple[torch.dtype],
+        dtypes: Tuple[Optional[torch.dtype]],
         mode: ArgMode,
     ) -> Tuple[List[BaseArg], Dict[str, BaseKwarg]]:
         """Construct args and kwargs for op given dtypes."""
@@ -50,8 +50,11 @@ class DtypeRunner:
 
     @staticmethod
     def _produce_dtype_tuple(
-        types: List[ArgType], code_tuple: Tuple[int], ty: ArgType, dt: torch.dtype
-    ) -> Optional[Tuple[torch.dtype]]:
+        types: List[ArgType],
+        code_tuple: Tuple[int],
+        ty: ArgType,
+        dt: Optional[torch.dtype],
+    ) -> Optional[Tuple[Optional[torch.dtype]]]:
         dtype_tuple = []
         for i, code in enumerate(code_tuple):
             same_group = [dt]
@@ -84,7 +87,7 @@ class DtypeRunner:
 
     def _get_type_tuples(
         self, inputs: Dict[str, List[BaseArg]]
-    ) -> List[List[torch.dtype]]:
+    ) -> List[List[Optional[torch.dtype]]]:
         types = DtypeRunner._get_types(inputs)
 
         def mapping(t):
@@ -102,7 +105,7 @@ class DtypeRunner:
 
     def select_dtype_combinations(
         self, inputs: Dict[str, List[BaseArg]], genmode: GenMode
-    ) -> Iterator[Tuple[torch.dtype]]:
+    ) -> Iterator[Tuple[Optional[torch.dtype]]]:
         random.seed(0)
 
         def produce_code_tuples(n: int, i: int) -> Iterator[Tuple[int]]:
@@ -134,9 +137,11 @@ class DtypeRunner:
         self,
         name: str,
         inputs: Dict[str, List[BaseArg]],
-        dtypes: Tuple[torch.dtype],
+        dtypes: Tuple[Optional[torch.dtype]],
         argmode: ArgMode = ArgMode.RANDOM,
-    ) -> Tuple[bool, str, Tuple[torch.dtype], List[BaseArg], Dict[str, BaseKwarg]]:
+    ) -> Tuple[
+        bool, str, Tuple[Optional[torch.dtype]], List[BaseArg], Dict[str, BaseKwarg]
+    ]:
         args, kwargs = DtypeRunner._get_args_kwargs(inputs, dtypes, argmode)
         op = get_callable(name)
         try:
@@ -169,7 +174,9 @@ class DtypeRunner:
     def run(
         self, name: str, inputs: Dict[str, List[BaseArg]]
     ) -> List[
-        Tuple[bool, str, Tuple[torch.dtype], List[BaseArg], Dict[str, BaseKwarg]]
+        Tuple[
+            bool, str, Tuple[Optional[torch.dtype]], List[BaseArg], Dict[str, BaseKwarg]
+        ]
     ]:
         results = []
         type_tuples = self._get_type_tuples(inputs)
