@@ -520,20 +520,17 @@ Tensor& index_Tensor_out(
   }
 
   ScalarType in_type = in.scalar_type();
-  ScalarType out_type = out.scalar_type();
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "index", CTYPE_IN, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "index", CTYPE_OUT, [&]() {
-      const CTYPE_IN* const in_data = in.const_data_ptr<CTYPE_IN>();
-      CTYPE_OUT* const out_data = out.mutable_data_ptr<CTYPE_OUT>();
+  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE, [&]() {
+    const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
+    CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
-      for (auto out_ix = 0; out_ix < out.numel(); out_ix++) {
-        size_t in_ix = block_count == 0
-            ? out_ix
-            : get_in_ix(
-                  ctx, in, indices, out, out_ix, start, xdim, dim_map, ix_map);
-        out_data[out_ix] = static_cast<CTYPE_OUT>(in_data[in_ix]);
-      }
-    });
+    for (auto out_ix = 0; out_ix < out.numel(); out_ix++) {
+      size_t in_ix = block_count == 0
+          ? out_ix
+          : get_in_ix(
+                ctx, in, indices, out, out_ix, start, xdim, dim_map, ix_map);
+      out_data[out_ix] = in_data[in_ix];
+    }
   });
 
   return out;
