@@ -191,4 +191,3 @@ jobs:
     uses: ./.github/workflows/_unittest.yml
     with:
       docker-image: executorch-ubuntu-22.04-clang12
-      runner: linux.2xlarge

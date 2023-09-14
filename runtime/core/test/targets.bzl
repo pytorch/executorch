@@ -78,6 +78,7 @@ def define_common_targets():
         srcs = ["tensor_shape_dynamism_test_aten.cpp"],
         deps = [
             "//executorch/runtime/core/exec_aten:lib_aten",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util_aten",
         ],
     )
 

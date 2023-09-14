@@ -232,6 +232,7 @@ runtime.genrule(
             "libtorch": ["libtorch.so"],
             "libc10": ["libc10.so"],
             "libtorch_cpu": ["libtorch_cpu.so"],
+            "libgomp": ["libgomp-a34b3233.so.1"],
             "include": ["include"],
         },
     }),
@@ -239,7 +240,7 @@ runtime.genrule(
     srcs = ["link_torch.sh"],
     bash = select({
         "ovr_config//os:macos": "bash $SRCS -f torch/lib/libtorch.dylib,torch/lib/libtorch_cpu.dylib,torch/lib/libc10.dylib,torch/include -o ${OUT}",
-        "DEFAULT": "bash $SRCS -f torch/lib/libtorch.so,torch/lib/libtorch_cpu.so,torch/lib/libc10.so,torch/include -o ${OUT}",
+        "DEFAULT": "bash $SRCS -f torch/lib/libtorch.so,torch/lib/libtorch_cpu.so,torch/lib/libc10.so,torch/lib/libgomp-a34b3233.so.1,torch/include -o ${OUT}",
     }),
 )
 
@@ -251,6 +252,11 @@ prebuilt_cxx_library(
 prebuilt_cxx_library(
     name = "libtorch_cpu",
     shared_lib = ":libtorch_gen[libtorch_cpu]",
+)
+
+prebuilt_cxx_library(
+    name = "libgomp",
+    shared_lib = ":libtorch_gen[libgomp]",
 )
 
 prebuilt_cxx_library(
@@ -266,9 +272,9 @@ prebuilt_cxx_library(
         "DEFAULT": ["-Wl,-rpath,$(location :libtorch_gen)"],  # define rpath to locate shared library
     }),
     exported_headers = [":libtorch_gen[include]"],
-    exported_deps = [
-        ":libc10",
-        ":libtorch_cpu",
-    ],
+    exported_deps = select({
+        "ovr_config//os:macos": [":libc10", ":libtorch_cpu"],
+        "DEFAULT": [":libc10", ":libtorch_cpu", ":libgomp"],
+    }),
     visibility = ["PUBLIC"],
 )
