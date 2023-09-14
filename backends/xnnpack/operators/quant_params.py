@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import cast, Optional, Union
 
 import torch
+from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
 from executorch.backends.xnnpack.utils.utils import check_or_raise
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -179,7 +180,9 @@ class QuantParams:
     @classmethod
     def from_inputs(cls, tensor_node: torch.fx.Node) -> Optional[QuantParams]:
         # tensor_node is quantized if it is produced by a dequant node
-        if is_dequant(tensor_node):
+        if is_dequant(tensor_node) and TagImplicitQDqPass.is_tagged_as_implicit_q_dq(
+            tensor_node
+        ):
             return cls.from_q_dq_node(tensor_node)
 
         return None
@@ -190,7 +193,7 @@ class QuantParams:
         if len(tensor_node.users) == 1:
             q = list(tensor_node.users.keys())[0]
             # Check if user is a q node
-            if is_quant(q):
+            if is_quant(q) and TagImplicitQDqPass.is_tagged_as_implicit_q_dq(q):
                 return cls.from_q_dq_node(q)
 
         return None
