@@ -419,6 +419,7 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
                 "call_function", target, args, kwargs, name
             )
             self.deserialize_outputs(serialized_node, fx_node)
+            fx_node.meta.update(self.deserialize_metadata(serialized_node.metadata))
             return
         elif isinstance(target, str):
             # Create a dummy fake op if the target does not exist
