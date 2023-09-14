@@ -7,7 +7,7 @@
  */
 
 #include <executorch/exir/backend/test/demos/rpc/ExecutorBackend.h>
-#include <executorch/runtime/backend/backend_registry.h>
+#include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 
 namespace torch {

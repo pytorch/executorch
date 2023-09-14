@@ -9,7 +9,7 @@
 #include <ATen/native/vulkan/graph/Arithmetic.h>
 #include <ATen/native/vulkan/graph/Graph.h>
 #include <executorch/backends/vulkan/serialization/schema/schema_generated.h>
-#include <executorch/runtime/backend/backend_registry.h>
+#include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/profiler.h>

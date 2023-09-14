@@ -54,9 +54,6 @@ executorch
 ├── backends                        #  1st party backend implementations.
 |   ├── xnnpack
 |   ├── vulkan
-|   ├── backend_api.py              # TODO move to exir/backend
-|   ├── backend_details.py          # TODO move to exir/backend
-|   ├── partioner.py                # TODO move to exir/backend
 ├── build                           #  Utilities for managing the build system.
 ├── bundled_program                 #  Utilities for attaching reference inputs and outputs to models. TODO move to extension
 ├── codegen                         #  Tooling to autogenerate bindings between kernels and the runtime. TODO move to tool
@@ -67,6 +64,7 @@ executorch
 |   ├── export
 |   ├── models
 ├── exir                            #  Ahead of time library, model capture and lowering apis.
+|   ├── backend                     #  Backend delegate ahead of time APIs
 |   ├── capture                     #  Program capture.
 |   ├── dialects                    #  Op sets for various dialects in the export process.
 |   ├── emit                        #  Conversion from ExportedProgram to Executorch execution instructions.
@@ -87,7 +85,7 @@ executorch
 |   ├── quantized
 ├── profiler                        #  Utilities for profiling. TODO delete in favor of ETDump in sdk/
 ├── runtime                         #  core cpp runtime of executorch
-|   ├── backend                     #  Backend definition and registration.
+|   ├── backend                     #  Backend delegate runtime APIs
 |   ├── core                        #  Core structures used across all levels of the runtime
 |   ├── executor                    #  Model loading, initalization, and execution.
 |   ├── kernel                      #  Kernel registration and management.
