@@ -12,7 +12,7 @@ import logging
 import torch._export as export
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import CaptureConfig, EdgeCompileConfig
 from executorch.exir.backend.backend_api import to_backend
 
 from ..export.utils import export_to_edge, save_pte_program
@@ -82,6 +82,7 @@ if __name__ == "__main__":
     edge = export_to_edge(
         model,
         example_inputs,
+        capture_config=CaptureConfig(enable_aot=True, _unlift=True),
         edge_compile_config=EdgeCompileConfig(
             _check_ir_validity=False if args.quantize else True,
         ),
