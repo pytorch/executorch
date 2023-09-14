@@ -7,10 +7,10 @@
 import copy
 from typing import final, List
 
-from executorch.backends.example.example_backend_delegate_passes.merge_to_dim_pass import (
+from executorch.examples.example_quantizer_and_delegate.example_backend_delegate_passes.merge_to_dim_pass import (
     MergeToDimPass,
 )
-from executorch.backends.example.example_backend_delegate_passes.permute_memory_formats_pass import (
+from executorch.examples.example_quantizer_and_delegate.example_backend_delegate_passes.permute_memory_formats_pass import (
     PermuteMemoryFormatsPass,
 )
 

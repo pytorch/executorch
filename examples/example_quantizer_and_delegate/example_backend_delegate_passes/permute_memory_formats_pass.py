@@ -7,7 +7,9 @@
 from itertools import chain
 
 import torch
-from executorch.backends.example.example_operators.ops import module_to_annotator
+from executorch.examples.example_quantizer_and_delegate.example_operators.ops import (
+    module_to_annotator,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dim_order_utils import get_dim_order
 from executorch.exir.pass_base import ExportPass, PassResult

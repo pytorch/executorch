@@ -7,8 +7,10 @@
 from dataclasses import dataclass
 
 import torch
-from executorch.backends.example.example_operators.op_base import OpBase
-from executorch.backends.example.example_operators.utils import (
+from executorch.examples.example_quantizer_and_delegate.example_operators.op_base import (
+    OpBase,
+)
+from executorch.examples.example_quantizer_and_delegate.example_operators.utils import (
     _annotate_nodes,
     _nodes_are_annotated,
 )

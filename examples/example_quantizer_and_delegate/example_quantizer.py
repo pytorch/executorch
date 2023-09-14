@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from typing import List
 
 import torch
-from executorch.backends.example.example_operators.ops import module_to_annotator
+from executorch.examples.example_quantizer_and_delegate.example_operators.ops import (
+    module_to_annotator,
+)
 from torch import fx
 from torch.ao.quantization.observer import HistogramObserver, MinMaxObserver
 from torch.ao.quantization.pt2e.graph_utils import find_sequential_partitions
