@@ -579,6 +579,12 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_pixel_shuffle",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_reciprocal",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
