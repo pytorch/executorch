@@ -153,7 +153,6 @@ class BackendWithDelegateMappingDemo(BackendDetails):
             processed_bytes=bytes(
                 str(number_of_instruction) + "#" + processed_bytes, encoding="utf8"
             ),
-            # pyre-ignore
             debug_handle_map=delegate_builder.get_delegate_mapping(),
         )
 

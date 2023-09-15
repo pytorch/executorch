@@ -22,7 +22,7 @@ def enforcedmethod(func):
 class PreprocessResult:
     processed_bytes: bytes = bytes()
     debug_handle_map: Optional[
-        Union[Dict[int, Tuple[int]], Dict[int, Tuple[int]]]
+        Union[Dict[int, Tuple[int]], Dict[str, Tuple[int]]]
     ] = None
 
 
