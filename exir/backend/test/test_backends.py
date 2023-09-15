@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 import unittest
 from typing import Dict, List
 
@@ -816,6 +817,16 @@ class TestBackends(unittest.TestCase):
         executorch_prog.exported_program = to_backend(
             ep.exported_program, AddMulPartitionerDemo
         )
+
+        for node in executorch_prog.exported_program.graph.nodes:
+            if node.op == "call_function" and node.target is executorch_call_delegate:
+                for user in node.users:
+                    self.assertTrue(
+                        user.op == "call_function" and user.target == operator.getitem
+                    )
+                    self.assertTrue(user.meta.get("source_fn", None) is None)
+                    self.assertTrue(user.meta.get("nn_module_stack", None) is None)
+
         executorch_prog = executorch_prog.to_executorch(
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
@@ -864,7 +875,7 @@ class TestBackends(unittest.TestCase):
 
             def forward(self, x, y):
                 x = self.add_one(x) * y
-                return self.add_one(x)
+                return self.add_one(x), self.add_one(y)
 
         inputs = (torch.randn(1, 3), torch.randn(1, 3))
         orig_res = Model()(*inputs)
@@ -873,6 +884,16 @@ class TestBackends(unittest.TestCase):
         executorch_prog.exported_program = to_backend(
             ep.exported_program, AddAttributePartitionerDemo
         )
+
+        for node in executorch_prog.exported_program.graph.nodes:
+            if node.op == "call_function" and node.target is executorch_call_delegate:
+                for user in node.users:
+                    self.assertTrue(
+                        user.op == "call_function" and user.target == operator.getitem
+                    )
+                    self.assertTrue(user.meta.get("source_fn", None) is None)
+                    self.assertTrue(user.meta.get("nn_module_stack", None) is None)
+
         executorch_prog = executorch_prog.to_executorch(
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
@@ -880,14 +901,15 @@ class TestBackends(unittest.TestCase):
         # Check the delegated submodules
         lowered_submodules = get_lowered_submodules(executorch_prog.dump_graph_module())
         self.assertEqual(len(lowered_submodules), 2)
-        for _, lowered_submodule, _ in lowered_submodules:
-            # Attributes should be stored in the lowered module
-            self.check_delegate_input(lowered_submodule, 1)
+        # Attributes should be stored in the lowered module
+        self.check_delegate_input(lowered_submodules[0][1], 1)
+        self.check_delegate_input(lowered_submodules[1][1], 2)
 
         executorch_prog.buffer
 
         new_res = executorch_prog.dump_graph_module()(*inputs)
-        self.assertTrue(torch.allclose(orig_res, new_res[0]))
+        self.assertTrue(torch.allclose(orig_res[0], new_res[0]))
+        self.assertTrue(torch.allclose(orig_res[1], new_res[1]))
 
     def test_bad_partitioner(self):
         """
