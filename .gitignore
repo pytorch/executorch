@@ -1,8 +1,10 @@
 .hypothesis
 buck-out/
 cmake-out/
+cmake-build-debug/
 cmake-android-out/
 cmake-ios-out/
+.idea/
 executorch.egg-info
 __pycache__/
 build/lib/
@@ -33,3 +35,4 @@ bundled_program/serialize/scalar_type.fbs
 *.swp
 *~
 .~lock.*
+*.DS_Store

@@ -78,9 +78,10 @@ x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 #             y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
 #             print(enc.decode(y[0].tolist()))
 #             print('---------------')
+head_dim = gptconf.dim // gptconf.n_heads
 for k in range(max_new_tokens):
-    y = model.generate_one(x)
-    x = torch.cat((x, y), dim=1)
+    x, k_cache, v_cache = model.generate_one(x, k_cache, v_cache)
+    print(x)
 print(enc.decode(x[0].tolist()))
 print('---------------')
 

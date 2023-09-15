@@ -20,6 +20,12 @@ class LLAMA2Model:
         checkpoint_dict = torch.load(checkpoint, map_location=device)
         gptconf = ModelArgs(**checkpoint_dict['model_args'])
         self.model_ = Transformer(gptconf)
+        state_dict = checkpoint_dict['model']
+        unwanted_prefix = '_orig_mod.'
+        for k, v in list(state_dict.items()):
+            if k.startswith(unwanted_prefix):
+                state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+        self.model_.load_state_dict(state_dict, strict=False)
 
     # @staticmethod
     def get_eager_model(self):
