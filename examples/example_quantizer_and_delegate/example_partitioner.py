@@ -80,7 +80,8 @@ class ExamplePartitioner(Partitioner):
                 partition_tags[delegation_tag] = self.delegation_spec
 
         for _, submodule, _ in get_control_flow_submodules(edge_graph_module):
-            self._partition_graph_module(submodule)
+            submodule_partition_tags = self._partition_graph_module(submodule)
+            partition_tags.update(submodule_partition_tags)
 
         return partition_tags
 
