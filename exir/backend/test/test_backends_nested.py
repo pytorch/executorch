@@ -11,7 +11,8 @@ from typing import Dict, final, List
 import executorch.exir as exir
 
 import torch
-from executorch.exir.backend.backend_api import ExportedProgram, to_backend
+
+from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,
@@ -32,6 +33,7 @@ from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.graph_module import _get_submodule, get_control_flow_submodules
 from executorch.exir.lowered_backend_module import get_lowered_submodules
 from functorch.experimental import control_flow
+from torch.export import ExportedProgram
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
 
@@ -96,23 +98,29 @@ class Backend2PartitionerDemo(Partitioner):
         self.delegation_spec = DelegationSpec("Backend2Demo", [])
         self.partition_tags = {}
 
-    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
+    def _partition_graph_module(
+        self, edge_graph_module: torch.fx.GraphModule
+    ) -> Dict[str, DelegationSpec]:
         partition_tags: Dict[str, DelegationSpec] = {}
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, op_support=self.op_support
         )
 
         for _, submodule, _ in get_control_flow_submodules(edge_graph_module):
-            partition_result: PartitionResult = self.partition(submodule)
-            partition_tags.update(partition_result.partition_tags)
+            submodule_partition_tags = self._partition_graph_module(submodule)
+            partition_tags.update(submodule_partition_tags)
 
         for partition in partition_list:
             for node in partition.nodes:
                 delegation_tag = f"backend2_tag{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
+        return partition_tags
+
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        partition_tags = self._partition_graph_module(exported_program.graph_module)
         return PartitionResult(
-            tagged_graph=edge_graph_module, partition_tags=partition_tags
+            tagged_exported_program=exported_program, partition_tags=partition_tags
         )
 
 
@@ -167,7 +175,9 @@ class Backend1PartitionerDemo(Partitioner):
         )
         self.delegation_spec = DelegationSpec("Backend1Demo", [])
 
-    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
+    def _partition_graph_module(
+        self, edge_graph_module: torch.fx.GraphModule
+    ) -> Dict[str, DelegationSpec]:
         partition_tags: Dict[str, DelegationSpec] = {}
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, op_support=self.op_support
@@ -177,7 +187,7 @@ class Backend1PartitionerDemo(Partitioner):
             # Don't partition the cond submodules because we are lowering the
             # entire cond node, including it's submodules.
             if node.target is not control_flow.cond:
-                self.partition(submodule)
+                self._partition_graph_module(submodule)
 
         for partition in partition_list:
             for node in partition.nodes:
@@ -193,8 +203,12 @@ class Backend1PartitionerDemo(Partitioner):
                     node.args[2].meta["delegation_tag"] = delegation_tag
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
+        return partition_tags
+
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        partition_tags = self._partition_graph_module(exported_program.graph_module)
         return PartitionResult(
-            tagged_graph=edge_graph_module, partition_tags=partition_tags
+            tagged_exported_program=exported_program, partition_tags=partition_tags
         )
 
 

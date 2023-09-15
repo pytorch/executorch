@@ -30,6 +30,7 @@ from torch.ao.quantization.quantize_fx import (
     _convert_to_reference_decomposed_fx,
     prepare_fx,
 )
+from torch.export import ExportedProgram
 from torch.fx import symbolic_trace
 from torch.fx.passes.utils.fuser_utils import legalize_graph
 from torch.fx.passes.utils.matcher_utils import SubgraphMatcher
@@ -256,10 +257,10 @@ class TestPartitioners(unittest.TestCase):
                 self.test = "a"
 
             def partition(
-                self, edge_graph_module: torch.fx.GraphModule
+                self, edge_exported_program: ExportedProgram
             ) -> PartitionResult:
                 return PartitionResult(
-                    tagged_graph=edge_graph_module, partition_tags=None
+                    tagged_exported_program=edge_exported_program, partition_tags=None
                 )
 
         exported_program = exir.capture(
