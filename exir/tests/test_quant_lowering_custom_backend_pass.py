@@ -39,7 +39,6 @@ from executorch.exir.passes.replace_aten_with_edge_pass import (
     should_lower_to_edge,
 )
 from torch import fx
-from torch._export.exported_program import ExportedProgram
 
 from torch.ao.quantization import (  # @manual
     default_dynamic_qconfig,
@@ -63,6 +62,7 @@ from torch.ao.quantization.quantize_fx import (
     prepare_fx,
     prepare_qat_fx,
 )
+from torch.export import ExportedProgram
 from torch.fx import subgraph_rewriter
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.testing import FileCheck
@@ -480,10 +480,10 @@ class QuantizedConvAddOpPartitioner(Partitioner):
 
         self.delegation_spec = DelegationSpec(ConvAddBackendDemo.__name__, [])
 
-    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
+    def partition(self, edge_exported_program: ExportedProgram) -> PartitionResult:
         partition_tags: Dict[str, DelegationSpec] = {}
         partition_list = generate_pattern_op_partitions(
-            edge_graph_module, patterns=self.patterns
+            edge_exported_program.graph_module, patterns=self.patterns
         )
         logging.debug(partition_list)
         for partition in partition_list:
@@ -492,7 +492,8 @@ class QuantizedConvAddOpPartitioner(Partitioner):
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
         return PartitionResult(
-            tagged_graph=edge_graph_module, partition_tags=partition_tags
+            tagged_exported_program=edge_exported_program.graph_module,
+            partition_tags=partition_tags,
         )
 
 

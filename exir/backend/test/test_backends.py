@@ -65,6 +65,7 @@ from torch.ao.quantization.quantize_fx import (
     _convert_to_reference_decomposed_fx,
     prepare_fx,
 )
+from torch.export import ExportedProgram
 from torch.testing import FileCheck
 
 
@@ -932,16 +933,16 @@ class TestBackends(unittest.TestCase):
                 return x
 
         class BadPartitioner(Partitioner):
-            def partition(self, edge_graph_module) -> PartitionResult:
+            def partition(self, exported_program: ExportedProgram) -> PartitionResult:
                 # Partitioner should not modify the given graph module
-                for node in edge_graph_module.graph.nodes:
+                for node in exported_program.graph.nodes:
                     if (
                         node.op == "call_function"
                         and node.target == exir_ops.edge.aten.add.Tensor
                     ):
                         node.target = exir_ops.edge.aten.mul.Tensor
                 return PartitionResult(
-                    tagged_graph=edge_graph_module,
+                    tagged_exported_program=exported_program,
                     partition_tags={
                         "tag1": DelegationSpec("BackendWithCompilerDemo", [])
                     },

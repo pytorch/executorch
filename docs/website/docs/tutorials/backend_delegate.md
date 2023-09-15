@@ -373,7 +373,7 @@ class Backend_1_2_Partitioner(Partitioner):
         self.delegation_spec_2 = DelegationSpec("Backend2", [])
 
     def partition(
-        self, edge_graph_module: torch.fx.GraphModule
+        self, exported_program: ExportedProgram
     ) -> PartitionResult:
         partition_tags: Dict[str, DelegationSpec] = {}
         # Tag all nodes in the first partiton to backend 1
@@ -388,7 +388,7 @@ class Backend_1_2_Partitioner(Partitioner):
         node.meta["delegation_tag"] = delegation_tag
         partition_tags[delegation_tag] = self.delegation_spec_2
         return PartitionResult(
-            tagged_graph=edge_graph_module, partition_tags=partition_tags
+            tagged_exported_program=exported_program, partition_tags=partition_tags
         )
 ```
 

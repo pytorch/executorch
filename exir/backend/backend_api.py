@@ -33,7 +33,7 @@ from executorch.exir.lowered_backend_module import (
     LoweredBackendModule,
 )
 from executorch.exir.pass_base import ExportPass
-from torch._export.exported_program import ExportedProgram
+from torch.export import ExportedProgram
 
 
 @singledispatch
@@ -281,18 +281,17 @@ def _(
     Returns:
         ExportedProgram: The input program, with some portions targeted for delegation.
     """
-    edge_graph_module = edge_program.graph_module
-    copied_graph_module = copy.deepcopy(edge_graph_module)
+    copied_edge_program = copy.deepcopy(edge_program)
     # Call the partitioner on the given graph module
     partitioner_instance: Partitioner = partitioner()
-    partitioner_result = partitioner_instance(copied_graph_module)
-    tagged_graph_module = partitioner_result.tagged_graph
+    partitioner_result = partitioner_instance(copied_edge_program)
+    tagged_exported_program = partitioner_result.tagged_exported_program
 
     # Check that the partitioner did not modify the original graph
     if _ENABLE_VALIDATION:
         assert is_identical_graph(
-            tagged_graph_module,
-            edge_graph_module,
+            tagged_exported_program.graph_module,
+            edge_program.graph_module,
         ), f"The partitioner {partitioner} should not modify the graph module"
     else:
         logging.warning("Disabled validating the partitioner.")
@@ -302,7 +301,7 @@ def _(
     ), f"Partitioner {partitioner} needs a `partition_tags` field containing a mapping of tags to delegate spec"
 
     tagged_graph_module = _partition_and_lower(
-        tagged_graph_module, partitioner_result, edge_program
+        tagged_exported_program.graph_module, partitioner_result, edge_program
     )
 
     # TODO(angelayi): Update this signature in a less manual way (maybe through
