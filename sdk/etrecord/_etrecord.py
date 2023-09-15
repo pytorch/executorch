@@ -17,6 +17,7 @@ from executorch.exir import (
     MultiMethodExecutorchProgram,
     MultiMethodExirExportedProgram,
 )
+from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.serde.serialize import deserialize, serialize
 
 
@@ -25,6 +26,7 @@ class ETRecordReservedFileNames(str, Enum):
     PROGRAM_BUFFER = "program_buffer"
     ET_DIALECT_GRAPH_MODULE = "et_dialect_graph_module"
     DEBUG_HANDLE_MAP_NAME = "debug_handle_map"
+    DELEGATE_MAP_NAME = "delegate_map"
 
 
 @dataclass
@@ -32,6 +34,9 @@ class ETRecord:
     graph_map: Optional[Dict[str, ExportedProgram]] = None
     program_buffer: Optional[bytes] = None
     _debug_handle_map: Optional[Dict[int, Union[int, List[int]]]] = None
+    _delegate_map: Optional[
+        Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]
+    ] = None
 
 
 def _handle_exported_program(
@@ -161,6 +166,11 @@ def generate_etrecord(
             json.dumps(program.debug_handle_map),
         )
 
+        etrecord_zip.writestr(
+            ETRecordReservedFileNames.DELEGATE_MAP_NAME,
+            json.dumps(program.delegate_map),
+        )
+
 
 def parse_etrecord(etrecord_path: str) -> ETRecord:
     """
@@ -190,6 +200,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
 
     graph_map: Dict[str, ExportedProgram] = {}
     debug_handle_map = None
+    delegate_map = None
     program_buffer = None
 
     serialized_exported_program_files = set()
@@ -198,6 +209,10 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
         if entry == ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME:
             debug_handle_map = json.loads(
                 etrecord_zip.read(ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME)
+            )
+        elif entry == ETRecordReservedFileNames.DELEGATE_MAP_NAME:
+            delegate_map = json.loads(
+                etrecord_zip.read(ETRecordReservedFileNames.DELEGATE_MAP_NAME)
             )
         elif entry == ETRecordReservedFileNames.PROGRAM_BUFFER:
             program_buffer = etrecord_zip.read(ETRecordReservedFileNames.PROGRAM_BUFFER)
@@ -223,4 +238,5 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
         graph_map=graph_map,
         program_buffer=program_buffer,
         _debug_handle_map=debug_handle_map,
+        _delegate_map=delegate_map,
     )
