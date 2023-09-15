@@ -51,8 +51,7 @@ EXECUTORCH_BACKEND_CONFIG = exir.ExecutorchBackendConfig(
 
 EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(_check_ir_validity=False)
 
-# TODO(T158653285)
-@unittest.expectedFailure
+
 class TestQnnbackends(unittest.TestCase):
     k_dim = 5
     input_dims = (1, 4, k_dim)
@@ -89,7 +88,7 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_tensor"
         ).check(
-            "executorch_exir_dialects_edge__ops_aten_t_copy_default"
+            "executorch_exir_dialects_edge__ops_aten_permute_copy_default"
         ).check(
             "executorch_exir_dialects_edge__ops_aten_mm"
         ).run(
@@ -170,7 +169,7 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "aten_view_copy_default"
         ).check(
-            "aten_t_copy_default"
+            "aten_permute_copy_default"
         ).check(
             "aten_addmm_default"
         ).check(
@@ -245,7 +244,7 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_tensor"
         ).check(
-            "executorch_exir_dialects_edge__ops_aten_t_copy_default"
+            "executorch_exir_dialects_edge__ops_aten_permute_copy_default"
         ).check(
             "executorch_exir_dialects_edge__ops_aten_mm"
         ).run(
@@ -326,7 +325,7 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "aten_view_copy_default"
         ).check(
-            "aten_t_copy_default"
+            "aten_permute_copy_default"
         ).check(
             "aten_addmm_default"
         ).check(
@@ -400,7 +399,7 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_tensor"
         ).check(
-            "executorch_exir_dialects_edge__ops_aten_t_copy_default"
+            "executorch_exir_dialects_edge__ops_aten_permute_copy_default"
         ).check(
             "executorch_exir_dialects_edge__ops_aten_mm"
         ).run(
@@ -482,7 +481,7 @@ class TestQnnbackends(unittest.TestCase):
         ).check(
             "aten_view_copy_default"
         ).check(
-            "aten_t_copy_default"
+            "aten_permute_copy_default"
         ).check(
             "aten_addmm_default"
         ).check(

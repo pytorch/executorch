@@ -6,6 +6,7 @@
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass, PassResult
 
 from executorch.exir.sym_util import eval_shape
 
@@ -105,7 +106,10 @@ def replace_addmm_mm_with_linear(graph: torch.fx.Graph) -> torch.fx.Graph:
             with graph.inserting_after(node):
                 if node.target == ops.aten.addmm.default:
                     weight_t_node = node.args[2]
-                    if weight_t_node.target != ops.aten.t_copy.default:
+                    if (
+                        weight_t_node.target != ops.aten.t_copy.default
+                        and weight_t_node.target != ops.aten.permute_copy.default
+                    ):
                         raise RuntimeError(
                             f"Weight input to addmm must be tranposed but found {weight_t_node}"
                         )
@@ -120,7 +124,10 @@ def replace_addmm_mm_with_linear(graph: torch.fx.Graph) -> torch.fx.Graph:
                     )
                 else:
                     weight_t_node = node.args[1]
-                    if weight_t_node.target != ops.aten.t_copy.default:
+                    if (
+                        weight_t_node.target != ops.aten.t_copy.default
+                        and weight_t_node.target != ops.aten.permute_copy.default
+                    ):
                         raise RuntimeError(
                             f"Weight input to addmm must be tranposed but found {weight_t_node}"
                         )
@@ -145,3 +152,9 @@ def apply_addmm_mm_to_linear_transform(graph: torch.fx.Graph) -> torch.fx.Graph:
     graph = replace_addmm_mm_with_linear(graph)
     graph = replace_linear_view_copy_input_output(graph)
     return graph
+
+
+class AddmmToLinearTransform(ExportPass):
+    def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        graph_module.graph = apply_addmm_mm_to_linear_transform(graph_module.graph)
+        return PassResult(graph_module, True)
