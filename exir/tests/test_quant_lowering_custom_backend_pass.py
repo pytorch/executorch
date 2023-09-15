@@ -480,10 +480,10 @@ class QuantizedConvAddOpPartitioner(Partitioner):
 
         self.delegation_spec = DelegationSpec(ConvAddBackendDemo.__name__, [])
 
-    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
+    def partition(self, edge_exported_program: ExportedProgram) -> PartitionResult:
         partition_tags: Dict[str, DelegationSpec] = {}
         partition_list = generate_pattern_op_partitions(
-            edge_graph_module, patterns=self.patterns
+            edge_exported_program.graph_module, patterns=self.patterns
         )
         logging.debug(partition_list)
         for partition in partition_list:
@@ -492,7 +492,8 @@ class QuantizedConvAddOpPartitioner(Partitioner):
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
         return PartitionResult(
-            tagged_graph=edge_graph_module, partition_tags=partition_tags
+            tagged_exported_program=edge_exported_program.graph_module,
+            partition_tags=partition_tags,
         )
 
 

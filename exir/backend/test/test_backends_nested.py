@@ -96,23 +96,29 @@ class Backend2PartitionerDemo(Partitioner):
         self.delegation_spec = DelegationSpec("Backend2Demo", [])
         self.partition_tags = {}
 
-    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
+    def _partition_graph_module(
+        self, edge_graph_module: torch.fx.GraphModule
+    ) -> Dict[str, DelegationSpec]:
         partition_tags: Dict[str, DelegationSpec] = {}
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, op_support=self.op_support
         )
 
         for _, submodule, _ in get_control_flow_submodules(edge_graph_module):
-            partition_result: PartitionResult = self.partition(submodule)
-            partition_tags.update(partition_result.partition_tags)
+            submodule_partition_tags = self._partition_graph_module(submodule)
+            partition_tags.update(submodule_partition_tags)
 
         for partition in partition_list:
             for node in partition.nodes:
                 delegation_tag = f"backend2_tag{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
+        return partition_tags
+
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        partition_tags = self._partition_graph_module(exported_program.graph_module)
         return PartitionResult(
-            tagged_graph=edge_graph_module, partition_tags=partition_tags
+            tagged_exported_program=exported_program, partition_tags=partition_tags
         )
 
 
@@ -167,7 +173,9 @@ class Backend1PartitionerDemo(Partitioner):
         )
         self.delegation_spec = DelegationSpec("Backend1Demo", [])
 
-    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
+    def _partition_graph_module(
+        self, edge_graph_module: torch.fx.GraphModule
+    ) -> Dict[str, DelegationSpec]:
         partition_tags: Dict[str, DelegationSpec] = {}
         partition_list = generate_pattern_op_partitions(
             edge_graph_module, op_support=self.op_support
@@ -177,7 +185,7 @@ class Backend1PartitionerDemo(Partitioner):
             # Don't partition the cond submodules because we are lowering the
             # entire cond node, including it's submodules.
             if node.target is not control_flow.cond:
-                self.partition(submodule)
+                self._partition_graph_module(submodule)
 
         for partition in partition_list:
             for node in partition.nodes:
@@ -193,8 +201,12 @@ class Backend1PartitionerDemo(Partitioner):
                     node.args[2].meta["delegation_tag"] = delegation_tag
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
+        return partition_tags
+
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        partition_tags = self._partition_graph_module(exported_program.graph_module)
         return PartitionResult(
-            tagged_graph=edge_graph_module, partition_tags=partition_tags
+            tagged_exported_program=exported_program, partition_tags=partition_tags
         )
 
 

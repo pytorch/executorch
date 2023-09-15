@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import final
+from typing import Dict, final
 
 import torch
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -22,6 +22,7 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_control_flow_submodules
+from torch._export import ExportedProgram
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
 
@@ -52,10 +53,13 @@ class AddMulPartitionerDemo(Partitioner):
             [CompileSpec("max_value", bytes([4]))],
         )
 
-    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
-        partition_tags = {}
+    def _partition_graph_module(
+        self,
+        graph_module: torch.fx.GraphModule,
+    ) -> Dict[str, DelegationSpec]:
+        partition_tags: Dict[str, DelegationSpec] = {}
         partition_list = generate_pattern_op_partitions(
-            edge_graph_module, op_support=self.op_support
+            graph_module, op_support=self.op_support
         )
         for partition in partition_list:
             for node in partition.nodes:
@@ -63,11 +67,15 @@ class AddMulPartitionerDemo(Partitioner):
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
 
-        for _, submodule, _ in get_control_flow_submodules(edge_graph_module):
-            partition_result = self.partition(submodule)
-            partition_tags.update(partition_result.partition_tags)
+        for _, submodule, _ in get_control_flow_submodules(graph_module):
+            ret_partition_tags = self._partition_graph_module(submodule)
+            partition_tags.update(ret_partition_tags)
+        return partition_tags
+
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
+        partition_tags = self._partition_graph_module(exported_program.graph_module)
         return PartitionResult(
-            tagged_graph=edge_graph_module, partition_tags=partition_tags
+            tagged_exported_program=exported_program, partition_tags=partition_tags
         )
 
 
@@ -82,10 +90,10 @@ class AddAttributePartitionerDemo(Partitioner):
 
         self.delegation_spec = DelegationSpec(BackendWithCompilerDemo.__name__, [])
 
-    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
+    def partition(self, edge_exported_program: ExportedProgram) -> PartitionResult:
         partition_tags = {}
         partition_list = generate_pattern_op_partitions(
-            edge_graph_module, op_support=self.op_support
+            edge_exported_program.graph_module, op_support=self.op_support
         )
         for partition in partition_list:
             for node in partition.nodes:
@@ -102,5 +110,5 @@ class AddAttributePartitionerDemo(Partitioner):
                         arg.meta["delegation_tag"] = delegation_tag
 
         return PartitionResult(
-            tagged_graph=edge_graph_module, partition_tags=partition_tags
+            tagged_exported_program=edge_exported_program, partition_tags=partition_tags
         )

@@ -18,6 +18,7 @@ from executorch.exir.backend.utils import (
 )
 
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
+from torch._export.exported_program import ExportedProgram
 from torch.ao.quantization import get_default_qconfig  # @manual
 from torch.ao.quantization.backend_config.executorch import (
     get_executorch_backend_config,
@@ -256,10 +257,10 @@ class TestPartitioners(unittest.TestCase):
                 self.test = "a"
 
             def partition(
-                self, edge_graph_module: torch.fx.GraphModule
+                self, edge_exported_program: ExportedProgram
             ) -> PartitionResult:
                 return PartitionResult(
-                    tagged_graph=edge_graph_module, partition_tags=None
+                    tagged_exported_program=edge_exported_program, partition_tags=None
                 )
 
         exported_program = exir.capture(

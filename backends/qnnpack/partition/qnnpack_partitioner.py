@@ -24,6 +24,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
+from torch._export.exported_program import ExportedProgram
 from torch.fx.passes.utils.matcher_utils import SubgraphMatcher
 
 logging.basicConfig(level=logging.INFO)
@@ -51,9 +52,11 @@ class _BasePartitioner(Partitioner):
         else:
             log.info(f"Found {pl} subgraphs to be partitioned.")
 
-    def partition(self, graph_module: torch.fx.GraphModule) -> PartitionResult:
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         raise NotImplementedError("This is not meant to be used directly.")
-        return PartitionResult(tagged_graph=graph_module, partition_tags={})
+        return PartitionResult(
+            tagged_exported_program=exported_program, partition_tags={}
+        )
 
 
 class _SingleOpDelegatePartitioner(_BasePartitioner):
@@ -75,16 +78,18 @@ class _SingleOpDelegatePartitioner(_BasePartitioner):
         self.transforms = transforms
 
     # override
-    def partition(self, graph_module: torch.fx.GraphModule) -> PartitionResult:
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # TODO delete this since we are not allowed to do this
         if self.transforms is not None:
             for transform in self.transforms:  # pyre-ignore
-                graph_module.graph = transform(graph_module.graph)
+                exported_program = exported_program._transform(transform)
 
         matches = [
             match
             for matches in (
-                SubgraphMatcher(pattern, ignore_literals=True).match(graph_module.graph)
+                SubgraphMatcher(pattern, ignore_literals=True).match(
+                    exported_program.graph
+                )
                 for pattern in self.patterns
             )
             for match in matches
@@ -130,7 +135,9 @@ class _SingleOpDelegatePartitioner(_BasePartitioner):
             partition_tags[delegation_tag] = self.delegation_spec
             tag_mapping[delegation_tag] = match_set
 
-        return PartitionResult(tagged_graph=graph_module, partition_tags=partition_tags)
+        return PartitionResult(
+            tagged_exported_program=exported_program, partition_tags=partition_tags
+        )
 
 
 class QnnpackPartitioner(_SingleOpDelegatePartitioner):

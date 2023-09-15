@@ -19,6 +19,7 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
+from torch._export.exported_program import ExportedProgram
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
 
@@ -49,10 +50,10 @@ class ExecutorBackendPartitioner(Partitioner):
         self.op_support = any_chain(AnyOperatorSupport(), AnyDelegateSupport())
         self.delegation_spec = DelegationSpec("ExecutorBackend", [])
 
-    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
+    def partition(self, edge_exported_program: ExportedProgram) -> PartitionResult:
         partition_tags = {}
         partition_list = generate_pattern_op_partitions(
-            edge_graph_module, op_support=self.op_support
+            edge_exported_program.graph_module, op_support=self.op_support
         )
         for partition in partition_list:
             for node in partition.nodes:
@@ -67,5 +68,6 @@ class ExecutorBackendPartitioner(Partitioner):
                     node.args[0].meta["delegation_tag"] = delegation_tag
 
         return PartitionResult(
-            tagged_graph=edge_graph_module, partition_tags=partition_tags
+            tagged_exported_program=edge_exported_program,
+            partition_tags=partition_tags,
         )

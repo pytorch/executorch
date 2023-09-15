@@ -19,7 +19,7 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
-from torch.fx import GraphModule
+from torch._export import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 
 
@@ -191,15 +191,17 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
 
         return flat_proposed_partitions_with_unique_id
 
-    def partition(self, graph_module: GraphModule) -> PartitionResult:
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         partition_tags = {}
-        partition_list = self.generate_partition_list(graph_module)
+        partition_list = self.generate_partition_list(exported_program.graph_module)
         for partition in partition_list:
             for node in partition.nodes:
                 delegation_tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
-        return PartitionResult(tagged_graph=graph_module, partition_tags=partition_tags)
+        return PartitionResult(
+            tagged_exported_program=exported_program, partition_tags=partition_tags
+        )
 
 
 @final
@@ -268,10 +270,10 @@ class HTAPartitionerOnePatternDemo(Partitioner):
         backend_id = QnnBackend.__name__
         self.delegation_spec = DelegationSpec(backend_id, [])
 
-    def partition(self, edge_graph_module: torch.fx.GraphModule) -> PartitionResult:
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         partition_tags = {}
         partition_list = generate_pattern_op_partitions(
-            edge_graph_module, patterns=self.patterns
+            exported_program.graph_module, patterns=self.patterns
         )
         for partition in partition_list:
             for node in partition.nodes:
@@ -279,5 +281,5 @@ class HTAPartitionerOnePatternDemo(Partitioner):
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
         return PartitionResult(
-            tagged_graph=edge_graph_module, partition_tags=partition_tags
+            tagged_exported_program=exported_program, partition_tags=partition_tags
         )

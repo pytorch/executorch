@@ -8,10 +8,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, NamedTuple, TypeVar
 
-import torch.fx as fx
-
 from executorch.exir.backend.backend_details import enforcedmethod
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from torch._export import ExportedProgram
 
 
 class DelegationSpec(NamedTuple):
@@ -22,20 +21,20 @@ class DelegationSpec(NamedTuple):
 @dataclass
 class PartitionResult:
     """
-    tagged_graph: the graph with nodes that intend to be delegated containing a "DelegationSpec" metadata
+    tagged_exported_program: the graph with nodes that intend to be delegated containing a "DelegationSpec" metadata
     partition_tags: A dictionary that will be used to keep track of the tags and it's corresponding DelegationSpec. The tag is defined by users and used
     in the node.meta.
     """
 
-    tagged_graph: fx.GraphModule
+    tagged_exported_program: ExportedProgram
     partition_tags: Dict[str, DelegationSpec]
 
 
 class Partitioner(ABC):
     """
-    Defines a callable interface for partitioning an exported module (i.e. a program) for
+    Defines a callable interface for partitioning an exported program for
     backend delegation.
-    A partitioner implementation would receive an exported module, determine what portions of
+    A partitioner implementation would receive an exported program, determine what portions of
     the it can be delegated to certain backend (though a partitioner can target multiple
     backends as well), and return the PartitionResult including:
     - the same input module with specific nodes in the input graph tagged for delegation
@@ -51,31 +50,31 @@ class Partitioner(ABC):
     the same format.
 
     Args:
-        edge_graph_module: A module in Edge dialect to be partitioned for backend delegation.
+        exported_program: An ExportedProgram in Edge dialect to be partitioned for backend delegation.
     """
 
-    def __call__(self, edge_graph_module: fx.GraphModule) -> PartitionResult:
-        return self.partition(edge_graph_module)
+    def __call__(self, exported_program: ExportedProgram) -> PartitionResult:
+        return self.partition(exported_program)
 
     @enforcedmethod
     @abstractmethod
-    def partition(self, edge_graph_module: fx.GraphModule) -> PartitionResult:
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         """
         Returns the input exported program with newly created sub-Modules encapsulating
         specific portions of the input "tagged" for delegation.
 
         The specific implementation is free to decide how existing computation in the
-        input Module should be delegated to one or even more than one specific
+        input exported program should be delegated to one or even more than one specific
         backends.
 
         The contract is stringent in that:
         * Each node that is intended to be delegated must be tagged
-        * No change in the original input Module (GraphModule) representation can take
+        * No change in the original input exported program (ExportedProgram) representation can take
         place other than adding sub-Modules for encapsulating existing portions of the
-        input Module and the associated metadata for tagging.
+        input exported program and the associated metadata for tagging.
 
         Args:
-            edge_graph_module: A module in Edge dialect to be partitioned for backend delegation.
+            exported_program: An ExportedProgram in Edge dialect to be partitioned for backend delegation.
 
         Returns:
             PartitionResult: includes the tagged graph and the delegation spec to indicate what backend_id and compile_spec is used for each node and the tag created by the backend developers.
@@ -84,5 +83,5 @@ class Partitioner(ABC):
 
 
 # Define Type variables to allow instantiate an instance a subclass of Partitioner
-# in to_backend(edge_graph_module: torch.fx.GraphModule, partitioner: Type[TPartitioner])
+# in to_backend(edge_exported_program: ExportedProgram, partitioner: Type[TPartitioner])
 TPartitioner = TypeVar("TPartitioner", bound=Partitioner)
