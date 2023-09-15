@@ -18,6 +18,8 @@ function(executorch_print_configuration_summary)
   message(STATUS "  CMAKE_CXX_STANDARD            : ${CMAKE_CXX_STANDARD}")
   message(STATUS "  CMAKE_CXX_COMPILER_ID         : ${CMAKE_CXX_COMPILER_ID}")
   message(STATUS "  CMAKE_TOOLCHAIN_FILE          : ${CMAKE_TOOLCHAIN_FILE}")
+  message(STATUS "  PYTHON_EXECUTABLE             : ${PYTHON_EXECUTABLE}")
+  message(STATUS "  FLATC_EXECUTABLE              : ${FLATC_EXECUTABLE}")
   message(STATUS "  FLATBUFFERS_BUILD_FLATC       : ${FLATBUFFERS_BUILD_FLATC}")
   message(
     STATUS "  FLATBUFFERS_BUILD_FLATHASH    : ${FLATBUFFERS_BUILD_FLATHASH}")

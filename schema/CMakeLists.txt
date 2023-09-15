@@ -9,6 +9,10 @@
 # cmake-format --first-comment-is-literal=True CMakeLists.txt
 # ~~~
 
+if(NOT FLATC_EXECUTABLE)
+  set(FLATC_EXECUTABLE flatc)
+endif()
+
 # The include directory that will contain the generated schema headers.
 set(_program_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 
@@ -31,13 +35,13 @@ endforeach()
 add_custom_command(
   OUTPUT ${_program_schema__outputs}
   COMMAND
-    flatc --cpp --cpp-std c++11 --gen-mutable --scoped-enums
+    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --gen-mutable --scoped-enums
     # Add a subdirectory to the include dir so the files can be included as
     # <executorch/schema/x_generated.h>
     -o "${_program_schema__include_dir}/executorch/schema"
     ${_program_schema__srcs}
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  DEPENDS flatc ${_program_schema__srcs}
+  DEPENDS ${FLATC_EXECUTABLE} ${_program_schema__srcs}
   COMMENT "Generating program_schema headers"
   VERBATIM)
 
