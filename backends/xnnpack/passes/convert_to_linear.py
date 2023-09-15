@@ -10,6 +10,9 @@ from typing import List
 import torch
 
 from executorch.backends.transforms import get_shape
+from executorch.backends.transforms.addmm_mm_to_linear import (
+    apply_addmm_mm_to_linear_transform,
+)
 from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -176,16 +179,12 @@ class ConvertToLinearPass(XNNPACKPass):
             if node.target in self.targets
         }
 
-        if len(src_node_dict) == 0:
-            logger.debug(
-                "Did not find any [add]mm target in source partitions, skipping the pass."
-            )
-            return PassResult(graph_module, False)
-
         logger.debug("Converting [add]mm into Linear")
 
         for node in src_node_dict.keys():
             self.create_linear(graph_module, node, src_node_dict[node])
+
+        graph_module.graph = apply_addmm_mm_to_linear_transform(graph_module.graph)
 
         graph_module.recompile()
 
