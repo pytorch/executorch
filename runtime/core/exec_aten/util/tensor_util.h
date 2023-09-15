@@ -502,6 +502,18 @@ inline bool tensor_is_rank(exec_aten::Tensor t, size_t rank) {
   return true;
 }
 
+inline bool tensor_has_rank_greater_or_equal_to(
+    exec_aten::Tensor t,
+    size_t rank) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      t.dim() >= rank,
+      "Expected tensor.dim() to be >= %zu, but got %zu",
+      static_cast<size_t>(rank),
+      static_cast<size_t>(t.dim()));
+
+  return true;
+}
+
 inline bool tensor_has_dim(exec_aten::Tensor t, int64_t d) {
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       d > 0 ? d < t.dim() : t.dim() + d >= 0,

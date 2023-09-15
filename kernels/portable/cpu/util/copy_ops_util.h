@@ -32,6 +32,17 @@ void get_permute_copy_out_target_size(
     Tensor::SizesType* out_sizes,
     size_t* out_ndim);
 
+bool check_pixel_shuffle_args(
+    const Tensor& in,
+    int64_t upscale_factor,
+    Tensor& out);
+
+void get_pixel_shuffle_out_target_size(
+    const Tensor& in,
+    int64_t upscale_factor,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim);
+
 bool check_stack_args(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
