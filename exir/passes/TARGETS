@@ -118,6 +118,7 @@ python_library(
         "memory_planning_pass.py",
     ],
     deps = [
+        ":lib",
         "//caffe2:torch",
         "//executorch/exir:error",
         "//executorch/exir:memory",

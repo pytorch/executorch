@@ -19,6 +19,7 @@ from executorch.exir.memory_planning import (
 )
 from executorch.exir.operator.convert import get_out_args_from_opoverload
 from executorch.exir.pass_base import PassBase, PassResult
+from executorch.exir.passes import SymShapeEvalPass
 from executorch.exir.tensor import ALIGNMENT
 
 
@@ -42,6 +43,7 @@ class MemoryPlanningPass(PassBase):
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
         self.alignment = alignment
+        self.sym_shape_eval_fn = SymShapeEvalPass()
 
     def _set_alloc_node_spec(self, graph_module: torch.fx.GraphModule) -> None:
         """
@@ -88,6 +90,8 @@ class MemoryPlanningPass(PassBase):
         """
         self._set_alloc_node_spec(graph_module)
         algo = get_algo(self.memory_planning_algo)
+
+        self.sym_shape_eval_fn(graph_module)
 
         # TODO(shunting) if people have concern of adding a field to GraphModule
         # directly, we should define a GraphModule subclass that we can add our

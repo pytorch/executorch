@@ -309,7 +309,6 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
         SpecPropPass(),
         EdgeToBackendOpsPass(),
         RemoveAssertAsyncPass(),
-        SymShapeEvalPass(),
         config.to_out_var_pass,
         config.memory_planning_pass,
     ]
