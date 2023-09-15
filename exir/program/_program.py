@@ -13,6 +13,7 @@ import torch._export
 from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.emit import emit_program, EmitterOutput
+from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
@@ -249,6 +250,14 @@ class ExecutorchProgram:
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
         if self._emitter_output:
             return self._emitter_output.debug_handle_map
+        return {}
+
+    @property
+    def delegate_map(
+        self,
+    ) -> Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]:
+        if self._emitter_output:
+            return self._emitter_output.method_to_delegate_debug_id_map
         return {}
 
     @property
@@ -497,6 +506,14 @@ class MultiMethodExecutorchProgram:
     @property
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
         return self._emitter_output.debug_handle_map
+
+    @property
+    def delegate_map(
+        self,
+    ) -> Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]:
+        if self._emitter_output:
+            return self._emitter_output.method_to_delegate_debug_id_map
+        return {}
 
     # TODO(ycao): This doesn't make sense any more, remove/change later.
     def dump_graph_module(self) -> torch.fx.GraphModule:

@@ -11,7 +11,12 @@ from typing import Any, Dict, List, Optional, Union
 import executorch.extension.pytree as ex_pytree
 import torch
 import torch.fx
-from executorch.exir.emit._emitter import _EmitterState, _ProgramState, _TopLevelEmitter
+from executorch.exir.emit._emitter import (
+    _DelegateDebugIdentifierMap,
+    _EmitterState,
+    _ProgramState,
+    _TopLevelEmitter,
+)
 from executorch.exir.error import ExportError, ExportErrorType
 from executorch.exir.schema import (
     Bool,
@@ -108,6 +113,13 @@ class EmitterOutput:
     # debug handles or list of debug handles in the case of delegate calls.
     debug_handle_map: Dict[int, Union[int, List[int]]]
 
+    # This dictionary maps the method name to the corresponding dict which
+    # contains the mapping of the delegate instruction id to its corresponding
+    # delegate name and delegate debug identifier mapping.
+    method_to_delegate_debug_id_map: Dict[
+        str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]
+    ]
+
 
 def emit_program(
     methods: Union[ExportedProgram, Dict[str, ExportedProgram]],
@@ -145,6 +157,7 @@ def emit_program(
 
     plans = []
     debug_handle_map = {}
+    method_to_delegate_debug_id_map = {}
     program_state = _ProgramState()
 
     # emit each entry point in order according to name.
@@ -177,6 +190,9 @@ def emit_program(
             program_state.allocated_specs
         )
         debug_handle_map[name] = emitter.debug_handle_map
+        method_to_delegate_debug_id_map[
+            name
+        ] = emitter.instr_id_to_delegate_debug_id_map
 
     # emit any primitive getters
     if prim_getters is not None:
@@ -184,6 +200,7 @@ def emit_program(
 
     return EmitterOutput(
         debug_handle_map=debug_handle_map,
+        method_to_delegate_debug_id_map=method_to_delegate_debug_id_map,
         program=Program(
             version=EXECUTORCH_SCHEMA_VERSION,
             execution_plan=plans,
