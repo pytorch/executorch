@@ -186,6 +186,9 @@ _Argument: TypeAlias = Union[
     None,
 ]
 
+_DelegateDebugIdentifierMap: TypeAlias = Union[
+    Dict[int, Tuple[int]], Dict[str, Tuple[int]]
+]
 
 # pyre-ignore[13]: Attribute `node` is never initialized.
 class _Emitter(torch.fx.Interpreter):
@@ -231,6 +234,9 @@ class _Emitter(torch.fx.Interpreter):
 
         self.concrete_output_ids: List[_AbstractValue] = []
         self.debug_handle_map: Dict[int, Union[int, List[int]]] = {}
+        self.instr_id_to_delegate_debug_id_map: Dict[
+            int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]
+        ] = {}
 
     def _stacktrace_to_framelist(self, stacktrace: str) -> FrameList:
         """Creates a frame list from a stacktrace string."""
@@ -931,6 +937,26 @@ class _Emitter(torch.fx.Interpreter):
             # the node.
             self.node.meta["debug_handle"] = emitter_id
 
+    def _add_delegate_map(
+        self,
+        # pyre-ignore: Undefined or invalid type [11]: Annotation `LoweredBackendModule` is not defined as a type.
+        lowered_module: "LoweredBackendModule",  # noqa
+        delegate_instruction_id: int,
+    ) -> None:
+        """
+        Store the delegate map from this lowered module into the dictionary of delegate maps. It
+        will later be used for various debugging purposes such as linking back to original source
+        code, module hierarchy etc.
+        """
+        delegate_map = {}
+        if hasattr(lowered_module, "meta"):
+            delegate_map = lowered_module.meta.get("delegate_map", {})
+
+        self.instr_id_to_delegate_debug_id_map[delegate_instruction_id] = {
+            "name": lowered_module.backend_id,
+            "delegate_map": delegate_map,
+        }
+
     def _emit_argument(
         self, arg: _Argument, arg_type: Optional[_SchemaType]
     ) -> _AbstractValue:
@@ -942,7 +968,6 @@ class _Emitter(torch.fx.Interpreter):
 
     def _emit_delegate(
         self,
-        # pyre-ignore: Undefined or invalid type [11]: Annotation `LoweredBackendModule` is not defined as a type.
         lowered_module: "LoweredBackendModule",  # noqa
         args: Tuple[_Argument, ...],
         kwargs: Dict[str, _Argument],
@@ -1247,7 +1272,9 @@ class _Emitter(torch.fx.Interpreter):
             lowered_module = args[0]
             assert is_lowered_module(lowered_module)
             v = self._emit_delegate(lowered_module, args[1:], kwargs)
-            self._add_debug_handle(len(self.chain.instructions) - 1, target)
+            delegate_instruction_id = len(self.chain.instructions) - 1
+            self._add_debug_handle(delegate_instruction_id, target)
+            self._add_delegate_map(lowered_module, delegate_instruction_id)
             return v
 
         elif isinstance(

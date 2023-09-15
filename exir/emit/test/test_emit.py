@@ -1240,3 +1240,49 @@ class TestEmit(unittest.TestCase):
             .to_executorch()
         )
         exec_prog.buffer
+
+    def test_delegate_mapping(self) -> None:
+        debug_handle_map = {1: [1, 2]}
+
+        class BackendWithCompilerDemo(BackendDetails):
+            @staticmethod
+            def preprocess(
+                edge_program,
+                compile_specs,
+            ) -> bytes:
+                return PreprocessResult(
+                    processed_bytes=bytes(str("test"), encoding="utf8"),
+                    debug_handle_map=debug_handle_map,
+                )
+
+        class TestModel(nn.Module):
+            def __init__(self):
+                super(TestModel, self).__init__()
+
+            def forward(self, x, y):
+                return torch.add(x, y)
+
+        inputs = (torch.ones(2, 2), torch.ones(2, 2))
+        model = TestModel()
+        edgeir_m = exir.capture(model, inputs, exir.CaptureConfig()).to_edge(
+            exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
+        lowered_module = to_backend(
+            "BackendWithCompilerDemo", edgeir_m.exported_program, None
+        )
+
+        class CompositeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered_module = lowered_module
+
+            def forward(self, x, y):
+                return self.lowered_module(x, y)
+
+        composite_model = CompositeModule()
+        exec_prog = (
+            exir.capture(composite_model, inputs, exir.CaptureConfig())
+            .to_edge()
+            .to_executorch()
+        )
+        self.assertIsNotNone(exec_prog.delegate_map)
