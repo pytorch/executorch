@@ -53,20 +53,28 @@ class PerfData:
 @dataclass
 class Event:
     """
-    Corresponds to an op instance
+    Event corresponds to an operator instance with perf data retrieved from the runtime and other metadata from ETRecord.
+
+    Public Attributes:
+        name: Name of the profiling/debugging Event.
+        perf_data: Performance data associated with the event retrived from the runtime.
+        op_type: List of op types corresponding to the event.
+        instruction_id: Instruction id of the profiling event.
+        delegate_debug_identifier: Supplemental identifier used in combination with instruction id.
+        debug_handles: Debug handles in the model graph to which this event is correlated.
+        stack_trace: A dictionary mapping the name of each associated op to its stack trace.
+        module_hierarchy: A dictionary mapping the name of each associated op to its module hierarchy.
+        is_delegated_op: Whether or not the event was delegated.
+        delegate_backend_name: Name of the backend this event was delegated to.
+        debug_data: Intermediate data collected during runtime.
     """
 
     name: str
     perf_data: PerfData
     op_type: List[str] = dataclasses.field(default_factory=list)
 
-    # Instruction Id of the original profiling event
     instruction_id: Optional[int] = None
-
-    # Supplemental Identifier used in combination with instruction_identifier
     delegate_debug_identifier: Optional[Union[int, str]] = None
-
-    # Debug Handles in the model graph to which this event is correlated
     debug_handles: Optional[Union[int, List[int]]] = None
 
     stack_trace: Dict[str, str] = dataclasses.field(default_factory=dict)
@@ -80,9 +88,12 @@ class Event:
 class EventBlock:
     """
     EventBlock contains a collection of events associated with a particular profiling/debugging block retrieved from the runtime.
-    Attributes:
-        name (str): Name of the profiling/debugging block
-        events (List[Event]): List of events associated with the profiling/debugging block
+    Each EventBlock represents a pattern of execution. For example, model initiation and loading lives in a single EventBlock. If
+    there's a control flow, each branch will be represented by a separate EventBlock.
+
+    Public Attributes:
+        name: Name of the profiling/debugging block.
+        events: List of events associated with the profiling/debugging block.
     """
 
     name: str
