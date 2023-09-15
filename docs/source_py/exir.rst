@@ -120,4 +120,3 @@ Subpackages
 
    exir.data_structures
    exir.passes
-   exir.serialize
