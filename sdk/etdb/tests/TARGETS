@@ -1,0 +1,11 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "inspector_test",
+    srcs = ["inspector_test.py"],
+    deps = [
+        "//executorch/sdk/etdb:inspector",
+    ],
+)
