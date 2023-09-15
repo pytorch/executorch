@@ -20,6 +20,7 @@ MODEL_NAME_TO_MODEL = {
     "ic4": ("inception_v4", "InceptionV4Model"),
     "resnet18": ("resnet", "ResNet18Model"),
     "resnet50": ("resnet", "ResNet50Model"),
+    "llama2": ("llama2", "LLAMA2Model"),
 }
 
 __all__ = [
