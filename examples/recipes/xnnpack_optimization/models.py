@@ -20,7 +20,7 @@ MODEL_NAME_TO_OPTIONS = {
     "mv2": OptimizationOptions(True, True),
     "mv3": OptimizationOptions(False, True),
     "ic4": OptimizationOptions(
-        False, False
+        True, False
     ),  # TODO[T163161310]: takes a long time to export to exec prog and save inception_v4 quantized model
     "w2l": OptimizationOptions(False, True),
 }
