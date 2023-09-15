@@ -459,17 +459,37 @@ def create_submodule_from_nodes(
     _fixup_output_node(sub_gm)
 
     gm = insert_subgm(gm, sub_gm, orig_inputs, orig_outputs)
+    submodule_node = None
+    for node in gm.graph.nodes:
+        if node.op == "call_module":
+            if node.target == submodule_name:
+                submodule_node = node
+            else:
+                raise RuntimeError(
+                    f"The submodule created with nodes {node_list} did not form \
+                    one fully contained subgraph. Check that these nodes form a \
+                    fully contained graph. Partitioned graph: {gm.graph}."
+                )
+
     if len(orig_outputs) == 1 and isinstance(orig_outputs[0].meta["val"], FakeTensor):
         # If the original output is a single tensor, it has been
         # pytree.tree_flatten-ed to be a singleton list, so we want to replace
         # all uses with a getitem call to the 0th index of the result
-        for node in gm.graph.nodes:
-            if node.op == "call_module":
-                with gm.graph.inserting_after(node):
-                    proxy_out = torch.fx.Proxy(node)[0].node  # type: ignore[index]
-                    node.replace_all_uses_with(proxy_out, propagate_meta=True)
-                    # Reset the args since it was overwritten in the previous line
-                    proxy_out.args = (node, 0)
+        with gm.graph.inserting_after(submodule_node):
+            proxy_out = torch.fx.Proxy(submodule_node)[0].node  # type: ignore[index]
+            submodule_node.replace_all_uses_with(proxy_out)
+            proxy_out.meta["val"] = submodule_node.meta["val"]
+            # Reset the args since it was overwritten in the previous line
+            proxy_out.args = (submodule_node, 0)
+    else:
+        # fuse_as_graphmodule will automatically propagate the metadata of the
+        # partition's last node to the getitem nodes that appear after the
+        # call_module node. However, in the case of delegation we do not want
+        # these getitem nodes to contain irrelevant previous metadata
+        # (ex. source_fn, # nn_module_stack)
+        for user_node in submodule_node.users:
+            user_node.meta.pop("nn_module_stack", None)
+            user_node.meta.pop("source_fn", None)
 
     erase_nodes(gm, sorted_nodes)
 
