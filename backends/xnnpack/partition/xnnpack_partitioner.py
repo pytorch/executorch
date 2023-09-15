@@ -109,6 +109,11 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         return _OP_SUPPORT_CONSTRAINTS.get(node.target, lambda node, ep: True)(node, ep)
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
+        # Parameters are supported if any of there users are supported
+        if is_param_node(self.ep, node):
+            return any(
+                self.is_node_supported(submodules, user) for user in node.users.keys()
+            )
         # TODO - other ops?
         if node.op != "call_function":
             return False
