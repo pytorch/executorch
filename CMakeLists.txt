@@ -87,12 +87,15 @@ option(EXECUTORCH_BUILD_XNNPACK
        "Build xnn_executor_runner which depends on XNNPACK" OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
+
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
+
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
 endif()
@@ -126,12 +129,15 @@ include(${EXECUTORCH_SRCS_FILE})
 # flatc: Flatbuffer commandline tool to generate .h files from .fbs files
 #
 
-option(FLATBUFFERS_BUILD_FLATC "" ON)
-option(FLATBUFFERS_BUILD_FLATHASH "" OFF)
-option(FLATBUFFERS_BUILD_FLATLIB "" OFF)
-option(FLATBUFFERS_BUILD_TESTS "" OFF)
-option(FLATBUFFERS_INSTALL "" OFF)
-add_subdirectory(third-party/flatbuffers)
+if(NOT FLATC_EXECUTABLE)
+  set(FLATC_EXECUTABLE flatc)
+  option(FLATBUFFERS_BUILD_FLATC "" ON)
+  option(FLATBUFFERS_BUILD_FLATHASH "" OFF)
+  option(FLATBUFFERS_BUILD_FLATLIB "" OFF)
+  option(FLATBUFFERS_BUILD_TESTS "" OFF)
+  option(FLATBUFFERS_INSTALL "" OFF)
+  add_subdirectory(third-party/flatbuffers)
+endif()
 
 #
 # gflags: Commandline flag libgrary

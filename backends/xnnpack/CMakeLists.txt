@@ -12,6 +12,7 @@
 cmake_minimum_required(VERSION 3.19)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
@@ -19,6 +20,11 @@ endif()
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
 endif()
+
+if(NOT FLATC_EXECUTABLE)
+  set(FLATC_EXECUTABLE flatc)
+endif()
+
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
@@ -43,7 +49,7 @@ endforeach()
 add_custom_command(
   OUTPUT ${_xnnpack_schema__outputs}
   COMMAND
-    flatc --cpp --cpp-std c++11 --scoped-enums -o
+    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
     "${_xnnpack_schema__include_dir}/executorch/backends/xnnpack"
     ${_xnnpack_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
