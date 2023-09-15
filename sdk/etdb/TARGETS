@@ -32,7 +32,25 @@ python_library(
         "inspector.py",
     ],
     deps = [
+        "fbsource//third-party/pypi/ipython:ipython",
+        "fbsource//third-party/pypi/numpy:numpy",
         "fbsource//third-party/pypi/pandas:pandas",
+        "fbsource//third-party/pypi/tabulate:tabulate",
+        ":inspector_utils",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
         "//executorch/sdk/edir:et_schema",
+        "//executorch/sdk/etrecord:etrecord",
+    ],
+)
+
+python_library(
+    name = "inspector_utils",
+    srcs = [
+        "_inspector_utils.py",
+    ],
+    deps = [
+        "//executorch/sdk/edir:et_schema",
+        "//executorch/sdk/etrecord:etrecord",
     ],
 )
