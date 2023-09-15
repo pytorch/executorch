@@ -1,4 +1,4 @@
-name: Run all unittests
+name: Run all unittests (DEBUG)
 
 on:
   workflow_call:
