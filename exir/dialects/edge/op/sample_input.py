@@ -930,6 +930,15 @@ SAMPLE_INPUT = {
             Return(ArgType.Tensor),
         ],
     },
+    "pixel_shuffle.default": {  # (Tensor self, int upscale_factor) -> Tensor
+        "args": [
+            InArg(ArgType.Tensor, size=[2, 4, 1, 3]),
+            InArg(ArgType.Param, value=2),
+        ],
+        "returns": [
+            Return(ArgType.Tensor, size=[2, 1, 2, 6]),
+        ],
+    },
     "pow.Tensor_Scalar": {  # (Tensor self, Scalar exponent) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
