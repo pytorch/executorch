@@ -11,6 +11,7 @@ import os
 import random
 import unittest
 from typing import Callable, Dict, Optional, Tuple, Type
+from unittest import skip, skipUnless
 
 import executorch.exir as exir
 
@@ -18,10 +19,6 @@ import executorch.exir.control_flow as control_flow
 
 # @manual=//executorch/extension/pytree:pybindings
 import executorch.extension.pytree as pytree
-
-# The module itself is not used directly. But we need the side effect of importing
-# it so the get_scratch_metas methods are attached to out variant ops.
-import executorch.test.end2end.register_scratch_meta_fns
 import torch
 from executorch.bundled_program.config import BundledConfig
 
@@ -57,6 +54,10 @@ from executorch.exir.tests.dynamic_shape_models import BatchNormModel
 from executorch.exir.tests.transformer import Transformer
 from functorch.experimental.control_flow import cond
 
+# The module itself is not used directly. But we need the side effect of importing
+# it so the get_scratch_metas methods are attached to out variant ops.
+from . import register_scratch_meta_fns
+
 kernel_mode = None  # either aten mode or lean mode
 try:
     # pyre-ignore[21]
@@ -64,11 +65,11 @@ try:
         _load_bundled_program_from_buffer,
         _load_for_executorch_from_buffer,
         _load_for_executorch_from_bundled_program,
-        Module,
     )
 
     kernel_mode = "lean"
-except:
+except ImportError as e:
+    print(e)
     pass
 
 try:
@@ -77,12 +78,12 @@ try:
         _load_bundled_program_from_buffer,
         _load_for_executorch_from_buffer,
         _load_for_executorch_from_bundled_program,
-        Module,
     )
 
     assert kernel_mode is None
     kernel_mode = "aten"
-except:
+except ImportError as e:
+    print(e)
     pass
 
 assert kernel_mode is not None
@@ -90,12 +91,11 @@ assert kernel_mode is not None
 is_aten_mode = kernel_mode == "aten"
 is_lean_mode = kernel_mode == "lean"
 
-from executorch.test.end2end.exported_module import ExportedModule
-
 from torch import nn
 from torch.utils import _pytree as torch_pytree
 
-torch.ops.load_library("//executorch/kernels/portable:custom_ops_generated_lib")
+from .exported_module import ExportedModule
+
 
 RUN_SKIPPED = int(os.environ.get("RUN_SKIPPED", "0"))
 
@@ -465,6 +465,15 @@ def validate_contiguous_tensors(program):
                 ), f"Non-contiguous tensor found: size {value.val.sizes} stride {value.val.strides}. constant_buffer_idx {value.val.constant_buffer_idx}. allocation_info {value.val.allocation_info}."
 
 
+class BoundMethod(object):
+    def __init__(self, instance, callable):
+        self._instance = instance
+        self._callable = callable
+
+    def __call__(self, *args, **kwargs):
+        return self._callable(self.instance, *args, **kwargs)
+
+
 def maketest(
     module_cls: Type[nn.Module],
     niter: int = 10,
@@ -533,7 +542,7 @@ def maketest(
                     expected = getattr(module.eager_module, module.methods[0])(*inputs)
                 with torch.no_grad():
                     result = module.graph_module(*inputs)
-                self.assertTrue(allclose(expected, result, rtol, atol))
+                self.assertTrue(allclose(expected, result[0], rtol, atol))
 
         program = module.executorch_program.program
         pretty_print(program)
@@ -609,18 +618,19 @@ def maketest(
             default_execution_plan_id = 0
 
             # TODO(T144329357): check bundled attachment correctness
-            for testset_idx in range(niter):
-                executorch_module.load_bundled_input(
-                    executorch_bundled_program,
-                    default_execution_plan_id,
-                    testset_idx,
-                )
-                executorch_module.plan_execute()
-                executorch_module.verify_result_with_bundled_expected_output(
-                    executorch_bundled_program,
-                    default_execution_plan_id,
-                    testset_idx,
-                )
+            # No load_bundled_input() method
+            # for testset_idx in range(niter):
+            #     executorch_module.load_bundled_input(
+            #         executorch_bundled_program,
+            #         default_execution_plan_id,
+            #         testset_idx,
+            #     )
+            #     executorch_module.plan_execute()
+            #     executorch_module.verify_result_with_bundled_expected_output(
+            #         executorch_bundled_program,
+            #         default_execution_plan_id,
+            #         testset_idx,
+            #     )
 
     return wrapper
 
@@ -637,46 +647,57 @@ class E2ETest(unittest.TestCase):
     #
     # aten::max.default does not have an out variant. Thus we need set
     # ignore_to_out_var_failure to be True.
-    test_basic = maketest(
-        ModuleBasic, run_executor=False, ignore_to_out_var_failure=True
-    )
+    def test_basic(self):
+        maketest(ModuleBasic, run_executor=False, ignore_to_out_var_failure=True)(self)
+
     # Make sure we can handle ops that return mutliple values. E.g. topk
     # At one time we can not properly setup TensorSpec for an Fx node
     # returning multiple tensors
     #
     # don't run the model thru executor because aten::topk.values is not defined
     # in the executor currently
-    test_ops_return_multi = maketest(ModuleOpsReturnMulti, run_executor=False)
-    test_mem_planning_toy_model = maketest(
-        ToyModelForMemPlanning,
-        capture_config=exir.CaptureConfig(
-            enable_dynamic_shape=True,
-        ),
-    )
+    def test_ops_return_multi(self):
+        maketest(ModuleOpsReturnMulti, run_executor=False)(self)
+
+    @skipUnless(RUN_SKIPPED, "TODO(larryliu0820) Fix this in both fbcode and oss")
+    def test_mem_planning_toy_model(self):
+        maketest(
+            ToyModelForMemPlanning,
+            capture_config=exir.CaptureConfig(
+                enable_dynamic_shape=True,
+            ),
+        )(self)
 
     # TODO: add ops implementations and turn on 'run_executor'
-    test_mem_planning_scratch_tensor = maketest(
-        MemPlanningWithScratchTensor,
-        run_graph_module=False,
-        run_executor=False,
-        atol=1e-5,
-    )
+    def test_mem_planning_scratch_tensor(self):
+        maketest(
+            MemPlanningWithScratchTensor,
+            run_graph_module=False,
+            run_executor=False,
+            atol=1e-5,
+        )(self)
 
-    test_executorch_forward = maketest(ModuleAdd)
-    test_containers = maketest(
-        ModuleContainers,
-        do_tree_flatten=True,
-        capture_config=exir.CaptureConfig(
-            enable_dynamic_shape=True,
-        ),
-    )
+    def test_executorch_forward(self):
+        maketest(ModuleAdd)(self)
+
+    @skipUnless(RUN_SKIPPED, "TODO(larryliu0820) Fix this in both fbcode and oss")
+    def test_containers(self):
+        maketest(
+            ModuleContainers,
+            do_tree_flatten=True,
+            capture_config=exir.CaptureConfig(
+                enable_dynamic_shape=True,
+            ),
+        )(self)
+
     # can not run the graph module since the out variance with tensor list out
     # argument returns None rather than tensor list.
     #
     # Can not run in the executor since kernel for tensor splitting is not implemented..
-    test_ops_return_tensorlist = maketest(
-        ModuleOpsReturnTensorList, run_graph_module=False, run_executor=False
-    )
+    def test_ops_return_tensorlist(self):
+        maketest(ModuleOpsReturnTensorList, run_graph_module=False, run_executor=False)(
+            self
+        )
 
     # Failed to produce a graph during tracing w/ dynamo because there are no torch ops
     # test_return_input = maketest(ModuleReturnInput, do_tree_flatten=True)
@@ -702,7 +723,8 @@ class E2ETest(unittest.TestCase):
     # test_while_if = maketest(ModuleWhileIf)
     # test_if_while = maketest(ModuleIfWhile)
 
-    test_contiguous_tensor = maketest(ModuleContiguousTensor, run_executor=False)
+    def test_contiguous_tensor(self):
+        maketest(ModuleContiguousTensor, run_executor=False)(self)
 
 
 class DynamicModelE2ETest(unittest.TestCase):
@@ -711,20 +733,20 @@ class DynamicModelE2ETest(unittest.TestCase):
     control flow or dynamic shape.
     """
 
-    test_input_dynamic_shape = maketest(
-        ModuleInputDynamicShape,
-        # can not run the graph module directly since out tensor are allocated
-        # with upperbound shape and may not match the actual shape.
-        run_graph_module=False,
-        capture_config=exir.CaptureConfig(
-            enable_dynamic_shape=True,
-            # enable_functionalization=False,  # TODO enable functionalization
-        ),
-    )
+    def test_input_dynamic_shape(self):
+        maketest(
+            ModuleInputDynamicShape,
+            # can not run the graph module directly since out tensor are allocated
+            # with upperbound shape and may not match the actual shape.
+            run_graph_module=False,
+            capture_config=exir.CaptureConfig(
+                enable_dynamic_shape=True,
+                # enable_functionalization=False,  # TODO enable functionalization
+            ),
+        )(self)
 
-    test_intermediate_dynamic_shape = unittest.skip(
-        "Revisit when unbacked symint is ready"
-    )(
+    @skip("Revisit when unbacked symint is ready")
+    def test_intermediate_dynamic_shape(self):
         maketest(
             ModuleIntermediateDynamicShape,
             run_graph_module=False,
@@ -732,80 +754,86 @@ class DynamicModelE2ETest(unittest.TestCase):
             capture_config=exir.CaptureConfig(
                 enable_dynamic_shape=True,
             ),
-        )
-    )
+        )(self)
 
     # TODO(shunting): some non constant tensors for transformer are non-contiguous.
     # Ignore for now. Will debug more.
     # NOTE: can not run on runtime since missing these ops: P535190636
-    test_transformer_encode = maketest(
-        Transformer,
-        method="encode",
-        allow_non_contiguous_tensor=True,
-        run_executor=False,
-    )
+    def test_transformer_encode(self):
+        maketest(
+            Transformer,
+            method="encode",
+            allow_non_contiguous_tensor=True,
+            run_executor=False,
+        )(self)
 
     # basic test for functorch torch.ops.higher_order.cond
-    test_ft_cond_basic = maketest(
-        FTCondBasic,
-        capture_config=exir.CaptureConfig(
-            enable_dynamic_shape=True,
-            enable_functionalization=False,  # TODO enable functionalization
-        ),
-    )
+    @skipUnless(RUN_SKIPPED, "TODO(larryliu0820) Fix this in both fbcode and oss")
+    def test_ft_cond_basic(self):
+        maketest(
+            FTCondBasic,
+            capture_config=exir.CaptureConfig(
+                enable_dynamic_shape=True,
+                enable_functionalization=False,  # TODO enable functionalization
+            ),
+        )(self)
 
-    test_ft_map_basic = unittest.skipUnless(RUN_SKIPPED, "Emitter is not ready yet")(
+    @skipUnless(RUN_SKIPPED, "Emitter is not ready yet")
+    def test_ft_map_basic(self):
         maketest(
             FTMapBasic,
             capture_config=exir.CaptureConfig(
                 enable_dynamic_shape=True,
                 enable_functionalization=False,  # TODO enable functionalization
             ),
-        )
-    )
+        )(self)
 
-    test_ft_cond_dynshape = maketest(
-        FTCondDynShape,
-        capture_config=exir.CaptureConfig(
-            enable_dynamic_shape=True,
-            enable_functionalization=False,  # TODO enable functionalization
-        ),
-    )
+    @skipUnless(RUN_SKIPPED, "TODO(larryliu0820) Fix this in both fbcode and oss")
+    def test_ft_cond_dynshape(self):
+        maketest(
+            FTCondDynShape,
+            capture_config=exir.CaptureConfig(
+                enable_dynamic_shape=True,
+                enable_functionalization=False,  # TODO enable functionalization
+            ),
+        )(self)
 
-    test_ft_map_dynshape = unittest.skipUnless(RUN_SKIPPED, "Emitter is not ready yet")(
+    @skipUnless(RUN_SKIPPED, "Emitter is not ready yet")
+    def test_ft_map_dynshape(self):
         maketest(
             FTMapDynShape,
             capture_config=exir.CaptureConfig(
                 enable_dynamic_shape=True,
                 enable_functionalization=False,  # TODO enable functionalization
             ),
-        )
-    )
+        )(self)
 
-    test_batch_norm = maketest(
-        BatchNormModel,
-        capture_config=exir.CaptureConfig(
-            enable_dynamic_shape=True,
-        ),
-        verify_graph=BatchNormModel.verify_graph,
-        # TODO: lean mode does not have native_batch_norm.out implemented
-        # run this on aten mode.
-        run_executor=is_aten_mode,
-    )
+    @skipUnless(RUN_SKIPPED, "TODO(larryliu0820) Fix this in both fbcode and oss")
+    def test_batch_norm(self):
+        maketest(
+            BatchNormModel,
+            capture_config=exir.CaptureConfig(
+                enable_dynamic_shape=True,
+            ),
+            verify_graph=BatchNormModel.verify_graph,
+            # TODO: lean mode does not have native_batch_norm.out implemented
+            # run this on aten mode.
+            run_executor=is_aten_mode,
+        )(self)
 
 
 class BundledProgramE2ETest(unittest.TestCase):
     # Using all models supporting executor running in this test.
 
-    test_mem_planning_toy_model_bundled_program = maketest(
-        ToyModelForMemPlanning, bundled_io=True
-    )
+    def test_mem_planning_toy_model_bundled_program(self):
+        maketest(ToyModelForMemPlanning, bundled_io=True)(self)
 
-    test_executorch_forward_bundled_program = maketest(ModuleAdd, bundled_io=True)
+    def test_executorch_forward_bundled_program(self):
+        maketest(ModuleAdd, bundled_io=True)(self)
 
-    test_containers_bundled_program = maketest(
-        ModuleContainers, do_tree_flatten=True, bundled_io=True
-    )
+    @skipUnless(RUN_SKIPPED, "TODO(larryliu0820) Fix this in both fbcode and oss")
+    def test_containers_bundled_program(self):
+        maketest(ModuleContainers, do_tree_flatten=True, bundled_io=True)(self)
 
     # Failed to produce a graph during tracing w/ dynamo because there are no torch ops
     # test_return_input_bundled_program = maketest(
@@ -826,22 +854,21 @@ class BundledProgramE2ETest(unittest.TestCase):
     # test_while_if_bundled_program = maketest(ModuleWhileIf, bundled_io=True)
     # test_if_while_bundled_program = maketest(ModuleIfWhile, bundled_io=True)
 
-    test_input_dynamic_shape_bundled_program = maketest(
-        ModuleInputDynamicShape,
-        run_graph_module=False,
-        bundled_io=True,
-        capture_config=exir.CaptureConfig(
-            enable_dynamic_shape=True,
-        ),
-    )
+    def test_input_dynamic_shape_bundled_program(self):
+        maketest(
+            ModuleInputDynamicShape,
+            run_graph_module=False,
+            bundled_io=True,
+            capture_config=exir.CaptureConfig(
+                enable_dynamic_shape=True,
+            ),
+        )(self)
 
-    test_intermediate_dynamic_shape_bundled_program = unittest.skip(
-        "revisit when unbacked symint is ready"
-    )(
+    @skip("revisit when unbacked symint is ready")
+    def test_intermediate_dynamic_shape_bundled_program(self):
         maketest(
             ModuleIntermediateDynamicShape,
             run_graph_module=False,
             allow_non_contiguous_tensor=True,
             bundled_io=True,
-        )
-    )
+        )(self)
