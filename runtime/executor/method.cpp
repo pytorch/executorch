@@ -948,11 +948,14 @@ Error Method::execute_instruction() {
       Error err = delegates_[delegate_idx].Execute(
           backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx].data());
-      ET_CHECK_MSG(
-          err == Error::Ok,
-          "CALL_DELEGATE execute failed at instruction %zu: %" PRIu32,
-          step_state_.instr_idx,
-          err);
+      if (err != Error::Ok) {
+        ET_LOG(
+            Error,
+            "CALL_DELEGATE execute failed at instruction %zu: %" PRIu32,
+            step_state_.instr_idx,
+            err);
+        return err;
+      }
     } break;
     case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {
       EXECUTORCH_SCOPE_PROF("JF_CALL");
