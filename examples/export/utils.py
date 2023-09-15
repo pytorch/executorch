@@ -66,20 +66,10 @@ def export_to_exec_prog(
     # pre-autograd export. eventually this will become torch.export
     m = model.eval()
     f = getattr(m, method_name)
-    m = export.capture_pre_autograd_graph(f, example_inputs)
+    f = export.capture_pre_autograd_graph(f, example_inputs)
 
     core_aten_exir_ep = _to_core_aten(f, example_inputs)
 
     edge_m = _core_aten_to_edge(core_aten_exir_ep, edge_compile_config)
     exec_prog = edge_m.to_executorch(backend_config)
     return exec_prog
-
-
-def save_pte_program(buffer, model_name):
-    filename = f"{model_name}.pte"
-    try:
-        with open(filename, "wb") as file:
-            file.write(buffer)
-            logging.info(f"Saved exported program to {filename}")
-    except Exception as e:
-        logging.error(f"Error while saving to {filename}: {e}")

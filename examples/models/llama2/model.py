@@ -120,6 +120,8 @@ class Attention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
+        k_cache: torch.Tensor,
+        v_cache: torch.Tensor,
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
     ):
@@ -195,8 +197,8 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x, freqs_cos, freqs_sin):
-        h = x + self.attention.forward(self.attention_norm(x), freqs_cos, freqs_sin)
+    def forward(self, x, k_cache, v_cache, freqs_cos, freqs_sin):
+        h = x + self.attention.forward(self.attention_norm(x), k_cache, v_cache, freqs_cos, freqs_sin)
         out = h + self.feed_forward.forward(self.ffn_norm(h))
         return out
 
@@ -244,7 +246,7 @@ class Transformer(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, tokens: torch.Tensor, targets: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, tokens: torch.Tensor, k_cache: torch.Tensor, v_cache: torch.Tensor, targets: Optional[torch.Tensor] = None) -> torch.Tensor:
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
         h = self.dropout(h)
@@ -252,7 +254,7 @@ class Transformer(nn.Module):
         freqs_sin = self.freqs_sin[:seqlen]
 
         for layer in self.layers:
-            h = layer(h, freqs_cos, freqs_sin)
+            h = layer.forward(h, k_cache, v_cache, freqs_cos, freqs_sin)
         # h = self.layers[0](h, freqs_cos, freqs_sin) # myuan: hack one layer for debug
 
         h = self.norm(h)
@@ -265,7 +267,7 @@ class Transformer(nn.Module):
         else:
             # inference-time mini-optimization: only forward the output on the very last position
             # logits = self.output(h[:, [-1], :]) # note: using list [-1] to preserve the time dim
-            h = h[:, [-1], :]
+            # h = h[:, [-1], :]
             logits = self.output(h) #myuan: hack above
             if self.training:
                 self.last_loss = None
@@ -346,10 +348,10 @@ class Transformer(nn.Module):
 
         return idx
 
-    def generate_one(self, idx, temperature=1.0, top_k=None):
+    def generate_one(self, idx, k_cache, v_cache, temperature=1.0, top_k=None):
         idx_cond = idx if idx.size(1) <= self.params.max_seq_len else idx[:, -self.params.max_seq_len:]
         # forward the model to get the logits for the index in the sequence
-        logits = self(idx_cond)
+        logits = self.forward(idx_cond, k_cache, v_cache)
         logits = logits[:, -1, :]  # crop to just the final time step
         if temperature == 0.0:
             # "sample" the single most likely index
@@ -368,6 +370,6 @@ class Transformer(nn.Module):
             # idx_next = torch.multinomial(probs, num_samples=1)
             idx_next = torch.argmax(probs)
             idx_next = torch.reshape(idx_next, (1, 1))
-        return idx_next
+        return torch.cat((idx, idx_next), dim=1), k_cache, v_cache
 
 
