@@ -5,8 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import dataclasses
+from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Optional, Union
+from typing import Dict, List, Mapping, NewType, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -15,8 +16,37 @@ from executorch.exir import ExportedProgram
 
 from executorch.sdk.edir.et_schema import OperatorGraphWithStats
 from executorch.sdk.etdb._inspector_utils import gen_graphs_from_etrecord
+from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
 from executorch.sdk.etrecord import parse_etrecord
 from tabulate import tabulate
+
+
+# Signature of a ProfileEvent
+@dataclass(frozen=True, order=True)
+class ProfileEventSignature:
+    name: str
+    instruction_id: Optional[int]
+    delegate_id: Optional[int] = None
+    delegate_id_str: Optional[str] = None
+
+    @staticmethod
+    def _gen_from_event(event: ProfileEvent) -> "ProfileEventSignature":
+        """
+        Given a ProfileEvent, extract the fields into a signature
+
+        ProfileEvents from ETDump default to "" and -1 when the field is not populated
+        The Signature will convert these back to the intended None value
+        """
+        return ProfileEventSignature(
+            event.name,
+            event.instruction_id if event.instruction_id != -1 else None,
+            event.delegate_debug_id_int if event.delegate_debug_id_int != -1 else None,
+            event.delegate_debug_id_str if event.delegate_debug_id_str != "" else None,
+        )
+
+
+# Signature of a RunData as defined by its ProfileEvents
+RunSignature = NewType("RunSignature", Tuple[ProfileEventSignature])
 
 
 @dataclass
@@ -75,6 +105,35 @@ class Event:
     delegate_backend_name: Optional[str] = None
     debug_data: List[torch.Tensor] = dataclasses.field(default_factory=list)
 
+    @staticmethod
+    def _gen_from_profile_events(
+        signature: ProfileEventSignature, events: List[ProfileEvent]
+    ) -> "Event":
+        """
+        Given a ProfileEventSignature and a list of ProfileEvents with that signature,
+        return an Event object matching the ProfileEventSignature, with perf_data
+        populated from the list of ProfileEvents
+        """
+        delegate_debug_identifier = (
+            signature.delegate_id or signature.delegate_id_str or None
+        )
+
+        # Use the delegate identifier as the event name if delegated
+        is_delegated_op = delegate_debug_identifier is not None
+        name = signature.name if not is_delegated_op else str(delegate_debug_identifier)
+
+        perf_data = PerfData(
+            [float(event.end_time - event.start_time) / 1000 for event in events]
+        )
+
+        return Event(
+            name=name,
+            perf_data=perf_data,
+            instruction_id=signature.instruction_id,
+            delegate_debug_identifier=delegate_debug_identifier,
+            is_delegated_op=is_delegated_op,
+        )
+
 
 @dataclass
 class EventBlock:
@@ -117,6 +176,53 @@ class EventBlock:
         }
         df = pd.DataFrame(data)
         return df
+
+    @staticmethod
+    def _gen_from_etdump(etdump: ETDumpFlatCC) -> List["EventBlock"]:
+        """
+        Given an etdump, generate a list of EventBlocks corresponding to the
+        contents
+        """
+
+        # Group all the RunData by the set of profile events
+        profile_run_groups: Mapping[
+            RunSignature,
+            OrderedDict[ProfileEventSignature, List[ProfileEvent]],
+        ] = defaultdict(OrderedDict)
+        for run in etdump.run_data:
+            if (run_events := run.events) is None:
+                continue
+
+            # Identify all the ProfileEventSignatures
+            profile_events: OrderedDict[
+                ProfileEventSignature, ProfileEvent
+            ] = OrderedDict()
+            for event in run_events:
+                if (profile_event := event.profile_event) is not None:
+                    signature = ProfileEventSignature._gen_from_event(profile_event)
+                    profile_events[signature] = profile_event
+
+            # Create a RunSignature from the ProfileEventSignature found
+            run_signature: RunSignature = RunSignature(tuple(profile_events.keys()))
+
+            # Update the Profile Run Groups, indexed on the RunSignature
+            run_signature_events: OrderedDict[
+                ProfileEventSignature, List[ProfileEvent]
+            ] = profile_run_groups[run_signature]
+            for event_signature, event in profile_events.items():
+                run_signature_events.setdefault(event_signature, []).append(event)
+
+        # Create EventBlocks from the Profile Run Groups
+        return [
+            EventBlock(
+                name=str(index),
+                events=[
+                    Event._gen_from_profile_events(signature, event)
+                    for signature, event in profile_events.items()
+                ],
+            )
+            for index, profile_events in enumerate(profile_run_groups.values())
+        ]
 
 
 class Inspector:
