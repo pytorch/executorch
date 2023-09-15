@@ -901,6 +901,10 @@ Error Method::execute_instruction() {
   auto instruction = instructions->Get(step_state_.instr_idx);
   switch (instruction->instr_args_type()) {
     case executorch_flatbuffer::InstructionArguments::KernelCall: {
+      auto op_index = instruction->instr_args_as_KernelCall()->op_index();
+      auto ops = serialization_plan_->operators();
+      auto op = ops->Get(op_index);
+      printf("op: %s.%s, instruction id: %d\n", op->name()->c_str(), op->overload()->c_str(), step_state_.instr_idx);
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
       // TODO(T147221312): Also expose the temp allocator and tensor resizer
       // via the context.

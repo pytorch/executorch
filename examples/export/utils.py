@@ -14,6 +14,7 @@ import torch
 import torch._export as export
 from executorch.exir.program import ExirExportedProgram
 from executorch.exir.tracer import Value
+from typing import Any, Callable
 
 
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
@@ -25,16 +26,12 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 
 
 def _to_core_aten(
-    model: torch.fx.GraphModule,
+    f: Callable[..., Any],
     example_inputs: Tuple[Value, ...],
     capture_config=_CAPTURE_CONFIG,
 ) -> ExirExportedProgram:
     # post autograd export. eventually this will become .to_core_aten
-    if not isinstance(model, torch.fx.GraphModule):
-        raise ValueError(
-            f"Expected passed in model to be an instance of fx.GraphModule, got {type(model)}"
-        )
-    core_aten_exir_ep = exir.capture(model, example_inputs, capture_config)
+    core_aten_exir_ep = exir.capture(f, example_inputs, capture_config)
     logging.info(f"Core ATen graph:\n{core_aten_exir_ep.exported_program.graph}")
     return core_aten_exir_ep
 
@@ -60,19 +57,20 @@ def export_to_edge(
 
 def export_to_exec_prog(
     model,
+    method_name,
     example_inputs,
     capture_config=_CAPTURE_CONFIG,
     edge_compile_config=_EDGE_COMPILE_CONFIG,
     backend_config=None,
 ):
-    m = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    m = export.capture_pre_autograd_graph(m, example_inputs)
+    m = model.eval()
+    f = getattr(m, method_name)
+    m = export.capture_pre_autograd_graph(f, example_inputs)
 
-    core_aten_exir_ep = _to_core_aten(m, example_inputs)
+    core_aten_exir_ep = _to_core_aten(f, example_inputs)
 
     edge_m = _core_aten_to_edge(core_aten_exir_ep, edge_compile_config)
-
     exec_prog = edge_m.to_executorch(backend_config)
     return exec_prog
 
