@@ -32,11 +32,22 @@ def nonzero(args, kwargs) -> List[Optional[int]]:
     return [eval_expr(args[0].shape[0]), len(args[0].shape)]
 
 
-class SymShapeEvalPass(PassBase):
+class HintBasedSymShapeEvalPass(PassBase):
     """
     If we enable dynamic shape tracing, a tensor's shape may become a symbolic
     formula. We should convert those symbolic formula to concrete value for
     static/upperbound tensors so we can properly do memory planning for them.
+
+    HintBasedSymShapeEvalPass evalutes the symbolic expression of shapes based
+    on its hint, which is a concrete integer that backs the sym expression. The original
+    hint comes from the sizes of the inputs that user uses for tracing and hints of
+    symbolic expressions are propagated via meta tensor computation.
+    For example, when export f(x), we use x = torch.ones(3, 4) as an exmaple input to f and
+    suppose we constrain both dimensions of x as dynamic. We'll have two symbols s0, s1 created
+    and they are backed up with hints 3 and 4 respectively. If there is a y = x[0] operation in f,
+    the shape of y is inferred to be s1, which is backed up with hint 4.
+
+    Warning: if you're using torch.export with constrain API, this method doesn't respect the input constraints.
 
     Not inherit from ExportPass since we simply need a way to iterate thru
     every node's output. PassBase is easier for that purpose.
