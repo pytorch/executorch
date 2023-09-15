@@ -160,20 +160,19 @@ if __name__ == "__main__":
     start = time.perf_counter()
     quantized_model = quantize(model, example_inputs)
     end = time.perf_counter()
-    # logging.info(f"Quantize time: {end - start}s")
+    logging.info(f"Quantize time: {end - start}s")
 
-    # TODO[T163161310]: takes a long time to export to exec prog and save inception_v4 quantized model
-    if args.model_name != "ic4":
+    start = time.perf_counter()
+    edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
+    edge_m = export_to_edge(
+        quantized_model, example_inputs, edge_compile_config=edge_compile_config
+    )
+    end = time.perf_counter()
+    logging.info(f"Export time: {end - start}s")
 
-        start = time.perf_counter()
-        edge_compile_config = EdgeCompileConfig(_check_ir_validity=False)
-        edge_m = export_to_edge(
-            quantized_model, example_inputs, edge_compile_config=edge_compile_config
-        )
-        end = time.perf_counter()
-
-        start = time.perf_counter()
-        prog = edge_m.to_executorch(None)
-        save_pte_program(prog.buffer, f"{args.model_name}_quantized")
-        end = time.perf_counter()
+    start = time.perf_counter()
+    prog = edge_m.to_executorch(None)
+    save_pte_program(prog.buffer, f"{args.model_name}_quantized")
+    end = time.perf_counter()
+    logging.info(f"Save time: {end - start}s")
     logging.info("finished")
