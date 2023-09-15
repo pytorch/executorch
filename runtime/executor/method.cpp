@@ -912,9 +912,6 @@ Error Method::execute_instruction() {
       auto args = chain.argument_lists_[step_state_.instr_idx];
       chain.kernels_[step_state_.instr_idx](context, args.data());
       Error err = context.failure_state();
-      for (auto arg:args) {
-        arg->tag
-      }
       if (err != Error::Ok) {
         auto op_index = instruction->instr_args_as_KernelCall()->op_index();
         auto op = serialization_plan_->operators()->Get(op_index);
