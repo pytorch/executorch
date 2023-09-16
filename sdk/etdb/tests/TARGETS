@@ -9,3 +9,12 @@ python_unittest(
         "//executorch/sdk/etdb:inspector",
     ],
 )
+
+python_unittest(
+    name = "event_blocks_test",
+    srcs = ["event_blocks_test.py"],
+    deps = [
+        "//executorch/sdk/etdb:inspector",
+        "//executorch/sdk/etdump:schema_flatcc",
+    ],
+)
