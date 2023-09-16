@@ -5,9 +5,20 @@
 # LICENSE file in the root directory of this source tree.
 
 import dataclasses
+import logging
 from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, NewType, Optional, Tuple, Union
+from typing import (
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeAlias,
+    TypedDict,
+    Union,
+)
 
 import numpy as np
 import pandas as pd
@@ -20,6 +31,7 @@ from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
 from executorch.sdk.etrecord import parse_etrecord
 from tabulate import tabulate
 
+log: logging.Logger = logging.getLogger(__name__)
 
 # Signature of a ProfileEvent
 @dataclass(frozen=True, order=True)
@@ -46,7 +58,19 @@ class ProfileEventSignature:
 
 
 # Signature of a RunData as defined by its ProfileEvents
-RunSignature = NewType("RunSignature", Tuple[ProfileEventSignature])
+RunSignature: TypeAlias = Tuple[ProfileEventSignature]
+
+
+# Typing for mapping Event.delegate_debug_identifiers to debug_handle(s)
+DelegateIdentifierDebugHandleMap: TypeAlias = Union[
+    Mapping[int, Tuple[int, ...]], Mapping[str, Tuple[int, ...]]
+]
+
+# Typing for Dict containig delegate metadata
+DelegateMetadata = TypedDict(
+    "DelegateMetadata",
+    {"name": str, "delegate_map": DelegateIdentifierDebugHandleMap},
+)
 
 
 @dataclass
@@ -97,7 +121,7 @@ class Event:
     delegate_debug_identifier: Optional[Union[int, str]] = None
 
     # Debug Handles in the model graph to which this event is correlated
-    debug_handles: Optional[Union[int, List[int]]] = None
+    debug_handles: Optional[Union[int, Sequence[int]]] = None
 
     stack_trace: Dict[str, str] = dataclasses.field(default_factory=dict)
     module_hierarchy: Dict[str, Dict] = dataclasses.field(default_factory=dict)
@@ -203,7 +227,7 @@ class EventBlock:
                     profile_events[signature] = profile_event
 
             # Create a RunSignature from the ProfileEventSignature found
-            run_signature: RunSignature = RunSignature(tuple(profile_events.keys()))
+            run_signature: RunSignature = tuple(profile_events.keys())
 
             # Update the Profile Run Groups, indexed on the RunSignature
             run_signature_events: OrderedDict[
@@ -223,6 +247,47 @@ class EventBlock:
             )
             for index, profile_events in enumerate(profile_run_groups.values())
         ]
+
+    def _gen_resolve_debug_handles(
+        self,
+        handle_map: Dict[int, List[int]],
+        delegate_map: Optional[Dict[int, DelegateMetadata]] = None,
+    ):
+        """
+        Given mappings from instruction id to debug handles, populate the
+        debug_handles field of all underlying events
+
+        If the event is delegated, index with the instruction_id and delegate_debug_identifier
+        to obtain the debug_handle via the delegate map
+        """
+        for event in self.events:
+            # Check for the instruction_id in handle map
+            if (
+                instruction_id := event.instruction_id
+            ) is None or instruction_id not in handle_map:
+                continue
+
+            # For non-delegated event, handles are found in handle_map
+            if (delegate_debug_id := event.delegate_debug_identifier) is None:
+                event.debug_handles = handle_map[instruction_id]
+                continue
+
+            # Check that the delegated event has a corresponding mapping
+            if (
+                delegate_map is None
+                or (delegate_metadata := delegate_map.get(instruction_id)) is None
+            ):
+                event.debug_handles = handle_map[instruction_id]
+                log.warning(
+                    f" No delegate mapping found for delegate with instruction id {event.instruction_id}"
+                )
+                continue
+
+            # For delegated events, handles are found via delegateMetadata
+            event.delegate_backend_name = delegate_metadata.get("name", "")
+            event.debug_handles = delegate_metadata.get("delegate_map", {}).get(
+                delegate_debug_id  # pyre-ignore
+            )
 
 
 class Inspector:

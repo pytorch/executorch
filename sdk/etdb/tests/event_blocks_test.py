@@ -10,12 +10,13 @@ from typing import List, Optional, Tuple, Union
 
 import executorch.sdk.etdump.schema_flatcc as flatcc
 from executorch.sdk.etdb.inspector import (
+    DelegateMetadata,
     Event,
     EventBlock,
     PerfData,
     ProfileEventSignature,
 )
-from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC
+from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
 
 
 class TestEventBlock(unittest.TestCase):
@@ -203,3 +204,87 @@ class TestEventBlock(unittest.TestCase):
 
         # Delegate with String Debug ID
         _test_profile_event_generation("delegate", 1, None, "identifier")
+
+    def test_gen_resolve_debug_handles(self) -> None:
+        """
+        Test that gen_resolve_debug_handles() correctly populates the EventBlock
+        """
+
+        def _gen_event_helper(events: List[ProfileEvent]) -> Event:
+            """
+            Helper function to generate an Event given a set of ProfileEvents
+            """
+            signature = ProfileEventSignature._gen_from_event(events[0])
+            return Event._gen_from_profile_events(signature, events)
+
+        # Create Test Data
+
+        # Non-Delegated
+        non_delegated_profile_events_1 = [
+            TestEventBlock._gen_sample_profile_event("non_del_1", 0, (0, 1)),
+            TestEventBlock._gen_sample_profile_event("non_del_1", 0, (0, 1)),
+        ]
+        non_delegated_profile_events_2 = [
+            TestEventBlock._gen_sample_profile_event("non_del_2", 1, (0, 1)),
+        ]
+        non_delegated_event_1 = _gen_event_helper(non_delegated_profile_events_1)
+        non_delegated_event_2 = _gen_event_helper(non_delegated_profile_events_2)
+
+        # Delegated
+        delegated_profile_events_1 = [
+            TestEventBlock._gen_sample_profile_event("del_1", 0, (0, 1), 10),
+            TestEventBlock._gen_sample_profile_event("del_1", 0, (0, 1), 10),
+            TestEventBlock._gen_sample_profile_event("del_1", 0, (0, 1), 10),
+        ]
+        delegated_profile_events_2 = [
+            TestEventBlock._gen_sample_profile_event("del_2", 2, (0, 1), 20),
+        ]
+        delegated_event_1 = _gen_event_helper(delegated_profile_events_1)
+        delegated_event_2 = _gen_event_helper(delegated_profile_events_2)
+
+        # Create Test EventBlock
+        event_block = EventBlock(
+            name="test_name_1",
+            events=[
+                non_delegated_event_1,
+                non_delegated_event_2,
+                delegated_event_1,
+                delegated_event_2,
+            ],
+        )
+
+        # Create Test Maps
+        handle_map = {0: [100], 1: [110], 2: [120]}
+        delegate_map = {
+            0: DelegateMetadata(
+                {
+                    "name": "delegate",
+                    "delegate_map": {10: (100, 1000)},
+                }
+            ),
+            2: DelegateMetadata(
+                {
+                    "name": "delegate_2",
+                    "delegate_map": {20: (200,)},
+                }
+            ),
+        }
+        event_block._gen_resolve_debug_handles(handle_map, delegate_map)
+
+        # Verify Results
+        for event in event_block.events:
+            # To satisfy type checker
+            assert event.instruction_id is not None
+            if (
+                delegate_debug_identifier := event.delegate_debug_identifier
+            ) is not None:
+                # Delegated
+                metadata = delegate_map[event.instruction_id]
+                self.assertEqual(event.delegate_backend_name, metadata["name"])
+                self.assertEqual(
+                    event.debug_handles,
+                    metadata["delegate_map"][delegate_debug_identifier],  # pyre-ignore
+                )
+            else:
+                # Non Delegated
+                self.assertEqual(event.debug_handles, handle_map[event.instruction_id])
