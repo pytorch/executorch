@@ -33,9 +33,9 @@ from executorch.sdk.etdump.serialize import deserialize_from_etdump
 # Keywords used in EDIR Metadata
 class RESERVED_METADATA_ARG(Enum):
     DEBUG_HANDLE = "debug_handle"
-    MODULE_STACK = "module_stack"
+    MODULE_STACK = "nn_module_stack"
     SOURCE_FN = "source_fn"
-    MODULE_TYPE = "nn_module_type"
+    MODULE_TYPE = "module_type"
     PROFILE_START_TIME = "profile_start_time"
     PROFILE_END_TIME = "profile_end_time"
     LOAD_START_TIME = "load_start_time"
@@ -718,6 +718,10 @@ class FXOperatorGraph(OperatorGraphWithStats):
         if not skip_stack_trace and RESERVED_METADATA_ARG.STACK_TRACE.value in metadata:
             ret[RESERVED_METADATA_ARG.STACK_TRACE.value] = metadata[
                 RESERVED_METADATA_ARG.STACK_TRACE.value
+            ]
+        if RESERVED_METADATA_ARG.MODULE_STACK.value in metadata:
+            ret[RESERVED_METADATA_ARG.MODULE_STACK.value] = metadata[
+                RESERVED_METADATA_ARG.MODULE_STACK.value
             ]
         return ret
 
