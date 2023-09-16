@@ -19,7 +19,7 @@ from executorch.backends.xnnpack.partition.configs import (
     SUPPORTED_QUANT_OPS,
     UNSUPPORTED_QUANT_MODULES,
 )
-from executorch.backends.xnnpack.utils.utils import get_input_node
+from executorch.backends.xnnpack.utils.utils import get_input_node, is_param_node
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -74,6 +74,7 @@ _OP_SUPPORT_CONSTRAINTS = {}
 class XnnpackOperatorSupport(OperatorSupportBase):
     def __init__(
         self,
+        ep: ExportedProgram,
         constraints_dict: Dict[
             Any, Callable[[torch.fx.Node], bool]
         ] = _OP_SUPPORT_CONSTRAINTS,
@@ -89,6 +90,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         self.unsupported_modules = unsupported_modules
         self.supported_ops = supported_ops
         self.constraints = constraints_dict
+        self.ep = ep
         assert len(self.constraints)
 
     def check_common_constraints(self, node) -> bool:
@@ -98,13 +100,13 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         return True
 
     @staticmethod
-    def check_constraint(node) -> bool:
+    def check_constraint(node, ep) -> bool:
         """
         This node is from a partitioned subgraph by one of the partitioners so
         should be a valid node otherwise, let's make sure the constraint is met
         if specified
         """
-        return _OP_SUPPORT_CONSTRAINTS.get(node.target, lambda _: True)(node)
+        return _OP_SUPPORT_CONSTRAINTS.get(node.target, lambda node, ep: True)(node, ep)
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         # TODO - other ops?
@@ -115,14 +117,16 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         if self.supported_ops and node.target not in self.supported_ops:
             return False
 
-        return self.check_constraint(node) and self.check_common_constraints(node)
+        return self.check_constraint(node, self.ep) and self.check_common_constraints(
+            node
+        )
 
     def _constraint(target):  # noqa
         """
         Decorator to register a constraint fn for a node
         """
 
-        def register(func: Callable[[torch.fx.Node], bool]):
+        def register(func: Callable[[torch.fx.Node, ExportedProgram], bool]):
             """
             Pass through registration for the constraint fn
             """
@@ -144,7 +148,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
     """
 
     @_constraint(exir_ops.edge.aten.mean.dim)
-    def mean_dim(node: torch.fx.Node) -> bool:  # noqa
+    def mean_dim(node: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
         """
         Only select 2d cases are supported by XNNPACK
         """
@@ -152,7 +156,9 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         return dims in ([-2, -1], [-1, -2])
 
     @_constraint(exir_ops.edge.aten.max_pool2d_with_indices.default)
-    def maxpool2d_with_indices(node: torch.fx.Node) -> bool:  # noqa
+    def maxpool2d_with_indices(
+        node: torch.fx.Node, ep: ExportedProgram  # noqa
+    ) -> bool:
         """
         Only if the first output value is consumed in the graph
         """
@@ -166,53 +172,61 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         )
 
     @_constraint(exir_ops.edge.quantized_decomposed.quantize_per_tensor.default)
-    def quant_per_tensor_default(q: torch.fx.Node) -> bool:  # noqa
+    def quant_per_tensor_default(q: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
         """
         Decide if we want to pull this q node or not in the partition.
         Given, op1 -> q -> dq -> op2
         For node q, if op1 or op2 is good, q should be good
         TODO: q -> op -> dq, real q not handled right now
         """
-        first = XnnpackOperatorSupport.check_constraint(q.args[0])
+        first = XnnpackOperatorSupport.check_constraint(q.args[0], ep)
         dq = list(q.users.keys())[0]
         op2 = list(dq.users.keys())[0]
-        return first or XnnpackOperatorSupport.check_constraint(op2)
+        return first or XnnpackOperatorSupport.check_constraint(op2, ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default)
-    def dequant_per_tensor_default(dq: torch.fx.Node) -> bool:  # noqa
+    def dequant_per_tensor_default(
+        dq: torch.fx.Node, ep: ExportedProgram  # noqa
+    ) -> bool:
         """
         Decide if we want to pull this dq node or not.
         """
-        return XnnpackOperatorSupport.check_constraint(dq.args[0])
+        return XnnpackOperatorSupport.check_constraint(dq.args[0], ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.quantize_per_channel.default)
-    def quant_per_channel_default(q: torch.fx.Node) -> bool:  # noqa
-        return XnnpackOperatorSupport.quant_per_tensor_default(q)
+    def quant_per_channel_default(
+        q: torch.fx.Node, ep: ExportedProgram  # noqa
+    ) -> bool:
+        return XnnpackOperatorSupport.quant_per_tensor_default(q, ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.dequantize_per_channel.default)
-    def dequant_per_channel_default(dq: torch.fx.Node) -> bool:  # noqa
-        return XnnpackOperatorSupport.dequant_per_tensor_default(dq)
+    def dequant_per_channel_default(
+        dq: torch.fx.Node, ep: ExportedProgram  # noqa
+    ) -> bool:
+        return XnnpackOperatorSupport.dequant_per_tensor_default(dq, ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor)
-    def quant_per_tensor_tensor(q: torch.fx.Node) -> bool:  # noqa
-        return XnnpackOperatorSupport.quant_per_tensor_default(q)
+    def quant_per_tensor_tensor(q: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
+        return XnnpackOperatorSupport.quant_per_tensor_default(q, ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor)
-    def dequant_per_tensor_tensor(dq: torch.fx.Node) -> bool:  # noqa
-        return XnnpackOperatorSupport.dequant_per_tensor_default(dq)
+    def dequant_per_tensor_tensor(
+        dq: torch.fx.Node, ep: ExportedProgram  # noqa
+    ) -> bool:
+        return XnnpackOperatorSupport.dequant_per_tensor_default(dq, ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.choose_qparams.tensor)
-    def choose_qparams_tensor(cqp: torch.fx.Node) -> bool:  # noqa
+    def choose_qparams_tensor(cqp: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
         """
         Given, cqp -> getitem -> q -> dq -> op2
         Just check q, because it will check op2
         """
         getitem0 = list(cqp.users.keys())[0]
         q = list(getitem0.users.keys())[0]
-        return XnnpackOperatorSupport.check_constraint(q)
+        return XnnpackOperatorSupport.check_constraint(q, ep)
 
     @_constraint(exir_ops.edge.aten.pow.Tensor_Scalar)
-    def pow_tensor_scalar(node: torch.fx.Node) -> bool:  # noqa
+    def pow_tensor_scalar(node: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
         """
         Only supports square, when args_2 = 2
         """
@@ -220,7 +234,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         return isinstance(power, int) and power == 2
 
     @_constraint(exir_ops.edge.aten.avg_pool2d.default)
-    def avg_pool_2d(node: torch.fx.Node) -> bool:  # noqa
+    def avg_pool_2d(node: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
         """
         Arguments to avg_pool2d.default node are as follows:
             - input,
@@ -255,7 +269,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         )
 
     @_constraint(exir_ops.edge.aten._prelu_kernel.default)
-    def prelu(node: torch.fx.Node) -> bool:  # noqa
+    def prelu(node: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
         """
         Input and Weight must be 4-dimensional
         """
@@ -264,7 +278,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         return input_dim == 4 and weight_dim == 4
 
     @_constraint(exir_ops.edge.aten.cat.default)
-    def cat(node: torch.fx.Node) -> bool:  # noqa
+    def cat(node: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
         """
         Only support concatenation of 2 - 4 tensors
         """
@@ -272,7 +286,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         return num_tensors >= 2 and num_tensors <= 4
 
     @_constraint(exir_ops.edge.aten.slice_copy.Tensor)
-    def slice_copy(node: torch.fx.Node) -> bool:  # noqa
+    def slice_copy(node: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
         """
         Support slicing with stride = 1, no zero-dim tensors
         """
@@ -334,7 +348,9 @@ class XnnpackFloatingPointPartitioner(Partitioner):
             log.info(f"Found {pl} subgraphs to be partitioned.")
         return pl != 0
 
-    def get_nodes(self, src_partition: SourcePartition) -> List[torch.fx.Node]:
+    def get_nodes(
+        self, src_partition: SourcePartition, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
         """
         Return nodes from the source partition.
 
@@ -343,7 +359,9 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         """
         return src_partition.nodes
 
-    def qualify_nodes(self, input_nodes: List[torch.fx.Node]) -> bool:
+    def qualify_nodes(
+        self, input_nodes: List[torch.fx.Node], ep: ExportedProgram
+    ) -> bool:
         """
         Each node in the module (post decomposition) must satisfy the
         constraints specified for XNNPACK.
@@ -351,16 +369,15 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         Disqualify the whole module if one of the nodes fails to satisfy.
         """
         return all(
-            XnnpackOperatorSupport.check_constraint(node) for node in input_nodes
+            XnnpackOperatorSupport.check_constraint(node, ep) for node in input_nodes
         )
 
-    def get_module_partitions(
-        self, graph_module: torch.fx.GraphModule
-    ) -> List[List[torch.fx.Node]]:
+    def get_module_partitions(self, ep: ExportedProgram) -> List[List[torch.fx.Node]]:
         """
         Get all partitions in the torch.fx.GraphModule for the supported
         modules.
         """
+        graph_module = ep.graph_module
         src_partition_dict = get_source_partitions(
             graph_module.graph, self.supported_modules
         )
@@ -369,22 +386,24 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         module_partitions = []
         for src_partitions in all_partitions:
             for src_partition in src_partitions:
-                partition_nodes = self.get_nodes(src_partition)
-                if self.qualify_nodes(partition_nodes):
+                partition_nodes = self.get_nodes(src_partition, ep)
+                if self.qualify_nodes(partition_nodes, ep):
                     module_partitions.append(partition_nodes)
 
         return module_partitions
 
-    def generate_partitions(self, graph_module: torch.fx.GraphModule) -> List[Any]:
+    def generate_partitions(self, ep: ExportedProgram) -> List[Any]:
         """
         Generate a list of partitions for an torch.fx.GraphModule.
         Also pass the supported ops to match.
         """
-        matched_module_nodes = self.get_module_partitions(graph_module)
+        graph_module = ep.graph_module
+        matched_module_nodes = self.get_module_partitions(ep)
         return generate_partitions_from_list_of_nodes(
             graph_module,
             matched_module_nodes,
             XnnpackOperatorSupport(
+                ep=ep,
                 supported_ops=self.supported_ops,
                 unsupported_modules=self.unsupported_modules,
             ),
@@ -409,7 +428,7 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         Run the partitioner on the given graph module, then tag each partition
         with its delegation tag (and partition id)
         """
-        partitions = self.generate_partitions(exported_program.graph_module)
+        partitions = self.generate_partitions(exported_program)
         partition_tags: Dict[str, DelegationSpec] = {}
         if self.check_partitions(partitions):
             partition_tags = self.tag_nodes(partitions)
@@ -456,7 +475,7 @@ class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
     # TODO Refactor this
     # TODO Don't be greedy when pulling q->dq pairs for a given op, add convert tracker pass
     def get_input_deps(  # noqa
-        self, input_nodes: List[torch.fx.Node]
+        self, input_nodes: List[torch.fx.Node], ep: ExportedProgram
     ) -> List[torch.fx.Node]:
         """
         For each input node, walk up and pull necessary quant/attr nodes in the partition
@@ -470,7 +489,7 @@ class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
                 # possible per_channel scale/zp for the dequant node args{1, 2}
                 for i in [1, 2]:
                     node = inp.args[i]
-                    if isinstance(node, torch.fx.Node) and node.op == "get_attr":
+                    if isinstance(node, torch.fx.Node) and is_param_node(ep, node):
                         nodes.add(node)
 
                 # quant node
@@ -482,7 +501,7 @@ class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
 
                 # possible weight for the quant node arg{0}
                 node = q_prod.args[0]
-                if isinstance(node, torch.fx.Node) and node.op == "get_attr":
+                if isinstance(node, torch.fx.Node) and is_param_node(ep, node):
                     nodes.add(node)
 
                 # possible nodes for quant node args{1, 2}
@@ -504,11 +523,13 @@ class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
                             nodes.add(parent)
 
                     # possible per_channel scale/zp for the quant node
-                    elif isinstance(node, torch.fx.Node) and node.op == "get_attr":
+                    elif isinstance(node, torch.fx.Node) and is_param_node(ep, node):
                         nodes.add(node)
         return list(nodes)
 
-    def get_output_deps(self, output_nodes: List[torch.fx.Node]) -> List[torch.fx.Node]:
+    def get_output_deps(
+        self, output_nodes: List[torch.fx.Node], exported_program
+    ) -> List[torch.fx.Node]:
         """
         For each output node, check all the users and insert them into the partition if needed
         """
@@ -526,14 +547,16 @@ class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
         return nodes
 
     # override
-    def get_nodes(self, src_partition: SourcePartition) -> List[torch.fx.Node]:  # noqa
+    def get_nodes(
+        self, src_partition: SourcePartition, ep: ExportedProgram
+    ) -> List[torch.fx.Node]:  # noqa
         """
         Insert quantization ops into src_partition by following the input, output node.
         """
         return (
             src_partition.nodes
-            + self.get_input_deps(src_partition.input_nodes)
-            + self.get_output_deps(src_partition.output_nodes)
+            + self.get_input_deps(src_partition.input_nodes, ep)
+            + self.get_output_deps(src_partition.output_nodes, ep)
         )
 
 
@@ -621,7 +644,7 @@ class XnnpackPartitioner(Partitioner):
         return pl != 0
 
     def get_input_deps(  # noqa
-        self, input_nodes: List[torch.fx.Node]
+        self, input_nodes: List[torch.fx.Node], ep: ExportedProgram
     ) -> List[torch.fx.Node]:
         """
         For each input node, walk up and pull necessary quant/attr nodes in the partition
@@ -635,7 +658,7 @@ class XnnpackPartitioner(Partitioner):
                 # possible per_channel scale/zp for the dequant node args{1, 2}
                 for i in [1, 2]:
                     node = inp.args[i]
-                    if isinstance(node, torch.fx.Node) and node.op == "get_attr":
+                    if isinstance(node, torch.fx.Node) and is_param_node(ep, node):
                         nodes.add(node)
 
                 # quant node
@@ -647,7 +670,7 @@ class XnnpackPartitioner(Partitioner):
 
                 # possible weight for the quant node arg{0}
                 node = q_prod.args[0]
-                if isinstance(node, torch.fx.Node) and node.op == "get_attr":
+                if isinstance(node, torch.fx.Node) and is_param_node(ep, node):
                     nodes.add(node)
 
                 # possible nodes for quant node args{1, 2}
@@ -669,11 +692,13 @@ class XnnpackPartitioner(Partitioner):
                             nodes.add(parent)
 
                     # possible per_channel scale/zp for the quant node
-                    elif isinstance(node, torch.fx.Node) and node.op == "get_attr":
+                    elif isinstance(node, torch.fx.Node) and is_param_node(ep, node):
                         nodes.add(node)
         return list(nodes)
 
-    def get_output_deps(self, output_nodes: List[torch.fx.Node]) -> List[torch.fx.Node]:
+    def get_output_deps(
+        self, output_nodes: List[torch.fx.Node], ep: ExportedProgram
+    ) -> List[torch.fx.Node]:
         """
         For each output node, check all the users and insert them into the partition if needed
         """
@@ -691,7 +716,7 @@ class XnnpackPartitioner(Partitioner):
         return nodes
 
     def get_nodes(
-        self, src_partition: SourcePartition, quant: bool
+        self, src_partition: SourcePartition, ep: ExportedProgram, quant: bool
     ) -> List[torch.fx.Node]:
         """
         Return nodes from the source partition.
@@ -700,13 +725,15 @@ class XnnpackPartitioner(Partitioner):
             # Insert quantization ops into src_partition by following the input, output node.
             return (
                 src_partition.nodes
-                + self.get_input_deps(src_partition.input_nodes)
-                + self.get_output_deps(src_partition.output_nodes)
+                + self.get_input_deps(src_partition.input_nodes, ep)
+                + self.get_output_deps(src_partition.output_nodes, ep)
             )
         else:
             return src_partition.nodes
 
-    def qualify_nodes(self, input_nodes: List[torch.fx.Node]) -> bool:
+    def qualify_nodes(
+        self, input_nodes: List[torch.fx.Node], ep: ExportedProgram
+    ) -> bool:
         """
         Each node in the module (post decomposition) must satisfy the
         constraints specified for XNNPACK.
@@ -714,23 +741,25 @@ class XnnpackPartitioner(Partitioner):
         Disqualify the whole module if one of the nodes fails to satisfy.
         """
         return all(
-            XnnpackOperatorSupport.check_constraint(node) for node in input_nodes
+            XnnpackOperatorSupport.check_constraint(node, ep) for node in input_nodes
         )
 
     def get_module_partitions(
-        self, graph_module: torch.fx.GraphModule, quant: Optional[bool]
+        self,
+        ep: ExportedProgram,
+        quant: Optional[bool],
     ) -> List[List[torch.fx.Node]]:
         """
         Get all partitions in the torch.fx.GraphModule for the supported
         modules.
         """
-
+        graph_module = ep.graph_module
         if quant is None:
-            module_partitions = self.get_module_partitions(graph_module, True)
+            module_partitions = self.get_module_partitions(ep, True)
             for node_list in module_partitions:
                 for node in node_list:
                     node.meta["quant_match"] = True
-            fp32_module_partitions = self.get_module_partitions(graph_module, False)
+            fp32_module_partitions = self.get_module_partitions(ep, False)
             for node_list in fp32_module_partitions:
                 for node in node_list:
                     if node.meta.get("quant_match", False):
@@ -750,24 +779,27 @@ class XnnpackPartitioner(Partitioner):
         module_partitions = []
         for src_partitions in all_partitions:
             for src_partition in src_partitions:
-                partition_nodes = self.get_nodes(src_partition, quant)
-                if self.qualify_nodes(partition_nodes):
+                partition_nodes = self.get_nodes(src_partition, ep, quant)
+                if self.qualify_nodes(partition_nodes, ep):
                     module_partitions.append(partition_nodes)
 
         return module_partitions
 
     def generate_partitions(
-        self, graph_module: torch.fx.GraphModule, quant: Optional[bool]
+        self, ep: ExportedProgram, quant: Optional[bool]
     ) -> List[Any]:
         """
         Generate a list of partitions for an torch.fx.GraphModule.
         Also pass the supported ops to match.
         """
-        matched_module_nodes = self.get_module_partitions(graph_module, quant)
+        graph_module = ep.graph_module
+        matched_module_nodes = self.get_module_partitions(ep, quant)
         return generate_partitions_from_list_of_nodes(
             graph_module,
             matched_module_nodes,
-            XnnpackOperatorSupport(supported_ops=list(self.get_supported_ops(quant))),
+            XnnpackOperatorSupport(
+                ep=ep, supported_ops=list(self.get_supported_ops(quant))
+            ),
         )
 
     def tag_nodes(self, partitions: List[Partition]) -> Dict[str, DelegationSpec]:
@@ -797,7 +829,7 @@ class XnnpackPartitioner(Partitioner):
         Run the partitioner on the given graph module, then tag each partition
         with its delegation tag (and partition id)
         """
-        partitions = self.generate_partitions(exported_program.graph_module, quant)
+        partitions = self.generate_partitions(exported_program, quant)
         partition_tags: Dict[str, DelegationSpec] = {}
         if self.check_partitions(partitions):
             partition_tags = self.tag_nodes(partitions)
@@ -831,7 +863,7 @@ class XnnpackDynamicallyQuantizedPartitioner(XnnpackQuantizedPartitioner):
                 id=next(partition_id),
                 nodes=set(match),
             )
-            for match in self.get_module_partitions(exported_program.graph_module)
+            for match in self.get_module_partitions(exported_program)
         ]
         partition_tags: Dict[str, DelegationSpec] = {}
 
