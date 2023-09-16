@@ -22,7 +22,6 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
 from executorch.backends.xnnpack.utils.xnnpack_constants import (
     XNN_FLAG_TRANSPOSE_WEIGHTS,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
 
 
 @register_node_visitor
@@ -56,15 +55,7 @@ class AddmmVisitor(NodeVisitor):
         # output
         output_id = vals_to_ids[node]
 
-        flag = (
-            0
-            if get_input_node(node, 2).target
-            in (
-                exir_ops.edge.aten.permute_copy.default,
-                exir_ops.edge.aten.t_copy.default,
-            )
-            else XNN_FLAG_TRANSPOSE_WEIGHTS
-        )
+        flag = XNN_FLAG_TRANSPOSE_WEIGHTS
 
         ser_node = XNode(
             xnode_union=XNNFullyConnected(
