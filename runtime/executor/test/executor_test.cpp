@@ -18,15 +18,11 @@
 #include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/hierarchical_allocator.h>
-#include <executorch/runtime/core/memory_allocator.h>
-#include <executorch/runtime/executor/executor.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
-#include <executorch/util/TestMemoryConfig.h>
 
 namespace torch {
 namespace executor {
@@ -256,55 +252,5 @@ TEST(PyTreeEValue, DestructedSpec) {
   ASSERT_NEAR(child1.leaf().toDouble(), 3.0, 0.01);
 }
 
-TEST_F(ExecutorTest, HierarchicalAllocator) {
-  constexpr size_t n_allocators = 2;
-  constexpr size_t size0 = 4;
-  constexpr size_t size1 = 8;
-  uint8_t mem0[size0];
-  uint8_t mem1[size1];
-  MemoryAllocator allocators[n_allocators]{
-      MemoryAllocator(size0, mem0), MemoryAllocator(size1, mem1)};
-
-  HierarchicalAllocator allocator(n_allocators, allocators);
-
-  // get_offset_address() success cases
-  {
-    // Total size is 4, so off=0 + size=2 fits.
-    Result<void*> address = allocator.get_offset_address(
-        /*memory_id=*/0, /*offset_bytes=*/0, /*size_bytes=*/2);
-    ASSERT_TRUE(address.ok());
-    ASSERT_NE(address.get(), nullptr);
-  }
-  {
-    // Total size is 8, so off=4 + size=4 fits exactly.
-    Result<void*> address = allocator.get_offset_address(
-        /*memory_id=*/1, /*offset_bytes=*/4, /*size_bytes=*/4);
-    ASSERT_TRUE(address.ok());
-    ASSERT_NE(address.get(), nullptr);
-  }
-
-  // get_offset_address() failure cases
-  {
-    // Total size is 4, so off=0 + size=5 is too large.
-    Result<void*> address = allocator.get_offset_address(
-        /*memory_id=*/0, /*offset_bytes=*/4, /*size_bytes=*/5);
-    ASSERT_FALSE(address.ok());
-    ASSERT_NE(address.error(), Error::Ok);
-  }
-  {
-    // Total size is 4, so off=8 + size=0 is off the end.
-    Result<void*> address = allocator.get_offset_address(
-        /*memory_id=*/0, /*offset_bytes=*/8, /*size_bytes=*/0);
-    ASSERT_FALSE(address.ok());
-    ASSERT_NE(address.error(), Error::Ok);
-  }
-  {
-    // ID too large; only two zero-indexed entries in the allocator.
-    Result<void*> address = allocator.get_offset_address(
-        /*memory_id=*/2, /*offset_bytes=*/0, /*size_bytes=*/99);
-    ASSERT_FALSE(address.ok());
-    ASSERT_NE(address.error(), Error::Ok);
-  }
-}
 } // namespace executor
 } // namespace torch

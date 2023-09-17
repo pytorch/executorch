@@ -63,17 +63,15 @@ def define_common_targets(is_fbcode = False):
             "executor_test.cpp",
         ],
         deps = [
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/core:evalue",
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/platform:platform",
-            "//executorch/runtime/kernel:operator_registry",
-            "//executorch/runtime/executor:executor",
-            "//executorch/kernels/portable:generated_lib",
-            "//executorch/runtime/kernel:kernel_runtime_context",
             "//executorch/extension/pytree:pytree",
+            "//executorch/kernels/portable:generated_lib",  # @manual
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:evalue",
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/kernel:kernel_runtime_context",
+            "//executorch/runtime/kernel:operator_registry",
+            "//executorch/runtime/platform:platform",
             "//executorch/test/utils:utils",
-            "//executorch/util:test_memory_config",
         ],
     )
 
