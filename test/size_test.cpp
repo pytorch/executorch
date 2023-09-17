@@ -52,9 +52,9 @@ int main(int argc, char** argv) {
       &runtime_allocator,
       &temp_allocator)};
 
-  Result<FileDataLoader> loader = FileDataLoader::From(argv[1]);
+  Result<FileDataLoader> loader = FileDataLoader::from(argv[1]);
   ET_CHECK_MSG(
-      loader.ok(), "FileDataLoader::From() failed: 0x%" PRIx32, loader.error());
+      loader.ok(), "FileDataLoader::from() failed: 0x%" PRIx32, loader.error());
 
   uint32_t prof_tok = EXECUTORCH_BEGIN_PROF("de-serialize model");
   const auto program = Program::Load(&loader.get());

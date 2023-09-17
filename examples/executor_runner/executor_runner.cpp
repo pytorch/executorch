@@ -61,9 +61,9 @@ int main(int argc, char** argv) {
   // DataLoaders that use mmap() or point to data that's already in memory, and
   // users can create their own DataLoaders to load from arbitrary sources.
   const char* model_path = FLAGS_model_path.c_str();
-  Result<FileDataLoader> loader = FileDataLoader::From(model_path);
+  Result<FileDataLoader> loader = FileDataLoader::from(model_path);
   ET_CHECK_MSG(
-      loader.ok(), "FileDataLoader::From() failed: 0x%" PRIx32, loader.error());
+      loader.ok(), "FileDataLoader::from() failed: 0x%" PRIx32, loader.error());
 
   // Parse the program file. This is immutable, and can also be reused between
   // multiple execution invocations across multiple threads.
