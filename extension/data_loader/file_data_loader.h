@@ -40,9 +40,16 @@ class FileDataLoader : public DataLoader {
    *     could not be found.
    * @retval Error::MemoryAllocationFailed Internal memory allocation failure.
    */
-  static Result<FileDataLoader> From(
+  static Result<FileDataLoader> from(
       const char* file_name,
       size_t alignment = alignof(std::max_align_t));
+
+  /// DEPRECATED: Use the lowercase `from()` instead.
+  __ET_DEPRECATED static Result<FileDataLoader> From(
+      const char* file_name,
+      size_t alignment = alignof(std::max_align_t)) {
+    return from(file_name, alignment);
+  }
 
   // Movable to be compatible with Result.
   FileDataLoader(FileDataLoader&& rhs) noexcept
