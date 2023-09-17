@@ -89,16 +89,16 @@ MemoryManager* create_memory_manager(
 
   // Create the non-const allocator and the buffers it points to.
   size_t num_non_const_buffers = method_meta->num_non_const_buffers();
-  MemoryAllocator* non_const_allocators =
-      worker_allocator.allocateList<MemoryAllocator>(num_non_const_buffers);
+  Span<uint8_t>* non_const_buffers =
+      worker_allocator.allocateList<Span<uint8_t>>(num_non_const_buffers);
+  ET_CHECK(non_const_buffers != nullptr);
   for (size_t id = 0; id < num_non_const_buffers; ++id) {
     const size_t buffer_size = method_meta->non_const_buffer_size(id).get();
     ET_LOG(
         Info, "Setting up non-const buffer id %zu, size %zu.", id, buffer_size);
     void* buffer = worker_allocator.allocate(buffer_size);
     ET_CHECK(buffer != nullptr);
-    new (&non_const_allocators[id])
-        MemoryAllocator(buffer_size, (uint8_t*)buffer);
+    non_const_buffers[id] = {(uint8_t*)buffer, buffer_size};
     ET_LOG(
         Info,
         "Created non_const_allocators with size %zu and addr %p",
@@ -109,7 +109,7 @@ MemoryManager* create_memory_manager(
       worker_allocator.allocateInstance<HierarchicalAllocator>();
   ET_CHECK(non_const_allocator != nullptr);
   new (non_const_allocator)
-      HierarchicalAllocator(num_non_const_buffers, non_const_allocators);
+      HierarchicalAllocator({non_const_buffers, num_non_const_buffers});
 
   // The constant allocator is not currently used, but must be provided.
   auto* const_allocator = worker_allocator.allocateInstance<MemoryAllocator>();

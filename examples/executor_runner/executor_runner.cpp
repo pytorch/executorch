@@ -114,33 +114,27 @@ int main(int argc, char** argv) {
       MemoryAllocator(kRuntimeMemorySize, runtime_pool)};
   runtime_allocator.enable_profiling("runtime allocator");
 
-  // The non-const allocator is used to provide the memory-planned buffers that
-  // back mutable tensors. Since it was planned ahead of time, the Program knows
-  // how big each of the allocators needs to be.
+  // The non-const buffers will back the mutable tensors used by the method. The
+  // sizes of these buffers were determined ahead of time during the
+  // memory-planning pasees.
   //
-  // These buffers correspond to different hardware memory banks. Most mobile
-  // environments will only have a single buffer. Some embedded environments may
-  // have more than one for, e.g., slow/large DRAM and fast/small SRAM.
+  // Each buffer typically corresponds to a different hardware memory bank. Most
+  // mobile environments will only have a single buffer. Some embedded
+  // environments may have more than one for, e.g., slow/large DRAM and
+  // fast/small SRAM, or for memory associated with particular cores.
   std::vector<std::unique_ptr<uint8_t[]>> non_const_buffers;
-  std::vector<MemoryAllocator> non_const_allocators;
+  std::vector<Span<uint8_t>> non_const_spans;
   size_t num_non_const_buffers = method_meta->num_non_const_buffers();
   for (size_t id = 0; id < num_non_const_buffers; ++id) {
-    auto buffer_size = method_meta->non_const_buffer_size(id);
-    ET_CHECK_MSG(
-        buffer_size.ok(),
-        "Failed to get size of non-const buffer %zu for method %s: 0x%x",
-        id,
-        method_name,
-        (unsigned int)buffer_size.error());
-    ET_LOG(
-        Info, "Setting up non-const buffer %zu, size %zu.", id, *buffer_size);
-    non_const_buffers.push_back(std::make_unique<uint8_t[]>(*buffer_size));
-    non_const_allocators.push_back(
-        MemoryAllocator(*buffer_size, non_const_buffers.back().get()));
-    non_const_allocators.back().enable_profiling("non_const_allocators");
+    // .get() will always succeed because id < num_non_const_buffers.
+    size_t buffer_size =
+        static_cast<size_t>(method_meta->non_const_buffer_size(id).get());
+    ET_LOG(Info, "Setting up non-const buffer %zu, size %zu.", id, buffer_size);
+    non_const_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
+    non_const_spans.push_back({non_const_buffers.back().get(), buffer_size});
   }
   HierarchicalAllocator non_const_allocator(
-      non_const_allocators.size(), non_const_allocators.data());
+      {non_const_spans.data(), non_const_spans.size()});
 
   // The constant allocator is not currently used. Please initialize with a
   // zero-sized allocator.
