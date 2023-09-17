@@ -56,7 +56,7 @@ class ExecutorBackend final : public PyTorchBackendInterface {
     // Can't free `processed` because the program will point into that memory.
 
     // Try loading the program.
-    Result<Program> program_result = Program::Load(loader);
+    Result<Program> program_result = Program::load(loader);
     if (!program_result.ok()) {
       return program_result.error();
     }

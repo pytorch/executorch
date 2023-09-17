@@ -57,7 +57,7 @@ class KernelResolutionTest : public ::testing::Test {
     loader_ = std::make_unique<FileDataLoader>(std::move(loader.get()));
 
     // Use it to load the program.
-    Result<Program> program = Program::Load(
+    Result<Program> program = Program::load(
         loader_.get(), Program::Verification::InternalConsistency);
     ASSERT_EQ(program.error(), Error::Ok);
     program_ = std::make_unique<Program>(std::move(program.get()));

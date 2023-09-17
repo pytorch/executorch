@@ -57,10 +57,10 @@ int main(int argc, char** argv) {
       loader.ok(), "FileDataLoader::From() failed: 0x%" PRIx32, loader.error());
 
   uint32_t prof_tok = EXECUTORCH_BEGIN_PROF("de-serialize model");
-  const auto program = Program::Load(&loader.get());
+  const auto program = Program::load(&loader.get());
   EXECUTORCH_END_PROF(prof_tok);
   ET_CHECK_MSG(
-      program.ok(), "Program::Load() failed: 0x%" PRIx32, program.error());
+      program.ok(), "Program::load() failed: 0x%" PRIx32, program.error());
   ET_LOG(Info, "Program file %s loaded.", argv[1]);
 
   // Use the first method in the program.

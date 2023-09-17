@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
 
   // Parse the program file. This is immutable, and can also be reused between
   // multiple execution invocations across multiple threads.
-  Result<Program> program = Program::Load(&loader.get());
+  Result<Program> program = Program::load(&loader.get());
   if (!program.ok()) {
     ET_LOG(Error, "Failed to parse model file %s", model_path);
     return 1;
