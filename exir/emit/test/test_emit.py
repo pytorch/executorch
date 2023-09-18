@@ -173,7 +173,8 @@ class TestEmit(unittest.TestCase):
         )
 
         self.assertEqual(
-            program.execution_plan[0].container_meta_type.encoded_inp_str, "T1#1($)"
+            program.execution_plan[0].container_meta_type.encoded_inp_str,
+            "T2#1#0(T1#1($),D0())",
         )
 
     def test_buffers_with_perfect_alignment(self) -> None:

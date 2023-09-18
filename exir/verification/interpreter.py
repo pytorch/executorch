@@ -369,7 +369,7 @@ class Interpreter:
         """
 
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
-        args, pytree = ex_pytree.tree_flatten(raw_args)
+        args, pytree = ex_pytree.tree_flatten((raw_args, {}))
 
         if pytree.to_str() != self.container_metatype.encoded_inp_str:
             raise TypeError(

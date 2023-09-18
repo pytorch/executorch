@@ -72,10 +72,9 @@ class HackedUpExportedProgramDONOTUSE(ExportedProgram):
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         import torch._export.error as error
-        from torch._export import combine_args_kwargs
 
         if self.call_spec.in_spec is not None:
-            user_args = combine_args_kwargs(args, kwargs)
+            user_args = args
             try:
                 args = fx_pytree.tree_flatten_spec(user_args, self.call_spec.in_spec)  # type: ignore[assignment]
             except Exception:
