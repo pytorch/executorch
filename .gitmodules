@@ -28,3 +28,6 @@
 [submodule "backends/xnnpack/third-party/XNNPACK"]
 	path = backends/xnnpack/third-party/XNNPACK
 	url = https://github.com/google/XNNPACK.git
+[submodule "examples/third-party/segment-anything"]
+	path = examples/third-party/segment-anything
+	url = https://github.com/facebookresearch/segment-anything.git
