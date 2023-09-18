@@ -244,7 +244,7 @@ inline std::unique_ptr<Module> load_from_buffer(
 inline std::unique_ptr<Module> load_from_file(const std::string& path) {
   EXECUTORCH_SCOPE_PROF("load_from_file");
 
-  Result<MmapDataLoader> res = MmapDataLoader::From(
+  Result<MmapDataLoader> res = MmapDataLoader::from(
       path.c_str(), MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
   THROW_IF_ERROR(
       res.error(),
