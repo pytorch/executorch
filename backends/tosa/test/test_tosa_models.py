@@ -7,83 +7,97 @@
 # Set of simple models for smoke testing TOSA conversion flow
 #
 
-import torch
 from enum import Enum
 
+import torch
+
 TestList = {}
-def register_test( cls ):
+
+
+def register_test(cls):
     TestList[cls.__name__] = cls()
     return cls
+
 
 # Which TOSA profile to target with a model/inputs
 # See https://www.mlplatform.org/tosa/tosa_spec.html#_profiles
 class TosaProfile(Enum):
-    BI = 0 # Base Inference
-    MI = 1 # Main Inference
-    MT = 2 # Main Training
+    BI = 0  # Base Inference
+    MI = 1  # Main Inference
+    MT = 2  # Main Training
+
 
 class TorchBuilder:
     """The member functions build the PyTorch operators into small networks
     for our tests"""
+
     def __init__(self):
         pass
 
     @register_test
     class simple_add(torch.nn.Module):
         inputs = {
-            TosaProfile.BI: ( torch.ones(5, dtype=torch.int32), ),
-            TosaProfile.MI: ( torch.ones(5), ),
+            TosaProfile.BI: (torch.ones(5, dtype=torch.int32),),
+            TosaProfile.MI: (torch.ones(5),),
         }
 
         def __init__(self):
             super().__init__()
 
         def forward(self, x):
-            return x+x
+            return x + x
 
     @register_test
     class simple_add_broadcast(torch.nn.Module):
         inputs = {
-            TosaProfile.BI: ( torch.ones(10,1, dtype=torch.int32), torch.ones(10,10, dtype=torch.int32), ),
-            TosaProfile.MI: ( torch.ones(10,1), torch.ones(10,10), ),
+            TosaProfile.BI: (
+                torch.ones(10, 1, dtype=torch.int32),
+                torch.ones(10, 10, dtype=torch.int32),
+            ),
+            TosaProfile.MI: (
+                torch.ones(10, 1),
+                torch.ones(10, 10),
+            ),
         }
 
         def __init__(self):
             super().__init__()
 
         def forward(self, x, y):
-            return x+y
+            return x + y
 
     @register_test
     class simple_linear(torch.nn.Module):
         inputs = {
-            #TODO: RuntimeError: mat1 and mat2 must have the same dtype, but got Int and Float
-            #TosaProfile.BI: ( torch.ones(128,20, dtype=torch.int32), ),
-            TosaProfile.MI: ( torch.ones(128,20), ),
+            # TODO: RuntimeError: mat1 and mat2 must have the same dtype, but got Int and Float
+            # TosaProfile.BI: ( torch.ones(128,20, dtype=torch.int32), ),
+            TosaProfile.MI: (torch.ones(128, 20),),
         }
 
         def __init__(self):
             super().__init__()
-            self.fc = torch.nn.Linear( 20, 30 )
+            self.fc = torch.nn.Linear(20, 30)
             self.relu6 = torch.nn.ReLU6()
 
         def forward(self, x):
-            x = self.fc( x )
+            x = self.fc(x)
             x = self.relu6(x)
-            return x+x
+            return x + x
 
     @register_test
     class simple_conv2d(torch.nn.Module):
         inputs = {
-            #TODO: fails input char, bias float
-            #TosaProfile.BI: ( torch.ones(1,3,256,256, dtype=torch.int8), ),
-            #TODO: this is segfaulting on model.forward in the nightly torch - disabling for now
-            #TosaProfile.MI: ( torch.ones(1,3,256,256), ),
+            # TODO: fails input char, bias float
+            # TosaProfile.BI: ( torch.ones(1,3,256,256, dtype=torch.int8), ),
+            # TODO: this is segfaulting on model.forward in the nightly torch - disabling for now
+            # TosaProfile.MI: ( torch.ones(1,3,256,256), ),
         }
 
         def __init__(self):
             super().__init__()
-            self.conv2d = torch.nn.Conv2d(in_channels=3, out_channels=10, kernel_size=3, stride=1)
+            self.conv2d = torch.nn.Conv2d(
+                in_channels=3, out_channels=10, kernel_size=3, stride=1
+            )
 
         def forward(self, x):
             x = self.conv2d(x)
@@ -93,8 +107,11 @@ class TorchBuilder:
     class simple_div(torch.nn.Module):
         inputs = {
             # TODO: BUG: need to codegen for integer div, current float/recip one is not valid BI
-            #TosaProfile.BI: ( torch.ones(5, dtype=torch.int8), torch.ones(5, dtype=torch.int8), ),
-            TosaProfile.MI: ( torch.ones(5), torch.ones(5), ),
+            # TosaProfile.BI: ( torch.ones(5, dtype=torch.int8), torch.ones(5, dtype=torch.int8), ),
+            TosaProfile.MI: (
+                torch.ones(5),
+                torch.ones(5),
+            ),
         }
 
         def __init__(self):
@@ -108,7 +125,7 @@ class TorchBuilder:
         inputs = {
             # "RuntimeError: "batch_norm" not implemented for 'Char'"
             # TosaProfile.BI: ( torch.ones(20,100,35,45, dtype=torch.int8), ),
-            TosaProfile.MI: ( torch.ones(20,100,35,45), ),
+            TosaProfile.MI: (torch.ones(20, 100, 35, 45),),
         }
 
         def __init__(self):
@@ -123,7 +140,7 @@ class TorchBuilder:
     class simple_avg_pool2d(torch.nn.Module):
         inputs = {
             # TosaProfile.BI: ( torch.ones(20, 16, 50, 32, dtype=torch.int8), ),
-            TosaProfile.MI: ( torch.ones(20, 16, 50, 32), ),
+            TosaProfile.MI: (torch.ones(20, 16, 50, 32),),
         }
 
         def __init__(self):
