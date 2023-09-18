@@ -68,7 +68,7 @@ class Module final {
   explicit Module(std::unique_ptr<DataLoader> loader)
       : loader_(std::move(loader)) {
     runtime_init();
-    Result<Program> program = Program::Load(
+    Result<Program> program = Program::load(
         loader_.get(), Program::Verification::InternalConsistency);
     THROW_IF_ERROR(
         program.error(),

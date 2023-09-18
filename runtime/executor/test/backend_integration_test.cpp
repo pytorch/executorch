@@ -295,7 +295,7 @@ TEST_P(BackendIntegrationTest, BasicInitSucceeds) {
   Result<FileDataLoader> loader = FileDataLoader::From(program_path());
   ASSERT_EQ(loader.error(), Error::Ok);
 
-  Result<Program> program = Program::Load(&loader.get());
+  Result<Program> program = Program::load(&loader.get());
   ASSERT_EQ(program.error(), Error::Ok);
 
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
@@ -326,7 +326,7 @@ TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
   DataLoaderSpy spy_loader(&loader.get());
 
   // Load the program.
-  Result<Program> program = Program::Load(&spy_loader);
+  Result<Program> program = Program::load(&spy_loader);
   ASSERT_EQ(program.error(), Error::Ok);
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method_res = program->load_method("forward", &mmm.get());
@@ -390,7 +390,7 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
   DataLoaderSpy spy_loader(&loader.get());
 
   // Load the program.
-  Result<Program> program = Program::Load(&spy_loader);
+  Result<Program> program = Program::load(&spy_loader);
   ASSERT_EQ(program.error(), Error::Ok);
 
   // Hold onto the address of the processed buffer so we can compare against
@@ -538,7 +538,7 @@ TEST_P(DelegateDataAlignmentTest, ExpectedDataAlignment) {
   DataLoaderSpy spy_loader(&loader.get());
 
   // Load the program.
-  Result<Program> program = Program::Load(&spy_loader);
+  Result<Program> program = Program::load(&spy_loader);
   ASSERT_EQ(program.error(), Error::Ok);
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method = program->load_method("forward", &mmm.get());
