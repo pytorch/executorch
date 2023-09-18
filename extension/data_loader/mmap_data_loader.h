@@ -51,16 +51,23 @@ class MmapDataLoader : public DataLoader {
    * @param[in] mlock_config How and whether to lock loaded pages with
    *     `mlock()`.
    */
-  static Result<MmapDataLoader> From(
+  static Result<MmapDataLoader> from(
       const char* file_name,
       MlockConfig mlock_config = MlockConfig::UseMlock);
 
-  /// DEPRECATED: Use the version of `From()` that takes an MlockConfig.
+  /// DEPRECATED: Use the lowercase `from()` instead.
+  __ET_DEPRECATED static Result<MmapDataLoader> From(
+      const char* file_name,
+      MlockConfig mlock_config = MlockConfig::UseMlock) {
+    return from(file_name, mlock_config);
+  }
+
+  /// DEPRECATED: Use the version of `from()` that takes an MlockConfig.
   __ET_DEPRECATED
   static Result<MmapDataLoader> From(const char* file_name, bool use_mlock) {
     MlockConfig mlock_config =
         use_mlock ? MlockConfig::UseMlock : MlockConfig::NoMlock;
-    return From(file_name, mlock_config);
+    return from(file_name, mlock_config);
   }
 
   // Movable to be compatible with Result.
