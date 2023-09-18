@@ -140,7 +140,8 @@ class QnnpackBackend final : public PyTorchBackendInterface {
         weights_zp->buffer()->data(),
         ScalarType::QUInt8,
         runtime_allocator,
-        0,
+        pre_pad_bytes, // Not necessary to prepad but surpresses asan errors:
+                       // D42179009
         &zp_buf);
 
     // Create + copy Weight Scales Tensor
@@ -152,7 +153,8 @@ class QnnpackBackend final : public PyTorchBackendInterface {
         weights_scale->buffer()->data(),
         ScalarType::Float,
         runtime_allocator,
-        0,
+        pre_pad_bytes, // Not necessary to prepad but surpresses asan errors:
+                       // D42179009
         &scale_buf);
 
     // Create Quantized Input Tensor

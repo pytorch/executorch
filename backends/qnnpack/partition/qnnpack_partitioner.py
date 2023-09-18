@@ -5,9 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import Callable, Dict, List, Optional, Union
-
-import torch
+from typing import Dict, List, Optional, Union
 
 from executorch.backends.qnnpack.partition.support_patterns import (
     get_dynamic_quant_addmm_with_view_copy_graph,
@@ -16,14 +14,13 @@ from executorch.backends.qnnpack.partition.support_patterns import (
     get_dynamic_quant_mm_without_view_copy_graph,
 )
 from executorch.backends.qnnpack.qnnpack_preprocess import QnnpackBackend
-from executorch.backends.transforms.addmm_mm_to_linear import (
-    apply_addmm_mm_to_linear_transform,
-)
+from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
     PartitionResult,
 )
+from torch._export.pass_base import PassType
 from torch.export import ExportedProgram
 from torch.fx.passes.utils.matcher_utils import SubgraphMatcher
 
@@ -69,7 +66,7 @@ class _SingleOpDelegatePartitioner(_BasePartitioner):
         self,
         delegate_name,
         patterns,
-        transforms: Optional[List[Callable[[torch.fx.Graph], torch.fx.Graph]]] = None,
+        transforms: Optional[List[PassType]] = None,
     ):
         """
         @param transforms: Optional list of transforms that will be applied to the graph before running the partitioner.
@@ -157,5 +154,5 @@ class QnnpackPartitioner(_SingleOpDelegatePartitioner):
             get_dynamic_quant_mm_without_view_copy_graph(dynamic_shape=True),
         ]
         super().__init__(
-            QnnpackBackend.__name__, qnnp_patterns, [apply_addmm_mm_to_linear_transform]
+            QnnpackBackend.__name__, qnnp_patterns, [AddmmToLinearTransform()]
         )
