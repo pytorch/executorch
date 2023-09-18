@@ -42,7 +42,7 @@ class MethodTest : public ::testing::Test {
          std::make_unique<FileDataLoader>(std::move(loader.get()))});
 
     // Use it to load the program.
-    Result<Program> program = Program::Load(
+    Result<Program> program = Program::load(
         loaders_[module_name].get(),
         Program::Verification::InternalConsistency);
     ASSERT_EQ(program.error(), Error::Ok);

@@ -218,7 +218,7 @@ int main(int argc, char** argv) {
   // multiple execution invocations across multiple threads.
   uint32_t prof_tok = EXECUTORCH_BEGIN_PROF("de-serialize model");
   Result<Program> program =
-      torch::executor::Program::Load(program_data.program_loader());
+      torch::executor::Program::load(program_data.program_loader());
   EXECUTORCH_END_PROF(prof_tok);
   if (!program.ok()) {
     ET_LOG(Error, "Failed to parse model file %s", FLAGS_model_path.c_str());
