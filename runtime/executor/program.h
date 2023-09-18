@@ -73,9 +73,16 @@ class Program final {
    * @param[in] verification The type of verification to do before returning
    *     success.
    */
-  __ET_NODISCARD static Result<Program> Load(
+  __ET_NODISCARD static Result<Program> load(
       DataLoader* loader,
       Verification verification = Verification::Minimal);
+
+  /// DEPRECATED: Use the lowercase `load()` instead.
+  __ET_DEPRECATED __ET_NODISCARD static Result<Program> Load(
+      DataLoader* loader,
+      Verification verification = Verification::Minimal) {
+    return load(loader, verification);
+  }
 
   // Movable, to be compatible with Result.
   Program(Program&&) noexcept = default;

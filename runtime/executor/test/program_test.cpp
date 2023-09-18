@@ -99,7 +99,7 @@ using torch::executor::testing::ProgramTestFriend;
 TEST_F(ProgramTest, DataParsesWithMinimalVerification) {
   // Parse the Program from the data.
   Result<Program> program =
-      Program::Load(add_loader_.get(), Program::Verification::Minimal);
+      Program::load(add_loader_.get(), Program::Verification::Minimal);
 
   // Should have succeeded.
   EXPECT_EQ(program.error(), Error::Ok);
@@ -107,7 +107,7 @@ TEST_F(ProgramTest, DataParsesWithMinimalVerification) {
 
 TEST_F(ProgramTest, DataParsesWithInternalConsistencyVerification) {
   // Parse the Program from the data.
-  Result<Program> program = Program::Load(
+  Result<Program> program = Program::load(
       add_loader_.get(), Program::Verification::InternalConsistency);
 
   // Should have succeeded.
@@ -139,7 +139,7 @@ TEST_F(ProgramTest, BadMagicFailsToLoad) {
     // Parse the Program from the data. Use minimal verification to show that
     // even this catches the header problem.
     Result<Program> program =
-        Program::Load(&data_loader, Program::Verification::Minimal);
+        Program::load(&data_loader, Program::Verification::Minimal);
 
     // Should fail.
     ASSERT_EQ(program.error(), Error::InvalidProgram);
@@ -152,7 +152,7 @@ TEST_F(ProgramTest, BadMagicFailsToLoad) {
   {
     // Parse the Program from the data again.
     Result<Program> program =
-        Program::Load(&data_loader, Program::Verification::Minimal);
+        Program::load(&data_loader, Program::Verification::Minimal);
 
     // Should now succeed.
     ASSERT_EQ(program.error(), Error::Ok);
@@ -170,7 +170,7 @@ TEST_F(ProgramTest, VerificationCatchesTruncation) {
   BufferDataLoader half_data_loader(full_data->data(), full_data_len / 2);
 
   // Loading with full verification should fail.
-  Result<Program> program = Program::Load(
+  Result<Program> program = Program::load(
       &half_data_loader, Program::Verification::InternalConsistency);
   ASSERT_EQ(program.error(), Error::InvalidProgram);
 }
@@ -195,7 +195,7 @@ TEST_F(ProgramTest, VerificationCatchesCorruption) {
 
   // Should fail to parse corrupted data when using full verification.
   Result<Program> program =
-      Program::Load(&data_loader, Program::Verification::InternalConsistency);
+      Program::load(&data_loader, Program::Verification::InternalConsistency);
   ASSERT_EQ(program.error(), Error::InvalidProgram);
 }
 
@@ -216,14 +216,14 @@ TEST_F(ProgramTest, UnalignedProgramDataFails) {
 
   // Should refuse to accept unaligned data.
   Result<Program> program =
-      Program::Load(&data_loader, Program::Verification::Minimal);
+      Program::load(&data_loader, Program::Verification::Minimal);
   ASSERT_NE(program.error(), Error::Ok);
 }
 
 TEST_F(ProgramTest, LoadSegmentWithNoSegments) {
   // Load a program with no segments.
   Result<Program> program =
-      Program::Load(add_loader_.get(), kDefaultVerification);
+      Program::load(add_loader_.get(), kDefaultVerification);
   EXPECT_EQ(program.error(), Error::Ok);
 
   // Loading a segment should fail.
@@ -305,7 +305,7 @@ TEST_F(ProgramTest, HeaderNotPresent) {
 TEST_F(ProgramTest, getMethods) {
   // Parse the Program from the data.
   Result<Program> program_res =
-      Program::Load(multi_loader_.get(), kDefaultVerification);
+      Program::load(multi_loader_.get(), kDefaultVerification);
   EXPECT_EQ(program_res.error(), Error::Ok);
 
   Program program(std::move(program_res.get()));
@@ -318,4 +318,11 @@ TEST_F(ProgramTest, getMethods) {
   auto res2 = program.get_method_name(1);
   EXPECT_TRUE(res2.ok());
   EXPECT_EQ(strcmp(res2.get(), "forward2"), 0);
+}
+
+// Test that the deprecated Load method (capital 'L') still works.
+TEST_F(ProgramTest, DEPRECATEDLoad) {
+  // Parse the Program from the data.
+  Result<Program> program_res = Program::Load(multi_loader_.get());
+  EXPECT_EQ(program_res.error(), Error::Ok);
 }
