@@ -19,7 +19,6 @@ from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
     aten_to_edge_passes,
     EdgeToBackendOpsPass,
-    HintBasedSymShapeEvalPass,
     OpReplacePass,
 )
 from executorch.exir.passes.remove_assert_async_pass import RemoveAssertAsyncPass
@@ -309,7 +308,7 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
         SpecPropPass(),
         EdgeToBackendOpsPass(),
         RemoveAssertAsyncPass(),
-        HintBasedSymShapeEvalPass(),
+        config.sym_shape_eval_pass,
         config.to_out_var_pass,
         config.memory_planning_pass,
     ]
