@@ -49,7 +49,7 @@ TEST_P(FileDataLoaderTest, InBoundsLoadsSucceed) {
 
   // Wrap it in a loader.
   Result<FileDataLoader> fdl =
-      FileDataLoader::From(tf.path().c_str(), alignment());
+      FileDataLoader::from(tf.path().c_str(), alignment());
   ASSERT_EQ(fdl.error(), Error::Ok);
 
   // size() should succeed and reflect the total size.
@@ -113,7 +113,7 @@ TEST_P(FileDataLoaderTest, OutOfBoundsLoadFails) {
   TempFile tf(data, sizeof(data));
 
   Result<FileDataLoader> fdl =
-      FileDataLoader::From(tf.path().c_str(), alignment());
+      FileDataLoader::from(tf.path().c_str(), alignment());
   ASSERT_EQ(fdl.error(), Error::Ok);
 
   // Loading beyond the end of the data should fail.
@@ -133,7 +133,7 @@ TEST_P(FileDataLoaderTest, OutOfBoundsLoadFails) {
 
 TEST_P(FileDataLoaderTest, FromMissingFileFails) {
   // Wrapping a file that doesn't exist should fail.
-  Result<FileDataLoader> fdl = FileDataLoader::From(
+  Result<FileDataLoader> fdl = FileDataLoader::from(
       "/tmp/FILE_DOES_NOT_EXIST_EXECUTORCH_MMAP_LOADER_TEST");
   EXPECT_NE(fdl.error(), Error::Ok);
 }
@@ -145,7 +145,7 @@ TEST_P(FileDataLoaderTest, BadAlignmentFails) {
 
   // Creating a loader with default alignment works fine.
   {
-    Result<FileDataLoader> fdl = FileDataLoader::From(tf.path().c_str());
+    Result<FileDataLoader> fdl = FileDataLoader::from(tf.path().c_str());
     ASSERT_EQ(fdl.error(), Error::Ok);
   }
 
@@ -153,7 +153,7 @@ TEST_P(FileDataLoaderTest, BadAlignmentFails) {
   const std::vector<size_t> bad_alignments = {0, 3, 5, 17};
   for (size_t bad_alignment : bad_alignments) {
     Result<FileDataLoader> fdl =
-        FileDataLoader::From(tf.path().c_str(), bad_alignment);
+        FileDataLoader::from(tf.path().c_str(), bad_alignment);
     ASSERT_EQ(fdl.error(), Error::InvalidArgument);
   }
 }
@@ -164,7 +164,7 @@ TEST_P(FileDataLoaderTest, MoveCtor) {
   std::string contents = "FILE_CONTENTS";
   TempFile tf(contents);
   Result<FileDataLoader> fdl =
-      FileDataLoader::From(tf.path().c_str(), alignment());
+      FileDataLoader::from(tf.path().c_str(), alignment());
   ASSERT_EQ(fdl.error(), Error::Ok);
   EXPECT_EQ(fdl->size().get(), contents.size());
 
@@ -182,6 +182,26 @@ TEST_P(FileDataLoaderTest, MoveCtor) {
   EXPECT_ALIGNED(fb->data(), alignment());
   ASSERT_EQ(fb->size(), contents.size());
   EXPECT_EQ(0, std::memcmp(fb->data(), contents.data(), fb->size()));
+}
+
+// Test that the deprecated From method (capital 'F') still works.
+TEST_P(FileDataLoaderTest, DEPRECATEDFrom) {
+  // Write some heterogeneous data to a file.
+  uint8_t data[256];
+  for (int i = 0; i < sizeof(data); ++i) {
+    data[i] = i;
+  }
+  TempFile tf(data, sizeof(data));
+
+  // Wrap it in a loader.
+  Result<FileDataLoader> fdl =
+      FileDataLoader::From(tf.path().c_str(), alignment());
+  ASSERT_EQ(fdl.error(), Error::Ok);
+
+  // size() should succeed and reflect the total size.
+  Result<size_t> size = fdl->size();
+  ASSERT_EQ(size.error(), Error::Ok);
+  EXPECT_EQ(*size, sizeof(data));
 }
 
 // Run all FileDataLoaderTests multiple times, varying the return value of
