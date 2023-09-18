@@ -6,9 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <array>
 #include <cstdint>
-#include <vector>
 
 #include <executorch/runtime/core/hierarchical_allocator.h>
 #include <executorch/runtime/core/memory_allocator.h>
