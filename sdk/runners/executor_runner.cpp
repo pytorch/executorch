@@ -105,7 +105,7 @@ class ProgramData {
     // Create a DataLoader that wraps the input file. It may be a plain Program,
     // or it may be a BundledProgram that contains a Program.
     Result<util::FileDataLoader> loader =
-        util::FileDataLoader::From(filename.c_str());
+        util::FileDataLoader::from(filename.c_str());
     ET_CHECK_MSG(
         loader.ok(),
         "Could not create loader for file '%s': 0x%x",

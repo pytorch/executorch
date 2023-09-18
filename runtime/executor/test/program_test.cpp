@@ -44,7 +44,7 @@ class ProgramTest : public ::testing::Test {
 
     // Load the serialized ModuleAdd data.
     const char* path = std::getenv("ET_MODULE_ADD_PATH");
-    Result<FileDataLoader> loader = FileDataLoader::From(path);
+    Result<FileDataLoader> loader = FileDataLoader::from(path);
     ASSERT_EQ(loader.error(), Error::Ok);
 
     // This file should always be compatible.
@@ -59,7 +59,7 @@ class ProgramTest : public ::testing::Test {
 
     // Load the serialized ModuleAdd data.
     path = std::getenv("ET_MODULE_MULTI_ENTRY_PATH");
-    Result<FileDataLoader> multi_loader = FileDataLoader::From(path);
+    Result<FileDataLoader> multi_loader = FileDataLoader::from(path);
     ASSERT_EQ(multi_loader.error(), Error::Ok);
 
     // This file should always be compatible.
