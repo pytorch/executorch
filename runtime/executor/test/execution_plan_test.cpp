@@ -37,7 +37,7 @@ class ExecutionPlanTest : public ::testing::Test {
   void SetUp() override {
     // Create a loader for the serialized ModuleAdd program.
     const char* path = std::getenv("ET_MODULE_ADD_PATH");
-    Result<FileDataLoader> loader = FileDataLoader::From(path);
+    Result<FileDataLoader> loader = FileDataLoader::from(path);
     ASSERT_EQ(loader.error(), Error::Ok);
     loader_ = std::make_unique<FileDataLoader>(std::move(loader.get()));
 

@@ -35,7 +35,7 @@ class MethodTest : public ::testing::Test {
  protected:
   void load_program(const char* path, const char* module_name) {
     // Create a loader for the serialized program.
-    Result<FileDataLoader> loader = FileDataLoader::From(path);
+    Result<FileDataLoader> loader = FileDataLoader::from(path);
     ASSERT_EQ(loader.error(), Error::Ok);
     loaders_.insert(
         {module_name,
