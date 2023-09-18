@@ -288,9 +288,10 @@ class TestDelegate(unittest.TestCase):
 
         node_list = []
         for node in gm.graph.nodes:
-            if (
-                node.op == "call_function"
-                and node.target == exir_ops.edge.aten.split_copy.Tensor
+            # split_copy.Tensor gets decomposed into split_with_sizes_copy.default
+            if node.op == "call_function" and (
+                node.target == exir_ops.edge.aten.split_copy.Tensor
+                or node.target == exir_ops.edge.aten.split_with_sizes_copy.default
             ):
                 node_list.append(node)
 
