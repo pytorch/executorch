@@ -77,7 +77,8 @@ class TorchBuilder:
         inputs = {
             #TODO: fails input char, bias float
             #TosaProfile.BI: ( torch.ones(1,3,256,256, dtype=torch.int8), ),
-            TosaProfile.MI: ( torch.ones(1,3,256,256), ),
+            #TODO: this is segfaulting on model.forward in the nightly torch - disabling for now
+            #TosaProfile.MI: ( torch.ones(1,3,256,256), ),
         }
 
         def __init__(self):

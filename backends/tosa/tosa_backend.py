@@ -14,8 +14,9 @@ from typing import final, List, NamedTuple
 
 import torch
 import operator
-from executorch.exir.backend.backend_details import BackendDetails, CompileSpec
-from executorch.exir.backend.partitioner import DelegationSpec, Partitioner
+from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.backend.partitioner import DelegationSpec, Partitioner, PartitionResult
 
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._export.exported_program import ExportedProgram
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == '1'
 if TOSA_DBG_VERBOSE:
+    logging.basicConfig(level=logging.INFO)
     logger.setLevel(logging.INFO)
 
 def dbg_node(node):
@@ -80,19 +82,15 @@ class TosaPartitioner(Partitioner):
 
     def __init__(self) -> None:
         self.delegation_spec = DelegationSpec(TosaBackend.__name__, [])
-        self.partition_tags = {}
 
-    def partition( self, edge_graph_module: torch.fx.GraphModule ) -> torch.fx.GraphModule:
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
         logger.info("TosaPartitioner::partition")
-
-        #logger.info(edge_graph_module.graph)
-        #for node in edge_graph_module.graph.nodes:
-        #    dbg_node(node)
+        partition_tags = {}
 
         capability_partitioner = CapabilityBasedPartitioner(
-            edge_graph_module,
+            exported_program.graph_module,
             TOSASupportedOperators(),
             allows_single_node_partition=True,
         )
@@ -101,10 +99,10 @@ class TosaPartitioner(Partitioner):
             for node in partition.nodes:
                 tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = tag
-                self.partition_tags[tag] = self.delegation_spec
+                partition_tags[tag] = self.delegation_spec
 
-        return edge_graph_module
-
+        return PartitionResult( tagged_exported_program=exported_program, partition_tags=partition_tags )
+    
 @final
 class TosaBackend( BackendDetails ):
 
@@ -113,9 +111,8 @@ class TosaBackend( BackendDetails ):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> bytes:
-
         logger.info("TosaBackend::preprocess")
-
+        
         # TODO: This should be a /tmp path output on error only, or specified location
         #       for testing. Should use compilespec rather than an env var.
         TOSA_TESTING_OP = os.environ.get("TOSA_TESTING_OP", default=".")
@@ -387,5 +384,4 @@ class TosaBackend( BackendDetails ):
 
         # Serialize and return the tosa flatbuffer
         fb = tosa_fb.serialize()
-        #return bytes( "TOSA_BIN", "utf8")
-        return bytes(fb)
+        return PreprocessResult( processed_bytes=bytes(fb) )

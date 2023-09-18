@@ -8,10 +8,14 @@ import os
 import json
 from enum import Enum
 import subprocess
-import executorch.exir as exir
+
 from executorch.exir.backend.backend_api import to_backend, CompileSpec
 from executorch.backends.tosa.tosa_backend import TosaBackend, TosaPartitioner
 from executorch.backends.tosa.test.test_tosa_models import TestList, TorchBuilder, TosaProfile
+
+from torch import _export as export
+import executorch.exir as exir
+from torch._export import ExportedProgram
 
 # Assumes you have these two tools on your path
 TOSA_REF_MODEL_PATH = "tosa_reference_model"
@@ -53,19 +57,25 @@ def tosa_run_test( op, profile = TosaProfile.MI ):
 
     # capture ExirExportedProgram
     captured_model = exir.capture( model, model.inputs[profile], _CAPTURE_CONFIG ).to_edge(_EDGE_COMPILE_CONFIG)
-    # captured_model.dump()
-    # print(captured_model.exported_program.graph_signature)
-    # convert ExportedProgram using TosaPartitioner and assign to captured model
+    # convert ExportedProgram using TosaPartitioner and assign back to captured model
     captured_model.exported_program = to_backend( captured_model.exported_program, TosaPartitioner )
     # Output ExecutorchProgram from ExportedProgram
     exec_prog = captured_model.to_executorch()
+    
 
-    # Emit some TOSA test data from the model inputs - assumes whole graph lowered so we just have
-    # placeholders for the TOSA delegate
+    # Emit TOSA test data from the model inputs - assumes whole graph lowered so we just have
+    # placeholders for the TOSA delegate.
+    # - Skips placeholders which are encoded as constants (i.e. are already captured weights)
+    # - Assumes argument order is fixed
     argument_names = []
     for node in captured_model.exported_program.graph.nodes:
         if node.op == "placeholder":
-            argument_names.append( node.name )
+            if node.name in captured_model.exported_program.graph_signature.inputs_to_parameters:
+                pass
+            elif node.name in captured_model.exported_program.graph_signature.inputs_to_buffers:
+                pass
+            else:
+                argument_names.append( node.name )
         else:
             break
 
