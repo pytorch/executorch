@@ -29,7 +29,7 @@ def register_upper_bound_inference(fn):
 @register_upper_bound_inference(exir_ops.edge.aten.nonzero.default)
 @register_upper_bound_inference(torch.ops.aten.nonzero.default)
 def nonzero(args, kwargs) -> List[Optional[int]]:
-    return [eval_expr(args[0].shape[0]), len(args[0].shape)]
+    return [eval_expr(args[0].numel()), len(args[0].shape)]
 
 
 class HintBasedSymShapeEvalPass(PassBase):
