@@ -24,11 +24,11 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import (
     dead_code_elimination_pass,
     DebugPass,
+    HintBasedSymShapeEvalPass,
     MemoryPlanningPass,
     propagate_dynamic_shape,
     RemoveNoopPass,
     ReplaceSymSizeOpPass,
-    SymShapeEvalPass,
     ToOutVarPass,
 )
 from executorch.exir.passes.const_prop_pass import ConstPropPass
@@ -586,7 +586,7 @@ class TestPasses(unittest.TestCase):
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         passes = [
             SpecPropPass(),
-            SymShapeEvalPass(),
+            HintBasedSymShapeEvalPass(),
             ToOutVarPass(),
             MemoryPlanningPass("greedy"),
         ]
