@@ -32,6 +32,12 @@ def nonzero(args, kwargs) -> List[Optional[int]]:
     return [eval_expr(args[0].shape[0]), len(args[0].shape)]
 
 
+@register_upper_bound_inference(exir_ops.edge.aten.index.Tensor)
+@register_upper_bound_inference(torch.ops.aten.index.Tensor)
+def index_Tensor(args, kwargs) -> List[Optional[int]]:
+    return [eval_expr(args[0].shape[0]), len(args[0].shape)]
+
+
 class HintBasedSymShapeEvalPass(PassBase):
     """
     If we enable dynamic shape tracing, a tensor's shape may become a symbolic
