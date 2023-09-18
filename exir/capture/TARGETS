@@ -37,5 +37,6 @@ python_library(
         "//executorch/exir:pass_manager",
         "//executorch/exir:tracer",
         "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:sym_shape_eval_pass",
     ],
 )
