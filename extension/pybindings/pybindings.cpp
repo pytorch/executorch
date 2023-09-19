@@ -429,6 +429,8 @@ struct PyModule final {
         list[i] = py::cast(v.toDouble());
       } else if (Tag::Bool == v.tag) {
         list[i] = py::cast(v.toBool());
+      } else if (Tag::String == v.tag) {
+        list[i] = py::cast(std::string(v.toString().data()));
       } else if (Tag::Tensor == v.tag) {
 #ifdef USE_ATEN_LIB
         // Clone so the outputs in python do not share a lifetime with the

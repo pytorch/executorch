@@ -6,11 +6,13 @@
 
 import copy
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, Type, Union
 
 import torch
 import torch._export
 from executorch.exir._serialize import _serialize_pte_binary
+from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.partitioner import TPartitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
@@ -23,12 +25,14 @@ from executorch.exir.passes import (
 )
 from executorch.exir.passes.remove_assert_async_pass import RemoveAssertAsyncPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
+from executorch.exir.print_program import pretty_print, print_program
 from executorch.exir.schema import Program
 from executorch.exir.verification.verifier import (
     EXIRATenDialectVerifier,
     EXIREdgeDialectVerifier,
 )
 from torch._export import ExportedProgram
+from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
 from torch._export.passes.lift_constant_tensor_pass import lift_constant_tensor_pass
 from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
@@ -555,3 +559,331 @@ def multi_method_program_to_executorch(
         delegate_alignment=config.delegate_alignment,
         prim_getters=edge_dialect_program.prim_getters(),
     )
+
+
+def to_edge(
+    programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
+    constant_methods: Optional[Dict[str, Any]] = None,
+    compile_config: Optional[EdgeCompileConfig] = None,
+) -> "EdgeProgramManager":
+    """
+    Constructs an EdgeProgramManger from a set of exported programs in
+    aten dialect. Upon construction those programs are transformed into edge dialect.
+
+    Args:
+        Can be a single ExportedProgram or a dictionary mapping function names
+        to their corresponding ExportedPrograms. If only a single ExportedProgram is provided
+        it will be assigned the name "forward".
+
+        constant_methods: An optional dictionary of method name to the constant value returned
+        by that method in eager mode. Often used to store config information on Edge models.
+
+        compile_config: An optional argument used to provide greater control over
+        the transformation to edge dialect process.
+    """
+    config = compile_config or EdgeCompileConfig()
+    if not isinstance(programs, dict):
+        aten_programs = {"forward": programs}
+    else:
+        aten_programs = programs
+
+    edge_programs: Dict[str, ExportedProgram] = {}
+    for name, program in aten_programs.items():
+        if config._check_ir_validity:
+            try:
+                EXIRATenDialectVerifier()(program.graph_module)
+            except ExportError as e:
+                logging.info(f"Input program {name} is not in aten dialect.")
+                raise e
+
+        op_replace_pass = [OpReplacePass()] if config._use_edge_ops else []
+
+        # TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -> debug_handle_generator. After enable
+        # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
+        # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
+        # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
+        program = lift_constant_tensor_pass(program)
+        passes = []
+        passes.append(
+            ReplaceViewOpsWithViewCopyOpsPass()
+        )  # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
+        passes.extend(aten_to_edge_passes.passes[:-2])
+        passes.extend(op_replace_pass)
+        passes.extend(aten_to_edge_passes.passes[-2:])
+        edge_program = program._transform(*passes)
+        if config._check_ir_validity:
+            try:
+                EXIREdgeDialectVerifier(check_edge_ops=config._use_edge_ops)(
+                    edge_program.graph_module
+                )
+            except ExportError as e:
+                logging.info(f"Resultant program {name} is not in edge dialect.")
+                raise e
+        edge_programs[name] = edge_program
+    return EdgeProgramManager(edge_programs, constant_methods)
+
+
+class EdgeProgramManager:
+    """
+    Package of one or more :class:'ExportedPrograms' in Edge dialect. Designed to simplify
+    lowering to Executorch.
+
+    Allows easy applications of transforms across a collection of exported programs
+    including the delegation of subgraphs.
+
+    Manages the second link in the lowering chain of ATen -> Edge -> Executorch.
+    """
+
+    # TODO(T163717152): Link to Edge dialect docs here ^.
+
+    def __init__(
+        self,
+        edge_programs: Dict[str, ExportedProgram],
+        constant_methods: Optional[Dict[str, Any]] = None,
+    ):
+        """
+        Should not be called directly by users. User should use :func:'to_edge' instead.
+
+        Constructs an EdgeProgramManager from an existing set of exported programs in edge dialect.
+        """
+
+        for name, program in edge_programs.items():
+            try:
+                EXIREdgeDialectVerifier()(program.graph_module)
+            except ExportError as e:
+                logging.info(f"Input program {name} is not in aten dialect.")
+                raise e
+
+        self._edge_programs = edge_programs
+        self._config_methods = constant_methods
+
+    @property
+    def methods(self) -> Set[str]:
+        """
+        Returns the set of methods in this EdgeProgramManager.
+        """
+        return set(self._edge_programs.keys())
+
+    @property
+    def config_methods(self) -> Set[str]:
+        """
+        Returns the set of config methods in this EdgeProgramManager.
+        """
+        return set(self._config_methods.keys()) if self._config_methods else set()
+
+    def exported_program(self, method_name: str = "forward") -> ExportedProgram:
+        """
+        Returns the ExportedProgram specified by 'method_name'.
+        """
+        return self._edge_programs[method_name]
+
+    def transform(
+        self,
+        passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]]],
+    ) -> "EdgeProgramManager":
+        """
+        Transforms the program according to the provided passes.
+
+        Args:
+            passes: The passes can either be a list of passes, or a
+            dictionary mapping method names to lists of passes. If it is
+            just a list of passes, all methods in the given EdgeProgramManager
+            will be transformed with the provided passes. If it is a
+            dictionary, only method names specified in the dictionary will be
+            transformed with their corresponding passes.
+
+        Returns:
+            EdgeProgramManager: A copy of the calling EdgeProgramManager with the
+            transformations applied.
+        """
+        new_programs: Dict[str, ExportedProgram] = {}
+        if isinstance(passes, dict):
+            for name, program in self._edge_programs.items():
+                if name in passes.keys():
+                    new_programs[name] = program._transform(*passes[name])
+                    EXIREdgeDialectVerifier()(new_programs[name].graph_module)
+                else:
+                    new_programs[name] = copy.deepcopy(program)
+
+        else:  # apply passes to every method
+            for name, program in self._edge_programs.items():
+                new_programs[name] = program._transform(*passes)
+                EXIREdgeDialectVerifier()(new_programs[name].graph_module)
+
+        return EdgeProgramManager(
+            new_programs,
+            copy.deepcopy(self._config_methods),
+        )
+
+    def to_backend(
+        self, partitioner: Union[Type[TPartitioner], Dict[str, Type[TPartitioner]]]
+    ) -> "EdgeProgramManager":
+        """
+        Returns a semantically-equivalent program to the one given as input,
+        but with portions of each program in the EdgeProgramManager targeted
+        for delegation as determined by the partitioner.
+
+        Args:
+            partitioner: The partitioner can either be a Partitioner subclass, or a
+                dictionary mapping method names to Partitioner subclass. If it is a
+                Partitioner subclass, all programs in the given EdgeProgramManager
+                will be lowered using the given partitioner. If it is a
+                dictionary, only method names specified in the dictionary will be
+                lowered with the given partitioner.
+
+                The Partitioner subclass is in charge with tagging portions of the
+                input program for delegation. A valid partitioner must have
+                partition_tags: Dict[str, DelegationSpec], where each key is a tag
+                name and the nodes with same tag will be fused a one subgraph and
+                delegated to backend specififed in delegation spec.
+
+        Returns:
+            EdgeProgramManager: A copy of the calling EdgeProgramManager with the
+            specified subgraphs lowered.
+        """
+        new_edge_programs: Dict[str, ExportedProgram] = {}
+        if isinstance(partitioner, dict):
+            for name, program in self._edge_programs.items():
+                if name in partitioner.keys():
+                    new_edge_programs[name] = to_backend(program, partitioner[name])
+                else:
+                    new_edge_programs[name] = copy.deepcopy(program)
+
+        else:  # apply partitioner to every method
+            for name, program in self._edge_programs.items():
+                new_edge_programs[name] = to_backend(program, partitioner)
+
+        return EdgeProgramManager(
+            new_edge_programs, copy.deepcopy(self._config_methods)
+        )
+
+    def to_executorch(
+        self, config: Optional[ExecutorchBackendConfig] = None
+    ) -> "ExecutorchProgramManager":
+        """
+        Transforms the program to the Executorch backend.
+
+        Args:
+            config: An optional argument used to provide greater control over
+            the transformation to the Executorch backend.
+
+        Returns:
+            ExecutorchProgramManager: A manager representing the state of the EdgeProgramManager
+            after it has been transformed to the Executorch backend.
+        """
+        config = config if config else ExecutorchBackendConfig()
+
+        execution_programs: Dict[str, ExportedProgram] = {}
+        for name, program in self._edge_programs.items():
+            new_prog = program._transform(*edge_to_executorch_passes(config))
+            execution_programs[name] = new_prog
+
+        return ExecutorchProgramManager(
+            execution_programs, self._config_methods, config
+        )
+
+
+class ExecutorchProgramManager:
+    """
+    Package of one or more :class:'ExportedPrograms' in Execution dialect. Designed to simplify
+    lowering to Executorch.
+
+    When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect
+    are used to form the executorch binary (in a process called emission) and then serialized
+    to a buffer.
+
+    Manages the final link in the lowering chain of ATen -> Edge -> Executorch.
+    """
+
+    # TODO(T163717152): Link to Execution dialect docs here ^.
+
+    def __init__(
+        self,
+        execution_programs: Dict[str, ExportedProgram],
+        config_methods: Optional[Dict[str, Any]] = None,
+        backend_config: Optional[ExecutorchBackendConfig] = None,
+    ):
+        """
+        End users should not call this constructor directly. Instead, they should use
+        :func:'to_executorch' to construct an ExecutorchProgramManger.
+
+        Constructs an ExecutorchProgramManager from a set of exported programs in
+        execution dialect.
+
+        Args:
+            execution_programs: A dictionary of method name to the corresponding
+            ExportedProgram.
+
+            config_methods: A dictionary of method name to the config value returned
+            by that method in eager mode.
+
+            backend_config: An optional argument used to provide greater control over
+            the emission and serialization.
+        """
+        # Set up methods
+        self._execution_programs: Dict[str, ExportedProgram] = execution_programs
+        self._config_methods: Optional[Dict[str, Any]] = config_methods
+
+        backend_config = backend_config or ExecutorchBackendConfig()
+
+        # Emit methods
+        self._emitter_output: EmitterOutput = emit_program(
+            self._execution_programs,
+            backend_config.emit_stacktrace,
+            self._config_methods,
+        )
+
+        # Serialize emitter output to a buffer
+        self._buffer: bytes = _serialize_pte_binary(
+            program=self._emitter_output.program,
+            extract_segments=backend_config.extract_segments,
+            segment_alignment=backend_config.segment_alignment,
+            constant_tensor_alignment=backend_config.constant_tensor_alignment,
+            delegate_alignment=backend_config.delegate_alignment,
+        )
+
+    @property
+    def methods(self) -> Set[str]:
+        """
+        Returns the set of methods in this ExecutorchProgramManager.
+        """
+        return set(self._execution_programs.keys())
+
+    @property
+    def config_methods(self) -> Set[str]:
+        """
+        Returns the set of config methods in this ExecutorchProgramManager.
+        """
+        return set(self._config_methods.keys()) if self._config_methods else set()
+
+    def exported_program(self, method_name: str = "forward") -> ExportedProgram:
+        """
+        Returns the ExportedProgram specified by 'method_name'.
+        """
+        return self._execution_programs[method_name]
+
+    def dump_executorch_program(self, verbose: bool = False) -> None:
+        """
+        Prints the Executorch binary in a human readable format.
+
+        Args:
+            verbose (bool):
+                If False prints the binary in a condensed format.
+                If True prints the binary 1-1 with the specification in the schema.
+        """
+        if verbose:
+            pretty_print(self._emitter_output.program)
+        else:
+            print_program(self._emitter_output.program)
+
+    @property
+    def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
+        # TODO ask Tarun what the docstring here should be.
+        return self._emitter_output.debug_handle_map
+
+    @property
+    def buffer(self) -> bytes:
+        """
+        Returns a buffer containing the serialized Executorch binary.
+        """
+        return self._buffer

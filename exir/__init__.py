@@ -18,11 +18,14 @@ from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.program import (
     _to_edge,
     edge_to_executorch_passes,
+    EdgeProgramManager,
     ExecutorchProgram,
+    ExecutorchProgramManager,
     ExirExportedProgram,
     multi_method_program_to_executorch,
     MultiMethodExecutorchProgram,
     MultiMethodExirExportedProgram,
+    to_edge,
 )
 from executorch.exir.tracer import ExirDynamoConfig
 from torch._export import (  # lots of people are doing from exir import CallSpec, ExportGraphSignature, ExportedProgram which seems wrong
@@ -45,6 +48,9 @@ __all__ = [
     "ExecutorchProgram",
     "ExportGraphSignature",
     "_to_edge",
+    "to_edge",
+    "EdgeProgramManager",
+    "ExecutorchProgramManager",
     "edge_to_executorch_passes",
     "MultiMethodExirExportedProgram",
     "MultiMethodExecutorchProgram",
