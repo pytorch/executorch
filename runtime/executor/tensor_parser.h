@@ -38,10 +38,10 @@ parseListOptionalType(
     EValue* values_,
     MemoryManager* memory_manager) {
   auto* evalp_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      memory_manager->get_runtime_allocator(), EValue*, value_indices->size());
+      memory_manager->method_allocator(), EValue*, value_indices->size());
 
   auto* optional_tensor_list = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      memory_manager->get_runtime_allocator(),
+      memory_manager->method_allocator(),
       exec_aten::optional<T>,
       value_indices->size());
 

@@ -75,6 +75,17 @@ def define_common_targets(is_fbcode = False):
         ],
     )
 
+    runtime.cxx_test(
+        name = "memory_manager_test",
+        srcs = [
+            "memory_manager_test.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/core:memory_allocator",
+            "//executorch/runtime/executor:memory_manager",
+        ],
+    )
+
     runtime.cxx_library(
         name = "managed_memory_manager",
         srcs = [],
