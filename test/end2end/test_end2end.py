@@ -20,12 +20,7 @@ import executorch.exir.control_flow as control_flow
 # @manual=//executorch/extension/pytree:pybindings
 import executorch.extension.pytree as pytree
 import torch
-from executorch.bundled_program.config import BundledConfig
 
-from executorch.bundled_program.core import create_bundled_program
-from executorch.bundled_program.serialize import (
-    serialize_from_bundled_program_to_flatbuffer,
-)
 from executorch.exir import (
     CaptureConfig,
     EdgeCompileConfig,
@@ -486,7 +481,6 @@ def maketest(
     allow_non_contiguous_tensor: bool = False,
     method: str = "forward",
     dynamic_memory_planning_mode: DynamicMemoryPlanningMode = DynamicMemoryPlanningMode.UPPER_BOUND,
-    bundled_io=False,
     capture_config=None,
     verify_graph: Optional[Callable] = None,
 ) -> Callable[[unittest.TestCase], None]:
@@ -510,9 +504,6 @@ def maketest(
             program only contains contiguous tensors.
         method: The name of the module_cls method to trace.
         dynamic_memory_planning_mode: The dynamic memory planning mode to use.
-        bundled_io: If true, will wrap the given program into bundled program
-            format, run and compared the program with bundled input and expected
-            output.
 
     Returns:
         A TestCase method that tests the provided module class and method.
@@ -586,54 +577,6 @@ def maketest(
                     print(f"expected result: {expected}")
                     print(f"actual result: {actual}")
                 self.assertTrue(is_close)
-
-        if bundled_io:
-            print("Being verified by Bundled Program")
-            expected_outputs_list = [
-                [[module.eager_module(*x)] for x in inputs_list],
-            ]
-            bundled_config = BundledConfig(
-                [
-                    method,
-                ],
-                [
-                    inputs_list,
-                ],
-                expected_outputs_list,
-            )
-            bundled_program = create_bundled_program(
-                module.executorch_program.program, bundled_config
-            )
-            bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
-                bundled_program
-            )
-
-            # pyre-fixme[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
-            executorch_bundled_program = _load_bundled_program_from_buffer(
-                bundled_program_buffer
-            )
-
-            # pyre-fixme[16]: Module `executorch.extension.pybindings` has no attribute `portable`.
-            executorch_module = _load_for_executorch_from_bundled_program(
-                executorch_bundled_program
-            )
-
-            default_execution_plan_id = 0
-
-            # TODO(T144329357): check bundled attachment correctness
-            # No load_bundled_input() method
-            # for testset_idx in range(niter):
-            #     executorch_module.load_bundled_input(
-            #         executorch_bundled_program,
-            #         default_execution_plan_id,
-            #         testset_idx,
-            #     )
-            #     executorch_module.plan_execute()
-            #     executorch_module.verify_result_with_bundled_expected_output(
-            #         executorch_bundled_program,
-            #         default_execution_plan_id,
-            #         testset_idx,
-            #     )
 
     return wrapper
 
@@ -822,56 +765,4 @@ class DynamicModelE2ETest(unittest.TestCase):
             # TODO: lean mode does not have native_batch_norm.out implemented
             # run this on aten mode.
             run_executor=is_aten_mode,
-        )(self)
-
-
-class BundledProgramE2ETest(unittest.TestCase):
-    # Using all models supporting executor running in this test.
-
-    def test_mem_planning_toy_model_bundled_program(self):
-        maketest(ToyModelForMemPlanning, bundled_io=True)(self)
-
-    def test_executorch_forward_bundled_program(self):
-        maketest(ModuleAdd, bundled_io=True)(self)
-
-    @skipUnless(RUN_SKIPPED, "TODO(larryliu0820) Fix this in both fbcode and oss")
-    def test_containers_bundled_program(self):
-        maketest(ModuleContainers, do_tree_flatten=True, bundled_io=True)(self)
-
-    # Failed to produce a graph during tracing w/ dynamo because there are no torch ops
-    # test_return_input_bundled_program = maketest(
-    #     ModuleReturnInput, do_tree_flatten=True, bundled_io=True
-    # )
-
-    # can not run this on the executor because missing the following ops:
-    #   aten::select_copy.int_out, aten::eq.Scalar_out
-    # TODO(gasoonjia) re-enable these tests.
-    # test_ifelse_bundled_program = maketest(ModuleIfElse, bundled_io=True)
-    # test_ifelse_with_bool_bundled_program = maketest(ModuleIfElseWithBool, bundled_io=True)
-
-    # fail to trace with functionalization enabled
-    # Fail with error: Missing out variants: {'aten::select', 'aten::_shape_as_tensor', 'aten::tensor_split'}
-    # TODO(gasoonjia) re-enable these tests.
-    # test_while_bundled_program = maketest(ModuleWhile, bundled_io=True)
-
-    # test_while_if_bundled_program = maketest(ModuleWhileIf, bundled_io=True)
-    # test_if_while_bundled_program = maketest(ModuleIfWhile, bundled_io=True)
-
-    def test_input_dynamic_shape_bundled_program(self):
-        maketest(
-            ModuleInputDynamicShape,
-            run_graph_module=False,
-            bundled_io=True,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-            ),
-        )(self)
-
-    @skip("revisit when unbacked symint is ready")
-    def test_intermediate_dynamic_shape_bundled_program(self):
-        maketest(
-            ModuleIntermediateDynamicShape,
-            run_graph_module=False,
-            allow_non_contiguous_tensor=True,
-            bundled_io=True,
         )(self)
