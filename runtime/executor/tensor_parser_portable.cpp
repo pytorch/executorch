@@ -25,7 +25,7 @@ Result<torch::executor::Tensor> parseTensor(
     MemoryManager* memory_manager,
     const executorch_flatbuffer::Tensor* s_tensor) {
   EXECUTORCH_SCOPE_PROF("TensorParser::parseTensor");
-  auto runtime_allocator = memory_manager->get_runtime_allocator();
+  auto method_allocator = memory_manager->method_allocator();
 
   ET_CHECK_OR_RETURN_ERROR(
       s_tensor->storage_offset() == 0,
@@ -54,9 +54,9 @@ Result<torch::executor::Tensor> parseTensor(
     // kimishpate: I think dim order can remain immutable and point to fb
     // memory, unless we plan to implement in-place permute
     exec_aten::SizesType* sizes_buf = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        runtime_allocator, exec_aten::SizesType, dim);
+        method_allocator, exec_aten::SizesType, dim);
     exec_aten::DimOrderType* dim_order_buf = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        runtime_allocator, exec_aten::DimOrderType, dim);
+        method_allocator, exec_aten::DimOrderType, dim);
     std::memcpy(
         sizes_buf, serialized_sizes, sizeof(exec_aten::SizesType) * dim);
     std::memcpy(
@@ -77,7 +77,7 @@ Result<torch::executor::Tensor> parseTensor(
   // In subsequent diffs we can remove strides accessor, however this
   // will introduce incompatible APIs between ATen Tensor and ETensor.
   exec_aten::StridesType* strides = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      runtime_allocator, exec_aten::StridesType, dim);
+      method_allocator, exec_aten::StridesType, dim);
   auto status =
       torch::executor::dim_order_to_stride(sizes, dim_order, dim, strides);
   ET_CHECK_OR_RETURN_ERROR(
@@ -86,7 +86,7 @@ Result<torch::executor::Tensor> parseTensor(
       "dim_order_to_stride returned invalid status");
 
   auto* tensor_impl = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-      runtime_allocator, torch::executor::TensorImpl);
+      method_allocator, torch::executor::TensorImpl);
   // Placement new on the allocated memory space. Note that we create this first
   // with null data so we can find its expected size before getting its memory.
   new (tensor_impl) torch::executor::TensorImpl(
@@ -103,7 +103,7 @@ Result<torch::executor::Tensor> parseTensor(
       s_tensor,
       program,
       tensor_impl->nbytes(),
-      memory_manager->get_non_constant_allocator());
+      memory_manager->planned_memory());
   if (!data_ptr.ok()) {
     ET_LOG(Error, "getTensorDataPtr() failed: 0x%" PRIx32, data_ptr.error());
     return data_ptr.error();

@@ -90,7 +90,8 @@ TEST_F(ExecutionPlanTest, SuccessfulInitSmoke) {
 TEST_F(ExecutionPlanTest, FailedInitSmoke) {
   // A memory manager that provides no memory, which will cause the plan init to
   // fail.
-  ManagedMemoryManager mmm(/*non_const_mem_bytes=*/0, /*runtime_mem_bytes=*/0);
+  ManagedMemoryManager mmm(
+      /*planned_memory_bytes=*/0, /*method_allocator_bytes=*/0);
 
   Executor executor(program_.get(), &mmm.get());
   auto& plan = executor.execution_plan();

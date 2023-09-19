@@ -20,45 +20,34 @@ namespace executor {
 namespace testing {
 
 /**
- * Creates and owns a MemoryManager and the MemoryAllocators that it points to.
- * Easier to manage than creating the allocators separately.
+ * Creates and owns a MemoryManager and the allocators that it points to. Easier
+ * to manage than creating the allocators separately.
  */
 class ManagedMemoryManager {
  public:
-  ManagedMemoryManager(size_t non_const_mem_bytes, size_t runtime_mem_bytes)
-      : const_allocator_(0, nullptr),
-        non_const_pool_(new uint8_t[non_const_mem_bytes]),
-        non_const_allocators_({
-            {non_const_pool_.get(), non_const_mem_bytes},
-        }),
-        non_const_allocator_({
-            non_const_allocators_.data(),
-            non_const_allocators_.size(),
-        }),
-        runtime_pool_(new uint8_t[runtime_mem_bytes]),
-        runtime_allocator_(runtime_mem_bytes, runtime_pool_.get()),
-        temp_allocator_(0, nullptr),
-        memory_manager_(
-            &const_allocator_,
-            &non_const_allocator_,
-            &runtime_allocator_,
-            &temp_allocator_) {}
+  ManagedMemoryManager(
+      size_t planned_memory_bytes,
+      size_t method_allocator_bytes)
+      : planned_memory_buffer_(new uint8_t[planned_memory_bytes]),
+        planned_memory_span_(
+            planned_memory_buffer_.get(),
+            planned_memory_bytes),
+        planned_memory_({&planned_memory_span_, 1}),
+        method_allocator_pool_(new uint8_t[method_allocator_bytes]),
+        method_allocator_(method_allocator_bytes, method_allocator_pool_.get()),
+        memory_manager_(&method_allocator_, &planned_memory_) {}
 
   MemoryManager& get() {
     return memory_manager_;
   }
 
  private:
-  MemoryAllocator const_allocator_;
+  std::unique_ptr<uint8_t[]> planned_memory_buffer_;
+  Span<uint8_t> planned_memory_span_;
+  torch::executor::HierarchicalAllocator planned_memory_;
 
-  std::unique_ptr<uint8_t[]> non_const_pool_;
-  std::vector<Span<uint8_t>> non_const_allocators_;
-  torch::executor::HierarchicalAllocator non_const_allocator_;
-
-  std::unique_ptr<uint8_t[]> runtime_pool_;
-  MemoryAllocator runtime_allocator_;
-
-  MemoryAllocator temp_allocator_;
+  std::unique_ptr<uint8_t[]> method_allocator_pool_;
+  MemoryAllocator method_allocator_;
 
   MemoryManager memory_manager_;
 };
