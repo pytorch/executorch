@@ -136,32 +136,56 @@ def assert_valid_bundle(
 
     """
 
-    # Check the number of execution plan tests
-    assert len(bundled_config.execution_plan_tests) == len(
-        program.execution_plan
-    ), "The length of execution_plan_tests in config should match the length of execution_plan in program, but get {} and {}.".format(
-        len(bundled_config.execution_plan_tests), len(program.execution_plan)
-    )
+    program_plan_id = 0
+    bp_plan_id = 0
+
+    method_name_of_program = {e.name for e in program.execution_plan}
+    method_name_of_test_suites = {
+        t.method_name for t in bundled_config.execution_plan_tests
+    }
+
+    assert method_name_of_test_suites.issubset(
+        method_name_of_program
+    ), f"All methods in method_test_suites should be found in program.execution_plan, \
+         but {str(method_name_of_test_suites - method_name_of_program)} does not include."
+
+    # check if method_tesdt_suites has been sorted in ascending alphabetical order of method name.
+    for bp_plan_id in range(1, len(bundled_config.execution_plan_tests)):
+        assert (
+            bundled_config.execution_plan_tests[bp_plan_id - 1].method_name
+            <= bundled_config.execution_plan_tests[bp_plan_id].method_name
+        ), f"The method name of test suite should be sorted in ascending alphabetical \
+            order of method name, but {bp_plan_id-1}-th and {bp_plan_id}-th method_test_suite aren't."
 
     # Check if the inputs' type meet Program's requirement
-    for plan_id in range(len(program.execution_plan)):
-        plan_test: ConfigExecutionPlanTest = bundled_config.execution_plan_tests[
-            plan_id
-        ]
+    while bp_plan_id < len(bundled_config.execution_plan_tests):
 
-        plan: ExecutionPlan = program.execution_plan[plan_id]
+        plan_test: ConfigExecutionPlanTest = bundled_config.execution_plan_tests[
+            bp_plan_id
+        ]
+        plan: ExecutionPlan = program.execution_plan[program_plan_id]
+
+        # User does not provide testcases for current plan, skip it
+        if plan_test.method_name > plan.name:
+            program_plan_id += 1
+            continue
+
+        # Check if the method name in user provided test matches the one in the original program
+        assert (
+            plan_test.method_name == plan.name
+        ), f"BundledConfig has testcases for method {plan_test.method_name}, but can not find it in the given program. All method names in the program are {', '.join([p.name for p in program.execution_plan])}."
 
         # Check if the type of Program's input is supported
         for index in range(len(plan.inputs)):
             assert (
-                type(get_program_input(program, plan_id, index))
+                type(get_program_input(program, program_plan_id, index))
                 in supported_program_type_table
             ), "The type of program's input isn't supported."
 
         # Check if the type of Program's output is supported
         for index in range(len(plan.outputs)):
             assert (
-                type(get_program_output(program, plan_id, index)) == Tensor
+                type(get_program_output(program, program_plan_id, index)) == Tensor
             ), "Only supports program with output in Tensor type."
 
         # Check if the I/O sets of each execution plan test match program's requirement.
@@ -181,14 +205,14 @@ def assert_valid_bundle(
                 assert (
                     type(cur_plan_test_inputs[j])
                     == supported_program_type_table[
-                        type(get_program_input(program, plan_id, j))
+                        type(get_program_input(program, program_plan_id, j))
                     ]
                 ), "The type {}-th input in {}-th test set of {}-th execution plan does not meet Program's requirement: expected {} but get {}".format(
                     j,
                     i,
-                    plan_id,
+                    program_plan_id,
                     supported_program_type_table[
-                        type(get_program_input(program, plan_id, j))
+                        type(get_program_input(program, program_plan_id, j))
                     ],
                     type(cur_plan_test_inputs[j]),
                 )
@@ -198,10 +222,10 @@ def assert_valid_bundle(
                     # pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`
                     # has no attribute `dtype`.
                     assert cur_plan_test_inputs[j].dtype == get_input_dtype(
-                        program, plan_id, j
+                        program, program_plan_id, j
                     ), "The input tensor {} dtype shall be {}, but now is {}".format(
                         cur_plan_test_inputs[j],
-                        get_input_dtype(program, plan_id, j),
+                        get_input_dtype(program, program_plan_id, j),
                         cur_plan_test_inputs[j].dtype,
                     )
                 elif type(cur_plan_test_inputs[j]) in (
@@ -210,9 +234,9 @@ def assert_valid_bundle(
                     float,
                 ):
                     assert type(cur_plan_test_inputs[j]) == get_input_type(
-                        program, plan_id, j
+                        program, program_plan_id, j
                     ), "The input primitive dtype shall be {}, but now is {}".format(
-                        get_input_type(program, plan_id, j),
+                        get_input_type(program, program_plan_id, j),
                         type(cur_plan_test_inputs[j]),
                     )
 
@@ -221,12 +245,15 @@ def assert_valid_bundle(
                 # pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`
                 # has no attribute `dtype`.
                 assert cur_plan_test_expected_outputs[j].dtype == get_output_dtype(
-                    program, plan_id, j
+                    program, program_plan_id, j
                 ), "The label tensor {} dtype shall be {}, but now is {}".format(
                     cur_plan_test_expected_outputs[j],
-                    get_output_dtype(program, plan_id, j),
+                    get_output_dtype(program, program_plan_id, j),
                     cur_plan_test_expected_outputs[j].dtype,
                 )
+
+        program_plan_id += 1
+        bp_plan_id += 1
 
 
 def create_bundled_program(
@@ -245,10 +272,7 @@ def create_bundled_program(
     execution_plan_tests: List[BundledExecutionPlanTest] = []
 
     # Emit data and metadata of bundled tensor
-    for plan_id in range(len(program.execution_plan)):
-        plan_test: ConfigExecutionPlanTest = bundled_config.execution_plan_tests[
-            plan_id
-        ]
+    for plan_test in bundled_config.execution_plan_tests:
         test_sets: List[BundledIOSet] = []
 
         # emit I/O sets for each execution plan test
@@ -283,7 +307,11 @@ def create_bundled_program(
             )
 
         # emit the whole execution plan test
-        execution_plan_tests.append(BundledExecutionPlanTest(test_sets=test_sets))
+        execution_plan_tests.append(
+            BundledExecutionPlanTest(
+                method_name=plan_test.method_name, test_sets=test_sets
+            )
+        )
 
     program_bytes: bytes = _serialize_pte_binary(program)
 

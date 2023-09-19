@@ -47,6 +47,7 @@ class ConfigIOSet:
 class ConfigExecutionPlanTest:
     """All info related to verify execution plan"""
 
+    method_name: str
     test_sets: List[ConfigIOSet]
 
 
@@ -60,6 +61,7 @@ class BundledConfig:
 
     def __init__(
         self,
+        method_names: List[str],
         # pyre-ignore
         inputs: List[List[Any]],
         # pyre-ignore
@@ -68,34 +70,34 @@ class BundledConfig:
         """Contruct the config given inputs and expected outputs
 
         Args:
-            inputs: All sets of input need to be test on for all execution plans. Each list
-                    of `inputs` is all sets which will be run on the execution plan in the
-                    program sharing same index. Each set of any `inputs` element should
+            method_names: All method names need to be verified in program.
+            inputs: All sets of input need to be test on for all methods. Each list
+                    of `inputs` is all sets which will be run on the method in the
+                    program with corresponding method name. Each set of any `inputs` element should
                     contain all inputs required by eager_model with the same inference function
                     as corresponding execution plan for one-time execution.
 
-                    Please note that currently we do not have any consensus about the mapping rule
-                    between inference name in eager_model and execution plan id in executorch
-                    program. Hence, user should take care of the data order in `inputs`: each list
-                    of `inputs` is all sets which will be run on the execution plan with same index,
-                    not the inference function with same index in the result of get_inference_name.
-                    Same as the `expected_outputs` and `metadatas` below.
-
-                    It shouldn't be a problem if there's only one inferenece function per model.
-
             expected_outputs: Expected outputs for inputs sharing same index. The size of
-                    expected_outputs should be the same as the size of inputs.
+                    expected_outputs should be the same as the size of inputs and provided method_names.
         """
         BundledConfig._check_io_type(inputs)
         BundledConfig._check_io_type(expected_outputs)
-        assert len(inputs) == len(expected_outputs), (
-            "length of inputs and expected_outputs should match,"
-            + " but got {} and {}".format(len(inputs), len(expected_outputs))
+
+        for m_name in method_names:
+            assert isinstance(m_name, str)
+
+        assert len(method_names) == len(inputs) == len(expected_outputs), (
+            "length of method_names, inputs and expected_outputs should match,"
+            + " but got {}, {} and {}".format(
+                len(method_names), len(inputs), len(expected_outputs)
+            )
         )
 
         self.execution_plan_tests: List[
             ConfigExecutionPlanTest
-        ] = BundledConfig._gen_execution_plan_tests(inputs, expected_outputs)
+        ] = BundledConfig._gen_execution_plan_tests(
+            method_names, inputs, expected_outputs
+        )
 
     @staticmethod
     # TODO(T138930448): Give pyre-ignore commands appropriate warning type and comments.
@@ -145,6 +147,7 @@ class BundledConfig:
 
     @staticmethod
     def _gen_execution_plan_tests(
+        method_names: List[str],
         # pyre-ignore
         inputs: List[List[Any]],
         # pyre-ignore
@@ -155,9 +158,10 @@ class BundledConfig:
         execution_plan_tests: List[ConfigExecutionPlanTest] = []
 
         for (
+            m_name,
             inputs_per_plan_test,
             expect_outputs_per_plan_test,
-        ) in zip(inputs, expected_outputs):
+        ) in zip(method_names, inputs, expected_outputs):
             test_sets: List[ConfigIOSet] = []
 
             # transfer I/O sets into ConfigIOSet for each execution plan
@@ -182,7 +186,12 @@ class BundledConfig:
 
             execution_plan_tests.append(
                 ConfigExecutionPlanTest(
+                    method_name=m_name,
                     test_sets=test_sets,
                 )
             )
+
+        # sort the execution plan tests by method name to in line with core program emitter.
+        execution_plan_tests.sort(key=lambda x: x.method_name)
+
         return execution_plan_tests

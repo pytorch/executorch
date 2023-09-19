@@ -73,6 +73,11 @@ class BundledIOSet:
 class BundledExecutionPlanTest:
     """Context for testing and verifying an exceution plan."""
 
+    # The name of the method to test; e.g., "forward" for the forward() method
+    # of an nn.Module. This name match a method defined by the ExecuTorch
+    # program.
+    method_name: str
+
     # Sets of input/outputs to test with.
     test_sets: List[BundledIOSet]
 
