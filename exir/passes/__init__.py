@@ -51,7 +51,7 @@ from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendO
 from executorch.exir.passes.replace_sym_size_op_pass import ReplaceSymSizeOpPass
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
-from executorch.exir.passes.sym_shape_eval_pass import SymShapeEvalPass
+from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
 from torch import fx
 from torch._subclasses import FakeTensor
@@ -65,7 +65,7 @@ __all__ = [
     "OpReplacePass",
     "EdgeToBackendOpsPass",
     "MemoryFormatOpsPass",
-    "SymShapeEvalPass",
+    "HintBasedSymShapeEvalPass",
 ]
 
 Argument = Optional[
@@ -510,5 +510,5 @@ def propagate_dynamic_shape(
     """
     return [
         SpecPropPass(),
-        SymShapeEvalPass(),
+        HintBasedSymShapeEvalPass(),
     ]

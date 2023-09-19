@@ -59,7 +59,7 @@ FileDataLoader::~FileDataLoader() {
   ::close(fd_);
 }
 
-Result<FileDataLoader> FileDataLoader::From(
+Result<FileDataLoader> FileDataLoader::from(
     const char* file_name,
     size_t alignment) {
   ET_CHECK_OR_RETURN_ERROR(

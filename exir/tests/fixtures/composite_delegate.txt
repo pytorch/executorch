@@ -6,7 +6,7 @@
     {
       "name": "forward",
       "container_meta_type": {
-        "encoded_inp_str": "T3#1#1#1($,$,$)",
+        "encoded_inp_str": "T2#3#0(T3#1#1#1($,$,$),D0())",
         "encoded_out_str": "$"
       },
       "values": [

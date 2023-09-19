@@ -35,14 +35,14 @@ class MethodTest : public ::testing::Test {
  protected:
   void load_program(const char* path, const char* module_name) {
     // Create a loader for the serialized program.
-    Result<FileDataLoader> loader = FileDataLoader::From(path);
+    Result<FileDataLoader> loader = FileDataLoader::from(path);
     ASSERT_EQ(loader.error(), Error::Ok);
     loaders_.insert(
         {module_name,
          std::make_unique<FileDataLoader>(std::move(loader.get()))});
 
     // Use it to load the program.
-    Result<Program> program = Program::Load(
+    Result<Program> program = Program::load(
         loaders_[module_name].get(),
         Program::Verification::InternalConsistency);
     ASSERT_EQ(program.error(), Error::Ok);

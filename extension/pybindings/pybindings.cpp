@@ -67,7 +67,7 @@ class Module final {
   explicit Module(std::unique_ptr<DataLoader> loader)
       : loader_(std::move(loader)) {
     runtime_init();
-    Result<Program> program = Program::Load(
+    Result<Program> program = Program::load(
         loader_.get(), Program::Verification::InternalConsistency);
     THROW_IF_ERROR(
         program.error(),
@@ -242,7 +242,7 @@ inline std::unique_ptr<Module> load_from_buffer(
 inline std::unique_ptr<Module> load_from_file(const std::string& path) {
   EXECUTORCH_SCOPE_PROF("load_from_file");
 
-  Result<MmapDataLoader> res = MmapDataLoader::From(
+  Result<MmapDataLoader> res = MmapDataLoader::from(
       path.c_str(), MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
   THROW_IF_ERROR(
       res.error(),

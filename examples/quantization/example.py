@@ -70,15 +70,21 @@ def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_
     after_quant_result_fx = m_fx(*example_inputs)
 
     # 3. compare results
-    # NB: this check is more useful for QAT since for PTQ we are only inserting observers that does not change the
-    # output of a model, so it's just testing the numerical difference for different captures in PTQ
-    # for QAT it is also testing whether the fake quant placement match or not
-    # not exactly the same due to capture changing numerics, but still really close
+    if model_name == "dl3":
+        after_prepare_result = after_prepare_result["out"]
+        after_prepare_result_fx = after_prepare_result_fx["out"]
+        after_quant_result = after_quant_result["out"]
+        after_quant_result_fx = after_quant_result_fx["out"]
     logging.info(f"m: {m}")
     logging.info(f"m_fx: {m_fx}")
     logging.info(
         f"prepare sqnr: {compute_sqnr(after_prepare_result, after_prepare_result_fx)}"
     )
+
+    # NB: this check is more useful for QAT since for PTQ we are only inserting observers that does not change the
+    # output of a model, so it's just testing the numerical difference for different captures in PTQ
+    # for QAT it is also testing whether the fake quant placement match or not
+    # not exactly the same due to capture changing numerics, but still really close
     assert compute_sqnr(after_prepare_result, after_prepare_result_fx) > 100
     logging.info(
         f"quant diff max: {torch.max(after_quant_result - after_quant_result_fx)}"
