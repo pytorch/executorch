@@ -94,7 +94,7 @@ class HierarchicalAllocator final {
         "n_allocators %" PRIu32 " > %zu",
         n_allocators,
         kSpanArraySize);
-    for (auto i = 0; i < n_allocators; ++i) {
+    for (uint32_t i = 0; i < n_allocators; ++i) {
       span_array_[i] =
           Span<uint8_t>(allocators[i].base_address(), allocators[i].size());
     }
