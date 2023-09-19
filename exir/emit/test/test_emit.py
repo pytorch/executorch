@@ -21,6 +21,7 @@ from executorch.exir.backend.backend_details import BackendDetails, PreprocessRe
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.error import InternalError
 from executorch.exir.passes.const_prop_pass import ConstPropPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
     Bool,
@@ -45,6 +46,8 @@ from executorch.extension.pybindings.portable_lib import (
 )
 from functorch.experimental import control_flow
 from torch import nn
+
+from torch.export import dynamic_dim
 
 
 class TestEmit(unittest.TestCase):
@@ -173,7 +176,8 @@ class TestEmit(unittest.TestCase):
         )
 
         self.assertEqual(
-            program.execution_plan[0].container_meta_type.encoded_inp_str, "T1#1($)"
+            program.execution_plan[0].container_meta_type.encoded_inp_str,
+            "T2#1#0(T1#1($),D0())",
         )
 
     def test_buffers_with_perfect_alignment(self) -> None:
@@ -1049,6 +1053,41 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(
             merged_program2.execution_plan[2], merged_program.execution_plan[2]
         )
+
+    def test_upper_bound_memory_planning_respect_input_constraints(self) -> None:
+        def func(k: torch.Tensor) -> torch.Tensor:
+            k = torch.cat((k, torch.ones(1, 4)))
+            return k
+
+        k = torch.rand(2, 4)
+        constraints = [
+            dynamic_dim(k, 0) <= 3,
+        ]
+        captured = exir.capture(
+            func,
+            (k,),
+            exir.CaptureConfig(pt2_mode=True, enable_aot=True),
+            constraints=constraints,  # enable_aot=False works
+        )
+        edge = captured.to_edge()
+        from executorch.exir.passes import MemoryPlanningPass
+
+        config = exir.ExecutorchBackendConfig(
+            sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
+            memory_planning_pass=MemoryPlanningPass(
+                memory_planning_algo="greedy",
+                # allow_lifetime_and_storage_overlap: bool = False,
+                alloc_graph_input=True,
+                alloc_graph_output=False,
+            ),
+        )
+
+        exe_prog = edge.to_executorch(config)
+        program = exe_prog.program
+        exir.print_program.pretty_print(exe_prog.program.execution_plan)
+        execution_plan = program.execution_plan[0]
+        self.check_tensor_buffer_loc(0, execution_plan.values, 0, 1, 0)
+        self.check_tensor_buffer_loc(1, execution_plan.values, 0, 1, 48)
 
     def test_emit_prims(self) -> None:
         class Simple(torch.nn.Module):

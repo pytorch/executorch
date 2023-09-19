@@ -289,12 +289,6 @@ class NodeVisitor:
 
         # convert tensor shape must reflect memory format, default is contiguous, so
         # only permute shape if we are converting the tensor to nhwc format
-        if tensor.target in (
-            exir_ops.edge.aten.permute_copy.default,
-            exir_ops.edge.aten.t_copy.default,
-        ):
-            # We ignore transpose nodes and reverse the dims to before it
-            dims = dims[::-1]
         if swap_nc_for_depthwise_weights:
             dims = [dims[1], dims[0]] + dims[2:]
         if convert_to_nhwc:

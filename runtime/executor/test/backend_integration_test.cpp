@@ -292,10 +292,10 @@ TEST_P(BackendIntegrationTest, BackendIsPresent) {
 
 // Demonstrate that installed StubBackend initializes successfully by default.
 TEST_P(BackendIntegrationTest, BasicInitSucceeds) {
-  Result<FileDataLoader> loader = FileDataLoader::From(program_path());
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
   ASSERT_EQ(loader.error(), Error::Ok);
 
-  Result<Program> program = Program::Load(&loader.get());
+  Result<Program> program = Program::load(&loader.get());
   ASSERT_EQ(program.error(), Error::Ok);
 
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
@@ -321,12 +321,12 @@ TEST_P(BackendIntegrationTest, FreeingProcessedBufferSucceeds) {
 
   // Wrap the real loader in a spy so we can see which operations were
   // performed.
-  Result<FileDataLoader> loader = FileDataLoader::From(program_path());
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
   ASSERT_EQ(loader.error(), Error::Ok);
   DataLoaderSpy spy_loader(&loader.get());
 
   // Load the program.
-  Result<Program> program = Program::Load(&spy_loader);
+  Result<Program> program = Program::load(&spy_loader);
   ASSERT_EQ(program.error(), Error::Ok);
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method_res = program->load_method("forward", &mmm.get());
@@ -385,12 +385,12 @@ TEST_P(BackendIntegrationTest, EndToEndTestWithProcessedAsHandle) {
 
   // Wrap the real loader in a spy so we can see which operations were
   // performed.
-  Result<FileDataLoader> loader = FileDataLoader::From(program_path());
+  Result<FileDataLoader> loader = FileDataLoader::from(program_path());
   ASSERT_EQ(loader.error(), Error::Ok);
   DataLoaderSpy spy_loader(&loader.get());
 
   // Load the program.
-  Result<Program> program = Program::Load(&spy_loader);
+  Result<Program> program = Program::load(&spy_loader);
   ASSERT_EQ(program.error(), Error::Ok);
 
   // Hold onto the address of the processed buffer so we can compare against
@@ -530,7 +530,7 @@ TEST_P(DelegateDataAlignmentTest, ExpectedDataAlignment) {
 
   // Create a loader that can satisfy the alignment required by this program.
   Result<FileDataLoader> loader =
-      FileDataLoader::From(program_path(), /*alignment=*/expected_alignment());
+      FileDataLoader::from(program_path(), /*alignment=*/expected_alignment());
   ASSERT_EQ(loader.error(), Error::Ok);
 
   // Wrap the real loader in a spy so we can see which operations were
@@ -538,7 +538,7 @@ TEST_P(DelegateDataAlignmentTest, ExpectedDataAlignment) {
   DataLoaderSpy spy_loader(&loader.get());
 
   // Load the program.
-  Result<Program> program = Program::Load(&spy_loader);
+  Result<Program> program = Program::load(&spy_loader);
   ASSERT_EQ(program.error(), Error::Ok);
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method = program->load_method("forward", &mmm.get());

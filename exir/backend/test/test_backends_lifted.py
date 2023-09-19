@@ -647,7 +647,7 @@ class TestBackends(unittest.TestCase):
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         )
 
-        new_res = program_with_delegates.dump_graph_module()(*inputs)
+        new_res = program_with_delegates.dump_exported_program()(*inputs)
         for t1, t2 in zip(new_res, orig_res, strict=True):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 
@@ -780,7 +780,7 @@ class TestBackends(unittest.TestCase):
         #     config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
         # )
 
-        new_res = program_with_delegates.dump_graph_module()(*inputs)
+        new_res = program_with_delegates.dump_exported_program()(*inputs)
         for t1, t2 in zip(new_res, orig_res, strict=True):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 

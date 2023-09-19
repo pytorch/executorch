@@ -457,8 +457,6 @@ class TestMisc(unittest.TestCase):
         )
         return quantized_model
 
-    # TODO(T158653285)
-    @unittest.expectedFailure
     def test_asr_joiner(self) -> None:
         eager_model = self.quantize(ASRJoiner())
         inputs = eager_model.get_random_inputs()
