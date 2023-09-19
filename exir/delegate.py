@@ -24,10 +24,7 @@ from torch.fx.experimental.proxy_tensor import (
     ProxyTorchDispatchMode,
     track_tensor_tree,
 )
-from torch.utils._python_dispatch import (
-    _get_current_dispatch_mode,
-    _pop_mode_temporarily,
-)
+from torch.utils._python_dispatch import _get_current_dispatch_mode
 from torch.utils._pytree import tree_flatten
 
 

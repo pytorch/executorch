@@ -36,7 +36,6 @@ from executorch.backends.xnnpack.utils.utils import (
 )
 
 from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_INVALID_VALUE_ID
-from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
 
 XNN_TYPE_MAP = {
