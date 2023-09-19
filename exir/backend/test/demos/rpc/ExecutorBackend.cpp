@@ -79,24 +79,21 @@ class ExecutorBackend final : public PyTorchBackendInterface {
 
     auto num_non_const_buffers = method_meta->num_non_const_buffers();
 
-    uint8_t** non_const_buffers = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        runtime_allocator, uint8_t*, num_non_const_buffers);
-    MemoryAllocator* non_const_allocators = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        runtime_allocator, MemoryAllocator, num_non_const_buffers);
+    Span<uint8_t>* non_const_buffers = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
+        runtime_allocator, Span<uint8_t>, num_non_const_buffers);
 
     for (size_t id = 0; id < num_non_const_buffers; ++id) {
-      auto buffer_size = method_meta->non_const_buffer_size(id);
+      size_t buffer_size =
+          static_cast<size_t>(method_meta->non_const_buffer_size(id).get());
       uint8_t* buffer_i = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-          runtime_allocator, uint8_t, buffer_size.get());
-      non_const_buffers[id] = buffer_i;
-      new (&non_const_allocators[id])
-          MemoryAllocator(static_cast<uint32_t>(buffer_size.get()), buffer_i);
+          runtime_allocator, uint8_t, buffer_size);
+      non_const_buffers[id] = {buffer_i, buffer_size};
     }
 
     auto client_non_const_allocator = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
         runtime_allocator, HierarchicalAllocator);
     new (client_non_const_allocator)
-        HierarchicalAllocator(num_non_const_buffers, non_const_allocators);
+        HierarchicalAllocator({non_const_buffers, num_non_const_buffers});
 
     // Allocate some memory from runtime allocator for the client executor, in
     // real case, like if it's an executor in dsp, it should allocate memory
