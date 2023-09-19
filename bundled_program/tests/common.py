@@ -12,7 +12,6 @@ from typing import List, Tuple, Union
 import executorch.exir as exir
 import torch
 from executorch.bundled_program.config import BundledConfig
-from executorch.exir import CaptureConfig
 from executorch.exir.schema import Program
 
 # @manual=fbsource//third-party/pypi/typing-extensions:typing-extensions
