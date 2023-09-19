@@ -8,20 +8,6 @@ def define_common_targets():
     """
 
     runtime.cxx_library(
-        name = "test_memory_config",
-        srcs = [],
-        exported_headers = ["TestMemoryConfig.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/core:memory_allocator",
-        ],
-    )
-
-    runtime.cxx_library(
         name = "read_file",
         srcs = ["read_file.cpp"],
         exported_headers = ["read_file.h"],
