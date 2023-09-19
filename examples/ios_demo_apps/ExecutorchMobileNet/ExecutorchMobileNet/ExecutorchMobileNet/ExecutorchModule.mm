@@ -162,12 +162,8 @@ std::vector<std::string> get_image_net_classes() {
   MemoryAllocator temp_allocator{MemoryAllocator(0, nullptr)};
   temp_allocator.enable_profiling("temp allocator");
 
-  MemoryAllocator non_const_allocators[1]{
-      MemoryAllocator(kMemoryAmount, activation_pool)};
-  non_const_allocators[0].enable_profiling("non_const_allocators");
-
-  HierarchicalAllocator non_const_allocator{
-      HierarchicalAllocator(1, non_const_allocators)};
+  Span<uint8_t> non_const_buffers[1]{{activation_pool, kMemoryAmount}};
+  HierarchicalAllocator non_const_allocator({non_const_buffers, 1});
 
   MemoryManager memory_manager{MemoryManager(
       &const_allocator,
