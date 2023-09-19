@@ -63,11 +63,23 @@ class Conv1dUnsqueezePass(XNNPACKPass):
                     kernel_param_4d = torch.nn.Parameter(
                         data=kernel_param_3d.data.contiguous().unsqueeze(dim=-1)
                     )
-                    setattr(
-                        kernel_node.graph.owning_module,
-                        kernel_node.target,
-                        kernel_param_4d,
-                    )
+
+                    if torch._export.utils.is_param(self.exported_program, kernel_node):
+                        parameter_name = (
+                            self.exported_program.graph_signature.inputs_to_parameters[
+                                kernel_node.name
+                            ]
+                        )
+                        self.exported_program.state_dict[
+                            parameter_name
+                        ] = kernel_param_4d
+                        kernel_node.meta["val"] = kernel_param_4d.data.contiguous()
+                    else:
+                        setattr(
+                            kernel_node.graph.owning_module,
+                            kernel_node.target,
+                            kernel_param_4d,
+                        )
 
                     # (b) Extend stride, padding, and dilation for extra dim
                     node.args = (
