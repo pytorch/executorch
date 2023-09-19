@@ -74,6 +74,16 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "hierarchical_allocator_test",
+        srcs = [
+            "hierarchical_allocator_test.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/core:memory_allocator",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "tensor_shape_dynamism_test_aten",
         srcs = ["tensor_shape_dynamism_test_aten.cpp"],
         deps = [
