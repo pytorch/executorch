@@ -15,7 +15,7 @@ from executorch.bundled_program.config import DataContainer
 from executorch.bundled_program.tests.common import (
     get_random_config,
     get_random_config_with_eager_model,
-    MISOModel,
+    SampleModel,
 )
 from executorch.extension.pytree import tree_flatten
 
@@ -43,7 +43,12 @@ class TestConfig(unittest.TestCase):
         n_sets_per_plan_test = 10
         n_execution_plan_tests = 5
 
-        (rand_inputs, rand_expected_outpus, bundled_config,) = get_random_config(
+        (
+            rand_method_names,
+            rand_inputs,
+            rand_expected_outpus,
+            bundled_config,
+        ) = get_random_config(
             n_model_inputs=2,
             model_input_sizes=[[2, 2], [2, 2]],
             n_model_outputs=1,
@@ -57,8 +62,14 @@ class TestConfig(unittest.TestCase):
             len(bundled_config.execution_plan_tests), n_execution_plan_tests
         )
 
+        rand_method_names.sort()
+
         # Compare to see if bundled execution plan test match expectations.
         for plan_test_idx in range(n_execution_plan_tests):
+            self.assertEqual(
+                bundled_config.execution_plan_tests[plan_test_idx].method_name,
+                rand_method_names[plan_test_idx],
+            )
             for testset_idx in range(n_sets_per_plan_test):
                 self.assertIOListEqual(
                     # pyre-ignore
@@ -77,24 +88,28 @@ class TestConfig(unittest.TestCase):
 
     def test_create_config_from_eager_model(self) -> None:
         n_sets_per_plan_test = 10
-        n_execution_plan_tests = 5
-        eager_model = MISOModel()
+        eager_model = SampleModel()
+        method_names: List[str] = eager_model.method_names
 
         rand_inputs, bundled_config = get_random_config_with_eager_model(
             eager_model=eager_model,
+            method_names=method_names,
             n_model_inputs=2,
             model_input_sizes=[[2, 2], [2, 2]],
             dtype=torch.int32,
             n_sets_per_plan_test=n_sets_per_plan_test,
-            n_execution_plan_tests=n_execution_plan_tests,
         )
 
-        self.assertEqual(
-            len(bundled_config.execution_plan_tests), n_execution_plan_tests
-        )
+        self.assertEqual(len(bundled_config.execution_plan_tests), len(method_names))
+
+        sorted_method_names = sorted(method_names)
 
         # Compare to see if bundled testcases match expectations.
-        for plan_test_idx in range(n_execution_plan_tests):
+        for plan_test_idx in range(len(method_names)):
+            self.assertEqual(
+                bundled_config.execution_plan_tests[plan_test_idx].method_name,
+                sorted_method_names[plan_test_idx],
+            )
             for testset_idx in range(n_sets_per_plan_test):
                 ri = rand_inputs[plan_test_idx][testset_idx]
                 self.assertIOListEqual(
@@ -105,7 +120,9 @@ class TestConfig(unittest.TestCase):
                     .inputs,
                 )
 
-                model_outputs = eager_model(*ri)
+                model_outputs = getattr(
+                    eager_model, sorted_method_names[plan_test_idx]
+                )(*ri)
                 if isinstance(model_outputs, get_args(DataContainer)):
                     # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
                     flatten_eager_model_outputs = tree_flatten(model_outputs)

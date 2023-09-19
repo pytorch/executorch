@@ -594,6 +594,9 @@ def maketest(
             ]
             bundled_config = BundledConfig(
                 [
+                    method,
+                ],
+                [
                     inputs_list,
                 ],
                 expected_outputs_list,
