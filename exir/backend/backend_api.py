@@ -8,10 +8,9 @@ import copy
 import logging
 from contextlib import contextmanager
 from functools import singledispatch
-from typing import Dict, Generator, List, Type, Union
+from typing import Generator, List, Type
 
 import torch
-from executorch.exir import MultiMethodExirExportedProgram
 
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -319,59 +318,3 @@ def _(
         copy.deepcopy(edge_program.equality_constraints),
         copy.deepcopy(edge_program.module_call_graph),
     )
-
-
-def to_backend_multiple(
-    multi_method_program: MultiMethodExirExportedProgram,
-    partitioner: Union[Dict[str, Type[TPartitioner]], Type[TPartitioner]],
-) -> MultiMethodExirExportedProgram:
-    """
-    Returns a semantically-equivalent program to the one given as input (represented
-    as a graph module in Edge dialect), but with portions of each method in the
-    program targeted for delegation as determined by the partitioner.
-
-    Args:
-        MultiMethodExirExportedProgram: A multiple method exported program in Edge dialect.
-
-        partitioner: The partitioner can either be a Partitioner subclass, or a
-            dictionary mapping method names to Partitioner subclass. If it is a
-            Partitioner subclass, all methods in the given multi-method exported
-            program will be lowered using the given partitioner. If it is a
-            dictionary, only method names specified in the dictionary will be
-            lowered with the given partitioner.
-
-            THe Partitioner subclass is in charge with tagging portions of the
-            input program for delegation. A valid partitioner must have
-            partition_tags: Dict[str, DelegationSpec], where each key is a tag
-            name and the nodes with same tag will be fused a one subgraph and
-            delegated to backend specififed in delegation spec.
-
-    Returns:
-        MultiMethodExirExportedProgram: The input program, with some portions
-        targeted for delegation in each method of the program.
-    """
-    if not (isinstance(partitioner, dict) or issubclass(partitioner, Partitioner)):
-        raise TypeError(
-            "partitioner should either be a dictionary of method names to"
-            + "partitioner subclass, or a partitioner subclass."
-        )
-
-    method_name_to_delegated_program = {}
-    for method_name, prog in multi_method_program.methods().items():
-        if isinstance(partitioner, dict):
-            if method_name in partitioner:
-                method_name_to_delegated_program[method_name] = prog
-                method_name_to_delegated_program[
-                    method_name
-                ].exported_program = to_backend(
-                    prog.exported_program, partitioner[method_name]
-                )
-            else:
-                method_name_to_delegated_program[method_name] = prog
-        else:
-            method_name_to_delegated_program[method_name] = prog
-            method_name_to_delegated_program[method_name].exported_program = to_backend(
-                prog.exported_program, partitioner
-            )
-
-    return MultiMethodExirExportedProgram(method_name_to_delegated_program)
