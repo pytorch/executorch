@@ -245,6 +245,7 @@ def capture(  # noqa: C901
         {},
         [],
         [],
+        dialect="OLD_EXIR_ATEN",
     )
     return ExirExportedProgram(ep, False)
 

@@ -29,6 +29,7 @@ from executorch.exir.verification.verifier import (
     EXIREdgeDialectVerifier,
 )
 from torch._export import ExportedProgram
+from torch._export.passes.lift_constant_tensor_pass import lift_constant_tensor_pass
 from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
 from torch.utils import _pytree as pytree
@@ -68,6 +69,7 @@ class HackedUpExportedProgramDONOTUSE(ExportedProgram):
             module_call_graph,
             example_inputs,
         )
+        self._dialect = "HACKED_ATEN"
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         import torch._export.error as error
@@ -281,17 +283,33 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
             )
             raise
 
-    op_replace_pass = [OpReplacePass()] if config._use_edge_ops else []
     # TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -> debug_handle_generator. After enable
     # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
     # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
     # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
-    passes = (
-        aten_to_edge_passes.passes[:-2]
-        + op_replace_pass
-        + aten_to_edge_passes.passes[-2:]
+    pre_op_replace_passes = aten_to_edge_passes.passes[:-2]
+    post_op_replace_passes = aten_to_edge_passes.passes[-2:]
+
+    new_ep = copy.deepcopy(ep).transform(*pre_op_replace_passes)
+    if new_ep.exported_program.dialect == "ATEN":
+        new_ep.exported_program = lift_constant_tensor_pass(new_ep.exported_program)
+
+    if config._use_edge_ops:
+        new_ep = new_ep.transform(OpReplacePass())
+
+    new_ep = new_ep.transform(*post_op_replace_passes)
+    new_ep.exported_program = ExportedProgram(
+        new_ep.exported_program.graph_module,
+        new_ep.exported_program.graph,
+        new_ep.exported_program.graph_signature,
+        new_ep.exported_program.call_spec,
+        new_ep.exported_program.state_dict,
+        new_ep.exported_program.range_constraints,
+        new_ep.exported_program.equality_constraints,
+        new_ep.exported_program.module_call_graph,
+        new_ep.exported_program.example_inputs,
+        dialect="EDGE",
     )
-    new_ep = copy.deepcopy(ep).transform(*passes)
     if config._check_ir_validity:
         EXIREdgeDialectVerifier(check_edge_ops=config._use_edge_ops)(
             new_ep.exported_program.graph_module
