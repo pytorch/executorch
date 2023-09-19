@@ -10,6 +10,7 @@
 import logging
 import operator
 import os
+import tempfile
 
 from typing import final, List
 
@@ -87,8 +88,10 @@ def attr_torch_to_tosa(op, node):
 
 @final
 class TosaPartitioner(Partitioner):
+    compile_spec = []
+
     def __init__(self) -> None:
-        self.delegation_spec = DelegationSpec(TosaBackend.__name__, [])
+        self.delegation_spec = DelegationSpec(TosaBackend.__name__, self.compile_spec)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
@@ -113,48 +116,58 @@ class TosaPartitioner(Partitioner):
         )
 
 
+# Output TOSA flatbuffer and test harness file
+def dbg_tosa_dump(tosa_fb, path):
+    filename = "output.tosa"
+
+    logger.info(f"Emitting debug output to {path}")
+
+    os.makedirs(path, exist_ok=True)
+
+    fb = tosa_fb.serialize()
+    js = tosa_fb.writeJson(filename)
+
+    f = open(path + filename, "wb")
+    f.write(fb)
+    f.close()
+
+    f = open(path + "desc.json", "w")
+    f.write(js)
+    f.close()
+
+
+def dbg_fail(node, tosa_fb, path):
+    dbg_tosa_dump(tosa_fb, path)
+    logger.warn("Internal error due to poorly handled node:")
+    dbg_node(node)
+    logger.warn(f"Debug output captured in '{path}'.")
+    raise RuntimeError("TOSA Internal Error on node, enable logging for further info")
+
+
 @final
 class TosaBackend(BackendDetails):
     @staticmethod
     def preprocess(  # noqa: C901
         edge_program: ExportedProgram,
-        compile_specs: List[CompileSpec],
+        compile_spec: List[CompileSpec],
     ) -> bytes:
         logger.info("TosaBackend::preprocess")
 
-        # TODO: This should be a /tmp path output on error only, or specified location
-        #       for testing. Should use compilespec rather than an env var.
-        TOSA_TESTING_OP = os.environ.get("TOSA_TESTING_OP", default=".")
-        path = "./tosaout/" + TOSA_TESTING_OP + "/"
+        # if a debug/test build capture output files from TOSA stage
+        path = None
+        debug_output = False
+        for spec in compile_spec:
+            if spec.key == "debug_tosa_path":
+                path = spec.value.decode()
+                debug_output = True
+
+        # in non debug builds we still pass files to vela
+        if path is None:
+            path = tempfile.mkdtemp(prefix="arm_tosa_")
+
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
         tosa_fb = ts.TosaSerializer(path)
-
-        def dbg_tosa_dump(tosa_fb):
-            filename = "output.tosa"
-
-            logger.info(f"Emitting debug output to {path}")
-
-            os.makedirs(path, exist_ok=True)
-
-            fb = tosa_fb.serialize()
-            js = tosa_fb.writeJson(filename)
-
-            f = open(path + filename, "wb")
-            f.write(fb)
-            f.close()
-
-            f = open(path + "desc.json", "w")
-            f.write(js)
-            f.close()
-
-        def dbg_fail(node, tosa_fb):
-            dbg_tosa_dump(tosa_fb)
-            logger.info("Went bang due to poorly handled node:")
-            dbg_node(node)
-            raise RuntimeError(
-                "TOSA Internal Error on node, enable logging for further info"
-            )
 
         for node in edge_program.graph.nodes:
             if node.op == "call_function":
@@ -586,9 +599,12 @@ class TosaBackend(BackendDetails):
                 continue
 
             else:
-                dbg_fail(node, tosa_fb)
+                # This will only happen if an unpartitioned graph is passed without
+                # any checking of compatibility.
+                dbg_fail(node, tosa_fb, path)
 
-        dbg_tosa_dump(tosa_fb)
+        if debug_output is True:
+            dbg_tosa_dump(tosa_fb, path)
 
         # Serialize and return the tosa flatbuffer
         fb = tosa_fb.serialize()

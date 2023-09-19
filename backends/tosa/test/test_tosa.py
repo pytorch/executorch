@@ -6,6 +6,8 @@
 import json
 import os
 import subprocess
+import tempfile
+import unittest
 
 import executorch.exir as exir
 import numpy as np
@@ -13,16 +15,85 @@ from executorch.backends.tosa.test.test_tosa_models import TestList, TosaProfile
 from executorch.backends.tosa.tosa_backend import TosaPartitioner
 
 from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 # Assumes you have these two tools on your path
 TOSA_REF_MODEL_PATH = "tosa_reference_model"
 VELA_COMPILER_PATH = "vela"
+
+# Temp directory that any debug output is written to
+DEBUG_PATH = tempfile.mkdtemp(prefix="arm_tosa_")
 
 # Config for Capturting the weights, will be moved in the future
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True, enable_dynamic_shape=False)
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
 )
+
+
+class TestBasicNN(unittest.TestCase):
+    def test_minimal_MI(self):
+        for test_model in TestList:
+            print(f"Running test {test_model}")
+            model, inputs, outputs = prepare_model_and_ref(test_model, TosaProfile.MI)
+            if inputs is None:
+                print("  Skipping, no inputs for this profile")
+                continue
+            model_edge, exec_prog = export_model(model, inputs, [])
+
+    def test_minimal_BI(self):
+        for test_model in TestList:
+            print(f"Running test {test_model}")
+            model, inputs, outputs = prepare_model_and_ref(test_model, TosaProfile.BI)
+            if inputs is None:
+                print("  Skipping, no inputs for this profile")
+                continue
+            model_edge, exec_prog = export_model(model, inputs, [])
+
+
+def prepare_model_and_ref(test_model, profile=TosaProfile.MI):
+    model = TestList[test_model]
+    model_inputs = model.inputs.get(profile)
+    if model_inputs is not None:
+        model_outputs = model.forward(*model_inputs)
+        return model, model_inputs, model_outputs
+    return model, model_inputs, None
+
+
+def export_model(model, inputs, compile_spec):
+    model_capture = exir.capture(model, inputs, _CAPTURE_CONFIG)
+    model_edge = model_capture.to_edge(_EDGE_COMPILE_CONFIG)
+    TosaPartitioner.compile_spec = compile_spec
+    model_edge.exported_program = to_backend(
+        model_edge.exported_program, TosaPartitioner
+    )
+    exec_prog = model_edge.to_executorch()
+    return model_edge, exec_prog
+
+
+def tosa_ref_dump_inputs(model_edge, inputs, path):
+    # Emit TOSA test data from the model inputs - assumes whole graph lowered so we just have
+    # placeholders for the TOSA delegate. Emits data in tosa_ref_model expected layout.
+    # - Skips placeholders which are encoded as constants (i.e. are already captured weights)
+    # - Assumes argument order is fixed
+    argument_names = []
+    for node in model_edge.exported_program.graph.nodes:
+        gs = model_edge.exported_program.graph_signature
+        if node.op == "placeholder":
+            if node.name in gs.inputs_to_parameters:
+                pass
+            elif node.name in gs.inputs_to_buffers:
+                pass
+            else:
+                argument_names.append(node.name)
+        else:
+            break
+
+    for arg in zip(argument_names, inputs):
+        name = arg[0]
+        data = arg[1].detach().numpy()
+        file_path = path + "/" + name + ".npy"
+        np.save(file_path, data, allow_pickle=False)
 
 
 def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
@@ -37,67 +108,32 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
     # TODO: Don't know how to pass data into tosa backend, setting as an env var as a workaround
     os.environ["TOSA_TESTING_OP"] = str(op)
 
-    model = TestList[op]
-    if model.inputs.get(profile) is None:
-        print(
-            "\033[96m" + "Skipping test as no inputs for this TOSA profile" + "\033[0m"
-        )
+    # Debug output for TORCH
+    TORCH_OUT_PATH = os.path.join(DEBUG_PATH, op, "torch", "")
+    os.makedirs(TORCH_OUT_PATH, exist_ok=True)
+
+    # Debug output for TOSA
+    TOSA_OUT_PATH = os.path.join(DEBUG_PATH, op, "tosa", "")
+    os.makedirs(TOSA_OUT_PATH, exist_ok=True)
+
+    # Debug flag for compilers
+    compile_spec = [CompileSpec("debug_tosa_path", bytes(TOSA_OUT_PATH, "utf8"))]
+
+    model, inputs, torch_output = prepare_model_and_ref(op, profile)
+
+    if inputs is None:
+        print("\033[96m Skipping, no inputs for TOSA profile \033[0m")
         return
 
-    torch_output = model.forward(*model.inputs[profile])
-
-    TORCH_OUT_PATH = os.path.join("torchout", op)
-    torch_dir_exists = os.path.exists(TORCH_OUT_PATH)
-    if not torch_dir_exists:
-        os.makedirs(TORCH_OUT_PATH)
+    captured_model, exec_prog = export_model(model, inputs, compile_spec)
 
     # Save ground truth results to file
     with open(TORCH_OUT_PATH + "/torch_output.npy", "wb") as f:
         np.save(f, torch_output.detach().numpy())
 
-    # capture ExirExportedProgram
-    captured_model = exir.capture(
-        model, model.inputs[profile], _CAPTURE_CONFIG
-    ).to_edge(_EDGE_COMPILE_CONFIG)
-    # convert ExportedProgram using TosaPartitioner and assign back to captured model
-    captured_model.exported_program = to_backend(
-        captured_model.exported_program, TosaPartitioner
-    )
-    # Output ExecutorchProgram from ExportedProgram
-    exec_prog = captured_model.to_executorch()
+    tosa_ref_dump_inputs(captured_model, inputs, TOSA_OUT_PATH)
 
-    # Emit TOSA test data from the model inputs - assumes whole graph lowered so we just have
-    # placeholders for the TOSA delegate.
-    # - Skips placeholders which are encoded as constants (i.e. are already captured weights)
-    # - Assumes argument order is fixed
-    argument_names = []
-    for node in captured_model.exported_program.graph.nodes:
-        if node.op == "placeholder":
-            if (
-                node.name
-                in captured_model.exported_program.graph_signature.inputs_to_parameters
-            ):
-                pass
-            elif (
-                node.name
-                in captured_model.exported_program.graph_signature.inputs_to_buffers
-            ):
-                pass
-            else:
-                argument_names.append(node.name)
-        else:
-            break
-
-    TOSA_OUT_PATH = os.path.join("tosaout", op)
-    tosa_dir_exists = os.path.exists(TOSA_OUT_PATH)
-    if not tosa_dir_exists:
-        os.makedirs(TOSA_OUT_PATH)
-
-    for arg in zip(argument_names, model.inputs[profile]):
-        name = arg[0]
-        data = arg[1].detach().numpy()
-        path = TOSA_OUT_PATH + "/" + name + ".npy"
-        np.save(path, data, allow_pickle=False)
+    print(TORCH_OUT_PATH, TOSA_OUT_PATH)
 
     # this is the .pte binary file
     with open(TORCH_OUT_PATH + "/delegated.pte", "wb") as fh:
@@ -108,7 +144,7 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
         "flatc"
         + " -o "
         + TOSA_OUT_PATH
-        + " --raw-binary -t ./backends/tosa/serialization_lib/schema/tosa.fbs -- ./"
+        + " --raw-binary -t ./backends/tosa/serialization_lib/schema/tosa.fbs -- "
         + TOSA_OUT_PATH
         + "/output.tosa"
     )
@@ -164,5 +200,10 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
         print("\033[96m" + "Skipping Vela test on non-BI profile." + "\033[0m")
 
 
-for op in TestList:
-    tosa_run_test(op, profile=TosaProfile.MI)
+# Temp systest mode for running all models against both inference profiles
+if __name__ == "__main__":
+    for op in TestList:
+        tosa_run_test(op, profile=TosaProfile.MI)
+
+    for op in TestList:
+        tosa_run_test(op, profile=TosaProfile.BI)
