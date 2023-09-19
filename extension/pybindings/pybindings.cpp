@@ -183,10 +183,9 @@ class Module final {
     explicit Memory(std::vector<std::vector<uint8_t>>&& non_const_buffers)
         : runtime_allocator_(),
           non_const_buffers_(std::move(non_const_buffers)),
-          non_const_allocator_list_(create_non_const_allocators()),
+          non_const_spans_(create_non_const_spans()),
           non_const_allocator_(
-              non_const_allocator_list_.size(),
-              non_const_allocator_list_.data()),
+              {non_const_spans_.data(), non_const_spans_.size()}),
           mem_manager_(
               &const_allocator_,
               &non_const_allocator_,
@@ -211,17 +210,17 @@ class Module final {
 
     std::vector<std::vector<uint8_t>> non_const_buffers_;
 
-    std::vector<MemoryAllocator> non_const_allocator_list_;
+    std::vector<Span<uint8_t>> non_const_spans_;
 
     HierarchicalAllocator non_const_allocator_;
 
     MemoryManager mem_manager_;
 
-    std::vector<MemoryAllocator> create_non_const_allocators() {
-      std::vector<MemoryAllocator> result;
+    std::vector<Span<uint8_t>> create_non_const_spans() {
+      std::vector<Span<uint8_t>> result;
       for (size_t i = 0; i < non_const_buffers_.size(); i++) {
-        result.push_back(MemoryAllocator(
-            non_const_buffers_[i].size(), non_const_buffers_[i].data()));
+        result.push_back(
+            {non_const_buffers_[i].data(), non_const_buffers_[i].size()});
       }
       return result;
     }
