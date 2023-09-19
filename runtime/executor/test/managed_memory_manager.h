@@ -29,11 +29,12 @@ class ManagedMemoryManager {
       : const_allocator_(0, nullptr),
         non_const_pool_(new uint8_t[non_const_mem_bytes]),
         non_const_allocators_({
-            MemoryAllocator(non_const_mem_bytes, non_const_pool_.get()),
+            {non_const_pool_.get(), non_const_mem_bytes},
         }),
-        non_const_allocator_(
+        non_const_allocator_({
+            non_const_allocators_.data(),
             non_const_allocators_.size(),
-            non_const_allocators_.data()),
+        }),
         runtime_pool_(new uint8_t[runtime_mem_bytes]),
         runtime_allocator_(runtime_mem_bytes, runtime_pool_.get()),
         temp_allocator_(0, nullptr),
@@ -51,7 +52,7 @@ class ManagedMemoryManager {
   MemoryAllocator const_allocator_;
 
   std::unique_ptr<uint8_t[]> non_const_pool_;
-  std::vector<MemoryAllocator> non_const_allocators_;
+  std::vector<Span<uint8_t>> non_const_allocators_;
   torch::executor::HierarchicalAllocator non_const_allocator_;
 
   std::unique_ptr<uint8_t[]> runtime_pool_;

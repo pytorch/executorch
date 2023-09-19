@@ -10,6 +10,7 @@
 
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/log.h>
@@ -18,75 +19,91 @@
 namespace torch {
 namespace executor {
 
-// A group of allocators that can be used to represent a device's memory
-// hierarchy.
-class HierarchicalAllocator {
+/**
+ * A group of buffers that can be used to represent a device's memory hierarchy.
+ */
+class HierarchicalAllocator final {
  public:
-  // Constructs a new hierarchycal allocator with the given array of allocators.
-  // Memory IDs are assigned based on the index in the 'allocators' array. E.g.
-  // the first allocator in the array will have a memory ID of 0.
-  HierarchicalAllocator(uint32_t n_allocators, MemoryAllocator* allocators)
-      : n_allocators_(n_allocators), allocators_(allocators) {}
+  /**
+   * Constructs a new hierarchical allocator with the given array of buffers.
+   *
+   * - Memory IDs are based on the index into `buffers`: `buffers[N]` will have
+   *   a memory ID of `N`.
+   * - `buffers.size()` must be >= `MethodMeta::num_non_const_buffers()`.
+   * - `buffers[N].size()` must be >= `MethodMeta::non_const_buffer_size(N)`.
+   */
+  explicit HierarchicalAllocator(Span<Span<uint8_t>> buffers)
+      : buffers_(buffers) {}
+
+  /**
+   * DEPRECATED: Use spans instead.
+   */
+  __ET_DEPRECATED HierarchicalAllocator(
+      uint32_t n_allocators,
+      MemoryAllocator* allocators)
+      : buffers_(to_spans(n_allocators, allocators)) {}
 
   /**
    * Returns the address at the byte offset `offset_bytes` from the given
-   * allocator's base address, which should have at least `size_bytes` of memory
-   * available inside the allocator's buffer.
+   * buffer's base address, which points to at least `size_bytes` of memory.
    *
-   * This is useful to point an object to this address when such information has
-   * been predetermined. This method assumes that the given memory's allocator
-   * has already reserved enough memory (i.e. there's no actual allocation call
-   * to the underlying memory allocator).
-   *
-   * @param[in] memory_id The ID of the allocator in the hierarchy.
-   * @param[in] offset_bytes The offset in bytes into the memory of the
-   *     specified allocator.
+   * @param[in] memory_id The ID of the buffer in the hierarchy.
+   * @param[in] offset_bytes The offset in bytes into the specified buffer.
    * @param[in] size_bytes The amount of memory that should be available at
    *     the offset.
    *
    * @returns On success, the address of the requested byte offset into the
-   *     specified allocator. On failure, a non-Ok Error.
+   *     specified buffer. On failure, a non-Ok Error.
    */
   __ET_NODISCARD Result<void*> get_offset_address(
       uint32_t memory_id,
       size_t offset_bytes,
       size_t size_bytes) {
-    Result<MemoryAllocator*> allocator_result = get_allocator(memory_id);
-    if (!allocator_result.ok()) {
-      return allocator_result.error();
-    }
-    auto allocator = allocator_result.get();
     ET_CHECK_OR_RETURN_ERROR(
-        offset_bytes + size_bytes <= allocator->size(),
+        memory_id < buffers_.size(),
+        InvalidArgument,
+        "id %" PRIu32 " >= %zu",
+        memory_id,
+        buffers_.size());
+    Span<uint8_t> buffer = buffers_[memory_id];
+    ET_CHECK_OR_RETURN_ERROR(
+        offset_bytes + size_bytes <= buffer.size(),
         MemoryAllocationFailed,
-        "offset_bytes (%zu) + size_bytes (%zu) >= allocator size (%" PRIu32
-        ") for memory_id %" PRIu32,
+        "offset_bytes (%zu) + size_bytes (%zu) >= allocator size (%zu) "
+        "for memory_id %" PRIu32,
         offset_bytes,
         size_bytes,
-        allocator->size(),
+        buffer.size(),
         memory_id);
-    return allocator->base_address() + offset_bytes;
+    return buffer.data() + offset_bytes;
   }
-
-  virtual ~HierarchicalAllocator() {}
 
  private:
-  /// Returns the memory allocator for the given 'memory_id' in the hierarchy.
-  Result<MemoryAllocator*> get_allocator(uint32_t memory_id) const {
-    ET_CHECK_OR_RETURN_ERROR(
-        memory_id < n_allocators_,
-        InvalidArgument,
-        "Memory id %" PRIu32 " >= n_allocators_ %" PRIu32,
-        memory_id,
-        n_allocators_);
-    return &allocators_[memory_id];
+  // TODO(T162089316): Remove the span array and to_spans once all users move to
+  // spans. This array is necessary to hold the pointers and sizes that were
+  // originally provided as MemoryAllocator instances.
+  static constexpr size_t kSpanArraySize = 16;
+  // NOTE: span_array_ must be declared before buffers_ so that it isn't
+  // re-initialized to zeros after initializing buffers_.
+  Span<uint8_t> span_array_[kSpanArraySize];
+  Span<Span<uint8_t>> to_spans(
+      uint32_t n_allocators,
+      MemoryAllocator* allocators) {
+    ET_CHECK_MSG(
+        n_allocators <= kSpanArraySize,
+        "n_allocators %" PRIu32 " > %zu",
+        n_allocators,
+        kSpanArraySize);
+    for (uint32_t i = 0; i < n_allocators; ++i) {
+      span_array_[i] =
+          Span<uint8_t>(allocators[i].base_address(), allocators[i].size());
+    }
+    return {span_array_, n_allocators};
   }
 
-  // The HierarchicalAllocator holds n_allocators_ MemoryAllocators.
-  uint32_t n_allocators_;
-
-  // Memory allocators as an array, each ID corresponds to their index.
-  MemoryAllocator* allocators_;
+  /// The underlying buffers.
+  Span<Span<uint8_t>> buffers_;
 };
+
 } // namespace executor
 } // namespace torch
