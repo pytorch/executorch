@@ -29,8 +29,7 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/util.h>
 
-static constexpr size_t kRuntimeMemorySize = 4 * 1024U * 1024U; // 4 MB
-static uint8_t runtime_pool[kRuntimeMemorySize];
+static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
 DEFINE_string(
     model_path,
@@ -98,66 +97,52 @@ int main(int argc, char** argv) {
   // do it dynamically.
   //
 
-  // The runtime allocator is used to allocate all dynamic C++ metadata/objects
-  // used to represent the loaded program. This allocator is only used during
+  // The method allocator is used to allocate all dynamic C++ metadata/objects
+  // used to represent the loaded method. This allocator is only used during
   // loading a method of the program, which will return an error if there was
   // not enough memory.
   //
-  // The amount of memory required depends on the loaded program and the runtime
+  // The amount of memory required depends on the loaded method and the runtime
   // code itself. The amount of memory here is usually determined by running the
-  // program and seeing how much memory is actually used, though it's possible
-  // to subclass MemoryAllocator so that it calls malloc() under the hood.
+  // method and seeing how much memory is actually used, though it's possible to
+  // subclass MemoryAllocator so that it calls malloc() under the hood (see
+  // MallocMemoryAllocator).
+  //
+  // In this example we use a statically allocated memory pool.
+  MemoryAllocator method_allocator{
+      MemoryAllocator(sizeof(method_allocator_pool), method_allocator_pool)};
+  method_allocator.enable_profiling("method allocator");
 
-  // In this example we using statically allocated gloabl runtime_pool of
-  // size kRuntimeMemorySize
-  MemoryAllocator runtime_allocator{
-      MemoryAllocator(kRuntimeMemorySize, runtime_pool)};
-  runtime_allocator.enable_profiling("runtime allocator");
-
-  // The non-const buffers will back the mutable tensors used by the method. The
-  // sizes of these buffers were determined ahead of time during the
+  // The memory-planned buffers will back the mutable tensors used by the
+  // method. The sizes of these buffers were determined ahead of time during the
   // memory-planning pasees.
   //
   // Each buffer typically corresponds to a different hardware memory bank. Most
   // mobile environments will only have a single buffer. Some embedded
   // environments may have more than one for, e.g., slow/large DRAM and
   // fast/small SRAM, or for memory associated with particular cores.
-  std::vector<std::unique_ptr<uint8_t[]>> non_const_buffers;
-  std::vector<Span<uint8_t>> non_const_spans;
-  size_t num_non_const_buffers = method_meta->num_non_const_buffers();
-  for (size_t id = 0; id < num_non_const_buffers; ++id) {
-    // .get() will always succeed because id < num_non_const_buffers.
+  std::vector<std::unique_ptr<uint8_t[]>> planned_buffers; // Owns the memory
+  std::vector<Span<uint8_t>> planned_spans; // Passed to the allocator
+  size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
+  for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
+    // .get() will always succeed because id < num_memory_planned_buffers.
     size_t buffer_size =
-        static_cast<size_t>(method_meta->non_const_buffer_size(id).get());
-    ET_LOG(Info, "Setting up non-const buffer %zu, size %zu.", id, buffer_size);
-    non_const_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
-    non_const_spans.push_back({non_const_buffers.back().get(), buffer_size});
+        static_cast<size_t>(method_meta->memory_planned_buffer_size(id).get());
+    ET_LOG(Info, "Setting up planned buffer %zu, size %zu.", id, buffer_size);
+    planned_buffers.push_back(std::make_unique<uint8_t[]>(buffer_size));
+    planned_spans.push_back({planned_buffers.back().get(), buffer_size});
   }
-  HierarchicalAllocator non_const_allocator(
-      {non_const_spans.data(), non_const_spans.size()});
-
-  // The constant allocator is not currently used. Please initialize with a
-  // zero-sized allocator.
-  MemoryAllocator const_allocator{MemoryAllocator(0, nullptr)};
-  const_allocator.enable_profiling("const allocator");
-
-  // The kernel temporary allocator is not currently used. Please initialize
-  // with a zero-sized allocator.
-  MemoryAllocator temp_allocator{MemoryAllocator(0, nullptr)};
-  temp_allocator.enable_profiling("temp allocator");
+  HierarchicalAllocator planned_memory(
+      {planned_spans.data(), planned_spans.size()});
 
   // Assemble all of the allocators into the MemoryManager that the Executor
   // will use.
-  MemoryManager memory_manager(
-      &const_allocator,
-      &non_const_allocator,
-      &runtime_allocator,
-      &temp_allocator);
+  MemoryManager memory_manager(&method_allocator, &planned_memory);
 
   //
-  // Load method from the program, using the provided
-  // allocators. Running the method can mutate allocated non_const buffers,
-  // so should only be used by a single thread at at time, but it can be reused.
+  // Load the method from the program, using the provided allocators. Running
+  // the method can mutate the memory-planned buffers, so the method should only
+  // be used by a single thread at at time, but it can be reused.
   //
 
   Result<Method> method = program->load_method(method_name, &memory_manager);

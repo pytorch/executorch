@@ -18,35 +18,23 @@
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
 
-static constexpr size_t kRuntimeMemorySize = 1024;
-static constexpr size_t kMemoryAmount = 512;
-
-static uint8_t runtime_pool[kRuntimeMemorySize];
-static uint8_t activation_pool[kMemoryAmount];
+static uint8_t method_allocator_pool[1024];
+static uint8_t activation_pool[512];
 
 int main(int argc, char** argv) {
   runtime_init();
 
   ET_CHECK_MSG(argc == 2, "Expected model file argument.");
 
-  MemoryAllocator const_allocator{MemoryAllocator(0, nullptr)};
-  const_allocator.enable_profiling("const allocator");
+  MemoryAllocator method_allocator(
+      sizeof(method_allocator_pool), method_allocator_pool);
+  method_allocator.enable_profiling("method allocator");
 
-  MemoryAllocator runtime_allocator{
-      MemoryAllocator(kRuntimeMemorySize, runtime_pool)};
-  runtime_allocator.enable_profiling("runtime allocator");
+  Span<uint8_t> memory_planned_buffers[1]{
+      {activation_pool, sizeof(activation_pool)}};
+  HierarchicalAllocator planned_memory({memory_planned_buffers, 1});
 
-  MemoryAllocator temp_allocator{MemoryAllocator(0, nullptr)};
-  temp_allocator.enable_profiling("temp allocator");
-
-  Span<uint8_t> non_const_buffers[1]{{activation_pool, kMemoryAmount}};
-  HierarchicalAllocator non_const_allocator({non_const_buffers, 1});
-
-  MemoryManager memory_manager{MemoryManager(
-      &const_allocator,
-      &non_const_allocator,
-      &runtime_allocator,
-      &temp_allocator)};
+  MemoryManager memory_manager(&method_allocator, &planned_memory);
 
   Result<FileDataLoader> loader = FileDataLoader::From(argv[1]);
   ET_CHECK_MSG(
@@ -89,7 +77,7 @@ int main(int argc, char** argv) {
 
   // print output
   auto output_list =
-      runtime_allocator.allocateList<EValue>(method->outputs_size());
+      method_allocator.allocateList<EValue>(method->outputs_size());
 
   status = method->get_outputs(output_list, method->outputs_size());
   ET_CHECK(status == Error::Ok);

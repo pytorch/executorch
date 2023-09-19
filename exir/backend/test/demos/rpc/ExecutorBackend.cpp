@@ -73,50 +73,39 @@ class ExecutorBackend final : public PyTorchBackendInterface {
     }
 
     // Building all different allocators for the client executor
-    auto client_const_allocator = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        runtime_allocator, MemoryAllocator);
-    new (client_const_allocator) MemoryAllocator(0, nullptr);
+    auto num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
 
-    auto num_non_const_buffers = method_meta->num_non_const_buffers();
+    Span<uint8_t>* memory_planned_buffers = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
+        runtime_allocator, Span<uint8_t>, num_memory_planned_buffers);
 
-    Span<uint8_t>* non_const_buffers = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        runtime_allocator, Span<uint8_t>, num_non_const_buffers);
-
-    for (size_t id = 0; id < num_non_const_buffers; ++id) {
-      size_t buffer_size =
-          static_cast<size_t>(method_meta->non_const_buffer_size(id).get());
+    for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
+      size_t buffer_size = static_cast<size_t>(
+          method_meta->memory_planned_buffer_size(id).get());
       uint8_t* buffer_i = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
           runtime_allocator, uint8_t, buffer_size);
-      non_const_buffers[id] = {buffer_i, buffer_size};
+      memory_planned_buffers[id] = {buffer_i, buffer_size};
     }
 
-    auto client_non_const_allocator = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
+    auto client_planned_memory = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
         runtime_allocator, HierarchicalAllocator);
-    new (client_non_const_allocator)
-        HierarchicalAllocator({non_const_buffers, num_non_const_buffers});
+    new (client_planned_memory) HierarchicalAllocator(
+        {memory_planned_buffers, num_memory_planned_buffers});
 
     // Allocate some memory from runtime allocator for the client executor, in
     // real case, like if it's an executor in dsp, it should allocate memory
     // dedicated to this specific hardware
-    auto client_runtime_allocator = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
+    auto client_method_allocator = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
         runtime_allocator, MemoryAllocator);
     const size_t kClientRuntimeMemorySize = 4 * 1024U;
     auto runtime_pool = ET_ALLOCATE_OR_RETURN_ERROR(
         runtime_allocator, kClientRuntimeMemorySize);
-    new (client_runtime_allocator) MemoryAllocator(
+    new (client_method_allocator) MemoryAllocator(
         kClientRuntimeMemorySize, static_cast<uint8_t*>(runtime_pool));
-
-    auto client_temp_allocator = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-        runtime_allocator, MemoryAllocator);
-    new (client_temp_allocator) MemoryAllocator(0, nullptr);
 
     auto client_memory_manager =
         ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(runtime_allocator, MemoryManager);
-    new (client_memory_manager) MemoryManager(
-        client_const_allocator,
-        client_non_const_allocator,
-        client_runtime_allocator,
-        client_temp_allocator);
+    new (client_memory_manager)
+        MemoryManager(client_method_allocator, client_planned_memory);
 
     // Construct the client Method
     Result<Method> method_res =

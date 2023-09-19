@@ -37,13 +37,7 @@ using namespace torch::executor;
  * This tool demonstrates that the memory can be managed this way.
  */
 
-static constexpr size_t kRuntimeMemorySize = 2 * 1024U * 1024U; // 2MB
-static uint8_t runtime_pool[kRuntimeMemorySize];
-
-// This is to emulate the local memory that a particular instance of hardware
-// own and shared across different model instances
-static constexpr size_t kNonConstantMemorySize = 10 * 1024U * 1024U; // 10MB
-static uint8_t shared_local_non_constant_pool[kNonConstantMemorySize];
+static uint8_t method_allocator_pool[2 * 1024U * 1024U]; // 4 MB
 
 #define MAX_INPUTS_PER_MODEL 16
 #define MAX_OUTPUTS_PER_MODEL 8
@@ -82,51 +76,46 @@ MemoryManager* create_memory_manager(
     MethodMeta* method_meta,
     MemoryAllocator& worker_allocator) {
   // Create the runtime allocator.
-  auto* runtime_allocator =
-      worker_allocator.allocateInstance<MemoryAllocator>();
-  ET_CHECK(runtime_allocator != nullptr);
-  new (runtime_allocator) MemoryAllocator(sizeof(runtime_pool), runtime_pool);
+  auto* method_allocator = worker_allocator.allocateInstance<MemoryAllocator>();
+  ET_CHECK(method_allocator != nullptr);
+  new (method_allocator)
+      MemoryAllocator(sizeof(method_allocator_pool), method_allocator_pool);
 
-  // Create the non-const allocator and the buffers it points to.
-  size_t num_non_const_buffers = method_meta->num_non_const_buffers();
-  Span<uint8_t>* non_const_buffers =
-      worker_allocator.allocateList<Span<uint8_t>>(num_non_const_buffers);
-  ET_CHECK(non_const_buffers != nullptr);
-  for (size_t id = 0; id < num_non_const_buffers; ++id) {
-    const size_t buffer_size = method_meta->non_const_buffer_size(id).get();
+  // Create the memory planned buffers.
+  size_t num_memory_planned_buffers = method_meta->num_memory_planned_buffers();
+  Span<uint8_t>* memory_planned_buffers =
+      worker_allocator.allocateList<Span<uint8_t>>(num_memory_planned_buffers);
+  ET_CHECK(memory_planned_buffers != nullptr);
+  for (size_t id = 0; id < num_memory_planned_buffers; ++id) {
+    const size_t buffer_size =
+        method_meta->memory_planned_buffer_size(id).get();
     ET_LOG(
-        Info, "Setting up non-const buffer id %zu, size %zu.", id, buffer_size);
+        Info, "Setting up planned buffer id %zu, size %zu.", id, buffer_size);
     void* buffer = worker_allocator.allocate(buffer_size);
     ET_CHECK(buffer != nullptr);
-    non_const_buffers[id] = {(uint8_t*)buffer, buffer_size};
+    memory_planned_buffers[id] = {(uint8_t*)buffer, buffer_size};
     ET_LOG(
         Info,
-        "Created non_const_allocators with size %zu and addr %p",
+        "Created memory_planned_buffers with size %zu and addr %p",
         buffer_size,
         buffer);
   }
-  auto* non_const_allocator =
+  auto* planned_memory =
       worker_allocator.allocateInstance<HierarchicalAllocator>();
-  ET_CHECK(non_const_allocator != nullptr);
-  new (non_const_allocator)
-      HierarchicalAllocator({non_const_buffers, num_non_const_buffers});
+  ET_CHECK(planned_memory != nullptr);
+  new (planned_memory) HierarchicalAllocator(
+      {memory_planned_buffers, num_memory_planned_buffers});
 
   // The constant allocator is not currently used, but must be provided.
   auto* const_allocator = worker_allocator.allocateInstance<MemoryAllocator>();
   ET_CHECK(const_allocator != nullptr);
   new (const_allocator) MemoryAllocator(0, nullptr);
 
-  // The temp allocator is not currently used, but must be provided.
-  auto* temp_allocator = worker_allocator.allocateInstance<MemoryAllocator>();
-  ET_CHECK(temp_allocator != nullptr);
-  new (temp_allocator) MemoryAllocator(0, nullptr);
-
   // Assemble all of the allocators into the MemoryManager that the Method
   // will use.
   auto* memory_manager = worker_allocator.allocateInstance<MemoryManager>();
   ET_CHECK(memory_manager != nullptr);
-  new (memory_manager) MemoryManager(
-      const_allocator, non_const_allocator, runtime_allocator, temp_allocator);
+  new (memory_manager) MemoryManager(method_allocator, planned_memory);
 
   return memory_manager;
 }
