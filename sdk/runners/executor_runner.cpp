@@ -75,6 +75,11 @@ DEFINE_string(
 
 DEFINE_int32(num_threads, 1, "Number of threads to use.");
 
+DEFINE_string(
+    method_name,
+    "forward",
+    "Name of method to run. Only used by bundled program mode.");
+
 DEFINE_int32(
     testset_idx,
     0,
@@ -347,7 +352,7 @@ int main(int argc, char** argv) {
           *method,
           program_data.bundled_program_data(),
           &bundled_input_allocator,
-          method_index,
+          method_name,
           FLAGS_testset_idx);
       ET_CHECK_MSG(
           status == Error::Ok,
@@ -376,7 +381,7 @@ int main(int argc, char** argv) {
           *method,
           program_data.bundled_program_data(),
           &bundled_input_allocator,
-          method_index,
+          method_name,
           FLAGS_testset_idx,
           FLAGS_rtol,
           FLAGS_atol);
