@@ -35,8 +35,8 @@ class RegisterPrimOpsTest : public ::testing::Test {
 };
 
 TEST_F(RegisterPrimOpsTest, OpRegistered) {
-  ASSERT_TRUE(hasOpsFn("aten::sym_size.int"));
-  ASSERT_TRUE(hasOpsFn("aten::sym_numel"));
+  EXPECT_TRUE(hasOpsFn("aten::sym_size.int"));
+  EXPECT_TRUE(hasOpsFn("aten::sym_numel"));
 }
 
 TEST_F(RegisterPrimOpsTest, SymSizeReturnsCorrectValue) {
@@ -58,7 +58,7 @@ TEST_F(RegisterPrimOpsTest, SymSizeReturnsCorrectValue) {
   getOpsFn("aten::sym_size.int")(context, stack);
 
   int64_t expected = 5;
-  ASSERT_EQ(stack[2]->toInt(), expected);
+  EXPECT_EQ(stack[2]->toInt(), expected);
 }
 
 TEST_F(RegisterPrimOpsTest, SymNumelReturnsCorrectValue) {
@@ -66,7 +66,6 @@ TEST_F(RegisterPrimOpsTest, SymNumelReturnsCorrectValue) {
 
   Tensor self_tensor = tf.ones({3, 5});
   EValue values[2];
-  int64_t dim = 1;
   int64_t out = 0;
   values[0] = EValue(self_tensor);
   values[1] = EValue(out);
@@ -79,7 +78,7 @@ TEST_F(RegisterPrimOpsTest, SymNumelReturnsCorrectValue) {
   getOpsFn("aten::sym_numel")(context, stack);
 
   int64_t expected = 15;
-  ASSERT_EQ(stack[1]->toInt(), expected);
+  EXPECT_EQ(stack[1]->toInt(), expected);
 }
 
 TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {
@@ -97,20 +96,23 @@ TEST_F(RegisterPrimOpsTest, TestAlgebraOps) {
   }
 
   getOpsFn("executorch_prim::add.Scalar")(context, stack);
-  ASSERT_EQ(stack[2]->toInt(), 7);
+  EXPECT_EQ(stack[2]->toInt(), 7);
 
   getOpsFn("executorch_prim::sub.Scalar")(context, stack);
-  ASSERT_EQ(stack[2]->toInt(), -1);
+  EXPECT_EQ(stack[2]->toInt(), -1);
 
   getOpsFn("executorch_prim::mul.Scalar")(context, stack);
-  ASSERT_EQ(stack[2]->toInt(), 12);
+  EXPECT_EQ(stack[2]->toInt(), 12);
 
   getOpsFn("executorch_prim::floordiv.Scalar")(context, stack);
-  ASSERT_EQ(stack[2]->toInt(), 0);
+  EXPECT_EQ(stack[2]->toInt(), 0);
+
+  getOpsFn("executorch_prim::truediv.Scalar")(context, stack);
+  EXPECT_FLOAT_EQ(stack[2]->toDouble(), 0.75);
 }
 
 TEST_F(RegisterPrimOpsTest, TestETCopyIndex) {
-  ASSERT_TRUE(hasOpsFn("executorch_prim::et_copy_index.tensor"));
+  EXPECT_TRUE(hasOpsFn("executorch_prim::et_copy_index.tensor"));
 
   int64_t index = 0;
   testing::TensorFactory<ScalarType::Int> tf;
@@ -144,8 +146,8 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndex) {
   // Simple test to copy to index 0.
   getOpsFn("executorch_prim::et_copy_index.tensor")(context, stack);
 
-  ASSERT_EQ(copy_to.sizes()[0], 1);
-  ASSERT_EQ(copy_to.sizes()[1], 2);
+  EXPECT_EQ(copy_to.sizes()[0], 1);
+  EXPECT_EQ(copy_to.sizes()[1], 2);
   EXPECT_TENSOR_EQ(copy_to, tf.make({1, 2}, {3, 4}));
 
   values[1] = tf.make({2}, {5, 6});
@@ -153,8 +155,8 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndex) {
   // Copy to the next index, 1.
   getOpsFn("executorch_prim::et_copy_index.tensor")(context, stack);
 
-  ASSERT_EQ(copy_to.sizes()[0], 2);
-  ASSERT_EQ(copy_to.sizes()[1], 2);
+  EXPECT_EQ(copy_to.sizes()[0], 2);
+  EXPECT_EQ(copy_to.sizes()[1], 2);
   EXPECT_TENSOR_EQ(copy_to, tf.make({2, 2}, {3, 4, 5, 6}));
 }
 
@@ -205,12 +207,12 @@ TEST_F(RegisterPrimOpsTest, TestETCopyIndexStaticShape) {
 
   // Copy and replace at index 1.
   getOpsFn("executorch_prim::et_copy_index.tensor")(context, stack);
-  ASSERT_EQ(copy_to.sizes()[0], 2);
-  ASSERT_EQ(copy_to.sizes()[1], 2);
+  EXPECT_EQ(copy_to.sizes()[0], 2);
+  EXPECT_EQ(copy_to.sizes()[1], 2);
   EXPECT_TENSOR_EQ(copy_to, tf.make({2, 2}, {1, 2, 5, 6}));
 
 #ifndef USE_ATEN_LIB
-  // Copy and replace at index 2. This should trigger an assert
+  // Copy and replace at index 2. This should trigger an EXPECT
   // in lean mode.
   index = 2;
   values[2] = EValue(index);
@@ -234,19 +236,19 @@ TEST_F(RegisterPrimOpsTest, TestBooleanOps) {
   }
 
   getOpsFn("executorch_prim::ge.Scalar")(context, stack);
-  ASSERT_EQ(stack[2]->toBool(), false);
+  EXPECT_EQ(stack[2]->toBool(), false);
 
   getOpsFn("executorch_prim::gt.Scalar")(context, stack);
-  ASSERT_EQ(stack[2]->toBool(), false);
+  EXPECT_EQ(stack[2]->toBool(), false);
 
   getOpsFn("executorch_prim::le.Scalar")(context, stack);
-  ASSERT_EQ(stack[2]->toBool(), true);
+  EXPECT_EQ(stack[2]->toBool(), true);
 
   getOpsFn("executorch_prim::lt.Scalar")(context, stack);
-  ASSERT_EQ(stack[2]->toBool(), true);
+  EXPECT_EQ(stack[2]->toBool(), true);
 
   getOpsFn("executorch_prim::eq.Scalar")(context, stack);
-  ASSERT_EQ(stack[2]->toBool(), false);
+  EXPECT_EQ(stack[2]->toBool(), false);
 }
 
 } // namespace executor
