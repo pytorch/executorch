@@ -163,7 +163,7 @@ def capture(  # noqa: C901
         # input spec, but due to some limitations in pytree implementation, it doesn't
         # recognize the make_fx graph with torchdynamo input spec. We workaround it
         # by getting the input spec directly from user argument.
-        in_spec = pytree.tree_flatten(args)[1]
+        in_spec = pytree.tree_flatten((args, {}))[1]
 
         if config.enable_functionalization and not config.enable_aot:
             args = copy.deepcopy(args)
@@ -245,6 +245,7 @@ def capture(  # noqa: C901
         {},
         [],
         [],
+        dialect="OLD_EXIR_ATEN",
     )
     return ExirExportedProgram(ep, False)
 

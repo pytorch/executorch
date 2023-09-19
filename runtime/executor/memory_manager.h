@@ -18,12 +18,14 @@ namespace executor {
  * A container class for allocators used during Method load and execution.
  *
  * This class consolidates all dynamic memory needs for Method load and
- * execution. This can allow for heap-less execution (relevant to some embedded
- * scenarios), and overall provides tighter control over memory use. This class,
- * however, cannot ensure all allocation is accounted for since kernel and
- * backend implementations are free to use a separate way to allocate memory
- * (e.g., for things like scratch space). But we do suggest that backends and
- * kernels use these provided allocators whenever possible.
+ * execution. This can allow for heap-based as well as heap-less execution
+ * (relevant to some embedded scenarios), and overall provides more control over
+ * memory use.
+ *
+ * This class, however, cannot ensure all allocation is accounted for since
+ * kernel and backend implementations are free to use a separate way to allocate
+ * memory (e.g., for things like scratch space). But we do suggest that backends
+ * and kernels use these provided allocators whenever possible.
  */
 class MemoryManager final {
  public:

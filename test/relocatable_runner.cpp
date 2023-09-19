@@ -61,7 +61,7 @@ Program* load_program(
   new (loader) util::BufferDataLoader(file_data, file_data_len);
 
   // Load the program.
-  Result<Program> program_result = Program::Load(loader);
+  Result<Program> program_result = Program::load(loader);
   ET_CHECK(program_result.ok());
 
   // Move the Program into worker memory.

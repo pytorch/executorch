@@ -21,7 +21,6 @@ from executorch.exir._serialize._dataclass import _DataclassEncoder
 
 def convert_to_flatbuffer(qnn_dynamic_linear: QNNDynamicLinear) -> bytes:
     qnnpack_graph_json = json.dumps(qnn_dynamic_linear, cls=_DataclassEncoder)
-
     with tempfile.TemporaryDirectory() as d:
         schema_path = os.path.join(d, "schema.fbs")
         with open(schema_path, "wb") as schema_file:

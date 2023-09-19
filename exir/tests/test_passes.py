@@ -24,11 +24,11 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import (
     dead_code_elimination_pass,
     DebugPass,
+    HintBasedSymShapeEvalPass,
     MemoryPlanningPass,
     propagate_dynamic_shape,
     RemoveNoopPass,
     ReplaceSymSizeOpPass,
-    SymShapeEvalPass,
     ToOutVarPass,
 )
 from executorch.exir.passes.const_prop_pass import ConstPropPass
@@ -46,6 +46,7 @@ from executorch.exir.tests.models import MLP, Mul
 from functorch.experimental import control_flow
 
 from torch import nn
+from torch._export.passes.lift_constant_tensor_pass import lift_constant_tensor_pass
 from torch.fx import GraphModule, subgraph_rewriter
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch.library import impl, Library
@@ -464,6 +465,53 @@ class TestPasses(unittest.TestCase):
                 for arg in node.args + tuple(node.kwargs.values()):
                     self.assertFalse(isinstance(arg, float))
 
+    def test_lift_scalar_tensor(self) -> None:
+        class FooWithBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("buffer", torch.zeros(42))
+
+            def forward(self, x):
+                return x.cos() + self.buffer.sum() + torch.tensor(4) + 4
+
+        ep = exir.capture(
+            FooWithBuffer(), (torch.ones(6, 2),), exir.CaptureConfig(enable_aot=True)
+        )
+        new_ep = ep.transform(ScalarToTensorPass()).exported_program
+        self.assertTrue(
+            len([node for node in new_ep.graph.nodes if node.op == "get_attr"])
+        )
+        lifted_exported_program = lift_constant_tensor_pass(new_ep)
+
+        self.assertEqual(
+            len(
+                [
+                    node
+                    for node in lifted_exported_program.graph.nodes
+                    if node.op == "placeholder"
+                ]
+            ),
+            4,
+        )
+        for node in lifted_exported_program.graph.nodes:
+            self.assertTrue(node.op != "get_attr")
+
+        edge_ep = exir.capture(
+            FooWithBuffer(), (torch.ones(6, 2),), exir.CaptureConfig(enable_aot=True)
+        ).to_edge()
+        self.assertEqual(
+            len(
+                [
+                    node
+                    for node in edge_ep.exported_program.graph.nodes
+                    if node.op == "placeholder"
+                ]
+            ),
+            4,
+        )
+        for node in edge_ep.exported_program.graph.nodes:
+            self.assertTrue(node.op != "get_attr")
+
     def test_remove_mixed_types_symfloats(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:
             return torch.nn.functional.interpolate(
@@ -586,7 +634,7 @@ class TestPasses(unittest.TestCase):
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         passes = [
             SpecPropPass(),
-            SymShapeEvalPass(),
+            HintBasedSymShapeEvalPass(),
             ToOutVarPass(),
             MemoryPlanningPass("greedy"),
         ]

@@ -7,7 +7,7 @@
 from unittest import TestCase
 
 from executorch import exir
-from executorch.exir.passes import DebugPass, SpecPropPass, SymShapeEvalPass
+from executorch.exir.passes import DebugPass, HintBasedSymShapeEvalPass, SpecPropPass
 from executorch.exir.tests.models import Repeat
 
 
@@ -23,7 +23,7 @@ class TestDynamicShapeProp(TestCase):
             exir.CaptureConfig(enable_dynamic_shape=True),
         ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
 
-        new_prog = prog.transform(SpecPropPass(), SymShapeEvalPass())
+        new_prog = prog.transform(SpecPropPass(), HintBasedSymShapeEvalPass())
 
         gm = new_prog.exported_program.graph_module
 
