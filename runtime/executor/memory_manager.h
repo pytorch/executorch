@@ -14,88 +14,93 @@
 namespace torch {
 namespace executor {
 
-// The memory manager for the executor. It is responsible for keeping
-// track of the memory allocation across the lifespan of the executor,
-// providing allocators for the following types of objects:
-//
-// 1. Constants - Constant values in the program. TODO(myuan): we may not
-// need it (because the constants are hardcoded in the flatbuffer) but
-// we'll account for it for the time being for completeness.
-//
-// 2. Non-constants - Non-constant values in the program, which may or may not
-// be tied to a memory plan.
-//
-// 3. Runtime structures - Any data needed by the executor itself.
-// TODO(myuan): determine whether Delegates need to receive it in the "init"
-// method for backends to use directly, or whether memory needs will be
-// expressed as an argument to the delegated methods for memory planning to
-// account for. Same concerns about dynamic behaviour apply.
-
-// 4. Kernel temporary - This is to provide kernels with a way to create memory,
-// without having to request it by adding an extra argument. The extra argument
-// approach is fine if/when planning desires to account for such memory, but in
-// certain cases a kernel may be fine just leaving this as an implementation
-// detail of the kernels itself (but we still want to be able to capture such
-// memory allocation).
-
-// In general, this memory manager aims to consolidate all dynamic memory needs
-// for program execution. This can allow for heap-less execution (relevant to
-// some embedded scenarios), and overall have a tighter control over memory
-// utilization. The manager, however, cannot ensure all allocation is accounted
-// for since kernel implementations are free to use a separate way to allocate
-// memory (e.g. for things like scratch space).
-// TODO(myuan): analyze the stack data overhead and lifespan.
-
-class MemoryManager {
+/**
+ * A container class for allocators used during Method load and execution.
+ *
+ * This class consolidates all dynamic memory needs for Method load and
+ * execution. This can allow for heap-less execution (relevant to some embedded
+ * scenarios), and overall provides tighter control over memory use. This class,
+ * however, cannot ensure all allocation is accounted for since kernel and
+ * backend implementations are free to use a separate way to allocate memory
+ * (e.g., for things like scratch space). But we do suggest that backends and
+ * kernels use these provided allocators whenever possible.
+ */
+class MemoryManager final {
  public:
-  MemoryManager(
-      MemoryAllocator* constant_allocator,
+  /**
+   * Constructs a new MemoryManager.
+   *
+   * @param[in] method_allocator The allocator to use when loading a Method and
+   *     allocating its internal structures. Must outlive the Method that uses
+   *     it.
+   * @param[in] planned_memory The memory-planned buffers to use for mutable
+   *     tensor data when executing a Method. Must outlive the Method that uses
+   *     it. May be `nullptr` if the Method does not use any memory-planned
+   *     tensor data. The sizes of the buffers in this HierarchicalAllocator
+   *     must agree with the corresponding
+   *     `MethodMeta::num_memory_planned_buffers()` and
+   *     `MethodMeta::memory_planned_buffer_size(N)` values, which are embedded
+   *     in the Program.
+   * @param[in] temp_allocator The allocator to use when allocating temporary
+   *     data during kernel or delegate execution. Must outlive the Method that
+   *     uses it. May be `nullptr` if the Method does not use kernels or
+   *     delegates that allocate temporary data. This allocator will be reset
+   *     after every kernel or delegate call during execution.
+   */
+  explicit MemoryManager(
+      MemoryAllocator* method_allocator,
+      HierarchicalAllocator* planned_memory = nullptr,
+      MemoryAllocator* temp_allocator = nullptr)
+      : method_allocator_(method_allocator),
+        planned_memory_(planned_memory),
+        temp_allocator_(temp_allocator) {}
+
+  /**
+   * DEPRECATED: Use the constructor without `constant_allocator` instead.
+   *
+   * TODO(T162089316): Remove this once all users migrate to the new ctor.
+   */
+  __ET_DEPRECATED MemoryManager(
+      __ET_UNUSED MemoryAllocator* constant_allocator,
       HierarchicalAllocator* non_constant_allocator,
       MemoryAllocator* runtime_allocator,
       MemoryAllocator* kernel_temporary_allocator)
-      : constant_allocator_(constant_allocator),
-        non_constant_allocator_(non_constant_allocator),
-        runtime_allocator_(runtime_allocator),
-        kernel_temporary_allocator_(kernel_temporary_allocator) {}
+      : MemoryManager(
+            /*method_allocator=*/runtime_allocator,
+            /*planned_memory=*/non_constant_allocator,
+            /*temp_allocator=*/kernel_temporary_allocator) {}
 
   /**
-   * Returns an allocator for constant values in the program.
+   * Returns the allocator that the runtime will use to allocate internal
+   * structures while loading a Method. Must not be used after its associated
+   * Method has been loaded.
    */
-  const MemoryAllocator* get_constant_allocator() const {
-    return constant_allocator_;
+  MemoryAllocator* method_allocator() const {
+    return method_allocator_;
   }
 
   /**
-   * Returns an hierarchical allocator for non-constant values in the program.
+   * Returns the memory-planned buffers to use for mutable tensor data.
    */
-  HierarchicalAllocator* get_non_constant_allocator() const {
-    return non_constant_allocator_;
+  HierarchicalAllocator* planned_memory() const {
+    return planned_memory_;
   }
 
   /**
-   * Returns an allocator to be used for any runtime internal structures
-   * (i.e. not directly program values).
+   * Returns the allocator to use to allocate temporary data during kernel or
+   * delegate execution.
+   *
+   * This allocator will be reset after every kernel or delegate call during
+   * execution.
    */
-  MemoryAllocator* get_runtime_allocator() const {
-    return runtime_allocator_;
+  MemoryAllocator* temp_allocator() const {
+    return temp_allocator_;
   }
-
-  /**
-   * Returns an allocator that kernel implementations can use to
-   * create temporary memory (i.e. whose lifespan is a single execution
-   * of the kernel).
-   */
-  MemoryAllocator* get_kernel_temporary_allocator() const {
-    return kernel_temporary_allocator_;
-  }
-
-  virtual ~MemoryManager() {}
 
  private:
-  const MemoryAllocator* constant_allocator_;
-  HierarchicalAllocator* non_constant_allocator_;
-  MemoryAllocator* runtime_allocator_;
-  MemoryAllocator* kernel_temporary_allocator_;
+  MemoryAllocator* method_allocator_;
+  HierarchicalAllocator* planned_memory_;
+  MemoryAllocator* temp_allocator_;
 };
 
 } // namespace executor

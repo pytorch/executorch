@@ -169,14 +169,14 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
       static_cast<exec_aten::ScalarType>(tensor_value->scalar_type()));
 }
 
-size_t MethodMeta::num_non_const_buffers() const {
+size_t MethodMeta::num_memory_planned_buffers() const {
   // Index zero is reserved internally, and we hide it from users. The actual
   // number of buffers is one fewer than the actual size of this list in the
   // program.
   return s_plan_->non_const_buffer_sizes()->size() - 1;
 }
 
-Result<int64_t> MethodMeta::non_const_buffer_size(size_t index) const {
+Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
   auto num_buffers = this->num_non_const_buffers();
   ET_CHECK_OR_RETURN_ERROR(
       index >= 0 && index < num_buffers,

@@ -162,19 +162,33 @@ class MethodMeta final {
   Result<TensorInfo> output_tensor_meta(size_t index) const;
 
   /**
-   * Get the number of non-constant buffers this method requires.
+   * Get the number of memory-planned buffers this method requires.
    *
-   * @returns The number of non-constant buffers.
+   * @returns The number of memory-planned buffers.
    */
-  size_t num_non_const_buffers() const;
+  size_t num_memory_planned_buffers() const;
 
   /**
-   * Get the size in bytes of the specified non-constant buffer.
+   * Get the size in bytes of the specified memory-planned buffer.
    *
    * @param[in] index The index of the buffer to look up.
    * @returns The size in bytes on success, or an error on failure.
    */
-  Result<int64_t> non_const_buffer_size(size_t index) const;
+  Result<int64_t> memory_planned_buffer_size(size_t index) const;
+
+  /**
+   * DEPRECATED: Use num_memory_planned_buffers() instead.
+   */
+  __ET_DEPRECATED size_t num_non_const_buffers() const {
+    return num_memory_planned_buffers();
+  }
+
+  /**
+   * DEPRECATED: Use memory_planned_buffer_size() instead.
+   */
+  Result<int64_t> non_const_buffer_size(size_t index) const {
+    return memory_planned_buffer_size(index);
+  }
 
  private:
   // Let Program create MethodMeta.

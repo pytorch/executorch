@@ -84,10 +84,7 @@ Result<at::Tensor> parseTensor(
   } else {
     // Now that we know how big the tensor is, find and assign its memory.
     Result<void*> data_ptr = getTensorDataPtr(
-        s_tensor,
-        program,
-        tensor.nbytes(),
-        memory_manager->get_non_constant_allocator());
+        s_tensor, program, tensor.nbytes(), memory_manager->planned_memory());
     if (!data_ptr.ok()) {
       ET_LOG(Error, "getTensorDataPtr() failed: 0x%" PRIx32, data_ptr.error());
       return data_ptr.error();

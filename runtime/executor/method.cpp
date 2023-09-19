@@ -44,7 +44,8 @@ class BackendDelegate final {
    *
    * @param[in] delegate The serialized backend delegate to load.
    * @param[in] program The serialized program to load from.
-   * @param[in] runtime_allocator Allocator for creating runtime C++ objects.
+   * @param[in] backend_init_context The context pointer to pass to the
+   *     backend's init() method.
    * @param[out] out The BackendDelegate to initialize.
    *
    * @returns Error::Ok if the initialization succeeded, or an error otherwise.
@@ -212,12 +213,12 @@ struct Chain {
 namespace {
 
 Result<InstructionArgs> gen_instruction_arguments(
-    MemoryAllocator* runtime_allocator,
+    MemoryAllocator* method_allocator,
     EValue* values,
     size_t num_args,
     const int32_t* arg_idxs) {
   EValue** arg_list =
-      ET_ALLOCATE_LIST_OR_RETURN_ERROR(runtime_allocator, EValue*, num_args);
+      ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, EValue*, num_args);
   for (size_t i = 0; i < num_args; ++i) {
     arg_list[i] = &values[arg_idxs[i]];
   }
@@ -267,7 +268,7 @@ Error Method::parse_values() {
   ET_CHECK(flatbuffer_values != nullptr);
   size_t n_value = flatbuffer_values->size();
   values_ = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-      memory_manager_->get_runtime_allocator(), EValue, n_value);
+      memory_manager_->method_allocator(), EValue, n_value);
 
   // n_value_ counts the number of successfully-initialized values for ~Method()
   // to clean up, and is incremented at the bottom of the loop. This makes it
@@ -299,10 +300,10 @@ Error Method::parse_values() {
         // Allocate space for boxed and unboxed list representations using
         // values_ as source of truth
         auto* evalp_list =
-            memory_manager_->get_runtime_allocator()->allocateList<EValue*>(
+            memory_manager_->method_allocator()->allocateList<EValue*>(
                 items->size());
         auto* int_list =
-            memory_manager_->get_runtime_allocator()->allocateList<int64_t>(
+            memory_manager_->method_allocator()->allocateList<int64_t>(
                 items->size());
 
         // initialize boxed list
@@ -452,9 +453,9 @@ Error Method::resolve_operator(
   populateOperatorName(op, kTempBufferSizeForName, operator_name);
 
   // resolve tensor meta
-  auto runtime_allocator = memory_manager_->get_runtime_allocator();
+  auto method_allocator = memory_manager_->method_allocator();
   TensorMeta* meta =
-      ET_ALLOCATE_LIST_OR_RETURN_ERROR(runtime_allocator, TensorMeta, n_args);
+      ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, TensorMeta, n_args);
   size_t count = 0;
   for (size_t i = 0; i < n_args; i++) {
     EValue* eval = args[i];
@@ -463,7 +464,7 @@ Error Method::resolve_operator(
       auto tensor = eval->toTensor();
       meta[count].dtype_ = tensor.scalar_type();
       exec_aten::DimOrderType* dim_order_ptr = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-          runtime_allocator, exec_aten::DimOrderType, tensor.dim());
+          method_allocator, exec_aten::DimOrderType, tensor.dim());
       size_t size = tensor.dim();
       Error err = get_dim_order(tensor, dim_order_ptr, size);
       ET_CHECK_OR_RETURN_ERROR(
@@ -514,7 +515,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
   init_state_ =
       InitializationState::InitializationFailed; // Until proven otherwise
   serialization_plan_ = s_plan;
-  auto runtime_allocator = memory_manager_->get_runtime_allocator();
+  auto method_allocator = memory_manager_->method_allocator();
 
   {
     // Parse the elements of the values_ array.
@@ -530,7 +531,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     ET_CHECK(delegates != nullptr);
     size_t n_delegate = delegates->size();
     delegates_ = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-        runtime_allocator, BackendDelegate, n_delegate);
+        method_allocator, BackendDelegate, n_delegate);
 
     // n_delegate_ counts the number of successfully-initialized delegates for
     // ~Method() to clean up, and is incremented at the bottom of the loop. This
@@ -539,7 +540,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
 
     for (size_t i = 0; i < n_delegate; ++i) {
       const auto& delegate = *delegates->Get(i);
-      BackendInitContext backend_init_context(runtime_allocator);
+      BackendInitContext backend_init_context(method_allocator);
       Error err = BackendDelegate::Init(
           delegate, program_, backend_init_context, &delegates_[i]);
       if (err != Error::Ok) {
@@ -559,15 +560,15 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     n_chains_ = chains->size();
 
     chains_ =
-        ET_ALLOCATE_LIST_OR_RETURN_ERROR(runtime_allocator, Chain, n_chains_);
+        ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, Chain, n_chains_);
     int32_t num_instructions_missing_op = 0;
     for (size_t i = 0; i < n_chains_; ++i) {
       auto s_chain = chains->Get(i);
       auto num_instructions = s_chain->instructions()->size();
       auto chain_instruction_kernels = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-          runtime_allocator, OpFunction, num_instructions);
+          method_allocator, OpFunction, num_instructions);
       auto chain_instruction_arg_lists = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
-          runtime_allocator, InstructionArgs, num_instructions);
+          method_allocator, InstructionArgs, num_instructions);
 
       // Set up the argument lists ahead of time and store pointers to them to
       // use when the instructions are called
@@ -579,7 +580,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             const auto arg_idxs =
                 instruction->instr_args_as_KernelCall()->args();
             auto res = gen_instruction_arguments(
-                runtime_allocator, values_, arg_idxs->size(), arg_idxs->data());
+                method_allocator, values_, arg_idxs->size(), arg_idxs->data());
             if (!res.ok()) {
               return res.error();
             }
@@ -600,7 +601,7 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             const auto arg_idxs =
                 instruction->instr_args_as_DelegateCall()->args();
             auto res = gen_instruction_arguments(
-                runtime_allocator, values_, arg_idxs->size(), arg_idxs->data());
+                method_allocator, values_, arg_idxs->size(), arg_idxs->data());
             if (!res.ok()) {
               return res.error();
             }

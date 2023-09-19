@@ -75,16 +75,23 @@ TEST_F(MethodMetaTest, MethodMetaApi) {
   // Appropriate amount of outputs
   EXPECT_EQ(method_meta->num_outputs(), 1);
 
-  // Appropriate amount of non_const_buffers
-  EXPECT_EQ(method_meta->num_non_const_buffers(), 1);
+  // Appropriate amount of planned buffers
+  EXPECT_EQ(method_meta->num_memory_planned_buffers(), 1);
+  EXPECT_EQ(method_meta->num_non_const_buffers(), 1); // Deprecated API
 
-  // Appropriate content of non_const_buffers
-  EXPECT_EQ(method_meta->non_const_buffer_size(0).get(), 48);
+  // Appropriate size of planned buffer
+  EXPECT_EQ(method_meta->memory_planned_buffer_size(0).get(), 48);
+  EXPECT_EQ(method_meta->non_const_buffer_size(0).get(), 48); // Deprecated API
 
   // Invalid index Errors
   EXPECT_EQ(
-      method_meta->non_const_buffer_size(1).error(), Error::InvalidArgument);
+      method_meta->memory_planned_buffer_size(1).error(),
+      Error::InvalidArgument);
+  EXPECT_EQ(
+      method_meta->non_const_buffer_size(1).error(),
+      Error::InvalidArgument); // Deprecated API
 
+  // Missing method fails
   EXPECT_EQ(
       program_->method_meta("not_a_method").error(), Error::InvalidArgument);
 }
