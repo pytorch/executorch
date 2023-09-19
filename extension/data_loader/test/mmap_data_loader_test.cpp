@@ -58,7 +58,7 @@ void MmapDataLoaderTest::test_in_bounds_loads_succeed(
 
   // Wrap it in a loader.
   Result<MmapDataLoader> mdl =
-      MmapDataLoader::From(tf.path().c_str(), mlock_config);
+      MmapDataLoader::from(tf.path().c_str(), mlock_config);
   ASSERT_EQ(mdl.error(), Error::Ok);
 
   // size() should succeed and reflect the total size.
@@ -186,7 +186,7 @@ TEST_F(MmapDataLoaderTest, FinalPageOfUnevenFileSucceeds) {
   TempFile tf(contents.get(), contents_size);
 
   // Wrap it in a loader.
-  Result<MmapDataLoader> mdl = MmapDataLoader::From(tf.path().c_str());
+  Result<MmapDataLoader> mdl = MmapDataLoader::from(tf.path().c_str());
   ASSERT_EQ(mdl.error(), Error::Ok);
 
   // size() should succeed and reflect the total size.
@@ -218,7 +218,7 @@ TEST_F(MmapDataLoaderTest, OutOfBoundsLoadFails) {
   memset(contents.get(), 0x55, contents_size);
   TempFile tf(contents.get(), contents_size);
 
-  Result<MmapDataLoader> mdl = MmapDataLoader::From(tf.path().c_str());
+  Result<MmapDataLoader> mdl = MmapDataLoader::from(tf.path().c_str());
   ASSERT_EQ(mdl.error(), Error::Ok);
 
   // Loading beyond the end of the data should fail.
@@ -246,7 +246,7 @@ TEST_F(MmapDataLoaderTest, UnalignedOffsetFails) {
   memset(contents.get(), 0x55, contents_size);
   TempFile tf(contents.get(), contents_size);
 
-  Result<MmapDataLoader> mdl = MmapDataLoader::From(tf.path().c_str());
+  Result<MmapDataLoader> mdl = MmapDataLoader::from(tf.path().c_str());
   ASSERT_EQ(mdl.error(), Error::Ok);
 
   // Loading from an unaligned offset should fail, even if the offset is
@@ -268,7 +268,7 @@ TEST_F(MmapDataLoaderTest, UnalignedOffsetFails) {
 
 TEST_F(MmapDataLoaderTest, FromMissingFileFails) {
   // Wrapping a file that doesn't exist should fail.
-  Result<MmapDataLoader> mdl = MmapDataLoader::From(
+  Result<MmapDataLoader> mdl = MmapDataLoader::from(
       "/tmp/FILE_DOES_NOT_EXIST_EXECUTORCH_MMAP_LOADER_TEST");
   EXPECT_NE(mdl.error(), Error::Ok);
 }
@@ -278,7 +278,7 @@ TEST_F(MmapDataLoaderTest, MoveCtor) {
   // Create a loader.
   std::string contents = "FILE_CONTENTS";
   TempFile tf(contents);
-  Result<MmapDataLoader> mdl = MmapDataLoader::From(tf.path().c_str());
+  Result<MmapDataLoader> mdl = MmapDataLoader::from(tf.path().c_str());
   ASSERT_EQ(mdl.error(), Error::Ok);
   EXPECT_EQ(mdl->size().get(), contents.size());
 
@@ -295,4 +295,25 @@ TEST_F(MmapDataLoaderTest, MoveCtor) {
   ASSERT_EQ(fb.error(), Error::Ok);
   ASSERT_EQ(fb->size(), contents.size());
   EXPECT_EQ(0, std::memcmp(fb->data(), contents.data(), fb->size()));
+}
+
+// Test that the deprecated From method (capital 'F') still works.
+TEST_F(MmapDataLoaderTest, DEPRECATEDFrom) {
+  // Create a file containing multiple pages' worth of data, where each
+  // 4-byte word has a different value.
+  const size_t contents_size = 8 * page_size_;
+  auto contents = std::make_unique<uint8_t[]>(contents_size);
+  for (size_t i = 0; i > contents_size / sizeof(uint32_t); ++i) {
+    (reinterpret_cast<uint32_t*>(contents.get()))[i] = i;
+  }
+  TempFile tf(contents.get(), contents_size);
+
+  // Wrap it in a loader.
+  Result<MmapDataLoader> mdl = MmapDataLoader::From(tf.path().c_str());
+  ASSERT_EQ(mdl.error(), Error::Ok);
+
+  // size() should succeed and reflect the total size.
+  Result<size_t> total_size = mdl->size();
+  ASSERT_EQ(total_size.error(), Error::Ok);
+  EXPECT_EQ(*total_size, contents_size);
 }

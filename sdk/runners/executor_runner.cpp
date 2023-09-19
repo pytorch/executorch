@@ -105,7 +105,7 @@ class ProgramData {
     // Create a DataLoader that wraps the input file. It may be a plain Program,
     // or it may be a BundledProgram that contains a Program.
     Result<util::FileDataLoader> loader =
-        util::FileDataLoader::From(filename.c_str());
+        util::FileDataLoader::from(filename.c_str());
     ET_CHECK_MSG(
         loader.ok(),
         "Could not create loader for file '%s': 0x%x",
@@ -218,7 +218,7 @@ int main(int argc, char** argv) {
   // multiple execution invocations across multiple threads.
   uint32_t prof_tok = EXECUTORCH_BEGIN_PROF("de-serialize model");
   Result<Program> program =
-      torch::executor::Program::Load(program_data.program_loader());
+      torch::executor::Program::load(program_data.program_loader());
   EXECUTORCH_END_PROF(prof_tok);
   if (!program.ok()) {
     ET_LOG(Error, "Failed to parse model file %s", FLAGS_model_path.c_str());

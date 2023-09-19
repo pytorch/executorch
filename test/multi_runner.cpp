@@ -115,7 +115,7 @@ class PreparedModel final {
 
  private:
   static Program load_program_or_die(DataLoader& loader) {
-    Result<Program> program = Program::Load(&loader);
+    Result<Program> program = Program::load(&loader);
     ET_CHECK(program.ok());
     return std::move(program.get());
   }

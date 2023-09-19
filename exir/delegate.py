@@ -114,18 +114,16 @@ def call_delegate_autograd(lowered_module, *args):
 
 @executorch_call_delegate.py_impl(ProxyTorchDispatchMode)
 # pyre-ignore
-def call_delegate_proxy_torch_dispatch_mode(lowered_module, *args):
-    mode = _get_current_dispatch_mode()
-    assert mode is not None, "Mode should always be enabled for python fallback key"
-    with _pop_mode_temporarily() as mode:
-        res = trace_call_delegate(mode, executorch_call_delegate, lowered_module, *args)
+def call_delegate_proxy_torch_dispatch_mode(mode, lowered_module, *args):
+    res = trace_call_delegate(mode, executorch_call_delegate, lowered_module, *args)
     return res
 
 
 @executorch_call_delegate.py_impl(FakeTensorMode)
 # pyre-ignore
-def call_delegate_fake_tensor_mode(lowered_module, *args):
-    return lowered_module.original_module(*args)
+def call_delegate_fake_tensor_mode(mode, lowered_module, *args):
+    with mode:
+        return lowered_module.original_module(*args)
 
 
 @executorch_call_delegate.py_impl(torch._C.DispatchKey.Functionalize)

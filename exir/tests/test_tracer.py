@@ -398,9 +398,8 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
                 return x.cos() + self.buffer.sum()
 
         capture_config = exir.CaptureConfig(enable_aot=True)
-        captured_gm = exir.capture(
-            FooWithBuffer(), (torch.ones(6, 2),), capture_config
-        ).exported_program.graph_module
+        captured_ep = exir.capture(FooWithBuffer(), (torch.ones(6, 2),), capture_config)
+        captured_gm = captured_ep.exported_program.graph_module
 
         placeholder_nodes = set()
         print(captured_gm.graph)
@@ -420,6 +419,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
                 )
 
         self.assertEqual(len(placeholder_nodes), 2)
+        captured_ep.to_edge()
 
     def test_export_unlift(self) -> None:
         class Foo(torch.nn.Module):

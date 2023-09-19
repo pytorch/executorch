@@ -59,10 +59,10 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 
 } // namespace
 
-/* static */ Result<Program> Program::Load(
+/* static */ Result<Program> Program::load(
     DataLoader* loader,
     Program::Verification verification) {
-  EXECUTORCH_SCOPE_PROF("Program::Load");
+  EXECUTORCH_SCOPE_PROF("Program::load");
 
   // See if the program size is in the header.
   size_t program_size = 0;

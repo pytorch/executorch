@@ -35,7 +35,7 @@ MmapDataLoader::~MmapDataLoader() {
   ::close(fd_);
 }
 
-Result<MmapDataLoader> MmapDataLoader::From(
+Result<MmapDataLoader> MmapDataLoader::from(
     const char* file_name,
     MmapDataLoader::MlockConfig mlock_config) {
   // Cache the page size.
