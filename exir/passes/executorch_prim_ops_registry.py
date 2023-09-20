@@ -42,6 +42,13 @@ def floordiv(a: _SymScalar, b: _SymScalar) -> _SymScalar:
     return a // b  # pyre-ignore
 
 
+@bind_pattern_to_op(
+    executorch_prims_lib, "truediv.Scalar(Scalar a, Scalar b) -> Scalar"
+)
+def truediv(a: _SymScalar, b: _SymScalar) -> _SymScalar:
+    return a / b  # pyre-ignore
+
+
 # TODO: ideally we should return SymBool in the schema, but it seems
 # the schema parser does not recognize SymBool yet: P629748075
 @bind_pattern_to_op(executorch_prims_lib, "gt.Scalar(Scalar a, Scalar b) -> bool")
@@ -74,6 +81,7 @@ _PYTHON_SYM_OPS_TO_EXECUTORCH_SYM_OPS: Dict[OpOverload, OpOverload] = {
     operator.mul: ops.backend.executorch_prim.mul.Scalar,
     operator.add: ops.backend.executorch_prim.add.Scalar,
     operator.floordiv: ops.backend.executorch_prim.floordiv.Scalar,
+    operator.truediv: ops.backend.executorch_prim.truediv.Scalar,
     operator.eq: ops.backend.executorch_prim.eq.Scalar,
     operator.gt: ops.backend.executorch_prim.gt.Scalar,
     operator.lt: ops.backend.executorch_prim.lt.Scalar,
