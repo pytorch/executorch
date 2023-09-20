@@ -187,6 +187,20 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
         popd
 
+  test-macos-x86:
+    name: test-macos-x86
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 60
+      script: |
+        set -eux
+
+        echo "This is running on GitHub MacOS x86_64 runner"
+        xcodebuild -version
+
   unittest:
     uses: ./.github/workflows/_unittest.yml
     with:
