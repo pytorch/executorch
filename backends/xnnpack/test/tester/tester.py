@@ -121,7 +121,9 @@ class Quantize(Stage):
 @register_stage
 class Export(Stage):
     def __init__(self, capture_config: Optional[CaptureConfig] = None):
-        self.capture_conf = capture_config or CaptureConfig(enable_aot=True)
+        self.capture_conf = capture_config or CaptureConfig(
+            enable_aot=True, _unlift=True
+        )
         self.exir_exported_program = None
 
     def run(self, artifact: torch.nn.Module, inputs) -> None:
