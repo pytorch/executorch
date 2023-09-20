@@ -1,7 +1,7 @@
+# Copyright 2023 Arm Limited and/or its affiliates.
 #
-# SPDX-FileCopyrightText: Copyright 2023 Arm Limited and/or its affiliates <open-source-office@arm.com>
-# SPDX-License-Identifier: BSD-3-Clause
-#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
 
 #
 # PTTT: PyTorch to Tosa mapping - simple mapping functions and multi-type extractions of key information
