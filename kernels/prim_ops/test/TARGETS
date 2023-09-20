@@ -7,9 +7,9 @@ load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 oncall("executorch")
 
 python_unittest(
-    name = "test_prim_ops",
+    name = "prim_ops_test_py",
     srcs = [
-        "test_prim_ops.py",
+        "prim_ops_test.py",
     ],
     deps = [
         "//caffe2:torch",
@@ -18,9 +18,9 @@ python_unittest(
 )
 
 cpp_unittest(
-    name = "register_prim_ops_test",
+    name = "prim_ops_test_cpp",
     srcs = [
-        "register_prim_ops_test.cpp",
+        "prim_ops_test.cpp",
     ],
     supports_static_listing = True,
     deps = [
