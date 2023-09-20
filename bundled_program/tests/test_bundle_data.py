@@ -53,6 +53,7 @@ class TestBundle(unittest.TestCase):
         for plan_id in range(len(program.execution_plan)):
             bundled_plan_test = bundled_program.execution_plan_tests[plan_id]
             config_plan_test = bundled_config.execution_plan_tests[plan_id]
+
             self.assertEqual(
                 len(bundled_plan_test.test_sets), len(config_plan_test.test_sets)
             )
@@ -68,3 +69,19 @@ class TestBundle(unittest.TestCase):
                 )
 
         self.assertEqual(bundled_program.program, _serialize_pte_binary(program))
+
+    def test_bundled_miss_methods(self) -> None:
+        program, bundled_config = get_common_program()
+
+        # only keep the testcases for the first method to mimic the case that user only creates testcases for the first method.
+        bundled_config.execution_plan_tests = bundled_config.execution_plan_tests[:1]
+
+        _ = create_bundled_program(program, bundled_config)
+
+    def test_bundled_wrong_method_name(self) -> None:
+        program, bundled_config = get_common_program()
+
+        bundled_config.execution_plan_tests[-1].method_name = "wrong_method_name"
+        self.assertRaises(
+            AssertionError, create_bundled_program, program, bundled_config
+        )

@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
+import random
+import string
 from typing import List, Tuple, Union
 
 import executorch.exir as exir
@@ -43,15 +45,16 @@ InputValues: TypeAlias = List[Union[torch.Tensor, int]]
 OutputValues: TypeAlias = List[torch.Tensor]
 
 
-class MISOModel(torch.nn.Module):
-    """An example model with Multi-Input Single-Output"""
+class SampleModel(torch.nn.Module):
+    """An example model with multi-methods. Each method has multiple input and single output"""
 
     def __init__(self) -> None:
         super().__init__()
         self.a: torch.Tensor = 3 * torch.ones(2, 2, dtype=torch.int32)
         self.b: torch.Tensor = 2 * torch.ones(2, 2, dtype=torch.int32)
+        self.method_names = ["encode", "decode"]
 
-    def forward(
+    def encode(
         self, x: torch.Tensor, q: torch.Tensor, a: int = DEFAULT_INT_INPUT
     ) -> torch.Tensor:
         z = x.clone()
@@ -59,6 +62,13 @@ class MISOModel(torch.nn.Module):
         y = x.clone()
         torch.add(z, self.b, alpha=a, out=y)
         torch.add(y, q, out=y)
+        return y
+
+    def decode(
+        self, x: torch.Tensor, q: torch.Tensor, a: int = DEFAULT_INT_INPUT
+    ) -> torch.Tensor:
+        y = x * q
+        torch.add(y, self.b, alpha=a, out=y)
         return y
 
 
@@ -96,6 +106,15 @@ def get_rand_output_values(
     ]
 
 
+def get_rand_method_names(n_execution_plan_tests: int) -> List[str]:
+    unique_strings = set()
+    while len(unique_strings) < n_execution_plan_tests:
+        rand_str = "".join(random.choices(string.ascii_letters, k=5))
+        if rand_str not in unique_strings:
+            unique_strings.add(rand_str)
+    return list(unique_strings)
+
+
 # TODO(T143955558): make n_int and metadatas as its input;
 def get_random_config(
     n_model_inputs: int,
@@ -105,7 +124,12 @@ def get_random_config(
     dtype: torch.dtype,
     n_sets_per_plan_test: int,
     n_execution_plan_tests: int,
-) -> Tuple[List[List[InputValues]], List[List[OutputValues]], BundledConfig,]:
+) -> Tuple[
+    List[str],
+    List[List[InputValues]],
+    List[List[OutputValues]],
+    BundledConfig,
+]:
     """Helper function to generate config filled with random inputs and expected outputs.
 
     The return type of rand inputs is a List[List[InputValues]]. The inner list of
@@ -115,6 +139,8 @@ def get_random_config(
     Same for rand_expected_outputs.
 
     """
+
+    rand_method_names = get_rand_method_names(n_execution_plan_tests)
 
     rand_inputs = get_rand_input_values(
         n_tensors=n_model_inputs,
@@ -134,29 +160,24 @@ def get_random_config(
     )
 
     return (
+        rand_method_names,
         rand_inputs,
         rand_expected_outputs,
-        BundledConfig(rand_inputs, rand_expected_outputs),
+        BundledConfig(rand_method_names, rand_inputs, rand_expected_outputs),
     )
 
 
 def get_random_config_with_eager_model(
     eager_model: torch.nn.Module,
+    method_names: List[str],
     n_model_inputs: int,
     model_input_sizes: List[List[int]],
     dtype: torch.dtype,
     n_sets_per_plan_test: int,
-    n_execution_plan_tests: int,
 ) -> Tuple[List[List[InputValues]], BundledConfig]:
     """Generate config filled with random inputs for each inference method given eager model
 
     The details of return type is the same as get_random_config_with_rand_io_lists.
-
-    NOTE: Right now we do not support multiple inference methods per eager model. To simulate
-    generating exepected output for different inference functions, we infer the same method
-    multiple times.
-
-    TODO(T143752810): Update the hacky method after we support multiple inference methods.
     """
     inputs = get_rand_input_values(
         n_tensors=n_model_inputs,
@@ -164,37 +185,42 @@ def get_random_config_with_eager_model(
         n_int=1,
         dtype=dtype,
         n_sets_per_plan_test=n_sets_per_plan_test,
-        n_execution_plan_tests=n_execution_plan_tests,
+        n_execution_plan_tests=len(method_names),
     )
 
     expected_outputs = [
-        [[eager_model(*x)] for x in inputs[i]] for i in range(n_execution_plan_tests)
+        [[getattr(eager_model, m_name)(*x)] for x in inputs[i]]
+        for i, m_name in enumerate(method_names)
     ]
 
-    return inputs, BundledConfig(inputs, expected_outputs)
+    return inputs, BundledConfig(method_names, inputs, expected_outputs)
 
 
 def get_common_program() -> Tuple[Program, BundledConfig]:
     """Helper function to generate a sample BundledProgram with its config."""
-    eager_model = MISOModel()
+    eager_model = SampleModel()
     # Trace to FX Graph.
-    capture_input = (
-        (torch.rand(2, 2) - 0.5).to(dtype=torch.int32),
-        (torch.rand(2, 2) - 0.5).to(dtype=torch.int32),
-        DEFAULT_INT_INPUT,
-    )
+    capture_inputs = {
+        m_name: (
+            (torch.rand(2, 2) - 0.5).to(dtype=torch.int32),
+            (torch.rand(2, 2) - 0.5).to(dtype=torch.int32),
+            DEFAULT_INT_INPUT,
+        )
+        for m_name in eager_model.method_names
+    }
+
     program = (
-        exir.capture(eager_model, capture_input, CaptureConfig())
+        exir.capture_multiple(eager_model, capture_inputs)
         .to_edge()
         .to_executorch()
         .program
     )
     _, bundled_config = get_random_config_with_eager_model(
         eager_model=eager_model,
+        method_names=eager_model.method_names,
         n_model_inputs=2,
         model_input_sizes=[[2, 2], [2, 2]],
         dtype=torch.int32,
         n_sets_per_plan_test=10,
-        n_execution_plan_tests=len(program.execution_plan),
     )
     return program, bundled_config

@@ -70,7 +70,9 @@ def main() -> None:
         for i in range(len(program.execution_plan))
     ]
 
-    bundled_config = BundledConfig(bundled_inputs, bundled_expected_outputs)
+    bundled_config = BundledConfig(
+        ["forward"], bundled_inputs, bundled_expected_outputs
+    )
 
     bundled_program = create_bundled_program(program, bundled_config)
     pretty_print(bundled_program)
