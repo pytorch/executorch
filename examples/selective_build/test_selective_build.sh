@@ -32,9 +32,9 @@ test_buck2_select_ops_in_list() {
     ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="add_mul"
 
     echo "Running selective build test"
-    # set max_kernel_num=17: 14 primops, add, mul
+    # set max_kernel_num=16: 13 primops, add, mul
     $BUCK run //examples/selective_build:selective_build_test \
-        --config=executorch.max_kernel_num=17 \
+        --config=executorch.max_kernel_num=16 \
         --config=executorch.select_ops=list -- --model_path=./add_mul.pte
 
     echo "Removing add_mul.pte"
@@ -80,12 +80,12 @@ test_cmake_select_ops_in_list() {
     echo "Exporting MobilenetV2"
     ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="mv2"
 
-    # set MAX_KERNEL_NUM=17: 14 primops, add, mul
+    # set MAX_KERNEL_NUM=16: 13 primops, add, mul
     (rm -rf cmake-out \
         && mkdir cmake-out \
         && cd cmake-out \
         && retry cmake -DBUCK2="$BUCK" \
-            -DMAX_KERNEL_NUM=17 \
+            -DMAX_KERNEL_NUM=16 \
             -DBUILD_SELECTIVE_BUILD_TEST=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DSELECT_OPS_LIST="aten::convolution.out,\
