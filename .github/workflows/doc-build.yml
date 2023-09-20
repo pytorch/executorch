@@ -45,6 +45,10 @@ jobs:
         cd ..
 
         cp -rf docs/_build/html/* "${RUNNER_DOCS_DIR}"
+
+        # Sometimes the artifact directory already contains an "html" subdir.
+        rm -rf "${RUNNER_ARTIFACT_DIR}/html"
+
         mv docs/_build/html "${RUNNER_ARTIFACT_DIR}"
 
 # Enable preview later. Previews are available publicly
