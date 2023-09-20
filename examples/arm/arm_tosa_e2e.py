@@ -7,15 +7,11 @@ import json
 import os
 import subprocess
 import tempfile
-import unittest
 
-import executorch.exir as exir
 import numpy as np
+from executorch.backends.tosa.test.test_tosa import export_model, prepare_model_and_ref
 from executorch.backends.tosa.test.test_tosa_models import TestList, TosaProfile
-from executorch.backends.tosa.test.test_tosa import prepare_model_and_ref, export_model
-from executorch.backends.tosa.tosa_backend import TosaPartitioner
 
-from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 # Assumes you have these two tools on your path
@@ -24,6 +20,7 @@ VELA_COMPILER_PATH = "vela"
 
 # Temp directory that any debug output is written to
 DEBUG_OUTPUT_PATH = tempfile.mkdtemp(prefix="arm_tosa_")
+
 
 def tosa_ref_dump_inputs(model_edge, inputs, path):
     # Emit TOSA test data from the model inputs - assumes whole graph lowered so we just have

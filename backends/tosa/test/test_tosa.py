@@ -3,23 +3,18 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
 
-import json
-import os
-import subprocess
-import tempfile
 import unittest
 
 import executorch.exir as exir
-import numpy as np
 from executorch.backends.tosa.test.test_tosa_models import TestList, TosaProfile
 from executorch.backends.tosa.tosa_backend import TosaPartitioner
 
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 # Config for Capturing the weights, will be moved in the future
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig()
+
 
 class TestBasicNN(unittest.TestCase):
     def test_minimal_MI(self):
@@ -30,7 +25,7 @@ class TestBasicNN(unittest.TestCase):
                 print("  Skipping, no inputs for this profile")
                 continue
             model_edge, exec_prog = export_model(model, inputs, [])
-            #TODO: check there is a tosa delegate blob in the output
+            # TODO: check there is a tosa delegate blob in the output
 
     def test_minimal_BI(self):
         for test_model in TestList:
@@ -40,7 +35,7 @@ class TestBasicNN(unittest.TestCase):
                 print("  Skipping, no inputs for this profile")
                 continue
             model_edge, exec_prog = export_model(model, inputs, [])
-            #TODO: check there is a tosa delegate blob in the output
+            # TODO: check there is a tosa delegate blob in the output
 
 
 def prepare_model_and_ref(test_model, profile=TosaProfile.MI):
