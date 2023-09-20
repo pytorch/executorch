@@ -76,37 +76,36 @@ To execute the program on the bundled input, we need to load the bundled input i
 ```c++
 
 /**
- * Compare the execution plan's output with testset_idx-th bundled expected
- * output in plan_idx-th execution plan test.
+ * Load testset_idx-th bundled input of method_idx-th Method test in
+ * bundled_program_ptr to given Method.
  *
- * @param[in] plan The execution plan contains output.
+ * @param[in] method The Method to verify.
  * @param[in] bundled_program_ptr The bundled program contains expected output.
- * @param[in] plan_idx  The index of execution plan being verified.
- * @param[in] testset_idx  The index of expected output needs to be compared.
- * @param[in] rtol Relative tolerance used for data comparsion.
- * @param[in] atol Absolute tolerance used for data comparsion.
+ * @param[in] method_name  The name of the Method being verified.
+ * @param[in] testset_idx  The index of input needs to be set into given Method.
  *
- * @returns Return Error::Ok if two outputs match, or the error happens during
+ * @returns Return Error::Ok if load successfully, or the error happens during
  * execution.
  */
 __ET_NODISCARD Error LoadBundledInput(
-    ExecutionPlan& plan,
+    Method& method,
     serialized_bundled_program* bundled_program_ptr,
-    size_t plan_idx,
+    MemoryAllocator* memory_allocator,
+    const char* method_name,
     size_t testset_idx);
 ```
 
 ### Verify the plan's output.
-We call `torch::executor::util::VerifyResultWithBundledExpectedOutput` to verify the plan's output with bundled expected outputs. Here's the details of this API:
+We call `torch::executor::util::VerifyResultWithBundledExpectedOutput` to verify the method's output with bundled expected outputs. Here's the details of this API:
 
 ```c++
 /**
- * Compare the execution plan's output with testset_idx-th bundled expected
- * output in plan_idx-th execution plan test.
+ * Compare the Method's output with testset_idx-th bundled expected
+ * output in method_idx-th Method test.
  *
- * @param[in] plan The execution plan contains output.
+ * @param[in] method The Method to extract outputs from.
  * @param[in] bundled_program_ptr The bundled program contains expected output.
- * @param[in] plan_idx  The index of execution plan being verified.
+ * @param[in] method_name  The name of the Method being verified.
  * @param[in] testset_idx  The index of expected output needs to be compared.
  * @param[in] rtol Relative tolerance used for data comparsion.
  * @param[in] atol Absolute tolerance used for data comparsion.
@@ -115,74 +114,62 @@ We call `torch::executor::util::VerifyResultWithBundledExpectedOutput` to verify
  * execution.
  */
 __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
-    ExecutionPlan& plan,
+    Method& method,
     serialized_bundled_program* bundled_program_ptr,
-    size_t plan_idx,
+    MemoryAllocator* memory_allocator,
+    const char* method_name,
     size_t testset_idx,
     double rtol = 1e-5,
     double atol = 1e-8);
+
 ```
 
 ### Example
 
-Here we provide an example about how to run the bundled program step by step. Most of the code are borrowed from "fbcode/executorch/sdk/runners/executor_runner.cpp":
+Here we provide an example about how to run the bundled program step by step. Most of the code are borrowed from "fbcode/executorch/sdk/runners/executor_runner.cpp" and please review that file if you need more info and context:
 
 ```c++
-    // model path is the path to flatbuffer file.
-    auto buff_ptr =
-        torch::executor::util::read_file_content(model_path);
-
-    std::shared_ptr<char> buff_ptr;
-    size_t buff_len;
-
-    // FILE_PATH here can be either BundledProgram or Program flatbuffer file.
-    Error status = torch::executor::util::read_file_content(
-        FILE_PATH, &buff_ptr, &buff_len);
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "read_file_content() failed with status 0x%" PRIx32,
-        status);
-
-    uint32_t prof_tok = EXECUTORCH_BEGIN_PROF("de-serialize model");
-
-    const void* program_ptr;
-    size_t program_len;
-    Error status = torch::executor::util::GetProgramData(
-        buff_ptr.get(), buff_len, &program_ptr, &program_len);
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "GetProgramData() failed with status 0x%" PRIx32,
-        status);
-
-    const auto program = torch::executor::Program(program_ptr);
-
+    // method_name is the name for the method we want to test
     // memory_manager is the executor::MemoryManager variable for executor memory allocation.
-    torch::executor::Executor executor(&program, &memory_manager);
-    const auto plan_index = torch::executor::Program::kForwardMethodIndex;
-    executor.init_execution_plan(plan_index);
+    // program is the executorch program.
+    Result<Method> method = program->load_method(method_name, &memory_manager);
+    EXECUTORCH_END_PROF(prof_tok);
+    ET_CHECK_MSG(
+        method.ok(),
+        "load_method() failed with status 0x%" PRIx32,
+        method.error());
 
     // Load testset_idx-th input in the buffer to plan
     status = torch::executor::util::LoadBundledInput(
-          plan, file_data.get(), plan_index, FLAGS_testset_idx);
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "LoadBundledInput failed with status %" PRIu32,
-        status);
+          *method,
+          program_data.bundled_program_data(),
+          &bundled_input_allocator,
+          method_name,
+          FLAGS_testset_idx);
+      ET_CHECK_MSG(
+          status == Error::Ok,
+          "LoadBundledInput failed with status 0x%" PRIx32,
+          status);
 
     // Execute the plan
-    plan.execute();
+    status = method->execute();
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "method->execute() failed with status 0x%" PRIx32,
+        status);
 
     // Verify the result.
     status = torch::executor::util::VerifyResultWithBundledExpectedOutput(
-        plan,
-        file_data.get(),
-        plan_index,
-        FLAGS_testset_idx,
-        FLAGS_rtol,
-        FLAGS_atol);
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "Bundle verification failed with status %" PRIu32,
-        status);
+          *method,
+          program_data.bundled_program_data(),
+          &bundled_input_allocator,
+          method_name,
+          FLAGS_testset_idx,
+          FLAGS_rtol,
+          FLAGS_atol);
+      ET_CHECK_MSG(
+          status == Error::Ok,
+          "Bundle verification failed with status 0x%" PRIx32,
+          status);
 
 ```
