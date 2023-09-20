@@ -175,6 +175,14 @@ class Module final {
     return result;
   }
 
+  Method& get_method(const std::string& method_name) {
+    if (methods_.count(method_name) == 0) {
+      THROW_IF_ERROR(
+          Error(), "no such method in program: %s", method_name.c_str());
+    }
+    return *methods_[method_name].get();
+  }
+
  private:
   /// A wrapper/util class for executorch memory allocations/manager.
   class Memory {
@@ -451,6 +459,48 @@ struct PyModule final {
     return run_method("forward", inputs);
   }
 
+  void load_bundled_input(
+      PyBundledModule& m,
+      const string method_name,
+      size_t testset_idx) {
+    const void* bundled_program_ptr = m.get_bundled_program_ptr();
+    Error status = util::LoadBundledInput(
+        module_->get_method(method_name),
+        bundled_program_ptr,
+        &m.get_bundled_input_allocator(),
+        method_name.c_str(),
+        testset_idx);
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "LoadBundledInput failed with status %" PRIu32,
+        status);
+  }
+
+  void verify_result_with_bundled_expected_output(
+      PyBundledModule& m,
+      const string method_name,
+      size_t testset_idx) {
+    const void* bundled_program_ptr = m.get_bundled_program_ptr();
+    Error status = util::VerifyResultWithBundledExpectedOutput(
+        module_->get_method(method_name),
+        bundled_program_ptr,
+        &m.get_bundled_input_allocator(),
+        method_name.c_str(),
+        testset_idx);
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "Result verification failed with status %" PRIu32,
+        status);
+  }
+
+  void plan_execute(const string method_name) {
+    auto status = module_->get_method(method_name).execute();
+    THROW_IF_ERROR(
+        status,
+        "executing execution plan for method 'forward' failed with error: 0x%" PRIx32,
+        status);
+  }
+
  private:
   std::unique_ptr<Module> module_;
 };
@@ -487,6 +537,11 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
   m.def("_reset_profile_results", []() { EXECUTORCH_RESET_PROFILE_RESULTS(); });
 
   py::class_<PyModule>(m, "ExecutorchModule")
+      .def("load_bundled_input", &PyModule::load_bundled_input)
+      .def(
+          "verify_result_with_bundled_expected_output",
+          &PyModule::verify_result_with_bundled_expected_output)
+      .def("plan_execute", &PyModule::plan_execute)
       .def("run_method", &PyModule::run_method)
       .def("forward", &PyModule::forward);
 
