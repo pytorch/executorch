@@ -166,6 +166,20 @@ bool tensors_are_close(
   }
 }
 
+Result<executorch_flatbuffer::BundledExecutionPlanTest*> get_method_test(
+    const executorch_flatbuffer::BundledProgram* bundled_program,
+    const char* method_name) {
+  auto method_tests = bundled_program->execution_plan_tests();
+  for (size_t i = 0; i < method_tests->size(); i++) {
+    auto m_test = method_tests->GetMutableObject(i);
+    if (std::strcmp(m_test->method_name()->c_str(), method_name) == 0) {
+      return m_test;
+    }
+  }
+  ET_LOG(Error, "No method named '%s' in given bundled program", method_name);
+  return Error::InvalidArgument;
+}
+
 } // namespace
 
 // Load testset_idx-th bundled data into the Method
@@ -173,7 +187,7 @@ __ET_NODISCARD Error LoadBundledInput(
     Method& method,
     serialized_bundled_program* bundled_program_ptr,
     MemoryAllocator* memory_allocator,
-    size_t method_idx,
+    const char* method_name,
     size_t testset_idx) {
   ET_CHECK_OR_RETURN_ERROR(
       executorch_flatbuffer::BundledProgramBufferHasIdentifier(
@@ -181,13 +195,16 @@ __ET_NODISCARD Error LoadBundledInput(
       NotSupported,
       "The input buffer should be a bundled program.");
 
+  auto method_test = get_method_test(
+      executorch_flatbuffer::GetBundledProgram(bundled_program_ptr),
+      method_name);
+
+  if (!method_test.ok()) {
+    return method_test.error();
+  }
+
   auto bundled_inputs =
-      executorch_flatbuffer::GetBundledProgram(bundled_program_ptr)
-          ->execution_plan_tests()
-          ->Get(method_idx)
-          ->test_sets()
-          ->Get(testset_idx)
-          ->inputs();
+      method_test.get()->test_sets()->Get(testset_idx)->inputs();
 
   for (size_t input_idx = 0; input_idx < method.inputs_size(); input_idx++) {
     auto bundled_input = bundled_inputs->GetMutableObject(input_idx);
@@ -263,7 +280,7 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
     Method& method,
     serialized_bundled_program* bundled_program_ptr,
     MemoryAllocator* memory_allocator,
-    size_t method_idx,
+    const char* method_name,
     size_t testset_idx,
     double rtol,
     double atol) {
@@ -273,13 +290,16 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
       NotSupported,
       "The input buffer should be a bundled program.");
 
+  auto method_test = get_method_test(
+      executorch_flatbuffer::GetBundledProgram(bundled_program_ptr),
+      method_name);
+
+  if (!method_test.ok()) {
+    return method_test.error();
+  }
+
   auto bundled_expected_outputs =
-      executorch_flatbuffer::GetBundledProgram(bundled_program_ptr)
-          ->execution_plan_tests()
-          ->Get(method_idx)
-          ->test_sets()
-          ->Get(testset_idx)
-          ->expected_outputs();
+      method_test.get()->test_sets()->Get(testset_idx)->expected_outputs();
 
   for (size_t output_idx = 0; output_idx < method.outputs_size();
        output_idx++) {

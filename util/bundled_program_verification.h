@@ -26,7 +26,7 @@ using serialized_bundled_program = const void;
  *
  * @param[in] method The Method to verify.
  * @param[in] bundled_program_ptr The bundled program contains expected output.
- * @param[in] method_idx  The index of the Method being verified.
+ * @param[in] method_name  The name of the Method being verified.
  * @param[in] testset_idx  The index of input needs to be set into given Method.
  *
  * @returns Return Error::Ok if load successfully, or the error happens during
@@ -36,7 +36,7 @@ __ET_NODISCARD Error LoadBundledInput(
     Method& method,
     serialized_bundled_program* bundled_program_ptr,
     MemoryAllocator* memory_allocator,
-    size_t method_idx,
+    const char* method_name,
     size_t testset_idx);
 
 /**
@@ -45,7 +45,7 @@ __ET_NODISCARD Error LoadBundledInput(
  *
  * @param[in] method The Method to extract outputs from.
  * @param[in] bundled_program_ptr The bundled program contains expected output.
- * @param[in] method_idx  The index of the Method being verified.
+ * @param[in] method_name  The name of the Method being verified.
  * @param[in] testset_idx  The index of expected output needs to be compared.
  * @param[in] rtol Relative tolerance used for data comparsion.
  * @param[in] atol Absolute tolerance used for data comparsion.
@@ -57,7 +57,7 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
     Method& method,
     serialized_bundled_program* bundled_program_ptr,
     MemoryAllocator* memory_allocator,
-    size_t method_idx,
+    const char* method_name,
     size_t testset_idx,
     double rtol = 1e-5,
     double atol = 1e-8);
