@@ -82,7 +82,7 @@ if __name__ == "__main__":
     edge = export_to_edge(
         model,
         example_inputs,
-        capture_config=CaptureConfig(enable_aot=True),
+        capture_config=CaptureConfig(enable_aot=True, _unlift=True),
         edge_compile_config=EdgeCompileConfig(
             _check_ir_validity=False if args.quantize else True,
         ),
