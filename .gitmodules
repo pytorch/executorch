@@ -29,5 +29,5 @@
 	path = backends/xnnpack/third-party/XNNPACK
 	url = https://github.com/google/XNNPACK.git
 [submodule "backends/tosa/third-party/serialization_lib"]
-	path = backends/tosa/third-party/serialization_lib
+	path = backends/arm/third-party/serialization_lib
 	url = https://git.mlplatform.org/tosa/serialization_lib.git

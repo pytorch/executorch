@@ -4,7 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 #
-# PTTT: PyTorch to Tosa mapping - simple mapping functions and multi-type extractions of key information
+# PyTorch to Tosa mapping - simple mapping functions and multi-type extraction
+# of key information. These are used by the initial compile stage which captures
+# the standardised TOSA representation.
 #
 
 import serializer.tosa_serializer as ts

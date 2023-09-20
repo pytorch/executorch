@@ -4,7 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 #
-# Main implementation of partition and preprocess
+# Main implementation of AoT flow to partition and preprocess for Arm target
+# backends. Converts via TOSA as an intermediate form supported by AoT and
+# JIT compiler flows.
 #
 
 import logging
@@ -87,16 +89,16 @@ def attr_torch_to_tosa(op, node):
 
 
 @final
-class TosaPartitioner(Partitioner):
+class ArmPartitioner(Partitioner):
     compile_spec = []
 
     def __init__(self) -> None:
-        self.delegation_spec = DelegationSpec(TosaBackend.__name__, self.compile_spec)
+        self.delegation_spec = DelegationSpec(ArmBackend.__name__, self.compile_spec)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
         # subgraphs containing the nodes with the tags
-        logger.info("TosaPartitioner::partition")
+        logger.info("ArmPartitioner::partition")
         partition_tags = {}
 
         capability_partitioner = CapabilityBasedPartitioner(
@@ -145,13 +147,13 @@ def dbg_fail(node, tosa_fb, path):
 
 
 @final
-class TosaBackend(BackendDetails):
+class ArmBackend(BackendDetails):
     @staticmethod
     def preprocess(  # noqa: C901
         edge_program: ExportedProgram,
         compile_spec: List[CompileSpec],
     ) -> bytes:
-        logger.info("TosaBackend::preprocess")
+        logger.info("ArmBackend::preprocess")
 
         # if a debug/test build capture output files from TOSA stage
         path = None

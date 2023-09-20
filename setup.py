@@ -59,8 +59,8 @@ setup(
         "executorch/schema": "schema",
         "executorch/extension": "extension",
         "executorch/bundled_program": "bundled_program",
-        "tosa": "backends/tosa/third-party/serialization_lib/python/tosa",
-        "serializer": "backends/tosa/third-party/serialization_lib/python/serializer",
+        "tosa": "backends/arm/third-party/serialization_lib/python/tosa",
+        "serializer": "backends/arm/third-party/serialization_lib/python/serializer",
     },
     cmdclass={
         "install": CustomInstallCommand,

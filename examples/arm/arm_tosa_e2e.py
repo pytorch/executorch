@@ -9,8 +9,8 @@ import subprocess
 import tempfile
 
 import numpy as np
-from executorch.backends.tosa.test.test_tosa import export_model, prepare_model_and_ref
-from executorch.backends.tosa.test.test_tosa_models import TestList, TosaProfile
+from executorch.backends.arm.test.test_models import TestList, TosaProfile
+from executorch.backends.arm.test.test_tosa import export_model, prepare_model_and_ref
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
@@ -94,7 +94,7 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
         "flatc"
         + " -o "
         + TOSA_OUT_PATH
-        + " --raw-binary -t ./backends/tosa/third-party/serialization_lib/schema/tosa.fbs -- "
+        + " --raw-binary -t ./backends/arm/third-party/serialization_lib/schema/tosa.fbs -- "
         + TOSA_OUT_PATH
         + "/output.tosa"
     )

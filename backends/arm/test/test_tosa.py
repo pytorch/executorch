@@ -3,11 +3,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+#
+# Test first-stage conversion to TOSA within the Arm backend.
+#
+
 import unittest
 
 import executorch.exir as exir
-from executorch.backends.tosa.test.test_tosa_models import TestList, TosaProfile
-from executorch.backends.tosa.tosa_backend import TosaPartitioner
+from executorch.backends.arm.arm_backend import ArmPartitioner
+from executorch.backends.arm.test.test_models import TestList, TosaProfile
 
 from executorch.exir.backend.backend_api import to_backend
 
@@ -50,9 +54,9 @@ def prepare_model_and_ref(test_model, profile=TosaProfile.MI):
 def export_model(model, inputs, compile_spec):
     model_capture = exir.capture(model, inputs, _CAPTURE_CONFIG)
     model_edge = model_capture.to_edge(_EDGE_COMPILE_CONFIG)
-    TosaPartitioner.compile_spec = compile_spec
+    ArmPartitioner.compile_spec = compile_spec
     model_edge.exported_program = to_backend(
-        model_edge.exported_program, TosaPartitioner
+        model_edge.exported_program, ArmPartitioner
     )
     exec_prog = model_edge.to_executorch()
     return model_edge, exec_prog
