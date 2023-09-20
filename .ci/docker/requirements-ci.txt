@@ -5,7 +5,7 @@ ruamel.yaml==0.17.32
 sympy==1.12
 timm==0.6.13
 tomli==2.0.1
-transformers==4.31.0
+transformers==4.33.2
 zstd==1.5.5.1
 pytest==7.2.0
 pytest-cov==4.1.0
