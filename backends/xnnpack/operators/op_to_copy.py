@@ -7,6 +7,7 @@
 from typing import Dict
 
 import torch
+from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.node_visitor import (
     get_tensor_value,
     NodeVisitor,
@@ -41,7 +42,7 @@ class ConvertMemoryFormat(NodeVisitor):
         vals_to_ids: Dict[torch.fx.Node, int],
         debug_handle: int,
     ) -> None:
-        memory_format_target = node.kwargs["memory_format"]
+        memory_format_target = node.kwargs.get("memory_format", torch.contiguous_format)
         to_channels_last = bool(memory_format_target == torch.channels_last)
         to_contiguous = bool(memory_format_target == torch.contiguous_format)
         check_or_raise(
@@ -61,7 +62,7 @@ class ConvertMemoryFormat(NodeVisitor):
             vals_to_ids,
             quant_params=input_quant_params,
             convert_to_nhwc=(
-                not to_channels_last
+                (not to_channels_last) and len(get_shape(input_node)) == 4
             ),  # input is contiguous if converting out of channels last
         )
 
