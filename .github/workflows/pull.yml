@@ -47,7 +47,7 @@ jobs:
       docker-image: executorch-ubuntu-22.04-clang12
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 60
+      timeout: 90
       script: |
         # The generic Linux job chooses to use base env, not the one setup by the image
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
@@ -73,7 +73,7 @@ jobs:
       runner: macos-m1-12
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 60
+      timeout: 90
       script: |
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
