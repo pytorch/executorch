@@ -7,7 +7,7 @@
 include "scalar_type.fbs";
 
 // TODO make this unique from the main schemas namespace
-namespace executorch_flatbuffer;
+namespace bundled_program_flatbuffer;
 
 // Identifier of a valid bundled program schema.
 file_identifier "BP06";
@@ -30,7 +30,7 @@ table BundledDouble {
 // All information we need to bundle for a tensor EValue input.
 table BundledTensor {
   // The scalar type of Tensor
-  scalar_type: ScalarType;
+  scalar_type: executorch_flatbuffer.ScalarType;
   // The target sizes of the tensor.
   sizes: [int];
   // The contents of the corresponding input tensor.
