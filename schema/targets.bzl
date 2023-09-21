@@ -95,9 +95,9 @@ def define_common_targets():
             # Lock this down as tightly as possible to ensure that flatbuffers
             # are an implementation detail. Ideally this list would only include
             # //executorch/runtime/executor/...
+            "//executorch/bundled_program/runtime/...",
             "//executorch/codegen/tools/...",
             "//executorch/runtime/executor/...",
-            "//executorch/util/...",  # bundled_program_verification
         ],
         exported_headers = {
             OUTPUT_PROGRAM_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_PROGRAM_HEADER),

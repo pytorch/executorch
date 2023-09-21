@@ -16,7 +16,7 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/sdk/etdump/etdump.h>
-#include <executorch/util/bundled_program_verification.h>
+#include <executorch/bundled_program/runtime/bundled_program_verification.h>
 #include <executorch/util/util.h>
 #ifdef USE_ATEN_LIB
 #include <c10/core/impl/LocalDispatchKeySet.h>
