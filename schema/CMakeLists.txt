@@ -41,7 +41,7 @@ add_custom_command(
     -o "${_program_schema__include_dir}/executorch/schema"
     ${_program_schema__srcs}
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  DEPENDS ${FLATC_EXECUTABLE} ${_program_schema__srcs}
+  DEPENDS ${_program_schema__srcs}
   COMMENT "Generating program_schema headers"
   VERBATIM)
 
