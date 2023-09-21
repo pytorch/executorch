@@ -11,8 +11,9 @@ exir/_serialize/program.fbs
 bundled_program/serialize/bundled_program_schema.fbs
 bundled_program/serialize/scalar_type.fbs
 
-# Any exported models
+# Any exported models and profiling outputs
 *.pte
+*.bin
 
 # Editor temporaries
 *.swa
