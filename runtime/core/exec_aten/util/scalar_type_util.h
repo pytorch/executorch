@@ -40,13 +40,38 @@ using ScalarType = at::ScalarType;
 }
 #else
 #include <executorch/runtime/core/portable_type/scalar_type.h>
+#include <executorch/runtime/core/portable_type/string_view.h>
 namespace exec_aten {
 using ScalarType = torch::executor::ScalarType;
-}
+using string_view = torch::executor::string_view;
+} // namespace exec_aten
 #endif
 
 namespace torch {
 namespace executor {
+
+#ifdef EXECUTORCH_SELECTIVE_BUILD_DTYPE
+#include <executorch/runtime/core/exec_aten/util/selected_mobile_ops.h>
+#else
+inline constexpr bool should_include_kernel_dtype(
+    const char* /*operator_name*/,
+    exec_aten::ScalarType /*scalar_type*/
+) {
+  return true;
+}
+#endif
+
+#define ET_INTERNAL_CHECK_SELECTIVE_BUILD(enum_type)               \
+  do {                                                             \
+    if (!should_include_kernel_dtype(et_switch_name, enum_type)) { \
+      ET_LOG(                                                      \
+          Error,                                                   \
+          "dtype '%s' not selected for kernel tag %s",             \
+          toString(enum_type),                                     \
+          et_switch_name);                                         \
+      torch::executor::runtime_abort();                            \
+    }                                                              \
+  } while (0)
 
 /// Maps ScalarTypes to C++ types.
 template <exec_aten::ScalarType N>
@@ -581,6 +606,7 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
 
 #define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)  \
   case enum_type: {                                           \
+    ET_INTERNAL_CHECK_SELECTIVE_BUILD(enum_type);             \
     using CTYPE_ALIAS = ScalarTypeToCppType<enum_type>::type; \
     return __VA_ARGS__();                                     \
   }
