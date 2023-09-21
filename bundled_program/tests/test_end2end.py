@@ -21,7 +21,7 @@ import executorch.extension.pytree as pytree
 
 import torch
 
-from executorch.bundled_program.core import create_bundled_program
+from executorch.bundled_program.aot.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )

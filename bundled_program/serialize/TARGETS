@@ -31,7 +31,7 @@ runtime.python_library(
     ],
     deps = [
         "fbsource//third-party/pypi/setuptools:setuptools",
-        "//executorch/bundled_program:schema",
+        "//executorch/bundled_program/aot:schema",
         "//executorch/exir/_serialize:lib",
     ],
 )

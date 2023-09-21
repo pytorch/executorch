@@ -10,7 +10,7 @@ import unittest
 from typing import get_args, List, Union
 
 import torch
-from executorch.bundled_program.config import DataContainer
+from executorch.bundled_program.aot.config import DataContainer
 
 from executorch.bundled_program.tests.common import (
     get_random_test_suites,

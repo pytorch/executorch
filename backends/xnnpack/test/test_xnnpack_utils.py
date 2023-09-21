@@ -26,8 +26,8 @@ from executorch.backends.xnnpack.utils.utils import capture_graph_for_xnnpack
 # import the xnnpack backend implementation
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 
-from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.bundled_program.core import create_bundled_program
+from executorch.bundled_program.aot.config import MethodTestCase, MethodTestSuite
+from executorch.bundled_program.aot.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )

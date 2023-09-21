@@ -9,11 +9,11 @@
 import unittest
 from typing import List
 
-import executorch.bundled_program.schema as bp_schema
+import executorch.bundled_program.aot.schema as bp_schema
 
 import torch
-from executorch.bundled_program.config import ConfigValue
-from executorch.bundled_program.core import create_bundled_program
+from executorch.bundled_program.aot.config import ConfigValue
+from executorch.bundled_program.aot.core import create_bundled_program
 from executorch.bundled_program.tests.common import get_common_program
 from executorch.exir._serialize import _serialize_pte_binary
 

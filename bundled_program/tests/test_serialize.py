@@ -8,7 +8,7 @@
 
 import unittest
 
-from executorch.bundled_program.core import create_bundled_program
+from executorch.bundled_program.aot.core import create_bundled_program
 
 from executorch.bundled_program.serialize import (
     deserialize_from_flatbuffer_to_bundled_program,

@@ -8,14 +8,14 @@ import ctypes
 import typing
 from typing import Dict, List, Sequence, Type
 
-import executorch.bundled_program.schema as bp_schema
+import executorch.bundled_program.aot.schema as bp_schema
 import executorch.exir.schema as core_schema
 
 import torch
 import torch.fx
-from executorch.bundled_program.config import ConfigValue, MethodTestSuite
+from executorch.bundled_program.aot.config import ConfigValue, MethodTestSuite
 
-from executorch.bundled_program.version import BUNDLED_PROGRAM_SCHEMA_VERSION
+from executorch.bundled_program.aot.version import BUNDLED_PROGRAM_SCHEMA_VERSION
 from executorch.exir._serialize import _serialize_pte_binary
 
 from executorch.exir.tensor import get_scalar_type, scalar_type_enum, TensorSpec
