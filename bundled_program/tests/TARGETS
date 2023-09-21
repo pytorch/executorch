@@ -14,7 +14,7 @@ python_library(
     deps = [
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
         "//caffe2:torch",
-        "//executorch/bundled_program:config",
+        "//executorch/bundled_program/aot:config",
         "//executorch/exir:lib",
         "//executorch/exir:schema",
     ],
@@ -28,9 +28,9 @@ python_unittest(
     deps = [
         ":lib",
         "//caffe2:torch",
-        "//executorch/bundled_program:config",
-        "//executorch/bundled_program:core",
-        "//executorch/bundled_program:schema",
+        "//executorch/bundled_program/aot:config",
+        "//executorch/bundled_program/aot:core",
+        "//executorch/bundled_program/aot:schema",
         "//executorch/exir/_serialize:lib",
     ],
 )
@@ -42,7 +42,7 @@ python_unittest(
     ],
     deps = [
         ":lib",
-        "//executorch/bundled_program:core",
+        "//executorch/bundled_program/aot:core",
         "//executorch/bundled_program/serialize:lib",
         "//executorch/exir:print_program",
     ],
@@ -56,7 +56,7 @@ python_unittest(
     deps = [
         ":lib",
         "//caffe2:torch",
-        "//executorch/bundled_program:config",
+        "//executorch/bundled_program/aot:config",
         "//executorch/extension/pytree:pylib",
     ],
 )
@@ -69,8 +69,8 @@ python_unittest(
     deps = [
         ":lib",
         "//caffe2:torch",
-        "//executorch/bundled_program:config",
-        "//executorch/bundled_program:core",
+        "//executorch/bundled_program/aot:config",
+        "//executorch/bundled_program/aot:core",
         "//executorch/bundled_program/serialize:lib",
         "//executorch/exir:dynamic_shape",
         "//executorch/exir:lib",

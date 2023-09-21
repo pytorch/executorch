@@ -43,7 +43,7 @@ runtime.python_library(
     # Please ask before changing this.
     visibility = [
         "//executorch/backends/...",
-        "//executorch/bundled_program:core",
+        "//executorch/bundled_program/aot:core",
         "//executorch/bundled_program/serialize:lib",
         "//executorch/bundled_program/tests/...",
         "//executorch/codegen/...",
