@@ -10,7 +10,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Delegate and Partitioner &mdash; ExecuTorch  documentation</title>
+  <title>Backend and Delegate &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -265,9 +265,9 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Delegate and Partitioner</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Backend and Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-kernel-fusion-pass.html">Kernel Fusion Pass</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passeis</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
@@ -339,7 +339,7 @@
       </li>
 
         
-      <li>Delegate and Partitioner</li>
+      <li>Backend and Delegate</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -377,9 +377,395 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <section id="delegate-and-partitioner">
-<h1>Delegate and Partitioner<a class="headerlink" href="#delegate-and-partitioner" title="Permalink to this heading">¶</a></h1>
-<p>TBA</p>
+  <section id="backend-and-delegate">
+<h1>Backend and Delegate<a class="headerlink" href="#backend-and-delegate" title="Permalink to this heading">¶</a></h1>
+<p>Backend delegation is an entry point for backends to process and execute PyTorch
+programs to leverage performance and efficiency benefits of specialized
+backends and hardware, while still providing PyTorch users with an experience
+close to that of the PyTorch runtime.</p>
+<p>At a high level, the entry point for backends is defined by 2 components:</p>
+<ul class="simple">
+<li><p>An IR to represent the program: <strong>Edge Dialect</strong> (which is produced through
+the <code class="docutils literal notranslate"><span class="pre">to_edge</span></code> API)</p></li>
+<li><p>A couple of interfaces for backends to implement:</p>
+<ul>
+<li><p>Ahead-of-Time (AOT)</p>
+<ul>
+<li><p>Program preprocessing (e.g. ahead of time compilation, transformation, optimization…).</p></li>
+</ul>
+</li>
+<li><p>Runtime</p>
+<ul>
+<li><p>Program initialization (e.g. runtime compilation).</p></li>
+<li><p>Program execution.</p></li>
+<li><p>(optional) Program destroy (e.g. release backend owned resource).</p></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<section id="backend-interfaces">
+<h2>Backend interfaces<a class="headerlink" href="#backend-interfaces" title="Permalink to this heading">¶</a></h2>
+<p>A delegate backend implementation is composed of:</p>
+<ol class="arabic simple">
+<li><p>An ahead-of-time preprocessing interface</p></li>
+<li><p>A runtime initialization and execution interface</p></li>
+</ol>
+<section id="ahead-of-time-preprocessing">
+<h3>Ahead-of-Time Preprocessing<a class="headerlink" href="#ahead-of-time-preprocessing" title="Permalink to this heading">¶</a></h3>
+<p>For the AOT preprocessing, backends are given an edge dialect program,
+a list of compile specs specifying the values needed for compilation, and are
+expected to return a compiled blob, or binary contains the desired program to be
+run in the backend, and profiling information. During serialization, the
+compiled blob will be serialized file, and directly loaded to the device. The
+API looks something like:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">preprocess</span><span class="p">(</span>
+    <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PreprocessResult</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>A demo of the preprocess function is implemented
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/backend/test/backend_with_compiler_demo.py">here</a>.
+The demo loops through the nodes in the graph module of the <code class="docutils literal notranslate"><span class="pre">edge_program</span></code> and
+serializes the <code class="docutils literal notranslate"><span class="pre">add</span></code>, <code class="docutils literal notranslate"><span class="pre">mul</span></code>, and <code class="docutils literal notranslate"><span class="pre">sin</span></code> instructions into a string, which is later
+parsed and executed at runtime.</p>
+</section>
+<section id="runtime-initialization-and-execution">
+<h3>Runtime Initialization and Execution<a class="headerlink" href="#runtime-initialization-and-execution" title="Permalink to this heading">¶</a></h3>
+<p>During the runtime, the compiled blob from the <code class="docutils literal notranslate"><span class="pre">preprocess</span></code> function will be
+loaded and passed directly to the backend’s custom <code class="docutils literal notranslate"><span class="pre">init</span></code> function. This
+function is responsible for further processing the compiled unit, as well as
+perform any backend initialization. The backend’s custom <code class="docutils literal notranslate"><span class="pre">execute</span></code> function will
+then be called to execute the handle produced by <code class="docutils literal notranslate"><span class="pre">init</span></code>. And finally, if
+destroying is required for some backend, backends can implement a <code class="docutils literal notranslate"><span class="pre">destroy</span></code>
+function which will be called when the program is out of its lifespan.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">//</span> <span class="n">Runtime</span> <span class="n">initialization</span>
+<span class="n">__ET_NODISCARD</span> <span class="n">virtual</span> <span class="n">Result</span><span class="o">&lt;</span><span class="n">DelegateHandle</span><span class="o">*&gt;</span> <span class="n">init</span><span class="p">(</span>
+    <span class="n">FreeableBuffer</span><span class="o">*</span> <span class="n">processed</span><span class="p">,</span>
+    <span class="n">ArrayRef</span><span class="o">&lt;</span><span class="n">CompileSpec</span><span class="o">&gt;</span> <span class="n">compile_specs</span><span class="p">,</span>
+    <span class="n">MemoryAllocator</span><span class="o">*</span> <span class="n">memory_allocator</span><span class="p">);</span>
+
+<span class="o">//</span> <span class="n">Runtime</span> <span class="n">execution</span>
+<span class="n">__ET_NODISCARD</span> <span class="n">virtual</span> <span class="n">Error</span> <span class="n">execute</span><span class="p">(</span><span class="n">DelegateHandle</span><span class="o">*</span> <span class="n">handle</span><span class="p">,</span> <span class="n">EValue</span><span class="o">**</span> <span class="n">args</span><span class="p">);</span>
+
+<span class="o">//</span> <span class="p">[</span><span class="n">optional</span><span class="p">]</span> <span class="n">Runtime</span> <span class="n">destroy</span><span class="o">.</span> <span class="n">Destroy</span> <span class="n">the</span> <span class="n">resource</span> <span class="n">held</span> <span class="n">by</span> <span class="n">the</span> <span class="n">backend</span>
+<span class="n">virtual</span> <span class="n">void</span> <span class="n">destroy</span><span class="p">(</span><span class="n">__ET_UNUSED</span> <span class="n">DelegateHandle</span><span class="o">*</span> <span class="n">handle</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Once the backend is ready, they can then be registered:</p>
+<p>To register the backend for AOT lowering, just simply import the backend:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.test.backend_with_compiler_demo</span> <span class="kn">import</span> <span class="n">BackendWithCompilerDemo</span>
+</pre></div>
+</div>
+<p>To register the backend for runtime, register via the <code class="docutils literal notranslate"><span class="pre">register_backend</span></code> API:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">__ET_NODISCARD</span> <span class="n">Error</span> <span class="n">register_backend</span><span class="p">(</span><span class="n">const</span> <span class="n">Backend</span><span class="o">&amp;</span> <span class="n">backend</span><span class="p">);</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="frontend-interfaces">
+<h2>Frontend interfaces<a class="headerlink" href="#frontend-interfaces" title="Permalink to this heading">¶</a></h2>
+<p>There are three flows for delegating a program to a backend:</p>
+<ol class="arabic simple">
+<li><p>Lower the whole module to a backend. This is good for testing backends and
+the preprocessing stage.</p></li>
+<li><p>Lower the whole module to a backend and compose it with another module. This
+is good for reusing lowered modules exported from other flows.</p></li>
+<li><p>Lower parts of a module according to a partitioner. This is good for
+lowering models that include both lowerable and non-lowerable nodes, and is
+the most streamlined procecss.</p></li>
+</ol>
+<section id="flow-1-lowering-the-whole-module">
+<h3>Flow 1: Lowering the whole module<a class="headerlink" href="#flow-1-lowering-the-whole-module" title="Permalink to this heading">¶</a></h3>
+<p>This flow starts from a traced graph module with Edge Dialect representation. To
+lower it, we call the following function which returns a <code class="docutils literal notranslate"><span class="pre">LoweredBackendModule</span></code>
+(more documentation on this function can be found in the Python API reference):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># defined in backend_api.py</span>
+<span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+    <span class="n">backend_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">compile_spec</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LoweredBackendModule</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Within this function, the backend’s <code class="docutils literal notranslate"><span class="pre">preprocess()</span></code> function is called which
+produces a compiled blob which will be emitted to the flatbuffer binary. The
+lowered module can be directly captured, or be put back in a parent module to be
+captured. Eventually the captured module is serialized in the flatbuffer’s model
+that can be loaded by the runtime.</p>
+<p>The following is an example of this flow:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span><span class="p">,</span> <span class="n">MethodCompileSpec</span>
+<span class="kn">import</span> <span class="nn">executorch.exir</span> <span class="k">as</span> <span class="nn">exir</span>
+<span class="kn">import</span> <span class="nn">torch</span>
+
+<span class="c1"># The submodule runs in a specific backend. In this example,  `BackendWithCompilerDemo` backend</span>
+<span class="k">class</span> <span class="nc">LowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+<span class="c1"># Convert the lowerable module to Edge IR Representation</span>
+<span class="n">to_be_lowered</span> <span class="o">=</span> <span class="n">LowerableSubModel</span><span class="p">()</span>
+<span class="n">example_input</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="p">)</span>
+<span class="n">to_be_lowered_exir_submodule</span> <span class="o">=</span> <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">to_be_lowered</span><span class="p">,</span> <span class="n">example_input</span><span class="p">)</span><span class="o">.</span><span class="n">to_edge</span><span class="p">()</span>
+
+<span class="c1"># Import the backend implementation</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.test.backend_with_compiler_demo</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BackendWithCompilerDemo</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">lowered_module</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="s1">&#39;BackendWithCompilerDemo&#39;</span><span class="p">,</span> <span class="n">to_be_lowered_exir_submodule</span><span class="p">,</span> <span class="p">[])</span>
+</pre></div>
+</div>
+<p>We can serialize the program to a flatbuffer format by directly running:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Save the flatbuffer to a local file</span>
+<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;delegate.pte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">lowered_module</span><span class="o">.</span><span class="n">buffer</span><span class="p">())</span>
+</pre></div>
+</div>
+</section>
+<section id="flow-2-lowering-the-whole-module-and-composite">
+<h3>Flow 2: Lowering the whole module and composite<a class="headerlink" href="#flow-2-lowering-the-whole-module-and-composite" title="Permalink to this heading">¶</a></h3>
+<p>Alternatively, after flow 1, we can compose this lowered module with another
+module:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># This submodule runs in executor runtime</span>
+<span class="k">class</span> <span class="nc">NonLowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bias</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="o">=</span> <span class="n">bias</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+
+
+<span class="c1"># The composite module, including lower part and non-lowerpart</span>
+<span class="k">class</span> <span class="nc">CompositeModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">non_lowerable</span> <span class="o">=</span> <span class="n">NonLowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lowerable</span> <span class="o">=</span> <span class="n">lowered_module</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowerable</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">b</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowerable</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">non_lowerable</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">ret</span>
+
+<span class="n">composite_model</span> <span class="o">=</span> <span class="n">CompositeModel</span><span class="p">()</span>
+<span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="p">)</span>
+<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">composite_model</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">to_edge</span><span class="p">()</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Save the flatbuffer to a local file</span>
+<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;delegate.pte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="flow-3-partitioning">
+<h3>Flow 3: Partitioning<a class="headerlink" href="#flow-3-partitioning" title="Permalink to this heading">¶</a></h3>
+<p>The third flow also starts from a traced graph module with Edge Dialect
+representation. To lower certain nodes in this graph module, we can use the
+overloaded <a class="reference external" href="https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/backend/backend_api.py#L39"><code class="docutils literal notranslate"><span class="pre">to_backend</span></code>
+function</a>.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+    <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">TPartitioner</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>This function takes in a <code class="docutils literal notranslate"><span class="pre">Partitioner</span></code> which adds a tag to all the nodes that
+are meant to be lowered. It will return a <code class="docutils literal notranslate"><span class="pre">partition_tags</span></code> mapping tags to
+backend names and module compile specs. The tagged nodes will then be
+partitioned and lowered to their mapped backends using Flow 1’s process.
+Available helper partitioner are documented
+<a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="std std-doc">here</span></a>. These lowered modules
+will be inserted into the top-level module and serialized.</p>
+<p>The following is an example of the flow:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
+<span class="kn">import</span> <span class="nn">executorch.exir</span> <span class="k">as</span> <span class="nn">exir</span>
+<span class="kn">import</span> <span class="nn">torch</span>
+
+<span class="k">class</span> <span class="nc">Model</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">-</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">/</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+        <span class="k">return</span> <span class="n">x</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">Model</span><span class="p">()</span>
+<span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+<span class="n">gm</span> <span class="o">=</span> <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">to_edge</span><span class="p">()</span>
+
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.test.op_partitioner_demo</span> <span class="kn">import</span> <span class="n">AddMulPartitionerDemo</span>
+<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">gm</span><span class="p">,</span> <span class="n">AddMulPartitionerDemo</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
+    <span class="n">exir</span><span class="o">.</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span><span class="n">passes</span><span class="o">=</span><span class="n">SpecPropPass</span><span class="p">())</span>
+<span class="p">)</span>
+
+<span class="c1"># Save the flatbuffer to a local file</span>
+<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;delegate.pte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="runtime">
+<h2>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h2>
+<p>The serialized flatbuffer model is loaded by the Executorch runtime. The
+preprocessed blob is directly stored in the flatbuffer, which is loaded into a
+call to the backend’s <code class="docutils literal notranslate"><span class="pre">init()</span></code> function during model initialization stage. At
+the model execution stage, the initialized handled can be executed through the
+backend’s <code class="docutils literal notranslate"><span class="pre">execute()</span></code> function.</p>
+<p>To run the real model with executor:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">&gt;</span> <span class="p">:</span><span class="n">warning</span><span class="p">:</span> <span class="o">**</span><span class="n">pybind</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">ready</span> <span class="k">for</span> <span class="n">partner</span> <span class="n">preview</span><span class="o">**</span><span class="p">:</span> <span class="n">please</span> <span class="n">use</span> <span class="n">size_test_all_ops</span> <span class="ow">or</span> <span class="n">executor_runner</span> <span class="n">cpp</span> <span class="n">binary</span> <span class="k">for</span> <span class="n">now</span><span class="o">.</span> <span class="n">pybind</span> <span class="n">to</span> <span class="n">run</span> <span class="n">executor</span> <span class="n">will</span> <span class="n">be</span> <span class="n">ready</span> <span class="n">before</span> <span class="n">MVP</span>
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Load the program with executor runtime</span>
+<span class="n">executorch_module</span> <span class="o">=</span> <span class="n">_load_for_executorch_from_buffer</span><span class="p">(</span><span class="n">flatbuffer</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;model_inputs: &quot;</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span>
+<span class="c1"># Execute the program</span>
+<span class="n">model_outputs</span> <span class="o">=</span> <span class="n">executorch_module</span><span class="o">.</span><span class="n">forward</span><span class="p">([</span><span class="o">*</span><span class="n">model_inputs</span><span class="p">])</span>
+</pre></div>
+</div>
+</section>
+<section id="error-messages">
+<h2>Error Messages<a class="headerlink" href="#error-messages" title="Permalink to this heading">¶</a></h2>
+<p>If there is an error in the backend, for example, if there is any operator that
+is not supported by the backend, a debug handler can be thrown. It can surface
+back to the Python frontend with the source code information. Below is an
+example where the <code class="docutils literal notranslate"><span class="pre">tan</span></code> operator is not supported in <code class="docutils literal notranslate"><span class="pre">BackendWithCompilerDemo</span></code>
+backend.</p>
+<p>A problematic program:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">TanModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tan</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+<span class="n">tan_module</span> <span class="o">=</span> <span class="n">TanModule</span><span class="p">()</span>
+<span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),)</span>
+<span class="n">edgeir_m</span> <span class="o">=</span> <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">tan_module</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">to_edge</span><span class="p">()</span>
+<span class="n">lowered_tan_module</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span>
+    <span class="s2">&quot;BackendWithCompilerDemo&quot;</span><span class="p">,</span> <span class="n">edgeir_m</span><span class="p">,</span> <span class="p">[]</span>
+<span class="p">)</span>
+
+<span class="k">class</span> <span class="nc">CompositeModelWithTan</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lowered_tan</span> <span class="o">=</span> <span class="n">lowered_tan_module</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">output_from_submodule</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowered_tan</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">output_from_submodule</span>
+
+<span class="n">composite_model_with_tan</span> <span class="o">=</span> <span class="n">CompositeModelWithTan</span><span class="p">()</span>
+<span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),)</span>
+
+<span class="n">composite_model_with_tan</span><span class="p">(</span><span class="o">*</span><span class="n">model_inputs</span><span class="p">)</span>
+
+<span class="n">exec_prog</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">composite_model_with_tan</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">to_edge</span><span class="p">()</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+<span class="p">)</span>
+
+<span class="n">buff</span> <span class="o">=</span> <span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span>
+<span class="n">model_inputs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="c1"># Load and init the program in executor</span>
+<span class="n">executorch_module</span> <span class="o">=</span> <span class="n">_load_for_executorch_from_buffer</span><span class="p">(</span><span class="n">buff</span><span class="p">)</span>
+
+<span class="c1"># Expect to throw with debug handler here.</span>
+<span class="n">model_outputs</span> <span class="o">=</span> <span class="n">executorch_module</span><span class="o">.</span><span class="n">forward</span><span class="p">([</span><span class="n">model_inputs</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>It’s expected to capture debug handler like <code class="docutils literal notranslate"><span class="pre">instruction</span> <span class="pre">demo::tan_default&lt;debug_handle&gt;1</span> <span class="pre">is</span> <span class="pre">not</span> <span class="pre">supported,</span> <span class="pre">debug</span> <span class="pre">handler</span> <span class="pre">is:</span> <span class="pre">1</span></code></p>
+</section>
+<section id="common-questions">
+<h2>Common Questions<a class="headerlink" href="#common-questions" title="Permalink to this heading">¶</a></h2>
+<p><strong>1. How can we get data in backend.preprocess?</strong></p>
+<p>The graph module being preprocessed is a lifted graph, this means that static
+data like weights and biases are supplied as inputs to the graph. However, we
+can access the weights and biases ahead-of-time through the exported program. To
+access these parameters from a given node, we can use the function <code class="docutils literal notranslate"><span class="pre">get_params</span></code>
+provided in  <code class="docutils literal notranslate"><span class="pre">torch/_export/utils.py</span></code></p>
+<p><strong>2. How can we embed the data (like weight/bias) to the backend?</strong></p>
+<p>It’s common that backend have some ways optimize the const data. In this case,
+we’d need to tag the placeholder node which are also the state in the
+partitioner, and during backend.preprocess, we can follow the description in the
+first question to get the weight.</p>
+<p><strong>3. How can we run the lowered module in Python with the specific backend?</strong></p>
+<p>We haven’t added the support yet but that’s the plan!</p>
+<p><strong>4. Should we expect to see <code class="docutils literal notranslate"><span class="pre">get_attr</span></code> nodes in the edge dialect program?</strong></p>
+<p><code class="docutils literal notranslate"><span class="pre">get_attr</span></code> nodes will only show up for submodules used for control flow or
+delegation. It won’t hold any data.</p>
+<p><strong>5. Can we delegate to multiple backends?</strong></p>
+<p>Yes! There are two ways to do this:</p>
+<p><em>Option 1: Run to_backend multiple times for different backends</em></p>
+<p>If we have two backends, backend_1 and backend_2, and they have their own
+parititioners: backend_1_parititioner and backend_2_partitioner, we can run it
+like:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Will first lower nodes to backend_1 depending on the backend_1_parititioner depending on partitioner algorithm</span>
+<span class="n">exported_program_backend_1</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">exported_program</span><span class="p">,</span> <span class="n">backend_1_parititioner</span><span class="p">)</span>
+<span class="c1"># For the rest of nodes, they will be lowered to backend_2 depending on backend_2_parititioner</span>
+<span class="n">exported_program_backend_1_and_2</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">exported_program_backend_1</span><span class="p">,</span> <span class="n">backend_2_parititioner</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>A more conrete example be found
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/backend/test/demos/test_xnnpack_qnnpack.py">here</a>.
+In this example,
+qnnpack is one backend and xnnpack is another backend. We haven’t open-sourced
+these two backends delegates yet, and this example won’t run out of box. It can
+be used as a reference to see how it can be done.</p>
+<p>This option is easy to try becuase usually all backends will implement their own
+parititioner. However this option may get different results if we change the
+order of to_backend call. If we want to have a better control on the nodes, like
+which backend they should go, option 2 is better.</p>
+<p><em>Option 2: Have a partitioner which partitions for different backends</em></p>
+<p>Another option is to create a customized partitioner, say partitioner
+<code class="docutils literal notranslate"><span class="pre">backend_1_2_partitioner</span></code>, and inside the partitioner logic,</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Backend_1_2_Partitioner</span><span class="p">(</span><span class="n">Partitioner</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Partitions all add/mul nodes regardless of order for Backend2</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_1</span> <span class="o">=</span> <span class="n">DelegationSpec</span><span class="p">(</span><span class="s2">&quot;Backend1&quot;</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_2</span> <span class="o">=</span> <span class="n">DelegationSpec</span><span class="p">(</span><span class="s2">&quot;Backend2&quot;</span><span class="p">,</span> <span class="p">[])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">partition_tags</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">def</span> <span class="nf">partition</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">edge_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
+
+        <span class="c1"># Tag all nodes in the first partiton to backend 1</span>
+        <span class="n">node_to_backend_1</span> <span class="o">=</span> <span class="o">...</span> <span class="c1"># some logic to select the nodes from the graph</span>
+        <span class="n">delegation_tag</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;backend2_tag</span><span class="si">{</span><span class="n">partitioner_1</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_tag</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">partition_tags</span><span class="p">[</span><span class="n">delegation_tag</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_1</span>
+
+        <span class="c1"># Tag all nodes in the first partiton to backend 2</span>
+        <span class="n">node_to_backend_2</span> <span class="o">=</span> <span class="o">...</span> <span class="c1"># some logic to select the nodes from the graph</span>
+        <span class="n">delegation_tag</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;backend2_tag</span><span class="si">{</span><span class="n">partitioner_2</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegation_tag</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">partition_tags</span><span class="p">[</span><span class="n">delegation_tag</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">delegation_spec_2</span>
+        <span class="k">return</span> <span class="n">edge_graph_module</span>
+</pre></div>
+</div>
+<p><strong>6. Is there an easy way to write a partitioner?</strong></p>
+<p>We provide some helper partitioners
+<a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="std std-doc">here</span></a> to make it easy to find
+nodes from decomposed operators.</p>
+</section>
 </section>
 
 
@@ -427,7 +813,23 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Delegate and Partitioner</a></li>
+<li><a class="reference internal" href="#">Backend and Delegate</a><ul>
+<li><a class="reference internal" href="#backend-interfaces">Backend interfaces</a><ul>
+<li><a class="reference internal" href="#ahead-of-time-preprocessing">Ahead-of-Time Preprocessing</a></li>
+<li><a class="reference internal" href="#runtime-initialization-and-execution">Runtime Initialization and Execution</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#frontend-interfaces">Frontend interfaces</a><ul>
+<li><a class="reference internal" href="#flow-1-lowering-the-whole-module">Flow 1: Lowering the whole module</a></li>
+<li><a class="reference internal" href="#flow-2-lowering-the-whole-module-and-composite">Flow 2: Lowering the whole module and composite</a></li>
+<li><a class="reference internal" href="#flow-3-partitioning">Flow 3: Partitioning</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#runtime">Runtime</a></li>
+<li><a class="reference internal" href="#error-messages">Error Messages</a></li>
+<li><a class="reference internal" href="#common-questions">Common Questions</a></li>
+</ul>
+</li>
 </ul>
 
             </div>
