@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/util/bundled_program_verification.h>
+#include <executorch/bundled_program/runtime/bundled_program_verification.h>
 
 #include <cmath>
 #include <cstddef>

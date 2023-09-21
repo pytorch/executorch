@@ -48,7 +48,7 @@ def define_common_targets():
                 "//executorch/runtime/executor/test:test_backend_with_delegate_mapping" + aten_suffix,
                 "//executorch/runtime/executor:program" + aten_suffix,
                 "//executorch/sdk/etdump:etdump",
-                "//executorch/util:bundled_program_verification" + aten_suffix,
+                "//executorch/bundled_program/runtime:lib" + aten_suffix,
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/util:util" + aten_suffix,
