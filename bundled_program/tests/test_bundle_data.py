@@ -41,19 +41,21 @@ class TestBundle(unittest.TestCase):
                 self.assertEqual(program_element.val.bool_val, config_element)
 
     def test_bundled_program(self) -> None:
-        program, bundled_config = get_common_program()
+        program, method_test_suites = get_common_program()
 
-        bundled_program = create_bundled_program(program, bundled_config)
+        bundled_program = create_bundled_program(program, method_test_suites)
+
+        method_test_suites = sorted(method_test_suites, key=lambda t: t.method_name)
 
         for plan_id in range(len(program.execution_plan)):
-            bundled_plan_test = bundled_program.execution_plan_tests[plan_id]
-            config_plan_test = bundled_config.execution_plan_tests[plan_id]
+            bundled_plan_test = bundled_program.method_test_suites[plan_id]
+            method_test_suite = method_test_suites[plan_id]
 
             self.assertEqual(
-                len(bundled_plan_test.test_sets), len(config_plan_test.test_sets)
+                len(bundled_plan_test.test_cases), len(method_test_suite.test_cases)
             )
             for bundled_program_ioset, bundled_config_ioset in zip(
-                bundled_plan_test.test_sets, config_plan_test.test_sets
+                bundled_plan_test.test_cases, method_test_suite.test_cases
             ):
                 self.assertIOsetDataEqual(
                     bundled_program_ioset.inputs, bundled_config_ioset.inputs
@@ -66,17 +68,17 @@ class TestBundle(unittest.TestCase):
         self.assertEqual(bundled_program.program, _serialize_pte_binary(program))
 
     def test_bundled_miss_methods(self) -> None:
-        program, bundled_config = get_common_program()
+        program, method_test_suites = get_common_program()
 
         # only keep the testcases for the first method to mimic the case that user only creates testcases for the first method.
-        bundled_config.execution_plan_tests = bundled_config.execution_plan_tests[:1]
+        method_test_suites = method_test_suites[:1]
 
-        _ = create_bundled_program(program, bundled_config)
+        _ = create_bundled_program(program, method_test_suites)
 
     def test_bundled_wrong_method_name(self) -> None:
-        program, bundled_config = get_common_program()
+        program, method_test_suites = get_common_program()
 
-        bundled_config.execution_plan_tests[-1].method_name = "wrong_method_name"
+        method_test_suites[-1].method_name = "wrong_method_name"
         self.assertRaises(
-            AssertionError, create_bundled_program, program, bundled_config
+            AssertionError, create_bundled_program, program, method_test_suites
         )
