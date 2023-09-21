@@ -8,6 +8,9 @@ import ctypes
 import typing
 from typing import Dict, List, Type
 
+import executorch.bundled_program.schema as bp_schema
+import executorch.exir.schema as core_schema
+
 import torch
 import torch.fx
 from executorch.bundled_program.config import (
@@ -15,39 +18,24 @@ from executorch.bundled_program.config import (
     ConfigExecutionPlanTest,
     ConfigValue,
 )
-from executorch.bundled_program.schema import (
-    BundledBool,
-    BundledDouble,
-    BundledExecutionPlanTest,
-    BundledInt,
-    BundledIOSet,
-    BundledProgram,
-    BundledTensor,
-    BundledValue,
-)
+
 from executorch.bundled_program.version import BUNDLED_PROGRAM_SCHEMA_VERSION
 from executorch.exir._serialize import _serialize_pte_binary
-from executorch.exir.schema import (
-    Bool,
-    Double,
-    ExecutionPlan,
-    Int,
-    KernelTypes,
-    Program,
-    Tensor,
-)
+
 from executorch.exir.tensor import get_scalar_type, scalar_type_enum, TensorSpec
 
 # pyre-ignore
-supported_program_type_table: Dict[Type[KernelTypes], ConfigValue] = {
-    Tensor: torch.Tensor,
-    Int: int,
-    Double: float,
-    Bool: bool,
+supported_program_type_table: Dict[Type[core_schema.KernelTypes], ConfigValue] = {
+    core_schema.Tensor: torch.Tensor,
+    core_schema.Int: int,
+    core_schema.Double: float,
+    core_schema.Bool: bool,
 }
 
 
-def emit_bundled_tensor(spec: TensorSpec, bundled_values: List[BundledValue]) -> None:
+def emit_bundled_tensor(
+    spec: TensorSpec, bundled_values: List[bp_schema.Value]
+) -> None:
     # QuantizedSchema in tensor has deprecated and may not be used anymore.
     # So here we don't emit it.
 
@@ -64,8 +52,8 @@ def emit_bundled_tensor(spec: TensorSpec, bundled_values: List[BundledValue]) ->
         tensor_data: bytes = bytes(spec_array)
 
     bundled_values.append(
-        BundledValue(
-            val=BundledTensor(
+        bp_schema.Value(
+            val=bp_schema.Tensor(
                 scalar_type=scalar_type_enum(spec.dtype),
                 sizes=spec.shape,
                 data=tensor_data,
@@ -75,18 +63,20 @@ def emit_bundled_tensor(spec: TensorSpec, bundled_values: List[BundledValue]) ->
     )
 
 
-def emit_prim(val: ConfigValue, bundled_values: List[BundledValue]):
+def emit_prim(val: ConfigValue, bundled_values: List[bp_schema.Value]):
     if type(val) == int:
-        bundled_values.append(BundledValue(val=BundledInt(int_val=val)))
+        bundled_values.append(bp_schema.Value(val=bp_schema.Int(int_val=val)))
     elif type(val) == bool:
-        bundled_values.append(BundledValue(val=BundledBool(bool_val=val)))
+        bundled_values.append(bp_schema.Value(val=bp_schema.Bool(bool_val=val)))
     elif type(val) == float:
-        bundled_values.append(BundledValue(val=BundledDouble(double_val=val)))
+        bundled_values.append(bp_schema.Value(val=bp_schema.Double(double_val=val)))
     else:
         assert 0, "Unsupported primitive type received."
 
 
-def get_program_input(program: Program, plan_idx: int, input_idx: int) -> KernelTypes:
+def get_program_input(
+    program: core_schema.Program, plan_idx: int, input_idx: int
+) -> core_schema.KernelTypes:
     return (
         program.execution_plan[plan_idx]
         .values[program.execution_plan[plan_idx].inputs[input_idx]]
@@ -94,7 +84,9 @@ def get_program_input(program: Program, plan_idx: int, input_idx: int) -> Kernel
     )
 
 
-def get_program_output(program: Program, plan_idx: int, output_idx: int) -> KernelTypes:
+def get_program_output(
+    program: core_schema.Program, plan_idx: int, output_idx: int
+) -> core_schema.KernelTypes:
     return (
         program.execution_plan[plan_idx]
         .values[program.execution_plan[plan_idx].outputs[output_idx]]
@@ -102,20 +94,28 @@ def get_program_output(program: Program, plan_idx: int, output_idx: int) -> Kern
     )
 
 
-def get_input_dtype(program: Program, plan_idx: int, input_idx: int) -> torch.dtype:
+def get_input_dtype(
+    program: core_schema.Program, plan_idx: int, input_idx: int
+) -> torch.dtype:
     # pyre-fixme[16]: now assert all input and outputs is in tenor type. Support multuple datatypes in the future.
     return get_scalar_type(get_program_input(program, plan_idx, input_idx).scalar_type)
 
 
-def get_input_type(program: Program, plan_idx: int, input_idx: int) -> type:
-    type_lookup = {Int: int, Bool: bool, Double: float}
+def get_input_type(program: core_schema.Program, plan_idx: int, input_idx: int) -> type:
+    type_lookup = {
+        core_schema.Int: int,
+        core_schema.Bool: bool,
+        core_schema.Double: float,
+    }
     # pyre-fixme[6]: Incompatible parameter type [6]: In call `dict.__getitem__`, for 1st positional only parameter
-    # expected `Type[Union[Bool, Double, Int]]` but got `Type[Union[Bool, Double, Int, Tensor, BoolList, DoubleList,
+    # expected `Type[Union[core_schema.Bool, core_schema.Double, core_schema.Int]]` but got `Type[Union[core_schema.Bool, core_schema.Double, core_schema.Int, core_schema.Tensor, BoolList, DoubleList,
     # IntList, Null, OptionalTensorList, String, TensorList]]`.
     return type_lookup[type(get_program_input(program, plan_idx, input_idx))]
 
 
-def get_output_dtype(program: Program, plan_idx: int, output_idx: int) -> torch.dtype:
+def get_output_dtype(
+    program: core_schema.Program, plan_idx: int, output_idx: int
+) -> torch.dtype:
     return get_scalar_type(
         # pyre-ignore[16]: now assert all outputs is in tensor type.
         get_program_output(program, plan_idx, output_idx).scalar_type
@@ -123,7 +123,7 @@ def get_output_dtype(program: Program, plan_idx: int, output_idx: int) -> torch.
 
 
 def assert_valid_bundle(
-    program: Program,
+    program: core_schema.Program,
     bundled_config: BundledConfig,
 ) -> None:
     """Check if the program and BundledConfig matches each other.
@@ -163,7 +163,7 @@ def assert_valid_bundle(
         plan_test: ConfigExecutionPlanTest = bundled_config.execution_plan_tests[
             bp_plan_id
         ]
-        plan: ExecutionPlan = program.execution_plan[program_plan_id]
+        plan: core_schema.ExecutionPlan = program.execution_plan[program_plan_id]
 
         # User does not provide testcases for current plan, skip it
         if plan_test.method_name > plan.name:
@@ -185,7 +185,8 @@ def assert_valid_bundle(
         # Check if the type of Program's output is supported
         for index in range(len(plan.outputs)):
             assert (
-                type(get_program_output(program, program_plan_id, index)) == Tensor
+                type(get_program_output(program, program_plan_id, index))
+                == core_schema.Tensor
             ), "Only supports program with output in Tensor type."
 
         # Check if the I/O sets of each execution plan test match program's requirement.
@@ -257,10 +258,10 @@ def assert_valid_bundle(
 
 
 def create_bundled_program(
-    program: Program,
+    program: core_schema.Program,
     bundled_config: BundledConfig,
-) -> BundledProgram:
-    """Create BundledProgram by bundling the given program and bundled_config together.
+) -> bp_schema.BundledProgram:
+    """Create bp_schema.BundledProgram by bundling the given program and bundled_config together.
 
     Args:
         program: The program to be bundled.
@@ -269,16 +270,16 @@ def create_bundled_program(
 
     assert_valid_bundle(program, bundled_config)
 
-    execution_plan_tests: List[BundledExecutionPlanTest] = []
+    execution_plan_tests: List[bp_schema.BundledExecutionPlanTest] = []
 
     # Emit data and metadata of bundled tensor
     for plan_test in bundled_config.execution_plan_tests:
-        test_sets: List[BundledIOSet] = []
+        test_sets: List[bp_schema.BundledIOSet] = []
 
         # emit I/O sets for each execution plan test
         for i in range(len(plan_test.test_sets)):
-            inputs: List[BundledValue] = []
-            expected_outputs: List[BundledValue] = []
+            inputs: List[bp_schema.Value] = []
+            expected_outputs: List[bp_schema.Value] = []
 
             cur_plan_test_inputs = plan_test.test_sets[i].inputs
             cur_plan_test_expected_outputs = plan_test.test_sets[i].expected_outputs
@@ -303,19 +304,19 @@ def create_bundled_program(
                     expected_outputs,
                 )
             test_sets.append(
-                BundledIOSet(inputs=inputs, expected_outputs=expected_outputs)
+                bp_schema.BundledIOSet(inputs=inputs, expected_outputs=expected_outputs)
             )
 
         # emit the whole execution plan test
         execution_plan_tests.append(
-            BundledExecutionPlanTest(
+            bp_schema.BundledExecutionPlanTest(
                 method_name=plan_test.method_name, test_sets=test_sets
             )
         )
 
     program_bytes: bytes = _serialize_pte_binary(program)
 
-    return BundledProgram(
+    return bp_schema.BundledProgram(
         version=BUNDLED_PROGRAM_SCHEMA_VERSION,
         execution_plan_tests=execution_plan_tests,
         program=program_bytes,
