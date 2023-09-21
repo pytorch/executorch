@@ -109,3 +109,13 @@ must work with threading**
   common sources of binary bloat. Some use of templates is fine (e.g. an
   `ArrayRef<T>`, or code that handles multiple `ScalarType` types), but for the
   most part avoid them if possible.
+
+## For Delegate Authors
+
+### Dependencies Management for a Delegate
+
+* Use [this](/docs/website/docs/contributors/delegates.md)
+guide when integrating your delegate with Executorch.
+
+* Refer to [this](/docs/website/docs/contributors/delegates_and_dependencies.md)
+set of guidelines when including a 3p depenency for your delegate.
