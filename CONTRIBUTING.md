@@ -112,8 +112,6 @@ must work with threading**
 
 ## For Delegate Authors
 
-### Dependencies Management for a Delegate
-
 * Use [this](/docs/website/docs/contributors/delegates.md)
 guide when integrating your delegate with Executorch.
 
