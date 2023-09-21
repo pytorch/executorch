@@ -55,6 +55,7 @@ def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_
     m = prepare_pt2e(m, quantizer)
     # calibration
     after_prepare_result = m(*example_inputs)
+    logging.info(f"prepare_pt2e: {m}")
     m = convert_pt2e(m)
     after_quant_result = m(*example_inputs)
 
@@ -66,11 +67,18 @@ def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_
         m_copy, qconfig_mapping, example_inputs, backend_config=backend_config
     )
     after_prepare_result_fx = m_fx(*example_inputs)
+    logging.info(f"prepare_fx: {m_fx}")
     m_fx = _convert_to_reference_decomposed_fx(m_fx, backend_config=backend_config)
     after_quant_result_fx = m_fx(*example_inputs)
 
     # 3. compare results
+    if model_name == "ic3":
+        # we don't want to compare results of inception_v3 with fx, since mul op with Scalar
+        # input is quantized differently in fx, and we don't want to replicate the behavior
+        # in XNNPACKQuantizer
+        return
     if model_name == "dl3":
+        # dl3 output format: {"out": a, "aux": b}
         after_prepare_result = after_prepare_result["out"]
         after_prepare_result_fx = after_prepare_result_fx["out"]
         after_quant_result = after_quant_result["out"]
