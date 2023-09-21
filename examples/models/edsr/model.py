@@ -19,9 +19,9 @@ class EdsrModel(EagerModelBase):
 
     def get_eager_model(self) -> torch.nn.Module:
         logging.info("Loading edsr model")
-        mv2 = edsr_r16f64(2, True)
+        m = edsr_r16f64(2, True)
         logging.info("Loaded edsr model")
-        return mv2
+        return m
 
     def get_example_inputs(self):
         tensor_size = (1, 3, 224, 224)
