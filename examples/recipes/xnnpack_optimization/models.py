@@ -24,4 +24,5 @@ MODEL_NAME_TO_OPTIONS = {
     ),  # TODO[T163161310]: takes a long time to export to exec prog and save inception_v4 quantized model
     "w2l": OptimizationOptions(False, True),
     "dl3": OptimizationOptions(True, False),
+    "vit": OptimizationOptions(True, False),
 }
