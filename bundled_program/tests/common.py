@@ -11,7 +11,8 @@ from typing import List, Tuple, Union
 
 import executorch.exir as exir
 import torch
-from executorch.bundled_program.config import BundledConfig
+from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.exir import CaptureConfig
 from executorch.exir.schema import Program
 
 # @manual=fbsource//third-party/pypi/typing-extensions:typing-extensions
@@ -77,7 +78,7 @@ def get_rand_input_values(
     n_int: int,
     dtype: torch.dtype,
     n_sets_per_plan_test: int,
-    n_execution_plan_tests: int,
+    n_method_test_suites: int,
 ) -> List[List[InputValues]]:
     return [
         [
@@ -85,7 +86,7 @@ def get_rand_input_values(
             + [DEFAULT_INT_INPUT for _ in range(n_int)]
             for _ in range(n_sets_per_plan_test)
         ]
-        for _ in range(n_execution_plan_tests)
+        for _ in range(n_method_test_suites)
     ]
 
 
@@ -94,40 +95,39 @@ def get_rand_output_values(
     sizes: List[List[int]],
     dtype: torch.dtype,
     n_sets_per_plan_test: int,
-    n_execution_plan_tests: int,
+    n_method_test_suites: int,
 ) -> List[List[OutputValues]]:
     return [
         [
             [(torch.rand(*sizes[i]) - 0.5).to(dtype) for i in range(n_tensors)]
             for _ in range(n_sets_per_plan_test)
         ]
-        for _ in range(n_execution_plan_tests)
+        for _ in range(n_method_test_suites)
     ]
 
 
-def get_rand_method_names(n_execution_plan_tests: int) -> List[str]:
+def get_rand_method_names(n_method_test_suites: int) -> List[str]:
     unique_strings = set()
-    while len(unique_strings) < n_execution_plan_tests:
+    while len(unique_strings) < n_method_test_suites:
         rand_str = "".join(random.choices(string.ascii_letters, k=5))
         if rand_str not in unique_strings:
             unique_strings.add(rand_str)
     return list(unique_strings)
 
 
-# TODO(T143955558): make n_int and metadatas as its input;
-def get_random_config(
+def get_random_test_suites(
     n_model_inputs: int,
     model_input_sizes: List[List[int]],
     n_model_outputs: int,
     model_output_sizes: List[List[int]],
     dtype: torch.dtype,
     n_sets_per_plan_test: int,
-    n_execution_plan_tests: int,
+    n_method_test_suites: int,
 ) -> Tuple[
     List[str],
     List[List[InputValues]],
     List[List[OutputValues]],
-    BundledConfig,
+    List[MethodTestSuite],
 ]:
     """Helper function to generate config filled with random inputs and expected outputs.
 
@@ -139,63 +139,99 @@ def get_random_config(
 
     """
 
-    rand_method_names = get_rand_method_names(n_execution_plan_tests)
+    rand_method_names = get_rand_method_names(n_method_test_suites)
 
-    rand_inputs = get_rand_input_values(
+    rand_inputs_per_program = get_rand_input_values(
         n_tensors=n_model_inputs,
         sizes=model_input_sizes,
         n_int=1,
         dtype=dtype,
         n_sets_per_plan_test=n_sets_per_plan_test,
-        n_execution_plan_tests=n_execution_plan_tests,
+        n_method_test_suites=n_method_test_suites,
     )
 
-    rand_expected_outputs = get_rand_output_values(
+    rand_expected_output_per_program = get_rand_output_values(
         n_tensors=n_model_outputs,
         sizes=model_output_sizes,
         dtype=dtype,
         n_sets_per_plan_test=n_sets_per_plan_test,
-        n_execution_plan_tests=n_execution_plan_tests,
+        n_method_test_suites=n_method_test_suites,
     )
+
+    rand_method_test_suites: List[MethodTestSuite] = []
+
+    for (
+        rand_method_name,
+        rand_inputs_per_method,
+        rand_expected_output_per_method,
+    ) in zip(
+        rand_method_names, rand_inputs_per_program, rand_expected_output_per_program
+    ):
+        rand_method_test_cases: List[MethodTestCase] = []
+        for rand_inputs, rand_expected_outputs in zip(
+            rand_inputs_per_method, rand_expected_output_per_method
+        ):
+            rand_method_test_cases.append(
+                MethodTestCase(
+                    inputs=rand_inputs, expected_outputs=rand_expected_outputs
+                )
+            )
+
+        rand_method_test_suites.append(
+            MethodTestSuite(
+                method_name=rand_method_name, test_cases=rand_method_test_cases
+            )
+        )
 
     return (
         rand_method_names,
-        rand_inputs,
-        rand_expected_outputs,
-        BundledConfig(rand_method_names, rand_inputs, rand_expected_outputs),
+        rand_inputs_per_program,
+        rand_expected_output_per_program,
+        rand_method_test_suites,
     )
 
 
-def get_random_config_with_eager_model(
+def get_random_test_suites_with_eager_model(
     eager_model: torch.nn.Module,
     method_names: List[str],
     n_model_inputs: int,
     model_input_sizes: List[List[int]],
     dtype: torch.dtype,
     n_sets_per_plan_test: int,
-) -> Tuple[List[List[InputValues]], BundledConfig]:
+) -> Tuple[List[List[InputValues]], List[MethodTestSuite]]:
     """Generate config filled with random inputs for each inference method given eager model
 
-    The details of return type is the same as get_random_config_with_rand_io_lists.
+    The details of return type is the same as get_random_test_suites_with_rand_io_lists.
     """
-    inputs = get_rand_input_values(
+    inputs_per_program = get_rand_input_values(
         n_tensors=n_model_inputs,
         sizes=model_input_sizes,
         n_int=1,
         dtype=dtype,
         n_sets_per_plan_test=n_sets_per_plan_test,
-        n_execution_plan_tests=len(method_names),
+        n_method_test_suites=len(method_names),
     )
 
-    expected_outputs = [
-        [[getattr(eager_model, m_name)(*x)] for x in inputs[i]]
-        for i, m_name in enumerate(method_names)
-    ]
+    method_test_suites: List[MethodTestSuite] = []
 
-    return inputs, BundledConfig(method_names, inputs, expected_outputs)
+    for method_name, inputs_per_method in zip(method_names, inputs_per_program):
+        method_test_cases: List[MethodTestCase] = []
+        for inputs in inputs_per_method:
+            method_test_cases.append(
+                MethodTestCase(
+                    inputs=inputs,
+                    expected_outputs=[getattr(eager_model, method_name)(*inputs)],
+                )
+            )
+
+        method_test_suites.append(
+            MethodTestSuite(method_name=method_name, test_cases=method_test_cases)
+        )
+
+    return inputs_per_program, method_test_suites
 
 
-def get_common_program() -> Tuple[Program, BundledConfig]:
+def get_common_program() -> Tuple[Program, List[MethodTestSuite]]:
     """Helper function to generate a sample BundledProgram with its config."""
     eager_model = SampleModel()
     # Trace to FX Graph.
@@ -214,7 +250,7 @@ def get_common_program() -> Tuple[Program, BundledConfig]:
         .to_executorch()
         .program
     )
-    _, bundled_config = get_random_config_with_eager_model(
+    _, method_test_suites = get_random_test_suites_with_eager_model(
         eager_model=eager_model,
         method_names=eager_model.method_names,
         n_model_inputs=2,
@@ -222,4 +258,4 @@ def get_common_program() -> Tuple[Program, BundledConfig]:
         dtype=torch.int32,
         n_sets_per_plan_test=10,
     )
-    return program, bundled_config
+    return program, method_test_suites

@@ -20,7 +20,6 @@ import executorch.exir.control_flow as control_flow
 import executorch.extension.pytree as pytree
 
 import torch
-from executorch.bundled_program.config import BundledConfig
 
 from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
@@ -62,10 +61,10 @@ assert kernel_mode is not None
 
 class BundledProgramE2ETest(unittest.TestCase):
     def test_sample_model_e2e(self):
-        program, bundled_config = get_common_program()
+        program, method_test_suites = get_common_program()
         eager_model = SampleModel()
 
-        bundled_program = create_bundled_program(program, bundled_config)
+        bundled_program = create_bundled_program(program, method_test_suites)
 
         bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
             bundled_program

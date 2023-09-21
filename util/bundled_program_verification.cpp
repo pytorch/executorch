@@ -34,8 +34,7 @@ namespace {
 #define kMaxDim 16
 
 // Create an aten tensor with same content using bundled tensor
-at::Tensor tensor_like(
-    bundled_program_flatbuffer::Tensor* bundled_tensor) {
+at::Tensor tensor_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
   ET_CHECK(bundled_tensor->sizes()->size() <= kMaxDim);
   int64_t ret_t_sizes[kMaxDim];
 
@@ -167,12 +166,13 @@ bool tensors_are_close(
   }
 }
 
-Result<bundled_program_flatbuffer::BundledExecutionPlanTest*> get_method_test(
+Result<bundled_program_flatbuffer::BundledMethodTestSuite*>
+get_method_test_suite(
     const bundled_program_flatbuffer::BundledProgram* bundled_program,
     const char* method_name) {
-  auto method_tests = bundled_program->execution_plan_tests();
-  for (size_t i = 0; i < method_tests->size(); i++) {
-    auto m_test = method_tests->GetMutableObject(i);
+  auto method_test_suites = bundled_program->method_test_suites();
+  for (size_t i = 0; i < method_test_suites->size(); i++) {
+    auto m_test = method_test_suites->GetMutableObject(i);
     if (std::strcmp(m_test->method_name()->c_str(), method_name) == 0) {
       return m_test;
     }
@@ -196,7 +196,7 @@ __ET_NODISCARD Error LoadBundledInput(
       NotSupported,
       "The input buffer should be a bundled program.");
 
-  auto method_test = get_method_test(
+  auto method_test = get_method_test_suite(
       bundled_program_flatbuffer::GetBundledProgram(bundled_program_ptr),
       method_name);
 
@@ -205,7 +205,7 @@ __ET_NODISCARD Error LoadBundledInput(
   }
 
   auto bundled_inputs =
-      method_test.get()->test_sets()->Get(testset_idx)->inputs();
+      method_test.get()->test_cases()->Get(testset_idx)->inputs();
 
   for (size_t input_idx = 0; input_idx < method.inputs_size(); input_idx++) {
     auto bundled_input = bundled_inputs->GetMutableObject(input_idx);
@@ -291,7 +291,7 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
       NotSupported,
       "The input buffer should be a bundled program.");
 
-  auto method_test = get_method_test(
+  auto method_test = get_method_test_suite(
       bundled_program_flatbuffer::GetBundledProgram(bundled_program_ptr),
       method_name);
 
@@ -300,7 +300,7 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
   }
 
   auto bundled_expected_outputs =
-      method_test.get()->test_sets()->Get(testset_idx)->expected_outputs();
+      method_test.get()->test_cases()->Get(testset_idx)->expected_outputs();
 
   for (size_t output_idx = 0; output_idx < method.outputs_size();
        output_idx++) {
