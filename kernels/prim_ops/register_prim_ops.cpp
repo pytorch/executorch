@@ -210,6 +210,17 @@ static Kernel prim_ops[] = {
           BOOLEAN_ET_PRIM_OP(<=, stack, context);
         }),
 
+    // executorch_prim::floordiv.int(int, int) -> int
+    Kernel(
+        "executorch_prim::floordiv.int",
+        [](RuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& a = *stack[0];
+          EValue& b = *stack[1];
+          EValue& out = *stack[2];
+          out = EValue(a.toInt() / b.toInt());
+        }),
+
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
     Kernel("executorch_prim::et_copy_index.tensor", &et_copy_index),
 
