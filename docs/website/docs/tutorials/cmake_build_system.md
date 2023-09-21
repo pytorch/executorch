@@ -119,9 +119,7 @@ I 00:00:00.011709 executorch:executor_runner.cpp:210] 8.000000
 Assuming NDK is available on installed, run
 ```bash
 # Run the following lines from executorch folder
-rm -r cmake-android-out
-mkdir cmake-android-out
-cd cmake-android-out
+rm -rf cmake-android-out && mkdir cmake-android-out && cd cmake-android-out
 
 # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
 # Run `which buck2`, if it returns empty (meaning the system doesn't know where buck2 is installed), pass in pass in this flag `-DBUCK2=/path/to/buck2` pointing to buck2
@@ -161,9 +159,7 @@ git clone  https://github.com/leetal/ios-cmake.git
 
 2.  Use the tool chain provided in the repro to build the executorch library.
 ```bash
-rm -r cmake-ios-out
-mkdir cmake-ios-out
-cd cmake-ios-out
+rm -rf cmake-ios-out && mkdir cmake-ios-out && cd cmake-ios-out
 
 # change the platform accordingly, please refer to the table listed in Readme
 cmake . -G Xcode -DCMAKE_TOOLCHAIN_FILE=~/ios-cmake/ios.toolchain.cmake -DPLATFORM=SIMULATOR
