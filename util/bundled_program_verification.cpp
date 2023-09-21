@@ -35,7 +35,7 @@ namespace {
 
 // Create an aten tensor with same content using bundled tensor
 at::Tensor tensor_like(
-    bundled_program_flatbuffer::BundledTensor* bundled_tensor) {
+    bundled_program_flatbuffer::Tensor* bundled_tensor) {
   ET_CHECK(bundled_tensor->sizes()->size() <= kMaxDim);
   int64_t ret_t_sizes[kMaxDim];
 
@@ -56,7 +56,7 @@ at::Tensor tensor_like(
 #else // !USE_ATEN_LIB
 // Create a tensorimpl with same content using bundled tensor
 TensorImpl impl_like(
-    bundled_program_flatbuffer::BundledTensor* bundled_tensor,
+    bundled_program_flatbuffer::Tensor* bundled_tensor,
     MemoryAllocator* runtime_allocator) {
   ScalarType scalar_type =
       static_cast<ScalarType>(bundled_tensor->scalar_type());
@@ -218,9 +218,9 @@ __ET_NODISCARD Error LoadBundledInput(
 
     // Set e_input with bundled_input based on different types.
     switch (bundled_input->val_type()) {
-      case bundled_program_flatbuffer::BundledValueUnion::BundledTensor: {
+      case bundled_program_flatbuffer::ValueUnion::Tensor: {
         auto bundled_input_tensor =
-            static_cast<bundled_program_flatbuffer::BundledTensor*>(
+            static_cast<bundled_program_flatbuffer::Tensor*>(
                 bundled_input->mutable_val());
 
 #ifdef USE_ATEN_LIB
@@ -239,20 +239,20 @@ __ET_NODISCARD Error LoadBundledInput(
         status = method.set_input(e_input, input_idx);
         break;
       }
-      case bundled_program_flatbuffer::BundledValueUnion::BundledInt: {
-        auto bundled_input_int = bundled_input->val_as_BundledInt();
+      case bundled_program_flatbuffer::ValueUnion::Int: {
+        auto bundled_input_int = bundled_input->val_as_Int();
         e_input = EValue(bundled_input_int->int_val());
         status = method.set_input(e_input, input_idx);
         break;
       }
-      case bundled_program_flatbuffer::BundledValueUnion::BundledDouble: {
-        auto bundled_input_int = bundled_input->val_as_BundledDouble();
+      case bundled_program_flatbuffer::ValueUnion::Double: {
+        auto bundled_input_int = bundled_input->val_as_Double();
         e_input = EValue(bundled_input_int->double_val());
         status = method.set_input(e_input, input_idx);
         break;
       }
-      case bundled_program_flatbuffer::BundledValueUnion::BundledBool: {
-        auto bundled_input_int = bundled_input->val_as_BundledBool();
+      case bundled_program_flatbuffer::ValueUnion::Bool: {
+        auto bundled_input_int = bundled_input->val_as_Bool();
         e_input = EValue(bundled_input_int->bool_val());
         status = method.set_input(e_input, input_idx);
         break;
@@ -308,9 +308,9 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
         bundled_expected_outputs->GetMutableObject(output_idx);
     auto method_output = method.get_output(output_idx);
     switch (bundled_expected_output->val_type()) {
-      case bundled_program_flatbuffer::BundledValueUnion::BundledTensor: {
+      case bundled_program_flatbuffer::ValueUnion::Tensor: {
         auto bundled_expected_output_tensor =
-            static_cast<bundled_program_flatbuffer::BundledTensor*>(
+            static_cast<bundled_program_flatbuffer::Tensor*>(
                 bundled_expected_output->mutable_val());
         const auto method_output_tensor = method_output.toTensor();
 
