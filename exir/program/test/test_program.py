@@ -284,7 +284,7 @@ class TestProgramManagers(unittest.TestCase):
 
         forward_program = delegate_manager.exported_program("forward")
         self.assertEqual(
-            forward_program(torch.ones(1), torch.ones(1), torch.ones(1)),
+            forward_program(torch.ones(1), torch.ones(1)),
             torch.ones(1) + 1,  # x * y + x
         )
 
