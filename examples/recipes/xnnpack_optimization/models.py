@@ -17,13 +17,13 @@ MODEL_NAME_TO_OPTIONS = {
     "linear": OptimizationOptions(True, True),
     "add": OptimizationOptions(True, True),
     "add_mul": OptimizationOptions(True, True),
-    "mv2": OptimizationOptions(True, True),
-    "mv3": OptimizationOptions(False, True),
+    "dl3": OptimizationOptions(True, True),
     "ic3": OptimizationOptions(True, False),
-    "ic4": OptimizationOptions(
-        True, False
-    ),  # TODO[T163161310]: takes a long time to export to exec prog and save inception_v4 quantized model
+    "ic4": OptimizationOptions(True, False),
+    "mv2": OptimizationOptions(True, True),
+    "mv3": OptimizationOptions(True, True),
+    "resnet18": OptimizationOptions(True, True),
+    "resnet50": OptimizationOptions(True, True),
+    "vit": OptimizationOptions(False, True),
     "w2l": OptimizationOptions(False, True),
-    "dl3": OptimizationOptions(True, False),
-    "vit": OptimizationOptions(True, False),
 }
