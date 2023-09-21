@@ -11,7 +11,7 @@ from typing import List, Tuple, Union
 
 import executorch.exir as exir
 import torch
-from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.bundled_program.aot.config import MethodTestCase, MethodTestSuite
 from executorch.exir import CaptureConfig
 from executorch.exir.schema import Program
 

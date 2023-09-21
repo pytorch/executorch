@@ -22,8 +22,8 @@ def define_common_targets():
         deps = [
             ":linear_model",
             "//caffe2:torch",
-            "//executorch/bundled_program:config",
-            "//executorch/bundled_program:core",
+            "//executorch/bundled_program/aot:config",
+            "//executorch/bundled_program/aot:core",
             "//executorch/bundled_program/serialize:lib",
             "//executorch/exir:lib",
             "//executorch/exir/_serialize:lib",
