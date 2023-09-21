@@ -20,7 +20,7 @@
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/log.h>
-#include <executorch/schema/bundled_program_schema_generated.h>
+#include <executorch/bundled_program/runtime/schema_generated.h>
 #include <executorch/schema/program_generated.h>
 
 namespace torch {
