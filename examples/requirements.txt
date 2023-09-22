@@ -1,0 +1,1 @@
+git+https://github.com/facebookresearch/segment-anything.git@main#egg=segment-anything
