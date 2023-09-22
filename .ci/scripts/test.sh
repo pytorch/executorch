@@ -42,6 +42,7 @@ build_cmake_executor_runner() {
     && mkdir ${CMAKE_OUTPUT_DIR} \
     && cd ${CMAKE_OUTPUT_DIR} \
     && retry cmake -DBUCK2=buck2 \
+      -DCMAKE_BUILD_TYPE=Release \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
   cmake --build ${CMAKE_OUTPUT_DIR} -j4
@@ -73,6 +74,7 @@ build_cmake_xnn_executor_runner() {
     && mkdir ${CMAKE_OUTPUT_DIR} \
     && cd ${CMAKE_OUTPUT_DIR} \
     && retry cmake -DBUCK2=buck2 \
+      -DCMAKE_BUILD_TYPE=Release \
       -DEXECUTORCH_BUILD_XNNPACK=ON \
       -DREGISTER_QUANTIZED_OPS=ON \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \

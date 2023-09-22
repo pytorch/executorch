@@ -50,7 +50,7 @@ endif()
 # -Os: Optimize for size -ffunction-sections -fdata-sections: breaks function
 # and data into sections so they can be properly gc'd -s: strip symbols
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-Os -ffunction-sections -fdata-sections -s -fno-exceptions -fno-rtti")
+    "-Os -ffunction-sections -fdata-sections -s -fno-exceptions")
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
 # Option to register custom operator `my_ops::mul3` or `my_ops::mul4` or no
