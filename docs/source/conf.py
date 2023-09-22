@@ -71,7 +71,7 @@ myst_enable_extensions = [
 sphinx_gallery_conf = {
     "examples_dirs": ["tutorials_source"],
     "gallery_dirs": ["tutorials"],
-    "filename_pattern": "/tutorials/",
+    "filename_pattern": "/tutorials_source/",
     "promote_jupyter_magic": True,
     "backreferences_dir": None,
     "first_notebook_cell": ("%matplotlib inline"),
