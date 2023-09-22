@@ -44,14 +44,25 @@ cmake_minimum_required(VERSION 3.19)
 project(executorch)
 include(build/Utils.cmake)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
 # -Os: Optimize for size -ffunction-sections -fdata-sections: breaks function
-# and data into sections so they can be properly gc'd -s: strip symbols
+# and data into sections so they can be properly gc'd. -s: strip symbols
 set(CMAKE_CXX_FLAGS_RELEASE
     "-Os -ffunction-sections -fdata-sections -s -fno-exceptions -fno-rtti")
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
+
+# Option to control the building of host-only tools like `flatc`. Disabling this
+# can be helpful when cross-compiling, but the tools that would have been built
+# need to be provided directly (via, for example, FLATC_EXECUTABLE).
+option(EXECUTORCH_BUILD_HOST_TARGETS ON)
 
 # Option to register custom operator `my_ops::mul3` or `my_ops::mul4` or no
 # custom ops at all. Custom ops are defined in
@@ -60,8 +71,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 option(
   REGISTER_EXAMPLE_CUSTOM_OP
   "Register whether custom op 1 (my_ops::mul3) or custom op 2 (my_ops::mul4) \
-  or no custom op at all."
-  OFF)
+  or no custom op at all." OFF)
 
 # Option to register quantized ops with quantized kernels. See
 # kernels/quantized/CMakeLists.txt
@@ -85,12 +95,6 @@ endif()
 # Build xnn_executor_runner which depends on XNNPACK
 option(EXECUTORCH_BUILD_XNNPACK
        "Build xnn_executor_runner which depends on XNNPACK" OFF)
-
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
-endif()
 
 if(NOT BUCK2)
   set(BUCK2 buck2)
@@ -130,13 +134,21 @@ include(${EXECUTORCH_SRCS_FILE})
 #
 
 if(NOT FLATC_EXECUTABLE)
-  set(FLATC_EXECUTABLE flatc)
-  option(FLATBUFFERS_BUILD_FLATC "" ON)
-  option(FLATBUFFERS_BUILD_FLATHASH "" OFF)
-  option(FLATBUFFERS_BUILD_FLATLIB "" OFF)
-  option(FLATBUFFERS_BUILD_TESTS "" OFF)
-  option(FLATBUFFERS_INSTALL "" OFF)
-  add_subdirectory(third-party/flatbuffers)
+  if(EXECUTORCH_BUILD_HOST_TARGETS)
+    set(FLATC_EXECUTABLE flatc)
+    option(FLATBUFFERS_BUILD_FLATC "" ON)
+    option(FLATBUFFERS_BUILD_FLATHASH "" OFF)
+    option(FLATBUFFERS_BUILD_FLATLIB "" OFF)
+    option(FLATBUFFERS_BUILD_TESTS "" OFF)
+    option(FLATBUFFERS_INSTALL "" OFF)
+    add_subdirectory(third-party/flatbuffers)
+  else()
+    message(
+      FATAL_ERROR
+        "FLATC_EXECUTABLE must be set when disabling "
+        "EXECUTORCH_BUILD_HOST_TARGETS"
+    )
+  endif()
 endif()
 
 #
