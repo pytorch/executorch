@@ -39,13 +39,13 @@ Compared to the legacy Lite Interpreter, there are some major benefits:
 
 - [Setting up ExecuTorch from GitHub](/docs/website/docs/tutorials/00_setting_up_executorch.md)
     - (Optional) [Building with CMake](/docs/website/docs/tutorials/cmake_build_system.md)
-- [Exporting to Executorch](/docs/website/docs/tutorials/exporting_to_executorch.md)
+- [Exporting to ExecuTorch](/docs/website/docs/tutorials/exporting_to_executorch.md)
     - [EXIR Spec](/docs/website/docs/ir_spec/00_exir.md)
     - [Exporting manual](/docs/website/docs/export/00_export_manual.md)
     - [Quantization](/docs/website/docs/tutorials/quantization_flow.md)
     - [Delegate to a backend](/docs/website/docs/tutorials/backend_delegate.md)
     - [Profiling](/docs/website/docs/tutorials/profiling.md)
-- [Executorch Google Colab](https://colab.research.google.com/drive/1m8iU4y7CRVelnnolK3ThS2l2gBo7QnAP#scrollTo=1o2t3LlYJQY5)
+- [ExecuTorch Google Colab](https://colab.research.google.com/drive/1m8iU4y7CRVelnnolK3ThS2l2gBo7QnAP#scrollTo=1o2t3LlYJQY5)
 
 ## Directory Structure [WIP]
 
@@ -67,7 +67,7 @@ executorch
 |   ├── backend                     #  Backend delegate ahead of time APIs
 |   ├── capture                     #  Program capture.
 |   ├── dialects                    #  Op sets for various dialects in the export process.
-|   ├── emit                        #  Conversion from ExportedProgram to Executorch execution instructions.
+|   ├── emit                        #  Conversion from ExportedProgram to ExecuTorch execution instructions.
 |   ├── program                     #  Export artifacts.
 |   ├── serialize                   #  Serialize final export artifact.
 ├── extension                       #  Extensions built on top of the runtime.
@@ -90,7 +90,7 @@ executorch
 |   ├── executor                    #  Model loading, initalization, and execution.
 |   ├── kernel                      #  Kernel registration and management.
 |   ├── platform                    #  Layer between architecture specific code and user calls.
-├── schema                          #  Executorch program definition, TODO move under serialization/
+├── schema                          #  ExecuTorch program definition, TODO move under serialization/
 ├── scripts                         #  Utility scripts for size management, dependency management, etc.
 ├── sdk                             #  Model profiling, debugging, and introspection: NOT READY YET FOR OSS USE
 ├── shim                            #  Compatibility layer between OSS and Internal builds
