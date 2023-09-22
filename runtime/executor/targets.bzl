@@ -89,26 +89,3 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
         )
-
-        runtime.cxx_library(
-            name = "executor" + aten_suffix,
-            srcs = [
-                "executor.cpp",
-            ],
-            deps = [
-                "//executorch/runtime/core:core",
-                "//executorch/schema:program",
-            ],
-            exported_deps = [
-                "//executorch/runtime/platform:platform",
-                ":memory_manager",
-                ":program" + aten_suffix,
-            ],
-            exported_headers = [
-                "executor.h",
-            ],
-            visibility = [
-                "//executorch/exir/backend/test/demos/rpc/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
-        )
