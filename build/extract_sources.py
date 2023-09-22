@@ -55,7 +55,7 @@ Example config:
 
     [targets.executorch]
     buck_targets = [
-    "//runtime/executor:executor",
+    "//runtime/executor:program",
     ]
     deps = [
     "schema",

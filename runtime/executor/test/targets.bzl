@@ -57,35 +57,6 @@ def define_common_targets(is_fbcode = False):
             link_whole = True,
         )
 
-    runtime.cxx_test(
-        name = "executor_test",
-        srcs = [
-            "executor_test.cpp",
-        ],
-        deps = [
-            "//executorch/extension/pytree:pytree",
-            "//executorch/kernels/portable:generated_lib",  # @manual
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/core:evalue",
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/kernel:kernel_runtime_context",
-            "//executorch/runtime/kernel:operator_registry",
-            "//executorch/runtime/platform:platform",
-            "//executorch/test/utils:utils",
-        ],
-    )
-
-    runtime.cxx_test(
-        name = "memory_manager_test",
-        srcs = [
-            "memory_manager_test.cpp",
-        ],
-        deps = [
-            "//executorch/runtime/core:memory_allocator",
-            "//executorch/runtime/executor:memory_manager",
-        ],
-    )
-
     runtime.cxx_library(
         name = "managed_memory_manager",
         srcs = [],
@@ -128,21 +99,6 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/kernels/portable:generated_lib",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/util:util",
-            ],
-            env = modules_env,
-        )
-
-        runtime.cxx_test(
-            name = "execution_plan_test",
-            srcs = [
-                "execution_plan_test.cpp",
-            ],
-            deps = [
-                ":managed_memory_manager",
-                "//executorch/runtime/executor:executor",
-                "//executorch/util:util",
-                "//executorch/extension/data_loader:file_data_loader",
-                "//executorch/kernels/portable:generated_lib",
             ],
             env = modules_env,
         )

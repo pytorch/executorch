@@ -21,7 +21,7 @@ filters = [
 
 [targets.executorch]
 buck_targets = [
-  "//runtime/executor:executor",
+  "//runtime/executor:program",
 ]
 deps = [
   "program_schema",
