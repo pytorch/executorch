@@ -103,7 +103,7 @@ Tensor& allclose_out(
   ET_CHECK_MSG(
       out.scalar_type() == ScalarType::Bool,
       "Out tensor must be type Bool; saw type %hhd",
-      out.scalar_type());
+      static_cast<int8_t>(out.scalar_type()));
   ET_CHECK_MSG(
       out.numel() == 1,
       "Out tensor must be a single element; saw %zu elements",

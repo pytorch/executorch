@@ -289,7 +289,7 @@ inline size_t elementSize(exec_aten::ScalarType t) {
   switch (t) {
     ET_FORALL_SCALAR_TYPES(CASE_ELEMENTSIZE_CASE)
     default:
-      ET_CHECK_MSG(false, "Unknown ScalarType %hhd", t);
+      ET_CHECK_MSG(false, "Unknown ScalarType %" PRId8, static_cast<int8_t>(t));
   }
 #undef CASE_ELEMENTSIZE_CASE
 }
@@ -552,8 +552,8 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
           type != exec_aten::ScalarType::ComplexDouble &&
           type != exec_aten::ScalarType::BFloat16 &&
           type != exec_aten::ScalarType::Undefined,
-      "Invalid or unsupported ScalarType %hhd",
-      type);
+      "Invalid or unsupported ScalarType %" PRId8,
+      static_cast<int8_t>(type));
 
   size_t type_size = 0;
 #define SCALAR_TYPE_SIZE(ctype, dtype) \
@@ -564,7 +564,8 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
   switch (type) {
     ET_FORALL_SCALAR_TYPES(SCALAR_TYPE_SIZE)
     default:
-      ET_CHECK_MSG(false, "Invalid input ScalarType %hhd", type);
+      ET_CHECK_MSG(
+          false, "Invalid input ScalarType %" PRId8, static_cast<int8_t>(type));
   }
 #undef SCALAR_TYPE_SIZE
 

@@ -37,15 +37,15 @@ void check_quantize_per_tensor_args(
   ET_CHECK_MSG(
       torch::executor::isFloatingType(input.scalar_type()),
       "input.scalar_type() %hdd is not floating type",
-      input.scalar_type());
+      static_cast<short>(input.scalar_type()));
 
   int32_t quant_min_lower_bound = 0, quant_max_upper_bound = 0;
   ScalarType out_dtype = out.scalar_type();
   ET_CHECK_MSG(
       out_dtype == dtype,
       "out.scalar_type() %hdd is not matching dtype argument %hdd",
-      out_dtype,
-      dtype);
+      static_cast<short>(out_dtype),
+      static_cast<short>(dtype));
   if (out_dtype == ScalarType::Byte) {
     quant_min_lower_bound =
         static_cast<int32_t>(std::numeric_limits<uint8_t>::min());
@@ -63,7 +63,8 @@ void check_quantize_per_tensor_args(
     quant_min_lower_bound = std::numeric_limits<int32_t>::min();
     quant_max_upper_bound = std::numeric_limits<int32_t>::max();
   } else {
-    ET_CHECK_MSG(false, "Unsupported dtype: %hdd", out_dtype);
+    ET_CHECK_MSG(
+        false, "Unsupported dtype: %hdd", static_cast<short>(out_dtype));
   }
   ET_CHECK_MSG(
       quant_min >= quant_min_lower_bound,
@@ -123,19 +124,25 @@ Tensor& quantize_per_tensor_out(
           scale, zero_point, value, quant_min, quant_max);              \
     }                                                                   \
     break;
-#define CALCULATE_FLOAT_TYPE(IN_CTYPE, in_dtype)                               \
-  case ScalarType::in_dtype:                                                   \
-    switch (out.scalar_type()) {                                               \
-      ET_FORALL_INT_TYPES_WITH(IN_CTYPE, QUANTIZE_IMPL);                       \
-      default:                                                                 \
-        ET_CHECK_MSG(false, "Unhandled output dtype %hhd", out.scalar_type()); \
-    }                                                                          \
+#define CALCULATE_FLOAT_TYPE(IN_CTYPE, in_dtype)         \
+  case ScalarType::in_dtype:                             \
+    switch (out.scalar_type()) {                         \
+      ET_FORALL_INT_TYPES_WITH(IN_CTYPE, QUANTIZE_IMPL); \
+      default:                                           \
+        ET_CHECK_MSG(                                    \
+            false,                                       \
+            "Unhandled output dtype %hhd",               \
+            static_cast<int8_t>(out.scalar_type()));     \
+    }                                                    \
     break;
 
   switch (input.scalar_type()) {
     ET_FORALL_FLOAT_TYPES(CALCULATE_FLOAT_TYPE);
     default:
-      ET_CHECK_MSG(false, "Unhandled input dtype %hhd", input.scalar_type());
+      ET_CHECK_MSG(
+          false,
+          "Unhandled input dtype %hhd",
+          static_cast<int8_t>(input.scalar_type()));
   }
 #undef CALCULATE_FLOAT_TYPE
 #undef QUANTIZE_IMPL
@@ -153,11 +160,11 @@ Tensor& quantize_per_tensor_tensor_args_out(
   ET_CHECK_MSG(
       scale.scalar_type() == ScalarType::Double,
       "Expected scale to be Double tensor received: %hdd",
-      scale.scalar_type());
+      static_cast<short>(scale.scalar_type()));
   ET_CHECK_MSG(
       zero_point.scalar_type() == ScalarType::Long,
       "Expected zero_point to be Long tensor received: %hdd",
-      zero_point.scalar_type());
+      static_cast<short>(zero_point.scalar_type()));
   ET_CHECK_MSG(
       scale.numel() == 1,
       "Exepcted scale to only have one element received: %zd",
