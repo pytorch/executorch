@@ -70,33 +70,40 @@ def op(op):
 
 # Class to capture arguments and turn into tensor references for TOSA OPs
 class TosaArg:
-    def process_node(self, argument):
+    def __process_node(self, argument):
         assert isinstance(argument, torch.fx.node.Node)
         assert argument.meta.get("val") is not None
         self.name = argument.name
         self.dtype, self.shape = extract_tensor_meta(argument.meta["val"])
 
-    def process_list(self, argument):
+    def __process_list(self, argument):
         self.special = list(argument)
 
-    def process_float(self, argument):
-        self.threshold = argument
+    def __process_number(self, argument):
+        self.number = argument
 
     def __init__(self, argument) -> None:
         self.name = None
         self.dtype = None
         self.shape = None
         self.special = None
-        self.threshold = None
+
+        if argument is None:
+            return
 
         if isinstance(argument, torch.fx.node.Node):
-            self.process_node(argument)
+            self.__process_node(argument)
             return
-        if issubclass(type(argument), list):
-            self.process_list(argument)
+        if isinstance(argument, list):
+            self.__process_list(argument)
             return
-        if isinstance(type(argument), type(float)):
-            self.process_float(argument)
+        if isinstance(argument, int):
+            self.__process_number(argument)
+            return
+        if isinstance(argument, float):
+            self.__process_number(argument)
             return
 
-        RuntimeError("Unhandled node input argument")
+        RuntimeError(
+            f"Unhandled node input argument: {argument}, of type {type(argument)}"
+        )
