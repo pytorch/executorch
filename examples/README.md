@@ -15,6 +15,7 @@ examples
 ├── ios_demo_apps                     # Contains iOS demo apps
 ├── models                            # Contains a set of simple to PyTorch models
 ├── quantization                      # Contains examples of quantization workflow
+├── arm                               # Contains examples of the Arm TOSA and Ethos-U NPU flows
 └── README.md                         # This file
 ```
 
