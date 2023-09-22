@@ -12,6 +12,7 @@ MODEL_NAME_TO_MODEL = {
     "add": ("toy_model", "AddModule"),
     "add_mul": ("toy_model", "AddMulModule"),
     "dl3": ("deeplab_v3", "DeepLabV3ResNet50Model"),
+    "edsr": ("edsr", "EdsrModel"),
     "emformer_transcribe": ("emformer_rnnt", "EmformerRnntTranscriberModel"),
     "emformer_predict": ("emformer_rnnt", "EmformerRnntPredictorModel"),
     "emformer_join": ("emformer_rnnt", "EmformerRnntJoinerModel"),

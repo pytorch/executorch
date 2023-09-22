@@ -10,6 +10,7 @@ python_library(
         "//caffe2:torch",
         "//executorch/examples/models:model_base",  # @manual
         "//executorch/examples/models/deeplab_v3:dl3_model",  # @manual
+        "//executorch/examples/models/edsr:edsr_model",  # @manual
         "//executorch/examples/models/emformer_rnnt:emformer_rnnt_model",  # @manual
         "//executorch/examples/models/inception_v3:ic3_model",  # @manual
         "//executorch/examples/models/inception_v4:ic4_model",  # @manual
