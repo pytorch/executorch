@@ -1,3 +1,5 @@
+<!--- DEPRECATED This document is moving to executorch/docs/source/sdk-delegate-integration.md---->
+
 # Profiling and debugging delegates
 
 Delegate backends are a prominent component of Edge Models. One attribute of
