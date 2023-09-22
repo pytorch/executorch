@@ -602,7 +602,7 @@ Other permutations of NCHW are allowed but we don’t have explicit names for th
 
 See more on channel_last mem format: [https://pytorch.org/tutorials/intermediate/memory_format_tutorial.html](https://pytorch.org/tutorials/intermediate/memory_format_tutorial.html)
 
-For Executorch, we have introduced a concept of dim orders to convey how a dense tensor is laid out in memory. Tensor's memory layout and memory format representation using the dim order in the Executorch the stack is still a WIP. We will update this doc and the IR spec very shortly.
+For ExecuTorch, we have introduced a concept of dim orders to convey how a dense tensor is laid out in memory. Tensor's memory layout and memory format representation using the dim order in the ExecuTorch the stack is still a WIP. We will update this doc and the IR spec very shortly.
 
 ### Tensor
 A Tensor type describes a mathematical tensor.

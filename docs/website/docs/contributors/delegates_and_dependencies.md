@@ -21,14 +21,14 @@ Python or C++ dependency. This guide will talk about only Python AoT dependencie
 
 **Guidelines:**
 
-* If Executorch already includes a dependency you require, prefer
+* If ExecuTorch already includes a dependency you require, prefer
   to use that if possible.
 * Since the dependency is only used by the files inside the
   `executorch/backends/<delegate_name>/` - it should introduced in
   a way that it is needed only by the code inside the backend delegate
   directory.
 * The dependency should not be installed by default when installing
-  the Executorch Python package.
+  the ExecuTorch Python package.
 
 More details in the section [below](#python-dependencies).
 
@@ -49,7 +49,7 @@ for these third-party dependencies.
 * If a delegate has a dependency which is already part of
   `executorch/third-party` then try to use that if possible. This
   helps with reducing the binary size when the delegate is enabled.
-* Rest of the Executorch code, outside of the delegate, should not depend on
+* Rest of the ExecuTorch code, outside of the delegate, should not depend on
   this. And it should should build and run correctly without this dependency
   when the delegate is disabled at build time.
 
@@ -64,9 +64,9 @@ the test.
 **Guidelines:**
 
 * For a Python dependency, it should not be installed by default when
-  installing the Executorch Python package.
+  installing the ExecuTorch Python package.
 * If for C++ tests, it should not be part of the
-  Executorch runtime even when the delegate is built/enabled.
+  ExecuTorch runtime even when the delegate is built/enabled.
 
 ## Other considerations
 
@@ -104,10 +104,10 @@ Python packaging is complicated and continuously evolving. For delegate
 dependencies, we recommend that a delegate specifies its third-party
 dependencies under `executorch/backends/<delegate_name>/requirements.txt` to be
 supplied to pip at installation time. The goal is to decouple them from the core
-Executorch dependencies.
+ExecuTorch dependencies.
 
 Version conflict should be avoided by trying to use the already included
-dependency by Executorch or by some other backend if possible. Otherwise
+dependency by ExecuTorch or by some other backend if possible. Otherwise
 try some other
 [recommended](https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts)
 ways to mitigate version conflicts.
@@ -128,7 +128,7 @@ dependency in the `executorch/backends/<delegate_name>/third-party`.
 
 ### buck2/CMake support
 At a minimum CMake support is required. Adding buck2 support should make
-the delegate available to more Executorch users.
+the delegate available to more ExecuTorch users.
 
 * More details TBD
 

@@ -1,6 +1,6 @@
-# Executorch Arm/TOSA Delegate
+# ExecuTorch Arm/TOSA Delegate
 
-This subtree contains the Arm Delegate implementation for Executorch.
+This subtree contains the Arm Delegate implementation for ExecuTorch.
 
 This delegate is structured to, over time, support a number of different Arm devices
 through an AoT flow which targets multiple Arm IP using the TOSA standard.
