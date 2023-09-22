@@ -17,7 +17,7 @@ from executorch.exir.tracer import Value
 
 
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
-    _check_ir_validity=False,
+    _check_ir_validity=True,
 )
 
 
