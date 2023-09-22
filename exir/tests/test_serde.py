@@ -56,7 +56,8 @@ class TestSerde(unittest.TestCase):
 
         executorch = edge.to_executorch().dump_exported_program()
         executorch_new = deserialize(*serialize(executorch))
-        self.check_ep(executorch, executorch_new, inputs)
+        with torch.no_grad():
+            self.check_ep(executorch, executorch_new, inputs)
 
     def test_basic(self) -> None:
         class MyModule(torch.nn.Module):
