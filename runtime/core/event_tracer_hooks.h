@@ -114,17 +114,16 @@ inline void event_tracer_create_event_block(
 inline EventTracerEntry event_tracer_begin_profiling_event(
     EventTracer* event_tracer,
     char const* name) {
-  EventTracerEntry event_tracer_entry;
 #ifdef ET_EVENT_TRACER_ENABLED
   if (event_tracer) {
-    event_tracer_entry = event_tracer->start_profiling(name);
+    return event_tracer->start_profiling(name);
   }
 #else //! ET_EVENT_TRACER_ENABLED
   (void)event_tracer;
   (void)name;
 #endif
   // There is no active tracer; this value will be ignored.
-  return event_tracer_entry;
+  return EventTracerEntry();
 }
 
 /**

@@ -905,7 +905,7 @@ Error Method::execute_instruction() {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
       // TODO(T147221312): Also expose the temp allocator and tensor resizer
       // via the context.
-      KernelRuntimeContext context;
+      KernelRuntimeContext context(event_tracer_);
       auto args = chain.argument_lists_[step_state_.instr_idx];
       chain.kernels_[step_state_.instr_idx](context, args.data());
       Error err = context.failure_state();
