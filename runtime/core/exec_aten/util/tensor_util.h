@@ -129,8 +129,8 @@
     ET_CHECK_MSG(                                                 \
         a_type__ == b_type__,                                     \
         ET_TENSOR_CHECK_PREFIX__ ": dtype={%hhd, %hhd}",          \
-        a_type__,                                                 \
-        b_type__);                                                \
+        static_cast<int8_t>(a_type__),                            \
+        static_cast<int8_t>(b_type__));                           \
   })
 
 #define ET_CHECK_SAME_DTYPE3(a__, b__, c__)                       \
@@ -141,9 +141,9 @@
     ET_CHECK_MSG(                                                 \
         a_type__ == b_type__ && b_type__ == c_type__,             \
         ET_TENSOR_CHECK_PREFIX__ ": dtype={%hhd, %hhd, %hhd}",    \
-        a_type__,                                                 \
-        b_type__,                                                 \
-        c_type__);                                                \
+        static_cast<int8_t>(a_type__),                            \
+        static_cast<int8_t>(b_type__),                            \
+        static_cast<int8_t>(c_type__));                           \
   })
 
 /**
@@ -171,8 +171,8 @@
         b_numel__,                                                        \
         a_dim__,                                                          \
         b_dim__,                                                          \
-        a_type__,                                                         \
-        b_type__);                                                        \
+        static_cast<int8_t>(a_type__),                                    \
+        static_cast<int8_t>(b_type__));                                   \
     for (size_t dim__ = 0; dim__ < ET_MIN2(a_dim__, b_dim__); ++dim__) {  \
       size_t a_size__ = (a__).size(dim__);                                \
       size_t b_size__ = (b__).size(dim__);                                \
@@ -211,9 +211,9 @@
         a_dim__,                                                       \
         b_dim__,                                                       \
         c_dim__,                                                       \
-        a_type__,                                                      \
-        b_type__,                                                      \
-        c_type__);                                                     \
+        static_cast<int8_t>(a_type__),                                 \
+        static_cast<int8_t>(b_type__),                                 \
+        static_cast<int8_t>(c_type__));                                \
     for (size_t dim__ = 0; dim__ < ET_MIN3(a_dim__, b_dim__, c_dim__); \
          ++dim__) {                                                    \
       size_t a_size__ = (a__).size(dim__);                             \

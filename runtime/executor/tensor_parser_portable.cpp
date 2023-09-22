@@ -105,7 +105,10 @@ Result<torch::executor::Tensor> parseTensor(
       tensor_impl->nbytes(),
       memory_manager->planned_memory());
   if (!data_ptr.ok()) {
-    ET_LOG(Error, "getTensorDataPtr() failed: 0x%" PRIx32, data_ptr.error());
+    ET_LOG(
+        Error,
+        "getTensorDataPtr() failed: 0x%" PRIx32,
+        static_cast<uint32_t>(data_ptr.error()));
     return data_ptr.error();
   }
   tensor_impl->set_data(data_ptr.get());
