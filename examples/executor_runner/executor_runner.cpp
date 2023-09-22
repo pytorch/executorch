@@ -177,7 +177,19 @@ int main(int argc, char** argv) {
     // readable way.
     auto output_tensor = output.toTensor();
     auto data_output = output_tensor.const_data_ptr<float>();
-    for (size_t j = 0; j < output_tensor.numel(); ++j) {
+
+    ssize_t max_print_element_count = 10000;
+    if (output_tensor.numel() > max_print_element_count) {
+      ET_LOG(
+          Info,
+          "Output tensor is too large, printing first %ld elements out of %ld",
+          max_print_element_count,
+          output_tensor.numel());
+    } else {
+      max_print_element_count = output_tensor.numel();
+    }
+
+    for (size_t j = 0; j < max_print_element_count; ++j) {
       ET_LOG(Info, "%f", data_output[j]);
     }
   }
