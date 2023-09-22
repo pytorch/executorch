@@ -33,3 +33,6 @@ pip install --pre timm==${TIMM_VERSION}
 
 TRANSFORMERS_VERSION=4.31.0
 pip install --pre transformers==${TRANSFORMERS_VERSION}
+
+TORCHSR_VERSION=1.0.4
+pip install --pre torchsr==${TORCHSR_VERSION}
