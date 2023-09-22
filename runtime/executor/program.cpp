@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/profiler.h>
@@ -170,6 +171,9 @@ Result<Method> Program::load_method(
     MemoryManager* memory_manager,
     EventTracer* event_tracer) const {
   EXECUTORCH_SCOPE_PROF("Program::load_method");
+  internal::event_tracer_create_event_block(event_tracer, "Default");
+  internal::EventTracerProfileScope event_tracer_scope =
+      internal::EventTracerProfileScope(event_tracer, "Program::load_method");
   auto plan = get_execution_plan(internal_program_, method_name);
   if (!plan.ok()) {
     return plan.error();
