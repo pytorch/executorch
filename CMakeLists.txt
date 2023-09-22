@@ -62,7 +62,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 # Option to control the building of host-only tools like `flatc`. Disabling this
 # can be helpful when cross-compiling, but the tools that would have been built
 # need to be provided directly (via, for example, FLATC_EXECUTABLE).
-option(EXECUTORCH_BUILD_HOST_TARGETS ON)
+option(EXECUTORCH_BUILD_HOST_TARGETS "Build host-only targets." ON)
 
 # Option to register custom operator `my_ops::mul3` or `my_ops::mul4` or no
 # custom ops at all. Custom ops are defined in
