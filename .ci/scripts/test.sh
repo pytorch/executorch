@@ -38,13 +38,14 @@ CMAKE_OUTPUT_DIR=cmake-out
 
 build_cmake_executor_runner() {
   echo "Building executor_runner"
-  (rm -rf ${CMAKE_OUTPUT_DIR} \
+  (rm -rf ${CMAKE_OUTPUT_DIR}    \
     && mkdir ${CMAKE_OUTPUT_DIR} \
-    && cd ${CMAKE_OUTPUT_DIR} \
+    && cd ${CMAKE_OUTPUT_DIR}    \
     && retry cmake -DBUCK2=buck2 \
+      -DCMAKE_BUILD_TYPE=Release \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4
+  cmake --build ${CMAKE_OUTPUT_DIR} --config Release -j4
 }
 
 test_model() {
@@ -69,16 +70,17 @@ build_cmake_xnn_executor_runner() {
   SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
   CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
 
-  (rm -rf ${CMAKE_OUTPUT_DIR} \
-    && mkdir ${CMAKE_OUTPUT_DIR} \
-    && cd ${CMAKE_OUTPUT_DIR} \
-    && retry cmake -DBUCK2=buck2 \
-      -DEXECUTORCH_BUILD_XNNPACK=ON \
-      -DREGISTER_QUANTIZED_OPS=ON \
+  (rm -rf ${CMAKE_OUTPUT_DIR}                  \
+    && mkdir ${CMAKE_OUTPUT_DIR}               \
+    && cd ${CMAKE_OUTPUT_DIR}                  \
+    && retry cmake -DBUCK2=buck2               \
+      -DCMAKE_BUILD_TYPE=Release               \
+      -DEXECUTORCH_BUILD_XNNPACK=ON            \
+      -DREGISTER_QUANTIZED_OPS=ON              \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
-  cmake --build ${CMAKE_OUTPUT_DIR} -j4
+  cmake --build ${CMAKE_OUTPUT_DIR} --config Release -j4
 }
 
 test_model_with_xnnpack() {
