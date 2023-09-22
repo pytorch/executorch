@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/platform/compiler.h>
 
 namespace torch {
@@ -22,6 +23,11 @@ namespace executor {
  */
 class KernelRuntimeContext {
  public:
+  /**
+   * Construct a new kernel runtime context along with an optional event tracer.
+   */
+  KernelRuntimeContext(EventTracer* event_tracer = nullptr)
+      : event_tracer_(event_tracer) {}
   /**
    * Tells the runtime that the kernel call has failed. Prefer this over
    * ET_CHECK_*(), which fatally panics the process/system.
@@ -43,11 +49,23 @@ class KernelRuntimeContext {
     return failure_state_;
   }
 
+  /**
+   * INTERNAL ONLY
+   *
+   * Returns a pointer to an instance of EventTracer to do profiling/debugging
+   * logging inside the codegen layer. This is only for internal usage inside
+   * the codegen layer and users should not be accessing this.
+   */
+  EventTracer* internal_event_tracer() {
+    return event_tracer_;
+  }
+
   // TODO(T147221312): Add a way to allocate temporary memory.
 
   // TODO(T147221312): Add a way to resize a tensor.
 
  private:
+  EventTracer* event_tracer_;
   Error failure_state_ = Error::Ok;
 };
 
