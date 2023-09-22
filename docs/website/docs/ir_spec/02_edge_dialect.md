@@ -44,7 +44,7 @@ Default value is true. If set to false, graph validaity check will be turned off
 
 ## Edge Operator
 
-As mentioned before, an edge operator is an ATen core operator with type specialization. This means the instance of edge operator contains a set of dtype constraints, to describe all the tensor dtypes supported by both Executorch runtime and their ATen kernels. These dtype constraints are expressed in a DSL defined in [edge.yaml](https://github.com/pytorch/executorch/blob/main/exir/dialects/edge/edge.yaml). Here's an example of the dtype constraints:
+As mentioned before, an edge operator is an ATen core operator with type specialization. This means the instance of edge operator contains a set of dtype constraints, to describe all the tensor dtypes supported by both ExecuTorch runtime and their ATen kernels. These dtype constraints are expressed in a DSL defined in [edge.yaml](https://github.com/pytorch/executorch/blob/main/exir/dialects/edge/edge.yaml). Here's an example of the dtype constraints:
 
 ```
 - func: sigmoid

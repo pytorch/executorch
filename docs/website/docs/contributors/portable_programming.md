@@ -4,7 +4,7 @@ NOTE: This document covers the runtime code: i.e., the code that needs to build
 for and execute in target hardware environments. These rules do not necessarily
 apply to code that only runs on the development host, like authoring tools.
 
-The Executorch runtime code is intendend to be portable, and should build for a
+The ExecuTorch runtime code is intendend to be portable, and should build for a
 wide variety of systems, from servers to mobile phones to DSPs, from POSIX to
 Windows to bare-metal environments.
 
@@ -35,7 +35,7 @@ dependencies except:
 
 ## Platform Abstraction Layer (PAL)
 
-To avoid assuming the capabilities of the target system, the Executorch runtime
+To avoid assuming the capabilities of the target system, the ExecuTorch runtime
 lets clients override low-level functions in its Platform Abstraction Layer
 (PAL), defined in `//executorch/runtime/platform/platform.h`, to perform operations
 like:
@@ -56,7 +56,7 @@ the data already loaded.
 
 ## Integer Types
 
-Executorch runtime code should not assume anything about the sizes of primitive
+ExecuTorch runtime code should not assume anything about the sizes of primitive
 types like `int`, `short`, or `char`. For example, the C++ standard only
 guarantees that `int` will be at least 16 bits wide. And ARM toolchains treat
 `char` as unsigned, while other toolchains often treat it as signed.
@@ -88,7 +88,7 @@ without floating point support.
 ## Logging
 
 Instead of using `printf()`, `fprintf()`, `cout`, `cerr`, or a library like
-`folly::logging` or `glog`, the Executorch runtime provides the `ET_LOG`
+`folly::logging` or `glog`, the ExecuTorch runtime provides the `ET_LOG`
 interface in `//executorch/runtime/platform/log.h` and the `ET_CHECK` interface in
 `//executorch/runtime/platform/assert.h`. The messages are printed using a hook in the PAL,
 which means that clients can redirect them to any underlying logging system, or
