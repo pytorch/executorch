@@ -11,6 +11,10 @@ import logging
 
 import torch._export as export
 
+from executorch.backends.transforms.addmm_mm_to_linear import (
+    apply_addmm_mm_to_linear_transform,
+)
+
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.backend_api import to_backend
@@ -88,6 +92,9 @@ if __name__ == "__main__":
     )
     logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
+    edge.exported_program.graph_module.graph = apply_addmm_mm_to_linear_transform(
+        edge.exported_program.graph_module.graph
+    )
     edge.exported_program = to_backend(edge.exported_program, XnnpackPartitioner)
     logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
 

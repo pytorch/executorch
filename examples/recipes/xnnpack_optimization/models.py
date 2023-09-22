@@ -24,7 +24,7 @@ MODEL_NAME_TO_OPTIONS = {
     "mv3": OptimizationOptions(True, True),
     "resnet18": OptimizationOptions(True, True),
     "resnet50": OptimizationOptions(True, True),
-    "vit": OptimizationOptions(False, True),
+    "vit": OptimizationOptions(True, True),
     "w2l": OptimizationOptions(False, True),
     "edsr": OptimizationOptions(True, False),
 }

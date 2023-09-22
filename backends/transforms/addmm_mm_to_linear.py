@@ -29,11 +29,10 @@ def get_dqlinear_input(node: torch.fx.Node):
     # if any of the nodes, during backtracking, is not view_copy
     # then break
     while node_to_backtrack.op != "placeholder":
-        if (
-            node_to_backtrack.op == "call_function"
-            and node_to_backtrack.target
-            == ops.quantized_decomposed.dequantize_per_tensor.tensor
-        ):
+        if node_to_backtrack.op == "call_function" and node_to_backtrack.target in [
+            ops.quantized_decomposed.dequantize_per_tensor.tensor,
+            ops.quantized_decomposed.dequantize_per_tensor.default,
+        ]:
             return node_to_backtrack
         if (
             node_to_backtrack.op == "call_function"
