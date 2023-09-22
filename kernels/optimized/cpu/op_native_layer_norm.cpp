@@ -160,7 +160,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> opt_native_layer_norm_out(
     // TODO support bfloat16
     ET_FORALL_FLOAT_TYPES(LAYER_NORM)
     default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd", input.scalar_type());
+      ET_CHECK_MSG(
+          false,
+          "Unhandled dtype %hhd",
+          static_cast<int8_t>(input.scalar_type()));
   }
 #undef LAYER_NORM
   return {out, mean_out, rstd_out};

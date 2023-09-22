@@ -47,15 +47,15 @@ void check_quantize_per_tensor_args(
   ET_CHECK_MSG(
       input.scalar_type() == ScalarType::Float,
       "Expected input to be Float tensor received: %hdd",
-      input.scalar_type());
+      static_cast<short>(input.scalar_type()));
   ET_CHECK_MSG(
       scale_out.scalar_type() == ScalarType::Double,
       "Expected scale to be Double tensor received: %hdd",
-      scale_out.scalar_type());
+      static_cast<short>(scale_out.scalar_type()));
   ET_CHECK_MSG(
       zero_point_out.scalar_type() == ScalarType::Long,
       "Expected scale to be Long tensor received: %hdd",
-      zero_point_out.scalar_type());
+      static_cast<short>(zero_point_out.scalar_type()));
   ET_CHECK_MSG(
       scale_out.numel() == 1,
       "Exepcted scale to only have one element received: %zd",

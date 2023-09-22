@@ -66,7 +66,7 @@ Tensor& ones_out(RuntimeContext& ctx, IntArrayRef size, Tensor& out) {
       ET_CHECK_MSG(
           false,
           "out tensor should be a real or bool dtype, but got %hhd",
-          out.scalar_type());
+          static_cast<int8_t>(out.scalar_type()));
   }
 #undef ONES_OUT
 

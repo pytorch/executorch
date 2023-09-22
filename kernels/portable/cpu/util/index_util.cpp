@@ -122,7 +122,7 @@ bool indices_list_is_valid(
       ET_LOG_MSG_AND_RETURN_IF_FALSE(
           false,
           "%hhd scalar type is not supported for indices",
-          index.scalar_type());
+          static_cast<int8_t>(index.scalar_type()));
     }
   }
   return true;
