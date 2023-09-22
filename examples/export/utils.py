@@ -16,9 +16,6 @@ from executorch.exir.program import ExirExportedProgram
 from executorch.exir.tracer import Value
 
 
-_CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
-
-# TODO(T163721729): Enable IR check after decomposing div.Tensor_mode
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
 )
@@ -27,14 +24,15 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 def _to_core_aten(
     model: torch.fx.GraphModule,
     example_inputs: Tuple[Value, ...],
-    capture_config=_CAPTURE_CONFIG,
 ) -> ExirExportedProgram:
     # post autograd export. eventually this will become .to_core_aten
     if not isinstance(model, torch.fx.GraphModule):
         raise ValueError(
             f"Expected passed in model to be an instance of fx.GraphModule, got {type(model)}"
         )
-    core_aten_exir_ep = exir.capture(model, example_inputs, capture_config)
+    core_aten_exir_ep = exir.capture(
+        model, example_inputs, exir.CaptureConfig(enable_aot=True)
+    )
     logging.info(f"Core ATen graph:\n{core_aten_exir_ep.exported_program.graph}")
     return core_aten_exir_ep
 
@@ -51,17 +49,15 @@ def _core_aten_to_edge(
 def export_to_edge(
     model: torch.fx.GraphModule,
     example_inputs: Tuple[Value, ...],
-    capture_config=_CAPTURE_CONFIG,
     edge_compile_config=_EDGE_COMPILE_CONFIG,
 ) -> ExirExportedProgram:
-    core_aten_exir_ep = _to_core_aten(model, example_inputs, capture_config)
+    core_aten_exir_ep = _to_core_aten(model, example_inputs)
     return _core_aten_to_edge(core_aten_exir_ep, edge_compile_config)
 
 
 def export_to_exec_prog(
     model,
     example_inputs,
-    capture_config=_CAPTURE_CONFIG,
     edge_compile_config=_EDGE_COMPILE_CONFIG,
     backend_config=None,
 ):
