@@ -251,7 +251,7 @@ with open(save_path, "wb") as f:
 
 ## Runtime
 
-The serialized flatbuffer model is loaded by the Executorch runtime. The
+The serialized flatbuffer model is loaded by the ExecuTorch runtime. The
 preprocessed blob is directly stored in the flatbuffer, which is loaded into a
 call to the backend's `init()` function during model initialization stage. At
 the model execution stage, the initialized handled can be executed through the
