@@ -137,7 +137,6 @@ jobs:
         #conda create --yes --quiet -n executorch python="${PYTHON_VERSION}"
         #conda activate executorch
         conda env list
-        sleep 3600
 
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
