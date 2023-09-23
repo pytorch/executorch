@@ -74,13 +74,12 @@ jobs:
         name: docs
     - name: Upload docs
       run: |
+
         set -x
         git config user.name 'pytorchbot'
         git config user.email 'soumith+bot@pytorch.org'
-
         rm -rf main
         mv html main
-
         git add --all main || true
         git commit -m "Auto-generating sphinx docs" || true
         git push -f
