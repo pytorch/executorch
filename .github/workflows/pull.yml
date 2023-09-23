@@ -37,87 +37,83 @@ jobs:
 
           PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py
 
-#  test-models-linux:
-#    name: test-models-linux
-#    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-#    needs: gather-models
-#    strategy:
-#      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
-#      fail-fast: false
-#    with:
-#      runner: ${{ matrix.runner }}
-#      docker-image: executorch-ubuntu-22.04-clang12
-#      submodules: 'true'
-#      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-#      timeout: 90
-#      script: |
-#        # The generic Linux job chooses to use base env, not the one setup by the image
-#        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-#        conda activate "${CONDA_ENV}"
-#
-#        MODEL_NAME=${{ matrix.model }}
-#        BUILD_TOOL=${{ matrix.build-tool }}
-#        QUANTIZATION=${{ matrix.quantization }}
-#        XNNPACK_DELEGATION=${{ matrix.xnnpack_delegation }}
-#
-#        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
-#        # Build and test Executorch
-#        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}" "${XNNPACK_DELEGATION}"
-#
-#  test-models-macos:
-#    name: test-models-macos
-#    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-#    needs: gather-models
-#    strategy:
-#      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
-#      fail-fast: false
-#    with:
-#      runner: macos-m1-12
-#      submodules: 'true'
-#      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-#      timeout: 90
-#      script: |
-#        #PYTHON_VERSION="3.10"
-#        #conda create --yes --quiet -n executorch python="${PYTHON_VERSION}"
-#        #conda activate executorch
-#
-#        WORKSPACE=$(pwd)
-#        pushd "${WORKSPACE}/pytorch/executorch"
-#
-#        MODEL_NAME=${{ matrix.model }}
-#        BUILD_TOOL=${{ matrix.build-tool }}
-#        QUANTIZATION=${{ matrix.quantization }}
-#        XNNPACK_DELEGATION=${{ matrix.xnnpack_delegation }}
-#
-#        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-#        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
-#        # Build and test Executorch
-#        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}" "${XNNPACK_DELEGATION}"
-#        popd
+  test-models-linux:
+    name: test-models-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    needs: gather-models
+    strategy:
+      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      fail-fast: false
+    with:
+      runner: ${{ matrix.runner }}
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
 
-#  test-custom-ops-linux:
-#    name: test-custom-ops-linux
-#    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-#    strategy:
-#      matrix:
-#        include:
-#          - build-tool: buck2
-#          - build-tool: cmake
-#      fail-fast: false
-#    with:
-#      runner: linux.2xlarge
-#      docker-image: executorch-ubuntu-22.04-clang12
-#      submodules: 'true'
-#      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-#      script: |
-#        # The generic Linux job chooses to use base env, not the one setup by the image
-#        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-#        conda activate "${CONDA_ENV}"
-#
-#        BUILD_TOOL=${{ matrix.build-tool }}
-#        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
-#        # Test custom ops
-#        PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
+        MODEL_NAME=${{ matrix.model }}
+        BUILD_TOOL=${{ matrix.build-tool }}
+        QUANTIZATION=${{ matrix.quantization }}
+        XNNPACK_DELEGATION=${{ matrix.xnnpack_delegation }}
+
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        # Build and test Executorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}" "${XNNPACK_DELEGATION}"
+
+  test-models-macos:
+    name: test-models-macos
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    needs: gather-models
+    strategy:
+      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
+      fail-fast: false
+    with:
+      runner: macos-m1-12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        WORKSPACE=$(pwd)
+        pushd "${WORKSPACE}/pytorch/executorch"
+
+        MODEL_NAME=${{ matrix.model }}
+        BUILD_TOOL=${{ matrix.build-tool }}
+        QUANTIZATION=${{ matrix.quantization }}
+        XNNPACK_DELEGATION=${{ matrix.xnnpack_delegation }}
+
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        # Build and test Executorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${QUANTIZATION}" "${XNNPACK_DELEGATION}"
+        popd
+
+  test-custom-ops-linux:
+    name: test-custom-ops-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: buck2
+          - build-tool: cmake
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL=${{ matrix.build-tool }}
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        # Test custom ops
+        PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
 
   test-custom-ops-macos:
     name: test-custom-ops-macos
@@ -133,11 +129,6 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        #PYTHON_VERSION="3.10"
-        #conda create --yes --quiet -n executorch python="${PYTHON_VERSION}"
-        #conda activate executorch
-        conda env list
-
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
 
@@ -149,29 +140,29 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
         popd
 
-#  test-selective-build-linux:
-#    name: test-selective-build-linux
-#    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-#    strategy:
-#      matrix:
-#        include:
-#          - build-tool: buck2
-#          - build-tool: cmake
-#      fail-fast: false
-#    with:
-#      runner: linux.2xlarge
-#      docker-image: executorch-ubuntu-22.04-clang12
-#      submodules: 'true'
-#      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-#      script: |
-#        # The generic Linux job chooses to use base env, not the one setup by the image
-#        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-#        conda activate "${CONDA_ENV}"
-#
-#        BUILD_TOOL=${{ matrix.build-tool }}
-#        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
-#        # Test selective build
-#        PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
+  test-selective-build-linux:
+    name: test-selective-build-linux
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: buck2
+          - build-tool: cmake
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL=${{ matrix.build-tool }}
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        # Test selective build
+        PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
   test-selective-build-macos:
     name: test-selective-build-macos
@@ -187,12 +178,6 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        #PYTHON_VERSION="3.10"
-        #conda create --yes --quiet -n executorch python="${PYTHON_VERSION}"
-        #conda activate executorch
-        conda env list
-        sleep 3600
-
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
 
