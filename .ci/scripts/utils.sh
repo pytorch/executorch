@@ -27,7 +27,7 @@ install_executorch() {
 install_conda() {
   pushd .ci/docker || return
   # Install conda dependencies like flatbuffer
-  conda install --file conda-env-ci.txt
+  conda install -y --file conda-env-ci.txt -c conda-forge
   popd || return
 }
 
@@ -46,6 +46,21 @@ install_pip_dependencies() {
     torchaudio=="${TORCHAUDIO_VERSION}.${NIGHTLY}" \
     torchvision=="${TORCHVISION_VERSION}.${NIGHTLY}" \
     --index-url https://download.pytorch.org/whl/nightly/cpu
+  popd || return
+}
+
+install_flatc_from_source() {
+  # NB: This function could be used to install flatbuffer from source
+  pushd third-party/flatbuffers || return
+
+  cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+  if [ "$(uname)" == "Darwin" ]; then
+    CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))
+  else
+    CMAKE_JOBS=$(( $(nproc) - 1 ))
+  fi
+  cmake --build . -j "${CMAKE_JOBS}"
+
   popd || return
 }
 

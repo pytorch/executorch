@@ -1,4 +1,5 @@
-# TODO: We might need to update this to install flatbuffers from the pinned commit
-# in fbcode/executorch/third-party/flatbuffers.submodule.txt
-flatbuffers=2.0.0
+# NB: Install flatbuffers 23.5.6 from conda-forge. This matches the version of
+# in fbcode/executorch/third-party/flatbuffers.submodule.txt. Otherwise, we'll
+# need to build it from source
+flatbuffers=23.5.26
 cmake=3.22.1
