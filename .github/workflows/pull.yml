@@ -77,6 +77,10 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
+        PYTHON_VERSION="3.10"
+        conda create --yes --quiet -n executorch python="${PYTHON_VERSION}"
+        conda activate executorch
+
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
 
@@ -129,8 +133,11 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        WORKSPACE=$(pwd)
+        PYTHON_VERSION="3.10"
+        conda create --yes --quiet -n executorch python="${PYTHON_VERSION}"
+        conda activate executorch
 
+        WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
 
         BUILD_TOOL=${{ matrix.build-tool }}
@@ -178,8 +185,11 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        WORKSPACE=$(pwd)
+        PYTHON_VERSION="3.10"
+        conda create --yes --quiet -n executorch python="${PYTHON_VERSION}"
+        conda activate executorch
 
+        WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
 
         BUILD_TOOL=${{ matrix.build-tool }}
