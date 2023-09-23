@@ -77,9 +77,9 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
-        PYTHON_VERSION="3.10"
-        conda create --yes --quiet -n executorch python="${PYTHON_VERSION}"
-        conda activate executorch
+        #PYTHON_VERSION="3.10"
+        #conda create --yes --quiet -n executorch python="${PYTHON_VERSION}"
+        #conda activate executorch
 
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
@@ -133,9 +133,9 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        PYTHON_VERSION="3.10"
-        conda create --yes --quiet -n executorch python="${PYTHON_VERSION}"
-        conda activate executorch
+        #PYTHON_VERSION="3.10"
+        #conda create --yes --quiet -n executorch python="${PYTHON_VERSION}"
+        #conda activate executorch
 
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
@@ -143,6 +143,8 @@ jobs:
         BUILD_TOOL=${{ matrix.build-tool }}
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+
+        sleep 3600
         # Build and test custom ops
         PYTHON_EXECUTABLE=python bash examples/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
         popd
@@ -185,9 +187,9 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        PYTHON_VERSION="3.10"
-        conda create --yes --quiet -n executorch python="${PYTHON_VERSION}"
-        conda activate executorch
+        #PYTHON_VERSION="3.10"
+        #conda create --yes --quiet -n executorch python="${PYTHON_VERSION}"
+        #conda activate executorch
 
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
@@ -195,6 +197,8 @@ jobs:
         BUILD_TOOL=${{ matrix.build-tool }}
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+
+        sleep 3600
         # Build and test selective build
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
         popd
