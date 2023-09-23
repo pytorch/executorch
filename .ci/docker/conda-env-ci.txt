@@ -1,5 +1,5 @@
 # NB: Install flatbuffers 23.5.6 from conda-forge. This matches the version of
 # in fbcode/executorch/third-party/flatbuffers.submodule.txt. Otherwise, we'll
 # need to build it from source
-flatbuffers=23.5.26
-cmake=3.26.4
+conda-forge::flatbuffers=23.5.26
+cmake=3.22.1

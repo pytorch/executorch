@@ -27,7 +27,7 @@ install_executorch() {
 install_conda() {
   pushd .ci/docker || return
   # Install conda dependencies like flatbuffer
-  conda install -y --file conda-env-ci.txt -c conda-forge
+  conda install -y --file conda-env-ci.txt
   popd || return
 }
 
