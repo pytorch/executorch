@@ -9,7 +9,7 @@
 #pragma once
 
 // Slightly modified version of caffe2/aten/src/ATen/native/cpu/moments_utils.h
-// for use in optimized Executorch ops. Template specializations of BFloat16
+// for use in optimized ExecuTorch ops. Template specializations of BFloat16
 // are excluded.
 
 #include <executorch/kernels/optimized/vec/vec.h>

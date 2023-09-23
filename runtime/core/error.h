@@ -8,7 +8,7 @@
 
 /**
  * @file
- * Executorch Error declarations.
+ * ExecuTorch Error declarations.
  */
 
 #pragma once
@@ -24,7 +24,7 @@ namespace executor {
 typedef uint32_t error_code_t;
 
 /**
- * Executorch Error type.
+ * ExecuTorch Error type.
  */
 enum class Error : error_code_t {
   /*

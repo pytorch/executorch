@@ -8,7 +8,7 @@
 
 /**
  * @file
- * Public types used by the Executorch Platform Abstraction Layer.
+ * Public types used by the ExecuTorch Platform Abstraction Layer.
  */
 
 #pragma once

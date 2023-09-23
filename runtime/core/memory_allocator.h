@@ -33,7 +33,7 @@ namespace executor {
  *   MemoryAllocator allocator(100, memory_pool)
  *   // Pass allocator object in the Executor
  *
- *   Underneath the hood, Executorch will
+ *   Underneath the hood, ExecuTorch will
  *   allocator.allocate() to keep iterating cur_ pointer
  */
 class MemoryAllocator {

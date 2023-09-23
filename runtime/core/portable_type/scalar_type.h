@@ -52,7 +52,7 @@ namespace executor {
  *
  * The indices and C types must be consistent with
  * AT_FORALL_SCALAR_TYPES_WITH_COMPLEX_AND_QINTS in the core pytorch file
- * c10/core/ScalarType.h. This ensures that Executorch serialization is
+ * c10/core/ScalarType.h. This ensures that ExecuTorch serialization is
  * compatible with ATen serialization.
  *
  * @param _ A macro that takes two parameters: the name of a C type, and the
