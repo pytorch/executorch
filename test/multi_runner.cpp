@@ -43,7 +43,7 @@
 DEFINE_string(
     models,
     "",
-    "Comma-separated list of paths to serialized Executorch model files");
+    "Comma-separated list of paths to serialized ExecuTorch model files");
 DEFINE_int32(
     num_instances,
     10,
