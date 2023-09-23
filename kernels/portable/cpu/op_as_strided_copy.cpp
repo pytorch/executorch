@@ -147,7 +147,7 @@ Tensor& as_strided_copy_out(
     default:
       ET_CHECK_MSG(
           false,
-          "Unhandled dtype %hhd",
+          "Unhandled dtype %" PRId8,
           static_cast<int8_t>(self.scalar_type()));
   }
 #undef AS_STRIDED_COPY_TENSOR

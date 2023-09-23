@@ -208,7 +208,7 @@ glu_out(RuntimeContext& ctx, const Tensor& self, int64_t dim, Tensor& out) {
     ET_FORALL_FLOAT_TYPES(GLU_TENSOR)
     default:
       ET_CHECK_MSG(
-          false, "Unhandled dtype %hhd", static_cast<int8_t>(in_dtype));
+          false, "Unhandled dtype %" PRId8, static_cast<int8_t>(in_dtype));
   }
 #undef GLU_TENSOR
   return out;

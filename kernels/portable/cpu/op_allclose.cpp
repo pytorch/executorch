@@ -102,7 +102,7 @@ Tensor& allclose_out(
   ET_CHECK_SAME_SHAPE_AND_DTYPE2(self, other);
   ET_CHECK_MSG(
       out.scalar_type() == ScalarType::Bool,
-      "Out tensor must be type Bool; saw type %hhd",
+      "Out tensor must be type Bool; saw type %" PRId8,
       static_cast<int8_t>(out.scalar_type()));
   ET_CHECK_MSG(
       out.numel() == 1,

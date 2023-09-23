@@ -150,7 +150,7 @@ Tensor& tril_out(
     default:
       ET_CHECK_MSG(
           false,
-          "out tensor should be a real or bool dtype, but got %hhd",
+          "out tensor should be a real or bool dtype, but got %" PRId8,
           static_cast<int8_t>(out.scalar_type()));
   }
 #undef TRIL_OUT

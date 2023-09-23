@@ -110,7 +110,7 @@ void log_softmax_wrapper(const Tensor& X, int64_t dim, Tensor& out) {
     default:
       ET_CHECK_MSG(
           false,
-          "Unhandled input dtype %hhd",
+          "Unhandled input dtype %" PRId8,
           static_cast<int8_t>(input_scalar_type));
   }
 }
@@ -140,12 +140,12 @@ void opt_log_soft_max_check_preconditions(
   auto out_scalar_type = out.scalar_type();
   ET_CHECK_MSG(
       out_scalar_type == ScalarType::Float,
-      "out.scalar_type() %hhd is not Float",
+      "out.scalar_type() %" PRId8 " is not Float",
       static_cast<int8_t>(out_scalar_type));
   auto input_scalar_type = self.scalar_type();
   ET_CHECK_MSG(
       input_scalar_type == ScalarType::Float,
-      "self.scalar_type() %hhd is not Float",
+      "self.scalar_type() %" PRId8 " is not Float",
       static_cast<int8_t>(input_scalar_type));
 }
 
@@ -177,7 +177,7 @@ Tensor& opt_log_softmax_out(
     default:
       ET_CHECK_MSG(
           false,
-          "Unhandled out dtype %hhd",
+          "Unhandled out dtype %" PRId8,
           static_cast<int8_t>(out_scalar_type));
   }
   return out;

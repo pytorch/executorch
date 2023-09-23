@@ -149,7 +149,7 @@ Tensor& opt_bmm_out(
     ET_FORALL_REAL_TYPES(BMM_TENSOR)
     default:
       ET_CHECK_MSG(
-          false, "Unhandled dtype %hhd", static_cast<int8_t>(scalar_type));
+          false, "Unhandled dtype %" PRId8, static_cast<int8_t>(scalar_type));
   }
 #undef BMM_TENSOR
 
