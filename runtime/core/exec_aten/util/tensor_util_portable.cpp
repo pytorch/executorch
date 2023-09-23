@@ -16,7 +16,7 @@
 namespace torch {
 namespace executor {
 /**
- * Implementation for Executorch tensor util, should only be included in
+ * Implementation for ExecuTorch tensor util, should only be included in
  * an target with ATen mode turned off. Explicitly taking
  * torch::executor::Tensor (instead of exec_aten::Tensor) to make sure it fails
  * at compile time if built incorrectly.

@@ -8,7 +8,7 @@
 
 /**
  * @file
- * Executorch global runtime wrapper functions.
+ * ExecuTorch global runtime wrapper functions.
  */
 
 #pragma once
@@ -19,7 +19,7 @@ namespace torch {
 namespace executor {
 
 /**
- * Initialize the Executorch global runtime.
+ * Initialize the ExecuTorch global runtime.
  */
 void runtime_init();
 

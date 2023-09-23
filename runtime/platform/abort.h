@@ -8,7 +8,7 @@
 
 /**
  * @file
- * Executorch global abort wrapper function.
+ * ExecuTorch global abort wrapper function.
  */
 
 #pragma once
@@ -19,7 +19,7 @@ namespace torch {
 namespace executor {
 
 /**
- * Trigger the Executorch global runtime to immediately exit without cleaning
+ * Trigger the ExecuTorch global runtime to immediately exit without cleaning
  * up, and set an abnormal exit status (platform-defined).
  */
 __ET_NORETURN void runtime_abort();

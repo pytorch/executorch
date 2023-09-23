@@ -15,7 +15,7 @@
  * See file comment in ../ScalarType.h.
  *
  * This file contains all of the non-critical parts of the original ScalarType.h
- * that are not required for the core Executorch runtime, but may be helpful for
+ * that are not required for the core ExecuTorch runtime, but may be helpful for
  * code that uses ScalarType.
  */
 
@@ -577,7 +577,7 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
 //
 // These macros are not meant to be used directly. They provide an easy way to
 // generate a switch statement that can handle subsets of ScalarTypes supported
-// by Executorch.
+// by ExecuTorch.
 //
 
 #define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)  \
@@ -744,7 +744,7 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
 // Switch case macros
 //
 // These macros provide an easy way to generate switch statements that apply a
-// common lambda function to subsets of ScalarTypes supported by Executorch.
+// common lambda function to subsets of ScalarTypes supported by ExecuTorch.
 // The lambda function can type specialize to the ctype associated with the
 // ScalarType being handled through an alias passed as the CTYPE_ALIAS argument.
 //

@@ -146,7 +146,7 @@ class Module final {
 #ifdef USE_ATEN_LIB
     // [TLS handling] This is to workaround an assertion failure
     // (https://fburl.com/code/302jyn8d) running `gelu` in ATen mode in fbcode
-    // (such as bento). The problem is Executorch ATen mode doesn't have
+    // (such as bento). The problem is ExecuTorch ATen mode doesn't have
     // Thread Local State, but `torch-cpp` is assuming tls init is done. There
     // are two more checks: MKLDNN disabled and C10_MOBILE, if any of them is
     // true we won't be hitting this assertion error. However in `torch-cpp`
