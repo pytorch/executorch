@@ -8,7 +8,7 @@
 
 /**
  * @file
- * Result type to be used in conjunction with Executorch Error type.
+ * Result type to be used in conjunction with ExecuTorch Error type.
  */
 
 #pragma once

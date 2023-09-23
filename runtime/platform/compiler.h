@@ -16,13 +16,13 @@
 // Compiler support checks.
 
 #if !defined(__cplusplus)
-#error Executorch must be compiled using a C++ compiler.
+#error ExecuTorch must be compiled using a C++ compiler.
 #endif
 
 #if __cplusplus < 201103L && (!defined(_MSC_VER) || _MSC_VER < 1600) && \
     (!defined(__GNUC__) ||                                              \
      (__GNUC__ * 10000 + __GNUC_MINOR__ * 100 + __GNUC_PATCHLEVEL__ < 40400))
-#error Executorch must use a compiler supporting at least the C++11 standard.
+#error ExecuTorch must use a compiler supporting at least the C++11 standard.
 #error __cplusplus _MSC_VER __GNUC__  __GNUC_MINOR__  __GNUC_PATCHLEVEL__
 #endif
 
@@ -31,7 +31,7 @@
  * See all C++ declaration attributes here:
  *   https://en.cppreference.com/w/cpp/language/attributes
  *
- * Note that Executorch supports a lower C++ standard version than all standard
+ * Note that ExecuTorch supports a lower C++ standard version than all standard
  * attributes. Therefore, some annotations are defined using their Clang/GNU
  * counterparts.
  *

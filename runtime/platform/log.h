@@ -8,7 +8,7 @@
 
 /**
  * @file
- * Executorch logging API.
+ * ExecuTorch logging API.
  */
 
 #pragma once
@@ -27,7 +27,7 @@
 
 /*
  * Enable logging by default if compiler option is not provided.
- * This should facilitate less confusion for those developing Executorch.
+ * This should facilitate less confusion for those developing ExecuTorch.
  */
 #ifndef ET_LOG_ENABLED
 #define ET_LOG_ENABLED 1
@@ -56,7 +56,7 @@ enum class LogLevel : uint8_t {
   Info,
 
   /**
-   * Log messages about errors within Executorch during runtime.
+   * Log messages about errors within ExecuTorch during runtime.
    */
   Error,
 

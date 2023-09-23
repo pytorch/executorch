@@ -23,7 +23,7 @@ namespace torch {
 namespace executor {
 
 /**
- * Metadata about a specific tensor of an Executorch Program.
+ * Metadata about a specific tensor of an ExecuTorch Program.
  *
  * The program used to create the MethodMeta object that created this
  * TensorInfo must outlive this TensorInfo.
@@ -90,7 +90,7 @@ class TensorInfo final {
 };
 
 /**
- * Describes a a method in an Executorch program.
+ * Describes a a method in an ExecuTorch program.
  *
  * The program used to create a MethodMeta object must outlive the MethodMeta.
  * It is separate from Method so that this information can be accessed without
