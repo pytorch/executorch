@@ -20,7 +20,7 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
 )
 from torch import nn
 
-"""Traces and exports delegated nn.Modules to Executorch .pte program files.
+"""Traces and exports delegated nn.Modules to ExecuTorch .pte program files.
 
 Creates two versions of each file:
 - <module-name>.pte: Delegate data stored in segments outside of the flatbuffer data.
@@ -133,7 +133,7 @@ def main() -> None:
     # when possible.
     parser = argparse.ArgumentParser(
         prog="export_delegated_program",
-        description="Exports delegated nn.Module models to Executorch .pte files",
+        description="Exports delegated nn.Module models to ExecuTorch .pte files",
     )
     parser.add_argument(
         "--modules",

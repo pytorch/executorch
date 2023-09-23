@@ -22,7 +22,7 @@ logger.setLevel(logging.INFO)
 class MemoryFormatOpsPass(ExportPass):
     """
     This pass replaces ops which takes torch.memory_format as an argument with
-    'equivalent' op which takes dim_order. This is towards the larger Executorch
+    'equivalent' op which takes dim_order. This is towards the larger ExecuTorch
     goal to move away from torch.memory_format. There is a 1:1 mapping between
     the aten op and the new edge dialect dim_order op.
     """

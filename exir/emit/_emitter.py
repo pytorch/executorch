@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 """Takes an ExportedArtifact, or a collection of ExportedArtifacts, in execution dialect, and turns
-them into a single Executorch Program.
+them into a single ExecuTorch Program.
 
 The provided ExportedArtifact's graph modules are in execution dialect and the emitter parses and
 converts them into executorch instructions. The emitter walks the provided graphs and as it
@@ -1015,7 +1015,7 @@ class _Emitter(torch.fx.Interpreter):
         return delegate_ret
 
     def _get_operator(self, name: str, overload: str) -> Tuple[int, Operator]:
-        """Given a fully qualified name, lookups the operator in the Executorch Program, or adds it
+        """Given a fully qualified name, lookups the operator in the ExecuTorch Program, or adds it
         if it is not already present"""
         key = (name, overload)
         op_index = self.emitter_state.operator_cache.get(key)
