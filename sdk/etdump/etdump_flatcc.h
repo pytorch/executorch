@@ -45,6 +45,20 @@ class ETDumpGen : public EventTracer {
   virtual void end_profiling(EventTracerEntry prof_entry) override;
   virtual void track_allocation(AllocatorID id, size_t size) override;
   virtual AllocatorID track_allocator(const char* name) override;
+  virtual EventTracerEntry start_profiling_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index) override {
+    return EventTracerEntry();
+  };
+  virtual void end_profiling_delegate(
+      EventTracerEntry event_tracer_entry,
+      const char* metadata = nullptr) override{};
+  virtual void log_profiling_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      et_timestamp_t start_time,
+      et_timestamp_t end_time,
+      const char* metadata = nullptr) override{};
   etdump_result get_etdump_data();
   size_t get_num_blocks();
 
