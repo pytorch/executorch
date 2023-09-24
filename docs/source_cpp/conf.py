@@ -90,7 +90,7 @@ exhale_args = {
     ############################################################################
     # Main library page layout example configuration.                          #
     ############################################################################
-    "afterTitleDescription": "Welcome to the Executorch's documentation.",
+    "afterTitleDescription": "Welcome to the ExecuTorch's documentation.",
 }
 
 # Tell sphinx what the primary language being documented is.

@@ -17,7 +17,7 @@ from executorch.test.end2end.exported_module import ExportedModule
 from torch import nn
 from torch._export import dynamic_dim
 
-"""Traces and exports nn.Modules to Executorch .pte program files.
+"""Traces and exports nn.Modules to ExecuTorch .pte program files.
 
 This tool mainly exists to export programs for C++ tests, but can also
 be used to export models manually.
@@ -177,7 +177,7 @@ def main() -> None:
     # when possible.
     parser = argparse.ArgumentParser(
         prog="export_program",
-        description="Exports nn.Module models to Executorch .pte files",
+        description="Exports nn.Module models to ExecuTorch .pte files",
     )
     parser.add_argument(
         "--modules",
