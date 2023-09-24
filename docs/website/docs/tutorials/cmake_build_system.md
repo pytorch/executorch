@@ -30,7 +30,7 @@ useful to embedded systems users.
 ## One-time setup
 
 1. Clone the repo and install buck2 as described in the "Runtime Setup" section
-   of [Setting up Executorch](00_setting_up_executorch.md#runtime-setup)
+   of [Setting up ExecuTorch](00_setting_up_executorch.md#runtime-setup)
    - `buck2` is necessary because the CMake build system runs `buck2` commands
      to extract source lists from the primary build system. It will be possible
      to configure the CMake system to avoid calling `buck2`, though.
@@ -40,7 +40,7 @@ useful to embedded systems users.
      calls to extract source lists from `buck2`. Consider doing this `pip
      install` inside your conda environment if you created one during AOT Setup
      (see [Setting up
-     Executorch](00_setting_up_executorch.md#aot-setup-open-on-google-colab)).
+     ExecuTorch](00_setting_up_executorch.md#aot-setup-open-on-google-colab)).
 1. Install CMake version 3.19 or later
 
 ## Configure the CMake build
@@ -84,7 +84,7 @@ cmake --build cmake-out -j9
 
 First, generate an `add.pte` or other ExecuTorch program file using the
 instructions in the "AOT Setup" section of
-[Setting up Executorch](00_setting_up_executorch.md#aot-setup-open-on-google-colab).
+[Setting up ExecuTorch](00_setting_up_executorch.md#aot-setup-open-on-google-colab).
 
 Then, pass it to the commandline tool:
 

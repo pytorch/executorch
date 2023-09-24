@@ -7,12 +7,12 @@ The current flow is
 Languages:
 
 - UI: Swift
-- Bridging with Executorch: Objective-C++
-- Executorch: C++
+- Bridging with ExecuTorch: Objective-C++
+- ExecuTorch: C++
 
 ## ExecutorchMobileNet App
 
-It's an app to use MobileNet with Executorch. In XCode, the layout is as following
+It's an app to use MobileNet with ExecuTorch. In XCode, the layout is as following
 
 ![](./executorch_mobilenet_xcode.png)
 

@@ -769,7 +769,7 @@ class EdgeProgramManager:
 
         Returns:
             ExecutorchProgramManager: A manager representing the state of the EdgeProgramManager
-            after it has been transformed to the Executorch backend.
+            after it has been transformed to the ExecuTorch backend.
         """
         config = config if config else ExecutorchBackendConfig()
 

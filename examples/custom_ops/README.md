@@ -1,5 +1,5 @@
 # Custom Operator Registration Examples (WIP)
-This folder contains examples to register custom operators into PyTorch as well as register its kernels into Executorch runtime.
+This folder contains examples to register custom operators into PyTorch as well as register its kernels into ExecuTorch runtime.
 
 ## How to run
 
@@ -13,7 +13,7 @@ bash test_custom_ops.sh
 
 ## AOT registration
 
-In order to use custom ops in Executorch AOT flow (EXIR), the first option is to register the custom ops into PyTorch JIT runtime using `torch.library` APIs.
+In order to use custom ops in ExecuTorch AOT flow (EXIR), the first option is to register the custom ops into PyTorch JIT runtime using `torch.library` APIs.
 
 We can see the example in `custom_ops_1.py` where we try to register `my_ops::mul3` and `my_ops::mul3_out`. `my_ops` is the namespace and it will show up in the way we use the operator like `torch.ops.my_ops.mul3.default`. For more information about PyTorch operator, checkout [`pytorch/torch/_ops.py`](https://github.com/pytorch/pytorch/blob/main/torch/_ops.py).
 
@@ -27,7 +27,7 @@ By linking them both with `libtorch` and `executorch` library, we can build a sh
 
 ## C++ kernel registration
 
-After the model is exported by EXIR, we need C++ implementations of these custom ops in order to run it. For example, `custom_ops_1_out.cpp` is C++ kernel that can be plugged in to Executorch runtime. Other than that, we also need a way to bind the PyTorch op to this kernel. This binding is specified in `custom_ops.yaml`:
+After the model is exported by EXIR, we need C++ implementations of these custom ops in order to run it. For example, `custom_ops_1_out.cpp` is C++ kernel that can be plugged in to ExecuTorch runtime. Other than that, we also need a way to bind the PyTorch op to this kernel. This binding is specified in `custom_ops.yaml`:
 ```yaml
 - func: my_ops::mul3.out(Tensor input, *, Tensor(a!) output) -> Tensor(a!)
   kernels:
