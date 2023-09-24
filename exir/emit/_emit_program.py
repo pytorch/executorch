@@ -106,7 +106,7 @@ class EmitterOutput:
     a mapping of instruction ids to debug handles.
     """
 
-    # The Executorch program
+    # The ExecuTorch program
     program: Program
 
     # This dictionary maps the instruction ids to their corresponding

@@ -84,7 +84,7 @@ class BundledExecutionPlanTest:
 
 @dataclass
 class BundledProgram:
-    """Executorch program bunlded with data for verification."""
+    """ExecuTorch program bunlded with data for verification."""
 
     # Schema version.
     version: int
@@ -94,5 +94,5 @@ class BundledProgram:
     # Its length should be equal to the number of execution plans in program.
     execution_plan_tests: List[BundledExecutionPlanTest]
 
-    # The binary data of a serialized Executorch program.
+    # The binary data of a serialized ExecuTorch program.
     program: bytes

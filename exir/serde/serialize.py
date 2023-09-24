@@ -683,7 +683,7 @@ def deserialize(
 ) -> exir.ExportedProgram:
     exported_program_str = exported_program_bytes.decode("utf-8")
     exported_program_dict = json.loads(exported_program_str)
-    # Executorch tests save exported program on disk when we haven't
+    # ExecuTorch tests save exported program on disk when we haven't
     # provided any compatibility guarantees.
     if "module_call_graph" not in exported_program_dict["graph_module"]:
         exported_program_dict["graph_module"]["module_call_graph"] = []

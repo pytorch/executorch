@@ -63,7 +63,7 @@ def dump_yaml(model_file: str, output_file: str) -> None:
 
 
 def main(args: List[Any]) -> None:
-    """This binary generates a template functions.yaml which will be consumed by Executorch codegen.
+    """This binary generates a template functions.yaml which will be consumed by ExecuTorch codegen.
     It reads the model file, deserialize it and dumps all the operators into a new functions.yaml.
     The generated file contains placeholder kernels, it needs to be updated with proper kernel names.
     """

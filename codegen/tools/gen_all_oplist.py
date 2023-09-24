@@ -16,8 +16,8 @@ from tools.code_analyzer import gen_oplist
 def main(argv: List[Any]) -> None:
     """This binary is a wrapper for //xplat/caffe2/tools/code_analyzer/gen_oplist.py.
     This is needed because we intend to error out for the case where `model_file_list_path`
-    is empty or invalid, so that the Executorch build will fail when no selective build target
-    is provided as a dependency to Executorch build.
+    is empty or invalid, so that the ExecuTorch build will fail when no selective build target
+    is provided as a dependency to ExecuTorch build.
     """
     parser = argparse.ArgumentParser(description="Generate operator lists")
     parser.add_argument(
@@ -66,7 +66,7 @@ def main(argv: List[Any]) -> None:
             model_file_names = model_list_file.read().split()
             assert (
                 len(model_file_names) > 0
-            ), "BUCK was not able to find any `et_operator_library` in the dependency graph of the current Executorch "
+            ), "BUCK was not able to find any `et_operator_library` in the dependency graph of the current ExecuTorch "
             "build. Please refer to Selective Build wiki page to add at least one."
     gen_oplist.main(argv)
 

@@ -24,7 +24,7 @@ from torch.utils._pytree import tree_flatten
 
 """
 Server can be an App Call, and will send delegate to client backend like DSP,
-DSP will reeive the rpc call, calls the Executorch instance (like on DSP),
+DSP will reeive the rpc call, calls the ExecuTorch instance (like on DSP),
 and return the result.
 
 
@@ -65,12 +65,12 @@ For example, in some usecases, there are can be three layers MCU -> DSP -> AC
 
 MCU
 ——
-1. MCU instantiate Executorch instance with DSPBackend
+1. MCU instantiate ExecuTorch instance with DSPBackend
 2. In DSPBackend init/execute, it'll invoke the implemented RPC calls on DSP
 
 DSP
 ——
-3. DSP receives the RPC call and construct the Executorch instance on the DSP
+3. DSP receives the RPC call and construct the ExecuTorch instance on the DSP
 4. When dsp executor runs, it can call any delegate (e.g. Accelerator) as needed.
 
 There’ll negligible overhead in binary size on the MCU, as the executor size is small.
