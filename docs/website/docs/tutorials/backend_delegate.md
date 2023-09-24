@@ -76,16 +76,16 @@ __ET_NODISCARD Error register_backend(const Backend& backend);
 ```
 
 
-# How to delegate a PyTorch module to a different backend in Executorch for Model Authors
+# How to delegate a PyTorch module to a different backend in ExecuTorch for Model Authors
 
 This note is to demonstrate the basic end-to-end flow of backend delegation in
-the Executorch runtime.
+the ExecuTorch runtime.
 
 At a high level, here are the steps needed for delegation:
 
-1. Add your backend to Executorch.
+1. Add your backend to ExecuTorch.
 2. Frontend: lower the PyTorch module or part of the module to a backend.
-3. Deployment: load and run the lowered module through Executorch runtime
+3. Deployment: load and run the lowered module through ExecuTorch runtime
 interface.
 
 
@@ -247,7 +247,7 @@ with open(save_path, "wb") as f:
 
 ## Runtime
 
-The serialized flatbuffer model is loaded by the Executorch runtime. The
+The serialized flatbuffer model is loaded by the ExecuTorch runtime. The
 preprocessed blob is directly stored in the flatbuffer, which is loaded into a
 call to the backend's `init()` function during model initialization stage. At
 the model execution stage, the initialized handled can be executed through the

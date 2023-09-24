@@ -1,4 +1,4 @@
-# Exporting to Executorch Runtime
+# Exporting to ExecuTorch Runtime
 
 On a high-level, the workflow for executorch is split to an ahead-of-time (AOT)
 compilation, and a runtime.
@@ -34,7 +34,7 @@ embedded devices. At a high level, the AOT steps are the following:
 
 NB: Export APIs are undergoing changes to align better with long term state of export. Please refer to https://github.com/pytorch/executorch/issues/290, for more details.
 
-The entrypoint to Executorch is through the `torch._export.capture_pre_autograd_graph` API, which is used
+The entrypoint to ExecuTorch is through the `torch._export.capture_pre_autograd_graph` API, which is used
 to fully capture a PyTorch Model (either `torch.nn.Module` or a callable) into a
 `torch.fx` graph representation.
 
@@ -195,7 +195,7 @@ ExportedProgram:
 ### 1.5 Save the graph to a flatbuffer file.
 
 Finally, the exported and delegated graph can be saved to a flatbuffer file to
-be loaded in the Executorch runtime.
+be loaded in the ExecuTorch runtime.
 
 ```python
 pre_autograd_aten_dialect = export.capture_pre_autograd_graph(MyModule(), (torch.randn(3, 4),), constraints)
@@ -204,11 +204,11 @@ edge_dialect = exir.capture(pre_autograd_aten_dialect, (torch.randn(3, 4),)).to_
 executorch_program = edge_dialect.to_executorch(executorch_backend_config)
 buffer = executorch_program.buffer
 
-# Save it to a file and load it in the Executorch runtime
+# Save it to a file and load it in the ExecuTorch runtime
 with open("model.pte", "wb") as file:
     file.write(buffer)
 
-# Or you can run the Executorch runtime in python to try it out
+# Or you can run the ExecuTorch runtime in python to try it out
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
