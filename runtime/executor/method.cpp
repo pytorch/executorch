@@ -952,7 +952,7 @@ Error Method::execute_instruction() {
           delegate_idx,
           n_delegate_,
           step_state_.instr_idx);
-      BackendExecutionContext backend_execution_context;
+      BackendExecutionContext backend_execution_context(event_tracer_);
       Error err = delegates_[delegate_idx].Execute(
           backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx].data());
