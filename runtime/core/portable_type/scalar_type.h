@@ -19,7 +19,7 @@
  * indices of the main ScalarType enum line up, so that serialization is
  * compatible between the two.
  *
- * Modifications for Executorch:
+ * Modifications for ExecuTorch:
  * - Namespace torch::executor instead of c10
  * - Macro prefix ET_ instead of AT_
  * - Use ET_CHECK_MSG() instead of TORCH_CHECK()

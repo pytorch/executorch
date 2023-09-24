@@ -1,10 +1,10 @@
 The `schema.fbs` file in this directory describes the
 [Flatbuffers](https://google.github.io/flatbuffers/) schema used to serialize
-Executorch programs.
+ExecuTorch programs.
 
 The `bundled_program_schema.fbs` file is for serializing bundled program. It
-bundles the Executorch program, several sets of inputs and referenced outputs,
-and other useful info together for verifying the correctness of Executorch program.
+bundles the ExecuTorch program, several sets of inputs and referenced outputs,
+and other useful info together for verifying the correctness of ExecuTorch program.
 
 The `scalar_type.fbs` file contains schema for scalar types, used in both
 `schema.fbs` and `bundled_program_schema.fbs`.
@@ -50,7 +50,7 @@ will tell Flatbuffer's `flatc` to stop generating getters/setters for it, so any
 code using those functions will fail to build, and will need to be fixed.
 
 However, this serialization format and the Flatbuffer types that are generated
-from it are private to Executorch, so we do not need to worry about updating
+from it are private to ExecuTorch, so we do not need to worry about updating
 external client code when the Flatbuffer API changes. This also means that we
 can more easily upgrade to new versions of the Flatbuffers tools/library.
 

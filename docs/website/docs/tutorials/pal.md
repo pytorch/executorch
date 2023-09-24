@@ -1,5 +1,5 @@
 # Platform Abstraction Layer
-The Executorch Platform Abstraction Layer (PAL) provides a way for execution
+The ExecuTorch Platform Abstraction Layer (PAL) provides a way for execution
 environments to override operations like:
 - Getting the current time
 - Printing a log statement
