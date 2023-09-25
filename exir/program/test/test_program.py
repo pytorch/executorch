@@ -6,9 +6,8 @@
 
 # pye-strict
 
-import copy
 import unittest
-from typing import Any, Callable, Dict
+from typing import Any, Dict
 
 import torch
 from executorch.exir import ExecutorchBackendConfig
@@ -16,11 +15,7 @@ from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDe
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.error import ExportError
 from executorch.exir.lowered_backend_module import get_lowered_submodules
-from executorch.exir.pass_base import ExportPass, PassResult
-from executorch.exir.passes.replace_aten_with_edge_pass import (
-    aten_to_edge,
-    should_lower_to_edge,
-)
+from executorch.exir.pass_base import ExportPass
 from executorch.exir.program._program import (
     EdgeProgramManager,
     ExecutorchProgramManager,
@@ -31,9 +26,7 @@ from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from executorch.extension.pybindings.portable_lib import (
     _load_for_executorch_from_buffer,
 )
-from torch import fx
 from torch.export import export, ExportedProgram
-from torch.fx import GraphModule, subgraph_rewriter
 
 
 def get_exported_programs() -> Dict[str, ExportedProgram]:
@@ -70,32 +63,13 @@ def get_config_methods() -> Dict[str, Any]:
 
 
 class AddToMulPassEdge(ExportPass):
-    def call(self, graph_module: GraphModule) -> PassResult:
-        """
-        Dummy pass that replaces add with mul
-        """
-
-        def _trace_and_lower_to_edge_ops(f: Callable) -> fx.GraphModule:
-            gm = fx.symbolic_trace(f)
-            for node in gm.graph.nodes:
-                if node.op == "call_function" and should_lower_to_edge(node.target):
-                    node.target = aten_to_edge(node.target)
-            gm.recompile()
-            return gm
-
-        def pattern(x: torch.Tensor, y: torch.Tensor):
-            return torch.ops.aten.add.Tensor(x, y)
-
-        def replacement(x: torch.Tensor, y: torch.Tensor):
-            return torch.ops.aten.mul.Tensor(x, y)
-
-        new_graph_module = copy.deepcopy(graph_module)
-        subgraph_rewriter.replace_pattern_with_filters(
-            new_graph_module,
-            _trace_and_lower_to_edge_ops(pattern),
-            _trace_and_lower_to_edge_ops(replacement),
-        )
-        return PassResult(new_graph_module, True)
+    def call_operator(self, op, args, kwargs, meta):
+        if op == exir_ops.edge.aten.add.Tensor:
+            return super().call_operator(
+                exir_ops.edge.aten.mul.Tensor, args, kwargs, meta
+            )
+        else:
+            return super().call_operator(op, args, kwargs, meta)
 
 
 class TestProgramManagers(unittest.TestCase):

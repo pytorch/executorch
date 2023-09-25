@@ -145,6 +145,8 @@ class TestVerification(unittest.TestCase):
         self.assertEqual(len(res), len(res_interp))
         self.assertTrue(torch.allclose(res, res_interp))
 
+
+class TestEdgeVerification(unittest.TestCase):
     def test_edge_happy(self) -> None:
         class TestModel(torch.nn.Module):
             def __init__(self):
