@@ -23,9 +23,20 @@ namespace {
 /// The default number of first/last list items to print before eliding.
 constexpr size_t kDefaultEdgeItems = 3;
 
-/// Init-time allocation of a globally unique "iword" stream index that we can
-/// use to store the current "edge items" count on arbitrary streams.
-const int kPrintEvalueEdgeItemsXalloc = std::ios_base::xalloc();
+/// Returns a globally unique "iword" index that we can use to store the current
+/// "edge items" count on arbitrary streams.
+int get_edge_items_xalloc() {
+  // Wrapping this in a function avoids a -Wglobal-constructors warning.
+  static const int xalloc = std::ios_base::xalloc();
+  return xalloc;
+}
+
+/// Returns the number of "edge items" to print at the beginning and end of
+/// lists when using the provided stream.
+long get_stream_edge_items(std::ostream& os) {
+  long edge_items = os.iword(get_edge_items_xalloc());
+  return edge_items <= 0 ? kDefaultEdgeItems : edge_items;
+}
 
 void print_double(std::ostream& os, double value) {
   if (std::isfinite(value)) {
@@ -61,16 +72,8 @@ void print_scalar_list(
     exec_aten::ArrayRef<T> list,
     bool print_length = true,
     bool elide_inner_items = true) {
-  long edge_items;
-  if (elide_inner_items) {
-    edge_items = os.iword(kPrintEvalueEdgeItemsXalloc);
-    if (edge_items <= 0) {
-      edge_items = kDefaultEdgeItems;
-    }
-  } else {
-    edge_items = std::numeric_limits<long>::max();
-  }
-
+  long edge_items = elide_inner_items ? get_stream_edge_items(os)
+                                      : std::numeric_limits<long>::max();
   if (print_length) {
     os << "(len=" << list.size() << ")";
   }
@@ -213,10 +216,11 @@ std::ostream& operator<<(std::ostream& os, const EValue& value) {
 }
 
 namespace util {
-// Lets us avoid exposing kPrintEvalueEdgeItemsXalloc in the header.
-long evalue_edge_items::xalloc_index() {
-  return kPrintEvalueEdgeItemsXalloc;
+
+void evalue_edge_items::set_edge_items(std::ostream& os, long edge_items) {
+  os.iword(get_edge_items_xalloc()) = edge_items;
 }
+
 } // namespace util
 
 } // namespace executor
