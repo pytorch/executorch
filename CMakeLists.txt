@@ -244,6 +244,14 @@ add_subdirectory(schema)
 # full operators. Does not contain any backends.
 #
 
+# Check if dl exists for this toolchain and only then link it.
+find_library(DL_LIBRARY_EXISTS NAMES dl)
+
+# Check if the library was found
+if(DL_LIBRARY_EXISTS)
+  target_link_libraries(executorch PRIVATE dl) # For dladdr()
+endif()
+
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE program_schema)
 # Check if dl exists for this toolchain and only then link it.
@@ -354,6 +362,10 @@ endif()
 
 if(EXECUTORCH_BUILD_EXAMPLES)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples)
+endif()
+
+if(EXECUTORCH_BUILD_XTENSA_EXAMPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/xtensa)
 endif()
 
 if(EXECUTORCH_BUILD_XTENSA_EXAMPLE)

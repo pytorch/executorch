@@ -201,8 +201,10 @@ int main(int argc, char** argv) {
       ET_LOG(Info, "%f \n", out_data_ptr[j]);
     }
   }
-  delay();
-  LED_TOGGLE();
+  while (1) {
+    delay();
+    LED_TOGGLE();
+  }
 
   return 0;
 }
