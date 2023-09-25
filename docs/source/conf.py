@@ -71,7 +71,7 @@ myst_enable_extensions = [
 sphinx_gallery_conf = {
     "examples_dirs": ["tutorials_source"],
     "gallery_dirs": ["tutorials"],
-    "filename_pattern": "/tutorials/",
+    "filename_pattern": "/tutorials_source/",
     "promote_jupyter_magic": True,
     "backreferences_dir": None,
     "first_notebook_cell": ("%matplotlib inline"),
@@ -90,6 +90,10 @@ autodoc_typehints = "none"
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
+# autosectionlabel throws warnings if section names are duplicated.
+# The following tells autosectionlabel to not throw a warning for
+# duplicated section names that are in different documents.
+autosectionlabel_prefix_document = True
 
 # -- Options for HTML output -------------------------------------------------
 
