@@ -57,12 +57,12 @@ class evalue_edge_items final {
   friend std::ostream& operator<<(
       std::ostream& os,
       const evalue_edge_items& e) {
-    os.iword(xalloc_index()) = e.edge_items_;
+    set_edge_items(os, e.edge_items_);
     return os;
   }
 
  private:
-  static long xalloc_index();
+  static void set_edge_items(std::ostream& os, long edge_items);
 
   const long edge_items_;
 };
