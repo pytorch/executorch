@@ -1,7 +1,17 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
+# This examples demonstrates how to Export a llama 2 model in ExecuTorch.
 # Llama 2 is licensed under the LLAMA 2 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved.
+#
+# Instructions:
+# 1. Follow https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/00_setting_up_executorch.md
+#    to set up ExecuTorch.
+# 2. cd examples/third-party/llama
+# 3. pip install -e .
+# 4. Follow the instruction in https://github.com/facebookresearch/llama to download the model
+# 5. Go back to executorch/ root, run
+#    python3 -m examples.export.export_example --model_name="llama"
 #
 
 import logging
@@ -176,9 +186,9 @@ class Transformer(nn.Module):
         freqs_cos = self.freqs_cos[:seqlen]
         freqs_sin = self.freqs_sin[:seqlen]
 
-        # for layer in self.layers:
-        #     h = layer(h, freqs_cos, freqs_sin)
-        h = self.layers[0](h, freqs_cos, freqs_sin) # myuan: hack one layer for debug
+        for layer in self.layers:
+            h = layer(h, freqs_cos, freqs_sin)
+        # h = self.layers[0](h, freqs_cos, freqs_sin) # myuan: hack one layer for debug
 
         h = self.norm(h)
 
