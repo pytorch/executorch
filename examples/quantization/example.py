@@ -43,8 +43,9 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_inputs):
     """This is a verification against fx graph mode quantization flow as a sanity check"""
 
-    if model_name == "edsr":
+    if model_name in ["edsr", "mobilebert"]:
         # EDSR has control flows that are not traceable in symbolic_trace
+        # mobilebert is not symbolically traceable with torch.fx.symbolic_trace
         return
     if model_name == "ic3":
         # we don't want to compare results of inception_v3 with fx, since mul op with Scalar
