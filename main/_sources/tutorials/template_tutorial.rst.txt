@@ -95,6 +95,22 @@ Example code (the output below is generated automatically):
     print(x)
 
 
+
+
+
+.. rst-class:: sphx-glr-script-out
+
+ .. code-block:: none
+
+    tensor([[0.6077, 0.9089, 0.1532],
+            [0.8341, 0.8666, 0.3356],
+            [0.6712, 0.6609, 0.3647],
+            [0.8230, 0.8163, 0.1028],
+            [0.2950, 0.4669, 0.7129]])
+
+
+
+
 .. GENERATED FROM PYTHON SOURCE LINES 81-87
 
 (Optional) Additional Exercises
@@ -124,9 +140,15 @@ Conclusion
     # * Link2
 
 
+
+
+
+
+
+
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 0.000 seconds)
+   **Total running time of the script:** (0 minutes 1.130 seconds)
 
 
 .. _sphx_glr_download_tutorials_template_tutorial.py:

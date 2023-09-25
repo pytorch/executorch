@@ -33,6 +33,23 @@ Tutorials
 
 .. raw:: html
 
+    <div class="sphx-glr-thumbcontainer" tooltip="Author: Angela Yi">
+
+.. only:: html
+
+  .. image:: /tutorials/images/thumb/sphx_glr_export-to-executorch-tutorial_thumb.png
+    :alt:
+
+  :ref:`sphx_glr_tutorials_export-to-executorch-tutorial.py`
+
+.. raw:: html
+
+      <div class="sphx-glr-thumbnail-title">Exporting to ExecuTorch Tutorial</div>
+    </div>
+
+
+.. raw:: html
+
     </div>
 
 
@@ -40,6 +57,7 @@ Tutorials
    :hidden:
 
    /tutorials/template_tutorial
+   /tutorials/export-to-executorch-tutorial
 
 
 .. only:: html

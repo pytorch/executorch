@@ -39,7 +39,6 @@
   <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="prev" title="Delegate Integration" href="../sdk-delegate-integration.html" />
   <!-- Google Tag Manager -->
     <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
     new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
@@ -253,7 +252,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Exporting to ExecuTorch</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../export-overview.html">Exporting to ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../export-overview.html">Exporting to Executorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../export-user-guide.html">Export User Guide</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Intermediate Representation (IR) Specification</span></p>
@@ -296,8 +295,8 @@
 <li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">Delegate Integration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
-<ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Template Tutorial</a></li>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 </ul>
 
             
@@ -469,8 +468,15 @@ Then run <code class="docutils literal notranslate"><span class="pre">make</span
 <p>Example code (the output below is generated automatically):</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="n">x</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.rand.html#torch.rand" title="torch.rand" class="sphx-glr-backref-module-torch sphx-glr-backref-type-py-function"><span class="n">torch</span><span class="o">.</span><span class="n">rand</span></a><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<a href="https://pytorch.org/docs/stable/tensors.html#torch.Tensor" title="torch.Tensor" class="sphx-glr-backref-module-torch sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">x</span></a> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.rand.html#torch.rand" title="torch.rand" class="sphx-glr-backref-module-torch sphx-glr-backref-type-py-function"><span class="n">torch</span><span class="o">.</span><span class="n">rand</span></a><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/tensors.html#torch.Tensor" title="torch.Tensor" class="sphx-glr-backref-module-torch sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">x</span></a><span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">tensor</span><span class="p">([[</span><span class="mf">0.6077</span><span class="p">,</span> <span class="mf">0.9089</span><span class="p">,</span> <span class="mf">0.1532</span><span class="p">],</span>
+        <span class="p">[</span><span class="mf">0.8341</span><span class="p">,</span> <span class="mf">0.8666</span><span class="p">,</span> <span class="mf">0.3356</span><span class="p">],</span>
+        <span class="p">[</span><span class="mf">0.6712</span><span class="p">,</span> <span class="mf">0.6609</span><span class="p">,</span> <span class="mf">0.3647</span><span class="p">],</span>
+        <span class="p">[</span><span class="mf">0.8230</span><span class="p">,</span> <span class="mf">0.8163</span><span class="p">,</span> <span class="mf">0.1028</span><span class="p">],</span>
+        <span class="p">[</span><span class="mf">0.2950</span><span class="p">,</span> <span class="mf">0.4669</span><span class="p">,</span> <span class="mf">0.7129</span><span class="p">]])</span>
 </pre></div>
 </div>
 </section>
@@ -490,7 +496,7 @@ Example: <a class="reference external" href="https://pytorch.org/tutorials/inter
 <span class="c1"># * Link2</span>
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.000 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.130 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-template-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/5e75fad65c3fb1034bc2a6332118737e/template_tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">template_tutorial.py</span></code></a></p>
@@ -508,13 +514,6 @@ Example: <a class="reference external" href="https://pytorch.org/tutorials/inter
              
             </div>
             <footer>
-  
-    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-      
-      
-        <a href="../sdk-delegate-integration.html" class="btn btn-neutral" title="Delegate Integration" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
-      
-    </div>
   
 
   
