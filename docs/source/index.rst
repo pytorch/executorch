@@ -181,8 +181,8 @@ ExecuTorch tutorials.
    :tags: Template
 
 .. customcarditem::
-   :header: Exporting to Executorch Tutorial
-   :card_description: A tutorial for exporting a model and lowering a it to be runnable on the Executorch runtime.
+   :header: Exporting to ExecuTorch Tutorial
+   :card_description: A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.
    :image: _static/img/generic-pytorch-logo.png
    :link: tutorials/export-to-executorch.html
    :tags: Export,Delegation,Quantization

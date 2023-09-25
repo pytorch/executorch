@@ -16,6 +16,10 @@ on:
 jobs:
   build:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: buck2
     with:
       job-name: Build doc
       runner: linux.2xlarge
@@ -28,10 +32,9 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        source .ci/scripts/utils.sh
-        # This is a simple Python script but as it tries to import executorch.examples.models,
-        # it requires a whole bunch of Executorch dependencies on the Docker image
-        install_executorch
+        BUILD_TOOL=${{ matrix.build-tool }}
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
 
         if [[(${GITHUB_EVENT_NAME} = 'pull_request' && (${GITHUB_BASE_REF} = 'release'*)) || (${GITHUB_REF} = 'refs/heads/release'*) ]]; then
           export CHANNEL=test
