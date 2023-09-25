@@ -35,28 +35,30 @@ void check_embedding_byte_args(
   ET_CHECK_MSG(
       weight.scalar_type() == ScalarType::Byte ||
           weight.scalar_type() == ScalarType::Char,
-      "weight.scalar_type() %hdd is not supported:",
-      static_cast<short>(weight.scalar_type()));
+      "weight.scalar_type() %" PRId8 " is not supported:",
+      static_cast<int8_t>(weight.scalar_type()));
 
   ET_CHECK_MSG(
       weight_scales.scalar_type() == ScalarType::Float,
-      "weight_scales.scalar_type() %hdd is not float only float is supported:",
-      static_cast<short>(weight_scales.scalar_type()));
+      "weight_scales.scalar_type() %" PRId8
+      " is not float only float is supported:",
+      static_cast<int8_t>(weight_scales.scalar_type()));
 
   ET_CHECK_MSG(
       weight_zero_points.scalar_type() == ScalarType::Float,
-      "weight_zero_points.scalar_type() %hdd is not Float only Float is supported for embedding:",
-      static_cast<short>(weight_zero_points.scalar_type()));
+      "weight_zero_points.scalar_type() %" PRId8
+      " is not Float only Float is supported for embedding:",
+      static_cast<int8_t>(weight_zero_points.scalar_type()));
 
   ET_CHECK_MSG(
       indices.scalar_type() == ScalarType::Long,
-      "indices.scalar_type() %hdd is not Long only Long is supported:",
-      static_cast<short>(indices.scalar_type()));
+      "indices.scalar_type() %" PRId8 " is not Long only Long is supported:",
+      static_cast<int8_t>(indices.scalar_type()));
 
   ET_CHECK_MSG(
       out.scalar_type() == ScalarType::Float,
-      "out.scalar_type() %hdd is not supported:",
-      static_cast<short>(out.scalar_type()));
+      "out.scalar_type() %" PRId8 " is not supported:",
+      static_cast<int8_t>(out.scalar_type()));
 
   ET_CHECK_MSG(
       weight_quant_min <= weight_quant_max,
@@ -167,7 +169,7 @@ Tensor& quantized_embedding_byte_out(
     default:                                                        \
       ET_CHECK_MSG(                                                 \
           false,                                                    \
-          "Unhandled output dtype %hhd",                            \
+          "Unhandled output dtype %" PRId8,                         \
           static_cast<int8_t>(out.scalar_type()));                  \
   }
 
@@ -181,7 +183,7 @@ Tensor& quantized_embedding_byte_out(
     default:
       ET_CHECK_MSG(
           false,
-          "Unhandled weight dtype %hhd",
+          "Unhandled weight dtype %" PRId8,
           static_cast<int8_t>(weight.scalar_type()));
   }
 #undef CALCULATE_OUT_DTYPE

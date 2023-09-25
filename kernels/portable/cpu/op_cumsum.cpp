@@ -123,7 +123,7 @@ Tensor& cumsum_out(
       default:                                           \
         ET_CHECK_MSG(                                    \
             false,                                       \
-            "Unhandled output dtype %hhd",               \
+            "Unhandled output dtype %" PRId8,            \
             static_cast<int8_t>(out.scalar_type()));     \
     }                                                    \
     break;
@@ -133,7 +133,7 @@ Tensor& cumsum_out(
     default:
       ET_CHECK_MSG(
           false,
-          "Unhandled input dtype %hhd",
+          "Unhandled input dtype %" PRId8,
           static_cast<int8_t>(self.scalar_type()));
   }
 

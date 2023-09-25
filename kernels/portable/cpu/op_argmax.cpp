@@ -39,7 +39,7 @@ void check_preconditions(
   }
   ET_CHECK_MSG(
       out.scalar_type() == ScalarType::Long,
-      "Expected out tensor to have dtype Long, but got %hhd instead",
+      "Expected out tensor to have dtype Long, but got %" PRId8 " instead",
       static_cast<int8_t>(out.scalar_type()));
   ET_CHECK_MSG(
       out.dim() == compute_reduced_out_dim(in, dim, keepdim),
