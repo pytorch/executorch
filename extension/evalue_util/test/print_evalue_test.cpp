@@ -76,14 +76,18 @@ TEST(PrintEvalueTest, NegativeInt) {
 }
 
 TEST(PrintEvalueTest, LargePositiveInt) {
-  // A value that can't fit in 32 bits.
-  EValue value(exec_aten::Scalar(1152921504606846976));
+  // A value that can't fit in 32 bits. Saying Scalar(<literal-long-long>) is
+  // ambiguous with c10::Scalar, so use a non-literal value.
+  constexpr int64_t i = 1152921504606846976;
+  EValue value = {exec_aten::Scalar(i)};
   expect_output(value, "1152921504606846976");
 }
 
 TEST(PrintEvalueTest, LargeNegativeInt) {
-  // A value that can't fit in 32 bits.
-  EValue value(exec_aten::Scalar(-1152921504606846976));
+  // A value that can't fit in 32 bits. Saying Scalar(<literal-long-long>) is
+  // ambiguous with c10::Scalar, so use a non-literal value.
+  constexpr int64_t i = -1152921504606846976;
+  EValue value = {exec_aten::Scalar(i)};
   expect_output(value, "-1152921504606846976");
 }
 
