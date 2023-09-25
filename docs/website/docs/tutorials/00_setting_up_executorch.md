@@ -1,6 +1,6 @@
-# Setting up Executorch
+# Setting up ExecuTorch
 
-This is a tutorial for building and installing Executorch from the GitHub repository.
+This is a tutorial for building and installing ExecuTorch from the GitHub repository.
 
 ## AOT Setup [(Open on Google Colab)](https://colab.research.google.com/drive/1m8iU4y7CRVelnnolK3ThS2l2gBo7QnAP#scrollTo=1o2t3LlYJQY5)
 
@@ -125,4 +125,4 @@ or execute the binary directly from the `--show-output` path shown when building
 ## More Examples
 
 The [`executorch/examples`](https://github.com/pytorch/executorch/blob/main/examples) directory contains useful examples with a guide to lower and run
-popular models like MobileNet V3, Torchvision ViT, Wav2Letter, etc. on Executorch.
+popular models like MobileNet V3, Torchvision ViT, Wav2Letter, etc. on ExecuTorch.

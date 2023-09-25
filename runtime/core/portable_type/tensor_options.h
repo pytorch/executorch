@@ -21,7 +21,7 @@ enum class MemoryFormat : int8_t {
   /**
    * Row-major contiguous data format.
    *
-   * This is the only format supported by Executorch. Use dim orders to
+   * This is the only format supported by ExecuTorch. Use dim orders to
    * describe other layouts.
    */
   Contiguous,
@@ -37,7 +37,7 @@ enum class Layout : int8_t {
    * Contrasted with a sparse tensor layout where the memory structure of the
    * data blob will be more complicated and indexing requires larger structures.
    *
-   * This is the only layout supported by Executorch.
+   * This is the only layout supported by ExecuTorch.
    */
   Strided,
 };

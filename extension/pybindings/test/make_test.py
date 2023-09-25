@@ -60,7 +60,7 @@ def make_test(  # noqa: C901
         ) -> Tuple[Program, Tuple[Any, ...]]:
             """Returns an executorch program based on ModuleAdd, along with inputs."""
 
-            # Trace the test module and create a serialized Executorch program.
+            # Trace the test module and create a serialized ExecuTorch program.
             inputs = (torch.ones(2, 2), torch.ones(2, 2))
             input_map = {}
             for method in eager_module.get_methods_to_export():
@@ -74,14 +74,14 @@ def make_test(  # noqa: C901
                 .to_executorch()
             )
 
-            # Create the Executorch program from the graph.
+            # Create the ExecuTorch program from the graph.
             pretty_print(exec_prog.program)
             return (exec_prog, inputs)
 
         ######### TEST CASES #########
 
         def test_e2e(tester):
-            # Create an Executorch program from ModuleAdd.
+            # Create an ExecuTorch program from ModuleAdd.
             exported_program, inputs = create_program(ModuleAdd())
 
             # Use pybindings to load and execute the program.

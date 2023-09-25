@@ -57,7 +57,7 @@ class TensorImpl {
    * This must match the size/signedness of the type used for `Tensor.sizes` in
    * //executorch/schema/program.fbs.
    *
-   * Note that at::TensorImpl uses `int64_t` for this type. Executorch uses
+   * Note that at::TensorImpl uses `int64_t` for this type. ExecuTorch uses
    * `int32_t` to save memory, since no single size value will ever be larger
    * than 2 billion.
    */
@@ -77,7 +77,7 @@ class TensorImpl {
    * This must match the size/signedness of the type used for `Tensor.strides`
    * in //executorch/schema/program.fbs.
    *
-   * Note that at::TensorImpl uses `int64_t` for this type. Executorch uses
+   * Note that at::TensorImpl uses `int64_t` for this type. ExecuTorch uses
    * `int32_t` to save memory, since no single stride value will ever be larger
    * than 2 billion.
    */

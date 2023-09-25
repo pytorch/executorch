@@ -145,7 +145,10 @@ Tensor& as_strided_copy_out(
   switch (self.scalar_type()) {
     ET_FORALL_SCALAR_TYPES(AS_STRIDED_COPY_TENSOR)
     default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd", self.scalar_type());
+      ET_CHECK_MSG(
+          false,
+          "Unhandled dtype %hhd",
+          static_cast<int8_t>(self.scalar_type()));
   }
 #undef AS_STRIDED_COPY_TENSOR
   return out;

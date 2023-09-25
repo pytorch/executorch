@@ -171,7 +171,7 @@ std::pair<float, float> GetMinMax(const Tensor& ft) {
   ET_CHECK_MSG(
       ft.scalar_type() == ScalarType::Float,
       "Expected float tensor but got %hhd",
-      ft.scalar_type());
+      static_cast<int8_t>(ft.scalar_type()));
   const float* d = ft.const_data_ptr<float>();
   for (int i = 0; i < ft.numel(); ++i) {
     min = (d[i] < min) ? d[i] : min;

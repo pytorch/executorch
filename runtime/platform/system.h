@@ -9,7 +9,7 @@
 /**
  * @file
  * Platform abstraction layer to allow individual host OS to override
- * symbols in Executorch. PAL functions are defined as C functions so an
+ * symbols in ExecuTorch. PAL functions are defined as C functions so an
  * implementer can use C in lieu of C++.
  */
 #pragma once

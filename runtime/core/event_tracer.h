@@ -28,6 +28,19 @@ typedef uint32_t DebugHandle;
 constexpr ChainID kUnsetChainId = -1;
 constexpr DebugHandle kUnsetDebugHandle = 0;
 
+/// Different types of delegate debug identifiers that are supported currently.
+enum class DelegateDebugIdType {
+  /// Default value, indicates that it's not a delegate event.
+  kNone,
+  /// Indicates a delegate event logged using an integer delegate debug
+  /// identifier.
+  kInt,
+  /// Indicates a delegate event logged using a string delegate debug
+  /// identifier i.e. the delegate debug id is a pointer to a string table
+  /// managed by the class implementing EventTracer functionality.
+  kStr
+};
+
 /**
  * This is the struct which should be returned when a profiling event is
  * started. This is used to uniquely identify that profiling event and will be
@@ -44,8 +57,16 @@ struct EventTracerEntry {
   DebugHandle debug_handle;
   /// The time at which this event was started to be tracked.
   et_timestamp_t start_time;
+  /// When delegate_event_id_type != DelegateDebugIdType::kNone it indicates
+  /// that event_id represents a delegate event. If delegate_event_id_type is:
+  /// 1) kInt then event_id contains an integer delegate debug id.
+  /// 2) kStr then event_id contains a string table index into a string table
+  /// maintained by the class implementing EventTracer functionality that will
+  /// give us the string identifier of this delegate event. For more details
+  /// refer to the DelegateMappingBuilder library present in
+  /// executorch/exir/backend/utils.py.
+  DelegateDebugIdType delegate_event_id_type;
 };
-
 /**
  * EventTracer is a class that users can inherit and implement to
  * log/serialize/stream etc. the profiling and debugging events that are
@@ -79,8 +100,9 @@ class EventTracer {
    * around. The string must be copied over into internal memory during this
    * call.
    * @param[in] chain_id The id of the chain to which this event belongs to. If
-   * -1 is passed in the chain_id and debug_handle stored in the class
-   * internally will be used.
+   * kUnsetChainId is passed in the chain_id and kUnsetDebugHandle for
+   * debug_handle then the values stored in the class internally for these
+   * properties will be used.
    * @param[in] debug_handle Debug handle generated ahead-of-time during model
    * compilation.
    *
@@ -91,6 +113,73 @@ class EventTracer {
       const char* name,
       ChainID chain_id = kUnsetChainId,
       DebugHandle debug_handle = kUnsetDebugHandle) = 0;
+
+  /**
+   * Start the profiling of a delegate event. Similar to start_profiling it will
+   * return an instance of EventTracerEntry that contains the details of this
+   * event.
+   *
+   * @param[in] name Human readable name for the delegate event. This name has
+   * to be the same name that was passed in during the Debug delegate mapping
+   * generation in the export/ahead-of-time process. If indices and not names
+   * are used by this delegate to identify ops executed in the backend then
+   * nullptr can be passed in. Users calling this interface do not need to keep
+   * the memory pointed to by this pointer around. The string must be copied
+   * over into internal memory during this call.
+   * @param[in] delegate_debug_index The id of the delegate event. If string
+   * based names are used by this delegate to identify ops executed in the
+   * backend then kUnsetDebugHandle should be passed in here.
+   */
+  virtual EventTracerEntry start_profiling_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index) = 0;
+
+  /**
+   * Signal the end of the delegate profiling event contained in
+   * event_tracer_entry. Users also have the option to log some some free-from
+   * string based metadata along with this.
+   *
+   * @param[in] event_tracer_entry The EventTracerEntry returned by a call to
+   * start_profiling_delegate().
+   * @param[in] metadata Optional free-form metadata associated with the
+   * delegate event. This should be a null terminated ASCII string. Users
+   * calling this interface do not need to keep the memory pointed to by this
+   * pointer around. The string must be copied over into internal memory during
+   * this call.
+   */
+  virtual void end_profiling_delegate(
+      EventTracerEntry event_tracer_entry,
+      const char* metadata = nullptr) = 0;
+
+  /**
+   * Some delegates get access to the profiling details only after the complete
+   * graph has been executed. This interface is to support such use cases. It
+   * can be called in a loop etc. to log any number of profiling events that are
+   * part of this delegate.
+   *
+   * @param[in] name Human readable name for the delegate event. This name has
+   * to be the same name that was passed in during the Debug delegate mapping
+   * generation in the export/ahead-of-time process. If indices and not names
+   * are used by this delegate to identify ops executed in the backend then
+   * nullptr can be passed in. Users calling this interface do not need to keep
+   * the memory pointed to by this pointer around. The string must be copied
+   * over into internal memory during this call.
+   * @param[in] delegate_debug_index The id of the delegate event. If string
+   * based names are used by this delegate to identify ops executed in the
+   * backend then kUnsetDebugHandle should be passed in here.
+   * @param[in] start_time The timestamp when the delegate event started.
+   * @param[in] end_time The timestamp when the delegate event finished.
+   * @param[in] metadata Optional data relevant to the execution that the user
+   * wants to log along with this event. Pointer to metadata doesn't need to be
+   * valid after the call to this function. This should be a null terminated
+   * ASCII string.
+   */
+  virtual void log_profiling_delegate(
+      const char* name,
+      DebugHandle delegate_debug_index,
+      et_timestamp_t start_time,
+      et_timestamp_t end_time,
+      const char* metadata = nullptr) = 0;
 
   /**
    * End the profiling of the event identified by prof_entry

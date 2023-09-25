@@ -156,7 +156,7 @@ class TestProgramManagers(unittest.TestCase):
         )
 
         original_res = edge_manager.exported_program("forward")(
-            torch.ones(1), torch.ones(1), torch.ones(1)
+            torch.ones(1), torch.ones(1)
         )
 
         # perform transformation
@@ -173,17 +173,13 @@ class TestProgramManagers(unittest.TestCase):
 
         # transformation was applied
         self.assertEqual(
-            transformed_edge.exported_program("forward")(
-                torch.ones(1), torch.ones(1), torch.ones(1)
-            ),
+            transformed_edge.exported_program("forward")(torch.ones(1), torch.ones(1)),
             torch.ones(1),  # x * y * x
         )
 
         # original unchanged
         self.assertEqual(
-            edge_manager.exported_program("forward")(
-                torch.ones(1), torch.ones(1), torch.ones(1)
-            ),
+            edge_manager.exported_program("forward")(torch.ones(1), torch.ones(1)),
             original_res,  # x * y + x
         )
 
@@ -199,9 +195,7 @@ class TestProgramManagers(unittest.TestCase):
         )
 
         self.assertEqual(
-            transformed_edge.exported_program("forward")(
-                torch.ones(1), torch.ones(1), torch.ones(1)
-            ),
+            transformed_edge.exported_program("forward")(torch.ones(1), torch.ones(1)),
             torch.ones(1),  # x * y * x
         )
 
@@ -222,7 +216,7 @@ class TestProgramManagers(unittest.TestCase):
 
         forward_program = delegate_manager.exported_program("forward")
         self.assertEqual(
-            forward_program(torch.ones(1), torch.ones(1), torch.ones(1)),
+            forward_program(torch.ones(1), torch.ones(1)),
             torch.ones(1) + 1,  # x * y + x
         )
 

@@ -1,9 +1,9 @@
-# How to integrate a Backend Delegate with Executorch?
+# How to integrate a Backend Delegate with ExecuTorch?
 
 Disclaimer: We are planning to restructure the repository around delegates.
 With that some of these guidelines will change in the future.
 
-This is a high level guideline when integrating a backend delegate with Executorch.
+This is a high level guideline when integrating a backend delegate with ExecuTorch.
 
 ## Directory Structure
 
@@ -13,9 +13,9 @@ Delegate files should be under this directory:
 ## Python files
 
 Delegate Python files such as one implementing `preprocess()` or `partition()`
-functions for Executorch AoT flow, excluding any external third-party
+functions for ExecuTorch AoT flow, excluding any external third-party
 dependencies and their files, should be installed and available with
-the top level Executorch package. For third-party dependencies, please refer to
+the top level ExecuTorch package. For third-party dependencies, please refer to
 [this](./delegates_and_dependencies.md).
 
 ## C++ sources
@@ -25,13 +25,13 @@ sources.
 
 For the CMake setup, the delegate dir should be included by the
 top level `CMakeLists.txt` file using `add_subdirectory` CMake command, and
-should be built conditionally with an Executorch build flag like
+should be built conditionally with an ExecuTorch build flag like
 `EXECUTORCH_BUILD_<DELEGATE_NAME>`, see `EXECUTORCH_BUILD_XNNPACK` for example.
 For third-party dependencies, please refer to
 [this](./delegates_and_dependencies.md).
 
 Adding buck2 support should make the delegate available to more
-Executorch users.
+ExecuTorch users.
 
 * More details TBD
 

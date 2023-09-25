@@ -1,6 +1,6 @@
  # Debugging with ETDB
 
-ETDB (Executorch Debugger) is an interactive text-based tool used for investigating models (`ETRecord`) and profiling information (`ETDump`). Features provided include:
+ETDB (ExecuTorch Debugger) is an interactive text-based tool used for investigating models (`ETRecord`) and profiling information (`ETDump`). Features provided include:
 - **Tabular Visualization** of model graphs
 - **Drill-in Selection** of components for detailed investigation
 - **Aggregated Operator Statistics** based on results from ETDump

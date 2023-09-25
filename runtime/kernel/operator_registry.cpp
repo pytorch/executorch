@@ -30,7 +30,7 @@ Error register_kernels(const ArrayRef<Kernel>& kernels) {
         false,
         "Kernel registration failed with error %" PRIu32
         ", see error log for details.",
-        success);
+        static_cast<uint32_t>(success));
   }
   return success;
 }

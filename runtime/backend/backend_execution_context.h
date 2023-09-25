@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <executorch/runtime/core/event_tracer.h>
+
 namespace torch {
 namespace executor {
 
@@ -16,7 +18,23 @@ namespace executor {
  * The current plan is to add temp allocator and event tracer (for profiling) as
  * part of the runtime context.
  */
-class BackendExecutionContext final {};
+class BackendExecutionContext final {
+ public:
+  BackendExecutionContext(EventTracer* event_tracer = nullptr)
+      : event_tracer_(event_tracer) {}
+
+  /**
+   * Returns a pointer to an instance of EventTracer to do profiling/debugging
+   * logging inside the delegate backend. Users will need access to this pointer
+   * to use any of the event tracer APIs.
+   */
+  EventTracer* event_tracer() {
+    return event_tracer_;
+  }
+
+ private:
+  EventTracer* event_tracer_ = nullptr;
+};
 
 } // namespace executor
 } // namespace torch

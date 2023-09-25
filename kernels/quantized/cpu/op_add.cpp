@@ -151,7 +151,8 @@ Tensor& quantized_add_out(
   switch (a.scalar_type()) {
     ET_FORALL_INT_TYPES(ADD_TENSORS)
     default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd", a.scalar_type());
+      ET_CHECK_MSG(
+          false, "Unhandled dtype %hhd", static_cast<int8_t>(a.scalar_type()));
   }
 
 #undef ADD_TENSORS

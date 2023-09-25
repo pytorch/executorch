@@ -116,19 +116,25 @@ Tensor& cumsum_out(
     cumsum_tensors<SELF_CTYPE, OUT_CTYPE>(self, dim, out); \
     break;
 
-#define CUMSUM_TENSORS(SELF_CTYPE, self_dtype)                                 \
-  case ScalarType::self_dtype:                                                 \
-    switch (out.scalar_type()) {                                               \
-      ET_FORALL_REAL_TYPES_WITH(SELF_CTYPE, CUMSUM_IMPL)                       \
-      default:                                                                 \
-        ET_CHECK_MSG(false, "Unhandled output dtype %hhd", out.scalar_type()); \
-    }                                                                          \
+#define CUMSUM_TENSORS(SELF_CTYPE, self_dtype)           \
+  case ScalarType::self_dtype:                           \
+    switch (out.scalar_type()) {                         \
+      ET_FORALL_REAL_TYPES_WITH(SELF_CTYPE, CUMSUM_IMPL) \
+      default:                                           \
+        ET_CHECK_MSG(                                    \
+            false,                                       \
+            "Unhandled output dtype %hhd",               \
+            static_cast<int8_t>(out.scalar_type()));     \
+    }                                                    \
     break;
 
   switch (self.scalar_type()) {
     ET_FORALL_REAL_TYPES_AND(Bool, CUMSUM_TENSORS)
     default:
-      ET_CHECK_MSG(false, "Unhandled input dtype %hhd", self.scalar_type());
+      ET_CHECK_MSG(
+          false,
+          "Unhandled input dtype %hhd",
+          static_cast<int8_t>(self.scalar_type()));
   }
 
 #undef CUMSUM_TENSORS

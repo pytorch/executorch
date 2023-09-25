@@ -1,12 +1,12 @@
 # Program file format
 
-Executorch programs are serialized as modified binary flatbuffer files.
+ExecuTorch programs are serialized as modified binary flatbuffer files.
 
 ```
              ┌───────────────────────────────────┐
              │Standard flatbuffer header         │
              ├───────────────────────────────────┤
-             │Optional Executorch extended header│
+             │Optional ExecuTorch extended header│
              ├───────────────────────────────────┤
              │Flatbuffer-serialized program data │
              │                                   │
@@ -39,7 +39,7 @@ Program files may have an optional extended header at byte offset 8, recognized
 by the magic string beginning with `eh` and followed by two ASCII decimal
 digits. This header includes the size of the flatbuffer-encoded core program
 data, and the starting offset of the segments that may follow the program data.
-Note that this header is Executorch-specific, but even when present it does not
+Note that this header is ExecuTorch-specific, but even when present it does not
 upset most flatbuffer-parsing code (apart from the rarely-used
 `GetBufferStartFromRootPointer()`).
 

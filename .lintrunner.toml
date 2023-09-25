@@ -122,3 +122,34 @@ init_command = [
     '--dry-run={{DRYRUN}}',
     '--requirement=requirements-lintrunner.txt',
 ]
+
+[[linter]]
+code = 'ETCAPITAL'
+include_patterns = [
+    '**/*.py',
+    '**/*.pyi',
+    '**/*.h',
+    '**/*.cpp',
+    '**/*.md',
+    '**/*.rst',
+]
+exclude_patterns = [
+    'third-party/**',
+    '**/third-party/**',
+]
+command = [
+    'python',
+    '-m',
+    'lintrunner_adapters',
+    'run',
+    'grep_linter',
+    '--pattern= Executorch\W+',
+    '--linter-name=ExecuTorchCapitalization',
+    '--error-name=Incorrect capitalization for ExecuTorch',
+    """--error-description=
+    Please use ExecuTorch with capital T for consistency.
+    https://fburl.com/workplace/nsx6hib2
+    """,
+    '--',
+    '@{{PATHSFILE}}',
+]

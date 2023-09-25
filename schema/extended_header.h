@@ -14,7 +14,7 @@ namespace torch {
 namespace executor {
 
 /**
- * An extended, Executorch-specific header that may be embedded in the
+ * An extended, ExecuTorch-specific header that may be embedded in the
  * serialized Program data header.
  *
  * For details see

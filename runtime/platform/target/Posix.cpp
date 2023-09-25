@@ -54,7 +54,7 @@
     if (!initialized) {                                             \
       fprintf(                                                      \
           ET_LOG_OUTPUT_FILE,                                       \
-          "Executorch PAL must be initialized before call to %s()", \
+          "ExecuTorch PAL must be initialized before call to %s()", \
           __ET_FUNCTION);                                           \
       fflush(ET_LOG_OUTPUT_FILE);                                   \
       et_pal_abort();                                               \

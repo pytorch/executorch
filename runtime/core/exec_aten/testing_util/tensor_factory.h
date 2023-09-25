@@ -554,7 +554,7 @@ inline void validate_strides(
 
 } // namespace
 
-// Note that this !USE_ATEN_LIB section uses Executorch-specific namespaces
+// Note that this !USE_ATEN_LIB section uses ExecuTorch-specific namespaces
 // instead of exec_aten to make it clear that we're dealing with ETensor, and
 // because many of these names aren't mapped into exec_aten::.
 

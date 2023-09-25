@@ -15,7 +15,7 @@ namespace torch {
 namespace executor {
 
 /**
- * Initialize the Executorch global runtime.
+ * Initialize the ExecuTorch global runtime.
  */
 void runtime_init() {
   et_pal_init();
