@@ -33,6 +33,10 @@ void expect_output(const EValue& value, const char* expected) {
   EXPECT_STREQ(expected, os.str().c_str());
 }
 
+//
+// None
+//
+
 TEST(PrintEvalueTest, None) {
   EValue value;
   expect_output(value, "None");
@@ -598,6 +602,16 @@ TEST(PrintEvalueTest, AllListOptionalTensorEntriesArePrinted) {
       "  [8]: None,\n"
       "  [9]: tensor(sizes=[2, 2], [8., 8., 8., 8.]),\n"
       "]");
+}
+
+//
+// Unknown tag
+//
+
+TEST(PrintEvalueTest, UnknownTag) {
+  EValue value;
+  value.tag = static_cast<torch::executor::Tag>(5555);
+  expect_output(value, "<Unknown EValue tag 5555>");
 }
 
 //
