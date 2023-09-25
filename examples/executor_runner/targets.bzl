@@ -15,6 +15,7 @@ def define_common_targets():
         deps = [
             "//executorch/runtime/executor:program",
             "//executorch/extension/data_loader:file_data_loader",
+            "//executorch/extension/evalue_util:print_evalue",
             "//executorch/util:util",
         ],
         external_deps = [
