@@ -1,9 +1,1 @@
-# NB: Install flatbuffers 23.5.6 from conda-forge. This matches the version of
-# in fbcode/executorch/third-party/flatbuffers.submodule.txt. Otherwise, we'll
-# need to build it from source
-conda-forge::flatbuffers=23.5.26
 cmake=3.22.1
-
-# NB: This is to avoid pulling in rhash 1.4.4 from conda-forge, which doesn't
-# work with cmake on MacOS
-rhash=1.4.3

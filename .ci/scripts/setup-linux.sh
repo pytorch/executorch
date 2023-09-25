@@ -20,5 +20,6 @@ fi
 
 # As Linux job is running inside a Docker container, all of its dependencies
 # have already been installed
+install_flatc_from_source
 install_executorch
 build_executorch_runner "${BUILD_TOOL}"

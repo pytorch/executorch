@@ -61,6 +61,10 @@ install_flatc_from_source() {
   fi
   cmake --build . -j "${CMAKE_JOBS}"
 
+  # Copy the flatc binary to conda path
+  EXEC_PATH=$(dirname $(which python))
+  cp flatc "${EXEC_PATH}"
+
   popd || return
 }
 
