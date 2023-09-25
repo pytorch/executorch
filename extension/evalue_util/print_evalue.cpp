@@ -10,6 +10,7 @@
 
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <ostream>
@@ -19,6 +20,9 @@ namespace torch {
 namespace executor {
 
 namespace {
+
+/// Number of list items on a line before wrapping.
+constexpr size_t kItemsPerLine = 10;
 
 /// The default number of first/last list items to print before eliding.
 constexpr size_t kDefaultEdgeItems = 3;
@@ -74,17 +78,56 @@ void print_scalar_list(
   if (print_length) {
     os << "(len=" << list.size() << ")";
   }
-  // TODO(T159700776): Wrap at a specified number of columns.
+
+  // See if we'll be printing enough elements to cause us to wrap.
+  bool wrapping = false;
+  {
+    long num_printed_items;
+    if (elide_inner_items) {
+      num_printed_items =
+          std::min(static_cast<long>(list.size()), edge_items * 2);
+    } else {
+      num_printed_items = static_cast<long>(list.size());
+    }
+    wrapping = num_printed_items > kItemsPerLine;
+  }
+
   os << "[";
+  size_t num_printed = 0;
   for (size_t i = 0; i < list.size(); ++i) {
+    if (wrapping && num_printed % kItemsPerLine == 0) {
+      // We've printed a full line, so wrap and begin a new one.
+      os << "\n  ";
+    }
     os << EValue(exec_aten::Scalar(list[i]));
-    if (i < list.size() - 1) {
+    if (wrapping || i < list.size() - 1) {
+      // No trailing comma when not wrapping. Always a trailing comma when
+      // wrapping. This will leave a trailing space at the end of every wrapped
+      // line, but it simplifies the logic here.
       os << ", ";
     }
+    ++num_printed;
     if (i + 1 == edge_items && i + edge_items + 1 < list.size()) {
-      os << "..., ";
+      if (wrapping) {
+        os << "\n  ...,";
+        // Make the first line after the elision be the ragged line, letting us
+        // always end on a full line.
+        num_printed = kItemsPerLine - edge_items % kItemsPerLine;
+        if (num_printed % kItemsPerLine != 0) {
+          // If the line ended exactly when the elision happened, the next
+          // iteration of the loop will add this line break.
+          os << "\n  ";
+        }
+      } else {
+        // Non-wrapping elision.
+        os << "..., ";
+      }
       i = list.size() - edge_items - 1;
     }
+  }
+  if (wrapping) {
+    // End the current line.
+    os << "\n";
   }
   os << "]";
 }
