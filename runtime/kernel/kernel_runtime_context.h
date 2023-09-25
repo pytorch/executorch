@@ -65,7 +65,7 @@ class KernelRuntimeContext {
   // TODO(T147221312): Add a way to resize a tensor.
 
  private:
-  EventTracer* event_tracer_;
+  EventTracer* event_tracer_ = nullptr;
   Error failure_state_ = Error::Ok;
 };
 

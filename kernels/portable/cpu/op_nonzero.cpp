@@ -39,7 +39,7 @@ void check_preconditions(const Tensor& input, const Tensor& output) {
   ET_CHECK_MSG(
       output.scalar_type() == ScalarType::Long,
       "Expected out to be a Long tensor but received %hdd",
-      output.scalar_type());
+      static_cast<short>(output.scalar_type()));
   ET_CHECK_MSG(
       output.dim() == 2,
       "Expected out to be a 2d tensor received %zd",

@@ -4,15 +4,15 @@
 
 ## Introduction
 
-**Warning: Selective build process is required by all Executorch operator libraries! Not having it properly setup will cause the operator to not being registered.**
+**Warning: Selective build process is required by all ExecuTorch operator libraries! Not having it properly setup will cause the operator to not being registered.**
 
-Selective build helps reduce Executorch build binary size, improving code structure by avoiding duplicate ATen-compliant operator schemas and definitions. It should be the by default build mode for Executorch builds.
+Selective build helps reduce ExecuTorch build binary size, improving code structure by avoiding duplicate ATen-compliant operator schemas and definitions. It should be the by default build mode for ExecuTorch builds.
 
 During development when binary size is not an issue, the option with a full list of operators is also provided (refer to `include_all_ops=True` below in detail).
 
 ## How does it work
 
-On a high level, scripts under `codegen/*` extract out operators being used by a model (or multiple models) and write the information into a yaml file. Codegen system reads this yaml file and selectively generates C++ code to register the corresponding operators and code to call the kernels. All the generated files will be encapsulated into a BUCK (or TARGETS) target, which needs to depend on the kernel libraries. Then both generated library and kernel libraries will be included into this Executorch build.
+On a high level, scripts under `codegen/*` extract out operators being used by a model (or multiple models) and write the information into a yaml file. Codegen system reads this yaml file and selectively generates C++ code to register the corresponding operators and code to call the kernels. All the generated files will be encapsulated into a BUCK (or TARGETS) target, which needs to depend on the kernel libraries. Then both generated library and kernel libraries will be included into this ExecuTorch build.
 
 
 
@@ -46,7 +46,7 @@ Under the hood we will generate a `model_operators.yaml` file for this model.
 
 2. a list of operators in plain text
 
-For example, if we want to include `aten::add` and `aten::mul` into Executorch build, we can write a rule like:
+For example, if we want to include `aten::add` and `aten::mul` into ExecuTorch build, we can write a rule like:
 ```python
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library")
 

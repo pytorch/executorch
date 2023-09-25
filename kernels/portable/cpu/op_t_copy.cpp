@@ -62,7 +62,8 @@ Tensor& t_copy_out(RuntimeContext& ctx, const Tensor& a, Tensor& out) {
   switch (a.scalar_type()) {
     ET_FORALL_SCALAR_TYPES(TRANSPOSE_TENSORS)
     default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd", a.scalar_type());
+      ET_CHECK_MSG(
+          false, "Unhandled dtype %hhd", static_cast<int8_t>(a.scalar_type()));
   }
 
 #undef TRANSPOSE_TENSORS

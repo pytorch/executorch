@@ -1,9 +1,11 @@
+<!--- DEPRECATED This document is moving to executorch/docs/source/sdk-delegate-integration.md---->
+
 # Profiling and debugging delegates
 
 Delegate backends are a prominent component of Edge Models. One attribute of
 delegated backends is that they operate mostly as an opaque transformation.
 This gives delegate authors greater freedom when defining backend behavior,
-but also prevents the Executorch authoring flow from tracking underlying changes.
+but also prevents the ExecuTorch authoring flow from tracking underlying changes.
 
 This makes associating profiling and debug information through delegated
 graphs difficult. We have provided a framework that will enable delegate authors

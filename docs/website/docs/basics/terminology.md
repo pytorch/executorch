@@ -12,7 +12,7 @@ along with related types (ScalarType, etc.)
   clients: e.g., CUDA support, sparse tensor support, dtype promotion
 
 ### Portable mode
-Portable mode uses Executorch's smaller `torch::executor::Tensor` (aka ETensor)
+Portable mode uses ExecuTorch's smaller `torch::executor::Tensor` (aka ETensor)
 implementation, along with related types (`torch::executor::ScalarType`, etc.)
 * ETensor's API is a source-compatible subset of `at::Tensor`. Code that is
   written against ETensor can also build against `at::Tensor`.

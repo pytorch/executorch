@@ -46,8 +46,8 @@ void check_args(const Tensor& input, int64_t dim, TensorList out) {
         out[i].scalar_type() == out[0].scalar_type(),
         "out[%zu] dtype %hhd != out[0] dtype %hhd",
         i,
-        out[i].scalar_type(),
-        out[0].scalar_type());
+        static_cast<int8_t>(out[i].scalar_type()),
+        static_cast<int8_t>(out[0].scalar_type()));
 
     // output tensor must have # of dims = input.dim() -1
     ET_CHECK_MSG(

@@ -13,6 +13,7 @@
 #include <cstdio>
 
 #include <executorch/runtime/backend/interface.h>
+#include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -102,7 +103,7 @@ class BackendDelegate final {
           Error,
           "Init failed for backend %s: %" PRIu32,
           backend_id,
-          handle.error());
+          static_cast<uint32_t>(handle.error()));
       out->segment_.Free();
       return handle.error();
     }
@@ -241,8 +242,8 @@ bool parse_cond_value(const EValue& cond_value) {
     ET_CHECK_MSG(
         ScalarType::Bool == cond_val.scalar_type(),
         "Expected dtype of %hhd got %hhd",
-        ScalarType::Bool,
-        cond_val.scalar_type());
+        static_cast<int8_t>(ScalarType::Bool),
+        static_cast<int8_t>(cond_val.scalar_type()));
 
     const bool* cond_data = cond_val.const_data_ptr<bool>();
     for (size_t i = 0; i < cond_val.numel(); i++) {
@@ -342,7 +343,7 @@ Error Method::parse_values() {
               Error,
               "Failed parsing tensor at index %zu: %" PRIu32,
               i,
-              t.error());
+              static_cast<uint32_t>(t.error()));
           return t.error();
         }
         new (&values_[i]) EValue(t.get());
@@ -359,7 +360,7 @@ Error Method::parse_values() {
               Error,
               "Failed parsing tensor list at index %zu: %" PRIu32,
               i,
-              tensors.error());
+              static_cast<uint32_t>(tensors.error()));
           return tensors.error();
         }
         new (&values_[i]) EValue(tensors.get());
@@ -376,7 +377,7 @@ Error Method::parse_values() {
               Error,
               "Failed parsing optional tensor list at index %zu: %" PRIu32,
               i,
-              tensors.error());
+              static_cast<uint32_t>(tensors.error()));
           return tensors.error();
         }
         new (&values_[i]) EValue(tensors.get());
@@ -472,7 +473,7 @@ Error Method::resolve_operator(
           InvalidArgument,
           "Error setting dim_order %zu: 0x%" PRIx32,
           i,
-          err);
+          static_cast<uint32_t>(err));
       meta[count].dim_order_ =
           ArrayRef<exec_aten::DimOrderType>(dim_order_ptr, size);
       count++;
@@ -506,6 +507,8 @@ Result<Method> Method::load(
 
 Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
   EXECUTORCH_SCOPE_PROF("Method::init");
+  internal::EventTracerProfileScope event_tracer_profile_scope =
+      internal::EventTracerProfileScope(event_tracer_, "Method::init");
   ET_CHECK_OR_RETURN_ERROR(
       // Don't use !initialized() here because we also want to fail on the
       // InitializationFailed state.
@@ -686,14 +689,14 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
       InvalidArgument,
       "The %zu-th input in method is expected Tensor or prim, but received %u",
       input_idx,
-      e.tag);
+      static_cast<uint32_t>(e.tag));
 
   ET_CHECK_OR_RETURN_ERROR(
       e.tag == input_evalue.tag,
       InvalidArgument,
       "The %zu-th input of method should have the same type as the input_evalue, but get tag %u and tag %u",
       input_idx,
-      e.tag,
+      static_cast<uint32_t>(e.tag),
       (unsigned int)input_evalue.tag);
 
   if (e.isTensor()) {
@@ -703,8 +706,8 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         t_dst.scalar_type() == t_src.scalar_type(),
         InvalidArgument,
         "The input tensor's scalartype does not meet requirement: found %hhd but expected %hhd",
-        t_src.scalar_type(),
-        t_dst.scalar_type());
+        static_cast<int8_t>(t_src.scalar_type()),
+        static_cast<int8_t>(t_dst.scalar_type()));
     // Reset the shape for the Method's input as the size of forwarded input
     // tensor for shape dynamism. Also is a safety check if need memcpy.
     Error err = resize_tensor(t_dst, t_src.sizes());
@@ -713,7 +716,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         InvalidArgument,
         "Error setting input %zu: 0x%" PRIx32,
         input_idx,
-        err);
+        static_cast<uint32_t>(err));
     Error error;
     if (pre_allocated_input_) {
       error = internal::copy_tensor_data(t_dst, t_src);
@@ -725,7 +728,7 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
         InvalidArgument,
         "Error setting data_ptr %zu: 0x%" PRIx32,
         input_idx,
-        error);
+        static_cast<uint32_t>(error));
     // Prims have to be the same as what was traced
   } else if (e.isInt()) {
     ET_CHECK_OR_RETURN_ERROR(
@@ -903,6 +906,8 @@ Error Method::execute_instruction() {
   switch (instruction->instr_args_type()) {
     case executorch_flatbuffer::InstructionArguments::KernelCall: {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
+      internal::EventTracerProfileScope event_tracer_scope =
+          internal::EventTracerProfileScope(event_tracer_, "OPERATOR_CALL");
       // TODO(T147221312): Also expose the temp allocator and tensor resizer
       // via the context.
       KernelRuntimeContext context(event_tracer_);
@@ -935,6 +940,8 @@ Error Method::execute_instruction() {
     } break;
     case executorch_flatbuffer::InstructionArguments::DelegateCall: {
       EXECUTORCH_SCOPE_PROF("DELEGATE_CALL");
+      internal::EventTracerProfileScope event_tracer_profile_scope =
+          internal::EventTracerProfileScope(event_tracer_, "DELEGATE_CALL");
       auto delegate_idx =
           instruction->instr_args_as_DelegateCall()->delegate_index();
       ET_CHECK_OR_RETURN_ERROR(
@@ -945,7 +952,7 @@ Error Method::execute_instruction() {
           delegate_idx,
           n_delegate_,
           step_state_.instr_idx);
-      BackendExecutionContext backend_execution_context;
+      BackendExecutionContext backend_execution_context(event_tracer_);
       Error err = delegates_[delegate_idx].Execute(
           backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx].data());
@@ -954,12 +961,14 @@ Error Method::execute_instruction() {
             Error,
             "CALL_DELEGATE execute failed at instruction %zu: %" PRIu32,
             step_state_.instr_idx,
-            err);
+            static_cast<uint32_t>(err));
         return err;
       }
     } break;
     case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {
       EXECUTORCH_SCOPE_PROF("JF_CALL");
+      internal::EventTracerProfileScope event_tracer_profile_scope =
+          internal::EventTracerProfileScope(event_tracer_, "JF_CALL");
       auto jf_call = instruction->instr_args_as_JumpFalseCall();
       bool jf_result = parse_cond_value(values_[jf_call->cond_value_index()]);
       if (!jf_result) {
@@ -969,11 +978,15 @@ Error Method::execute_instruction() {
     } break;
     case executorch_flatbuffer::InstructionArguments::MoveCall: {
       EXECUTORCH_SCOPE_PROF("MOVE_CALL");
+      internal::EventTracerProfileScope event_tracer_profile_scope =
+          internal::EventTracerProfileScope(event_tracer_, "MOVE_CALL");
       auto move_call = instruction->instr_args_as_MoveCall();
       mutable_value(move_call->move_to()) = get_value(move_call->move_from());
     } break;
     case executorch_flatbuffer::InstructionArguments::FreeCall: {
       EXECUTORCH_SCOPE_PROF("FREE_CALL");
+      internal::EventTracerProfileScope event_tracer_profile_scope =
+          internal::EventTracerProfileScope(event_tracer_, "FREE_CALL");
       auto free_call = instruction->instr_args_as_FreeCall();
       auto t = values_[free_call->value_index()].toTensor();
       internal::reset_data_ptr(t);
@@ -982,7 +995,7 @@ Error Method::execute_instruction() {
       ET_CHECK_MSG(
           false,
           "Instruction is not supported. %hhu",
-          instruction->instr_args_type());
+          static_cast<uint8_t>(instruction->instr_args_type()));
   }
   step_state_.instr_idx += 1;
   return Error::Ok;
@@ -1001,7 +1014,14 @@ Error Method::experimental_step() {
   EXECUTORCH_PROFILE_INSTRUCTION_SCOPE(
       static_cast<int32_t>(step_state_.chain_idx),
       static_cast<uint32_t>(step_state_.instr_idx));
+  internal::EventTracerProfileInstructionScope event_tracer_instr_scope =
+      internal::EventTracerProfileInstructionScope(
+          event_tracer_,
+          static_cast<int32_t>(step_state_.chain_idx),
+          static_cast<uint32_t>(step_state_.instr_idx));
   EXECUTORCH_SCOPE_PROF("Method::step");
+  internal::EventTracerProfileScope event_tracer_profile_scope =
+      internal::EventTracerProfileScope(event_tracer_, "Method::step");
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
       InvalidState,
@@ -1036,6 +1056,9 @@ Error Method::experimental_step() {
 }
 
 Error Method::execute() {
+  internal::event_tracer_create_event_block(event_tracer_, "Execute");
+  internal::EventTracerProfileScope event_tracer_profile_scope =
+      internal::EventTracerProfileScope(event_tracer_, "Method::execute");
   EXECUTORCH_SCOPE_PROF("Method::execute");
   ET_CHECK_OR_RETURN_ERROR(
       initialized(),
@@ -1060,6 +1083,11 @@ Error Method::execute() {
       EXECUTORCH_PROFILE_INSTRUCTION_SCOPE(
           static_cast<int32_t>(step_state_.chain_idx),
           static_cast<uint32_t>(step_state_.instr_idx));
+      internal::EventTracerProfileInstructionScope event_tracer_instr_scope =
+          internal::EventTracerProfileInstructionScope(
+              event_tracer_,
+              static_cast<ChainID>(step_state_.chain_idx),
+              static_cast<DebugHandle>(step_state_.instr_idx));
       auto status = execute_instruction();
       if (status != Error::Ok) {
         return status;

@@ -103,7 +103,7 @@ Tensor& allclose_out(
   ET_CHECK_MSG(
       out.scalar_type() == ScalarType::Bool,
       "Out tensor must be type Bool; saw type %hhd",
-      out.scalar_type());
+      static_cast<int8_t>(out.scalar_type()));
   ET_CHECK_MSG(
       out.numel() == 1,
       "Out tensor must be a single element; saw %zu elements",
@@ -117,13 +117,13 @@ Tensor& allclose_out(
  * Note: This custom operator contains two variants: allclose.Tensor (a
  * functional variant, no inplace mutating on the arguments) and allclose.out
  * (an out variant, mutating out). We need to register both into the PyTorch
- * runtime so that they can be visible from Executorch compiler side. Eventually
- * only allclose.out will be seen from Executorch runtime. With this setup, the
+ * runtime so that they can be visible from ExecuTorch compiler side. Eventually
+ * only allclose.out will be seen from ExecuTorch runtime. With this setup, the
  * portable kernel for allclose.Tensor can be implemented as a wrapper of
  * allclose.out. We can easily instantiate an at::Tensor for the out argument,
  * then pass it into allclose.out. This logic will only need to work out in
- * "ATen mode" for Executorch compiler, since we won't expose allclose.Tensor in
- * Executorch runtime.
+ * "ATen mode" for ExecuTorch compiler, since we won't expose allclose.Tensor in
+ * ExecuTorch runtime.
  */
 Tensor allclose_tensor(
     __ET_UNUSED const Tensor& self,

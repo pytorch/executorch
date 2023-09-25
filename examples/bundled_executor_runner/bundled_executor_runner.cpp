@@ -9,7 +9,7 @@
 /**
  * @file
  *
- * This tool can run Executorch model files that only use operators that
+ * This tool can run ExecuTorch model files that only use operators that
  * are covered by the portable kernels, with possible delegate to the
  * test_backend_compiler_lib.
  *
@@ -42,7 +42,7 @@ DEFINE_string(
 DEFINE_string(
     prof_result_path,
     "prof_result.bin",
-    "Executorch profiler output path.");
+    "ExecuTorch profiler output path.");
 
 DEFINE_bool(
     bundled_program,

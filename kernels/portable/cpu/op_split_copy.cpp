@@ -92,8 +92,8 @@ void check_args(
         out[i].scalar_type() == out[0].scalar_type(),
         "out[%zu] dtype %hhd != out[0] dtype %hhd",
         i,
-        out[i].scalar_type(),
-        out[0].scalar_type());
+        static_cast<int8_t>(out[i].scalar_type()),
+        static_cast<int8_t>(out[0].scalar_type()));
 
     // All outputs must have the same number of dimensions as the input.
     ET_CHECK_MSG(

@@ -1,4 +1,4 @@
-This subtree contains operator implementations that Executorch clients can
+This subtree contains operator implementations that ExecuTorch clients can
 use and contribute to.
 
 ## Layout
@@ -9,7 +9,7 @@ use and contribute to.
     YAML files.
   - `kernels/optimized/cpu`: Optimized C++ implementations of the operators defined in the
     YAML files, for specific hardware platforms.
-  - `kernels/aten`: A thin wrapper layer to hookup ATen library into Executorch.
+  - `kernels/aten`: A thin wrapper layer to hookup ATen library into ExecuTorch.
   - `kernels/test`: Tests for all operator implementations. Since all
     implementations should behave identically, the same tests should pass for
     all target types.
@@ -33,27 +33,27 @@ implementation to this library. The goals of these guidelines are to:
 - Make it easy for users to find available operator implementations, and to
   trust in their quality and behavioral stability.
 
-### Your code must be compatible with Executorch types
+### Your code must be compatible with ExecuTorch types
 
-Executorch does not use `at::Tensor`, `at::ScalarType`, `c10::Scalar`, or any of
+ExecuTorch does not use `at::Tensor`, `at::ScalarType`, `c10::Scalar`, or any of
 the types defined by PyTorch core in the `at` or `c10` namespaces. To retain
-tigher control over CPU and memory runtime behavior, Executorch reimplements
+tigher control over CPU and memory runtime behavior, ExecuTorch reimplements
 compatible but restricted subsets of those types.
 
 [`//runtime/core/exec_aten/exec_aten.h`](https://github.com/pytorch/executorch/blob/main/runtime/core/exec_aten/exec_aten.h)
-contains the mapping between ATen/c10 types and the Executorch types. The
-Executorch types are defined in other headers in that same directory,
+contains the mapping between ATen/c10 types and the ExecuTorch types. The
+ExecuTorch types are defined in other headers in that same directory,
 [`//runtime/core/portable_type/`](https://github.com/pytorch/executorch/tree/main/runtime/core/portable_type).
 
-The Executorch types are source-compatible with the ATen/c10 types; if you write
-code that works with the Executorch types, then that same code should work when
+The ExecuTorch types are source-compatible with the ATen/c10 types; if you write
+code that works with the ExecuTorch types, then that same code should work when
 built against ATen/c10. But, there are features of `at::Tensor` and other
 ATen/c10 types that may not be present. In many cases this is intentional, but
 in other cases we can consider adding the missing features.
 
 ### Do your initial work in fbcode (skip this if in OSS)
 
-Althouth Executorch is mapped into both `xplat` and `fbcode`, we recommend
+Althouth ExecuTorch is mapped into both `xplat` and `fbcode`, we recommend
 setting up the initial targets while working from `fbcode`. Once everything's in
 place, you should be able to build from either spot.
 
@@ -79,11 +79,11 @@ The next sections describe how to add a yaml entry.
 
 #### YAML Schema
 
-This YAML file schema is a DSL to decribe the operators and the kernels that implement them. This YAML file is a contract between AOT model export and runtime execution, that if followed correctly, can make sure Executorch runtime be able to link the C++ implementation of an operator to the exported model artifact. Here are some rules of writing up your own YAML files.
+This YAML file schema is a DSL to decribe the operators and the kernels that implement them. This YAML file is a contract between AOT model export and runtime execution, that if followed correctly, can make sure ExecuTorch runtime be able to link the C++ implementation of an operator to the exported model artifact. Here are some rules of writing up your own YAML files.
 
 **Out variants only**
 
-Executorch only supports out-style operators, where:
+ExecuTorch only supports out-style operators, where:
 - The caller provides the output Tensor or Tensor list in the final position
   with the name `out`.
 - The C++ function modifies and returns the same `out` argument.
@@ -94,19 +94,19 @@ Executorch only supports out-style operators, where:
 - Conventionally, these out operators are named using the pattern `<name>.out`
   or `<name>.<overload>_out`.
 
-Since all output values are returned via an `out` parameter, Executorch ignores
+Since all output values are returned via an `out` parameter, ExecuTorch ignores
 the actual C++ function return value. But, to be consistent, functions should
 always return `out` when the return type is non-`void`.
 
 **Can only return `Tensor` or `()`**
 
-Executorch only supports operators that return a single `Tensor`, or the unit
+ExecuTorch only supports operators that return a single `Tensor`, or the unit
 type `()` (which maps to `void`). It does not support returning any other types,
 including lists, optionals, tuples, or scalars like `bool`.
 
 **Supported argument types**
 
-Executorch does not support all of the argument types that core PyTorch
+ExecuTorch does not support all of the argument types that core PyTorch
 supports. See [this
 spreadsheet](https://docs.google.com/spreadsheets/d/1uArc0r1Yq1QSeyRJZKzZ8Wkz0eS9TsM39ghmMAZCXDA/edit#gid=0)
 for the list of supported and unsupported types.
@@ -115,7 +115,7 @@ so that external users can see it. -->
 
 **Functions only, no methods**
 
-Executorch does not support Tensor methods, and assumes `variants: function` for
+ExecuTorch does not support Tensor methods, and assumes `variants: function` for
 all operators. Entries like `variants: method` or `variants: function, method`
 will be ignored.
 
@@ -231,7 +231,7 @@ adding the suffix `_custom` if necessary: e.g., `op_add` for ATen-compatible
 overloads of the `add` operator, and `op_add_custom` for non-ATen-compatible
 overloads.
 
-By default, this target will depend on the core Executorch types, but you can
+By default, this target will depend on the core ExecuTorch types, but you can
 add additional deps if you want to.
 
 NOTE: An `op_<name>` target may not depend on another `op_<name>` target. If two
@@ -412,7 +412,7 @@ restrictions of embedded environments, your operator implementations:
     operations that allocate under the hood like `make_unique`, or the creation
     of `vector` or `string`, for example.
 - Must be stateless.
-- Must be thread-safe. Note that the Executorch environment does not provide
+- Must be thread-safe. Note that the ExecuTorch environment does not provide
   a locking construct, so this means that operator implementations must not
   modify global memory.
 - Must work in an environment without threads. This, along with the stateless
@@ -424,7 +424,7 @@ restrictions of embedded environments, your operator implementations:
 - Must not raise exceptions. Instead use `ET_CHECK` and other macros from
   `executorch/runtime/platform/assert.h`.
 
-Note that not all of these apply to *every* Executorch-compatible operator
+Note that not all of these apply to *every* ExecuTorch-compatible operator
 implementation, only those included in this portable library.
 
 For example, a target-specfic custom operator that initiates a DMA copy would be

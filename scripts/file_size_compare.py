@@ -36,8 +36,8 @@ TTY_RED = "\033[0;31m"
 TTY_RESET = "\033[0m"
 
 # Error message printed if size is exceeded.
-SIZE_ERROR_MESSAGE = """This diff is increasing the binary size of Executorch (the PyTorch Edge model executor) by a large amount.
-Executorch has strict size requirements due to its embedded use case. Please follow these steps:
+SIZE_ERROR_MESSAGE = """This diff is increasing the binary size of ExecuTorch (the PyTorch Edge model executor) by a large amount.
+ExecuTorch has strict size requirements due to its embedded use case. Please follow these steps:
 1. Check the output of the two steps (Build ... with the base commit/diff version) and compare their executable section sizes.
 2. Contact a member of #pytorch_edge_portability so we can better help you.
 """

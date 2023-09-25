@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Intermediate Representation of Executorch Concepts in Productivity SDK
+Intermediate Representation of ExecuTorch Concepts in Productivity SDK
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ class PROFILE_STAT_HEADER(Enum):
     MAX_MS = "Max (ms)"
 
 
-# A single inference run extracted from Executorch SDK ET Dump
+# A single inference run extracted from ExecuTorch SDK ET Dump
 @dataclass
 class InferenceRun:
     # Maps from a node identifier (e.g. Debug Handle) to its associated metadata
@@ -733,7 +733,7 @@ class FXOperatorGraph(OperatorGraphWithStats):
 
 # Representation of an Exported ExecuTorch Program as an OperatorGraph
 class ExportedETOperatorGraph(OperatorGraphWithStats):
-    # Given the path to an Executorch Program, parse it into an OperatorGraph
+    # Given the path to an ExecuTorch Program, parse it into an OperatorGraph
     # `include_constant_nodes`: Whether to include constant nodes in output graph
     @staticmethod
     def gen_operator_graph_from_path(
@@ -773,7 +773,7 @@ class ExportedETOperatorGraph(OperatorGraphWithStats):
 
         return unpacked_args, out_indices
 
-    # Given an Executorch Program, parse it into an OperatorGraph
+    # Given an ExecuTorch Program, parse it into an OperatorGraph
     # `include_constant_nodes`: Whether to include constant nodes in output graph
     @staticmethod
     def gen_operator_graph(

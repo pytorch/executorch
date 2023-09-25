@@ -230,7 +230,7 @@ class EdgeDialectFunctionSchema:
         else:
             # Not get the info from edge.yaml
             # Create a dtype constraint for this operator that allows any dtype
-            # combinations as long as any dtype is legal in Executorch.
+            # combinations as long as any dtype is legal in ExecuTorch.
             type_alias = {
                 f"T{idx}": list(regular_tensor_str_to_dtypes.values())
                 for idx in range(len(all_tensor_io_names))

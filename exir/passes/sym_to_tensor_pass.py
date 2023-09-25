@@ -17,7 +17,7 @@ from torch.utils._pytree import PyTree
 class SymToTensorPass(ExportPass):
     """
     The dispatcher implicitly converts SymInt/SymFloats to tensors, but
-    sometimes this doesn't comply with the operator's schema which Executorch
+    sometimes this doesn't comply with the operator's schema which ExecuTorch
     heavily relies on. So this pass inserts a
     torch.ops.aten.scalar_tensor.default operator before these SymInts are used
     so that it matches the schema of the operator.
