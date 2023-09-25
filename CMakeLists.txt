@@ -101,7 +101,7 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options -Wno-deprecated-declarations)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/..)
@@ -159,7 +159,7 @@ add_subdirectory(schema)
 
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE program_schema)
-target_link_libraries(executorch PRIVATE dl) # For dladdr()
+#target_link_libraries(executorch PRIVATE dl) # For dladdr()
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_options(executorch PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
@@ -174,8 +174,8 @@ endif()
 # Real integrations should supply their own YAML file that only lists the
 # operators necessary for the models that will run.
 #
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
-set(_libs executorch portable_ops_lib gflags)
+#add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
+set(_libs executorch gflags)
 
 # Generate custom_ops_lib based on REGISTER_EXAMPLE_CUSTOM_OP
 if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 1 OR REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
@@ -193,7 +193,7 @@ endif()
 if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
   add_executable(executor_runner ${_executor_runner__srcs})
   if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
-    target_link_options(executor_runner PRIVATE "LINKER:--gc-sections")
+    target_link_options(executor_runner PRIVATE "LINKER:--gc-sections -static")
   endif()
   target_link_libraries(executor_runner ${_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
