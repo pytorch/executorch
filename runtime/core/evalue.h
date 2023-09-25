@@ -247,7 +247,7 @@ struct EValue {
   }
 
   exec_aten::Tensor& toTensor() & {
-    ET_CHECK_MSG(isTensor(), "EValue is not a Tensor.");
+    ET_CHECK_MSG(isTensor(), "EValue is not a Tensor: tag is %d.", (int)tag);
     return payload.as_tensor;
   }
 

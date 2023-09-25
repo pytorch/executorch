@@ -1,0 +1,210 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#include <executorch/extension/evalue_util/print_evalue.h>
+
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+
+#include <cmath>
+#include <iomanip>
+#include <ostream>
+#include <sstream>
+
+namespace torch {
+namespace executor {
+
+namespace {
+
+/// The default number of first/last list items to print before eliding.
+constexpr size_t kDefaultEdgeItems = 3;
+
+/// Init-time allocation of a globally unique "iword" stream index that we can
+/// use to store the current "edge items" count on arbitrary streams.
+const int kPrintEvalueEdgeItemsXalloc = std::ios_base::xalloc();
+
+void print_double(std::ostream& os, double value) {
+  if (std::isfinite(value)) {
+    // Mimic PyTorch by printing a trailing dot when the float value is
+    // integral, to distinguish from actual integers.
+    bool add_dot = false;
+    if (value == -0.0) {
+      // Special case that won't be detected by a comparison with int.
+      add_dot = true;
+    } else {
+      std::ostringstream oss_float;
+      oss_float << value;
+      std::ostringstream oss_int;
+      oss_int << static_cast<int64_t>(value);
+      if (oss_float.str() == oss_int.str()) {
+        add_dot = true;
+      }
+    }
+    if (add_dot) {
+      os << value << ".";
+    } else {
+      os << value;
+    }
+  } else {
+    // Infinity or NaN.
+    os << value;
+  }
+}
+
+template <class T>
+void print_scalar_list(
+    std::ostream& os,
+    exec_aten::ArrayRef<T> list,
+    bool print_length = true,
+    bool elide_inner_items = true) {
+  long edge_items;
+  if (elide_inner_items) {
+    edge_items = os.iword(kPrintEvalueEdgeItemsXalloc);
+    if (edge_items <= 0) {
+      edge_items = kDefaultEdgeItems;
+    }
+  } else {
+    edge_items = std::numeric_limits<long>::max();
+  }
+
+  if (print_length) {
+    os << "(len=" << list.size() << ")";
+  }
+  // TODO(T159700776): Wrap at a specified number of columns.
+  os << "[";
+  for (size_t i = 0; i < list.size(); ++i) {
+    os << EValue(exec_aten::Scalar(list[i]));
+    if (i < list.size() - 1) {
+      os << ", ";
+    }
+    if (i + 1 == edge_items && i + edge_items + 1 < list.size()) {
+      os << "..., ";
+      i = list.size() - edge_items - 1;
+    }
+  }
+  os << "]";
+}
+
+void print_tensor(std::ostream& os, exec_aten::Tensor tensor) {
+  os << "tensor(sizes=";
+  // Always print every element of the sizes list.
+  print_scalar_list(
+      os, tensor.sizes(), /*print_length=*/false, /*elide_inner_items=*/false);
+  os << ", ";
+
+  // Print the data as a one-dimensional list.
+  //
+  // TODO(T159700776): Print dim_order and strides when they have non-default
+  // values.
+  //
+  // TODO(T159700776): Format multidimensional data like numpy/PyTorch does.
+  // https://github.com/pytorch/pytorch/blob/main/torch/_tensor_str.py
+#define PRINT_TENSOR_DATA(ctype, dtype)                            \
+  case ScalarType::dtype:                                          \
+    print_scalar_list(                                             \
+        os,                                                        \
+        ArrayRef<ctype>(tensor.data_ptr<ctype>(), tensor.numel()), \
+        /*print_length=*/false);                                   \
+    break;
+
+  switch (tensor.scalar_type()) {
+    ET_FORALL_REAL_TYPES_AND(Bool, PRINT_TENSOR_DATA)
+    default:
+      os << "[<unhandled scalar type " << (int)tensor.scalar_type() << ">]";
+  }
+  os << ")";
+
+#undef PRINT_TENSOR_DATA
+}
+
+void print_tensor_list(
+    std::ostream& os,
+    exec_aten::ArrayRef<exec_aten::Tensor> list) {
+  os << "(len=" << list.size() << ")[";
+  for (size_t i = 0; i < list.size(); ++i) {
+    if (list.size() > 1) {
+      os << "\n  [" << i << "]: ";
+    }
+    print_tensor(os, list[i]);
+    if (list.size() > 1) {
+      os << ",";
+    }
+  }
+  if (list.size() > 1) {
+    os << "\n";
+  }
+  os << "]";
+}
+
+void print_list_optional_tensor(
+    std::ostream& os,
+    exec_aten::ArrayRef<exec_aten::optional<exec_aten::Tensor>> list) {
+  os << "(len=" << list.size() << ")[";
+  for (size_t i = 0; i < list.size(); ++i) {
+    if (list.size() > 1) {
+      os << "\n  [" << i << "]: ";
+    }
+    if (list[i].has_value()) {
+      print_tensor(os, list[i].value());
+    } else {
+      os << "None";
+    }
+    if (list.size() > 1) {
+      os << ",";
+    }
+  }
+  if (list.size() > 1) {
+    os << "\n";
+  }
+  os << "]";
+}
+
+} // namespace
+
+std::ostream& operator<<(std::ostream& os, const EValue& value) {
+  if (value.isNone()) {
+    os << "None";
+  } else if (value.isBool()) {
+    if (value.toBool()) {
+      os << "True";
+    } else {
+      os << "False";
+    }
+  } else if (value.isInt()) {
+    os << value.toInt();
+  } else if (value.isDouble()) {
+    print_double(os, value.toDouble());
+  } else if (value.isString()) {
+    auto str = value.toString();
+    os << std::quoted(std::string(str.data(), str.size()));
+  } else if (value.isTensor()) {
+    print_tensor(os, value.toTensor());
+  } else if (value.isBoolList()) {
+    print_scalar_list(os, value.toBoolList());
+  } else if (value.isIntList()) {
+    print_scalar_list(os, value.toIntList());
+  } else if (value.isDoubleList()) {
+    print_scalar_list(os, value.toDoubleList());
+  } else if (value.isTensorList()) {
+    print_tensor_list(os, value.toTensorList());
+  } else if (value.isListOptionalTensor()) {
+    print_list_optional_tensor(os, value.toListOptionalTensor());
+  } else {
+    os << "<Unknown EValue tag " << static_cast<int>(value.tag) << ">";
+  }
+  return os;
+}
+
+namespace util {
+// Lets us avoid exposing kPrintEvalueEdgeItemsXalloc in the header.
+long evalue_edge_items::xalloc_index() {
+  return kPrintEvalueEdgeItemsXalloc;
+}
+} // namespace util
+
+} // namespace executor
+} // namespace torch
