@@ -122,7 +122,7 @@ Tensor& opt_gelu_out(
     default:
       ET_CHECK_MSG(
           false,
-          "Unhandled dtype %hhd",
+          "Unhandled dtype %" PRId8,
           static_cast<int8_t>(input.scalar_type()));
   }
 #undef GELU

@@ -40,18 +40,18 @@ void check_dequantize_per_tensor_args(
           input.scalar_type() == ScalarType::Char ||
           input.scalar_type() == ScalarType::Short ||
           input.scalar_type() == ScalarType::Int,
-      "input.scalar_type() %hdd is not supported:",
-      static_cast<short>(input.scalar_type()));
+      "input.scalar_type() %" PRId8 " is not supported:",
+      static_cast<int8_t>(input.scalar_type()));
 
   ET_CHECK_MSG(
       input.scalar_type() == dtype,
-      "input.scalar_type() %hdd is not matching dtype argumenta:",
-      static_cast<short>(input.scalar_type()));
+      "input.scalar_type() %" PRId8 " is not matching dtype argumenta:",
+      static_cast<int8_t>(input.scalar_type()));
 
   ET_CHECK_MSG(
       out.scalar_type() == ScalarType::Float,
-      "out.scalar_type() %hdd is not supported:",
-      static_cast<short>(out.scalar_type()));
+      "out.scalar_type() %" PRId8 " is not supported:",
+      static_cast<int8_t>(out.scalar_type()));
 
   ET_CHECK_MSG(
       quant_min <= quant_max,
@@ -107,7 +107,7 @@ Tensor& dequantize_per_tensor_out(
       default:                                               \
         ET_CHECK_MSG(                                        \
             false,                                           \
-            "Unhandled output dtype %hhd",                   \
+            "Unhandled output dtype %" PRId8,                \
             static_cast<int8_t>(out.scalar_type()));         \
     }                                                        \
     break;
@@ -117,7 +117,7 @@ Tensor& dequantize_per_tensor_out(
     default:
       ET_CHECK_MSG(
           false,
-          "Unhandled input dtype %hhd",
+          "Unhandled input dtype %" PRId8,
           static_cast<int8_t>(input.scalar_type()));
   }
 
@@ -136,12 +136,12 @@ Tensor& dequantize_per_tensor_tensor_args_out(
     Tensor& out) {
   ET_CHECK_MSG(
       scale.scalar_type() == ScalarType::Double,
-      "Expected scale to be Double tensor received: %hdd",
-      static_cast<short>(scale.scalar_type()));
+      "Expected scale to be Double tensor received: %" PRId8,
+      static_cast<int8_t>(scale.scalar_type()));
   ET_CHECK_MSG(
       zero_point.scalar_type() == ScalarType::Long,
-      "Expected scale to be Long tensor received: %hdd",
-      static_cast<short>(zero_point.scalar_type()));
+      "Expected scale to be Long tensor received: %" PRId8,
+      static_cast<int8_t>(zero_point.scalar_type()));
   ET_CHECK_MSG(
       scale.numel() == 1,
       "Exepcted scale to only have one element received: %zd",

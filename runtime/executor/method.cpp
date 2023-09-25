@@ -241,7 +241,7 @@ bool parse_cond_value(const EValue& cond_value) {
     // and we should exit.
     ET_CHECK_MSG(
         ScalarType::Bool == cond_val.scalar_type(),
-        "Expected dtype of %hhd got %hhd",
+        "Expected dtype of %" PRId8 " got %" PRId8,
         static_cast<int8_t>(ScalarType::Bool),
         static_cast<int8_t>(cond_val.scalar_type()));
 
@@ -705,7 +705,8 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     ET_CHECK_OR_RETURN_ERROR(
         t_dst.scalar_type() == t_src.scalar_type(),
         InvalidArgument,
-        "The input tensor's scalartype does not meet requirement: found %hhd but expected %hhd",
+        "The input tensor's scalartype does not meet requirement: found %" PRId8
+        " but expected %" PRId8,
         static_cast<int8_t>(t_src.scalar_type()),
         static_cast<int8_t>(t_dst.scalar_type()));
     // Reset the shape for the Method's input as the size of forwarded input
