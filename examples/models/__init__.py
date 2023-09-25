@@ -16,6 +16,7 @@ MODEL_NAME_TO_MODEL = {
     "emformer_transcribe": ("emformer_rnnt", "EmformerRnntTranscriberModel"),
     "emformer_predict": ("emformer_rnnt", "EmformerRnntPredictorModel"),
     "emformer_join": ("emformer_rnnt", "EmformerRnntJoinerModel"),
+    "llama": ("llama", "LlamaModel"),
     "mobilebert": ("mobilebert", "MobileBertModelExample"),
     "mv2": ("mobilenet_v2", "MV2Model"),
     "mv3": ("mobilenet_v3", "MV3Model"),
