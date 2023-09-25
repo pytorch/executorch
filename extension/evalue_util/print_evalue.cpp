@@ -166,35 +166,48 @@ void print_list_optional_tensor(
 } // namespace
 
 std::ostream& operator<<(std::ostream& os, const EValue& value) {
-  if (value.isNone()) {
-    os << "None";
-  } else if (value.isBool()) {
-    if (value.toBool()) {
-      os << "True";
-    } else {
-      os << "False";
-    }
-  } else if (value.isInt()) {
-    os << value.toInt();
-  } else if (value.isDouble()) {
-    print_double(os, value.toDouble());
-  } else if (value.isString()) {
-    auto str = value.toString();
-    os << std::quoted(std::string(str.data(), str.size()));
-  } else if (value.isTensor()) {
-    print_tensor(os, value.toTensor());
-  } else if (value.isBoolList()) {
-    print_scalar_list(os, value.toBoolList());
-  } else if (value.isIntList()) {
-    print_scalar_list(os, value.toIntList());
-  } else if (value.isDoubleList()) {
-    print_scalar_list(os, value.toDoubleList());
-  } else if (value.isTensorList()) {
-    print_tensor_list(os, value.toTensorList());
-  } else if (value.isListOptionalTensor()) {
-    print_list_optional_tensor(os, value.toListOptionalTensor());
-  } else {
-    os << "<Unknown EValue tag " << static_cast<int>(value.tag) << ">";
+  switch (value.tag) {
+    case Tag::None:
+      os << "None";
+      break;
+    case Tag::Bool:
+      if (value.toBool()) {
+        os << "True";
+      } else {
+        os << "False";
+      }
+      break;
+    case Tag::Int:
+      os << value.toInt();
+      break;
+    case Tag::Double:
+      print_double(os, value.toDouble());
+      break;
+    case Tag::String: {
+      auto str = value.toString();
+      os << std::quoted(std::string(str.data(), str.size()));
+    } break;
+    case Tag::Tensor:
+      print_tensor(os, value.toTensor());
+      break;
+    case Tag::ListBool:
+      print_scalar_list(os, value.toBoolList());
+      break;
+    case Tag::ListInt:
+      print_scalar_list(os, value.toIntList());
+      break;
+    case Tag::ListDouble:
+      print_scalar_list(os, value.toDoubleList());
+      break;
+    case Tag::ListTensor:
+      print_tensor_list(os, value.toTensorList());
+      break;
+    case Tag::ListOptionalTensor:
+      print_list_optional_tensor(os, value.toListOptionalTensor());
+      break;
+    default:
+      os << "<Unknown EValue tag " << static_cast<int>(value.tag) << ">";
+      break;
   }
   return os;
 }
