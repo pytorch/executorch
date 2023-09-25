@@ -300,6 +300,11 @@ if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
 endif()
 
+option(EXECUTORCH_BUILD_QNN "Build the backends/qualcomm directory" OFF)
+if(EXECUTORCH_BUILD_QNN)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
+endif()
+
 # Add selective build subdirectory
 if(BUILD_SELECTIVE_BUILD_TEST)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/selective_build)

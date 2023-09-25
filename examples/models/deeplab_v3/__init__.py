@@ -4,8 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from .model import DeepLabV3ResNet50Model
+from .model import (
+    DeepLabV3ResNet50Model,
+    DeepLabV3ResNet101Model,
+)
 
 __all__ = [
     DeepLabV3ResNet50Model,
+    DeepLabV3ResNet101Model
 ]
