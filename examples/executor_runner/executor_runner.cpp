@@ -17,11 +17,13 @@
  * all fp32 tensors.
  */
 
+#include <iostream>
 #include <memory>
 
 #include <gflags/gflags.h>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
@@ -169,29 +171,13 @@ int main(int argc, char** argv) {
 
   // Print the outputs.
   std::vector<EValue> outputs(method->outputs_size());
+  ET_LOG(Info, "%zu outputs: ", outputs.size());
   status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
-  for (EValue& output : outputs) {
-    // TODO(T159700776): This assumes that all outputs are fp32 tensors. Add
-    // support for other EValues and Tensor dtypes, and print tensors in a more
-    // readable way.
-    auto output_tensor = output.toTensor();
-    auto data_output = output_tensor.const_data_ptr<float>();
-
-    ssize_t max_print_element_count = 10000;
-    if (output_tensor.numel() > max_print_element_count) {
-      ET_LOG(
-          Info,
-          "Output tensor is too large, printing first %ld elements out of %ld",
-          max_print_element_count,
-          output_tensor.numel());
-    } else {
-      max_print_element_count = output_tensor.numel();
-    }
-
-    for (size_t j = 0; j < max_print_element_count; ++j) {
-      ET_LOG(Info, "%f", data_output[j]);
-    }
+  // Print the first and last 100 elements of long lists of scalars.
+  std::cout << torch::executor::util::evalue_edge_items(100);
+  for (int i = 0; i < outputs.size(); ++i) {
+    std::cout << "Output " << i << ": " << outputs[i] << std::endl;
   }
 
   // Dump the profiling data to the specified file.
