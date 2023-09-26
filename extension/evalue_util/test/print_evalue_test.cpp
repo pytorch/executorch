@@ -729,3 +729,243 @@ TEST(PrintEvalueTest, EdgeItemsAffectsTensorData) {
       // in full.
       "tensor(sizes=[5, 1, 1, 2], [1., ..., 10.1])\n");
 }
+
+//
+// Long list wrapping.
+//
+// Use double as a proxy for testing the wrapping logic; the other scalar
+// types use the same underlying code, so they don't need to test this again.
+//
+
+// Duplicates the internal value in the cpp file under test.
+constexpr size_t kItemsPerLine = 10;
+
+TEST(PrintEvalueTest, ListWrapping) {
+  // A large list of scalars.
+  std::array<double, 100> list;
+  for (int i = 0; i < list.size(); ++i) {
+    list[i] = static_cast<double>(i);
+  }
+
+  {
+    // Should elide by default and print on a single line.
+    EValue value(ArrayRef<double>(list.data(), list.size()));
+
+    std::ostringstream os;
+    os << value;
+    EXPECT_STREQ(os.str().c_str(), "(len=100)[0., 1., 2., ..., 97., 98., 99.]");
+  }
+  {
+    // Exactly the per-line length should not wrap when increasing the number of
+    // edge items to disable elision.
+    EValue value(ArrayRef<double>(list.data(), kItemsPerLine));
+
+    std::ostringstream os;
+    os << torch::executor::util::evalue_edge_items(1000) << value;
+    EXPECT_STREQ(
+        os.str().c_str(), "(len=10)[0., 1., 2., 3., 4., 5., 6., 7., 8., 9.]");
+  }
+  {
+    // One more than the per-line length should wrap; no elision.
+    EValue value(ArrayRef<double>(list.data(), kItemsPerLine + 1));
+
+    std::ostringstream os;
+    os << torch::executor::util::evalue_edge_items(1000) << value;
+    EXPECT_STREQ(
+        os.str().c_str(),
+        "(len=11)[\n"
+        "  0., 1., 2., 3., 4., 5., 6., 7., 8., 9., \n"
+        "  10., \n"
+        "]");
+  }
+  {
+    // Exactly twice the per-line length, without elision.
+    EValue value(ArrayRef<double>(list.data(), kItemsPerLine * 2));
+
+    std::ostringstream os;
+    os << torch::executor::util::evalue_edge_items(1000) << value;
+    EXPECT_STREQ(
+        os.str().c_str(),
+        "(len=20)[\n"
+        "  0., 1., 2., 3., 4., 5., 6., 7., 8., 9., \n"
+        "  10., 11., 12., 13., 14., 15., 16., 17., 18., 19., \n"
+        // Make sure there is no extra newline here.
+        "]");
+  }
+  {
+    // Exactly one whole line, with elision.
+    EValue value(ArrayRef<double>(list.data(), kItemsPerLine * 3));
+
+    std::ostringstream os;
+    os << torch::executor::util::evalue_edge_items(kItemsPerLine) << value;
+    EXPECT_STREQ(
+        os.str().c_str(),
+        "(len=30)[\n"
+        "  0., 1., 2., 3., 4., 5., 6., 7., 8., 9., \n"
+        // Elision always on its own line when wrapping.
+        "  ...,\n"
+        "  20., 21., 22., 23., 24., 25., 26., 27., 28., 29., \n"
+        "]");
+  }
+  {
+    // Edge item count slightly larger than per-line length, with elision.
+    EValue value(ArrayRef<double>(list.data(), kItemsPerLine * 3));
+
+    std::ostringstream os;
+    os << torch::executor::util::evalue_edge_items(kItemsPerLine + 1) << value;
+    EXPECT_STREQ(
+        os.str().c_str(),
+        "(len=30)[\n"
+        "  0., 1., 2., 3., 4., 5., 6., 7., 8., 9., \n"
+        "  10., \n"
+        // Elision always on its own line when wrapping.
+        "  ...,\n"
+        // The ragged line always comes just after the elision so that
+        // we will end on a full line.
+        "  19., \n"
+        "  20., 21., 22., 23., 24., 25., 26., 27., 28., 29., \n"
+        "]");
+  }
+  {
+    // Large wrapped, ragged, elided example.
+    EValue value(ArrayRef<double>(list.data(), list.size()));
+
+    std::ostringstream os;
+    os << torch::executor::util::evalue_edge_items(33) << value;
+    EXPECT_STREQ(
+        os.str().c_str(),
+        "(len=100)[\n"
+        "  0., 1., 2., 3., 4., 5., 6., 7., 8., 9., \n"
+        "  10., 11., 12., 13., 14., 15., 16., 17., 18., 19., \n"
+        "  20., 21., 22., 23., 24., 25., 26., 27., 28., 29., \n"
+        "  30., 31., 32., \n"
+        "  ...,\n"
+        "  67., 68., 69., \n"
+        "  70., 71., 72., 73., 74., 75., 76., 77., 78., 79., \n"
+        "  80., 81., 82., 83., 84., 85., 86., 87., 88., 89., \n"
+        "  90., 91., 92., 93., 94., 95., 96., 97., 98., 99., \n"
+        "]");
+  }
+}
+
+TEST(PrintEvalueTest, WrappedTensorData) {
+  TensorFactory<ScalarType::Double> tf;
+  // A tensor with a large number of elements.
+  EValue value(tf.ones({10, 10}));
+
+  std::ostringstream os;
+  os << torch::executor::util::evalue_edge_items(33) << value;
+  EXPECT_STREQ(
+      os.str().c_str(),
+      "tensor(sizes=[10, 10], [\n"
+      "  1., 1., 1., 1., 1., 1., 1., 1., 1., 1., \n"
+      "  1., 1., 1., 1., 1., 1., 1., 1., 1., 1., \n"
+      "  1., 1., 1., 1., 1., 1., 1., 1., 1., 1., \n"
+      "  1., 1., 1., \n"
+      "  ...,\n"
+      "  1., 1., 1., \n"
+      "  1., 1., 1., 1., 1., 1., 1., 1., 1., 1., \n"
+      "  1., 1., 1., 1., 1., 1., 1., 1., 1., 1., \n"
+      "  1., 1., 1., 1., 1., 1., 1., 1., 1., 1., \n"
+      "])");
+}
+
+TEST(PrintEvalueTest, WrappedTensorSizes) {
+  TensorFactory<ScalarType::Double> tf;
+
+  {
+    // A tensor with enough dimensions that the sizes list is wrapped, but
+    // the data is not.
+    std::vector<int32_t> sizes(kItemsPerLine + 1, 1);
+    sizes[0] = 5;
+    EValue value(tf.ones(sizes));
+
+    std::ostringstream os;
+    os << value;
+    EXPECT_STREQ(
+        os.str().c_str(),
+        "tensor(sizes=[\n"
+        "  5, 1, 1, 1, 1, 1, 1, 1, 1, 1, \n"
+        "  1, \n"
+        "], [1., 1., 1., 1., 1.])");
+  }
+  {
+    // Both sizes and data are wrapped.
+    std::vector<int32_t> sizes(kItemsPerLine + 1, 1);
+    sizes[0] = 100;
+    EValue value(tf.ones(sizes));
+
+    std::ostringstream os;
+    os << torch::executor::util::evalue_edge_items(15) << value;
+    EXPECT_STREQ(
+        os.str().c_str(),
+        "tensor(sizes=[\n"
+        "  100, 1, 1, 1, 1, 1, 1, 1, 1, 1, \n"
+        "  1, \n"
+        // TODO(T159700776): Indent this further to look more like python.
+        "], [\n"
+        "  1., 1., 1., 1., 1., 1., 1., 1., 1., 1., \n"
+        "  1., 1., 1., 1., 1., \n"
+        "  ...,\n"
+        "  1., 1., 1., 1., 1., \n"
+        "  1., 1., 1., 1., 1., 1., 1., 1., 1., 1., \n"
+        "])");
+  }
+}
+
+TEST(PrintEvalueTest, WrappedTensorLists) {
+  TensorFactory<ScalarType::Float> tf;
+
+  std::array<EValue, 2> values = {
+      // Tensors that are large enough for their data to wrap.
+      tf.ones({10, 10}),
+      tf.ones({11, 11}),
+  };
+  std::array<EValue*, values.size()> wrapped_values = {
+      &values[0],
+      &values[1],
+  };
+  // Memory that BoxedEvalueList will use to assemble a contiguous array of
+  // Tensor entries. It's important not to destroy these entries, because the
+  // values list will own the underlying Tensors.
+  auto unwrapped_values_memory = std::make_unique<uint8_t[]>(
+      sizeof(exec_aten::Tensor) * wrapped_values.size());
+  exec_aten::Tensor* unwrapped_values =
+      reinterpret_cast<exec_aten::Tensor*>(unwrapped_values_memory.get());
+#if USE_ATEN_LIB
+  // Must be initialized because BoxedEvalueList will use operator=() on each
+  // entry. But we can't do this in non-ATen mode because
+  // torch::executor::Tensor doesn't have a default constructor.
+  for (int i = 0; i < wrapped_values.size(); ++i) {
+    new (&unwrapped_values[i]) at::Tensor();
+  }
+#endif
+
+  // Demonstrate the formatting when printing a list with multiple tensors.
+  BoxedEvalueList<exec_aten::Tensor> list(
+      wrapped_values.data(), unwrapped_values, wrapped_values.size());
+  EValue value(list);
+
+  std::ostringstream os;
+  os << torch::executor::util::evalue_edge_items(15) << value;
+  EXPECT_STREQ(
+      os.str().c_str(),
+      "(len=2)[\n"
+      "  [0]: tensor(sizes=[10, 10], [\n"
+      // TODO(T159700776): Indent these entries further to look more like
+      // python.
+      "  1., 1., 1., 1., 1., 1., 1., 1., 1., 1., \n"
+      "  1., 1., 1., 1., 1., \n"
+      "  ...,\n"
+      "  1., 1., 1., 1., 1., \n"
+      "  1., 1., 1., 1., 1., 1., 1., 1., 1., 1., \n"
+      "]),\n"
+      "  [1]: tensor(sizes=[11, 11], [\n"
+      "  1., 1., 1., 1., 1., 1., 1., 1., 1., 1., \n"
+      "  1., 1., 1., 1., 1., \n"
+      "  ...,\n"
+      "  1., 1., 1., 1., 1., \n"
+      "  1., 1., 1., 1., 1., 1., 1., 1., 1., 1., \n"
+      "]),\n"
+      "]");
+}
