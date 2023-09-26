@@ -1324,4 +1324,16 @@ class TestEmit(unittest.TestCase):
             .to_edge()
             .to_executorch()
         )
+        # Reading the program triggers the call to emit_program underneath which
+        # we need to be done for our test to succeed.
+        exec_prog.program
         self.assertIsNotNone(exec_prog.delegate_map)
+        self.assertIsNotNone(exec_prog.delegate_map.get("forward"))
+        self.assertIsNotNone(exec_prog.delegate_map.get("forward").get(0))
+        self.assertEqual(
+            exec_prog.delegate_map.get("forward").get(0).get("name"),
+            "BackendWithCompilerDemo",
+        )
+        self.assertTrue(
+            len(exec_prog.delegate_map.get("forward").get(0).get("delegate_map")) != 0
+        )
