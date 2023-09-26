@@ -49,25 +49,29 @@ def export_models_for_ci() -> None:
     # https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs
     models = {"include": []}
     for name in MODEL_NAME_TO_MODEL.keys():
-        quantization = (
-            name in MODEL_NAME_TO_OPTIONS and MODEL_NAME_TO_OPTIONS[name].quantization
-        )
-        xnnpack_delegation = (
+        quantization_configs = {
+            False,
+            name in MODEL_NAME_TO_OPTIONS and MODEL_NAME_TO_OPTIONS[name].quantization,
+        }
+        delegation_configs = {
+            False,
             name in MODEL_NAME_TO_OPTIONS
-            and MODEL_NAME_TO_OPTIONS[name].xnnpack_delegation
-        )
+            and MODEL_NAME_TO_OPTIONS[name].xnnpack_delegation,
+        }
         for build_tool in BUILD_TOOLS:
-            models["include"].append(
-                {
-                    "build-tool": build_tool,
-                    "model": name,
-                    "quantization": quantization,
-                    "xnnpack_delegation": xnnpack_delegation,
-                    "runner": RUNNERS.get(name, DEFAULT_RUNNER),
-                    # demo_backend_delegation test only supports add_mul model
-                    "demo_backend_delegation": name == "add_mul",
-                }
-            )
+            for q_config in quantization_configs:
+                for d_config in delegation_configs:
+                    models["include"].append(
+                        {
+                            "build-tool": build_tool,
+                            "model": name,
+                            "xnnpack_quantization": q_config,
+                            "xnnpack_delegation": d_config,
+                            "runner": RUNNERS.get(name, DEFAULT_RUNNER),
+                            # demo_backend_delegation test only supports add_mul model
+                            "demo_backend_delegation": name == "add_mul",
+                        }
+                    )
     set_output("models", json.dumps(models))
 
 
