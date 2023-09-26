@@ -86,6 +86,9 @@ buck_targets = [
 filters = [
   ".cpp$",
 ]
+deps = [
+  "executorch",
+]
 
 [targets.xnn_executor_runner]
 buck_targets = [
