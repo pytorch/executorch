@@ -22,9 +22,9 @@ if [[ -z "${BUILD_TOOL:-}" ]]; then
   exit 1
 fi
 
-QUANTIZATION=$3
-if [[ -z "${QUANTIZATION:-}" ]]; then
-  QUANTIZATION=false
+XNNPACK_QUANTIZATION=$3
+if [[ -z "${XNNPACK_QUANTIZATION:-}" ]]; then
+  XNNPACK_QUANTIZATION=false
 fi
 
 XNNPACK_DELEGATION=$4
@@ -88,6 +88,15 @@ build_cmake_xnn_executor_runner() {
 
 test_model_with_xnnpack() {
   WITH_QUANTIZATION=$1
+  WITH_DELEGATION=$2
+
+  # Quantization-only
+  if [[ ${WITH_QUANTIZATION} == true ]] && [[ ${WITH_DELEGATION} == false ]]; then
+    bash examples/quantization/test_quantize.sh "${BUILD_TOOL}" "${MODEL_NAME}"
+    exit 0
+  fi
+
+  # Delegation
   if [[ ${WITH_QUANTIZATION} == true ]]; then
     SUFFIX="q8"
     "${PYTHON_EXECUTABLE}" -m examples.backend.xnnpack_examples --model_name="${MODEL_NAME}" --delegate --quantize
@@ -97,6 +106,7 @@ test_model_with_xnnpack() {
   fi
 
   OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_${SUFFIX}.pte"
+
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
     buck2 run //examples/backend:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
@@ -135,27 +145,12 @@ test_demo_backend_delegation() {
   fi
 }
 
-echo "Testing ${MODEL_NAME} (fp32, quantized, xnnpack) with ${BUILD_TOOL}..."
-# Test the select model without XNNPACK or quantization
-test_model
-
-# Test quantization
-if [[ "${QUANTIZATION}" == true ]]; then
-  bash examples/quantization/test_quantize.sh "${BUILD_TOOL}" "${MODEL_NAME}"
+if [[ "${XNNPACK_DELEGATION}" == false ]] && [[ "${XNNPACK_QUANTIZATION}" == false ]]; then
+  echo "Testing ${MODEL_NAME} with portable kernels..."
+  test_model
 else
-  echo "The model ${MODEL_NAME} doesn't support quantization yet"
-fi
-
-# Test XNNPACK without quantization
-if [[ "${XNNPACK_DELEGATION}" == true ]]; then
-  test_model_with_xnnpack false
-else
-  echo "The model ${MODEL_NAME} doesn't support XNNPACK yet"
-fi
-
-# Test XNNPACK with quantization
-if [[ "${XNNPACK_DELEGATION}" == true ]] && [[ "${QUANTIZATION}" == true ]]; then
-  test_model_with_xnnpack true
+  echo "Testing ${MODEL_NAME} with XNNPACK quantization=${XNNPACK_QUANTIZATION} delegation=${XNNPACK_DELEGATION}..."
+  test_model_with_xnnpack "${XNNPACK_QUANTIZATION}" "${XNNPACK_DELEGATION}"
 fi
 
 # Test demo backend delegation
