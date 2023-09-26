@@ -37,18 +37,22 @@ namespace internal {
 class EventTracerProfileScope final {
  public:
   EventTracerProfileScope(EventTracer* event_tracer, const char* name) {
+#ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_ = event_tracer;
     if (event_tracer_ == nullptr) {
       return;
     }
     event_entry_ = event_tracer->start_profiling(name);
+#endif
   }
 
   ~EventTracerProfileScope() {
+#ifdef ET_EVENT_TRACER_ENABLED
     if (event_tracer_ == nullptr) {
       return;
     }
     event_tracer_->end_profiling(event_entry_);
+#endif
   }
 
  private:
@@ -70,18 +74,22 @@ class EventTracerProfileInstructionScope final {
       EventTracer* event_tracer,
       ChainID chain_idx,
       DebugHandle debug_handle) {
+#ifdef ET_EVENT_TRACER_ENABLED
     event_tracer_ = event_tracer;
     if (event_tracer_ == nullptr) {
       return;
     }
     event_tracer_->set_chain_debug_handle(chain_idx, debug_handle);
+#endif
   }
 
   ~EventTracerProfileInstructionScope() {
+#ifdef ET_EVENT_TRACER_ENABLED
     if (event_tracer_ == nullptr) {
       return;
     }
     event_tracer_->set_chain_debug_handle(kUnsetChainId, kUnsetDebugHandle);
+#endif
   }
 
  private:
