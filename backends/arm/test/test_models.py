@@ -69,7 +69,6 @@ class TorchBuilder:
     @register_test
     class simple_linear(torch.nn.Module):
         inputs = {
-            # TODO: RuntimeError: mat1 and mat2 must have the same dtype, but got Int and Float
             # TosaProfile.BI: ( torch.ones(128,20, dtype=torch.int32), ),
             TosaProfile.MI: (torch.ones(128, 20),),
         }
@@ -87,16 +86,51 @@ class TorchBuilder:
     @register_test
     class simple_conv2d(torch.nn.Module):
         inputs = {
-            # TODO: fails input char, bias float
             # TosaProfile.BI: ( torch.ones(1,3,256,256, dtype=torch.int8), ),
-            # TODO: this is segfaulting on model.forward in the nightly torch - disabling for now
-            # TosaProfile.MI: ( torch.ones(1,3,256,256), ),
+            TosaProfile.MI: (torch.ones(1, 3, 256, 256),),
         }
 
         def __init__(self):
             super().__init__()
             self.conv2d = torch.nn.Conv2d(
                 in_channels=3, out_channels=10, kernel_size=3, stride=1
+            )
+
+        def forward(self, x):
+            x = self.conv2d(x)
+            return x
+
+    @register_test
+    class block_two_conv2d(torch.nn.Module):
+        inputs = {
+            TosaProfile.MI: (torch.ones(1, 3, 256, 256),),
+        }
+
+        def __init__(self):
+            super().__init__()
+            self.conv2d = torch.nn.Conv2d(
+                in_channels=3, out_channels=10, kernel_size=5, stride=1
+            )
+            self.conv2d_2 = torch.nn.Conv2d(
+                in_channels=10, out_channels=15, kernel_size=5, stride=1
+            )
+
+        def forward(self, x):
+            x = self.conv2d(x)
+            x = self.conv2d_2(x)
+            return x
+
+    @register_test
+    class simple_depthwise_conv2d(torch.nn.Module):
+        inputs = {
+            # TosaProfile.BI: ( torch.ones(1,3,256,256, dtype=torch.int8), ),
+            TosaProfile.MI: (torch.ones(1, 3, 256, 256),),
+        }
+
+        def __init__(self):
+            super().__init__()
+            self.conv2d = torch.nn.Conv2d(
+                in_channels=3, out_channels=3, kernel_size=3, stride=1, groups=3
             )
 
         def forward(self, x):
@@ -149,3 +183,94 @@ class TorchBuilder:
 
         def forward(self, x):
             return self.avg_pool_2d(x)
+
+    @register_test
+    class simple_softmax(torch.nn.Module):
+        inputs = {
+            TosaProfile.MI: (torch.ones(2, 3),),
+        }
+
+        def __init__(self):
+            super().__init__()
+            self.softmax = torch.nn.Softmax(dim=1)
+
+        def forward(self, x):
+            return self.softmax(x)
+
+    @register_test
+    class block_conv_norm_activation(torch.nn.Module):
+        inputs = {
+            TosaProfile.MI: (torch.ones(1, 3, 256, 256),),
+        }
+
+        def __init__(self):
+            super().__init__()
+            self.conv2d = torch.nn.Conv2d(
+                in_channels=3, out_channels=3, kernel_size=3, stride=1, groups=1
+            )
+            self.batch_norm2d = torch.nn.BatchNorm2d(3, affine=False)
+            self.relu6 = torch.nn.ReLU6()
+            self.eval()
+
+        def forward(self, x):
+            x = self.conv2d(x)
+            x = self.batch_norm2d(x)
+            x = self.relu6(x)
+            return x
+
+    @register_test
+    class block_bottleneck_residual(torch.nn.Module):
+        # This is the essence of MobileNetV2
+        # Ref: https://arxiv.org/abs/1801.04381
+
+        inputs = {
+            # TosaProfile.BI: ( torch.ones(1,3,256,256, dtype=torch.int8), ),
+            TosaProfile.MI: (torch.ones(1, 64, 81, 81),),
+        }
+
+        def __init__(self):
+            super().__init__()
+            # (t, c, n, s) = (6, 96, 1, 1)
+            # 1. 1x1 CONV2d + ReLU6 (Pointwise)
+            self.pointwise_conv2d = torch.nn.Conv2d(
+                in_channels=64, out_channels=384, kernel_size=1, stride=1, groups=1
+            )  ## (1, 384, 81, 81)
+            self.batch_norm2d_16 = torch.nn.BatchNorm2d(384, affine=False)
+            self.relu6 = torch.nn.ReLU6()
+
+            # 2. 3x3 DepthwiseConv2d + ReLu6
+            self.depthwise_conv2d = torch.nn.Conv2d(
+                in_channels=384,
+                out_channels=384,
+                kernel_size=3,
+                padding=1,
+                stride=1,
+                groups=384,
+            )  ## (1, 384, H, W)
+
+            # 3. Linear 1x1 Conv2d
+            self.pointwise_conv2d_linear = torch.nn.Conv2d(
+                in_channels=384, out_channels=64, kernel_size=1, stride=1, groups=1
+            )  ## (1, 64, 81, 81)
+
+            self.eval()
+
+        def forward(self, x):
+            input = x
+            # 1x1 CONV2d + ReLU6 (Pointwise)
+            x = self.pointwise_conv2d(x)
+            x = self.batch_norm2d_16(x)
+            x = self.relu6(x)
+
+            # 3x3 DepthwiseConv2d + ReLu6
+            x = self.depthwise_conv2d(x)
+            x = self.batch_norm2d_16(x)
+            x = self.relu6(x)
+
+            # Linear 1x1 Conv2d
+            x = self.pointwise_conv2d_linear(x)
+
+            # Final Residual Connection
+            x = x + input
+
+            return x

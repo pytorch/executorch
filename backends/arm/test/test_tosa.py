@@ -55,6 +55,7 @@ def export_model(model, inputs, compile_spec):
     model_capture = exir.capture(model, inputs, _CAPTURE_CONFIG)
     model_edge = model_capture.to_edge(_EDGE_COMPILE_CONFIG)
     ArmPartitioner.compile_spec = compile_spec
+
     model_edge.exported_program = to_backend(
         model_edge.exported_program, ArmPartitioner
     )
