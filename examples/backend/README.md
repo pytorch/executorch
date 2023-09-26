@@ -36,11 +36,13 @@ buck2 run examples/backend:xnn_executor_runner -- --model_path ./mv2_xnnpack_q8.
 
 ### Overview
 
-We tested the performance for MobileNet V2 and MobileNet V3 on Linux x86 and Mac (Apple Silicon) platforms.
+We tested the performance for MobileNet V2 and MobileNet V3 on Linux x86, Mac (Apple Silicon), and Android platforms.
 
 For each model, we export three variations: portable (without any optimization), xnnpack fp32 (exported for XNNPACK delegation without quantization), xnnpack q8 (exported for XNNPACK delegation with qint8 delegation).
 
-We build the benchmarking binary (will be released in the near future, but it is similar to `examples/backend:xnn_executor_runner`). Benchmarking binary, by default, runs 10 iterations of warmup and 50 iterations of benchmarking. Number reported here are average measured latency, in ms, across 50 runs. The first iteration is slower due to warm up, and the performance is is stable on subsequent iterations, so we also report the execution time for the first iteration for reference. Below is the model execution time for first iteration and subsequent iterations (average after warmup), in milliseconds. We use a single thread to test the models. Details about the methodology and repro steps are below the tables.
+We also provide a comparison to PyTorch Lite Interpreter on Android platforms using XNNPACK FP32 backend, to give users an estimate on how ExecuTorch improves the performance.
+
+We build the benchmarking binary (will be released in the near future, but it is similar to `examples/backend:xnn_executor_runner`). Benchmarking binary, by default, runs 10 iterations of warmup and 50 iterations of benchmarking. Number reported here are average measured latency, in ms, across 50 runs. The first few iterations are slower due to warm up, and the performance is is stable on subsequent iterations. Below is the model execution time for iterations after warmup, in milliseconds. We use a single thread to test the models. Details about the methodology and repro steps are below the tables.
 
 ### Methodology
 
@@ -56,7 +58,7 @@ A rough number of execution time can be obtained via the log timestamp. The prof
 buck run //profiler:profiler_results_cli -- --prof_results_bin=prof_result.bin
 ```
 
-Run: Use 60 iterations. Usually the first iteration is slower, due to warm up. However, the performance from the second iteration is quite stable and reliable. We note down the execution time for first iteration; then for average execution time, we drop the first 10 iterations, and calculate the average time for the next 50 iterations.
+Run: Use 60 iterations. Usually the first few iterations are slower, due to warm up. However, the performance from the second or third iteration is quite stable and reliable. For average execution time, we drop the first 10 iterations, and calculate the average time for the next 50 iterations.
 
 Number we use: “run model” time in the profiler_results_cli tool. This represents the time to execute a model for an iteration. The numbers in the report are floored.
 
@@ -64,36 +66,53 @@ Number we use: “run model” time in the profiler_results_cli tool. This repre
 
 MobileNet V2 - Linux x86
 
-| backend      | first iteration (ms) | subsequent iteration (ms) |
-|--------------|----------------------|---------------------------|
-| portable     | 25690                | 25480                     |
-| xnnpack fp32 | 21                   | 10                        |
-| xnnpack q8   | 18                   | 11                        |
+| backend      | avg (ms)                  |
+|--------------|---------------------------|
+| portable     | 25480                     |
+| xnnpack fp32 | 10                        |
+| xnnpack q8   | 11                        |
 
 
 MobileNet V2 - Mac
 
-| backend      | first iteration (ms) | subsequent iteration (ms) |
-|--------------|----------------------|---------------------------|
-| portable     | 17743                | 17852                     |
-| xnnpack fp32 | 21                   | 16                        |
-| xnnpack q8   | 20                   | 18                        |
+| backend      | avg (ms)                  |
+|--------------|---------------------------|
+| portable     | 17852                     |
+| xnnpack fp32 | 16                        |
+| xnnpack q8   | 18                        |
+
+
+MobileNet V2 - Android
+
+| backend      | avg (ms)                  | Reference: PyTorch Lite Interpreter |
+|--------------|---------------------------|-------------------------------------|
+| portable     | 2399                      | N/A                                 |
+| xnnpack fp32 | 11                        | 37                                  |
+| xnnpack q8   | 5                         | N/A                                 |
 
 
 MobileNet V3 - Linux x86
 
-| backend      | first iteration (ms) | subsequent iteration (ms) |
-|--------------|----------------------|---------------------------|
-| portable     | 4938                 | 4975                      |
-| xnnpack fp32 | 15                   | 8                         |
-| xnnpack q8   | 343                  | 323                       |
+| backend      | avg (ms)                  |
+|--------------|---------------------------|
+| portable     | 4975                      |
+| xnnpack fp32 | 8                         |
+| xnnpack q8   | 323                       |
 
 Note: MV3 does not have quantized hardsigomid and hardswish, this is because XNNPACK currently does not support quantized hardswish and hardsigmoid. Our current quantized partitioner only partitions quantized operators, so we do not lower these floating point ops, and they are run on portable. Ops running on portable lead to the worse performance for MV3 q8. We will eventually release a mixed datatype partitioner to fix this
 
 MobileNet V3 - Mac
 
-| backend      | first iteration (ms) | subsequent iteration (ms) |
-|--------------|----------------------|---------------------------|
-| portable     | 3427                 | 3394                      |
-| xnnpack fp32 | 7                    | 4                         |
-| xnnpack q8   | 206                  | 201                       |
+| backend      | avg (ms)                  |
+|--------------|---------------------------|
+| portable     | 3394                      |
+| xnnpack fp32 | 4                         |
+| xnnpack q8   | 201                       |
+
+
+MobileNet V3 - Android
+
+| backend      | avg (ms)                  | Reference: PyTorch Lite Interpreter |
+|--------------|---------------------------|-------------------------------------|
+| portable     | 444                       | N/A                                 |
+| xnnpack fp32 | 7                         | 8                                   |
