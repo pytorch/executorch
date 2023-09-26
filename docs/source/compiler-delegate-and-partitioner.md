@@ -371,7 +371,7 @@ exported_program_backend_1 = to_backend(exported_program, backend_1_parititioner
 exported_program_backend_1_and_2 = to_backend(exported_program_backend_1, backend_2_parititioner)
 ```
 
-A more conrete example be found
+A more concrete example be found
 [here](https://github.com/pytorch/executorch/blob/main/exir/backend/test/demos/test_xnnpack_qnnpack.py).
 In this example,
 qnnpack is one backend and xnnpack is another backend. We haven't open-sourced
