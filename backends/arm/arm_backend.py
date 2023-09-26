@@ -13,8 +13,9 @@ import logging
 import operator
 import os
 import tempfile
-
 from typing import final, List
+
+import numpy as np
 
 import serializer.tosa_serializer as ts
 
@@ -72,6 +73,8 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.div.Tensor,
             exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
             exir_ops.edge.aten.avg_pool2d.default,
+            exir_ops.edge.aten._softmax.default,
+            operator.getitem,
         ]
         return supported
 
@@ -146,13 +149,52 @@ def dbg_fail(node, tosa_fb, path):
     raise RuntimeError("TOSA Internal Error on node, enable logging for further info")
 
 
+# Helper function to match TOSA's broadcasting rank requirement
+# Ref: TOSA 0.80.0 specification - 1.9.3. Data Layouts from
+# https://www.mlplatform.org/tosa/tosa_spec.html
+def promote_shape(tosa_fb, arg, promoted_shape, out_dtype):
+    assert np.prod(arg.shape) == np.prod(promoted_shape), "Incompatible promoted shape"
+    reshape_res = tosa_fb.addIntermediate(promoted_shape, out_dtype)
+    attr = ts.TosaSerializerAttribute()
+    attr.ReshapeAttribute(promoted_shape)
+    tosa_fb.addOperator(TosaOp.Op().RESHAPE, [arg.name], [reshape_res.name], attr)
+    return reshape_res
+
+
+# Helper transpose function to match TOSA's shape requirements
+# E.g., TOSA 0.80.0 specification - 2.3.3 CONV2D shapes:
+# https://www.mlplatform.org/tosa/tosa_spec.html#_conv2d
+def transpose_helper(tosa_fb, input, new_order, out_dtype):
+    # Check new_order's length is equal to input rank
+    assert len(input.shape) == len(new_order), "Wrong shape order length"
+
+    # Check no duplications
+    assert len(set(new_order)) == len(new_order), "Contain duplicated dim numbers"
+
+    # Check all dims are valid
+    for idx in new_order:
+        if idx < 0:
+            assert True, "Negative dim number"
+        elif idx >= len(input.shape):
+            assert True, "Dim is greater than input rank"
+
+    input_shape_transpoed = [input.shape[i] for i in new_order]
+    attr = ts.TosaSerializerAttribute()
+    attr.TransposeAttribute(new_order)
+    input_transposed = tosa_fb.addIntermediate(input_shape_transpoed, out_dtype)
+    tosa_fb.addOperator(
+        TosaOp.Op().TRANSPOSE, [input.name], [input_transposed.name], attr
+    )
+    return input_transposed
+
+
 @final
 class ArmBackend(BackendDetails):
     @staticmethod
     def preprocess(  # noqa: C901
         edge_program: ExportedProgram,
         compile_spec: List[CompileSpec],
-    ) -> bytes:
+    ) -> PreprocessResult:
         logger.info("ArmBackend::preprocess")
 
         # if a debug/test build capture output files from TOSA stage
@@ -200,61 +242,24 @@ class ArmBackend(BackendDetails):
                 else:
                     # A more complex mapping of operator
                     if exir_ops.edge.aten.addmm.default == node.target:
-                        input = inputs[1]
-                        weight = inputs[2]
-                        bias = inputs[0]
+                        bias, input, weight = inputs
 
-                        # Reshape input tensor
-                        # TODO: move shape compatibility promotion to function
-                        # Many TOSA ops require a shape including a batch size so we make the implicit
-                        # batch size from the edge graph explicit in TOSA
-                        input_reshape_res = tosa_fb.addIntermediate(
-                            (1,) + input.shape, outp.dtype
+                        # Reshape input, weight, bias tensors
+                        input_reshape_res = promote_shape(
+                            tosa_fb, input, (1,) + input.shape, outp.dtype
                         )
-                        attr_input = ts.TosaSerializerAttribute()
-                        attr_input.ReshapeAttribute((1,) + input.shape)
-                        tosa_fb.addOperator(
-                            TosaOp.Op().RESHAPE,
-                            [input.name],
-                            [input_reshape_res.name],
-                            attr_input,
+                        weight_reshape_res = promote_shape(
+                            tosa_fb, weight, (1,) + weight.shape, outp.dtype
                         )
-
-                        # Reshape weight tensor
-                        weight_reshape_res = tosa_fb.addIntermediate(
-                            (1,) + weight.shape, outp.dtype
-                        )
-                        attr_weight = ts.TosaSerializerAttribute()
-                        attr_weight.ReshapeAttribute((1,) + weight.shape)
-                        tosa_fb.addOperator(
-                            TosaOp.Op().RESHAPE,
-                            [weight.name],
-                            [weight_reshape_res.name],
-                            attr_weight,
-                        )
-
-                        # Reshape bias tensor
-                        bias_reshape_res = tosa_fb.addIntermediate(
+                        bias_reshape_res = promote_shape(
+                            tosa_fb,
+                            bias,
                             (
                                 1,
                                 1,
                             )
                             + bias.shape,
                             outp.dtype,
-                        )
-                        attr_bias = ts.TosaSerializerAttribute()
-                        attr_bias.ReshapeAttribute(
-                            (
-                                1,
-                                1,
-                            )
-                            + bias.shape
-                        )
-                        tosa_fb.addOperator(
-                            TosaOp.Op().RESHAPE,
-                            [bias.name],
-                            [bias_reshape_res.name],
-                            attr_bias,
                         )
 
                         # Add dummy batch 1 to mm_shape
@@ -295,52 +300,83 @@ class ArmBackend(BackendDetails):
                         attr = ts.TosaSerializerAttribute()
                         attr.ClampAttribute(
                             tosa_fb.builder,
-                            int(inputs[1].threshold),
-                            int(inputs[2].threshold),
-                            inputs[1].threshold,
-                            inputs[2].threshold,
+                            int(inputs[1].number),
+                            int(inputs[2].number),
+                            inputs[1].number,
+                            inputs[2].number,
                         )
                         tosa_fb.addOperator(
                             TosaOp.Op().CLAMP, [inputs[0].name], [outp.name], attr
                         )
                     elif exir_ops.edge.aten.convolution.default == node.target:
-                        ## RESHAPE input tensor to NHWC_Order = [0, 2, 3, 1]
+                        input, weight, bias, stride, pad, dilation, _, _, group = inputs
+
+                        ## Transpose input tensor to NHWC_Order for TOSA
                         NHWC_Order = [0, 2, 3, 1]
-                        attr_input_reshape = ts.TosaSerializerAttribute()
-                        input_shape_NHWC = [inputs[0].shape[i] for i in NHWC_Order]
-                        attr_input_reshape.ReshapeAttribute(input_shape_NHWC)
-                        input_reshaped = tosa_fb.addIntermediate(
-                            input_shape_NHWC, outp.dtype
-                        )
-                        tosa_fb.addOperator(
-                            TosaOp.Op().RESHAPE,
-                            [inputs[0].name],
-                            [input_reshaped.name],
-                            attr_input_reshape,
+                        input_transposed = transpose_helper(
+                            tosa_fb, input, NHWC_Order, outp.dtype
                         )
 
                         ## CONV2DOp
                         attr = ts.TosaSerializerAttribute()
                         # PAD
-                        pad_attr = [val for val in inputs[4].special for _ in (0, 1)]
+                        pad_attr = [val for val in pad.special for _ in (0, 1)]
                         # Stride
-                        stride_attr = inputs[3].special
+                        stride_attr = stride.special
                         # Dilation
-                        dilation_attr = inputs[5].special
+                        dilation_attr = dilation.special
                         attr.ConvAttribute(pad_attr, stride_attr, dilation_attr, 0, 0)
 
-                        ## TOSA output shape is [NHWO] (num_batch, height, width, num_output)
-                        NHWO_Order = [0, 2, 3, 1]
-                        out_shape_TOSA_CONV2D = [outp.shape[i] for i in NHWO_Order]
-                        conv2d_res = tosa_fb.addIntermediate(
-                            out_shape_TOSA_CONV2D, outp.dtype
-                        )
-                        tosa_fb.addOperator(
-                            TosaOp.Op().CONV2D,
-                            [input_reshaped.name, inputs[1].name, inputs[2].name],
-                            [conv2d_res.name],
-                            attr,
-                        )
+                        if group.number > 1:
+                            # Transpose weight to [KH, KW, C, M]
+                            weight_HWCM_Order = [2, 3, 0, 1]
+                            weight_transposed = transpose_helper(
+                                tosa_fb, weight, weight_HWCM_Order, outp.dtype
+                            )
+
+                            ## TOSA output shape is [N, H, W, C*M]
+                            NHWO_Order = [0, 2, 3, 1]
+                            out_shape_TOSA_Depthwise_CONV2D = [
+                                outp.shape[i] for i in NHWO_Order
+                            ]
+
+                            conv2d_res = tosa_fb.addIntermediate(
+                                out_shape_TOSA_Depthwise_CONV2D, outp.dtype
+                            )
+                            tosa_fb.addOperator(
+                                TosaOp.Op().DEPTHWISE_CONV2D,
+                                [
+                                    input_transposed.name,
+                                    weight_transposed.name,
+                                    bias.name,
+                                ],
+                                [conv2d_res.name],
+                                attr,
+                            )
+                        else:
+                            # TODO: Transpose the weight AoT
+                            # Transpose weight to [OC, H, W, IC]
+                            weight_CHWC_Order = [0, 2, 3, 1]
+                            weight_transposed = transpose_helper(
+                                tosa_fb, weight, weight_CHWC_Order, outp.dtype
+                            )
+
+                            ## TOSA output shape is [NHWO]
+                            NHWO_Order = [0, 2, 3, 1]
+                            out_shape_TOSA_CONV2D = [outp.shape[i] for i in NHWO_Order]
+                            conv2d_res = tosa_fb.addIntermediate(
+                                out_shape_TOSA_CONV2D, outp.dtype
+                            )
+                            tosa_fb.addOperator(
+                                TosaOp.Op().CONV2D,
+                                [
+                                    input_transposed.name,
+                                    weight_transposed.name,
+                                    bias.name,
+                                ],
+                                [conv2d_res.name],
+                                attr,
+                            )
 
                         ## Torch output shape is [NOHW]
                         NOHW_Order = [0, 3, 1, 2]
@@ -388,7 +424,7 @@ class ArmBackend(BackendDetails):
                         input_shape = activations.shape
 
                         assert (
-                            0.1 == momentum.threshold
+                            0.1 == momentum.number
                         ), "Expected 0.1 momentum, not currently encoded into TOSA"
 
                         # %op1 = tosa.SUB(%x, %bmean)
@@ -399,7 +435,9 @@ class ArmBackend(BackendDetails):
                         # %output = tosa.ADD(%op5, %bias)
 
                         # Reshape mean to match rank of activations
-                        mean_reshaped_res = tosa_fb.addIntermediate(
+                        mean_reshaped_res = promote_shape(
+                            tosa_fb,
+                            running_mean,
                             (1,)
                             + running_mean.shape
                             + (
@@ -407,21 +445,6 @@ class ArmBackend(BackendDetails):
                                 1,
                             ),
                             input_dtype,
-                        )
-                        attr_mean = ts.TosaSerializerAttribute()
-                        attr_mean.ReshapeAttribute(
-                            (1,)
-                            + running_mean.shape
-                            + (
-                                1,
-                                1,
-                            )
-                        )
-                        tosa_fb.addOperator(
-                            TosaOp.Op().RESHAPE,
-                            [running_mean.name],
-                            [mean_reshaped_res.name],
-                            attr_mean,
                         )
 
                         # Subtract mean
@@ -433,7 +456,7 @@ class ArmBackend(BackendDetails):
                         )
                         # Adding eplison to variance
                         epsilon_const = tosa_fb.addConst(
-                            [1], input_dtype, [epsilon.threshold]
+                            [1], input_dtype, [epsilon.number]
                         )
                         int2 = tosa_fb.addIntermediate(running_var.shape, input_dtype)
                         tosa_fb.addOperator(
@@ -446,7 +469,9 @@ class ArmBackend(BackendDetails):
                         tosa_fb.addOperator(TosaOp.Op().RSQRT, [int2.name], [int3.name])
 
                         # Reshape variable to match rank of activations
-                        var_reshaped_res = tosa_fb.addIntermediate(
+                        var_reshaped_res = promote_shape(
+                            tosa_fb,
+                            int3,
                             (1,)
                             + running_var.shape
                             + (
@@ -454,21 +479,6 @@ class ArmBackend(BackendDetails):
                                 1,
                             ),
                             input_dtype,
-                        )
-                        attr_var = ts.TosaSerializerAttribute()
-                        attr_var.ReshapeAttribute(
-                            (1,)
-                            + running_var.shape
-                            + (
-                                1,
-                                1,
-                            )
-                        )
-                        tosa_fb.addOperator(
-                            TosaOp.Op().RESHAPE,
-                            [int3.name],
-                            [var_reshaped_res.name],
-                            attr_var,
                         )
 
                         # Multiple shifted activations with reciprocal variance
@@ -501,20 +511,8 @@ class ArmBackend(BackendDetails):
                         # Torch's input is [N,C,H,W], TOSA is [N, H, W, C],
                         # Transpose to align with TOSA
                         NHWC_Order = [0, 2, 3, 1]
-                        attr_input_transpose = ts.TosaSerializerAttribute()
-                        attr_input_transpose.TransposeAttribute(NHWC_Order)
-
-                        transeposed_input_shape = [
-                            input_tensor.shape[i] for i in NHWC_Order
-                        ]
-                        input_transposed = tosa_fb.addIntermediate(
-                            transeposed_input_shape, outp.dtype
-                        )
-                        tosa_fb.addOperator(
-                            TosaOp.Op().TRANSPOSE,
-                            [input_tensor.name],
-                            [input_transposed.name],
-                            attr_input_transpose,
+                        input_transposed = transpose_helper(
+                            tosa_fb, input_tensor, NHWC_Order, outp.dtype
                         )
 
                         avg_pool2d_res_shape = [outp.shape[i] for i in NHWC_Order]
@@ -537,6 +535,79 @@ class ArmBackend(BackendDetails):
                             [avg_pool2d_res.name],
                             [outp.name],
                             attr_output_transpose,
+                        )
+                    elif exir_ops.edge.aten._softmax.default == node.target:
+                        input_name = inputs[0].name
+                        input_shape = inputs[0].shape
+                        dim_value = inputs[1].number
+
+                        ## softmax = exp(logits - max(logits)) / reduce_sum(exp(logits - max(logits)), -1)
+                        # FP32
+                        # reduce_max_res = reducemax(logits)
+                        # sub_res = sub(inputs, reduce_max_res)
+                        # exp_res = exp(sub_res)
+                        # reduce_sum_res = reduce_sum(exp_res, -1)
+                        # inverted_reduce_sum = reciprocal(reduce_sum_res)
+                        # output = mul(exp_res, inverted_reduce_sum)
+
+                        # Max_Reduction
+                        attr_axis = ts.TosaSerializerAttribute()
+                        attr_axis.AxisAttribute(axis=dim_value)
+                        reduced_shape = list(input_shape)
+                        reduced_shape[dim_value] = 1
+                        reduce_max_res = tosa_fb.addIntermediate(
+                            reduced_shape, outp.dtype
+                        )
+                        tosa_fb.addOperator(
+                            TosaOp.Op().REDUCE_MAX,
+                            [input_name],
+                            [reduce_max_res.name],
+                            attr_axis,
+                        )
+
+                        # Subtract max from logits
+                        sub_res = tosa_fb.addIntermediate(input_shape, outp.dtype)
+                        tosa_fb.addOperator(
+                            TosaOp.Op().SUB,
+                            [input_name, reduce_max_res.name],
+                            [sub_res.name],
+                        )
+
+                        # Raise the subtraction results to exponent
+                        exp_res = tosa_fb.addIntermediate(input_shape, outp.dtype)
+                        tosa_fb.addOperator(
+                            TosaOp.Op().EXP, [sub_res.name], [exp_res.name]
+                        )
+
+                        # Reduce_sum of the calculated exponent value
+                        reduce_sum_res = tosa_fb.addIntermediate(
+                            reduced_shape, outp.dtype
+                        )
+                        tosa_fb.addOperator(
+                            TosaOp.Op().REDUCE_SUM,
+                            [exp_res.name],
+                            [reduce_sum_res.name],
+                            attr_axis,
+                        )
+
+                        # Invert the reduce_sum
+                        inverted_reduce_sum = tosa_fb.addIntermediate(
+                            reduced_shape, outp.dtype
+                        )
+                        tosa_fb.addOperator(
+                            TosaOp.Op().RECIPROCAL,
+                            [reduce_sum_res.name],
+                            [inverted_reduce_sum.name],
+                        )
+
+                        # Multiply two parts to get the final results
+                        attr_mul = ts.TosaSerializerAttribute()
+                        attr_mul.MulAttribute(0)
+                        tosa_fb.addOperator(
+                            TosaOp.Op().MUL,
+                            [exp_res.name, inverted_reduce_sum.name],
+                            [outp.name],
+                            attr_mul,
                         )
                     elif operator.getitem == node.target:
                         item_name = inputs[0].name
