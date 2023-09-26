@@ -15,7 +15,7 @@ namespace torch {
 namespace executor {
 
 // Constructor implementation
-ETDumpGen::ETDumpGen(void* buffer, size_t buf_size) {
+ETDumpGen::ETDumpGen() {
   // Initialize the flatcc builder using the buffer and buffer size
   flatcc_builder_init(&builder);
   flatbuffers_buffer_start(&builder, etdump_ETDump_file_identifier);

@@ -32,7 +32,7 @@ struct etdump_result {
 
 class ETDumpGen : public EventTracer {
  public:
-  ETDumpGen(void* buffer, size_t buf_size);
+  ETDumpGen();
 
   ~ETDumpGen() override;
   void clear_builder();

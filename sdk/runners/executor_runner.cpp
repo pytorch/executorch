@@ -16,6 +16,7 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/sdk/etdump/etdump.h>
+#include <executorch/sdk/etdump/etdump_flatcc.h>
 #include <executorch/util/bundled_program_verification.h>
 #include <executorch/util/util.h>
 #ifdef USE_ATEN_LIB
@@ -304,7 +305,9 @@ int main(int argc, char** argv) {
   //
 
   prof_tok = EXECUTORCH_BEGIN_PROF("load model");
-  Result<Method> method = program->load_method(method_name, &memory_manager);
+  torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
+  Result<Method> method =
+      program->load_method(method_name, &memory_manager, &etdump_gen);
   EXECUTORCH_END_PROF(prof_tok);
   ET_CHECK_MSG(
       method.ok(),
@@ -431,6 +434,14 @@ int main(int argc, char** argv) {
       ET_LOG(Error, "Failed to serialize and write out etdump data.");
       return -1;
     }
+  }
+
+  etdump_result result = etdump_gen.get_etdump_data();
+  if (result.buf != nullptr && result.size > 0) {
+    FILE* f = fopen(FLAGS_etdump_path.c_str(), "w+");
+    fwrite((uint8_t*)result.buf, 1, result.size, f);
+    fclose(f);
+    free(result.buf);
   }
 
   return 0;
