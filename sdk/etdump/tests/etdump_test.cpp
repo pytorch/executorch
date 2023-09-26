@@ -46,8 +46,10 @@ TEST_F(ProfilerETDumpTest, SingleProfileEvent) {
   ASSERT_TRUE(result.buf != nullptr);
   ASSERT_TRUE(result.size != 0);
 
-  etdump_ETDump_table_t etdump = etdump_ETDump_as_root_with_identifier(
-      result.buf, etdump_ETDump_file_identifier);
+  size_t size = 0;
+  void* buf = flatbuffers_read_size_prefix(result.buf, &size);
+  etdump_ETDump_table_t etdump =
+      etdump_ETDump_as_root_with_identifier(buf, etdump_ETDump_file_identifier);
 
   ASSERT_NE(etdump, nullptr);
   EXPECT_EQ(etdump_ETDump_version(etdump), ETDUMP_VERSION);
@@ -90,8 +92,10 @@ TEST_F(ProfilerETDumpTest, EmptyBlocks) {
   ASSERT_TRUE(result.buf != nullptr);
   ASSERT_TRUE(result.size != 0);
 
-  etdump_ETDump_table_t etdump = etdump_ETDump_as_root_with_identifier(
-      result.buf, etdump_ETDump_file_identifier);
+  size_t size = 0;
+  void* buf = flatbuffers_read_size_prefix(result.buf, &size);
+  etdump_ETDump_table_t etdump =
+      etdump_ETDump_as_root_with_identifier(buf, etdump_ETDump_file_identifier);
 
   etdump_RunData_vec_t run_data_vec = etdump_ETDump_run_data(etdump);
   ASSERT_EQ(etdump_RunData_vec_len(run_data_vec), 3);
@@ -153,8 +157,10 @@ TEST_F(ProfilerETDumpTest, MultipleBlocksWithEvents) {
   ASSERT_TRUE(result.buf != nullptr);
   ASSERT_TRUE(result.size != 0);
 
-  etdump_ETDump_table_t etdump = etdump_ETDump_as_root_with_identifier(
-      result.buf, etdump_ETDump_file_identifier);
+  size_t size = 0;
+  void* buf = flatbuffers_read_size_prefix(result.buf, &size);
+  etdump_ETDump_table_t etdump =
+      etdump_ETDump_as_root_with_identifier(buf, etdump_ETDump_file_identifier);
 
   ASSERT_NE(etdump, nullptr);
   EXPECT_EQ(etdump_ETDump_version(etdump), ETDUMP_VERSION);
@@ -212,8 +218,10 @@ TEST_F(ProfilerETDumpTest, VerifyData) {
   ASSERT_TRUE(result.buf != nullptr);
   ASSERT_TRUE(result.size != 0);
 
-  etdump_ETDump_table_t etdump = etdump_ETDump_as_root_with_identifier(
-      result.buf, etdump_ETDump_file_identifier);
+  size_t size = 0;
+  void* buf = flatbuffers_read_size_prefix(result.buf, &size);
+  etdump_ETDump_table_t etdump =
+      etdump_ETDump_as_root_with_identifier(buf, etdump_ETDump_file_identifier);
 
   ASSERT_NE(etdump, nullptr);
   EXPECT_EQ(etdump_ETDump_version(etdump), ETDUMP_VERSION);
@@ -251,6 +259,110 @@ TEST_F(ProfilerETDumpTest, VerifyData) {
       std::string(allocator_name, strlen(allocator_name)),
       "single prof allocator");
 
+  free(result.buf);
+}
+
+TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
+  etdump_gen->create_event_block("test_block");
+
+  // Event 0
+  etdump_gen->log_profiling_delegate(nullptr, 276, 1, 2, nullptr);
+  // Event 1
+  etdump_gen->log_profiling_delegate(nullptr, 278, 1, 2, "test_metadata");
+  EventTracerEntry entry = etdump_gen->start_profiling_delegate(
+      "test_event", static_cast<torch::executor::DebugHandle>(-1));
+  EXPECT_NE(entry.delegate_event_id_type, DelegateDebugIdType::kNone);
+  // Event 2
+  etdump_gen->end_profiling_delegate(entry, "test_metadata");
+  // Event 3
+  etdump_gen->log_profiling_delegate(
+      "test_event",
+      static_cast<torch::executor::DebugHandle>(-1),
+      1,
+      2,
+      nullptr);
+  // Event 4
+  etdump_gen->log_profiling_delegate(
+      "test_event",
+      static_cast<torch::executor::DebugHandle>(-1),
+      1,
+      2,
+      "test_metadata");
+
+  // Only a valid name or delegate debug index should be passed in. If valid
+  // entries are passed in for both then the test should assert out.
+  ET_EXPECT_DEATH(
+      etdump_gen->start_profiling_delegate("test_event", 1),
+      "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
+  ET_EXPECT_DEATH(
+      etdump_gen->log_profiling_delegate("test_event", 1, 1, 2, nullptr),
+      "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
+  ET_EXPECT_DEATH(
+      etdump_gen->end_profiling(entry),
+      "Delegate events must use end_profiling_delegate to mark the end of a delegate profiling event.");
+
+  etdump_result result = etdump_gen->get_etdump_data();
+  ASSERT_TRUE(result.buf != nullptr);
+  ASSERT_TRUE(result.size != 0);
+
+  // Run verification tests on the data that was just serialized.
+  size_t size = 0;
+  void* buf = flatbuffers_read_size_prefix(result.buf, &size);
+  etdump_ETDump_table_t etdump =
+      etdump_ETDump_as_root_with_identifier(buf, etdump_ETDump_file_identifier);
+  etdump_RunData_vec_t run_data_vec = etdump_ETDump_run_data(etdump);
+
+  // Event 0
+  etdump_RunData_table_t run_data_0 = etdump_RunData_vec_at(run_data_vec, 0);
+  etdump_Event_vec_t event_vec = etdump_RunData_events(run_data_0);
+  ASSERT_EQ(etdump_Event_vec_len(event_vec), 5);
+  etdump_Event_table_t event = etdump_Event_vec_at(event_vec, 0);
+
+  flatbuffers_string_t delegate_debug_id_name =
+      etdump_ProfileEvent_delegate_debug_id_str(
+          etdump_Event_profile_event(event));
+
+  // Event 0 should have a empty delegate_debug_id_str
+  EXPECT_EQ(delegate_debug_id_name, nullptr);
+  // Check for the correct delegate_debug_id_int
+  EXPECT_EQ(
+      etdump_ProfileEvent_delegate_debug_id_int(
+          etdump_Event_profile_event(event)),
+      276);
+  flatbuffers_string_t debug_metadata_name =
+      etdump_ProfileEvent_delegate_debug_metadata(
+          etdump_Event_profile_event(event));
+  // Event 0 should have an empty delegate_debug_metadata string.
+  EXPECT_EQ(debug_metadata_name, nullptr);
+
+  // Event 1
+  event = etdump_Event_vec_at(event_vec, 1);
+  // Check for the correct delegate_debug_id_int
+  EXPECT_EQ(
+      etdump_ProfileEvent_delegate_debug_id_int(
+          etdump_Event_profile_event(event)),
+      278);
+  debug_metadata_name = etdump_ProfileEvent_delegate_debug_metadata(
+      etdump_Event_profile_event(event));
+  // Check for the correct delegate_debug_metadata string
+  EXPECT_EQ(
+      std::string(debug_metadata_name, strlen(debug_metadata_name)),
+      "test_metadata");
+
+  // Event 2
+  event = etdump_Event_vec_at(event_vec, 2);
+  delegate_debug_id_name = etdump_ProfileEvent_delegate_debug_id_str(
+      etdump_Event_profile_event(event));
+  // Check for the correct delegate_debug_id_str string.
+  EXPECT_EQ(
+      std::string(delegate_debug_id_name, strlen(delegate_debug_id_name)),
+      "test_event");
+  // Event 2 used a string delegate debug identifier, so delegate_debug_id_int
+  // should be -1.
+  EXPECT_EQ(
+      etdump_ProfileEvent_delegate_debug_id_int(
+          etdump_Event_profile_event(event)),
+      -1);
   free(result.buf);
 }
 

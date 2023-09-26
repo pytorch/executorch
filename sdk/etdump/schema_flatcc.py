@@ -90,11 +90,12 @@ class PROFILE_EVENT_ENUM(Enum):
 
 @dataclass
 class ProfileEvent:
-    name: str
+    name: Optional[str]
     chain_id: int
     instruction_id: int
-    delegate_debug_id_int: int
-    delegate_debug_id_str: str
+    delegate_debug_id_int: Optional[int]
+    delegate_debug_id_str: Optional[str]
+    delegate_debug_metadata: Optional[str]
     start_time: int
     end_time: int
 
