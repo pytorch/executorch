@@ -10,7 +10,7 @@
 */
 :root {
     --sd-color-info: #ee4c2c;
-    --sd-color-primary: #6c6c6d;
+    --sd-color-primary: #f3f4f7;
     --sd-color-primary-highlight: #f3f4f7;
     --sd-color-card-border-hover: #ee4c2c;
     --sd-color-card-border: #f3f4f7;
@@ -75,4 +75,48 @@
 
 .sd-card:hover:after {
     transform: scaleX(1);
+}
+
+.card-prerequisites:hover {
+    transition: none;
+    border: none;
+}
+
+.card-prerequisites:hover:after {
+    transition: none;
+    transform: none;
+}
+
+.card-prerequisites:after {
+    display: block;
+    content: '';
+    border-bottom: none;
+    background-color: #fff;
+    transform: none;
+    transition: none;
+    transform-origin: none;
+}
+
+
+details.sd-dropdown {
+    font-weight: 300;
+    width: auto;
+}
+
+details.sd-dropdown:after {
+    border: none;
+    transition: none;
+}
+
+details.sd-dropdown:hover {
+    border: none;
+    transition: none;
+}
+
+details.sd-dropdown .sd-summary-content {
+    font-weight: 300;
+}
+
+details.sd-dropdown .highlight .n {
+    font-weight: normal;
 }
