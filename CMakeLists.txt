@@ -44,11 +44,17 @@ cmake_minimum_required(VERSION 3.19)
 project(executorch)
 include(build/Utils.cmake)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
-# -Os: Optimize for size -ffunction-sections -fdata-sections: breaks function
-# and data into sections so they can be properly gc'd -s: strip symbols
+# -Os: Optimize for size. -ffunction-sections -fdata-sections: breaks function
+# and data into sections so they can be properly gc'd. -s: strip symbols
 set(CMAKE_CXX_FLAGS_RELEASE
     "-Os -ffunction-sections -fdata-sections -s -fno-exceptions -fno-rtti")
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
@@ -60,8 +66,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 option(
   REGISTER_EXAMPLE_CUSTOM_OP
   "Register whether custom op 1 (my_ops::mul3) or custom op 2 (my_ops::mul4) \
-  or no custom op at all."
-  OFF)
+  or no custom op at all." OFF)
 
 # Option to register quantized ops with quantized kernels. See
 # kernels/quantized/CMakeLists.txt
@@ -85,12 +90,6 @@ endif()
 # Build xnn_executor_runner which depends on XNNPACK
 option(EXECUTORCH_BUILD_XNNPACK
        "Build xnn_executor_runner which depends on XNNPACK" OFF)
-
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 17)
-endif()
 
 if(NOT BUCK2)
   set(BUCK2 buck2)
@@ -126,10 +125,67 @@ message(STATUS "executorch: Using sources file ${EXECUTORCH_SRCS_FILE}")
 include(${EXECUTORCH_SRCS_FILE})
 
 #
+# Modify default options when cross-compiling.
+#
+# The intent is for the EXECUTORCH_BUILD_HOST_TARGETS option to affect the
+# default ON/OFF values of host targets around the tree. This way, a user can
+# disable EXECUTORCH_BUILD_HOST_TARGETS to disable all host targets, and then
+# optionally re-enable some of those targets. Or they could leave
+# EXECUTORCH_BUILD_HOST_TARGETS enabled and then optionally disable any given
+# host target.
+#
+# We can then use various cross-compilation hints to set the default value of
+# EXECUTORCH_BUILD_HOST_TARGETS, which can still be overridden if desired.
+#
+
+# _default_build_host_targets: The default value for the
+# EXECUTORCH_BUILD_HOST_TARGETS option.
+set(_default_build_host_targets ON)
+if(CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
+  # TODO(dbort): Refactor toolchain-specific matching. Ideally this file would
+  # not know about specific targets, and work with more abstract concepts like
+  # "is cross compiling".
+  set(_default_build_host_targets OFF)
+endif()
+
+# EXECUTORCH_BUILD_HOST_TARGETS: Option to control the building of host-only
+# tools like `flatc`, along with example executables like `executor_runner` and
+# libraries that it uses, like `gflags`. Disabling this can be helpful when
+# cross-compiling, but some required tools that would have been built need to be
+# provided directly (via, for example, FLATC_EXECUTABLE).
+option(EXECUTORCH_BUILD_HOST_TARGETS "Build host-only targets."
+       "${_default_build_host_targets}")
+# Unset this since it's easy to confuse with _default_host_target_option.
+unset(_default_build_host_targets)
+
+# _default_host_target_option: EXECUTORCH_BUILD_* options that guard host tools
+# and libraries should use this as their default value.
+if(EXECUTORCH_BUILD_HOST_TARGETS)
+  set(_default_host_target_option ON)
+else()
+  set(_default_host_target_option OFF)
+endif()
+
+#
 # flatc: Flatbuffer commandline tool to generate .h files from .fbs files
 #
 
-if(NOT FLATC_EXECUTABLE)
+if(FLATC_EXECUTABLE)
+  # A `flatc` is provided, so no need to build another one.
+  set(_default_build_flatc OFF)
+else()
+  set(_default_build_flatc "${_default_host_target_option}")
+endif()
+option(EXECUTORCH_BUILD_FLATC "Build the flatc executable."
+       "${_default_build_flatc}")
+if(EXECUTORCH_BUILD_FLATC)
+  if(FLATC_EXECUTABLE)
+    # We could ignore this, but it could lead to confusion about which `flatc`
+    # is actually being used.
+    message(
+      FATAL_ERROR "May not set both EXECUTORCH_BUILD_FLATC and FLATC_EXECUTABLE"
+    )
+  endif()
   set(FLATC_EXECUTABLE flatc)
   option(FLATBUFFERS_BUILD_FLATC "" ON)
   option(FLATBUFFERS_BUILD_FLATHASH "" OFF)
@@ -138,12 +194,13 @@ if(NOT FLATC_EXECUTABLE)
   option(FLATBUFFERS_INSTALL "" OFF)
   add_subdirectory(third-party/flatbuffers)
 endif()
-
-#
-# gflags: Commandline flag libgrary
-#
-
-add_subdirectory(third-party/gflags)
+if(NOT FLATC_EXECUTABLE)
+  message(
+    FATAL_ERROR
+      "FLATC_EXECUTABLE must be set when EXECUTORCH_BUILD_FLATC is disabled. "
+      "Note that EXECUTORCH_BUILD_FLATC may be disabled implicitly when "
+      "cross-compiling or when EXECUTORCH_BUILD_HOST_TARGETS is disabled.")
+endif()
 
 #
 # program_schema: Generated .h files from schema/*.fbs inputs
@@ -175,27 +232,42 @@ endif()
 # operators necessary for the models that will run.
 #
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
-set(_libs executorch portable_ops_lib gflags)
 
-# Generate custom_ops_lib based on REGISTER_EXAMPLE_CUSTOM_OP
-if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 1 OR REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/custom_ops)
-  list(APPEND _libs custom_ops_lib)
+#
+# gflags: Commandline flag host library.
+#
+option(EXECUTORCH_BUILD_GFLAGS "Build the gflags library."
+       "${_default_host_target_option}")
+if(EXECUTORCH_BUILD_GFLAGS)
+  add_subdirectory(third-party/gflags)
 endif()
 
-# Generate lib to register quantized ops
-if(REGISTER_QUANTIZED_OPS)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
-  list(APPEND _libs quantized_ops_lib)
-endif()
+#
+# executor_runner: Host tool that demonstrates program execution.
+#
+option(EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable"
+       "${_default_host_target_option}")
+if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
+  # Baseline libraries that executor_runner will link against.
+  set(_executor_runner_libs executorch portable_ops_lib gflags)
 
-# ios can only build library but not binary
-if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
+  # Generate custom_ops_lib based on REGISTER_EXAMPLE_CUSTOM_OP
+  if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 1 OR REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/custom_ops)
+    list(APPEND _executor_runner_libs custom_ops_lib)
+  endif()
+
+  # Generate lib to register quantized ops
+  if(REGISTER_QUANTIZED_OPS)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
+    list(APPEND _executor_runner_libs quantized_ops_lib)
+  endif()
+
   add_executable(executor_runner ${_executor_runner__srcs})
   if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
     target_link_options(executor_runner PRIVATE "LINKER:--gc-sections")
   endif()
-  target_link_libraries(executor_runner ${_libs})
+  target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 

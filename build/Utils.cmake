@@ -4,28 +4,40 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+#
 # This file is intended to have helper functions to keep the CMakeLists.txt
 # concise. If there are any helper function can be re-used, it's recommented to
 # add them here.
+#
+# ### Editing this file ###
+#
+# This file should be formatted with
+# ~~~
+# cmake-format --first-comment-is-literal=True Utils.cmake
+# ~~~
+# It should also be cmake-lint clean.
+#
 
-# Public function to print summary for all configurations. For new variable,
+# Public function to print summary for all configurations. For new variables,
 # it's recommended to add them here.
 function(executorch_print_configuration_summary)
   message(STATUS "")
   message(STATUS "******** Summary ********")
-  message(STATUS "  BUCK                          : ${BUCK2}")
   message(STATUS "  CMAKE_BUILD_TYPE              : ${CMAKE_BUILD_TYPE}")
   message(STATUS "  CMAKE_CXX_STANDARD            : ${CMAKE_CXX_STANDARD}")
   message(STATUS "  CMAKE_CXX_COMPILER_ID         : ${CMAKE_CXX_COMPILER_ID}")
   message(STATUS "  CMAKE_TOOLCHAIN_FILE          : ${CMAKE_TOOLCHAIN_FILE}")
+  message(STATUS "  BUCK2                         : ${BUCK2}")
   message(STATUS "  PYTHON_EXECUTABLE             : ${PYTHON_EXECUTABLE}")
   message(STATUS "  FLATC_EXECUTABLE              : ${FLATC_EXECUTABLE}")
-  message(STATUS "  FLATBUFFERS_BUILD_FLATC       : ${FLATBUFFERS_BUILD_FLATC}")
   message(
-    STATUS "  FLATBUFFERS_BUILD_FLATHASH    : ${FLATBUFFERS_BUILD_FLATHASH}")
+    STATUS "  EXECUTORCH_BUILD_HOST_TARGETS : ${EXECUTORCH_BUILD_HOST_TARGETS}")
+  message(STATUS "  EXECUTORCH_BUILD_FLATC        : ${EXECUTORCH_BUILD_FLATC}")
+  message(STATUS "  EXECUTORCH_BUILD_GFLAGS       : ${EXECUTORCH_BUILD_GFLAGS}")
   message(
-    STATUS "  FLATBUFFERS_BUILD_FLATLIB     : ${FLATBUFFERS_BUILD_FLATLIB}")
-  message(STATUS "  FLATBUFFERS_BUILD_TESTS       : ${FLATBUFFERS_BUILD_TESTS}")
+    STATUS
+      "  EXECUTORCH_BUILD_EXECUTOR_RUNNER : ${EXECUTORCH_BUILD_EXECUTOR_RUNNER}"
+  )
   message(
     STATUS "  REGISTER_EXAMPLE_CUSTOM_OPS   : ${REGISTER_EXAMPLE_CUSTOM_OPS}")
 endfunction()
@@ -37,24 +49,20 @@ function(kernel_link_options target_name)
   # target_link_options(${target_name} INTERFACE
   # "$<LINK_LIBRARY:WHOLE_ARCHIVE,target_name>")
   target_link_options(
-    ${target_name}
-    INTERFACE
-    "SHELL:LINKER:--whole-archive \
+    ${target_name} INTERFACE "SHELL:LINKER:--whole-archive \
     $<TARGET_FILE:${target_name}> \
-    LINKER:--no-whole-archive"
-  )
+    LINKER:--no-whole-archive")
 endfunction()
 
+# Same as kernel_link_options but it's for MacOS linker
 function(macos_kernel_link_options target_name)
-  target_link_options(
-    ${target_name} INTERFACE
-    # Same as kernel_link_options but it's for MacOS linker
-    "SHELL:LINKER:-force_load,$<TARGET_FILE:${target_name}>")
+  target_link_options(${target_name} INTERFACE
+                      "SHELL:LINKER:-force_load,$<TARGET_FILE:${target_name}>")
 endfunction()
 
+# Ensure that the load-time constructor functions run. By default, the linker
+# would remove them since there are no other references to them.
 function(target_link_options_shared_lib target_name)
-  # Ensure that the load-time constructor functions run. By default, the linker
-  # would remove them since there are no other references to them.
   if(APPLE)
     macos_kernel_link_options(${target_name})
   else()
@@ -65,13 +73,15 @@ endfunction()
 # Extract source files based on toml config. This is useful to keep buck2 and
 # cmake aligned.
 function(extract_sources sources_file)
-  if(NOT EXECUTORCH_ROOT)
-    set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+  if(EXECUTORCH_ROOT)
+    set(executorch_root ${EXECUTORCH_ROOT})
+  else()
+    set(executorch_root ${CMAKE_CURRENT_SOURCE_DIR})
   endif()
   execute_process(
     COMMAND
-      ${PYTHON_EXECUTABLE} ${EXECUTORCH_ROOT}/build/extract_sources.py
-      --buck2=${BUCK2} --config=${EXECUTORCH_ROOT}/build/cmake_deps.toml
+      ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
+      --buck2=${BUCK2} --config=${executorch_root}/build/cmake_deps.toml
       --out=${sources_file}
     OUTPUT_VARIABLE gen_srcs_output
     ERROR_VARIABLE gen_srcs_error
