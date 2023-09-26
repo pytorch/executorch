@@ -25,6 +25,7 @@ function(gen_selected_ops ops_schema_yaml root_ops include_all_ops)
   if(include_all_ops)
     list(APPEND _gen_oplist_command --include_all_operators)
   endif()
+
   message("Command - ${_gen_oplist_command}")
   add_custom_command(
     COMMENT "Generating selected_operators.yaml for custom ops"
@@ -113,7 +114,9 @@ function(gen_operators_lib lib_name kernel_lib deps)
       ${CMAKE_CURRENT_BINARY_DIR}/Functions.h
       ${CMAKE_CURRENT_BINARY_DIR}/NativeFunctions.h)
   target_link_libraries(${lib_name} PRIVATE ${deps})
-  target_link_libraries(${lib_name} INTERFACE ${kernel_lib})
+  if(kernel_lib)
+    target_link_libraries(${lib_name} INTERFACE ${kernel_lib})
+  endif()
 
   target_link_options_shared_lib(${lib_name})
 endfunction()

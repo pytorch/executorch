@@ -50,7 +50,10 @@ endif()
 # -Os: Optimize for size -ffunction-sections -fdata-sections: breaks function
 # and data into sections so they can be properly gc'd -s: strip symbols
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-Os -ffunction-sections -fdata-sections -s -fno-exceptions -fno-rtti")
+    "-Os -ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
+if(NOT APPLE)
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
+endif()
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
 # Option to register custom operator `my_ops::mul3` or `my_ops::mul4` or no
@@ -70,6 +73,9 @@ option(REGISTER_QUANTIZED_OPS
 
 option(BUILD_SELECTIVE_BUILD_TEST
        "Whether to build binary for demo selective build" OFF)
+
+option(EXECUTORCH_BUILD_SIZE_TEST
+       "Whether to build size test" OFF)
 
 if(BUILD_SELECTIVE_BUILD_TEST)
   option(SELECT_ALL_OPS
@@ -207,6 +213,11 @@ endif()
 # Add selective build subdirectory
 if(BUILD_SELECTIVE_BUILD_TEST)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/selective_build)
+endif()
+
+# Add size test subdirectory
+if(EXECUTORCH_BUILD_SIZE_TEST)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test)
 endif()
 # Print all summary
 executorch_print_configuration_summary()

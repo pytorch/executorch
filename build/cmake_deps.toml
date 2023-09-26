@@ -63,6 +63,20 @@ deps = [
   "portable_kernels",
 ]
 
+[targets.size_test]
+buck_targets = [
+  "//test:size_test",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+]
+
 [targets.xnnpack_schema]
 buck_targets = [
   "//backends/xnnpack:xnnpack_schema"
