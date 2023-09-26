@@ -4,12 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import List, Optional
+import itertools
+import operator
+from typing import Any, List, Optional, Tuple, Type
 
 import torch
-from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType
+from executorch.exir.lowered_backend_module import LoweredBackendModule
 from executorch.exir.verification.arg_validator import (
     EdgeOpArgValidator,
     RunHigherOrderOperatorError,
@@ -17,7 +19,6 @@ from executorch.exir.verification.arg_validator import (
 
 from torch._export.verifier import (
     _check_has_fake_tensor,
-    _check_tensors_are_contiguous,
     ATenDialectVerifier,
     SpecViolationError,
     Verifier,
@@ -28,30 +29,21 @@ from torch.fx import GraphModule
 
 
 ALLOWED_META_KEYS = {"spec", "stack_trace"}
-VALID_BUILTIN_FUNCS = [
-    executorch_call_delegate,
-]
+
+
+def _check_tensors_are_contiguous(gm: GraphModule) -> None:
+    # Tensors be of contiguous format
+    for name, param in itertools.chain(gm.named_parameters(), gm.named_buffers()):
+        if isinstance(param, torch.Tensor):
+            if not param.is_contiguous():
+                raise SpecViolationError(
+                    f"Tensors in Aten dialect must be contiguous, {name} is not contiguous"
+                )
 
 
 class EXIRATenDialectVerifier(ATenDialectVerifier):
-    def valid_builtin_funcs(self):
-        builtin_funcs = super().valid_builtin_funcs()
-        builtin_funcs.extend(VALID_BUILTIN_FUNCS)
-        return builtin_funcs
-
-    # TODO(angelayi): Delete this function when we migrate all tests to
-    #  because right now old tracer does not add ["val"] metadata
-    def check_valid(self, gm: GraphModule) -> None:  # noqa: C901
-
-        for node in gm.graph.nodes:
-            if node.op in {"call_module", "call_method"}:
-                raise SpecViolationError(
-                    "call_module is not valid: got a class '{}' ".format(node.target),
-                )
-
-            if node.op == "call_function":
-                if node.target not in self.valid_builtin_funcs():
-                    self.check_valid_op(node.target)
+    def allowed_getattr_types(self) -> Tuple[Type[Any], ...]:
+        return (torch.fx.GraphModule, LoweredBackendModule, torch.Tensor)
 
 
 def _get_inputs(graph_module: GraphModule) -> List[Optional[FakeTensor]]:
@@ -97,15 +89,21 @@ def _check_tensor_args_matching_op_allowed_dtype(gm: GraphModule) -> None:
 
 
 class EXIREdgeDialectVerifier(Verifier):
-    def __init__(self, check_edge_ops: bool = False) -> None:
+    def __init__(self, check_edge_ops: bool = True) -> None:
         self.check_edge_ops = check_edge_ops
 
-    def valid_builtin_funcs(self):
-        builtin_funcs = super().valid_builtin_funcs()
-        builtin_funcs.extend(VALID_BUILTIN_FUNCS)
-        return builtin_funcs
+        if self.check_edge_ops:
+            self.check_valid_op = self.check_valid_edge_op
+        else:
+            self.check_valid_op = self.check_valid_aten_op
+
+    def allowed_getattr_types(self) -> Tuple[Type[Any], ...]:
+        return (torch.fx.GraphModule, LoweredBackendModule, torch.Tensor)
 
     def check_valid_edge_op(self, op):
+        if op in [operator.getitem]:
+            return
+
         if isinstance(op, OpOverload) and not isinstance(op, EdgeOpOverload):
             raise SpecViolationError(
                 "Operator {}.{} is not an Edge operator.".format(
@@ -116,33 +114,23 @@ class EXIREdgeDialectVerifier(Verifier):
     def check_valid_aten_op(self, op) -> None:
         super().check_valid_op(op)
 
-        op_name = op.name if hasattr(op, "name") else op.__name__
-
-        if not isinstance(op, OpOverload):
-            raise SpecViolationError(
-                "Operator '{}' is not a registered Op".format(op_name),
-            )
-
-        if (
-            torch.Tag.core not in op.tags  # type: ignore[attr-defined]
-            and torch.Tag.view_copy not in op.tags  # type: ignore[attr-defined]
-        ):
-            # NOTE(qihan): whether view_copy operators are marked as canonical is still under
-            #            discussion.
-            raise SpecViolationError(
-                "Operator {}.{} is not Aten Canonical.".format(
-                    op.__module__, op.__name__
+        if isinstance(op, OpOverload):
+            if (
+                torch.Tag.core not in op.tags  # type: ignore[attr-defined]
+                and torch.Tag.view_copy not in op.tags  # type: ignore[attr-defined]
+            ):
+                # NOTE(qihan): whether view_copy operators are marked as canonical is still under
+                #            discussion.
+                raise SpecViolationError(
+                    "Operator {}.{} is not Aten Canonical.".format(
+                        op.__module__, op.__name__
+                    )
                 )
-            )
 
-    def check_valid(self, gm: GraphModule) -> None:
+    def check_additional(self, gm: GraphModule) -> None:
         if self.check_edge_ops:
-            self.check_valid_op = self.check_valid_edge_op
-            super().check_valid(gm)
             _check_tensors_are_contiguous(gm)
             _check_tensor_args_matching_op_allowed_dtype(gm)
-        else:
-            self.check_valid_op = self.check_valid_aten_op
 
         # Additionally, edge dialect's operator must have same input dtype
         for n in gm.graph.nodes:
