@@ -26,7 +26,7 @@ class BackendOpOverload(EdgeOpOverload):
     2. backend op is stateless while delegation doesn't have to
     3. backend op stays in executor standard runtime but delegation doesn't have to
 
-    Examples for backend ops including fused ops for a specific backend, Executorch prim ops to handle symbolic shape.
+    Examples for backend ops including fused ops for a specific backend, ExecuTorch prim ops to handle symbolic shape.
 
     Note that the assumption here is that the backend op and the original callable / equivalent callable is 1 - 1 mapping.
 

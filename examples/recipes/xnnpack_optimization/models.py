@@ -26,4 +26,6 @@ MODEL_NAME_TO_OPTIONS = {
     "resnet50": OptimizationOptions(True, True),
     "vit": OptimizationOptions(False, True),
     "w2l": OptimizationOptions(False, True),
+    "edsr": OptimizationOptions(True, False),
+    "mobilebert": OptimizationOptions(True, False),
 }

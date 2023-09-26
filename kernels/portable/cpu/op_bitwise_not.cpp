@@ -44,7 +44,10 @@ Tensor& bitwise_not_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
           in.numel());
     });
   } else {
-    ET_CHECK_MSG(false, "Unsupported input dtype %hhd", in.scalar_type());
+    ET_CHECK_MSG(
+        false,
+        "Unsupported input dtype %" PRId8,
+        static_cast<int8_t>(in.scalar_type()));
   }
 
   return out;

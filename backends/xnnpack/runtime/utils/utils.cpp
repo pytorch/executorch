@@ -8,6 +8,7 @@
 
 #include <executorch/backends/xnnpack/runtime/utils/utils.h>
 #include <executorch/runtime/platform/assert.h>
+#include <cinttypes>
 
 namespace torch {
 namespace executor {
@@ -170,8 +171,8 @@ std::pair<float, float> GetMinMax(const Tensor& ft) {
   float max = -std::numeric_limits<float>::max();
   ET_CHECK_MSG(
       ft.scalar_type() == ScalarType::Float,
-      "Expected float tensor but got %hhd",
-      ft.scalar_type());
+      "Expected float tensor but got %" PRId8,
+      static_cast<int8_t>(ft.scalar_type()));
   const float* d = ft.const_data_ptr<float>();
   for (int i = 0; i < ft.numel(); ++i) {
     min = (d[i] < min) ? d[i] : min;

@@ -23,7 +23,7 @@ To lower edge ops to backend ops, a pass will perform pattern matching to identi
 * `transform()`. An API on `ExportProgram` that allows users to provide custom passes. Note that this is not guarded by any validator so the soundness of the program is not guaranteed.
 * [`ExecutorchBackendConfig.passes`](https://github.com/pytorch/executorch/blob/main/exir/capture/_config.py#L40). If added here, the pass will be part of the lowering process from backend dialect to `ExecutorchProgram`.
 
-Example: one of such passes is `QuantFusion`. This pass takes a "canonical quantization pattern", ie. "dequant - some_op - quant" and fuse this pattern into a single operator that is backend specific, i.e. `quantized_decomposed::some_op`. You can find more details [here](../tutorials/short_term_quantization_flow.md). Another simpler example is [here](https://github.com/pytorch/executorch/blob/main/exir/passes/replace_edge_with_backend_pass.py#L20) where we replace sym_size operators to the ones that are understood by Executorch.
+Example: one of such passes is `QuantFusion`. This pass takes a "canonical quantization pattern", ie. "dequant - some_op - quant" and fuse this pattern into a single operator that is backend specific, i.e. `quantized_decomposed::some_op`. You can find more details [here](../tutorials/short_term_quantization_flow.md). Another simpler example is [here](https://github.com/pytorch/executorch/blob/main/exir/passes/replace_edge_with_backend_pass.py#L20) where we replace sym_size operators to the ones that are understood by ExecuTorch.
 
 ## API
 
@@ -38,7 +38,7 @@ Then the operator can be accessed/used from the passes. The `CompositeImplicitAu
 2. Ensures the retracability of `ExportProgram`. Once retraced, the backend operator will be decomposed into the ATen ops used in the pattern.
 
 ## Op Set
-Unlike edge dialect where we have a well defined op set, for backend dialect, since it is target-aware we will be allowing user to use our API to register target-aware ops and they will be grouped by namespaces. Here are some examples: `executorch_prims` are ops that are used by Executorch runtime to perform operation on `SymInt`s. `quantized_decomposed` are ops that fuses edge operators for quantization purpose and are meaningful to targets that support quantization.
+Unlike edge dialect where we have a well defined op set, for backend dialect, since it is target-aware we will be allowing user to use our API to register target-aware ops and they will be grouped by namespaces. Here are some examples: `executorch_prims` are ops that are used by ExecuTorch runtime to perform operation on `SymInt`s. `quantized_decomposed` are ops that fuses edge operators for quantization purpose and are meaningful to targets that support quantization.
 
 * `executorch_prims::add.int(SymInt a, SymInt b) -> SymInt`
   * pattern: builtin.add

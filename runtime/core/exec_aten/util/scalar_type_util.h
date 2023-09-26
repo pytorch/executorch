@@ -15,7 +15,7 @@
  * See file comment in ../ScalarType.h.
  *
  * This file contains all of the non-critical parts of the original ScalarType.h
- * that are not required for the core Executorch runtime, but may be helpful for
+ * that are not required for the core ExecuTorch runtime, but may be helpful for
  * code that uses ScalarType.
  */
 
@@ -289,7 +289,7 @@ inline size_t elementSize(exec_aten::ScalarType t) {
   switch (t) {
     ET_FORALL_SCALAR_TYPES(CASE_ELEMENTSIZE_CASE)
     default:
-      ET_CHECK_MSG(false, "Unknown ScalarType %hhd", t);
+      ET_CHECK_MSG(false, "Unknown ScalarType %" PRId8, static_cast<int8_t>(t));
   }
 #undef CASE_ELEMENTSIZE_CASE
 }
@@ -552,8 +552,8 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
           type != exec_aten::ScalarType::ComplexDouble &&
           type != exec_aten::ScalarType::BFloat16 &&
           type != exec_aten::ScalarType::Undefined,
-      "Invalid or unsupported ScalarType %hhd",
-      type);
+      "Invalid or unsupported ScalarType %" PRId8,
+      static_cast<int8_t>(type));
 
   size_t type_size = 0;
 #define SCALAR_TYPE_SIZE(ctype, dtype) \
@@ -564,7 +564,8 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
   switch (type) {
     ET_FORALL_SCALAR_TYPES(SCALAR_TYPE_SIZE)
     default:
-      ET_CHECK_MSG(false, "Invalid input ScalarType %hhd", type);
+      ET_CHECK_MSG(
+          false, "Invalid input ScalarType %" PRId8, static_cast<int8_t>(type));
   }
 #undef SCALAR_TYPE_SIZE
 
@@ -576,7 +577,7 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
 //
 // These macros are not meant to be used directly. They provide an easy way to
 // generate a switch statement that can handle subsets of ScalarTypes supported
-// by Executorch.
+// by ExecuTorch.
 //
 
 #define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)  \
@@ -743,7 +744,7 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
 // Switch case macros
 //
 // These macros provide an easy way to generate switch statements that apply a
-// common lambda function to subsets of ScalarTypes supported by Executorch.
+// common lambda function to subsets of ScalarTypes supported by ExecuTorch.
 // The lambda function can type specialize to the ctype associated with the
 // ScalarType being handled through an alias passed as the CTYPE_ALIAS argument.
 //

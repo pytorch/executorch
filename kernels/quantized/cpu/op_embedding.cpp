@@ -35,28 +35,30 @@ void check_embedding_byte_args(
   ET_CHECK_MSG(
       weight.scalar_type() == ScalarType::Byte ||
           weight.scalar_type() == ScalarType::Char,
-      "weight.scalar_type() %hdd is not supported:",
-      weight.scalar_type());
+      "weight.scalar_type() %" PRId8 " is not supported:",
+      static_cast<int8_t>(weight.scalar_type()));
 
   ET_CHECK_MSG(
       weight_scales.scalar_type() == ScalarType::Float,
-      "weight_scales.scalar_type() %hdd is not float only float is supported:",
-      weight_scales.scalar_type());
+      "weight_scales.scalar_type() %" PRId8
+      " is not float only float is supported:",
+      static_cast<int8_t>(weight_scales.scalar_type()));
 
   ET_CHECK_MSG(
       weight_zero_points.scalar_type() == ScalarType::Float,
-      "weight_zero_points.scalar_type() %hdd is not Float only Float is supported for embedding:",
-      weight_zero_points.scalar_type());
+      "weight_zero_points.scalar_type() %" PRId8
+      " is not Float only Float is supported for embedding:",
+      static_cast<int8_t>(weight_zero_points.scalar_type()));
 
   ET_CHECK_MSG(
       indices.scalar_type() == ScalarType::Long,
-      "indices.scalar_type() %hdd is not Long only Long is supported:",
-      indices.scalar_type());
+      "indices.scalar_type() %" PRId8 " is not Long only Long is supported:",
+      static_cast<int8_t>(indices.scalar_type()));
 
   ET_CHECK_MSG(
       out.scalar_type() == ScalarType::Float,
-      "out.scalar_type() %hdd is not supported:",
-      out.scalar_type());
+      "out.scalar_type() %" PRId8 " is not supported:",
+      static_cast<int8_t>(out.scalar_type()));
 
   ET_CHECK_MSG(
       weight_quant_min <= weight_quant_max,
@@ -158,14 +160,17 @@ Tensor& quantized_embedding_byte_out(
       indices,
       out);
 
-#define FETCH_EMBEDDINGS(WEIGHT_CTYPE)                                       \
-  switch (out.scalar_type()) {                                               \
-    case ScalarType::Float:                                                  \
-      embedding_byte_per_channel<WEIGHT_CTYPE, float>(                       \
-          weight, weight_scales, weight_zero_points, indices, out);          \
-      break;                                                                 \
-    default:                                                                 \
-      ET_CHECK_MSG(false, "Unhandled output dtype %hhd", out.scalar_type()); \
+#define FETCH_EMBEDDINGS(WEIGHT_CTYPE)                              \
+  switch (out.scalar_type()) {                                      \
+    case ScalarType::Float:                                         \
+      embedding_byte_per_channel<WEIGHT_CTYPE, float>(              \
+          weight, weight_scales, weight_zero_points, indices, out); \
+      break;                                                        \
+    default:                                                        \
+      ET_CHECK_MSG(                                                 \
+          false,                                                    \
+          "Unhandled output dtype %" PRId8,                         \
+          static_cast<int8_t>(out.scalar_type()));                  \
   }
 
   switch (weight.scalar_type()) {
@@ -176,7 +181,10 @@ Tensor& quantized_embedding_byte_out(
       FETCH_EMBEDDINGS(int8_t)
       break;
     default:
-      ET_CHECK_MSG(false, "Unhandled weight dtype %hhd", weight.scalar_type());
+      ET_CHECK_MSG(
+          false,
+          "Unhandled weight dtype %" PRId8,
+          static_cast<int8_t>(weight.scalar_type()));
   }
 #undef CALCULATE_OUT_DTYPE
 

@@ -90,7 +90,10 @@ Tensor& transpose_copy_int_out(
   switch (a.scalar_type()) {
     ET_FORALL_SCALAR_TYPES(TRANSPOSE_TENSORS)
     default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd", a.scalar_type());
+      ET_CHECK_MSG(
+          false,
+          "Unhandled dtype %" PRId8,
+          static_cast<int8_t>(a.scalar_type()));
   }
 
 #undef TRANSPOSE_TENSORS

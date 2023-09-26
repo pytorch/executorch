@@ -359,7 +359,7 @@ class Tester:
         delegated_module = self.get_artifact(self._stage_name(Partition))
         self.reference_output = delegated_module(*self.inputs)
 
-        # Executorch
+        # ExecuTorch
         inputs_flattened, _ = tree_flatten(self.inputs)
         serialized_buffer = self.get_artifact(self._stage_name(Serialize))
         executorch_module = _load_for_executorch_from_buffer(serialized_buffer)

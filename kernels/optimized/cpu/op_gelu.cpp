@@ -120,7 +120,10 @@ Tensor& opt_gelu_out(
     // TODO support Double as well
     GELU(float, Float)
     default:
-      ET_CHECK_MSG(false, "Unhandled dtype %hhd", input.scalar_type());
+      ET_CHECK_MSG(
+          false,
+          "Unhandled dtype %" PRId8,
+          static_cast<int8_t>(input.scalar_type()));
   }
 #undef GELU
 

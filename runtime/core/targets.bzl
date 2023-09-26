@@ -24,6 +24,7 @@ def define_common_targets():
             "error.h",
             "event_tracer.h",
             "event_tracer_hooks.h",
+            "event_tracer_hooks_delegate.h",
             "freeable_buffer.h",
             "function_ref.h",
             "result.h",

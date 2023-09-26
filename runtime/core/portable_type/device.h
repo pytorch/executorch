@@ -24,11 +24,11 @@ using DeviceIndex = int8_t;
 
 /**
  * An abstraction for the compute device on which a tensor is located.
- * Executorch doesn't allow dynamic dispatching based on device, so this type is
+ * ExecuTorch doesn't allow dynamic dispatching based on device, so this type is
  * just a skeleton to allow certain kernels that expect device as an
  * argument to still be run.
  *
- * In Executorch this is always expected to be CPU.
+ * In ExecuTorch this is always expected to be CPU.
  */
 struct Device final {
   using Type = DeviceType;

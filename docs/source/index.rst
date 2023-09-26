@@ -163,7 +163,7 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Tutorials
    :hidden:
 
-   tutorials/template_tutorial
+   tutorials/export-to-executorch-tutorial
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -180,5 +180,11 @@ ExecuTorch tutorials.
    :link: tutorials/template_tutorial.html
    :tags: Template
 
-.. customcardend::
+.. customcarditem::
+   :header: Exporting to ExecuTorch Tutorial
+   :card_description: A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: tutorials/export-to-executorch.html
+   :tags: Export,Delegation,Quantization
 
+.. customcardend::

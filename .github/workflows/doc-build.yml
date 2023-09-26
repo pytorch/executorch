@@ -16,19 +16,25 @@ on:
 jobs:
   build:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: buck2
     with:
       job-name: Build doc
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-clang12
-      fetch-depth: 0
       submodules: 'true'
       repository: pytorch/executorch
       upload-artifact: docs
-
       script: |
-        # Set up Environment Variables
-        PYTHON_VERSION=3.10
-        export PATH="/opt/conda/envs/py_${PYTHON_VERSION}/bin:${PATH}"
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL=${{ matrix.build-tool }}
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
 
         if [[(${GITHUB_EVENT_NAME} = 'pull_request' && (${GITHUB_BASE_REF} = 'release'*)) || (${GITHUB_REF} = 'refs/heads/release'*) ]]; then
           export CHANNEL=test
@@ -36,8 +42,7 @@ jobs:
           export CHANNEL=nightly
         fi
 
-        set -ex
-        set +u
+        set -eux
 
         # Build docset:
         cd docs
@@ -48,7 +53,6 @@ jobs:
 
         # Sometimes the artifact directory already contains an "html" subdir.
         rm -rf "${RUNNER_ARTIFACT_DIR}/html"
-
         mv docs/_build/html "${RUNNER_ARTIFACT_DIR}"
 
 # Enable preview later. Previews are available publicly

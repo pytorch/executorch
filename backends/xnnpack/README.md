@@ -1,6 +1,6 @@
-# Executorch XNNPACK Delegate
+# ExecuTorch XNNPACK Delegate
 
-This subtree contains the XNNPACK Delegate implementation for Executorch.
+This subtree contains the XNNPACK Delegate implementation for ExecuTorch.
 XNNPACK is an optimized library of neural network inference operators for ARM
 and x86 CPUs. It is an open source project used by PyTorch. The delegate is the
 mechanism for leveraging the XNNPACK library to accelerate operators running on

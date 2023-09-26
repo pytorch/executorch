@@ -29,8 +29,8 @@ Tensor& unary_ufunc_realb_to_bool(
 
   ET_CHECK_MSG(
       out.scalar_type() == exec_aten::ScalarType::Bool,
-      "Expected out tensor to have dtype Bool, but got %hhd instead.",
-      out.scalar_type());
+      "Expected out tensor to have dtype Bool, but got %" PRId8 " instead.",
+      static_cast<int8_t>(out.scalar_type()));
 
   const auto in_type = in.scalar_type();
 

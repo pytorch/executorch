@@ -90,10 +90,10 @@ void check_args(
     // All output dtypes must be the same.
     ET_CHECK_MSG(
         out[i].scalar_type() == out[0].scalar_type(),
-        "out[%zu] dtype %hhd != out[0] dtype %hhd",
+        "out[%zu] dtype %" PRId8 " != out[0] dtype %" PRId8,
         i,
-        out[i].scalar_type(),
-        out[0].scalar_type());
+        static_cast<int8_t>(out[i].scalar_type()),
+        static_cast<int8_t>(out[0].scalar_type()));
 
     // All outputs must have the same number of dimensions as the input.
     ET_CHECK_MSG(

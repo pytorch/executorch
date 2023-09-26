@@ -626,12 +626,12 @@ def to_edge(
 class EdgeProgramManager:
     """
     Package of one or more :class:'ExportedPrograms' in Edge dialect. Designed to simplify
-    lowering to Executorch.
+    lowering to ExecuTorch.
 
     Allows easy applications of transforms across a collection of exported programs
     including the delegation of subgraphs.
 
-    Manages the second link in the lowering chain of ATen -> Edge -> Executorch.
+    Manages the second link in the lowering chain of ATen -> Edge -> ExecuTorch.
     """
 
     # TODO(T163717152): Link to Edge dialect docs here ^.
@@ -761,15 +761,15 @@ class EdgeProgramManager:
         self, config: Optional[ExecutorchBackendConfig] = None
     ) -> "ExecutorchProgramManager":
         """
-        Transforms the program to the Executorch backend.
+        Transforms the program to the ExecuTorch backend.
 
         Args:
             config: An optional argument used to provide greater control over
-            the transformation to the Executorch backend.
+            the transformation to the ExecuTorch backend.
 
         Returns:
             ExecutorchProgramManager: A manager representing the state of the EdgeProgramManager
-            after it has been transformed to the Executorch backend.
+            after it has been transformed to the ExecuTorch backend.
         """
         config = config if config else ExecutorchBackendConfig()
 
@@ -786,13 +786,13 @@ class EdgeProgramManager:
 class ExecutorchProgramManager:
     """
     Package of one or more :class:'ExportedPrograms' in Execution dialect. Designed to simplify
-    lowering to Executorch.
+    lowering to ExecuTorch.
 
     When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect
     are used to form the executorch binary (in a process called emission) and then serialized
     to a buffer.
 
-    Manages the final link in the lowering chain of ATen -> Edge -> Executorch.
+    Manages the final link in the lowering chain of ATen -> Edge -> ExecuTorch.
     """
 
     # TODO(T163717152): Link to Execution dialect docs here ^.
@@ -864,7 +864,7 @@ class ExecutorchProgramManager:
 
     def dump_executorch_program(self, verbose: bool = False) -> None:
         """
-        Prints the Executorch binary in a human readable format.
+        Prints the ExecuTorch binary in a human readable format.
 
         Args:
             verbose (bool):
@@ -884,6 +884,6 @@ class ExecutorchProgramManager:
     @property
     def buffer(self) -> bytes:
         """
-        Returns a buffer containing the serialized Executorch binary.
+        Returns a buffer containing the serialized ExecuTorch binary.
         """
         return self._buffer

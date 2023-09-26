@@ -54,19 +54,25 @@ Tensor& to_copy_out(
     _to_impl<SELF_CTYPE, OUT_CTYPE>(self, out);   \
     break;
 
-#define CASE_TENSOR_DTYPE(SELF_CTYPE, self_dtype)                              \
-  case ScalarType::self_dtype:                                                 \
-    switch (out.scalar_type()) {                                               \
-      ET_FORALL_REAL_TYPES_AND_WITH(Bool, SELF_CTYPE, TO_IMPL)                 \
-      default:                                                                 \
-        ET_CHECK_MSG(false, "Unhandled output dtype %hhd", out.scalar_type()); \
-    }                                                                          \
+#define CASE_TENSOR_DTYPE(SELF_CTYPE, self_dtype)              \
+  case ScalarType::self_dtype:                                 \
+    switch (out.scalar_type()) {                               \
+      ET_FORALL_REAL_TYPES_AND_WITH(Bool, SELF_CTYPE, TO_IMPL) \
+      default:                                                 \
+        ET_CHECK_MSG(                                          \
+            false,                                             \
+            "Unhandled output dtype %" PRId8,                  \
+            static_cast<int8_t>(out.scalar_type()));           \
+    }                                                          \
     break;
 
   switch (self.scalar_type()) {
     ET_FORALL_REAL_TYPES_AND(Bool, CASE_TENSOR_DTYPE);
     default:
-      ET_CHECK_MSG(false, "Unhandled input dtype %hhd", self.scalar_type());
+      ET_CHECK_MSG(
+          false,
+          "Unhandled input dtype %" PRId8,
+          static_cast<int8_t>(self.scalar_type()));
   }
 
 #undef CASE_TENSOR_DTYPE

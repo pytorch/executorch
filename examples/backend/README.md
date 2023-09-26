@@ -13,7 +13,7 @@ The following command will produce an floating-point XNNPACK delegated model `mv
 python3 -m examples.backend.xnnpack_examples --model_name="mv2" --delegate
 ```
 
-Once we have the model binary (pte) file, then let's run it with Executorch runtime using the `xnn_executor_runner`.
+Once we have the model binary (pte) file, then let's run it with ExecuTorch runtime using the `xnn_executor_runner`.
 
 ```bash
 buck2 run examples/backend:xnn_executor_runner -- --model_path ./mv2_xnnpack_fp32.pte
@@ -26,7 +26,7 @@ The following command will produce an XNNPACK quantized and delegated model `mv2
 python3 -m examples.backend.xnnpack_examples --model_name="mv2" --quantize --delegate
 ```
 
-Once we have the model binary (pte) file, then let's run it with Executorch runtime using the `xnn_executor_runner`.
+Once we have the model binary (pte) file, then let's run it with ExecuTorch runtime using the `xnn_executor_runner`.
 
 ```bash
 buck2 run examples/backend:xnn_executor_runner -- --model_path ./mv2_xnnpack_q8.pte

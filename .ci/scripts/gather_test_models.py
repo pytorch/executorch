@@ -23,6 +23,7 @@ RUNNERS = {
     "ic4": "linux.12xlarge",
     "resnet50": "linux.12xlarge",
     # This one causes timeout on smaller runner, the root cause is unclear (T161064121)
+    "dl3": "linux.12xlarge",
     "emformer_join": "linux.12xlarge",
 }
 

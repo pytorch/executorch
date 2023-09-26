@@ -122,28 +122,29 @@
   })
 
 /// Asserts that all tensors have the same dtype.
-#define ET_CHECK_SAME_DTYPE2(a__, b__)                            \
-  ({                                                              \
-    const ::exec_aten::ScalarType a_type__ = (a__).scalar_type(); \
-    const ::exec_aten::ScalarType b_type__ = (b__).scalar_type(); \
-    ET_CHECK_MSG(                                                 \
-        a_type__ == b_type__,                                     \
-        ET_TENSOR_CHECK_PREFIX__ ": dtype={%hhd, %hhd}",          \
-        a_type__,                                                 \
-        b_type__);                                                \
+#define ET_CHECK_SAME_DTYPE2(a__, b__)                               \
+  ({                                                                 \
+    const ::exec_aten::ScalarType a_type__ = (a__).scalar_type();    \
+    const ::exec_aten::ScalarType b_type__ = (b__).scalar_type();    \
+    ET_CHECK_MSG(                                                    \
+        a_type__ == b_type__,                                        \
+        ET_TENSOR_CHECK_PREFIX__ ": dtype={%" PRId8 ", %" PRId8 "}", \
+        static_cast<int8_t>(a_type__),                               \
+        static_cast<int8_t>(b_type__));                              \
   })
 
-#define ET_CHECK_SAME_DTYPE3(a__, b__, c__)                       \
-  ({                                                              \
-    const ::exec_aten::ScalarType a_type__ = (a__).scalar_type(); \
-    const ::exec_aten::ScalarType b_type__ = (b__).scalar_type(); \
-    const ::exec_aten::ScalarType c_type__ = (c__).scalar_type(); \
-    ET_CHECK_MSG(                                                 \
-        a_type__ == b_type__ && b_type__ == c_type__,             \
-        ET_TENSOR_CHECK_PREFIX__ ": dtype={%hhd, %hhd, %hhd}",    \
-        a_type__,                                                 \
-        b_type__,                                                 \
-        c_type__);                                                \
+#define ET_CHECK_SAME_DTYPE3(a__, b__, c__)                                 \
+  ({                                                                        \
+    const ::exec_aten::ScalarType a_type__ = (a__).scalar_type();           \
+    const ::exec_aten::ScalarType b_type__ = (b__).scalar_type();           \
+    const ::exec_aten::ScalarType c_type__ = (c__).scalar_type();           \
+    ET_CHECK_MSG(                                                           \
+        a_type__ == b_type__ && b_type__ == c_type__,                       \
+        ET_TENSOR_CHECK_PREFIX__ ": dtype={%" PRId8 ", %" PRId8 ", %" PRId8 \
+                                 "}",                                       \
+        static_cast<int8_t>(a_type__),                                      \
+        static_cast<int8_t>(b_type__),                                      \
+        static_cast<int8_t>(c_type__));                                     \
   })
 
 /**
@@ -152,37 +153,37 @@
  * This macro should produce less code/data than calling the SHAPE and DTYPE
  * macros independently, because it only calls ET_CHECK_MSG once.
  */
-#define ET_CHECK_SAME_SHAPE_AND_DTYPE2(a__, b__)                          \
-  ({                                                                      \
-    const size_t a_numel__ = (a__).numel();                               \
-    const size_t b_numel__ = (b__).numel();                               \
-    const size_t a_dim__ = (a__).dim();                                   \
-    const size_t b_dim__ = (b__).dim();                                   \
-    const ::exec_aten::ScalarType a_type__ = (a__).scalar_type();         \
-    const ::exec_aten::ScalarType b_type__ = (b__).scalar_type();         \
-                                                                          \
-    ET_CHECK_MSG(                                                         \
-        a_numel__ == b_numel__ &&                                         \
-            ((a_numel__ == 1 && b_numel__ == 1) || a_dim__ == b_dim__) && \
-            a_type__ == b_type__,                                         \
-        ET_TENSOR_CHECK_PREFIX__                                          \
-        ": numel={%zu, %zu}, dim={%zu, %zu}, dtype={%hhd, %hhd}",         \
-        a_numel__,                                                        \
-        b_numel__,                                                        \
-        a_dim__,                                                          \
-        b_dim__,                                                          \
-        a_type__,                                                         \
-        b_type__);                                                        \
-    for (size_t dim__ = 0; dim__ < ET_MIN2(a_dim__, b_dim__); ++dim__) {  \
-      size_t a_size__ = (a__).size(dim__);                                \
-      size_t b_size__ = (b__).size(dim__);                                \
-      ET_CHECK_MSG(                                                       \
-          a_size__ == b_size__,                                           \
-          ET_TENSOR_CHECK_PREFIX__ " at size(%zu): {%zu, %zu}",           \
-          dim__,                                                          \
-          a_size__,                                                       \
-          b_size__);                                                      \
-    }                                                                     \
+#define ET_CHECK_SAME_SHAPE_AND_DTYPE2(a__, b__)                              \
+  ({                                                                          \
+    const size_t a_numel__ = (a__).numel();                                   \
+    const size_t b_numel__ = (b__).numel();                                   \
+    const size_t a_dim__ = (a__).dim();                                       \
+    const size_t b_dim__ = (b__).dim();                                       \
+    const ::exec_aten::ScalarType a_type__ = (a__).scalar_type();             \
+    const ::exec_aten::ScalarType b_type__ = (b__).scalar_type();             \
+                                                                              \
+    ET_CHECK_MSG(                                                             \
+        a_numel__ == b_numel__ &&                                             \
+            ((a_numel__ == 1 && b_numel__ == 1) || a_dim__ == b_dim__) &&     \
+            a_type__ == b_type__,                                             \
+        ET_TENSOR_CHECK_PREFIX__                                              \
+        ": numel={%zu, %zu}, dim={%zu, %zu}, dtype={%" PRId8 ", %" PRId8 "}", \
+        a_numel__,                                                            \
+        b_numel__,                                                            \
+        a_dim__,                                                              \
+        b_dim__,                                                              \
+        static_cast<int8_t>(a_type__),                                        \
+        static_cast<int8_t>(b_type__));                                       \
+    for (size_t dim__ = 0; dim__ < ET_MIN2(a_dim__, b_dim__); ++dim__) {      \
+      size_t a_size__ = (a__).size(dim__);                                    \
+      size_t b_size__ = (b__).size(dim__);                                    \
+      ET_CHECK_MSG(                                                           \
+          a_size__ == b_size__,                                               \
+          ET_TENSOR_CHECK_PREFIX__ " at size(%zu): {%zu, %zu}",               \
+          dim__,                                                              \
+          a_size__,                                                           \
+          b_size__);                                                          \
+    }                                                                         \
   })
 
 #define ET_CHECK_SAME_SHAPE_AND_DTYPE3(a__, b__, c__)                  \
@@ -204,16 +205,16 @@
             a_type__ == b_type__ && b_type__ == c_type__,              \
         ET_TENSOR_CHECK_PREFIX__                                       \
         ": numel={%zu, %zu, %zu}, dim={%zu, %zu, %zu}, "               \
-        "dtype={%hhd, %hhd, %hhd}",                                    \
+        "dtype={%" PRId8 ", %" PRId8 ", %" PRId8 "}",                  \
         a_numel__,                                                     \
         b_numel__,                                                     \
         c_numel__,                                                     \
         a_dim__,                                                       \
         b_dim__,                                                       \
         c_dim__,                                                       \
-        a_type__,                                                      \
-        b_type__,                                                      \
-        c_type__);                                                     \
+        static_cast<int8_t>(a_type__),                                 \
+        static_cast<int8_t>(b_type__),                                 \
+        static_cast<int8_t>(c_type__));                                \
     for (size_t dim__ = 0; dim__ < ET_MIN3(a_dim__, b_dim__, c_dim__); \
          ++dim__) {                                                    \
       size_t a_size__ = (a__).size(dim__);                             \

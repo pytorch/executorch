@@ -36,7 +36,7 @@ class ProgramTestFriend;
 } // namespace testing
 
 /**
- * A deserialized Executorch program binary.
+ * A deserialized ExecuTorch program binary.
  */
 class Program final {
  public:
