@@ -15,8 +15,8 @@
 #include <stdio.h>
 #include <cstddef>
 #include <string>
-//
-#include <executorch/extension/data_loader/file_data_loader.h>
+
+#include <executorch/extension/data_loader/shared_ptr_data_loader.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
@@ -33,7 +33,8 @@
 #include <string>
 
 using namespace torch::executor;
-using torch::executor::util::FileDataLoader;
+
+using torch::executor::util::SharedPtrDataLoader;
 using torch::executor::testing::TensorFactory;
 
 static constexpr size_t kRuntimeMemorySize = 64021120;
@@ -120,37 +121,21 @@ std::vector<std::string> get_image_net_classes() {
 - (char*)segmentImage:(void*)imageBuffer
             withWidth:(int)width
            withHeight:(int)height {
-  printf("running segmentImage...");
   float* floatData = static_cast<float*>(imageBuffer);
-  for (int i = 0; i < 10; i++) {
-    printf("float Data first item: %f: ", floatData[i]);
-  }
-
-  printf("last element: %f: ", floatData[1 * 3 * 224 * 224 - 1]);
 
   runtime_init();
   Error status;
 
   TensorFactory<ScalarType::Float> tensor_inputs;
-  //    const std::vector<int32_t> sizes = {1};
-  //    EValue evalue_inputs(tensor_inputs.make(sizes, /*data=*/{0.2}));
-
   const std::vector<int32_t> sizes = {1, 3, 224, 224};
   std::vector<float> floatVector(floatData, floatData + 1 * 3 * 224 * 224);
   EValue evalue_inputs(tensor_inputs.make(sizes, /*data=*/floatVector));
 
-  //    NSString *filePath = [[NSBundle mainBundle]
-  //    pathForResource:@"lowered_sin" ofType:@"ff"]; executorch_module_name =
-  //    filePath.UTF8String;
   NSString* filePath = [[NSBundle mainBundle] pathForResource:@"mv2_softmax"
                                                        ofType:@"pte"];
-  //    NSString *filePath = [[NSBundle mainBundle] pathForResource:@"mv3"
-  //    ofType:@"ff"]; NSString *filePath = [[NSBundle mainBundle]
-  //    pathForResource:@"lowered_sin" ofType:@"ff"];
   NSLog(@"   filePath: %@", filePath);
   std::string log_message = "Start logging...\n";
   ET_LOG(Info, "Hello world.");
-  NSString* objcString = @(log_message.c_str());
 
   MemoryAllocator const_allocator{MemoryAllocator(0, nullptr)};
   const_allocator.enable_profiling("const allocator");
@@ -191,40 +176,38 @@ std::vector<std::string> get_image_net_classes() {
   // Allocate memory
   std::shared_ptr<char> file_data = std::shared_ptr<char>(
       new char[file_length + 1], std::default_delete<char[]>());
+
   if (!file_data) {
     ET_LOG(Error, "Unable to allocate memory to read file %s\n", file_name);
     fclose(file);
   }
   ET_LOG(Info, "Allocate memory Finish.");
-  //
-  //            // Read file contents into buffer
+
   fread(file_data.get(), file_length, 1, file);
   ET_LOG(Info, "Load file Finish.");
-  //
-  const void* program_data = file_data.get();
 
-  const auto program = torch::executor::Program(program_data);
+  // TODO(chenlai): use FileDataLoader or MmapDataLoader to load model
+  SharedPtrDataLoader data_loader(file_data, file_length);
+  Result<Program> program = Program::load(&data_loader);
 
-  if (!program.is_valid()) {
-    ET_LOG(Info, "Failed to parse model file %s", file_name);
+  if (!program.ok()) {
+    ET_LOG(Error, "Failed to parse model file %s", file_name);
+    return nil;
   }
 
-  // Use the first method in the program.
   const char* method_name = nullptr;
   {
-    const auto method_name_result = program.get_method_name(0);
+    const auto method_name_result = program->get_method_name(0);
     ET_CHECK_MSG(method_name_result.ok(), "Program has no methods");
     method_name = *method_name_result;
   }
-  ET_LOG(Info, "Loading method %s", method_name);
-  log_message = log_message + "Loading method " + method_name + "\n";
+  ET_LOG(Info, "Using method %s", method_name);
 
-  Result<Method> method = program.load_method(method_name, &memory_manager);
+  Result<Method> method = program->load_method(method_name, &memory_manager);
 
   ET_CHECK(method.ok());
   ET_LOG(Info, "Method loaded.");
   method->set_input(evalue_inputs, 0);
-  //    auto inputs = torch::executor::util::PrepareInputTensors(*method);
 
   ET_LOG(Info, "Inputs prepared.");
 
