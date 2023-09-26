@@ -18,8 +18,9 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 
 from ..models import MODEL_NAME_TO_MODEL
+from ..models.model_factory import EagerModelFactory
 
-from ..utils import export_to_edge
+from .utils import export_to_edge
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -37,7 +38,7 @@ We support three ways:
 """
 
 
-def export_compsite_module_with_lower_graph():
+def export_composite_module_with_lower_graph():
     """
 
     AddMulModule:
@@ -57,9 +58,10 @@ def export_compsite_module_with_lower_graph():
     logging.info(
         "Running the example to export a composite module with lowered graph..."
     )
-    m, m_inputs = MODEL_NAME_TO_MODEL.get("add_mul")()
-    m = m.eval()
-    m_inputs = m.get_example_inputs()
+
+    m, m_inputs = EagerModelFactory.create_model(*MODEL_NAME_TO_MODEL["add_mul"])
+    m_compile_spec = m.get_compile_spec()
+
     # pre-autograd export. eventually this will become torch.export
     m = export.capture_pre_autograd_graph(m, m_inputs)
     edge = export_to_edge(m, m_inputs)
@@ -68,7 +70,7 @@ def export_compsite_module_with_lower_graph():
     # Lower AddMulModule to the demo backend
     logging.info("Lowering to the demo backend...")
     lowered_graph = to_backend(
-        BackendWithCompilerDemo.__name__, edge.exported_program, m.get_compile_spec()
+        BackendWithCompilerDemo.__name__, edge.exported_program, m_compile_spec
     )
 
     # Composite the lower graph with other module
@@ -166,8 +168,9 @@ def export_and_lower_the_whole_graph():
     """
     logging.info("Running the example to export and lower the whole graph...")
 
-    m, m_inputs = MODEL_NAME_TO_MODEL.get("add_mul")()
-    m = m.eval()
+    m, m_inputs = EagerModelFactory.create_model(*MODEL_NAME_TO_MODEL["add_mul"])
+    m_compile_spec = m.get_compile_spec()
+
     m_inputs = m.get_example_inputs()
     # pre-autograd export. eventually this will become torch.export
     m = export.capture_pre_autograd_graph(m, m_inputs)
@@ -177,7 +180,7 @@ def export_and_lower_the_whole_graph():
     # Lower AddMulModule to the demo backend
     logging.info("Lowering to the demo backend...")
     lowered_module = to_backend(
-        BackendWithCompilerDemo.__name__, edge, m.get_compile_spec()
+        BackendWithCompilerDemo.__name__, edge.exported_program, m_compile_spec
     )
 
     buffer = lowered_module.buffer()
@@ -190,7 +193,7 @@ def export_and_lower_the_whole_graph():
 
 
 OPTIONS_TO_LOWER = {
-    "composite": export_compsite_module_with_lower_graph,
+    "composite": export_composite_module_with_lower_graph,
     "partition": export_and_lower_partitioned_graph,
     "whole": export_and_lower_the_whole_graph,
 }

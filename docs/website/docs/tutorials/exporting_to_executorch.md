@@ -55,7 +55,7 @@ dynamic and impose ranges on them. To learn more about constraints, you can look
 at [these docs](../export/constraint_apis.md)
 
 The output of `torch._export.capture_pre_autograd_graph` is a fully flattened graph (meaning the graph does
-not contain any module heirachy, except in the case of control flow operators).
+not contain any module hierachy, except in the case of control flow operators).
 Furthermore, the captured graph is in ATen dialect with ATen opset which is autograd safe, i.e. safe for eager mode training.
 This is important for quantization as noted in https://github.com/pytorch/executorch/issues/290.
 
