@@ -64,6 +64,8 @@ def export_models_for_ci() -> None:
                     "quantization": quantization,
                     "xnnpack_delegation": xnnpack_delegation,
                     "runner": RUNNERS.get(name, DEFAULT_RUNNER),
+                    # demo_backend_delegation test only supports add_mul model
+                    "demo_backend_delegation": name == "add_mul",
                 }
             )
     set_output("models", json.dumps(models))

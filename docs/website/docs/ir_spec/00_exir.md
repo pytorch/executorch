@@ -70,7 +70,7 @@ The `ExportedProgram` has the following attributes:
   containing the parameters and buffers.
 * `range constraints (Dict[sympy.Symbol, RangeConstraint])`: For programs that
   are exported with data dependent behavior, the metadata on each node will
-  contain symbolic shapes (hich look like `s0`, `i0`). This attribute maps the
+  contain symbolic shapes (which look like `s0`, `i0`). This attribute maps the
   symbolic shapes to their lower/upper ranges.
 * `equality_constraints (List[Tuple[InputDim, InputDim]])`: A list of nodes in
   the graph and dimensions that have the same shape.
@@ -196,7 +196,7 @@ A `call_function` node represents a call to an operator.
 
 * **Functional:** We say a callable is “functional” if it satisfy all following requirements:
   * Non-aliasing, ie output tensors do not share data storage with each other or with inputs of the operator
-  * Non-mutating, ie the operator does not mutate value of it’s input (for tensors, this includes both metadata and data)
+  * Non-mutating, ie the operator does not mutate value of its input (for tensors, this includes both metadata and data)
   * No side effects, ie the operator does not mutate states that are visible from outside, like changing values of module parameters.
 
 * **Operator:** is a functional callable with a predefined schema. Examples of
@@ -208,7 +208,7 @@ A `call_function` node represents a call to an operator.
 %name = call_function[target = operator](args = (%x, %y, …), kwargs = {})
 ```
 
-#### Differences from vanila FX call_function
+#### Differences from vanilla FX call_function
 
 1. In FX graph, a call_function can refer to any callable, in EXIR, we restrict
 this to only Canonical ATen operators (a select subset of PyTorch ATen operator

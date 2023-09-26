@@ -32,6 +32,11 @@ if [[ -z "${XNNPACK_DELEGATION:-}" ]]; then
   XNNPACK_DELEGATION=false
 fi
 
+DEMO_BACKEND_DELEGATION=$5
+if [[ -z "${DEMO_BACKEND_DELEGATION:-}" ]]; then
+  DEMO_BACKEND_DELEGATION=false
+fi
+
 which "${PYTHON_EXECUTABLE}"
 # Just set this variable here, it's cheap even if we use buck2
 CMAKE_OUTPUT_DIR=cmake-out
@@ -106,6 +111,30 @@ test_model_with_xnnpack() {
   fi
 }
 
+test_demo_backend_delegation() {
+  echo "Testing demo backend delegation on AddMul"
+  "${PYTHON_EXECUTABLE}" -m examples.export.export_and_delegate  --option "composite"
+  "${PYTHON_EXECUTABLE}" -m examples.export.export_and_delegate  --option "partition"
+  "${PYTHON_EXECUTABLE}" -m examples.export.export_and_delegate  --option "whole"
+
+  # Run test model
+  if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+    buck2 run //examples/executor_runner:executor_runner -- --model_path "./composite_model.pte"
+    buck2 run //examples/executor_runner:executor_runner -- --model_path "./partition_lowered_model.pte"
+    buck2 run //examples/executor_runner:executor_runner -- --model_path "./whole.pte"
+  elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
+    if [[ ! -f ${CMAKE_OUTPUT_DIR}/executor_runner ]]; then
+      build_cmake_executor_runner
+    fi
+    ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./composite_model.pte"
+    ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./partition_lowered_model.pte"
+    ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./whole.pte"
+  else
+    echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
+    exit 1
+  fi
+}
+
 echo "Testing ${MODEL_NAME} (fp32, quantized, xnnpack) with ${BUILD_TOOL}..."
 # Test the select model without XNNPACK or quantization
 test_model
@@ -127,4 +156,9 @@ fi
 # Test XNNPACK with quantization
 if [[ "${XNNPACK_DELEGATION}" == true ]] && [[ "${QUANTIZATION}" == true ]]; then
   test_model_with_xnnpack true
+fi
+
+# Test demo backend delegation
+if [[ "${DEMO_BACKEND_DELEGATION}" == true ]]; then
+  test_demo_backend_delegation
 fi
