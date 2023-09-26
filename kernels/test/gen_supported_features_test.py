@@ -30,8 +30,7 @@ class TestGenSupportedFeatures(unittest.TestCase):
   dtype_double:
     type: bool
     default: true
-""",
-            Loader=yaml.FullLoader,
+"""
         )
         result = generate_header(y)
         self.assertTrue("bool is_aten = false;" in result)
@@ -46,8 +45,7 @@ class TestGenSupportedFeatures(unittest.TestCase):
 
 - namespace: op_gelu
   dtype_double: true
-""",
-            Loader=yaml.FullLoader,
+"""
         )
         result = generate_definition(y)
         self.assertTrue(".output_resize = true," in result)
