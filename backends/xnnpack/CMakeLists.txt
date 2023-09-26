@@ -62,7 +62,7 @@ target_include_directories(
   xnnpack_schema INTERFACE ${_xnnpack_schema__include_dir}
                            ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
 
-set(xnn_executor_runner_libs ${_libs} xnnpack_schema)
+set(xnn_executor_runner_libs ${_executor_runner_libs} xnnpack_schema)
 
 list(TRANSFORM _dynamic_quant_utils__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(dynamic_quant_utils ${_dynamic_quant_utils__srcs})
