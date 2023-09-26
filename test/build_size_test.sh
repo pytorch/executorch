@@ -16,7 +16,7 @@ test_cmake_size_test() {
         && mkdir cmake-out \
         && cd cmake-out \
         && retry cmake -DBUCK2="$BUCK2" \
-            -DBUILD_SIZE_TEST=ON \
+            -DEXECUTORCH_BUILD_SIZE_TEST=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
