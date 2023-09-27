@@ -6,6 +6,7 @@
 
 import random
 import statistics
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 
@@ -13,9 +14,14 @@ from typing import List
 
 from unittest.mock import patch
 
+from executorch.exir import ExportedProgram
+from executorch.sdk.edir.et_schema import OperatorNode
+
 from executorch.sdk.etdb import inspector
 
 from executorch.sdk.etdb.inspector import Event, EventBlock, Inspector, PerfData
+from executorch.sdk.etrecord import generate_etrecord, parse_etrecord
+from executorch.sdk.etrecord.tests.etrecord_test import TestETRecord
 
 
 OP_TYPE = "aten::add"
@@ -26,6 +32,7 @@ ETDUMP_PATH = "unittest_etdump_path"
 ETRECORD_PATH = "unittest_etrecord_path"
 
 
+# TODO: write an E2E test: create an inspector instance, mock just the file reads, and then verify the external correctness
 class TestInspector(unittest.TestCase):
     def test_perf_data(self) -> None:
         random_floats = self._gen_random_float_list()
@@ -42,15 +49,19 @@ class TestInspector(unittest.TestCase):
         self.assertEqual(len(df), EVENTS_SIZE)
         self.assertTrue("op_0" in df["event_name"].values)
         self.assertEqual(len(df["raw"].values[0]), RAW_DATA_SIZE)
-        self.assertEqual(df["op_type"].values[0][0], OP_TYPE)
+        self.assertEqual(df["op_types"].values[0][0], OP_TYPE)
 
     def test_inspector_constructor(self):
-        # Create a context manager to patch Inspector.__init__
+        # Create a context manager to patch functions called by Inspector.__init__
         with patch.object(
-            inspector, "parse_etrecord"
-        ) as mock_parse_etrecord, patch.object(
-            inspector, "gen_graphs_from_etrecord", return_value=None
-        ) as mock_gen_graphs:
+            inspector, "gen_etrecord_object", return_value=None
+        ) as mock_gen_etrecord, patch.object(
+            inspector, "gen_etdump_object", return_value=None
+        ) as mock_gen_etdump, patch.object(
+            EventBlock, "_gen_from_etdump"
+        ) as mock_gen_from_etdump, patch.object(
+            inspector, "gen_graphs_from_etrecord"
+        ) as mock_gen_graphs_from_etrecord:
             # Call the constructor of Inspector
             Inspector(
                 etdump_path=ETDUMP_PATH,
@@ -58,26 +69,162 @@ class TestInspector(unittest.TestCase):
             )
 
             # Assert that expected functions are called
-            mock_parse_etrecord.assert_called_once_with(
+            mock_gen_etrecord.assert_called_once_with(etrecord_path=ETRECORD_PATH)
+            mock_gen_etdump.assert_called_once_with(etdump_path=ETDUMP_PATH)
+            mock_gen_from_etdump.assert_called_once()
+            mock_gen_graphs_from_etrecord.assert_called_once()
+
+    def test_inspector_get_event_blocks_and_print_data_tabular(self):
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            inspector, "gen_etrecord_object", return_value=None
+        ), patch.object(
+            inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            inspector, "gen_graphs_from_etrecord"
+        ):
+            # Call the constructor of Inspector
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
                 etrecord_path=ETRECORD_PATH,
             )
-            mock_gen_graphs.assert_called_once()
 
-    def test_inspector_methods(self):
-        inspector_instance = Inspector()
+            # Test get_event_blocks() method. The mock inspector instance should start with having an empty event blocks list
+            event_block_list = [
+                EventBlock(name=EVENT_BLOCK_NAME, events=self._gen_random_events())
+            ]
+            # Add non-empty event blocks to test get_event_blocks() and print_data_tabular()
+            inspector_instance.event_blocks = event_block_list
+            self.assertEqual(inspector_instance.get_event_blocks(), event_block_list)
 
-        # Test get_event_blocks() method. The mock inspector instance should have an empty event blocks list
-        self.assertEqual(inspector_instance.get_event_blocks(), [])
-        # Then add a non-empty event block list to the mock inspector instance, and test the get_event_blocks() method again
-        event_block_list = [
-            EventBlock(name=EVENT_BLOCK_NAME, events=self._gen_random_events())
-        ]
-        inspector_instance.event_blocks = event_block_list
-        self.assertEqual(inspector_instance.get_event_blocks(), event_block_list)
+            # Call print_data_tabular(), make sure it doesn't crash
+            with redirect_stdout(None):
+                inspector_instance.print_data_tabular()
 
-        # Call print_data_tabular(), make sure it doesn't crash
-        with redirect_stdout(None):
-            inspector_instance.print_data_tabular()
+    def test_inspector_associate_with_op_graph_nodes_single_debug_handle(self):
+        # Test on an event with a single debug handle
+        debug_handle = 111
+        event_with_single_debug_handle = Event(
+            name="event_with_single_debug_handle",
+            perf_data=PerfData(raw=[]),
+            debug_handles=debug_handle,
+        )
+        node_0 = OperatorNode(
+            name="node_0",
+            metadata={
+                "debug_handle": debug_handle,
+                "stack_trace": "stack_trace_relu",
+                "nn_module_stack": "module_hierarchy_relu",
+            },
+            op="op",
+        )
+
+        # Call the method that's under testing and verify
+        event_with_single_debug_handle._associate_with_op_graph_nodes(
+            {debug_handle: node_0}
+        )
+
+        expected_stack_traces = {"node_0": "stack_trace_relu"}
+        self.assertEqual(
+            event_with_single_debug_handle.stack_traces, expected_stack_traces
+        )
+        expected_module_hierarchy = {"node_0": "module_hierarchy_relu"}
+        self.assertEqual(
+            event_with_single_debug_handle.module_hierarchy, expected_module_hierarchy
+        )
+        expected_ops = ["op"]
+        self.assertEqual(event_with_single_debug_handle.op_types, expected_ops)
+
+    def test_inspector_associate_with_op_graph_nodes_multiple_debug_handles(self):
+        # Test on an event with a sequence of debug handles
+        debug_handles = [222, 333]
+        event_with_multiple_debug_handles = Event(
+            name="event_with_multiple_debug_handles",
+            perf_data=PerfData(raw=[]),
+            debug_handles=debug_handles,
+        )
+        node_0 = OperatorNode(
+            name="node_0",
+            metadata={
+                "debug_handle": debug_handles[0],
+                "stack_trace": "stack_trace_relu",
+                "nn_module_stack": "module_hierarchy_relu",
+            },
+            op="op_0",
+        )
+        node_1 = OperatorNode(
+            name="node_1",
+            metadata={
+                "debug_handle": debug_handles[1],
+                "stack_trace": "stack_trace_conv",
+                "nn_module_stack": "module_hierarchy_conv",
+            },
+            op="op_1",
+        )
+
+        # Call the method that's under testing and verify
+        event_with_multiple_debug_handles._associate_with_op_graph_nodes(
+            {debug_handles[0]: node_0, debug_handles[1]: node_1}
+        )
+
+        expected_stack_traces = {
+            "node_0": "stack_trace_relu",
+            "node_1": "stack_trace_conv",
+        }
+        self.assertEqual(
+            event_with_multiple_debug_handles.stack_traces, expected_stack_traces
+        )
+        expected_module_hierarchy = {
+            "node_0": "module_hierarchy_relu",
+            "node_1": "module_hierarchy_conv",
+        }
+        self.assertEqual(
+            event_with_multiple_debug_handles.module_hierarchy,
+            expected_module_hierarchy,
+        )
+        expected_ops = ["op_0", "op_1"]
+        self.assertEqual(event_with_multiple_debug_handles.op_types, expected_ops)
+
+    def test_inspector_get_exported_program(self):
+        # Create a context manager to patch functions called by Inspector.__init__
+        with patch.object(
+            inspector, "gen_etrecord_object", return_value=None
+        ), patch.object(
+            inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            inspector, "gen_graphs_from_etrecord"
+        ):
+            # Call the constructor of Inspector
+            inspector_instance = Inspector(
+                etdump_path=ETDUMP_PATH,
+                etrecord_path=ETRECORD_PATH,
+            )
+
+            # Gen a mock etrecord
+            captured_output, edge_output, et_output, _ = TestETRecord().get_test_model()
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                generate_etrecord(
+                    tmpdirname + "/etrecord.bin",
+                    et_output,
+                    {
+                        "aten_dialect_output": captured_output,
+                        "edge_dialect_output": edge_output,
+                    },
+                )
+
+                inspector_instance._etrecord = parse_etrecord(
+                    tmpdirname + "/etrecord.bin"
+                )
+
+                self.assertTrue(
+                    isinstance(
+                        inspector_instance.get_exported_program(), ExportedProgram
+                    )
+                )
 
     def _gen_random_float_list(self) -> List[float]:
         return [random.uniform(0, 10) for _ in range(RAW_DATA_SIZE)]
@@ -88,7 +235,7 @@ class TestInspector(unittest.TestCase):
             events.append(
                 Event(
                     name=f"op_{i}",
-                    op_type=[OP_TYPE],
+                    op_types=[OP_TYPE],
                     perf_data=PerfData(self._gen_random_float_list()),
                 )
             )
