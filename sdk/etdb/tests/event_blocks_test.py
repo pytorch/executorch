@@ -49,6 +49,7 @@ class TestEventBlock(unittest.TestCase):
             instruction_id,
             delegate_debug_id_int,
             delegate_debug_id_str,
+            "",
             start_time=time[0],
             end_time=time[1],
         )
