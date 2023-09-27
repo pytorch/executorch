@@ -168,12 +168,12 @@ def replace_quantized_partition_with_op(
 # TODO - style: use templated types
 class DelegateMappingBuilder:
     """
-    Profiling helper class for building Delegate Maps.
-    Delegate Maps are a mapping from log entry identifiers to node
+    Profiling helper class for building Delegate Mappings.
+    Delegate Mappings are mappings from delegate debug identifiers to node
     debug handles. Specifically this is used to log within backend delegates
 
     Args:
-        generated_identifiers (bool, optional): Whether delegate map keys are
+        generated_identifiers (bool, optional): Whether identifier keys are
             generated automatically. Defaults to False.
     """
 
@@ -206,17 +206,14 @@ class DelegateMappingBuilder:
         identifier: Optional[Union[int, str]] = None,
     ) -> Union[int, str]:
         """
-        Add or append to an existing delegate mapping entry
+        Add a new delegate mapping entry
 
         If self._generated_identifiers = False:
-            - An identifier must be provided, else this is no-op
+            - A new identifier must be provided, else an exception is thrown
 
         If self._generated_identifiers = True:
-            - NEW identifiers cannot be manually provided. Existing identifier
-                can be provided
             - New identifiers are generated incrementally, 0 indexed
-
-        If a provided identifier already exists, node entries are appended
+            - Identifiers cannot be manually provided, else an exception is thrown
 
         Args:
             nodes (Union[Node, List[Node]]): A (list of) Node(s)
@@ -224,9 +221,8 @@ class DelegateMappingBuilder:
                 Debug identifier corresponding to the Node(s)
 
         Returns:
-            Optional[Union[int, str]]:
-                Delegate debug identifier corresponding to the node group
-                    None is returned, if no identifier is associated
+            Union[int, str]:
+                Delegate debug identifier inserted
         """
 
         # Check for manual addition of identifier (with generated identifiers enabled)
