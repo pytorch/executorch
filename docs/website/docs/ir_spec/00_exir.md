@@ -247,12 +247,14 @@ the following metadata fields:
   {'self_linear': ('self.linear', <class 'torch.nn.Linear'>), 'self_sequential': ('self.sequential', <class 'torch.nn.Sequential'>)}
   ```
 
-* `node.meta["source_fn"]` contains the torch function or the leaf
+* `node.meta["source_fn_stack"]` contains the stack of torch function or the leaf
   `torch.nn.Module` class this node was called from before decomposition. For
   example, a node containing the `addmm` op from a `torch.nn.Linear` module call
   would contain `torch.nn.Linear` in their `source_fn`, and a node containing
   the `addmm` op from a `torch.nn.functional.Linear` module call would contain
-  `torch.nn.functional.Linear` in their `source_fn`.
+  `torch.nn.functional.Linear` in their `source_fn`. The stack records the higher order
+  operator stack that this source_fn belongs to. For example, if a `torch.nn.Linear` module
+  call is within the true branch of `cond`, then the stack will contain `['cond', 'torch.nn.Linear']`.
 
 
 ### placeholder

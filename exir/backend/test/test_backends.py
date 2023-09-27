@@ -819,7 +819,7 @@ class TestBackends(unittest.TestCase):
                     self.assertTrue(
                         user.op == "call_function" and user.target == operator.getitem
                     )
-                    self.assertTrue(user.meta.get("source_fn", None) is None)
+                    self.assertTrue(user.meta.get("source_fn_stack", None) is None)
                     self.assertTrue(user.meta.get("nn_module_stack", None) is None)
 
         executorch_prog = executorch_prog.to_executorch(
@@ -886,7 +886,7 @@ class TestBackends(unittest.TestCase):
                     self.assertTrue(
                         user.op == "call_function" and user.target == operator.getitem
                     )
-                    self.assertTrue(user.meta.get("source_fn", None) is None)
+                    self.assertTrue(user.meta.get("source_fn_stack", None) is None)
                     self.assertTrue(user.meta.get("nn_module_stack", None) is None)
 
         executorch_prog = executorch_prog.to_executorch(
