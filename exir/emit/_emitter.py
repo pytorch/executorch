@@ -950,7 +950,7 @@ class _Emitter(torch.fx.Interpreter):
         """
         delegate_map = {}
         if hasattr(lowered_module, "meta"):
-            delegate_map = lowered_module.meta.get("delegate_map", {})
+            delegate_map = lowered_module.meta.get("debug_handle_map", {})
 
         self.instr_id_to_delegate_debug_id_map[delegate_instruction_id] = {
             "name": lowered_module.backend_id,
