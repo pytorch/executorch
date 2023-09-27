@@ -75,6 +75,30 @@ def define_common_targets():
         ],
     )
 
+    executorch_generated_lib(
+        name = "test_manual_registration_lib",
+        deps = [
+            ":executorch_all_ops",
+            "//executorch/kernels/portable:operators",
+        ],
+        functions_yaml_target = "//executorch/kernels/portable:functions.yaml",
+        manual_registration = True,
+        visibility = [
+            "//executorch/...",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "test_kernel_manual_registration",
+        srcs = [
+            "test_kernel_manual_registration.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/kernel:operator_registry",
+            ":test_manual_registration_lib",
+        ],
+    )
+
     for aten_mode in (True, False):
         aten_suffix = "_aten" if aten_mode else ""
 

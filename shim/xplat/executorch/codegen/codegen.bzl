@@ -20,6 +20,15 @@ GENERATED_SOURCES = [
     "RegisterCodegenUnboxedKernelsEverything.cpp",
 ]
 
+MANUAL_REGISTRATION_SOURCES = [
+    # buildifier: keep sorted
+    "RegisterKernelsEverything.cpp",
+]
+
+MANUAL_REGISTRATION_HEADERS = [
+    "RegisterKernels.h",
+]
+
 # Fake kernels only return `out` or any other tensor from arguments
 CUSTOM_OPS_DUMMY_KERNEL_SOURCES = ["Register{}Stub.cpp".format(backend) for backend in STATIC_DISPATCH_BACKENDS]
 
@@ -35,11 +44,9 @@ CUSTOM_OPS_SCHEMA_REGISTRATION_SOURCES = [
 def et_operator_library(
         name,
         ops = [],
-        exported_deps = [],
         model = None,
         include_all_operators = False,
         ops_schema_yaml_target = None,
-        define_static_targets = False,
         **kwargs):
     genrule_cmd = [
         "$(exe //executorch/codegen/tools:gen_oplist)",
@@ -61,6 +68,10 @@ def et_operator_library(
         genrule_cmd.append(
             "--include_all_operators",
         )
+
+    # TODO(larryliu0820): Remove usages of this flag.
+    if "define_static_targets" in kwargs:
+        kwargs.pop("define_static_targets")
     runtime.genrule(
         name = name,
         macros_only = False,
@@ -70,18 +81,22 @@ def et_operator_library(
         **kwargs
     )
 
-def _get_headers(genrule_name, prefix = "", custom_op = None):
+def _get_headers(genrule_name, prefix = "", custom_op = None, manual_registration = False):
+    headers = OPERATOR_HEADERS + (CUSTOM_OPS_NATIVE_FUNCTION_HEADER if custom_op else [])
     return {
         prefix + f: ":{}[{}]".format(genrule_name, f)
-        for f in OPERATOR_HEADERS + (CUSTOM_OPS_NATIVE_FUNCTION_HEADER if custom_op else [])
+        for f in (MANUAL_REGISTRATION_HEADERS if manual_registration else [])
+    }, {
+        prefix + f: ":{}[{}]".format(genrule_name, f)
+        for f in headers
     }
 
 def _prepare_genrule_and_lib(
         name,
         functions_yaml_path = None,
         custom_ops_yaml_path = None,
-        custom_ops_aten_kernel_deps = [],
         custom_ops_requires_runtime_registration = True,
+        manual_registration = False,
         aten_mode = False):
     """
     This function returns two dicts `genrules` and `libs`, derived from the arguments being passed
@@ -122,15 +137,18 @@ def _prepare_genrule_and_lib(
         # actually-generated files matches GENERATED_FILES.
     ]
 
+    # Sources for generated kernel registration lib
+    sources = MANUAL_REGISTRATION_SOURCES if manual_registration else GENERATED_SOURCES
+
     # The command will always generate these files.
-    genrule_outs = GENERATED_SOURCES + OPERATOR_HEADERS + (CUSTOM_OPS_NATIVE_FUNCTION_HEADER if custom_ops_yaml_path else [])
+    genrule_outs = sources + OPERATOR_HEADERS + (CUSTOM_OPS_NATIVE_FUNCTION_HEADER if custom_ops_yaml_path else []) + MANUAL_REGISTRATION_HEADERS
 
     genrules = {}
     libs = {}
 
     # if aten_mode is true, we don't need functions_yaml_path
     genrule_name = name + "_combined"
-    headers = _get_headers(genrule_name = genrule_name, custom_op = custom_ops_yaml_path)
+    exported_headers, headers = _get_headers(genrule_name = genrule_name, custom_op = custom_ops_yaml_path, manual_registration = manual_registration)
 
     # need to register ATen ops into Executorch runtime:
     need_reg_aten_ops = aten_mode or functions_yaml_path
@@ -149,6 +167,10 @@ def _prepare_genrule_and_lib(
         ]
     if aten_mode:
         genrule_cmd = genrule_cmd + ["--use_aten_lib"]
+    if manual_registration:
+        genrule_cmd = genrule_cmd + [
+            "--manual_registration",
+        ]
     if custom_ops_yaml_path:
         genrule_cmd = genrule_cmd + [
             "--custom_ops_yaml_path=" + custom_ops_yaml_path,
@@ -160,13 +182,15 @@ def _prepare_genrule_and_lib(
 
     if need_reg_ops:
         libs[name] = {
+            "exported_headers": exported_headers,
             "genrule": genrule_name,
             "headers": headers,
-            "srcs": GENERATED_SOURCES,
+            "srcs": sources,
         }
 
     header_lib = name + "_headers"
     libs[header_lib] = {
+        "exported_headers": exported_headers,
         "headers": headers,
     }
     return genrules, libs
@@ -303,6 +327,7 @@ def executorch_generated_lib(
         custom_ops_requires_runtime_registration = True,
         visibility = [],
         aten_mode = False,
+        manual_registration = False,
         use_default_aten_ops_lib = True,
         deps = [],
         xplat_deps = [],
@@ -350,6 +375,7 @@ def executorch_generated_lib(
         visibility: Visibility of the C++ library targets.
         deps: Additinal deps of the main C++ library. Needs to be in either `//executorch` or `//caffe2` module.
         platforms: platforms args to runtime.cxx_library (only used when in xplat)
+        manual_registration: if true, generate RegisterKernels.cpp and RegisterKernels.h.
         use_default_aten_ops_lib: If `aten_mode` is True AND this flag is True, use `torch_mobile_all_ops` for ATen operator library.
         xplat_deps: Additional xplat deps, can be used to provide custom operator library.
         fbcode_deps: Additional fbcode deps, can be used to provide custom operator library.
@@ -391,9 +417,9 @@ def executorch_generated_lib(
         name = name,
         functions_yaml_path = functions_yaml_path,
         custom_ops_yaml_path = custom_ops_yaml_path,
-        custom_ops_aten_kernel_deps = custom_ops_aten_kernel_deps,
         custom_ops_requires_runtime_registration = custom_ops_requires_runtime_registration,
         aten_mode = aten_mode,
+        manual_registration = manual_registration,
     )
 
     # genrule for selective build from static operator list
@@ -457,6 +483,7 @@ def executorch_generated_lib(
             # target, and are not meant to be used by targets outside of this
             # directory.
             headers = libs[lib_name]["headers"],
+            exported_headers = libs[lib_name]["exported_headers"],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             # link_whole is necessary because the operators register themselves via
             # static initializers that run at program startup.
