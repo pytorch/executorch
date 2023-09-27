@@ -25,7 +25,7 @@ class ProfilerETDumpTest : public ::testing::Test {
     const size_t buf_size = 8192;
     buf = static_cast<uint8_t*>(malloc(buf_size * sizeof(uint8_t)));
 
-    etdump_gen = new ETDumpGen(buf, buf_size);
+    etdump_gen = new ETDumpGen();
   }
 
   void TearDown() override {
