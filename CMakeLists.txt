@@ -93,6 +93,10 @@ if(BUILD_SELECTIVE_BUILD_TEST)
   option(SELECT_OPS_YAML "Register all the ops from a given yaml file" OFF)
 endif()
 
+# Build Arm Baremetal backend
+option(EXECUTORCH_BUILD_ARM_BAREMETAL
+       "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF)
+
 # Build xnn_executor_runner which depends on XNNPACK
 option(EXECUTORCH_BUILD_XNNPACK
        "Build xnn_executor_runner which depends on XNNPACK" OFF)
@@ -280,6 +284,10 @@ endif()
 # Add XNNPACK subdirectory
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+endif()
+
+if(EXECUTORCH_BUILD_ARM_BAREMETAL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
 endif()
 
 # Add selective build subdirectory
