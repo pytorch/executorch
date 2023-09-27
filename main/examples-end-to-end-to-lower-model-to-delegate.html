@@ -10,7 +10,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Kernel Fusion Pass &mdash; ExecuTorch  documentation</title>
+  <title>An end-to-end example to lower a model as a delegate &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -39,8 +39,8 @@
   <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Custom Compiler Passes and Partitioners" href="compiler-custom-compiler-passes.html" />
-    <link rel="prev" title="Backend and Delegate" href="compiler-delegate-and-partitioner.html" />
+    <link rel="next" title="Backend and Delegate" href="compiler-delegate-and-partitioner.html" />
+    <link rel="prev" title="High-order Operators" href="ir-high-order-operators.html" />
   <!-- Google Tag Manager -->
     <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
     new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
@@ -265,9 +265,9 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">An end-to-end example to lower a model as a delegate</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">An end-to-end example to lower a model as a delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Kernel Fusion Pass</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-kernel-fusion-pass.html">Kernel Fusion Pass</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
@@ -340,13 +340,13 @@
       </li>
 
         
-      <li>Kernel Fusion Pass</li>
+      <li>An end-to-end example to lower a model as a delegate</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/compiler-kernel-fusion-pass.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/examples-end-to-end-to-lower-model-to-delegate.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -378,9 +378,181 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <section id="kernel-fusion-pass">
-<h1>Kernel Fusion Pass<a class="headerlink" href="#kernel-fusion-pass" title="Permalink to this heading">¶</a></h1>
-<p>TBA</p>
+  <section id="an-end-to-end-example-to-lower-a-model-as-a-delegate">
+<h1>An end-to-end example to lower a model as a delegate<a class="headerlink" href="#an-end-to-end-example-to-lower-a-model-as-a-delegate" title="Permalink to this heading">¶</a></h1>
+<p>Audience: ML Engineers, who are interested in applying delegates to accelerate their program in runtime</p>
+<p>Backend delegation is an entry point for backends to process and execute PyTorch
+programs to leverage performance and efficiency benefits of specialized
+backends and hardware, while still providing PyTorch users with an experience
+close to that of the PyTorch runtime. The backend delegate is usually either provited by
+Exececutorch or vendors. The way to leverage delegate in your program is via a standard entry point <code class="docutils literal notranslate"><span class="pre">to_backend</span></code>.</p>
+<section id="frontend-interfaces">
+<h2>Frontend interfaces<a class="headerlink" href="#frontend-interfaces" title="Permalink to this heading">¶</a></h2>
+<p>There are three flows for delegating a program to a backend:</p>
+<ol class="arabic simple">
+<li><p>Lower the whole module to a backend. This is good for testing backends and
+the preprocessing stage.</p></li>
+<li><p>Lower the whole module to a backend and compose it with another module. This
+is good for reusing lowered modules exported from other flows.</p></li>
+<li><p>Lower parts of a module according to a partitioner. This is good for
+lowering models that include both lowerable and non-lowerable nodes, and is
+the most streamlined procecss.</p></li>
+</ol>
+<section id="flow-1-lowering-the-whole-module">
+<h3>Flow 1: Lowering the whole module<a class="headerlink" href="#flow-1-lowering-the-whole-module" title="Permalink to this heading">¶</a></h3>
+<p>This flow starts from a traced graph module with Edge Dialect representation. To
+lower it, we call the following function which returns a <code class="docutils literal notranslate"><span class="pre">LoweredBackendModule</span></code>
+(more documentation on this function can be found in the Python API reference):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># defined in backend_api.py</span>
+<span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+    <span class="n">backend_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">compile_spec</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LoweredBackendModule</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>Within this function, the backend’s <code class="docutils literal notranslate"><span class="pre">preprocess()</span></code> function is called which
+produces a compiled blob which will be emitted to the flatbuffer binary. The
+lowered module can be directly captured, or be put back in a parent module to be
+captured. Eventually the captured module is serialized in the flatbuffer’s model
+that can be loaded by the runtime.</p>
+<p>The following is an example of this flow:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span><span class="p">,</span> <span class="n">MethodCompileSpec</span>
+<span class="kn">import</span> <span class="nn">executorch.exir</span> <span class="k">as</span> <span class="nn">exir</span>
+<span class="kn">import</span> <span class="nn">torch</span>
+
+<span class="c1"># The submodule runs in a specific backend. In this example,  `BackendWithCompilerDemo` backend</span>
+<span class="k">class</span> <span class="nc">LowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+<span class="c1"># Convert the lowerable module to Edge IR Representation</span>
+<span class="n">to_be_lowered</span> <span class="o">=</span> <span class="n">LowerableSubModel</span><span class="p">()</span>
+<span class="n">example_input</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="p">)</span>
+<span class="n">to_be_lowered_exir_submodule</span> <span class="o">=</span> <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">to_be_lowered</span><span class="p">,</span> <span class="n">example_input</span><span class="p">)</span><span class="o">.</span><span class="n">to_edge</span><span class="p">()</span>
+
+<span class="c1"># Import the backend implementation</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.test.backend_with_compiler_demo</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BackendWithCompilerDemo</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">lowered_module</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="s1">&#39;BackendWithCompilerDemo&#39;</span><span class="p">,</span> <span class="n">to_be_lowered_exir_submodule</span><span class="p">,</span> <span class="p">[])</span>
+</pre></div>
+</div>
+<p>We can serialize the program to a flatbuffer format by directly running:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Save the flatbuffer to a local file</span>
+<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;delegate.pte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">lowered_module</span><span class="o">.</span><span class="n">buffer</span><span class="p">())</span>
+</pre></div>
+</div>
+</section>
+<section id="flow-2-lowering-the-whole-module-and-composite">
+<h3>Flow 2: Lowering the whole module and composite<a class="headerlink" href="#flow-2-lowering-the-whole-module-and-composite" title="Permalink to this heading">¶</a></h3>
+<p>Alternatively, after flow 1, we can compose this lowered module with another
+module:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># This submodule runs in executor runtime</span>
+<span class="k">class</span> <span class="nc">NonLowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bias</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="o">=</span> <span class="n">bias</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+
+
+<span class="c1"># The composite module, including lower part and non-lowerpart</span>
+<span class="k">class</span> <span class="nc">CompositeModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">non_lowerable</span> <span class="o">=</span> <span class="n">NonLowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lowerable</span> <span class="o">=</span> <span class="n">lowered_module</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowerable</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">b</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowerable</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">non_lowerable</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">ret</span>
+
+<span class="n">composite_model</span> <span class="o">=</span> <span class="n">CompositeModel</span><span class="p">()</span>
+<span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="p">)</span>
+<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">composite_model</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">to_edge</span><span class="p">()</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Save the flatbuffer to a local file</span>
+<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;delegate.pte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+<section id="flow-3-partitioning">
+<h3>Flow 3: Partitioning<a class="headerlink" href="#flow-3-partitioning" title="Permalink to this heading">¶</a></h3>
+<p>The third flow also starts from a traced graph module with Edge Dialect
+representation. To lower certain nodes in this graph module, we can use the
+overloaded <a class="reference external" href="https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/backend/backend_api.py#L39"><code class="docutils literal notranslate"><span class="pre">to_backend</span></code>
+function</a>.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+    <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">TPartitioner</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>This function takes in a <code class="docutils literal notranslate"><span class="pre">Partitioner</span></code> which adds a tag to all the nodes that
+are meant to be lowered. It will return a <code class="docutils literal notranslate"><span class="pre">partition_tags</span></code> mapping tags to
+backend names and module compile specs. The tagged nodes will then be
+partitioned and lowered to their mapped backends using Flow 1’s process.
+Available helper partitioner are documented
+<a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="std std-doc">here</span></a>. These lowered modules
+will be inserted into the top-level module and serialized.</p>
+<p>The following is an example of the flow:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
+<span class="kn">import</span> <span class="nn">executorch.exir</span> <span class="k">as</span> <span class="nn">exir</span>
+<span class="kn">import</span> <span class="nn">torch</span>
+
+<span class="k">class</span> <span class="nc">Model</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">-</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">/</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+        <span class="k">return</span> <span class="n">x</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">Model</span><span class="p">()</span>
+<span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+<span class="n">gm</span> <span class="o">=</span> <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">to_edge</span><span class="p">()</span>
+
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.test.op_partitioner_demo</span> <span class="kn">import</span> <span class="n">AddMulPartitionerDemo</span>
+<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">gm</span><span class="p">,</span> <span class="n">AddMulPartitionerDemo</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
+    <span class="n">exir</span><span class="o">.</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span><span class="n">passes</span><span class="o">=</span><span class="n">SpecPropPass</span><span class="p">())</span>
+<span class="p">)</span>
+
+<span class="c1"># Save the flatbuffer to a local file</span>
+<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;delegate.pte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="runtime">
+<h2>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h2>
+<p>After having the program with delegates, to run the model with the backend, we’d need to register the backend.
+Depending on the delegate implementation, the backend can be registered either as part of global variables or
+explicitly register inside main function.</p>
+<ul class="simple">
+<li><p>If register during global variables initialization
+The backend will be registered as long as it’s static linked. Users only need to include the library as part of the dependency.</p></li>
+<li><p>If vendor provide an APIs to register the backend
+Users need to include the library as part of the dependency, and call the API provided by vendors to explicitly register the backend as part of the main function</p></li>
+</ul>
+</section>
 </section>
 
 
@@ -391,10 +563,10 @@
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="compiler-custom-compiler-passes.html" class="btn btn-neutral float-right" title="Custom Compiler Passes and Partitioners" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="compiler-delegate-and-partitioner.html" class="btn btn-neutral float-right" title="Backend and Delegate" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="compiler-delegate-and-partitioner.html" class="btn btn-neutral" title="Backend and Delegate" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="ir-high-order-operators.html" class="btn btn-neutral" title="High-order Operators" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -428,7 +600,16 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Kernel Fusion Pass</a></li>
+<li><a class="reference internal" href="#">An end-to-end example to lower a model as a delegate</a><ul>
+<li><a class="reference internal" href="#frontend-interfaces">Frontend interfaces</a><ul>
+<li><a class="reference internal" href="#flow-1-lowering-the-whole-module">Flow 1: Lowering the whole module</a></li>
+<li><a class="reference internal" href="#flow-2-lowering-the-whole-module-and-composite">Flow 2: Lowering the whole module and composite</a></li>
+<li><a class="reference internal" href="#flow-3-partitioning">Flow 3: Partitioning</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#runtime">Runtime</a></li>
+</ul>
+</li>
 </ul>
 
             </div>
