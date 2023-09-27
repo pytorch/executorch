@@ -1,3 +1,5 @@
+<!--- DEPRECATED This document is moved to executorch/docs/source/getting-started-setup.md---->
+
 # Setting up ExecuTorch
 
 This is a tutorial for building and installing ExecuTorch from the GitHub repository.
