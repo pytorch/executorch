@@ -39,9 +39,11 @@ cd cmake-corstone
 cmake -DFLATC_EXECUTABLE=flatc \
 	  -DEXECUTORCH_BUILD_HOST_TARGETS=OFF \
 	  -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON \
+	  -DCMAKE_SYSTEM_PROCESSOR=cortex-m55+nodsp+nofp \
+	  -DETHOSU_TARGET_NPU_CONFIG=ethos-u55-128 \
 	  --toolchain backends/arm/cmake/arm-none-eabi-gcc.cmake \
 	  ..
 # -DCMAKE_TOOLCHAIN_FILE=backends/arm/cmake/arm-none-eabi-gcc.cmake \
 
 cd ..
-cmake --build cmake-corstone -j1 --target ethos_u
+cmake --build cmake-corstone -j1 --target ethos_u ethosu_core_driver

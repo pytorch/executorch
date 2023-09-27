@@ -18,7 +18,7 @@ set(_common_compile_options -Wno-deprecated-declarations)
 
 include(cmake/Dependencies.cmake)
 
-set(_arm_baremetal_sources backends/arm/runtime/ArmBackendEthosU.cpp)
+set(_arm_baremetal_sources backends/arm/runtime/ArmBackendEthosU.cpp backends/arm/runtime/command_stream.cpp)
 list(TRANSFORM _arm_baremetal_sources PREPEND "${EXECUTORCH_ROOT}/")
 add_library(ethos_u STATIC ${_arm_baremetal_sources})
 target_include_directories(ethos_u PUBLIC ${_common_include_directories})
