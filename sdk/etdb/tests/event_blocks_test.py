@@ -255,15 +255,15 @@ class TestEventBlock(unittest.TestCase):
         )
 
         # Create Test Maps
-        handle_map = {0: [100], 1: [110], 2: [120]}
+        handle_map = {"0": [100], "1": [110], "2": [120]}
         delegate_map = {
-            0: DelegateMetadata(
+            "0": DelegateMetadata(
                 {
                     "name": "delegate",
                     "delegate_map": {10: (100, 1000)},
                 }
             ),
-            2: DelegateMetadata(
+            "2": DelegateMetadata(
                 {
                     "name": "delegate_2",
                     "delegate_map": {20: (200,)},
@@ -280,7 +280,7 @@ class TestEventBlock(unittest.TestCase):
                 delegate_debug_identifier := event.delegate_debug_identifier
             ) is not None:
                 # Delegated
-                metadata = delegate_map[event.instruction_id]
+                metadata = delegate_map[str(event.instruction_id)]
                 self.assertEqual(event.delegate_backend_name, metadata["name"])
                 self.assertEqual(
                     event.debug_handles,
@@ -288,4 +288,6 @@ class TestEventBlock(unittest.TestCase):
                 )
             else:
                 # Non Delegated
-                self.assertEqual(event.debug_handles, handle_map[event.instruction_id])
+                self.assertEqual(
+                    event.debug_handles, handle_map[str(event.instruction_id)]
+                )

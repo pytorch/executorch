@@ -1,9 +1,20 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
 
 python_unittest(
     name = "etrecord_test",
+    srcs = ["etrecord_test.py"],
+    deps = [
+        "//executorch/exir:lib",
+        "//executorch/exir/tests:models",
+        "//executorch/sdk/etrecord:etrecord",
+    ],
+)
+
+python_library(
+    name = "etrecord_test_library",
     srcs = ["etrecord_test.py"],
     deps = [
         "//executorch/exir:lib",
