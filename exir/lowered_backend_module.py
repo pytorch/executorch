@@ -489,7 +489,7 @@ def create_submodule_from_nodes(
         # (ex. source_fn, # nn_module_stack)
         for user_node in submodule_node.users:
             user_node.meta.pop("nn_module_stack", None)
-            user_node.meta.pop("source_fn", None)
+            user_node.meta.pop("source_fn_stack", None)
 
     erase_nodes(gm, sorted_nodes)
 

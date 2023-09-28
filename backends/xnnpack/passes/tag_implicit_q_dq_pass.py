@@ -89,8 +89,9 @@ class TagImplicitQDqPass(XNNPACKPass):
 
     def is_supported_quant_module(self, node: torch.fx.Node) -> bool:
         is_supported = (
-            "source_fn" in node.meta
-            and node.meta["source_fn"][1] in SUPPORTED_IMPLICIT_Q_DQ_MODULES_SET
+            "source_fn_stack" in node.meta
+            and node.meta["source_fn_stack"][-1][1]
+            in SUPPORTED_IMPLICIT_Q_DQ_MODULES_SET
         )
         if is_supported and self.is_supported_quant_op(node):
             raise RuntimeError(

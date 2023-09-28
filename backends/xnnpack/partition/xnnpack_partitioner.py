@@ -94,8 +94,8 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         assert len(self.constraints)
 
     def check_common_constraints(self, node) -> bool:
-        if self.unsupported_modules and "source_fn" in node.meta:
-            return not node.meta["source_fn"][1] in self.unsupported_modules
+        if self.unsupported_modules and "source_fn_stack" in node.meta:
+            return not node.meta["source_fn_stack"][-1][1] in self.unsupported_modules
 
         return True
 
