@@ -53,6 +53,19 @@ endif()
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
+
+# https://cmake.org/cmake/help/latest/command/add_definitions.html
+# Adds definitions to the compiler command line for
+# - targets in the current directory, before and after this command is invoked
+# - targets in sub-directories added after this command is invoked
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  # Avoid pulling in the logging strings, which can be large.
+  add_definitions(-DET_LOG_ENABLED=0)
+  # Avoid pulling in the flatbuffer data verification
+  # logic, which can add about 20kB.
+  add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
+endif()
+
 # -Os: Optimize for size. -ffunction-sections -fdata-sections: breaks function
 # and data into sections so they can be properly gc'd. -s: strip symbols
 set(CMAKE_CXX_FLAGS_RELEASE
