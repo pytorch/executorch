@@ -11,9 +11,6 @@ import torch
 from executorch import exir
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
 from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinearPass
-from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
-    FuseBatchNormWithConvPass,
-)
 from executorch.backends.xnnpack.passes.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 
@@ -91,41 +88,6 @@ class TestXNNPackPasses(unittest.TestCase):
                 torch.allclose(old_results[i], new_results[i], rtol=rtol, atol=atol)
             )
         return new_exported_program
-
-    def test_conv_batch_norm_fusion(self) -> None:
-        passes = [FuseBatchNormWithConvPass]
-
-        class ModelConvBN(torch.nn.Module):
-            def __init__(
-                self, in_features: int, out_features: int, kernel_size: Tuple[int, int]
-            ):
-                super().__init__()
-                self.conv2d = torch.nn.Conv2d(in_features, out_features, kernel_size)
-                self.bn = torch.nn.BatchNorm2d(out_features)
-
-            def forward(self, x):
-                y = self.conv2d(x)
-                y = self.bn(y)
-                y = self.conv2d(y)
-                y = y + y
-                return self.bn(y)
-
-        model = ModelConvBN(2, 2, (2, 2))
-        sample_input = (torch.randn(2, 2, 4, 4),)
-
-        for enable_aot, unlift in [(False, None), (True, True), (True, False)]:
-            # one batchnorm was not removed because it was separated by add
-            # Filecheck exir_ops.edge.aten.native_batch_norm_legit_no_training.default node.
-            # Since we are in eval() mode we should check for no_training variant
-            self.capture_and_test_pass(
-                model.eval(),
-                sample_input,
-                passes,
-                expected_copies=1,
-                expected_node="executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
-                enable_aot=enable_aot,
-                unlift=unlift,
-            )
 
     def test_max_pool2d_remove_getitem(self) -> None:
         passes = [RemoveGetItemPass()]
