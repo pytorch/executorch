@@ -5,8 +5,8 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#ifndef EXECUTORCH_QNN_EXECUTORCH_LOGGING_H_
-#define EXECUTORCH_QNN_EXECUTORCH_LOGGING_H_
+#pragma once
+
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/runtime/core/error.h>
 namespace torch {
@@ -21,4 +21,3 @@ void Log(QnnExecuTorchLogLevel log_level, const char* format, ...);
 }  // namespace qnn
 }  // namespace executor
 }  // namespace torch
-#endif  // EXECUTORCH_QNN_EXECUTORCH_LOGGING_H_

@@ -282,10 +282,10 @@ Error HtpDevice::MakeConfig(std::vector<const QnnDevice_Config_t*>& config) {
   std::vector<QnnDevice_CustomConfig_t> ret;
   QnnHtpDevice_CustomConfig_t* p_custom_config = nullptr;
 
-  const std::map<QcomModel, HtpInfo>& soc_info_table = PopulateSocInfoTable();
+  const std::map<QcomChipset, HtpInfo>& soc_info_table = PopulateSocInfoTable();
   auto soc_pair = soc_info_table.find(htp_options_.soc_model);
   if (soc_pair == soc_info_table.end()) {
-    QcomModel default_soc_model = QcomModel::SM8550;
+    QcomChipset default_soc_model = QcomChipset::SM8550;
     QNN_EXECUTORCH_LOG(kLogLevelWarn,
                        "[Qnn Execu Torch] Failed to get soc info for "
                        "soc model %d. Using default soc_model=%d",

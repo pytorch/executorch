@@ -5,8 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#ifndef EXECUTORCH_QNN_EXECUTORCH_BACKENDS_QNN_SYS_INTERFACE_H_
-#define EXECUTORCH_QNN_EXECUTORCH_BACKENDS_QNN_SYS_INTERFACE_H_
+#pragma once
 
 #include "System/QnnSystemInterface.h"
 
@@ -46,5 +45,3 @@ class QnnSystemInterface {
 }  // namespace qnn
 }  // namespace executor
 }  // namespace torch
-
-#endif  // EXECUTORCH_QNN_EXECUTORCH_BACKENDS_QNN_SYS_INTERFACE_H_

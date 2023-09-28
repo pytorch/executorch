@@ -5,8 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#ifndef EXECUTORCH_QNN_EXECUTORCH_BACKENDS_QNN_GRAPH_COMMON_H_
-#define EXECUTORCH_QNN_EXECUTORCH_BACKENDS_QNN_GRAPH_COMMON_H_
+#pragma once
 
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
@@ -70,5 +69,3 @@ class QnnGraph {
 }  // namespace qnn
 }  // namespace executor
 }  // namespace torch
-
-#endif  // EXECUTORCH_QNN_EXECUTORCH_BACKENDS_QNN_GRAPH_COMMON_H_

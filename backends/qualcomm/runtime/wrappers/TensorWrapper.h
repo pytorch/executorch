@@ -5,8 +5,8 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#ifndef EXECUTORCH_QNN_EXECUTORCH_WRAPPER_TENSOR_WRAPPER_H_
-#define EXECUTORCH_QNN_EXECUTORCH_WRAPPER_TENSOR_WRAPPER_H_
+#pragma once
+
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/wrappers/QuantizeParamsWrapper.h>
 #include <executorch/runtime/core/error.h>
@@ -22,7 +22,7 @@ namespace executor {
 namespace qnn {
 class TensorWrapper {
  public:
-  explicit TensorWrapper(std::string tensor_name, Qnn_TensorType_t tensor_type,
+  explicit TensorWrapper(const std::string& tensor_name, Qnn_TensorType_t tensor_type,
                          Qnn_DataType_t data_type,
                          std::unique_ptr<QuantizeParamsWrapper> quantize_params,
                          std::uint32_t rank, const std::uint32_t dims[],
@@ -68,7 +68,7 @@ class TensorWrapper {
 };
 // base function for Create TensorWrapper
 std::shared_ptr<TensorWrapper> CreateTensorWrapper(
-    std::string tensor_name, Qnn_TensorType_t tensor_type,
+    const std::string& tensor_name, Qnn_TensorType_t tensor_type,
     Qnn_DataType_t data_type,
     std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper,
     std::uint32_t rank, const std::uint32_t dims[], std::uint32_t bytes = 0,
@@ -85,4 +85,3 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(const Qnn_Tensor_t& tensor);
 }  // namespace qnn
 }  // namespace executor
 }  // namespace torch
-#endif  // EXECUTORCH_QNN_EXECUTORCH_WRAPPER_TENSOR_WRAPPER_H_

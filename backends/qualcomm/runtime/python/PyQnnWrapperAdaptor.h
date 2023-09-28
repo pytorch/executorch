@@ -5,8 +5,8 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#ifndef EXECUTORCH_QNN_EXECUTORCH_PYTHON_PY_WRAPPER_ADAPTOR_H_
-#define EXECUTORCH_QNN_EXECUTORCH_PYTHON_PY_WRAPPER_ADAPTOR_H_
+#pragma once
+
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/wrappers/OpWrapper.h>
 #include <executorch/backends/qualcomm/runtime/wrappers/TensorWrapper.h>
@@ -19,8 +19,8 @@ namespace executor {
 namespace qnn {
 class PyQnnOpWrapper {
  public:
-  explicit PyQnnOpWrapper(std::string name, std::string package_name,
-                          std::string op_type) {
+  explicit PyQnnOpWrapper(const std::string& name, const std::string& package_name,
+                          const std::string& op_type) {
     op_wrapper_ = std::make_shared<OpWrapper>(name, package_name, op_type);
   }
   void AddInputTensors(
@@ -90,5 +90,3 @@ class PyQnnOpWrapper {
 }  // namespace qnn
 }  // namespace executor
 }  // namespace torch
-
-#endif  // EXECUTORCH_QNN_EXECUTORCH_PYTHON_PY_WRAPPER_ADAPTOR_H_

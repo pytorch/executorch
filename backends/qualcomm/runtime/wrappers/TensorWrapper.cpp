@@ -58,7 +58,7 @@ std::atomic<std::uint32_t> intermediate_tensor_id{
 std::uint32_t CreateIntermediateTensorId() { return --intermediate_tensor_id; }
 
 TensorWrapper::TensorWrapper(
-    std::string tensor_name, Qnn_TensorType_t tensor_type,
+    const std::string& tensor_name, Qnn_TensorType_t tensor_type,
     Qnn_DataType_t data_type,
     std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper,
     std::uint32_t rank, const std::uint32_t dims[], std::uint32_t bytes,
@@ -128,7 +128,7 @@ Error TensorWrapper::SetName(const std::string& name) {
 
 // base function for Create TensorWrapper
 std::shared_ptr<TensorWrapper> CreateTensorWrapper(
-    std::string tensor_name, Qnn_TensorType_t tensor_type,
+    const std::string& tensor_name, Qnn_TensorType_t tensor_type,
     Qnn_DataType_t data_type,
     std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper,
     std::uint32_t rank, const std::uint32_t dims[], std::uint32_t bytes,

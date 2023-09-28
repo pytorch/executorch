@@ -66,11 +66,11 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
     ArrayRef<CompileSpec> compile_specs) const {
   QnnExecuTorchOptions options = QnnExecuTorchOptionsDefault();
 
-  // covert SizedBuffer to qnn execu torch option
+  // covert SizedBuffer to qnn ExecuTorch option
   options.qnn_context_blob.buffer = const_cast<void*>(processed->data());
   options.qnn_context_blob.nbytes = processed->size();
 
-  // covert CompileSpec to qnn execu torch option
+  // covert CompileSpec to qnn ExecuTorch option
   for (auto& compile_spec : compile_specs) {
     auto type = static_cast<QnnExecuTorchOptionsTypes>(
         FindOptionInMap(compile_spec.key, kOptionsMap));
@@ -94,7 +94,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
         break;
       case kHtpSocModel:
         options.htp_options.soc_model =
-            *static_cast<const QcomModel*>(compile_spec.value.buffer);
+            *static_cast<const QcomChipset*>(compile_spec.value.buffer);
         break;
       case kHtpPerformanceMode:
         options.htp_options.performance_mode =
@@ -182,5 +182,11 @@ void QnnExecuTorchBackend::destroy(DelegateHandle* handle) const {
 }
 
 bool QnnExecuTorchBackend::is_available() const { return true; }
+
+namespace {
+auto cls = QnnExecuTorchBackend();
+Backend backend{"QnnBackend", &cls};
+static auto success_with_compiler = register_backend(backend);
+}  // namespace
 }  // namespace executor
 }  // namespace torch

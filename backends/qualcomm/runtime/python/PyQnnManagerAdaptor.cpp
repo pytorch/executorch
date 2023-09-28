@@ -32,11 +32,11 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .value("kLogLevelDebug", QnnExecuTorchLogLevel::kLogLevelDebug)
       .export_values();
 
-  py::enum_<QcomModel>(m, "QcomModel")
-      .value("UNKNOWN_SM", QcomModel::UNKNOWN_SM)
-      .value("SM8450", QcomModel::SM8450)
-      .value("SM8475", QcomModel::SM8475)
-      .value("SM8550", QcomModel::SM8550)
+  py::enum_<QcomChipset>(m, "QcomChipset")
+      .value("UNKNOWN_SM", QcomChipset::UNKNOWN_SM)
+      .value("SM8450", QcomChipset::SM8450)
+      .value("SM8475", QcomChipset::SM8475)
+      .value("SM8550", QcomChipset::SM8550)
       .export_values();
 
   py::enum_<QnnExecuTorchHtpPrecision>(m, "QnnExecuTorchHtpPrecision")

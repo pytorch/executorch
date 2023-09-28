@@ -97,7 +97,7 @@ def generate_qnn_executorch_option(
                 )
             )
         elif compiler_spec.key == "htp_soc_model":
-            option.htp_options.soc_model = PyQnnManager.QcomModel(
+            option.htp_options.soc_model = PyQnnManager.QcomChipset(
                 int.from_bytes(compiler_spec.value, sys.byteorder)
             )
         else:
@@ -137,9 +137,9 @@ def generate_qnn_executorch_compiler_spec(
     """
 
     supported_soc_models = {
-        SoCModel.SM8450: PyQnnManager.QcomModel.SM8450,
-        SoCModel.SM8475: PyQnnManager.QcomModel.SM8475,
-        SoCModel.SM8550: PyQnnManager.QcomModel.SM8550,
+        SoCModel.SM8450: PyQnnManager.QcomChipset.SM8450,
+        SoCModel.SM8475: PyQnnManager.QcomChipset.SM8475,
+        SoCModel.SM8550: PyQnnManager.QcomChipset.SM8550,
     }
     backend_type = CompileSpec("backend_type", bytes([2]))
 

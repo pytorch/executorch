@@ -5,8 +5,8 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#ifndef EXECUTORCH_QNN_EXECUTORCH_QNN_BACKEND_FACTORY_H_
-#define EXECUTORCH_QNN_EXECUTORCH_QNN_BACKEND_FACTORY_H_
+#pragma once
+
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
@@ -64,5 +64,3 @@ class QnnBackendFactory : public QnnFactory {
 }  // namespace qnn
 }  // namespace executor
 }  // namespace torch
-
-#endif  // EXECUTORCH_QNN_EXECUTORCH_QNN_BACKEND_FACTORY_H_

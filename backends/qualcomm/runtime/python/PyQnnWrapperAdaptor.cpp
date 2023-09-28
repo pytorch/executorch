@@ -27,11 +27,10 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
     int32_t axis = quant_info["axis"].cast<int32_t>();
     std::vector<Qnn_ScaleOffset_t> scale_offset =
         quant_info["scale_offset"].cast<std::vector<Qnn_ScaleOffset_t>>();
-    std::uint32_t numScaleOffsets = scale_offset.size();
 
     quantize_param_wrapper =
         std::make_unique<AxisScaleOffsetQuantizeParamsWrapper>(
-            axis, numScaleOffsets, scale_offset);
+            axis, scale_offset);
   } else if (encoding == QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) {
     float scale = quant_info["scale"].cast<float>();
     int32_t offset = quant_info["offset"].cast<int32_t>();
@@ -46,7 +45,7 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
 }
 
 std::shared_ptr<TensorWrapper> CreateTensorWrapper(
-    std::string tensor_name, Qnn_TensorType_t tensor_type,
+    const std::string& tensor_name, Qnn_TensorType_t tensor_type,
     Qnn_DataType_t data_type, const Qnn_QuantizationEncoding_t& encoding,
     py::dict& quant_info, std::uint32_t rank, const std::vector<uint32_t>& dims,
     py::array& data, bool copy_data) {
@@ -121,11 +120,11 @@ PYBIND11_MODULE(PyQnnWrapperAdaptor, m) {
                  QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET)
       .export_values();
   py::class_<OpWrapper, std::shared_ptr<OpWrapper>>(m, "OpWrapper")
-      .def(py::init<std::string, std::string, std::string>());
+      .def(py::init<const std::string&, const std::string&, const std::string&>());
 
   py::class_<TensorWrapper, std::shared_ptr<TensorWrapper>>(m, "TensorWrapper")
       .def(py::init(
-          py::overload_cast<std::string, Qnn_TensorType_t, Qnn_DataType_t,
+          py::overload_cast<const std::string&, Qnn_TensorType_t, Qnn_DataType_t,
                             const Qnn_QuantizationEncoding_t&, py::dict&,
                             std::uint32_t, const std::vector<uint32_t>&,
                             py::array&, bool>(&CreateTensorWrapper)));
@@ -137,7 +136,7 @@ PYBIND11_MODULE(PyQnnWrapperAdaptor, m) {
 
   py::class_<PyQnnOpWrapper, std::shared_ptr<PyQnnOpWrapper>>(m,
                                                               "PyQnnOpWrapper")
-      .def(py::init<std::string, std::string, std::string>())
+      .def(py::init<const std::string&, const std::string&, const std::string&>())
       .def("AddInputTensors", &PyQnnOpWrapper::AddInputTensors,
            "A function which add input tensor wrapper into op wrapper",
            py::arg("tensors"))

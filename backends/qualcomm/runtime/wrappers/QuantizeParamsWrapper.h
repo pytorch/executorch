@@ -5,8 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#ifndef EXECUTORCH_QNN_EXECUTORCH_WRAPPER_QUANTIZE_PARAM_WRAPPER_H_
-#define EXECUTORCH_QNN_EXECUTORCH_WRAPPER_QUANTIZE_PARAM_WRAPPER_H_
+#pragma once
 
 #include <cstdint>
 #include <memory>
@@ -120,12 +119,10 @@ class AxisScaleOffsetQuantizeParamsWrapper final
     : public QuantizeParamsWrapper {
  public:
   explicit AxisScaleOffsetQuantizeParamsWrapper(
-      std::int32_t axis, std::uint32_t num_scale_offsets,
-      const std::vector<Qnn_ScaleOffset_t>& scale_offsets)
+      std::int32_t axis, const std::vector<Qnn_ScaleOffset_t>& scale_offsets)
       : QuantizeParamsWrapper(QNN_DEFINITION_DEFINED,
                               QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET),
         axis_(axis),
-        num_scale_offsets_(num_scale_offsets),
         scale_offsets_(scale_offsets) {}
 
   AxisScaleOffsetQuantizeParamsWrapper(
@@ -133,7 +130,6 @@ class AxisScaleOffsetQuantizeParamsWrapper final
       : QuantizeParamsWrapper(rhs.GetEncodingDefinition(),
                               rhs.GetQuantizationEncoding()),
         axis_(rhs.axis_),
-        num_scale_offsets_(rhs.num_scale_offsets_),
         scale_offsets_(rhs.scale_offsets_) {}
   AxisScaleOffsetQuantizeParamsWrapper(
       AxisScaleOffsetQuantizeParamsWrapper&& rhs) = delete;
@@ -155,14 +151,13 @@ class AxisScaleOffsetQuantizeParamsWrapper final
     rval.encodingDefinition = GetEncodingDefinition();
     rval.quantizationEncoding = GetQuantizationEncoding();
     rval.axisScaleOffsetEncoding.axis = axis_;
-    rval.axisScaleOffsetEncoding.numScaleOffsets = num_scale_offsets_;
+    rval.axisScaleOffsetEncoding.numScaleOffsets = scale_offsets_.size();
     rval.axisScaleOffsetEncoding.scaleOffset = scale_offsets_.data();
     return rval;
   }
 
  private:
   std::int32_t axis_;
-  std::uint32_t num_scale_offsets_;
   std::vector<Qnn_ScaleOffset_t> scale_offsets_;
 };
 
@@ -172,4 +167,3 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
 }  // namespace qnn
 }  // namespace executor
 }  // namespace torch
-#endif  // EXECUTORCH_QNN_EXECUTORCH_WRAPPER_QUANTIZE_PARAM_WRAPPER_H_

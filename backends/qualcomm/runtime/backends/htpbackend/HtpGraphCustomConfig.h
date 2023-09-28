@@ -5,8 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#ifndef EXECUTORCH_QNN_EXECUTORCH_BACKENDS_HTP_BACKEND_HTP_GRAPH_CUSTOM_CONFIG_H_
-#define EXECUTORCH_QNN_EXECUTORCH_BACKENDS_HTP_BACKEND_HTP_GRAPH_CUSTOM_CONFIG_H_
+#pragma once
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 
@@ -39,4 +38,3 @@ class HtpGraphCustomConfig {
 }  // namespace qnn
 }  // namespace executor
 }  // namespace torch
-#endif  // EXECUTORCH_QNN_EXECUTORCH_BACKENDS_HTP_BACKEND_HTP_GRAPH_CUSTOM_CONFIG_H_

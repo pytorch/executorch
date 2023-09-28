@@ -5,8 +5,8 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#ifndef EXECUTORCH_QNN_EXECUTORCH_BACKENDS_HTP_BACKEND_HTP_CONTEXT_H_
-#define EXECUTORCH_QNN_EXECUTORCH_BACKENDS_HTP_BACKEND_HTP_CONTEXT_H_
+#pragma once
+
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
 namespace torch {
@@ -29,4 +29,3 @@ class HtpContext : public QnnContext {
 }  // namespace qnn
 }  // namespace executor
 }  // namespace torch
-#endif  // EXECUTORCH_QNN_EXECUTORCH_BACKENDS_HTP_BACKEND_HTP_CONTEXT_H_

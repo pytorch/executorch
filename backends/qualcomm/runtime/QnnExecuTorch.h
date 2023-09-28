@@ -5,8 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#ifndef EXECUTORCH_QNN_EXECUTORCH_INTERFACE_H_
-#define EXECUTORCH_QNN_EXECUTORCH_INTERFACE_H_
+#pragma once
 
 #ifdef __cplusplus
 #include <cstdint>
@@ -74,12 +73,12 @@ typedef enum {
   SM8450 = 36,  // v69
   SM8475 = 42,  // v69
   SM8550 = 43,  // v73
-} QcomModel;
+} QcomChipset;
 
 /// Specifies the backend options for the HTP backend.
 typedef struct {  // NOLINT
   /// Specify SoC to generate HTP Offline Cache for.
-  QcomModel soc_model;
+  QcomChipset soc_model;
   /// The default performance mode sets no configurations on the HTP.
   QnnExecuTorchHtpPerformanceMode performance_mode;
   /// The default precision mode supports quantized networks. Other precision
@@ -169,5 +168,3 @@ QnnExecuTorchOptions QnnExecuTorchOptionsDefault();
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
-
-#endif  // EXECUTORCH_QNN_EXECUTORCH_INTERFACE_H_

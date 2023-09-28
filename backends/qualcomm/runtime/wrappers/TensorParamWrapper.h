@@ -5,8 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#ifndef EXECUTORCH_QNN_EXECUTORCH_WRAPPER_TENSOR_PARAM_WRAPPER_H_
-#define EXECUTORCH_QNN_EXECUTORCH_WRAPPER_TENSOR_PARAM_WRAPPER_H_
+#pragma once
 
 #include <executorch/backends/qualcomm/runtime/wrappers/ParamWrapper.h>
 #include <executorch/backends/qualcomm/runtime/wrappers/TensorWrapper.h>
@@ -46,5 +45,3 @@ class TensorParamWrapper final : public ParamWrapper {
 }  // namespace qnn
 }  // namespace executor
 }  // namespace torch
-
-#endif  // EXECUTORCH_QNN_EXECUTORCH_WRAPPER_TENSOR_PARAM_WRAPPER_H_

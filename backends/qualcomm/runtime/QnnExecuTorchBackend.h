@@ -5,8 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#ifndef EXECUTORCH_QNN_EXECUTORCH_QNN_EXECUTORCH_BACKEND_H_
-#define EXECUTORCH_QNN_EXECUTORCH_QNN_EXECUTORCH_BACKEND_H_
+#pragma once
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -31,12 +30,5 @@ class QnnExecuTorchBackend final : public PyTorchBackendInterface {
   bool is_available() const override;
 };
 
-namespace {
-auto cls = QnnExecuTorchBackend();
-Backend backend{"QnnBackend", &cls};
-static auto success_with_compiler = register_backend(backend);
-}  // namespace
-
 }  // namespace executor
 }  // namespace torch
-#endif  // EXECUTORCH_QNN_EXECUTORCH_QNN_EXECUTORCH_BACKEND_H_
