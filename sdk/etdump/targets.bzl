@@ -180,7 +180,7 @@ def define_common_targets():
         srcs = [
             "etdump_flatcc.cpp",
         ],
-        headers = [
+        exported_headers = [
             "etdump_flatcc.h",
         ],
         deps = [
