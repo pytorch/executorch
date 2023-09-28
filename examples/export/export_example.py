@@ -12,6 +12,7 @@ import logging
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
 from .utils import export_to_exec_prog, save_pte_program
+from executorch.exir.print_program import pretty_print, print_program  # noqa
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -40,4 +41,6 @@ if __name__ == "__main__":
     )
 
     prog = export_to_exec_prog(model, example_inputs)
+
+    pretty_print(prog.program.execution_plan)
     save_pte_program(prog.buffer, args.model_name)
