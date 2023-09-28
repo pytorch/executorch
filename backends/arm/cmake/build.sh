@@ -46,4 +46,4 @@ cmake -DFLATC_EXECUTABLE=flatc \
 # -DCMAKE_TOOLCHAIN_FILE=backends/arm/cmake/arm-none-eabi-gcc.cmake \
 
 cd ..
-cmake --build cmake-corstone -j1 --target ethos_u ethosu_core_driver
+cmake --build cmake-corstone -j1 --target ethos_u ethosu_core_driver executorch
