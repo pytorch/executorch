@@ -1,0 +1,676 @@
+
+---
+events:
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeDetermineSystem.cmake:204 (message)"
+      - "CMakeLists.txt:44 (project)"
+    message: |
+      The system is: Darwin - 23.0.0 - arm64
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeDetermineCCompiler.cmake:123 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:44 (project)"
+    message: |
+      Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+      Compiler: /usr/bin/clang 
+      Build flags: 
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+      
+      The C compiler identification is AppleClang, found in:
+        /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/3.26.4/CompilerIdC/a.out
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeDetermineCXXCompiler.cmake:126 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:44 (project)"
+    message: |
+      Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" succeeded.
+      Compiler: /usr/bin/clang++ 
+      Build flags: 
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "a.out"
+      
+      The CXX compiler identification is AppleClang, found in:
+        /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/3.26.4/CompilerIdCXX/a.out
+      
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeDetermineCompilerABI.cmake:57 (try_compile)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:44 (project)"
+    checks:
+      - "Detecting C compiler ABI info"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-dfvhib"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-dfvhib"
+    cmakeVariables:
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "CMAKE_C_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-dfvhib
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_b9281 && [1/2] /usr/bin/clang   -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk   -v -Wl,-v -MD -MT CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o -MF CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o.d -o CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o -c /Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeCCompilerABI.c
+        Apple clang version 15.0.0 (clang-1500.0.28.1.1)
+        Target: arm64-apple-darwin23.0.0
+        Thread model: posix
+        InstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin
+        clang: warning: -Wl,-v: 'linker' input unused [-Wunused-command-line-argument]
+         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" -cc1 -triple arm64-apple-macosx14.0.0 -Wundef-prefix=TARGET_OS_ -Wdeprecated-objc-isa-usage -Werror=deprecated-objc-isa-usage -Werror=implicit-function-declaration -emit-obj -mrelax-all --mrelax-relocations -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCCompilerABI.c -mrelocation-model pic -pic-level 2 -mframe-pointer=non-leaf -fno-strict-return -ffp-contract=on -fno-rounding-math -funwind-tables=1 -fobjc-msgsend-selector-stubs -target-sdk-version=14.0 -fvisibility-inlines-hidden-static-local-var -target-cpu apple-m1 -target-feature +v8.5a -target-feature +crc -target-feature +lse -target-feature +rdm -target-feature +crypto -target-feature +dotprod -target-feature +fp-armv8 -target-feature +neon -target-feature +fp16fml -target-feature +ras -target-feature +rcpc -target-feature +zcm -target-feature +zcz -target-feature +fullfp16 -target-feature +sm4 -target-feature +sha3 -target-feature +sha2 -target-feature +aes -target-abi darwinpcs -mllvm -treat-scalable-fixed-error-as-warning -debugger-tuning=lldb -target-linker-version 902.11 -v -fcoverage-compilation-dir=/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-dfvhib -resource-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0 -dependency-file CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o.d -skip-unused-modulemap-deps -MT CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o -sys-header-deps -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -internal-isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/local/include -internal-isystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include -internal-externc-isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include -internal-externc-isystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include -Wno-reorder-init-list -Wno-implicit-int-float-conversion -Wno-c99-designator -Wno-final-dtor-non-final-class -Wno-extra-semi-stmt -Wno-misleading-indentation -Wno-quoted-include-in-framework-header -Wno-implicit-fallthrough -Wno-enum-enum-conversion -Wno-enum-float-conversion -Wno-elaborated-enum-base -Wno-reserved-identifier -Wno-gnu-folding-constant -fdebug-compilation-dir=/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-dfvhib -ferror-limit 19 -stack-protector 1 -fstack-check -mdarwin-stkchk-strong-link -fblocks -fencode-extended-block-signature -fregister-global-dtors-with-atexit -fgnuc-version=4.2.1 -fmax-type-align=16 -fcommon -clang-vendor-feature=+disableNonDependentMemberExprInCurrentInstantiation -fno-odr-hash-protocols -clang-vendor-feature=+enableAggressiveVLAFolding -clang-vendor-feature=+revert09abecef7bbf -clang-vendor-feature=+thisNoAlignAttr -clang-vendor-feature=+thisNoNullAttr -mllvm -disable-aligned-alloc-awareness=1 -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o -x c /Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeCCompilerABI.c
+        clang -cc1 version 15.0.0 (clang-1500.0.28.1.1) default target arm64-apple-darwin23.0.0
+        ignoring nonexistent directory "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/local/include"
+        ignoring nonexistent directory "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/Library/Frameworks"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include
+         /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include
+         /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include
+         /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks (framework directory)
+        End of search list.
+        [2/2] : && /usr/bin/clang -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names -v -Wl,-v CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o -o cmTC_b9281   && :
+        Apple clang version 15.0.0 (clang-1500.0.28.1.1)
+        Target: arm64-apple-darwin23.0.0
+        Thread model: posix
+        InstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin
+         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld" -demangle -lto_library /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libLTO.dylib -dynamic -arch arm64 -platform_version macos 14.0.0 14.0 -syslibroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -o cmTC_b9281 -search_paths_first -headerpad_max_install_names -v CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o -lSystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/lib/darwin/libclang_rt.osx.a
+        @(#)PROGRAM:ld  PROJECT:ld64-902.11
+        BUILD 21:58:52 Jun  7 2023
+        configured to support archs: armv6 armv7 armv7s arm64 arm64e arm64_32 i386 x86_64 x86_64h armv6m armv7k armv7m armv7em
+        Library search paths:
+        	/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/lib
+        Framework search paths:
+        	/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks/
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeDetermineCompilerABI.cmake:127 (message)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:44 (project)"
+    message: |
+      Parsed C implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include]
+          add: [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include]
+          add: [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include]
+        end of search list found
+        collapse include dir [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include] ==> [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include]
+        collapse include dir [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include] ==> [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include]
+        collapse include dir [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include] ==> [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include]
+        implicit include dirs: [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include;/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include;/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeDetermineCompilerABI.cmake:152 (message)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:44 (project)"
+    message: |
+      Parsed C implicit link information:
+        link line regex: [^( *|.*[/\\])(ld|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        ignore line: [Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-dfvhib]
+        ignore line: []
+        ignore line: [Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_b9281 && [1/2] /usr/bin/clang   -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk   -v -Wl -v -MD -MT CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o -MF CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o.d -o CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o -c /Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeCCompilerABI.c]
+        ignore line: [Apple clang version 15.0.0 (clang-1500.0.28.1.1)]
+        ignore line: [Target: arm64-apple-darwin23.0.0]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin]
+        ignore line: [clang: warning: -Wl -v: 'linker' input unused [-Wunused-command-line-argument]]
+        ignore line: [ "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" -cc1 -triple arm64-apple-macosx14.0.0 -Wundef-prefix=TARGET_OS_ -Wdeprecated-objc-isa-usage -Werror=deprecated-objc-isa-usage -Werror=implicit-function-declaration -emit-obj -mrelax-all --mrelax-relocations -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCCompilerABI.c -mrelocation-model pic -pic-level 2 -mframe-pointer=non-leaf -fno-strict-return -ffp-contract=on -fno-rounding-math -funwind-tables=1 -fobjc-msgsend-selector-stubs -target-sdk-version=14.0 -fvisibility-inlines-hidden-static-local-var -target-cpu apple-m1 -target-feature +v8.5a -target-feature +crc -target-feature +lse -target-feature +rdm -target-feature +crypto -target-feature +dotprod -target-feature +fp-armv8 -target-feature +neon -target-feature +fp16fml -target-feature +ras -target-feature +rcpc -target-feature +zcm -target-feature +zcz -target-feature +fullfp16 -target-feature +sm4 -target-feature +sha3 -target-feature +sha2 -target-feature +aes -target-abi darwinpcs -mllvm -treat-scalable-fixed-error-as-warning -debugger-tuning=lldb -target-linker-version 902.11 -v -fcoverage-compilation-dir=/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-dfvhib -resource-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0 -dependency-file CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o.d -skip-unused-modulemap-deps -MT CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o -sys-header-deps -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -internal-isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/local/include -internal-isystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include -internal-externc-isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include -internal-externc-isystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include -Wno-reorder-init-list -Wno-implicit-int-float-conversion -Wno-c99-designator -Wno-final-dtor-non-final-class -Wno-extra-semi-stmt -Wno-misleading-indentation -Wno-quoted-include-in-framework-header -Wno-implicit-fallthrough -Wno-enum-enum-conversion -Wno-enum-float-conversion -Wno-elaborated-enum-base -Wno-reserved-identifier -Wno-gnu-folding-constant -fdebug-compilation-dir=/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-dfvhib -ferror-limit 19 -stack-protector 1 -fstack-check -mdarwin-stkchk-strong-link -fblocks -fencode-extended-block-signature -fregister-global-dtors-with-atexit -fgnuc-version=4.2.1 -fmax-type-align=16 -fcommon -clang-vendor-feature=+disableNonDependentMemberExprInCurrentInstantiation -fno-odr-hash-protocols -clang-vendor-feature=+enableAggressiveVLAFolding -clang-vendor-feature=+revert09abecef7bbf -clang-vendor-feature=+thisNoAlignAttr -clang-vendor-feature=+thisNoNullAttr -mllvm -disable-aligned-alloc-awareness=1 -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o -x c /Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeCCompilerABI.c]
+        ignore line: [clang -cc1 version 15.0.0 (clang-1500.0.28.1.1) default target arm64-apple-darwin23.0.0]
+        ignore line: [ignoring nonexistent directory "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/local/include"]
+        ignore line: [ignoring nonexistent directory "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/Library/Frameworks"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include]
+        ignore line: [ /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include]
+        ignore line: [ /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include]
+        ignore line: [ /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks (framework directory)]
+        ignore line: [End of search list.]
+        ignore line: [[2/2] : && /usr/bin/clang -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl -search_paths_first -Wl -headerpad_max_install_names -v -Wl -v CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o -o cmTC_b9281   && :]
+        ignore line: [Apple clang version 15.0.0 (clang-1500.0.28.1.1)]
+        ignore line: [Target: arm64-apple-darwin23.0.0]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin]
+        link line: [ "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld" -demangle -lto_library /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libLTO.dylib -dynamic -arch arm64 -platform_version macos 14.0.0 14.0 -syslibroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -o cmTC_b9281 -search_paths_first -headerpad_max_install_names -v CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o -lSystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/lib/darwin/libclang_rt.osx.a]
+          arg [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld] ==> ignore
+          arg [-demangle] ==> ignore
+          arg [-lto_library] ==> ignore, skip following value
+          arg [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libLTO.dylib] ==> skip value of -lto_library
+          arg [-dynamic] ==> ignore
+          arg [-arch] ==> ignore
+          arg [arm64] ==> ignore
+          arg [-platform_version] ==> ignore
+          arg [macos] ==> ignore
+          arg [14.0.0] ==> ignore
+          arg [14.0] ==> ignore
+          arg [-syslibroot] ==> ignore
+          arg [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_b9281] ==> ignore
+          arg [-search_paths_first] ==> ignore
+          arg [-headerpad_max_install_names] ==> ignore
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_b9281.dir/CMakeCCompilerABI.c.o] ==> ignore
+          arg [-lSystem] ==> lib [System]
+          arg [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/lib/darwin/libclang_rt.osx.a] ==> lib [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/lib/darwin/libclang_rt.osx.a]
+        Library search paths: [;/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/lib]
+        Framework search paths: [;/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks/]
+        remove lib [System]
+        remove lib [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/lib/darwin/libclang_rt.osx.a]
+        collapse library dir [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/lib] ==> [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/lib]
+        collapse framework dir [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks/] ==> [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks]
+        implicit libs: []
+        implicit objs: []
+        implicit dirs: [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/lib]
+        implicit fwks: [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks]
+      
+      
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeDetermineCompilerABI.cmake:57 (try_compile)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:44 (project)"
+    checks:
+      - "Detecting CXX compiler ABI info"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-jW4Tu9"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-jW4Tu9"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "CMAKE_CXX_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-jW4Tu9
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_8f005 && [1/2] /usr/bin/clang++   -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk   -v -Wl,-v -MD -MT CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o -MF CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o.d -o CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o -c /Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeCXXCompilerABI.cpp
+        Apple clang version 15.0.0 (clang-1500.0.28.1.1)
+        Target: arm64-apple-darwin23.0.0
+        Thread model: posix
+        InstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin
+        clang: warning: -Wl,-v: 'linker' input unused [-Wunused-command-line-argument]
+         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" -cc1 -triple arm64-apple-macosx14.0.0 -Wundef-prefix=TARGET_OS_ -Wdeprecated-objc-isa-usage -Werror=deprecated-objc-isa-usage -Werror=implicit-function-declaration -emit-obj -mrelax-all --mrelax-relocations -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCXXCompilerABI.cpp -mrelocation-model pic -pic-level 2 -mframe-pointer=non-leaf -fno-strict-return -ffp-contract=on -fno-rounding-math -funwind-tables=1 -fobjc-msgsend-selector-stubs -target-sdk-version=14.0 -fvisibility-inlines-hidden-static-local-var -target-cpu apple-m1 -target-feature +v8.5a -target-feature +crc -target-feature +lse -target-feature +rdm -target-feature +crypto -target-feature +dotprod -target-feature +fp-armv8 -target-feature +neon -target-feature +fp16fml -target-feature +ras -target-feature +rcpc -target-feature +zcm -target-feature +zcz -target-feature +fullfp16 -target-feature +sm4 -target-feature +sha3 -target-feature +sha2 -target-feature +aes -target-abi darwinpcs -mllvm -treat-scalable-fixed-error-as-warning -debugger-tuning=lldb -target-linker-version 902.11 -v -fcoverage-compilation-dir=/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-jW4Tu9 -resource-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0 -dependency-file CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o.d -skip-unused-modulemap-deps -MT CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o -sys-header-deps -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -internal-isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include/c++/v1 -internal-isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/local/include -internal-isystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include -internal-externc-isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include -internal-externc-isystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include -Wno-reorder-init-list -Wno-implicit-int-float-conversion -Wno-c99-designator -Wno-final-dtor-non-final-class -Wno-extra-semi-stmt -Wno-misleading-indentation -Wno-quoted-include-in-framework-header -Wno-implicit-fallthrough -Wno-enum-enum-conversion -Wno-enum-float-conversion -Wno-elaborated-enum-base -Wno-reserved-identifier -Wno-gnu-folding-constant -fdeprecated-macro -fdebug-compilation-dir=/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-jW4Tu9 -ferror-limit 19 -stack-protector 1 -fstack-check -mdarwin-stkchk-strong-link -fblocks -fencode-extended-block-signature -fregister-global-dtors-with-atexit -fgnuc-version=4.2.1 -fno-cxx-modules -fcxx-exceptions -fexceptions -fmax-type-align=16 -fcommon -clang-vendor-feature=+disableNonDependentMemberExprInCurrentInstantiation -fno-odr-hash-protocols -clang-vendor-feature=+enableAggressiveVLAFolding -clang-vendor-feature=+revert09abecef7bbf -clang-vendor-feature=+thisNoAlignAttr -clang-vendor-feature=+thisNoNullAttr -mllvm -disable-aligned-alloc-awareness=1 -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o -x c++ /Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeCXXCompilerABI.cpp
+        clang -cc1 version 15.0.0 (clang-1500.0.28.1.1) default target arm64-apple-darwin23.0.0
+        ignoring nonexistent directory "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/local/include"
+        ignoring nonexistent directory "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/Library/Frameworks"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include/c++/v1
+         /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include
+         /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include
+         /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include
+         /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks (framework directory)
+        End of search list.
+        [2/2] : && /usr/bin/clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names -v -Wl,-v CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_8f005   && :
+        Apple clang version 15.0.0 (clang-1500.0.28.1.1)
+        Target: arm64-apple-darwin23.0.0
+        Thread model: posix
+        InstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin
+         "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld" -demangle -lto_library /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libLTO.dylib -dynamic -arch arm64 -platform_version macos 14.0.0 14.0 -syslibroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -o cmTC_8f005 -search_paths_first -headerpad_max_install_names -v CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o -lc++ -lSystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/lib/darwin/libclang_rt.osx.a
+        @(#)PROGRAM:ld  PROJECT:ld64-902.11
+        BUILD 21:58:52 Jun  7 2023
+        configured to support archs: armv6 armv7 armv7s arm64 arm64e arm64_32 i386 x86_64 x86_64h armv6m armv7k armv7m armv7em
+        Library search paths:
+        	/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/lib
+        Framework search paths:
+        	/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks/
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeDetermineCompilerABI.cmake:127 (message)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:44 (project)"
+    message: |
+      Parsed CXX implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include/c++/v1]
+          add: [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include]
+          add: [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include]
+          add: [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include]
+        end of search list found
+        collapse include dir [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include/c++/v1] ==> [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include/c++/v1]
+        collapse include dir [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include] ==> [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include]
+        collapse include dir [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include] ==> [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include]
+        collapse include dir [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include] ==> [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include]
+        implicit include dirs: [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include/c++/v1;/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include;/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include;/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeDetermineCompilerABI.cmake:152 (message)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:44 (project)"
+    message: |
+      Parsed CXX implicit link information:
+        link line regex: [^( *|.*[/\\])(ld|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        ignore line: [Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-jW4Tu9]
+        ignore line: []
+        ignore line: [Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_8f005 && [1/2] /usr/bin/clang++   -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk   -v -Wl -v -MD -MT CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o -MF CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o.d -o CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o -c /Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [Apple clang version 15.0.0 (clang-1500.0.28.1.1)]
+        ignore line: [Target: arm64-apple-darwin23.0.0]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin]
+        ignore line: [clang: warning: -Wl -v: 'linker' input unused [-Wunused-command-line-argument]]
+        ignore line: [ "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang" -cc1 -triple arm64-apple-macosx14.0.0 -Wundef-prefix=TARGET_OS_ -Wdeprecated-objc-isa-usage -Werror=deprecated-objc-isa-usage -Werror=implicit-function-declaration -emit-obj -mrelax-all --mrelax-relocations -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCXXCompilerABI.cpp -mrelocation-model pic -pic-level 2 -mframe-pointer=non-leaf -fno-strict-return -ffp-contract=on -fno-rounding-math -funwind-tables=1 -fobjc-msgsend-selector-stubs -target-sdk-version=14.0 -fvisibility-inlines-hidden-static-local-var -target-cpu apple-m1 -target-feature +v8.5a -target-feature +crc -target-feature +lse -target-feature +rdm -target-feature +crypto -target-feature +dotprod -target-feature +fp-armv8 -target-feature +neon -target-feature +fp16fml -target-feature +ras -target-feature +rcpc -target-feature +zcm -target-feature +zcz -target-feature +fullfp16 -target-feature +sm4 -target-feature +sha3 -target-feature +sha2 -target-feature +aes -target-abi darwinpcs -mllvm -treat-scalable-fixed-error-as-warning -debugger-tuning=lldb -target-linker-version 902.11 -v -fcoverage-compilation-dir=/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-jW4Tu9 -resource-dir /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0 -dependency-file CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o.d -skip-unused-modulemap-deps -MT CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o -sys-header-deps -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -internal-isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include/c++/v1 -internal-isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/local/include -internal-isystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include -internal-externc-isystem /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include -internal-externc-isystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include -Wno-reorder-init-list -Wno-implicit-int-float-conversion -Wno-c99-designator -Wno-final-dtor-non-final-class -Wno-extra-semi-stmt -Wno-misleading-indentation -Wno-quoted-include-in-framework-header -Wno-implicit-fallthrough -Wno-enum-enum-conversion -Wno-enum-float-conversion -Wno-elaborated-enum-base -Wno-reserved-identifier -Wno-gnu-folding-constant -fdeprecated-macro -fdebug-compilation-dir=/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-jW4Tu9 -ferror-limit 19 -stack-protector 1 -fstack-check -mdarwin-stkchk-strong-link -fblocks -fencode-extended-block-signature -fregister-global-dtors-with-atexit -fgnuc-version=4.2.1 -fno-cxx-modules -fcxx-exceptions -fexceptions -fmax-type-align=16 -fcommon -clang-vendor-feature=+disableNonDependentMemberExprInCurrentInstantiation -fno-odr-hash-protocols -clang-vendor-feature=+enableAggressiveVLAFolding -clang-vendor-feature=+revert09abecef7bbf -clang-vendor-feature=+thisNoAlignAttr -clang-vendor-feature=+thisNoNullAttr -mllvm -disable-aligned-alloc-awareness=1 -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o -x c++ /Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [clang -cc1 version 15.0.0 (clang-1500.0.28.1.1) default target arm64-apple-darwin23.0.0]
+        ignore line: [ignoring nonexistent directory "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/local/include"]
+        ignore line: [ignoring nonexistent directory "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/Library/Frameworks"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include/c++/v1]
+        ignore line: [ /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/include]
+        ignore line: [ /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include]
+        ignore line: [ /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/include]
+        ignore line: [ /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks (framework directory)]
+        ignore line: [End of search list.]
+        ignore line: [[2/2] : && /usr/bin/clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl -search_paths_first -Wl -headerpad_max_install_names -v -Wl -v CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_8f005   && :]
+        ignore line: [Apple clang version 15.0.0 (clang-1500.0.28.1.1)]
+        ignore line: [Target: arm64-apple-darwin23.0.0]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin]
+        link line: [ "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld" -demangle -lto_library /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libLTO.dylib -dynamic -arch arm64 -platform_version macos 14.0.0 14.0 -syslibroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -o cmTC_8f005 -search_paths_first -headerpad_max_install_names -v CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o -lc++ -lSystem /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/lib/darwin/libclang_rt.osx.a]
+          arg [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld] ==> ignore
+          arg [-demangle] ==> ignore
+          arg [-lto_library] ==> ignore, skip following value
+          arg [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/libLTO.dylib] ==> skip value of -lto_library
+          arg [-dynamic] ==> ignore
+          arg [-arch] ==> ignore
+          arg [arm64] ==> ignore
+          arg [-platform_version] ==> ignore
+          arg [macos] ==> ignore
+          arg [14.0.0] ==> ignore
+          arg [14.0] ==> ignore
+          arg [-syslibroot] ==> ignore
+          arg [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_8f005] ==> ignore
+          arg [-search_paths_first] ==> ignore
+          arg [-headerpad_max_install_names] ==> ignore
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_8f005.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
+          arg [-lc++] ==> lib [c++]
+          arg [-lSystem] ==> lib [System]
+          arg [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/lib/darwin/libclang_rt.osx.a] ==> lib [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/lib/darwin/libclang_rt.osx.a]
+        Library search paths: [;/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/lib]
+        Framework search paths: [;/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks/]
+        remove lib [System]
+        remove lib [/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/15.0.0/lib/darwin/libclang_rt.osx.a]
+        collapse library dir [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/lib] ==> [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/lib]
+        collapse framework dir [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks/] ==> [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks]
+        implicit libs: [c++]
+        implicit objs: []
+        implicit dirs: [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/lib]
+        implicit fwks: [/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks]
+      
+      
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckSymbolExists.cmake:145 (try_compile)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckCXXSymbolExists.cmake:77 (__CHECK_SYMBOL_EXISTS_IMPL)"
+      - "third-party/flatbuffers/CMakeLists.txt:105 (check_cxx_symbol_exists)"
+    checks:
+      - "Looking for strtof_l"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-QrfKWd"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-QrfKWd"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_CXX_FLAGS_DEBUG: "-O0 -g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "FLATBUFFERS_HAS_STRTOF_L"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-QrfKWd
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_b6a1c && [1/2] /usr/bin/clang++   -std=gnu++17 -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_b6a1c.dir/CheckSymbolExists.cxx.o -MF CMakeFiles/cmTC_b6a1c.dir/CheckSymbolExists.cxx.o.d -o CMakeFiles/cmTC_b6a1c.dir/CheckSymbolExists.cxx.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-QrfKWd/CheckSymbolExists.cxx
+        FAILED: CMakeFiles/cmTC_b6a1c.dir/CheckSymbolExists.cxx.o 
+        /usr/bin/clang++   -std=gnu++17 -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_b6a1c.dir/CheckSymbolExists.cxx.o -MF CMakeFiles/cmTC_b6a1c.dir/CheckSymbolExists.cxx.o.d -o CMakeFiles/cmTC_b6a1c.dir/CheckSymbolExists.cxx.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-QrfKWd/CheckSymbolExists.cxx
+        /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-QrfKWd/CheckSymbolExists.cxx:8:19: error: use of undeclared identifier 'strtof_l'
+          return ((int*)(&strtof_l))[argc];
+                          ^
+        1 error generated.
+        ninja: build stopped: subcommand failed.
+        
+      exitCode: 1
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckSymbolExists.cmake:145 (try_compile)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckCXXSymbolExists.cmake:77 (__CHECK_SYMBOL_EXISTS_IMPL)"
+      - "third-party/flatbuffers/CMakeLists.txt:106 (check_cxx_symbol_exists)"
+    checks:
+      - "Looking for strtoull_l"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-o81Al5"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-o81Al5"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_CXX_FLAGS_DEBUG: "-O0 -g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "FLATBUFFERS_HAS_STRTOULL_L"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-o81Al5
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_f3601 && [1/2] /usr/bin/clang++   -std=gnu++17 -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_f3601.dir/CheckSymbolExists.cxx.o -MF CMakeFiles/cmTC_f3601.dir/CheckSymbolExists.cxx.o.d -o CMakeFiles/cmTC_f3601.dir/CheckSymbolExists.cxx.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-o81Al5/CheckSymbolExists.cxx
+        FAILED: CMakeFiles/cmTC_f3601.dir/CheckSymbolExists.cxx.o 
+        /usr/bin/clang++   -std=gnu++17 -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_f3601.dir/CheckSymbolExists.cxx.o -MF CMakeFiles/cmTC_f3601.dir/CheckSymbolExists.cxx.o.d -o CMakeFiles/cmTC_f3601.dir/CheckSymbolExists.cxx.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-o81Al5/CheckSymbolExists.cxx
+        /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-o81Al5/CheckSymbolExists.cxx:8:19: error: use of undeclared identifier 'strtoull_l'; did you mean 'strtoull'?
+          return ((int*)(&strtoull_l))[argc];
+                          ^~~~~~~~~~
+                          strtoull
+        /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/include/stdlib.h:178:3: note: 'strtoull' declared here
+                 strtoull(const char *__str, char **__endptr, int __base);
+                 ^
+        1 error generated.
+        ninja: build stopped: subcommand failed.
+        
+      exitCode: 1
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckSymbolExists.cmake:145 (try_compile)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckSymbolExists.cmake:71 (__CHECK_SYMBOL_EXISTS_IMPL)"
+      - "third-party/flatbuffers/CMakeLists.txt:115 (check_symbol_exists)"
+    checks:
+      - "Looking for realpath"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-fwOcBr"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-fwOcBr"
+    cmakeVariables:
+      CMAKE_C_FLAGS: ""
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "HAVE_REALPATH"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-fwOcBr
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_33a4a && [1/2] /usr/bin/clang   -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_33a4a.dir/CheckSymbolExists.c.o -MF CMakeFiles/cmTC_33a4a.dir/CheckSymbolExists.c.o.d -o CMakeFiles/cmTC_33a4a.dir/CheckSymbolExists.c.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-fwOcBr/CheckSymbolExists.c
+        [2/2] : && /usr/bin/clang -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names  CMakeFiles/cmTC_33a4a.dir/CheckSymbolExists.c.o -o cmTC_33a4a   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckIncludeFileCXX.cmake:94 (try_compile)"
+      - "third-party/gflags/CMakeLists.txt:256 (check_include_file_cxx)"
+    checks:
+      - "Looking for C++ include unistd.h"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-RgzViY"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-RgzViY"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "HAVE_UNISTD_H"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-RgzViY
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_5aaa8 && [1/2] /usr/bin/clang++   -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_5aaa8.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_5aaa8.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_5aaa8.dir/CheckIncludeFile.cxx.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-RgzViY/CheckIncludeFile.cxx
+        [2/2] : && /usr/bin/clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names  CMakeFiles/cmTC_5aaa8.dir/CheckIncludeFile.cxx.o -o cmTC_5aaa8   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckIncludeFileCXX.cmake:94 (try_compile)"
+      - "third-party/gflags/CMakeLists.txt:256 (check_include_file_cxx)"
+    checks:
+      - "Looking for C++ include stdint.h"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-SkRio5"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-SkRio5"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "HAVE_STDINT_H"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-SkRio5
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_152da && [1/2] /usr/bin/clang++   -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_152da.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_152da.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_152da.dir/CheckIncludeFile.cxx.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-SkRio5/CheckIncludeFile.cxx
+        [2/2] : && /usr/bin/clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names  CMakeFiles/cmTC_152da.dir/CheckIncludeFile.cxx.o -o cmTC_152da   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckIncludeFileCXX.cmake:94 (try_compile)"
+      - "third-party/gflags/CMakeLists.txt:256 (check_include_file_cxx)"
+    checks:
+      - "Looking for C++ include inttypes.h"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-2Og3aF"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-2Og3aF"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "HAVE_INTTYPES_H"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-2Og3aF
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_d7b6c && [1/2] /usr/bin/clang++   -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_d7b6c.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_d7b6c.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_d7b6c.dir/CheckIncludeFile.cxx.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-2Og3aF/CheckIncludeFile.cxx
+        [2/2] : && /usr/bin/clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names  CMakeFiles/cmTC_d7b6c.dir/CheckIncludeFile.cxx.o -o cmTC_d7b6c   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckIncludeFileCXX.cmake:94 (try_compile)"
+      - "third-party/gflags/CMakeLists.txt:256 (check_include_file_cxx)"
+    checks:
+      - "Looking for C++ include sys/types.h"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-416ANv"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-416ANv"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "HAVE_SYS_TYPES_H"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-416ANv
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_de676 && [1/2] /usr/bin/clang++   -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_de676.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_de676.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_de676.dir/CheckIncludeFile.cxx.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-416ANv/CheckIncludeFile.cxx
+        [2/2] : && /usr/bin/clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names  CMakeFiles/cmTC_de676.dir/CheckIncludeFile.cxx.o -o cmTC_de676   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckIncludeFileCXX.cmake:94 (try_compile)"
+      - "third-party/gflags/CMakeLists.txt:256 (check_include_file_cxx)"
+    checks:
+      - "Looking for C++ include sys/stat.h"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-yaJpem"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-yaJpem"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "HAVE_SYS_STAT_H"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-yaJpem
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_e74c6 && [1/2] /usr/bin/clang++   -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_e74c6.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_e74c6.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_e74c6.dir/CheckIncludeFile.cxx.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-yaJpem/CheckIncludeFile.cxx
+        [2/2] : && /usr/bin/clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names  CMakeFiles/cmTC_e74c6.dir/CheckIncludeFile.cxx.o -o cmTC_e74c6   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckIncludeFileCXX.cmake:94 (try_compile)"
+      - "third-party/gflags/CMakeLists.txt:256 (check_include_file_cxx)"
+    checks:
+      - "Looking for C++ include fnmatch.h"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-cNIcCx"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-cNIcCx"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "HAVE_FNMATCH_H"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-cNIcCx
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_cede7 && [1/2] /usr/bin/clang++   -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_cede7.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_cede7.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_cede7.dir/CheckIncludeFile.cxx.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-cNIcCx/CheckIncludeFile.cxx
+        [2/2] : && /usr/bin/clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names  CMakeFiles/cmTC_cede7.dir/CheckIncludeFile.cxx.o -o cmTC_cede7   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckIncludeFileCXX.cmake:94 (try_compile)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckTypeSize.cmake:262 (check_include_file_cxx)"
+      - "third-party/gflags/CMakeLists.txt:277 (check_type_size)"
+    checks:
+      - "Looking for C++ include stddef.h"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-AB8hGu"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-AB8hGu"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "HAVE_STDDEF_H"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-AB8hGu
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_a1ac0 && [1/2] /usr/bin/clang++   -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_a1ac0.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_a1ac0.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_a1ac0.dir/CheckIncludeFile.cxx.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-AB8hGu/CheckIncludeFile.cxx
+        [2/2] : && /usr/bin/clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names  CMakeFiles/cmTC_a1ac0.dir/CheckIncludeFile.cxx.o -o cmTC_a1ac0   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckTypeSize.cmake:148 (try_compile)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckTypeSize.cmake:273 (__check_type_size_impl)"
+      - "third-party/gflags/CMakeLists.txt:277 (check_type_size)"
+    checks:
+      - "Check size of uint32_t"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-9SX0YU"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-9SX0YU"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "HAVE_uint32_t"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-9SX0YU
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_101fb && [1/2] /usr/bin/clang++   -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_101fb.dir/uint32_t.cpp.o -MF CMakeFiles/cmTC_101fb.dir/uint32_t.cpp.o.d -o CMakeFiles/cmTC_101fb.dir/uint32_t.cpp.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-9SX0YU/uint32_t.cpp
+        [2/2] : && /usr/bin/clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names  CMakeFiles/cmTC_101fb.dir/uint32_t.cpp.o -o cmTC_101fb   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckSymbolExists.cmake:145 (try_compile)"
+      - "/Users/gyansinha/miniconda3/lib/python3.10/site-packages/cmake/data/share/cmake-3.26/Modules/CheckCXXSymbolExists.cmake:77 (__CHECK_SYMBOL_EXISTS_IMPL)"
+      - "third-party/gflags/CMakeLists.txt:312 (check_cxx_symbol_exists)"
+    checks:
+      - "Looking for strtoll"
+    directories:
+      source: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-YXz09O"
+      binary: "/Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-YXz09O"
+    cmakeVariables:
+      CMAKE_CXX_FLAGS: ""
+      CMAKE_CXX_FLAGS_DEBUG: "-O0 -g"
+      CMAKE_EXE_LINKER_FLAGS: ""
+      CMAKE_OSX_ARCHITECTURES: ""
+      CMAKE_OSX_DEPLOYMENT_TARGET: ""
+      CMAKE_OSX_SYSROOT: "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk"
+    buildResult:
+      variable: "HAVE_STRTOLL"
+      cached: true
+      stdout: |
+        Change Dir: /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-YXz09O
+        
+        Run Build Command(s):/Users/gyansinha/.vscode/extensions/powertech.powercpp-23.2.24/thirdparty/bin/ninja -v cmTC_992e2 && [1/2] /usr/bin/clang++   -std=gnu++17 -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -MD -MT CMakeFiles/cmTC_992e2.dir/CheckSymbolExists.cxx.o -MF CMakeFiles/cmTC_992e2.dir/CheckSymbolExists.cxx.o.d -o CMakeFiles/cmTC_992e2.dir/CheckSymbolExists.cxx.o -c /Users/gyansinha/Documents/executorch-forked/executorch/build/CMakeFiles/CMakeScratch/TryCompile-YXz09O/CheckSymbolExists.cxx
+        [2/2] : && /usr/bin/clang++ -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk -Wl,-search_paths_first -Wl,-headerpad_max_install_names  CMakeFiles/cmTC_992e2.dir/CheckSymbolExists.cxx.o -o cmTC_992e2   && :
+        
+      exitCode: 0
+...
