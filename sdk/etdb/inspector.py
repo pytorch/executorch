@@ -28,6 +28,7 @@ from executorch.exir import ExportedProgram
 from executorch.sdk.edir.et_schema import OperatorGraphWithStats, OperatorNode
 from executorch.sdk.etdb._inspector_utils import (
     create_debug_handle_to_op_node_mapping,
+    EDGE_DIALECT_GRAPH_KEY,
     gen_etdump_object,
     gen_etrecord_object,
     gen_graphs_from_etrecord,
@@ -71,7 +72,7 @@ class ProfileEventSignature:
         The Signature will convert these back to the intended None value
         """
         return ProfileEventSignature(
-            event.name,
+            event.name or "",
             event.instruction_id if event.instruction_id != -1 else None,
             event.delegate_debug_id_int if event.delegate_debug_id_int != -1 else None,
             event.delegate_debug_id_str if event.delegate_debug_id_str != "" else None,
@@ -346,9 +347,6 @@ class EventBlock:
                 )
 
 
-EDGE_DIALECT_GRAPH_KEY = "edge_dialect_output/forward"
-
-
 class Inspector:
     """
     APIs for examining model architecture and performance stats.
@@ -455,13 +453,13 @@ class Inspector:
         # TODO: implement
         pass
 
-    def get_exported_program(
-        self, graph: Optional[str] = EDGE_DIALECT_GRAPH_KEY
-    ) -> ExportedProgram:
+    def get_exported_program(self, graph: Optional[str] = None) -> ExportedProgram:
         """
         Access helper for ETRecord, defaults to returning Edge Dialect Program
 
         Args:
-            graph: Name of the graph to access, defaults to "edge_dialect_output/forward"
+            graph: Name of the graph to access. If None, returns the Edge Dialect Program.
         """
+        if graph is None:
+            return self._etrecord.edge_dialect_program
         return self._etrecord.graph_map.get(graph)

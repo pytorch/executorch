@@ -13,7 +13,8 @@ There are two important API's users must be aware of when dealing with ETrecord:
 ```python
 generate_etrecord(
     etrecord_path: str,
-    program: Optional[Union[ExecutorchProgram, MultiMethodExecutorchProgram]] = None,
+    edge_dialect_program: ExirExportedProgram
+    executorch_program: Union[ExecutorchProgram, MultiMethodExecutorchProgram],
     export_modules: Optional[
         Dict[
             str, Union[MultiMethodExirExportedProgram, ExirExportedProgram]
@@ -23,13 +24,15 @@ generate_etrecord(
 ```
 
 Generates an ETRecord from the given objects and saves it to the given path.
-The objects that will be serialized to an ETRecord are all the graph modules present in the export_modules dict and also the graph module present in the program object, which is the closest graph module representation of what is eventually run on the device.
+The objects that will be serialized to an ETRecord are all the graph modules present in the export_modules dict, the graph module present in the edge dialect program object,
+and also the graph module present in the executorch program object, which is the closest graph module representation of what is eventually run on the device.
 
 In addition to all the graph modules we also serialize the program buffer which the users can provide to the ExecuTorch runtime to run the model.
 
 #### Parameters:
 - `etrecord_path` : Path to where the ETRecord file will be saved to.
-- `program`: ExecutorchProgram or MultiMethodExecutorchProgram for this model returned by the call to to_executorch()
+- `edge_dialect_program`: ExirExportedProgram for this model returned by the call to to_edge()
+- `executorch_program`: ExecutorchProgram or MultiMethodExecutorchProgram for this model returned by the call to to_executorch()
 - `export_modules`: Dictionary of graph modules with the key being the user provided name and the value is the corresponding exported module. The exported graph modules can be either the output of capture() or to_edge().
 
 #### Returns:
