@@ -92,12 +92,11 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    export-overview
-   export-user-guide
 
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: Intermediate Representation (IR) Specification
+   :caption: IR Specification
    :hidden:
 
    ir-exir
