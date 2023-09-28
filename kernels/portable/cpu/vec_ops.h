@@ -13,6 +13,7 @@
 #include <cstring>
 #include <numeric>
 #include <type_traits>
+#include <cinttypes>
 
 /**
  * @file
