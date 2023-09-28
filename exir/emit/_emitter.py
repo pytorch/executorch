@@ -454,11 +454,13 @@ class _Emitter(torch.fx.Interpreter):
         # For constant tensors, allocation_info = None.
         return EValue(make_tensor_value(buffer_idx, None, spec))
 
-    def _get_list_jit_type(self, val: List[_Argument]) -> _SchemaType:
+    def _get_list_tuple_jit_type(
+        self, val: Union[Tuple[_Argument], List[_Argument]]
+    ) -> _SchemaType:
         """Returns the JIT type for the given python type."""
         assert isinstance(
-            val, list
-        ), f"Input to _get_list_jit_type was expected to be an instance of list but received {type(val)}"
+            val, (list, tuple)
+        ), f"Input to _get_list_tuple_jit_type was expected to be an instance of a list or tuple but received {type(val)}"
         is_tensor_type = all(
             isinstance(v, _AbstractValue) and v.tensor is not None for v in val
         )
@@ -474,7 +476,7 @@ class _Emitter(torch.fx.Interpreter):
         raise InternalError(
             self._emit_node_specific_error(
                 self.node,
-                "Couldn't determine JitType for list of elements. Only supports int, float, bool, and Tensor.",
+                "Couldn't determine JitType for list/tuple of elements. Only supports int, float, bool, and Tensor.",
             )
         )
 
@@ -492,11 +494,13 @@ class _Emitter(torch.fx.Interpreter):
         if val is None:
             return EValue(Null())
 
-        if isinstance(val, list):
+        if isinstance(val, (list, tuple)):
             # Refine Optional[List[T]] -> List[T] This works because if the val was None it would
             # have converted to Null before this function call.
             if val_type is None:
-                val_type = torch.ListType(self._get_list_jit_type(val))  # pyre-ignore
+                val_type = torch.ListType(
+                    self._get_list_tuple_jit_type(val)  # pyre-ignore
+                )
             if type(val_type) == torch.OptionalType:
                 val_type = val_type.getElementType()
             assert type(val_type) == torch.ListType
