@@ -16,6 +16,7 @@ from executorch.sdk.edir.et_schema import (
 )
 from executorch.sdk.etdb._inspector_utils import (
     create_debug_handle_to_op_node_mapping,
+    EDGE_DIALECT_GRAPH_KEY,
     gen_graphs_from_etrecord,
 )
 from executorch.sdk.etrecord import generate_etrecord, parse_etrecord
@@ -29,10 +30,10 @@ class TestInspectorUtils(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdirname:
             generate_etrecord(
                 tmpdirname + "/etrecord.bin",
+                edge_output,
                 et_output,
                 {
                     "aten_dialect_output": captured_output,
-                    "edge_dialect_output": edge_output,
                 },
             )
 
@@ -42,7 +43,7 @@ class TestInspectorUtils(unittest.TestCase):
 
             self.assertTrue("aten_dialect_output/forward" in graphs)
             self.assertTrue("et_dialect_graph_module/forward" in graphs)
-            self.assertTrue("edge_dialect_output/forward" in graphs)
+            self.assertTrue(EDGE_DIALECT_GRAPH_KEY in graphs)
 
             self.assertTrue(
                 isinstance(graphs["aten_dialect_output/forward"], FXOperatorGraph)
@@ -50,9 +51,7 @@ class TestInspectorUtils(unittest.TestCase):
             self.assertTrue(
                 isinstance(graphs["et_dialect_graph_module/forward"], FXOperatorGraph)
             )
-            self.assertTrue(
-                isinstance(graphs["edge_dialect_output/forward"], FXOperatorGraph)
-            )
+            self.assertTrue(isinstance(graphs[EDGE_DIALECT_GRAPH_KEY], FXOperatorGraph))
 
     def test_create_debug_handle_to_op_node_mapping(self):
         debug_handle_to_op_node_map = {}

@@ -16,16 +16,24 @@ from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC
 from executorch.sdk.etdump.serialize import deserialize_from_etdump_flatcc
 from executorch.sdk.etrecord import ETRecord, parse_etrecord
 
+EDGE_DIALECT_GRAPH_KEY = "edge_dialect_graph_module"
+
 
 def gen_graphs_from_etrecord(
     etrecord: ETRecord,
 ) -> Mapping[str, OperatorGraphWithStats]:
-    if etrecord.graph_map is None:
-        return {}
-    return {
-        name: FXOperatorGraph.gen_operator_graph(exported_program.graph_module)
-        for name, exported_program in etrecord.graph_map.items()
-    }
+    op_graph_map = {}
+    if etrecord.graph_map is not None:
+        op_graph_map = {
+            name: FXOperatorGraph.gen_operator_graph(exported_program.graph_module)
+            for name, exported_program in etrecord.graph_map.items()
+        }
+    if etrecord.edge_dialect_program is not None:
+        op_graph_map[EDGE_DIALECT_GRAPH_KEY] = FXOperatorGraph.gen_operator_graph(
+            etrecord.edge_dialect_program.graph_module
+        )
+
+    return op_graph_map
 
 
 # TODO: use anonymous function to avoid passing the dict around
