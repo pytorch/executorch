@@ -33,10 +33,15 @@ Tensor& add_out(
 
   ET_CHECK(canCast(common_type, out_type));
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "add", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "add", CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(Bool, common_type, ctx, "add", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "add", CTYPE_OUT, [&]() {
+//  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "add", CTYPE_A, [&]() {
+//    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "add", CTYPE_B, [&]() {
+//      ET_SWITCH_REAL_TYPES_AND(Bool, common_type, ctx, "add", CTYPE_IN, [&]() {
+//        ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "add", CTYPE_OUT, [&]() {
+
+          using CTYPE_A = float;
+          using CTYPE_B = float;
+          using CTYPE_IN = float;
+          using CTYPE_OUT = float;
           CTYPE_IN alpha_val;
           ET_EXTRACT_SCALAR(alpha, alpha_val);
 
@@ -51,10 +56,10 @@ Tensor& add_out(
               a,
               b,
               out);
-        });
-      });
-    });
-  });
+//        });
+//      });
+//    });
+//  });
 
   return out;
 }
