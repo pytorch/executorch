@@ -153,7 +153,7 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
 # Temp systest mode for running all models against both inference profiles
 if __name__ == "__main__":
     for op in TestList:
-        tosa_run_test(op, profile=TosaProfile.MI)
+        tosa_run_test(op, profile=TosaProfile.BI)
 
     # TODO: haven't added the quantized lowerings for BI, comment out for now
     # for op in TestList:
