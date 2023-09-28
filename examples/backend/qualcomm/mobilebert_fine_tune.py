@@ -9,7 +9,7 @@ import numpy as np
 import os
 
 import torch
-from executorch.examples.qualcomm.utils import (
+from executorch.examples.backend.qualcomm.utils import (
     SimpleADB,
     build_executorch_binary,
     make_output_dir,

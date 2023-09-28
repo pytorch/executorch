@@ -122,7 +122,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
       case kUndefinedOption:
       default:
         QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                           "[Qnn Execu Torch]: unknown argument: %s",
+                           "[Qnn ExecuTorch]: unknown argument: %s",
                            compile_spec.key);
     }
   }

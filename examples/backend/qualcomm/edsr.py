@@ -13,7 +13,7 @@ import piq
 
 from PIL import Image
 from torch.utils.data import Dataset
-from executorch.examples.qualcomm.utils import (
+from executorch.examples.backend.qualcomm.utils import (
     SimpleADB,
     build_executorch_binary,
     make_output_dir,
@@ -56,16 +56,16 @@ class SrDataset(Dataset):
             input_list += f"input_{i}_0.raw\n"
         return input_list
 
-def get_b100():
-    hr_dir = "./sr_bm_dataset/SRBenchmarks/benchmark/B100/HR"
-    lr_dir = "./sr_bm_dataset/SRBenchmarks/benchmark/B100/LR_bicubic/X2"
+def get_b100(dataset_dir: str,):
+    hr_dir = f"{dataset_dir}/sr_bm_dataset/SRBenchmarks/benchmark/B100/HR"
+    lr_dir = f"{dataset_dir}/sr_bm_dataset/SRBenchmarks/benchmark/B100/LR_bicubic/X2"
 
     if not os.path.exists(hr_dir) or not os.path.exists(lr_dir):
-        B100(root="./sr_bm_dataset", scale=2, download=True)
+        B100(root=f"{dataset_dir}/sr_bm_dataset", scale=2, download=True)
 
     return SrDataset(hr_dir, lr_dir)
 
-def get_dataset(hr_dir: str, lr_dir: str, default_dataset: str):
+def get_dataset(hr_dir: str, lr_dir: str, default_dataset: str, dataset_dir: str):
     if not (lr_dir and hr_dir) and not default_dataset:
         raise RuntimeError("Nither custom dataset is provided nor using default dataset.")
 
@@ -73,7 +73,7 @@ def get_dataset(hr_dir: str, lr_dir: str, default_dataset: str):
         raise RuntimeError("Either use custom dataset, or use default dataset.")
 
     if default_dataset:
-        return get_b100()
+        return get_b100(dataset_dir)
 
     return SrDataset(hr_dir, lr_dir)
 
@@ -153,7 +153,9 @@ if __name__ == "__main__":
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    dataset = get_dataset(args.hr_ref_dir, args.lr_dir, args.default_dataset)
+    dataset = get_dataset(
+        args.hr_ref_dir, args.lr_dir, args.default_dataset, args.artifact
+    )
 
     inputs, targets, input_list = dataset.lr, dataset.hr, dataset.get_input_list()
     pte_filename = "edsr_qnn"

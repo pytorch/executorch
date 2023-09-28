@@ -38,7 +38,7 @@ Error GetPerfInfra(const QnnInterface& qnn_interface,
 
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn Execu Torch] HTP backend perf_infrastructure "
+                       "[Qnn ExecuTorch] HTP backend perf_infrastructure "
                        "creation failed. Error %d",
                        QNN_GET_ERROR_CODE(error));
     return Error::Internal;
@@ -47,7 +47,7 @@ Error GetPerfInfra(const QnnInterface& qnn_interface,
   auto* htp_infra = static_cast<QnnHtpDevice_Infrastructure_t*>(device_infra);
   if (htp_infra->infraType != QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF) {
     QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn Execu Torch] HTP infra type = %d, which is "
+                       "[Qnn ExecuTorch] HTP infra type = %d, which is "
                        "not perf infra type.",
                        htp_infra->infraType);
     return Error::Internal;
@@ -209,7 +209,7 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetVotePowerConfig(
       break;
     default:
       QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn Execu Torch] Invalid performance profile "
+                         "[Qnn ExecuTorch] Invalid performance profile "
                          "%d to set power configs",
                          perf_mode);
       break;
@@ -250,7 +250,7 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetRpcPollingPowerConfig(
       break;
     default:
       QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn Execu Torch] Invalid performance profile "
+                         "[Qnn ExecuTorch] Invalid performance profile "
                          "%d to set power configs",
                          perf_mode);
       break;
@@ -287,7 +287,7 @@ Error HtpDevice::MakeConfig(std::vector<const QnnDevice_Config_t*>& config) {
   if (soc_pair == soc_info_table.end()) {
     QcomChipset default_soc_model = QcomChipset::SM8550;
     QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                       "[Qnn Execu Torch] Failed to get soc info for "
+                       "[Qnn ExecuTorch] Failed to get soc info for "
                        "soc model %d. Using default soc_model=%d",
                        htp_options_.soc_model, default_soc_model);
 
@@ -335,7 +335,7 @@ Error HtpDevice::MakeConfig(std::vector<const QnnDevice_Config_t*>& config) {
     // platform info can only be 1.
     ET_CHECK_OR_RETURN_ERROR(
         device_platform_info.size() == 1u, Internal,
-        "[QNN Execu Torch] Error! Device platform info size != 1, got %zu",
+        "[QNN ExecuTorch] Error! Device platform info size != 1, got %zu",
         device_platform_info.size());
     device_config_[ret.size()].option = QNN_DEVICE_CONFIG_OPTION_PLATFORM_INFO;
     device_config_[ret.size()].hardwareInfo = device_platform_info.back();
@@ -379,7 +379,7 @@ Error HtpDevice::AfterCreateDevice() {
 
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn Execu Torch] HTP backend unable to create "
+                         "[Qnn ExecuTorch] HTP backend unable to create "
                          "power config. Error %d",
                          QNN_GET_ERROR_CODE(error));
       return Error::Internal;

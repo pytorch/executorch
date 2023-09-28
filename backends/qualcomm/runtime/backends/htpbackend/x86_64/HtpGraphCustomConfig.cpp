@@ -44,7 +44,7 @@ HtpGraphCustomConfig::CreateGraphCustomConfig() {
   }
 
   QNN_EXECUTORCH_LOG(kLogLevelInfo,
-                     "[Qnn Execu Torch] Running level=3 optimization.");
+                     "[Qnn ExecuTorch] Running level=3 optimization.");
 
   p_custom_config = AllocGraphCustomConfig();
   p_custom_config->option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;

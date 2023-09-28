@@ -35,7 +35,11 @@ from torch.fx.passes.utils.source_matcher_utils import (
     get_source_partitions,
 )
 
-from .common_defs import supported_modules, not_supported_operator, white_list_operator
+from .common_defs import (
+    supported_modules,
+    not_supported_operator,
+    allow_list_operator,
+)
 
 
 class QnnOperatorSupport(OperatorSupportBase):
@@ -59,7 +63,7 @@ class QnnOperatorSupport(OperatorSupportBase):
         op_wrapper = self.node_visitors[node.target.__name__].define_node(
             node, self.nodes_to_wrappers
         )
-        if node.target in white_list_operator:
+        if node.target in allow_list_operator:
             return True
 
         if op_wrapper is None:
@@ -131,7 +135,7 @@ class QnnPartitioner(Partitioner):
                 self.partition_tags[delegation_tag] = self.delegation_spec
 
     # override
-    def partition(self, exported_program: ExportedProgram) -> torch.fx.GraphModule:
+    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         graph_module = exported_program.graph_module
         partitions = self.generate_partitions(graph_module)
         if len(partitions) != 0:

@@ -1,4 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
 # Copyright (c) Qualcomm Innovation Center, Inc.
 # All rights reserved
 #
@@ -46,13 +45,6 @@ def capture_program(
         qnn_capture_config(),
     ).to_edge(qnn_edge_config())
     return edge_prog.transform(qnn_partitioner_passes)
-
-
-def capture_graph(
-    module: torch.nn.Module,
-    inputs: Tuple[torch.Tensor],
-) -> torch.fx.GraphModule:
-    return capture_program(module, inputs).exported_program.graph_module
 
 
 def draw_graph(title, path, graph_module: torch.fx.GraphModule):

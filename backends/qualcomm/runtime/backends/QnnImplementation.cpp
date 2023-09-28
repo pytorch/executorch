@@ -57,7 +57,7 @@ Error QnnImplementation::StartBackend(const std::string& lib_path,
   if (lib_handle == nullptr) {
     QNN_EXECUTORCH_LOG(
         kLogLevelError,
-        "[Qnn Execu Torch] Cannot Open QNN library %s, with error: %s",
+        "[Qnn ExecuTorch] Cannot Open QNN library %s, with error: %s",
         lib_path.c_str(), dlerror());
     return Error::Internal;
   }
@@ -69,7 +69,7 @@ Error QnnImplementation::StartBackend(const std::string& lib_path,
   if (get_providers == nullptr) {
     QNN_EXECUTORCH_LOG(
         kLogLevelError,
-        "[Qnn Execu Torch] QnnImplementation::Load Cannot load symbol "
+        "[Qnn ExecuTorch] QnnImplementation::Load Cannot load symbol "
         "QnnInterface_getProviders : %s",
         dlerror());
     return Error::Internal;
@@ -83,14 +83,14 @@ Error QnnImplementation::StartBackend(const std::string& lib_path,
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG(
         kLogLevelError,
-        "[Qnn Execu Torch] Qnn Interface failed to get providers. Error %d",
+        "[Qnn ExecuTorch] Qnn Interface failed to get providers. Error %d",
         QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
 
   if (num_providers != required_num_providers_) {
     QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn Execu Torch] Qnn Interface Num Providers is "
+                       "[Qnn ExecuTorch] Qnn Interface Num Providers is "
                        "%d instead of required %d",
                        num_providers, required_num_providers_);
     return Error::Internal;
@@ -110,21 +110,21 @@ Error QnnImplementation::StartBackend(const std::string& lib_path,
   if (loaded_backend_.count(backend_id) > 0) {
     QNN_EXECUTORCH_LOG(
         kLogLevelWarn,
-        "[Qnn Execu Torch] lib_path %s is loaded, but backend %d "
+        "[Qnn ExecuTorch] lib_path %s is loaded, but backend %d "
         "already exists. Overwriting previous loaded backend...",
         lib_path.c_str(), backend_id);
   }
   loaded_backend_[backend_id] = provider_list[0];
 
   if (loaded_lib_handle_.count(backend_id) > 0) {
-    QNN_EXECUTORCH_LOG(kLogLevelWarn, "[Qnn Execu Torch] closing %pK...",
+    QNN_EXECUTORCH_LOG(kLogLevelWarn, "[Qnn ExecuTorch] closing %pK...",
                        loaded_lib_handle_[backend_id]);
 
     int dlclose_error = dlclose(loaded_lib_handle_[backend_id]);
     if (dlclose_error != 0) {
       QNN_EXECUTORCH_LOG(
           kLogLevelWarn,
-          "[Qnn Execu Torch] Sadly, fail to close %pK with error %s",
+          "[Qnn ExecuTorch] Sadly, fail to close %pK with error %s",
           loaded_lib_handle_[backend_id], dlerror());
     }
   }
@@ -142,7 +142,7 @@ Error QnnImplementation::StartBackend(const std::string& lib_path,
     if (dlclose_error != 0) {
       QNN_EXECUTORCH_LOG(
           kLogLevelWarn,
-          "[Qnn Execu Torch] fail to close %pK after backend-init "
+          "[Qnn ExecuTorch] fail to close %pK after backend-init "
           "failure, with error %s",
           loaded_lib_handle_[backend_id], dlerror());
     }
@@ -164,7 +164,7 @@ Error QnnImplementation::TerminateAllBackends() {
     if (dlclose_error != 0) {
       QNN_EXECUTORCH_LOG(
           kLogLevelError,
-          "[Qnn Execu Torch] Fail to close QNN backend %d with error %s",
+          "[Qnn ExecuTorch] Fail to close QNN backend %d with error %s",
           it.first, dlerror());
       ret_status = Error::Internal;
     }
@@ -193,7 +193,7 @@ Error QnnImplementation::Load(const QnnSaver_Config_t** saver_config) {
     if (loaded_backend_.count(backend_id) == 0 ||
         loaded_lib_handle_.count(backend_id) == 0) {
       QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn Execu Torch] library %s is loaded but "
+                         "[Qnn ExecuTorch] library %s is loaded but "
                          "loaded backend count=%zu, "
                          "loaded lib_handle count=%zu",
                          lib_path_.c_str(), loaded_backend_.count(backend_id),
@@ -212,7 +212,7 @@ const QnnInterface& QnnImplementation::GetQnnInterface() const {
   if (!qnn_interface_.IsLoaded()) {
     QNN_EXECUTORCH_LOG(
         kLogLevelWarn,
-        "[Qnn Execu Torch] GetQnnInterface, returning a QNN interface "
+        "[Qnn ExecuTorch] GetQnnInterface, returning a QNN interface "
         "which is not loaded yet.");
   }
   return qnn_interface_;

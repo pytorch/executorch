@@ -8,15 +8,15 @@ Here are some general information and limitations.
 
 ## Prerequisite
 
-Please finish tutorial [Setting up executorch](../../docs/website/docs/tutorials/00_setting_up_executorch.md).
+Please finish tutorial [Setting up executorch](../../../docs/website/docs/tutorials/00_setting_up_executorch.md).
 
-Please finish [setup QNN backend](../../backends/qualcomm/setup.md).
+Please finish [setup QNN backend](../../../backends/qualcomm/setup.md).
 
 ## Environment
 
 Please set up `QNN_SDK_ROOT` environment variable.
 Note that this version should be exactly same as building QNN backend.
-Please check [setup](../../backends/qualcomm/setup.md).
+Please check [setup](../../../backends/qualcomm/setup.md).
 
 Please set up `LD_LIBRARY_PATH` to `$QNN_SDK_ROOT/lib/x86_64-linux-clang`.
 Or, you could put QNN libraries to default search path of the dynamic linker.
@@ -26,7 +26,7 @@ Or, you could put QNN libraries to default search path of the dynamic linker.
 Please connect an Android phone to the workstation. We use `adb` to communicate with the device.
 
 If the device is in a remote host, you might want to add `-H` to the `adb`
-commands in the `SimpleADB` class inside [utils.py](../../backends/qualcomm/utils/utils.py).
+commands in the `SimpleADB` class inside [utils.py](../../../backends/qualcomm/utils/utils.py).
 
 
 ## Please use python xxx.py --help for information of each examples.
@@ -57,5 +57,8 @@ but the performance and accuracy number can differ.
 set of SoCs. Please check QNN documents for details.
 
 3. The mobilebert example needs to train the last classifier layer a bit, so it takes
-time to run.
+time to run. 
+
+4. [**Important**] Due to the numerical limits of FP16, other use cases leveraging mobileBert wouldn't
+guarantee to work.
 

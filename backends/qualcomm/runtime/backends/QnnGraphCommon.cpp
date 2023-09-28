@@ -24,7 +24,7 @@ Error QnnGraph::Configure() {
         context_->GetHandle(), context_->GetGraphName().c_str(), &handle_);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn Execu Torch] Can't retrieve graph "
+                         "[Qnn ExecuTorch] Can't retrieve graph "
                          "%s from context. Error %d.",
                          context_->GetGraphName().c_str(),
                          QNN_GET_ERROR_CODE(error));
@@ -38,13 +38,13 @@ Error QnnGraph::Configure() {
 
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn Execu Torch] qnn_graph_create failed. Error  %d",
+                         "[Qnn ExecuTorch] qnn_graph_create failed. Error  %d",
                          QNN_GET_ERROR_CODE(error));
       return Error::Internal;
     }
   } else {
     QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn Execu Torch] QNN context cache is invalid.");
+                       "[Qnn ExecuTorch] QNN context cache is invalid.");
     return Error::Internal;
   }
 
@@ -72,7 +72,7 @@ Error QnnGraph::EnsureTensorInQnnGraph(
 
       QNN_EXECUTORCH_LOG(
           kLogLevelInfo,
-          "[Qnn Execu Torch] tensor name %s hash collision, change to %s",
+          "[Qnn ExecuTorch] tensor name %s hash collision, change to %s",
           old_name.c_str(), new_name.c_str());
 
       // update

@@ -18,7 +18,7 @@ Error QnnSystemImplementation::Load() {
   if (lib_handle_ == nullptr) {
     QNN_EXECUTORCH_LOG(
         kLogLevelError,
-        "[Qnn Execu Torch] Cannot Open QNN library %s, with error: %s",
+        "[Qnn ExecuTorch] Cannot Open QNN library %s, with error: %s",
         lib_path_.c_str(), dlerror());
     return Error::Internal;
   }
@@ -30,7 +30,7 @@ Error QnnSystemImplementation::Load() {
   if (get_providers == nullptr) {
     QNN_EXECUTORCH_LOG(
         kLogLevelError,
-        "[Qnn Execu Torch] QnnSystemImplementation::Load Cannot load symbol "
+        "[Qnn ExecuTorch] QnnSystemImplementation::Load Cannot load symbol "
         "QnnSystemInterface_getProviders : %s",
         dlerror());
     return Error::Internal;
@@ -41,7 +41,7 @@ Error QnnSystemImplementation::Load() {
   error = get_providers(&provider_list, &num_providers);
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn Execu Torch] QnnSystemInterface failed to "
+                       "[Qnn ExecuTorch] QnnSystemInterface failed to "
                        "get providers. Error %d",
                        QNN_GET_ERROR_CODE(error));
     return Error::Internal;
@@ -49,7 +49,7 @@ Error QnnSystemImplementation::Load() {
 
   if (num_providers != required_num_providers_) {
     QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn Execu Torch] QnnSystemInterface Num "
+                       "[Qnn ExecuTorch] QnnSystemInterface Num "
                        "Providers is %d instead of required %d",
                        num_providers, required_num_providers_);
     return Error::Internal;
@@ -67,7 +67,7 @@ Error QnnSystemImplementation::Unload() {
   if (dlclose_error != 0) {
     QNN_EXECUTORCH_LOG(
         kLogLevelWarn,
-        "[Qnn Execu Torch] Failed to close QnnSystem library with error %s",
+        "[Qnn ExecuTorch] Failed to close QnnSystem library with error %s",
         dlerror());
     return Error::Internal;
   }
@@ -82,7 +82,7 @@ const QnnSystemInterface& QnnSystemImplementation::GetQnnSystemInterface()
   if (!qnn_sys_interface_.IsLoaded()) {
     QNN_EXECUTORCH_LOG(
         kLogLevelWarn,
-        "[Qnn Execu Torch] GetQnnSystemInterface, returning a QNN interface "
+        "[Qnn ExecuTorch] GetQnnSystemInterface, returning a QNN interface "
         "which is not loaded yet.");
   }
   return qnn_sys_interface_;

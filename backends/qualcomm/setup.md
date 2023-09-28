@@ -56,7 +56,7 @@ export PYTHONPATH=$EXECUTORCH_ROOT/..
 ```
 
 
-## Build
+## End to End Inference
 
 ### Step 1: Build Python APIs for AOT compilation on x64
 
@@ -104,108 +104,21 @@ cmake --build . -j8
 You can find `qnn_executor_runner` under `build_android/backends/qualcomm`.
 
 
-## Compile a model
+### Step 3: Compile a model
 
-### for ExecuTorch
-
-We can export and compile an executorch model by:
-
-```python
-from executorch import exir
-from executorch.examples.models.mobilenet_v2 import MV2Model
-
-mv2 = MV2Model()
-example_input = mv2.get_example_inputs()
-model = mv2.get_eager_model().eval()
-
-captured_program = exir.capture(model, example_input)
-
-edge_program = captured_program.to_edge(
-    exir.EdgeCompileConfig(_check_ir_validity=False))
-
-executorch_program = edge_program.to_executorch()
-
-with open("mv2.pte", "wb") as fp:
-    fp.write(executorch_program.buffer)
+```
+python -m examples.backend.qualcomm.export_example --model_name mv2
 ```
 
-Then the `mv2.pte` can be run on the device by `build_android/executor_runner`.
+Then the generated `mv2.pte` can be run on the device by
+`build_android/backends/qualcomm/qnn_executor_runner` with Qualcomm AI Engine
+Direct backend.
 
-### for executorch Qualcomm AI Engine backend
-
-So, how if we want to compile the model for Qualcomm AI Engine?
-
-It's as simple as changing some configurations and adding an extra call `to_backend()`.
-
-To gain the best performance, we also employ quantization:
-
-```python
-import torch
-
-from torch.ao.quantization.quantize_pt2e import (
-    convert_pt2e,
-    prepare_pt2e,
-)
-from executorch.examples.models.mobilenet_v2 import MV2Model
-from executorch.exir.backend.backend_api import (
-    to_backend,
-    validation_disabled,
-)
-from executorch.backends.qualcomm.partition.qnn_partitioner import (
-    QnnPartitioner,
-)
-from executorch.backends.qualcomm.qnn_quantizer import (
-    QnnQuantizer,
-    get_default_qnn_ptq_config,
-)
-from executorch.backends.qualcomm.utils.utils import (
-    capture_program,
-    generate_qnn_executorch_compiler_spec,
-)
-
-mv2 = MV2Model()
-example_input = mv2.get_example_inputs()
-model = mv2.get_eager_model().eval()
-
-# Get quantizer
-quantizer = QnnQuantizer()
-quant_config = get_default_qnn_ptq_config(enable_per_channel_conv_quant=False)
-quantizer.set_global_op_quant_config(quant_config)
-
-# Typical pytorch 2.0 quantization flow
-m = torch._export.capture_pre_autograd_graph(model, example_input)
-m = prepare_pt2e(m, quantizer)
-# Calibration
-m(*example_input)
-# Get the quantized model
-m = convert_pt2e(m)
-
-# Capture program for edge IR
-edge_program = capture_program(m, example_input)
-
-# Delegate to QNN backend
-QnnPartitioner.set_compiler_spec(
-    generate_qnn_executorch_compiler_spec(
-        is_fp16=False, soc_model="SM8550", debug=False, saver=False,
-    )
-)
-with validation_disabled():
-    delegated_program = edge_program
-    delegated_program.exported_program = to_backend(
-        edge_program.exported_program, QnnPartitioner
-    )
-
-executorch_program = delegated_program.to_executorch()
-
-with open("mv2_qnn.pte", "wb") as fp:
-    fp.write(executorch_program.buffer)
-```
-
-Then we have an executorch program which delegates the model to
-Qualcomm AI Engine Direct backend.
+[**Note**] To get proper accuracy, please apply calibrations with representative
+dataset, which could be learnt more from examples under `examples/backend/qualcomm/`.
 
 
-## Run
+### Step 4: Model Inference
 
 The backend rely on Qualcomm AI Engine Direct SDK libraries.
 
@@ -244,8 +157,8 @@ I 00:00:00.133366 executorch:qnn_executor_runner.cpp:156] Method loaded.
 I 00:00:00.133590 executorch:util.h:104] input already initialized, refilling.
 I 00:00:00.135162 executorch:qnn_executor_runner.cpp:161] Inputs prepared.
 I 00:00:00.136768 executorch:qnn_executor_runner.cpp:278] Model executed successfully.
-[INFO][Qnn Execu Torch] Destroy Qnn backend parameters
-[INFO][Qnn Execu Torch] Destroy Qnn context
-[INFO][Qnn Execu Torch] Destroy Qnn device
-[INFO][Qnn Execu Torch] Destroy Qnn backend
+[INFO][Qnn ExecuTorch] Destroy Qnn backend parameters
+[INFO][Qnn ExecuTorch] Destroy Qnn context
+[INFO][Qnn ExecuTorch] Destroy Qnn device
+[INFO][Qnn ExecuTorch] Destroy Qnn backend
 ```

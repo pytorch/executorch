@@ -13,11 +13,11 @@ QnnBackend::~QnnBackend() {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   if (nullptr != handle_) {
-    QNN_EXECUTORCH_LOG(kLogLevelInfo, "[Qnn Execu Torch] Destroy Qnn backend");
+    QNN_EXECUTORCH_LOG(kLogLevelInfo, "[Qnn ExecuTorch] Destroy Qnn backend");
     error = qnn_interface.qnn_backend_free(handle_);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn Execu Torch] Failed to free QNN "
+                         "[Qnn ExecuTorch] Failed to free QNN "
                          "backend_handle. Backend "
                          "ID %u, error %d",
                          qnn_interface.GetBackendId(),
@@ -42,7 +42,7 @@ Error QnnBackend::Configure() {
       &handle_);
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn Execu Torch] Failed to create "
+                       "[Qnn ExecuTorch] Failed to create "
                        "backend_handle for Backend "
                        "ID %u, error=%d",
                        qnn_interface.GetBackendId(), QNN_GET_ERROR_CODE(error));

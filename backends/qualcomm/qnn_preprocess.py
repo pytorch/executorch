@@ -35,7 +35,7 @@ class QnnBackend(BackendDetails):
     def preprocess(
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
-    ) -> bytes:
+    ) -> PreprocessResult:
         option = generate_qnn_executorch_option(compile_specs)
         qnn_manager = PyQnnManager.QnnManager(option)
         qnn_manager.Init()

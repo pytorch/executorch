@@ -44,7 +44,7 @@ QnnManager::QnnManager(const QnnExecuTorchOptions* options)
         break;
       default:
         QNN_EXECUTORCH_LOG(kLogLevelError,
-                           "[Qnn Execu Torch] Unknown backend type: %s",
+                           "[Qnn ExecuTorch] Unknown backend type: %s",
                            backend_type_);
         break;
     }
@@ -66,7 +66,7 @@ Error QnnManager::Init() {
   if (backend_params_ptr_->backend_init_state_ ==
       BackendInitializeState::UNINITIALIZED) {
     QNN_EXECUTORCH_LOG(kLogLevelInfo,
-                       "[Qnn Execu Torch] Initialize Qnn backend "
+                       "[Qnn ExecuTorch] Initialize Qnn backend "
                        "parameters for Qnn executorch backend type %d",
                        backend_type_);
     backend_params_ptr_ = QnnBackendFactory().Create(
@@ -120,7 +120,7 @@ Error QnnManager::Execute(const std::vector<Qnn_Tensor_t>& input_tensor_structs,
 
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn Execu Torch] qnn_graph_execute failed. Error %d",
+                       "[Qnn ExecuTorch] qnn_graph_execute failed. Error %d",
                        QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
@@ -130,7 +130,7 @@ Error QnnManager::Execute(const std::vector<Qnn_Tensor_t>& input_tensor_structs,
 
 void QnnManager::Destroy() {
   QNN_EXECUTORCH_LOG(kLogLevelInfo,
-                     "[Qnn Execu Torch] Destroy Qnn backend parameters");
+                     "[Qnn ExecuTorch] Destroy Qnn backend parameters");
   backend_params_ptr_.reset(new BackendConfigParameters());
   logger_.reset();
 
@@ -149,7 +149,7 @@ bool QnnManager::IsNodeSupportedByBackend(
       // auto* p_tensor_param = dynamic_cast<TensorParamWrapper*>(param.get());
       if (param->PopulateQnnParam() != Error::Ok) {
         QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                           "[Qnn Execu Torch] Qnn Backend op validation failed "
+                           "[Qnn ExecuTorch] Qnn Backend op validation failed "
                            "with PopulateQnnParam: %d",
                            QNN_GET_ERROR_CODE(error));
         return false;
@@ -161,7 +161,7 @@ bool QnnManager::IsNodeSupportedByBackend(
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(
           kLogLevelWarn,
-          "[Qnn Execu Torch] Qnn Backend op validation failed with error: %d",
+          "[Qnn ExecuTorch] Qnn Backend op validation failed with error: %d",
           QNN_GET_ERROR_CODE(error));
 
       return false;
@@ -210,7 +210,7 @@ Error QnnManager::Compile(
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(
           kLogLevelError,
-          "[Qnn Execu Torch] Failed to add node to Qnn Graph with error: %d",
+          "[Qnn ExecuTorch] Failed to add node to Qnn Graph with error: %d",
           QNN_GET_ERROR_CODE(error));
       return Error::Internal;
     }
@@ -220,7 +220,7 @@ Error QnnManager::Compile(
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG(
         kLogLevelError,
-        "[Qnn Execu Torch] Failed to finalize Qnn Graph with error: %d",
+        "[Qnn ExecuTorch] Failed to finalize Qnn Graph with error: %d",
         QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }

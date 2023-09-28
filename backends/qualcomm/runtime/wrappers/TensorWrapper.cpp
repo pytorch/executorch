@@ -111,7 +111,7 @@ Error TensorWrapper::FillDataBuffer(const void* data, bool copy_data) {
     }
   } else {
     QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                       "[Qnn Execu Torch] Data pointer is nullptr");
+                       "[Qnn ExecuTorch] Data pointer is nullptr");
   }
   return Error::Ok;
 }

@@ -78,7 +78,7 @@ class PyQnnOpWrapper {
         break;
       default:
         QNN_EXECUTORCH_LOG(kLogLevelError,
-                           "[Qnn Execu Torch] tensor.v1.name: %d", data_type);
+                           "[Qnn ExecuTorch] tensor.v1.name: %d", data_type);
         break;
     }
   }

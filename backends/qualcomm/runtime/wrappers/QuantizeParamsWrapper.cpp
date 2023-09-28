@@ -34,7 +34,7 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
   } else {
     QNN_EXECUTORCH_LOG(
         kLogLevelError,
-        "[Qnn Execu Torch] Unknown the encoding of quantization: %d",
+        "[Qnn ExecuTorch] Unknown the encoding of quantization: %d",
         quantization.quantizationEncoding);
   }
 

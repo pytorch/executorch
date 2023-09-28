@@ -14,11 +14,11 @@ QnnContext::~QnnContext() {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   if (handle_ != nullptr) {
-    QNN_EXECUTORCH_LOG(kLogLevelInfo, "[Qnn Execu Torch] Destroy Qnn context");
+    QNN_EXECUTORCH_LOG(kLogLevelInfo, "[Qnn ExecuTorch] Destroy Qnn context");
     error = qnn_interface.qnn_context_free(handle_, /*profile=*/nullptr);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn Execu Torch] Failed to free QNN "
+                         "[Qnn ExecuTorch] Failed to free QNN "
                          "context_handle_. Backend "
                          "ID %u, error %d",
                          qnn_interface.GetBackendId(),
@@ -47,7 +47,7 @@ Error QnnContext::Configure() {
         /*profile=*/nullptr);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn Execu Torch] Can't create context from "
+                         "[Qnn ExecuTorch] Can't create context from "
                          "binary. Error %d.",
                          QNN_GET_ERROR_CODE(error));
       return Error::Internal;
@@ -61,14 +61,14 @@ Error QnnContext::Configure() {
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(
           kLogLevelError,
-          "[Qnn Execu Torch] Failed to create QNN context for Backend "
+          "[Qnn ExecuTorch] Failed to create QNN context for Backend "
           "ID %u, error=%d",
           qnn_interface.GetBackendId(), QNN_GET_ERROR_CODE(error));
       return Error::Internal;
     }
   } else {
     QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn Execu Torch] QNN context cache is invalid.");
+                       "[Qnn ExecuTorch] QNN context cache is invalid.");
     return Error::Internal;
   }
   return Error::Ok;
@@ -88,7 +88,7 @@ Error QnnContext::GetContextBinary(
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(
           kLogLevelError,
-          "[Qnn Execu Torch] Can't get graph binary to be saved to "
+          "[Qnn ExecuTorch] Can't get graph binary to be saved to "
           "cache. Error %d",
           QNN_GET_ERROR_CODE(error));
       return Error::Internal;
@@ -96,7 +96,7 @@ Error QnnContext::GetContextBinary(
       if (binary_size < bytes_written) {
         QNN_EXECUTORCH_LOG(
             kLogLevelError,
-            "[Qnn Execu Torch] Illegal written buffer size [%d] bytes. Cannot "
+            "[Qnn ExecuTorch] Illegal written buffer size [%d] bytes. Cannot "
             "exceed allocated memory of [%d] bytes",
             bytes_written, binary_size);
         return Error::Internal;
@@ -106,7 +106,7 @@ Error QnnContext::GetContextBinary(
     }
   } else {
     QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn Execu Torch] Can't determine the size of "
+                       "[Qnn ExecuTorch] Can't determine the size of "
                        "graph binary to be saved to cache. Error %d",
                        QNN_GET_ERROR_CODE(error));
     return Error::Internal;

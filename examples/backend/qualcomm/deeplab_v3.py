@@ -12,7 +12,7 @@ import random
 import re
 
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
-from executorch.examples.qualcomm.utils import (
+from executorch.examples.backend.qualcomm.utils import (
     SimpleADB,
     build_executorch_binary,
     segmentation_metrics,

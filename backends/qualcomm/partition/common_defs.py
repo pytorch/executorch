@@ -24,6 +24,6 @@ not_supported_operator = [
     exir_ops.edge.aten.full.default,
 ]
 
-white_list_operator = [
+allow_list_operator = [
     _operator.getitem,
 ]

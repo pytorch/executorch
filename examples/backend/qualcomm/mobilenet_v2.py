@@ -11,7 +11,7 @@ import numpy as np
 
 import torch
 from executorch.examples.models.mobilenet_v2 import MV2Model
-from executorch.examples.qualcomm.utils import (
+from executorch.examples.backend.qualcomm.utils import (
     SimpleADB,
     build_executorch_binary,
     topk_accuracy,

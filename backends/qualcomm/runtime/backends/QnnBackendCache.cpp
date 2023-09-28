@@ -24,7 +24,7 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary() {
 
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                       "[Qnn Execu Torch] Failed to interpret QNN Context "
+                       "[Qnn ExecuTorch] Failed to interpret QNN Context "
                        "binary. Error code %d",
                        QNN_GET_ERROR_CODE(error));
     return Error::Internal;
@@ -38,7 +38,7 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary() {
     graph = binaryinfo->contextBinaryInfoV2.graphs;
   } else {
     QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                       "[Qnn Execu Torch] Unknown QNN BinaryInfo version %d.",
+                       "[Qnn ExecuTorch] Unknown QNN BinaryInfo version %d.",
                        binaryinfo->version);
     return Error::Internal;
   }
@@ -46,7 +46,7 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary() {
   if (num_graphs > 1) {
     QNN_EXECUTORCH_LOG(
         kLogLevelWarn,
-        "[Qnn Execu Torch] The context binary contains %lu graphs. But now "
+        "[Qnn ExecuTorch] The context binary contains %lu graphs. But now "
         "assume that one context binary contains one graph.",
         num_graphs);
     return Error::Internal;
@@ -55,7 +55,7 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary() {
   // only have version_1 now
   if (graph[0].version != QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_1) {
     QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                       "[Qnn Execu Torch] Unknown QNN GraphInfo version %d.",
+                       "[Qnn ExecuTorch] Unknown QNN GraphInfo version %d.",
                        graph[0].version);
     return Error::Internal;
   }
@@ -85,13 +85,13 @@ QnnBackendCache::QnnBackendCache(
   if (qnn_context_blob_.buffer == nullptr) {
     state_ = SERIALIZE;
     QNN_EXECUTORCH_LOG(kLogLevelInfo,
-                       "[Qnn Execu Torch] Caching: Caching is in SAVE MODE.");
+                       "[Qnn ExecuTorch] Caching: Caching is in SAVE MODE.");
     return;
   }
 
   if (qnn_sys_impl_.Load() != Error::Ok) {
     QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn Execu Torch] Failed to Load QnnSystem "
+                       "[Qnn ExecuTorch] Failed to Load QnnSystem "
                        "APIs. Caching mechanism is being disabled.");
     return;
   }
@@ -106,7 +106,7 @@ QnnBackendCache::QnnBackendCache(
   if (error != QNN_SUCCESS) {
     QNN_EXECUTORCH_LOG(
         kLogLevelError,
-        "[Qnn Execu Torch] Failed to create Qnn "
+        "[Qnn ExecuTorch] Failed to create Qnn "
         "SystemContext. Caching mechanism will be disabled. Error code %d",
         QNN_GET_ERROR_CODE(error));
     return;
@@ -115,12 +115,12 @@ QnnBackendCache::QnnBackendCache(
   // DO DESERIALIZE
   state_ = DESERIALIZE;
   QNN_EXECUTORCH_LOG(kLogLevelInfo,
-                     "[Qnn Execu Torch] Caching: Caching is in RESTORE MODE.");
+                     "[Qnn ExecuTorch] Caching: Caching is in RESTORE MODE.");
   Error status = GetQnnGraphInfoFromBinary();
   if (status == Error::Internal) {
     QNN_EXECUTORCH_LOG(
         kLogLevelError,
-        "[Qnn Execu Torch] Failed to parse QNN Graph Info. The cache "
+        "[Qnn ExecuTorch] Failed to parse QNN Graph Info. The cache "
         "might be broken. Please consider to re-generate the "
         "cache.");
     InvalidateCache();
@@ -137,7 +137,7 @@ QnnBackendCache::~QnnBackendCache() {
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(
           kLogLevelWarn,
-          "[Qnn Execu Torch] Failed to free QNN system context.");
+          "[Qnn ExecuTorch] Failed to free QNN system context.");
     }
     sys_context_handle_ = nullptr;
   }

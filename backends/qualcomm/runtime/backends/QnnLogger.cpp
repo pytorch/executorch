@@ -63,11 +63,11 @@ QnnLogger::QnnLogger(const QnnImplementation& implementation,
         break;
       default:
         QNN_EXECUTORCH_LOG(kLogLevelError,
-                           "[Qnn Execu Torch] Unknown logging level %d",
+                           "[Qnn ExecuTorch] Unknown logging level %d",
                            log_level);
     }
     QNN_EXECUTORCH_LOG(kLogLevelInfo,
-                       "[Qnn Execu Torch] create QNN Logger with log_level %d",
+                       "[Qnn ExecuTorch] create QNN Logger with log_level %d",
                        log_level);
     Qnn_ErrorHandle_t error =
         qnn_interface.qnn_log_create(callback, qnn_log_level, &handle_);
@@ -75,7 +75,7 @@ QnnLogger::QnnLogger(const QnnImplementation& implementation,
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(
           kLogLevelWarn,
-          "[Qnn Execu Torch] Failed to create log_handle for backend "
+          "[Qnn ExecuTorch] Failed to create log_handle for backend "
           " %u, qnn_log_level %d, error=%d",
           qnn_interface.GetBackendId(), qnn_log_level,
           QNN_GET_ERROR_CODE(error));
@@ -93,7 +93,7 @@ QnnLogger::~QnnLogger() {
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(
           kLogLevelError,
-          "[Qnn Execu Torch] Failed to free QNN log_handle. Backend "
+          "[Qnn ExecuTorch] Failed to free QNN log_handle. Backend "
           "ID %u, error %d",
           qnn_interface.GetBackendId(), QNN_GET_ERROR_CODE(error));
     }
