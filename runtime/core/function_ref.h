@@ -59,9 +59,7 @@ class FunctionRef;
 
 template <typename Ret, typename... Params>
 class FunctionRef<Ret(Params...)> {
-  Ret (*callback_)(const void* memory, Params... params) = nullptr;
   union Storage {
-    void* callable;
     Ret (*function)(Params...);
   } storage_;
 
@@ -70,57 +68,18 @@ class FunctionRef<Ret(Params...)> {
   explicit FunctionRef(std::nullptr_t) {}
 
   /**
-   * Case 1: A callable object passed by lvalue reference.
-   * Taking rvalue reference is error prone because the object will be always
-   * be destroyed immediately.
-   */
-  template <
-      typename Callable,
-      // This is not the copy-constructor.
-      typename std::enable_if<
-          !std::is_same<remove_cvref_t<Callable>, FunctionRef>::value,
-          int32_t>::type = 0,
-      // Avoid lvalue reference to non-capturing lambda.
-      typename std::enable_if<
-          !std::is_convertible<Callable, Ret (*)(Params...)>::value,
-          int32_t>::type = 0,
-      // Functor must be callable and return a suitable type.
-      // To make this container type safe, we need to ensure either:
-      // 1. The return type is void.
-      // 2. Or the resulting type from calling the callable is convertible to
-      // the declared return type.
-      typename std::enable_if<
-          std::is_void<Ret>::value ||
-              std::is_convertible<
-                  decltype(std::declval<Callable>()(std::declval<Params>()...)),
-                  Ret>::value,
-          int32_t>::type = 0>
-  explicit FunctionRef(Callable& callable)
-      : callback_([](const void* memory, Params... params) {
-          auto& storage = *static_cast<const Storage*>(memory);
-          auto& callable = *static_cast<Callable*>(storage.callable);
-          return static_cast<Ret>(callable(std::forward<Params>(params)...));
-        }) {
-    storage_.callable = &callable;
-  }
-
-  /**
-   * Case 2: A plain function pointer.
+   * Case 1: A plain function pointer.
    * Instead of storing an opaque pointer to underlying callable object,
    * store a function pointer directly.
    * Note that in the future a variant which coerces compatible function
    * pointers could be implemented by erasing the storage type.
    */
-  /* implicit */ FunctionRef(Ret (*ptr)(Params...))
-      : callback_([](const void* memory, Params... params) {
-          auto& storage = *static_cast<const Storage*>(memory);
-          return storage.function(std::forward<Params>(params)...);
-        }) {
+  /* implicit */ FunctionRef(Ret (*ptr)(Params...)) {
     storage_.function = ptr;
   }
 
   /**
-   * Case 3: Implicit conversion from lambda to FunctionRef.
+   * Case 2: Implicit conversion from lambda to FunctionRef.
    * A common use pattern is like:
    * void foo(FunctionRef<...>) {...}
    * foo([](...){...})
@@ -144,11 +103,11 @@ class FunctionRef<Ret(Params...)> {
       : FunctionRef(static_cast<Ret (*)(Params...)>(function)) {}
 
   Ret operator()(Params... params) const {
-    return callback_(&storage_, std::forward<Params>(params)...);
+    return storage_.function(std::forward<Params>(params)...);
   }
 
   explicit operator bool() const {
-    return callback_;
+    return storage_.function;
   }
 };
 
