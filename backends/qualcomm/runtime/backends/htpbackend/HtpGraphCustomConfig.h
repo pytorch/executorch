@@ -1,0 +1,42 @@
+/*
+ * Copyright (c) Qualcomm Innovation Center, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+#ifndef EXECUTORCH_QNN_EXECUTORCH_BACKENDS_HTP_BACKEND_HTP_GRAPH_CUSTOM_CONFIG_H_
+#define EXECUTORCH_QNN_EXECUTORCH_BACKENDS_HTP_BACKEND_HTP_GRAPH_CUSTOM_CONFIG_H_
+
+#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
+
+#include <memory>
+#include <vector>
+
+#include "HTP/QnnHtpGraph.h"
+namespace torch {
+namespace executor {
+namespace qnn {
+class HtpGraphCustomConfig {
+ public:
+  explicit HtpGraphCustomConfig(
+      const QnnExecuTorchHtpBackendOptions& htp_options)
+      : htp_options_(htp_options) {}
+
+  std::vector<QnnGraph_CustomConfig_t> CreateGraphCustomConfig();
+
+ private:
+  QnnHtpGraph_CustomConfig_t* AllocGraphCustomConfig() {
+    htp_graph_config_.emplace_back(
+        std::make_unique<QnnHtpGraph_CustomConfig_t>());
+    htp_graph_config_.back()->option = QNN_HTP_GRAPH_CONFIG_OPTION_UNKNOWN;
+    return htp_graph_config_.back().get();
+  }
+
+  [[maybe_unused]] QnnExecuTorchHtpBackendOptions htp_options_;
+  std::vector<std::unique_ptr<QnnHtpGraph_CustomConfig_t>> htp_graph_config_;
+};
+}  // namespace qnn
+}  // namespace executor
+}  // namespace torch
+#endif  // EXECUTORCH_QNN_EXECUTORCH_BACKENDS_HTP_BACKEND_HTP_GRAPH_CUSTOM_CONFIG_H_
