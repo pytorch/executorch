@@ -1,0 +1,23 @@
+# Mac OS X
+*.DS_Store
+
+cmake-ios-out/
+
+
+# Xcode
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserstate
+project.xcworkspace/
+xcuserdata/
+
+
+runtime/runner/build/
+runtime/libraries/
+runtime/inmemoryfs/build/
+xcode-runner-build/
+xcode-test-build/
+
+*.egg-info

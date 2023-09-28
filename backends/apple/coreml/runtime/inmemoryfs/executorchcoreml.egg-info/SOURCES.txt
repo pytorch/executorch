@@ -1,0 +1,12 @@
+inmemory_filesystem.cpp
+inmemory_filesystem_py.cpp
+memory_buffer.cpp
+memory_stream.cpp
+reversed_memory_stream.cpp
+setup.py
+executorchcoreml.egg-info/PKG-INFO
+executorchcoreml.egg-info/SOURCES.txt
+executorchcoreml.egg-info/dependency_links.txt
+executorchcoreml.egg-info/not-zip-safe
+executorchcoreml.egg-info/requires.txt
+executorchcoreml.egg-info/top_level.txt

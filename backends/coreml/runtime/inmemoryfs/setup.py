@@ -1,0 +1,42 @@
+import os
+
+from pybind11.setup_helpers import build_ext, Pybind11Extension
+from setuptools import setup
+
+__version__ = "0.0.1"
+
+cxx_std = int(os.environ.get("CMAKE_CXX_STANDARD", "17"))
+
+ext_modules = [
+    Pybind11Extension(
+        "executorchcoreml",
+        [
+            "inmemory_filesystem.cpp",
+            "inmemory_filesystem_py.cpp",
+            "memory_buffer.cpp",
+            "memory_stream.cpp",
+            "reversed_memory_stream.cpp",
+        ],
+        define_macros=[("VERSION_INFO", __version__)],
+        cxx_std=cxx_std,
+        extra_compile_args=["-mmacosx-version-min=10.15"],
+        include_dirs=[
+            "../../third-party/nlohmann",
+            ".",
+        ],
+    ),
+]
+
+setup(
+    name="executorchcoreml",
+    version=__version__,
+    description="CoreML extension for executorch",
+    long_description="",
+    author="Apple Inc.",
+    ext_modules=ext_modules,
+    extras_require={"test": "pytest"},
+    cmdclass={"build_ext": build_ext},
+    include_package_data=True,
+    zip_safe=False,
+    python_requires=">=3.9",
+)
