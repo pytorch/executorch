@@ -6,14 +6,16 @@
 
 # pyre-strict
 
+import copy
+import re
 import reprlib
 from dataclasses import fields
 from enum import IntEnum
 from typing import Any, List
 
 import torch
-
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
+
 from executorch.exir.schema import (
     Bool,
     BoolList,
@@ -21,6 +23,7 @@ from executorch.exir.schema import (
     Double,
     DoubleList,
     EValue,
+    Frame,
     FrameList,
     FreeCall,
     Int,
@@ -302,3 +305,109 @@ def pretty_print_stacktraces(obj: FrameList) -> str:
         pretty += f"{frame.context} \n"
     pretty += "\n"
     return pretty
+
+
+def add_cursor_to_graph(graph: torch.fx.Graph, finding_node: torch.fx.Node) -> str:
+    """
+    Insert a cursor at the node location in the fx.Graph.
+    e.g:
+    # graph():
+    #   %x : [#users=1] = placeholder[target=x]
+    #   %param : [#users=1] = get_attr[target=param]
+    #   %add : [#users=1] = call_function[target=operator.add](args = (%x, %param), kwargs = {})
+    # --> %linear : [#users=1] = call_module[target=linear](args = (%add,), kwargs = {})
+    #   %clamp : [#users=1] = call_method[target=clamp](args = (%linear,), kwargs = {min: 0.0, max: 1.0})
+    #   return clamp
+
+    This is mostly used for error reporting
+    """
+
+    new_graph = copy.deepcopy(graph)
+
+    found_at = -1
+    for ix, node in enumerate(graph.nodes):
+        if node == finding_node:
+            found_at = ix
+
+    # This is heavily based on __str__ method of fx.Graph
+    def _format_graph(graph: torch.fx.Graph, offending_node_idx: int) -> str:
+        s = "graph():"
+        for ix, node in enumerate(graph.nodes):
+            node_str = node.format_node()
+            if node_str:
+                if ix != offending_node_idx:
+                    s += "\n    " + node_str
+                else:
+                    s += "\n--> " + node_str
+        return s
+
+    return _format_graph(new_graph, found_at)
+
+
+def _stacktrace_to_framelist(stacktrace: str) -> FrameList:
+    """Creates a frame list from a stacktrace string."""
+    pattern = r'File "(.*?)", line (\d+), in (.*?)\n'
+    matches = re.findall(pattern, stacktrace)
+    mapped_frame_list = [
+        Frame(
+            filename=match[0],
+            lineno=int(match[1]),
+            name=match[2],
+            context=stacktrace.split("\n")[i * 2 + 1].strip(),
+        )
+        for i, match in enumerate(matches)
+    ]
+    return FrameList(mapped_frame_list)
+
+
+def inspect_node(graph: torch.fx.Graph, node: torch.fx.Node) -> str:
+    """
+    Inspect a node by highlighting the node in the graph as well as the stacktrace.
+
+    Args:
+        graph: The graph containing the node
+        node: The node to be inspected
+
+    Return: A string. An example output is:
+
+    _param_constant0 error_msg:  Here is the failing node in the graph module:
+    graph():
+        %arg0_1 : [num_users=1] = placeholder[target=arg0_1]
+    --> %_param_constant0 : [num_users=1] = get_attr[target=_param_constant0]
+        %_param_constant1 : [num_users=1] = get_attr[target=_param_constant1]
+        %aten_convolution_default : [num_users=2] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%arg0_1, %_param_constant0, %_param_constant1, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+        %_param_constant2 : [num_users=1] = get_attr[target=_param_constant2]
+        %_param_constant3 : [num_users=1] = get_attr[target=_param_constant3]
+        %aten_convolution_default_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_convolution_default, %_param_constant2, %_param_constant3, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+        %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_convolution_default, %aten_convolution_default_1), kwargs = {})
+        %_param_constant4 : [num_users=1] = get_attr[target=_param_constant4]
+        %_param_constant5 : [num_users=1] = get_attr[target=_param_constant5]
+        %aten_convolution_default_2 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_add_tensor, %_param_constant4, %_param_constant5, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+        %aten_gelu_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.gelu.default](args = (%aten_convolution_default_2,), kwargs = {})
+        return [aten_gelu_default]
+    This node _param_constant0 has metadata of:
+    The node stacktrace:
+    Traceback (most recent call last):
+        File "/tmp/ipykernel_1204253/3382880687.py", line 7, in forward
+    return self.test_model(x)
+        File "/mnt/xarfuse/uid-25337/7b86ad0c-seed-nspid4026532987_cgpid2707357-ns-4026532984/torch/nn/modules/module.py", line 1528, in _call_impl
+    return forward_call(*args, **kwargs)
+        File "/tmp/ipykernel_1204253/712280972.py", line 10, in forward
+    a = self.conv1(x)
+
+    """
+    graph_str_with_cursor = add_cursor_to_graph(graph, node)
+    error_msg = (
+        f"Here is the node in the graph module:\n"
+        f"{graph_str_with_cursor}\n"
+        f"This node {node} has metadata of:\n"
+    )
+    # Node spec error message
+    if hasattr(node.meta, "spec"):
+        error_msg += f"The node spec:\n{node.meta['spec']}\n"
+
+    # Stacktrace error message
+    if "stack_trace" in node.meta:
+        framelist = _stacktrace_to_framelist(node.meta["stack_trace"])
+        error_msg += f"The node stacktrace:\n{pretty_print_stacktraces(framelist)}\n"
+    return error_msg

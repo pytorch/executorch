@@ -265,6 +265,7 @@ python_unittest(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:common",
+        "//executorch/exir:print_program",
     ],
 )
 
@@ -428,5 +429,17 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir/passes:lib",
+    ],
+)
+
+python_unittest(
+    name = "print_program",
+    srcs = [
+        "test_print_program.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:print_program",
     ],
 )

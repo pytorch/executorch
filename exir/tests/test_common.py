@@ -12,11 +12,8 @@ import unittest
 import torch
 import torch.fx
 
-from executorch.exir.common import (
-    add_cursor_to_graph,
-    extract_out_arguments,
-    get_schema_for_operators,
-)
+from executorch.exir.common import extract_out_arguments, get_schema_for_operators
+from executorch.exir.print_program import add_cursor_to_graph
 
 
 class TestExirCommon(unittest.TestCase):
