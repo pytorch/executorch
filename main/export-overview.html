@@ -40,7 +40,7 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Export User Guide" href="export-user-guide.html" />
+    <link rel="next" title="EXIR" href="ir-exir.html" />
     <link rel="prev" title="Setting Up ExecuTorch" href="getting-started-setup.html" />
     
     
@@ -259,9 +259,8 @@
 <p class="caption" role="heading"><span class="caption-text">Exporting to ExecuTorch</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Exporting to Executorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="export-user-guide.html">Export User Guide</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Intermediate Representation (IR) Specification</span></p>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="ir-exir.html">EXIR</a></li>
 <li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">OpSet definition</a></li>
@@ -350,7 +349,7 @@
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/export-overview.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/export-overview.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -384,9 +383,19 @@
               
   <section id="exporting-to-executorch">
 <h1>Exporting to Executorch<a class="headerlink" href="#exporting-to-executorch" title="Permalink to this heading">¶</a></h1>
-<p>A tutorial for exporting a PyTorch model to executorch <a class="reference external" href="./tutorials/export-to-executorch-tutorial.html">here</a></p>
-<p>It will redirect in 3 seconds.</p>
-<meta http-equiv="Refresh" content="3; url='./tutorials/export-to-executorch-tutorial.html'" /></section>
+<p>One of the important steps in getting your PyTorch programs ready for execution
+on an edge device is exporting them. This is achieved through the use of a
+PyTorch API called <code class="docutils literal notranslate"><span class="pre">torch.export</span></code>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">torch.export</span></code> documentation, which is part of the PyTorch core library, can
+be found in the Core PyTorch documentation set. Additionally, we provide a
+step-by-step tutorial that takes you through the process of exporting a PyTorch
+program, making it easier for you to understand and implement the process.</p>
+<p>To learn more about exporting your model:</p>
+<ul class="simple">
+<li><p>Complete the <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Exporting to ExecuTorch tutorial</span></a>.</p></li>
+<li><p>Read the <a class="reference external" href="https://pytorch.org/docs/2.1/export.html">torch.export documentation</a>.</p></li>
+</ul>
+</section>
 
 
              </article>
@@ -396,7 +405,7 @@
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="export-user-guide.html" class="btn btn-neutral float-right" title="Export User Guide" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="ir-exir.html" class="btn btn-neutral float-right" title="EXIR" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
         <a href="getting-started-setup.html" class="btn btn-neutral" title="Setting Up ExecuTorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>

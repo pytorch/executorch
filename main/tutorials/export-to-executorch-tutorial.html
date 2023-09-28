@@ -258,9 +258,8 @@
 <p class="caption" role="heading"><span class="caption-text">Exporting to ExecuTorch</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../export-overview.html">Exporting to Executorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../export-user-guide.html">Export User Guide</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Intermediate Representation (IR) Specification</span></p>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../ir-exir.html">EXIR</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../ir-ops-set-definition.html">OpSet definition</a></li>
@@ -413,7 +412,7 @@ to download the full example code</p>
 <p><strong>Author:</strong> <a class="reference external" href="https://github.com/angelayi">Angela Yi</a></p>
 <p>ExecuTorch is a unified ML stack for lowering PyTorch models to edge devices.
 It introduces improved entry points to perform model, device, and/or use-case
-specific optizations such as backend delegation, user-defined compiler
+specific optimizations such as backend delegation, user-defined compiler
 transformations, default or user-defined memory planning, and more.</p>
 <p>At a high level, the workflow looks as follows:</p>
 <a class="reference internal image-reference" href="../_images/executorch_stack.png"><img alt="../_images/executorch_stack.png" src="../_images/executorch_stack.png" style="width: 560px;" /></a>
@@ -449,7 +448,7 @@ callable or <code class="docutils literal notranslate"><span class="pre">torch.n
 the two-stage APIs, <code class="docutils literal notranslate"><span class="pre">torch._export.capture_pre_autograd_graph</span></code>, and
 <code class="docutils literal notranslate"><span class="pre">torch.export</span></code>.</p>
 <p>Both APIs take in a model (any callable or <code class="docutils literal notranslate"><span class="pre">torch.nn.Module</span></code>), a tuple of
-positional arguments, optionally a dictionary of keywork arguments (not shown
+positional arguments, optionally a dictionary of keyword arguments (not shown
 in the example), and a list of constraints (covered later).</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">from</span> <span class="nn">torch._export</span> <span class="kn">import</span> <span class="n">capture_pre_autograd_graph</span>
@@ -512,7 +511,7 @@ in the example), and a list of constraints (covered later).</p>
 <p>The output of <code class="docutils literal notranslate"><span class="pre">torch._export.capture_pre_autograd_graph</span></code> is a fully
 flattened graph (meaning the graph does not contain any module hierarchy,
 except in the case of control flow operators). Furthermore, the captured graph
-contains only ATen operators (~3000 ops) which are autograd safe, i.e. safe
+contains only ATen operators (~3000 ops) which are Autograd safe, for example, safe
 for eager mode training.</p>
 <p>The output of <code class="docutils literal notranslate"><span class="pre">torch.export</span></code> further compiles the graph to a lower and
 cleaner representation. Specifically, it has the following:</p>
@@ -530,7 +529,7 @@ stacktrace from user’s code.</p></li>
 <p>Since the result of <code class="docutils literal notranslate"><span class="pre">torch.export</span></code> is a graph containing the Core ATen
 operators, we will call this the <code class="docutils literal notranslate"><span class="pre">ATen</span> <span class="pre">Dialect</span></code>, and since
 <code class="docutils literal notranslate"><span class="pre">torch._export.capture_pre_autograd_graph</span></code> returns a graph containing the
-set of ATen operators which are autograd safe, we will call it the
+set of ATen operators which are Autograd safe, we will call it the
 <code class="docutils literal notranslate"><span class="pre">Pre-Autograd</span> <span class="pre">ATen</span> <span class="pre">Dialect</span></code>.</p>
 <section id="expressing-dynamism">
 <h3>Expressing Dynamism<a class="headerlink" href="#expressing-dynamism" title="Permalink to this heading">¶</a></h3>
@@ -726,7 +725,7 @@ level which is safe for eager mode training.</p>
 <a class="reference external" href="https://pytorch.org/tutorials/prototype/fx_graph_mode_ptq_static.html">FX Graph Mode Quantization</a>,
 we will need to call two new APIs: <code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> and <code class="docutils literal notranslate"><span class="pre">compare_pt2e</span></code>
 instead of <code class="docutils literal notranslate"><span class="pre">prepare_fx</span></code> and <code class="docutils literal notranslate"><span class="pre">convert_fx</span></code>. It differs in that
-<code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> takes a backend-specific <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> as an arugument, which
+<code class="docutils literal notranslate"><span class="pre">prepare_pt2e</span></code> takes a backend-specific <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> as an argument, which
 will annotate the nodes in the graph with information needed to quantize the
 model properly for a specific backend.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><a href="https://docs.python.org/3/library/stdtypes.html#tuple" title="builtins.tuple" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">example_args</span></a> <span class="o">=</span> <span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.randn.html#torch.randn" title="torch.randn" class="sphx-glr-backref-module-torch sphx-glr-backref-type-py-function"><span class="n">torch</span><span class="o">.</span><span class="n">randn</span></a><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">256</span><span class="p">,</span> <span class="mi">256</span><span class="p">),)</span>
@@ -1466,7 +1465,7 @@ program to a file that can be run on the ExecuTorch runtime.</p>
 <li><p><a class="reference external" href="../compiler-delegate-and-partitioner.html">Backend Delegation Documentation</a></p></li>
 <li><p><a class="reference external" href="../compiler-memory-planning.html">Memory Planning Documentation</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 4.804 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 4.890 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-export-to-executorch-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/e045b13b001260d8b012dd4630eb9054/export-to-executorch-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">export-to-executorch-tutorial.py</span></code></a></p>
