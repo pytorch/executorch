@@ -52,11 +52,9 @@
 #define _ASSERT_PAL_INITIALIZED()                                   \
   ({                                                                \
     if (!initialized) {                                             \
-      fprintf(                                                      \
-          ET_LOG_OUTPUT_FILE,                                       \
+      printf(                                                       \
           "ExecuTorch PAL must be initialized before call to %s()", \
           __ET_FUNCTION);                                           \
-      fflush(ET_LOG_OUTPUT_FILE);                                   \
       et_pal_abort();                                               \
     }                                                               \
   })
@@ -144,8 +142,7 @@ void et_pal_emit_log_message(
   //
   // Clients who want to change the format or add other fields can override this
   // weak implementation of et_pal_emit_log_message.
-  fprintf(
-      ET_LOG_OUTPUT_FILE,
+  printf(
       "%c %02u:%02u:%02u.%06lu executorch:%s:%zu] %s\n",
       level,
       hour,
@@ -155,5 +152,5 @@ void et_pal_emit_log_message(
       filename,
       line,
       message);
-  fflush(ET_LOG_OUTPUT_FILE);
+  // fflush(ET_LOG_OUTPUT_FILE);
 }
