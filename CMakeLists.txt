@@ -346,6 +346,19 @@ if(EXECUTORCH_BUILD_MPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/apple/mps)
 endif()
 
+# Build CoreML backend
+option(EXECUTORCH_BUILD_COREML "Build the backends/apple/coreml directory" OFF)
+if(EXECUTORCH_BUILD_COREML)
+  # CoreML delegate library can only be built with iOS toolchain
+  if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS\.)|(ios\.toolchain\.)cmake$")
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
+  else()
+    message(
+      FATAL_ERROR "executorch: Building CoreML delegate requires iOS toolchain"
+    )
+  endif()
+endif()
+
 # Add selective build subdirectory
 if(BUILD_SELECTIVE_BUILD_TEST)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/selective_build)

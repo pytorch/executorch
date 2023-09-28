@@ -94,6 +94,7 @@ Topics in this section will help you get started with ExecuTorch.
    build-run-xtensa
    build-run-qualcomm-ai-engine-direct-backend
    build-run-mps
+   build-run-coreml
    tutorials/sdk-integration-tutorial
    executorch-arm-delegate-tutorial
    tutorial-xnnpack-delegate-lowering
