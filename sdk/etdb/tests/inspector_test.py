@@ -197,6 +197,8 @@ class TestInspector(unittest.TestCase):
             EventBlock, "_gen_from_etdump"
         ), patch.object(
             inspector, "gen_graphs_from_etrecord"
+        ), patch.object(
+            inspector, "create_debug_handle_to_op_node_mapping"
         ):
             # Call the constructor of Inspector
             inspector_instance = Inspector(
@@ -209,10 +211,10 @@ class TestInspector(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmpdirname:
                 generate_etrecord(
                     tmpdirname + "/etrecord.bin",
+                    edge_output,
                     et_output,
                     {
                         "aten_dialect_output": captured_output,
-                        "edge_dialect_output": edge_output,
                     },
                 )
 

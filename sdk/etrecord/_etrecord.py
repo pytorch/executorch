@@ -24,6 +24,7 @@ from executorch.exir.serde.serialize import deserialize, serialize
 class ETRecordReservedFileNames(str, Enum):
     ETRECORD_IDENTIFIER = "ETRECORD_V0"
     PROGRAM_BUFFER = "program_buffer"
+    EDGE_DIALECT_EXPORTED_PROGRAM = "edge_dialect_exported_program"
     ET_DIALECT_GRAPH_MODULE = "et_dialect_graph_module"
     DEBUG_HANDLE_MAP_NAME = "debug_handle_map"
     DELEGATE_MAP_NAME = "delegate_map"
@@ -31,6 +32,7 @@ class ETRecordReservedFileNames(str, Enum):
 
 @dataclass
 class ETRecord:
+    edge_dialect_program: Optional[ExportedProgram] = None
     graph_map: Optional[Dict[str, ExportedProgram]] = None
     program_buffer: Optional[bytes] = None
     _debug_handle_map: Optional[Dict[int, Union[int, List[int]]]] = None
@@ -76,7 +78,7 @@ def _handle_export_module(
         raise RuntimeError(f"Unsupported graph module type. {type(export_module)}")
 
 
-def _handle_program(
+def _handle_executorch_program(
     etrecord_zip: ZipFile,
     program: Union[ExecutorchProgram, MultiMethodExecutorchProgram],
 ) -> None:
@@ -111,9 +113,25 @@ def _handle_program(
         )
 
 
+def _handle_edge_dialect_exported_program(
+    etrecord_zip: ZipFile, edge_dialect_exported_program: ExportedProgram
+) -> None:
+    serialized_ep, serialized_state_dict = serialize(edge_dialect_exported_program)
+
+    etrecord_zip.writestr(
+        ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM,
+        serialized_ep,
+    )
+    etrecord_zip.writestr(
+        f"{ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM}_state_dict",
+        serialized_state_dict,
+    )
+
+
 def generate_etrecord(
     etrecord_path: str,
-    program: Optional[Union[ExecutorchProgram, MultiMethodExecutorchProgram]] = None,
+    edge_dialect_program: ExirExportedProgram,
+    executorch_program: Union[ExecutorchProgram, MultiMethodExecutorchProgram],
     export_modules: Optional[
         Dict[
             str,
@@ -132,7 +150,8 @@ def generate_etrecord(
 
     Args:
         etrecord_path: Path to where the ETRecord file will be saved to.
-        program: ExecutorchProgram or MultiMethodExecutorchProgram for this model returned by the
+        edge_dialect_program: ExirExportedProgram for this model returned by the call to to_edge()
+        executorch_program: ExecutorchProgram or MultiMethodExecutorchProgram for this model returned by the
             call to to_executorch()
         export_modules: Dictionary of graph modules with the key being the user provided name and the
             value is the corresponding exported module. The exported graph modules can be either the
@@ -158,18 +177,22 @@ def generate_etrecord(
                 )
             _handle_export_module(etrecord_zip, export_module, module_name)
 
-    if program is not None:
-        _handle_program(etrecord_zip, program)
+    _handle_executorch_program(etrecord_zip, executorch_program)
 
-        etrecord_zip.writestr(
-            ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME,
-            json.dumps(program.debug_handle_map),
-        )
+    _handle_edge_dialect_exported_program(
+        etrecord_zip,
+        edge_dialect_program.exported_program,
+    )
 
-        etrecord_zip.writestr(
-            ETRecordReservedFileNames.DELEGATE_MAP_NAME,
-            json.dumps(program.delegate_map),
-        )
+    etrecord_zip.writestr(
+        ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME,
+        json.dumps(executorch_program.debug_handle_map),
+    )
+
+    etrecord_zip.writestr(
+        ETRecordReservedFileNames.DELEGATE_MAP_NAME,
+        json.dumps(executorch_program.delegate_map),
+    )
 
 
 def parse_etrecord(etrecord_path: str) -> ETRecord:
@@ -202,6 +225,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
     debug_handle_map = None
     delegate_map = None
     program_buffer = None
+    edge_dialect_program = None
 
     serialized_exported_program_files = set()
     serialized_state_dict_files = set()
@@ -218,6 +242,13 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
             program_buffer = etrecord_zip.read(ETRecordReservedFileNames.PROGRAM_BUFFER)
         elif entry == ETRecordReservedFileNames.ETRECORD_IDENTIFIER:
             continue
+        elif entry == ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM:
+            edge_dialect_program = deserialize(
+                etrecord_zip.read(
+                    ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM
+                ),
+                etrecord_zip.read(f"{entry}_state_dict"),
+            )
         else:
             if entry.endswith("state_dict"):
                 serialized_state_dict_files.add(entry)
@@ -235,6 +266,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
         )
 
     return ETRecord(
+        edge_dialect_program=edge_dialect_program,
         graph_map=graph_map,
         program_buffer=program_buffer,
         _debug_handle_map=debug_handle_map,
