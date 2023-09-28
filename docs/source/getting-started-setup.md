@@ -263,6 +263,6 @@ ExecuTorch program. Now that you have a basic understanding of how ExecuTorch
 works, you can start exploring its advanced features and capabilities. Here
 is a list of sections you might want to read next:
 
-* [Exporting a model](export-overview.rst)
+* [Exporting a model](export-overview.md)
 * Using [EXIR](ir-exir.md) for advanced exports
 * Review more advanced examples in the [executorch/examples](https://github.com/pytorch/executorch/tree/main/examples) directory

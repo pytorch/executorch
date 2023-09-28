@@ -15,7 +15,7 @@ Exporting to ExecuTorch Tutorial
 ######################################################################
 # ExecuTorch is a unified ML stack for lowering PyTorch models to edge devices.
 # It introduces improved entry points to perform model, device, and/or use-case
-# specific optizations such as backend delegation, user-defined compiler
+# specific optimizations such as backend delegation, user-defined compiler
 # transformations, default or user-defined memory planning, and more.
 #
 # At a high level, the workflow looks as follows:
@@ -62,7 +62,7 @@ Exporting to ExecuTorch Tutorial
 # ``torch.export``.
 #
 # Both APIs take in a model (any callable or ``torch.nn.Module``), a tuple of
-# positional arguments, optionally a dictionary of keywork arguments (not shown
+# positional arguments, optionally a dictionary of keyword arguments (not shown
 # in the example), and a list of constraints (covered later).
 
 import torch
@@ -96,7 +96,7 @@ print(aten_dialect)
 # The output of ``torch._export.capture_pre_autograd_graph`` is a fully
 # flattened graph (meaning the graph does not contain any module hierarchy,
 # except in the case of control flow operators). Furthermore, the captured graph
-# contains only ATen operators (~3000 ops) which are autograd safe, i.e. safe
+# contains only ATen operators (~3000 ops) which are Autograd safe, for example, safe
 # for eager mode training.
 #
 # The output of ``torch.export`` further compiles the graph to a lower and
@@ -116,7 +116,7 @@ print(aten_dialect)
 # Since the result of ``torch.export`` is a graph containing the Core ATen
 # operators, we will call this the ``ATen Dialect``, and since
 # ``torch._export.capture_pre_autograd_graph`` returns a graph containing the
-# set of ATen operators which are autograd safe, we will call it the
+# set of ATen operators which are Autograd safe, we will call it the
 # ``Pre-Autograd ATen Dialect``.
 
 ######################################################################
@@ -231,7 +231,7 @@ except Exception:
 # `FX Graph Mode Quantization <https://pytorch.org/tutorials/prototype/fx_graph_mode_ptq_static.html>`__,
 # we will need to call two new APIs: ``prepare_pt2e`` and ``compare_pt2e``
 # instead of ``prepare_fx`` and ``convert_fx``. It differs in that
-# ``prepare_pt2e`` takes a backend-specific ``Quantizer`` as an arugument, which
+# ``prepare_pt2e`` takes a backend-specific ``Quantizer`` as an argument, which
 # will annotate the nodes in the graph with information needed to quantize the
 # model properly for a specific backend.
 
