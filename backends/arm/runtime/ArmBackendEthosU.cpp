@@ -73,28 +73,24 @@ public:
 
 		printf("ArmBackend::execute 0x%X\n", processed->data());
 
+		vela_handles handles = { 0, 0, 0, 0, 0, 0};
+
 		// Command stream - we know at this point it's aligned
-		char *handle = (char*)processed->data();
-		int command_stream_length = ((int*)handle)[0];
-		char *command_stream = ethos_align(handle+sizeof(int));
+		char *data = (char*)processed->data();
+
+		// Read key sections from the vela_bin_stream
+		this->vela_read( data, &handles );
 		
-		// Static tensors/weights/model data
-		handle = ethos_align( command_stream + command_stream_length );
-		int weight_data_length = ((int*)handle)[0];
-		char *weight_data = ethos_align(handle+sizeof(int));
-
-		// Activation data, input and output memory
-		handle = ethos_align( weight_data + weight_data_length );
-		int activation_data_length = ((int*)handle)[0];
-		char *activation_data = ethos_align(handle+sizeof(int));
-
-
+		printf("Running program data:\n  cmd %p %d\n  weight %p %d\n  scratch %p %d\n",
+			   handles.cmd_data, handles.cmd_data_length,
+			   handles.weight_data, handles.weight_data_length,
+			   handles.scratch_data, handles.scratch_data_length );
 		// Invoke driver using the above pointers
 		CommandStream cs(
-			DataPointer(command_stream, command_stream_length),
+			DataPointer(handles.cmd_data, handles.cmd_data_length),
 			BasePointers({
-					DataPointer(weight_data, weight_data_length),
-					DataPointer(activation_data, activation_data_length)
+					DataPointer(handles.weight_data, handles.weight_data_length),
+					DataPointer(handles.scratch_data, handles.scratch_data_length)
 				}),
 			PmuEvents({ETHOSU_PMU_CYCLE, ETHOSU_PMU_NPU_IDLE, ETHOSU_PMU_NPU_ACTIVE})
 			);
@@ -116,6 +112,54 @@ public:
 
 	void destroy(DelegateHandle* handle) const override {
 		return;
+	}
+
+private:
+	typedef struct {
+		const char *cmd_data; int cmd_data_length;
+		const char *weight_data; int weight_data_length;
+		const char *scratch_data; int scratch_data_length;
+	} vela_handles;
+
+	int vela_read(char* data, vela_handles *h ) const {
+		if( strncmp( data, "vela_bin_stream", 15 ) ) return 0;
+		while( 1 )
+		{
+			data += 16;
+			if( !strncmp( data, "vela_end_stream", 15 ) )
+			{
+				printf("footer found!\n");
+				return 1;
+			}
+			printf("reading block '%s':\n", data);
+			char *block_name = data;
+			data += 16;
+			int block_length = ((int*)data)[0];
+			int block_length_padded = block_length + (15-(block_length-1)%16);
+			printf("  length %d\n", block_length );
+			printf("  padded length %d\n", block_length_padded );
+			char *block_data = data;
+			data += block_length_padded;
+
+			if( !strncmp( block_name, "cmd_data", strlen("cmd_data")) )
+			{
+				printf("Capturing cmd_data\n");
+				h->cmd_data = block_data;
+				h->cmd_data_length = block_length;
+			}
+			if( !strncmp( block_name, "weight_data", strlen("weight_data")) )
+			{
+				printf("Capturing weight_data\n");
+				h->weight_data = block_data;
+				h->weight_data_length = block_length;
+			}
+			if( !strncmp( block_name, "scratch_data", strlen("scratch_data")) )
+			{
+				printf("Capturing scratch_data\n");
+				h->scratch_data = block_data;
+				h->scratch_data_length = block_length;
+			}
+		}
 	}
 
 };

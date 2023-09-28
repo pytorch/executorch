@@ -178,6 +178,23 @@ def vela_compile(tosa_fb):
                 block = block_name + block_length + block_data
                 blocks = blocks + block
 
+            # Add a block for scratch, inputs and outputs
+            # scratch shape is a 1 element array giving us size in bytes
+            block_name = bytes("scratch_data","utf8")[:15]
+            block_name = block_name + b'\x00'*(16-len(block_name))
+            block_length = data["scratch_shape"][0].item()
+            print(f"scratch length = {block_length}")
+            block_length = block_length+(15-(block_length-1)%16)
+            block_data = b'\x00'*block_length
+            block_length = block_length.to_bytes(16, 'little')
+            print(f"lengths {len(block_name)} {len(block_length)} {len(block_data)}")
+            block = block_name + block_length + block_data
+            blocks = blocks + block
+            # TODO are these already in scratch shape? look to be
+            #input_shape * input_elem_size
+            #output_shape * output_elem_size
+            # input_offset and output_offset specify the location these arrays are written from base of scratch
+
         # return 16 byte VELA bin header + blocks + footer
         header = bytes("vela_bin_stream","utf-8") + b'\x00'
         footer = bytes("vela_end_stream","utf-8") + b'\x00'

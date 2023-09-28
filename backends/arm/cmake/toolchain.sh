@@ -6,6 +6,7 @@
 set -e
 
 # Cross compiler for Arm baremetal (e.g. Corestone-300 FVP or silcon)
-curl -o gcc.tar.xz https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi.tar.xz
+ARCH=$(uname -i)
+curl -o gcc.tar.xz https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-${ARCH}-arm-none-eabi.tar.xz
 tar xf gcc.tar.xz
 export PATH=${PATH}:`(cd arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi/bin/; pwd)`

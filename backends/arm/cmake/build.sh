@@ -11,7 +11,9 @@ set -e
 BASEDIR=`realpath $(dirname "$0")`
 echo "building using build.sh in $BASEDIR"
 
-GCCPATH=${BASEDIR}/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi/bin/
+ARCH=$(uname -i)
+GCCPATH=${BASEDIR}/arm-gnu-toolchain-12.3.rel1-${ARCH}-arm-none-eabi/bin/
+
 echo $GCCPATH
 if test -d "${GCCPATH}"; then
 	echo Using exising compiler ${GCCPATH}
