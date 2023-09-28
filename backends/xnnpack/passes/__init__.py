@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import List, Optional
+from typing import List, Optional, Type
 
 from executorch.backends.xnnpack.passes.channels_last_tagged_reshape_pass import (
     ChannelsLastTaggedReshapePass,
@@ -29,7 +29,9 @@ from torch.export import ExportedProgram
 
 class XNNPACKPassManager:
     def __init__(
-        self, exported_program: ExportedProgram, passes: Optional[List[PassType]] = None
+        self,
+        exported_program: ExportedProgram,
+        passes: Optional[List[Type[PassType]]] = None,
     ) -> None:
         """
         A helper class to run multiple XNNPack passes on a program
