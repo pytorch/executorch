@@ -163,6 +163,14 @@ def build_executorch_binary(model, inputs, soc_model, file_name, dataset, use_fp
         file.write(exec_prog.buffer)
 
 
+def make_output_dir(path: str):
+    if os.path.exists(path):
+        for f in os.listdir(path):
+            os.remove(os.path.join(path, f))
+        os.removedirs(path)
+    os.makedirs(path)
+
+
 def topk_accuracy(predictions, targets, k):
     def solve(prob, target, k):
         _, indices = torch.topk(prob, k=k, sorted=True)

@@ -16,6 +16,7 @@ from executorch.examples.qualcomm.utils import (
     SimpleADB,
     build_executorch_binary,
     segmentation_metrics,
+    make_output_dir,
 )
 
 
@@ -152,10 +153,7 @@ if __name__ == "__main__":
 
     # collect output data
     output_data_folder = f"{args.artifact}/outputs"
-    if os.path.exists(output_data_folder):
-        for f in os.listdir(output_data_folder):
-            os.remove(os.path.join(output_data_folder, f))
-        os.removedirs(output_data_folder)
+    make_output_dir(output_data_folder)
 
     # remove the auxiliary output and data processing
     classes = [
