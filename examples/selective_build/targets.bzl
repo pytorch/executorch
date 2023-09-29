@@ -60,6 +60,25 @@ def define_common_targets():
     # Select all ops from a given model
     # TODO(larryliu0820): Add this
 
+    # Select add.out and manually register
+    et_operator_library(
+        name = "select_add_out",
+        ops = [
+            "aten::add.out",
+        ],
+    )
+
+    executorch_generated_lib(
+        name = "select_add_out_manual_lib",
+        functions_yaml_target = "//executorch/kernels/portable:functions.yaml",
+        manual_registration = True,
+        deps = [
+            "//executorch/kernels/portable:operators",
+            ":select_add_out",
+        ],
+        visibility = ["PUBLIC"],
+    )
+
     # ~~~ Test binary for selective build ~~~
     select_ops = native.read_config("executorch", "select_ops", None)
     lib = []
@@ -69,6 +88,8 @@ def define_common_targets():
         lib.append(":select_ops_in_list_lib")
     elif select_ops == "yaml":
         lib.append(":select_ops_from_yaml_lib")
+    elif select_ops == "add_manual":
+        lib.append(":select_add_out_manual_lib")
     runtime.cxx_binary(
         name = "selective_build_test",
         srcs = [],

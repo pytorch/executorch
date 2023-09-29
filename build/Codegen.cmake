@@ -36,9 +36,27 @@ function(gen_selected_ops ops_schema_yaml root_ops include_all_ops)
 
 endfunction()
 
+# Return generated source files
+function(get_generated_sources list_name manual_registration)
+  set(_temp_list
+    ${CMAKE_CURRENT_BINARY_DIR}/Functions.h
+    ${CMAKE_CURRENT_BINARY_DIR}/NativeFunctions.h)
+  # If manually register ops, change source files
+  if(manual_registration)
+    list(APPEND _temp_list
+      ${CMAKE_CURRENT_BINARY_DIR}/RegisterKernelsEverything.cpp)
+    list(APPEND _temp_list ${CMAKE_CURRENT_BINARY_DIR}/RegisterKernels.h)
+  else()
+    list(APPEND _temp_list
+      ${CMAKE_CURRENT_BINARY_DIR}/RegisterCodegenUnboxedKernelsEverything.cpp)
+  endif()
+
+  set(${list_name} ${_temp_list} PARENT_SCOPE)
+endfunction()
+
 # Codegen for registering kernels. Kernels are defined in functions_yaml and
 # custom_ops_yaml
-function(generate_bindings_for_kernels functions_yaml custom_ops_yaml)
+function(generate_bindings_for_kernels functions_yaml custom_ops_yaml manual)
   # Command to generate selected_operators.yaml from custom_ops.yaml.
   file(GLOB_RECURSE _codegen_templates "${EXECUTORCH_ROOT}/codegen/templates/*")
   file(GLOB_RECURSE _torchgen_srcs "${TORCH_ROOT}/torchgen/*.py")
@@ -55,10 +73,12 @@ function(generate_bindings_for_kernels functions_yaml custom_ops_yaml)
       --aten-yaml-path=${TORCH_ROOT}/aten/src/ATen/native/native_functions.yaml
       --op-selection-yaml-path=${_oplist_yaml})
 
-  set(_gen_command_sources
-      ${CMAKE_CURRENT_BINARY_DIR}/RegisterCodegenUnboxedKernelsEverything.cpp
-      ${CMAKE_CURRENT_BINARY_DIR}/Functions.h
-      ${CMAKE_CURRENT_BINARY_DIR}/NativeFunctions.h)
+  get_generated_sources("_gen_command_sources" "${manual}")
+
+  # If manually register ops, append --manual_registration and change out files
+  if(manual)
+    list(APPEND _gen_command --manual_registration)
+  endif()
 
   if(functions_yaml)
     list(APPEND _gen_command --functions-yaml-path=${functions_yaml})
@@ -105,14 +125,10 @@ function(gen_custom_ops_aot_lib lib_name kernel_sources)
 endfunction()
 
 # Generate a runtime lib for registering operators in Executorch
-function(gen_operators_lib lib_name kernel_lib deps)
+function(gen_operators_lib lib_name kernel_lib deps manual_registration)
   add_library(${lib_name})
-  target_sources(
-    ${lib_name}
-    PRIVATE
-      ${CMAKE_CURRENT_BINARY_DIR}/RegisterCodegenUnboxedKernelsEverything.cpp
-      ${CMAKE_CURRENT_BINARY_DIR}/Functions.h
-      ${CMAKE_CURRENT_BINARY_DIR}/NativeFunctions.h)
+  get_generated_sources("_sources" "${manual_registration}")
+  target_sources(${lib_name} PRIVATE ${_sources})
   target_link_libraries(${lib_name} PRIVATE ${deps})
   if(kernel_lib)
     target_link_libraries(${lib_name} INTERFACE ${kernel_lib})
