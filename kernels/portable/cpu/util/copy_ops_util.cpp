@@ -163,6 +163,47 @@ void get_pixel_shuffle_out_target_size(
   out_sizes[i] = in.size(i) * casted_upscale_factor;
 }
 
+bool check_split_with_sizes_copy_args(
+    const Tensor& in,
+    exec_aten::ArrayRef<int64_t> split_sizes,
+    int64_t dim,
+    TensorList out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(in, 1));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      split_sizes.size() == out.size(),
+      "Number of split sizes must match the number of output tensors");
+
+  int64_t sum = 0;
+  for (int i = 0; i < split_sizes.size(); i++) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        split_sizes[i] >= 0, "All split sizes must be non negative.");
+    sum += split_sizes[i];
+  }
+
+  const ssize_t dim_size = in.size(dim);
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      sum == dim_size,
+      "Sum of split sizes does not match input size at given dim");
+
+  return true;
+}
+
+void get_split_with_sizes_copy_out_target_size(
+    const Tensor& in,
+    int64_t split_size,
+    int64_t dim,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim) {
+  *out_ndim = in.dim();
+
+  for (size_t d = 0; d < in.dim(); ++d) {
+    out_sizes[d] = in.size(d);
+  }
+  out_sizes[dim] = split_size;
+}
+
 bool check_stack_args(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
