@@ -173,7 +173,7 @@ def vela_compile(tosa_fb):
                 # We need the acual unpadded block lengths for hw setup
                 block_length = len(block_data).to_bytes(16, 'little')
                 # pad block data to multiple of 16 bytes
-                block_data = block_data + b'\x00'*(16-len(block_data)%16)
+                block_data = block_data + b'\x00'*(15-(len(block_data)-1)%16)
 
                 block = block_name + block_length + block_data
                 blocks = blocks + block

@@ -39,13 +39,15 @@ cd cmake-corstone
 
 #cmake --toolchain backends/arm/cmake/arm-none-eabi-gcc.cmake ..
 cmake -DFLATC_EXECUTABLE=flatc \
+	  -DEXECUTORCH_BUILD_XNNPACK=OFF \
 	  -DEXECUTORCH_BUILD_HOST_TARGETS=OFF \
 	  -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON \
 	  -DCMAKE_SYSTEM_PROCESSOR=cortex-m55+nodsp+nofp \
 	  -DETHOSU_TARGET_NPU_CONFIG=ethos-u55-128 \
 	  --toolchain backends/arm/cmake/arm-none-eabi-gcc.cmake \
+	  -DCMAKE_BUILD_TYPE=Release \
+	  -DEXECUTORCH_ENABLE_LOGGING_RELEASE_MODE=ON \
 	  ..
-# -DCMAKE_TOOLCHAIN_FILE=backends/arm/cmake/arm-none-eabi-gcc.cmake \
 
 cd ..
-cmake --build cmake-corstone -j1 --target ethos_u ethosu_core_driver executorch
+cmake --build cmake-corstone -j9 --target ethos_u ethosu_core_driver executorch portable_ops_lib portable_kernels

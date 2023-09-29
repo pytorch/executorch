@@ -34,6 +34,10 @@ namespace executor {
 class ArmBackend final : public PyTorchBackendInterface {
 
 public:
+	ArmBackend() {
+		printf("Constructing ARM Backend\n");
+	}
+	
 	~ArmBackend() = default;
 
 	virtual bool is_available() const override {
@@ -73,18 +77,29 @@ public:
 
 		printf("ArmBackend::execute 0x%X\n", processed->data());
 
-		vela_handles handles = { 0, 0, 0, 0, 0, 0};
+		vela_handles handles = { 0, 0, 0, 0, 0, 0 };
 
 		// Command stream - we know at this point it's aligned
 		char *data = (char*)processed->data();
 
 		// Read key sections from the vela_bin_stream
 		this->vela_read( data, &handles );
-		
+
 		printf("Running program data:\n  cmd %p %d\n  weight %p %d\n  scratch %p %d\n",
 			   handles.cmd_data, handles.cmd_data_length,
 			   handles.weight_data, handles.weight_data_length,
 			   handles.scratch_data, handles.scratch_data_length );
+
+		// TMP emit scratch
+		printf("Scratch before:\n");
+		for( int i=0; i<handles.scratch_data_length; i++ )
+		{
+			if( i%4 == 0 ) ((char*)handles.scratch_data)[i] = 1;
+			printf("%02x ", ((char*)handles.scratch_data)[i]);
+			if( !((i+1)%4) ) printf("\n");
+		}
+		printf("\n");
+		
 		// Invoke driver using the above pointers
 		CommandStream cs(
 			DataPointer(handles.cmd_data, handles.cmd_data_length),
@@ -106,7 +121,16 @@ public:
 			printf("Error, failure executing job\n");
 			return Error::InvalidProgram;
 		}
-	
+
+        // TMP emit scratch
+        printf("Scratch after:\n");
+        for( int i=0; i<handles.scratch_data_length; i++ )
+        {
+            printf("%02x ", ((char*)handles.scratch_data)[i]);
+            if( !((i+1)%4) ) printf("\n");
+        }
+        printf("\n");
+		
 		return Error::Ok;
 	}
 
@@ -123,9 +147,9 @@ private:
 
 	int vela_read(char* data, vela_handles *h ) const {
 		if( strncmp( data, "vela_bin_stream", 15 ) ) return 0;
+		data += 16;
 		while( 1 )
 		{
-			data += 16;
 			if( !strncmp( data, "vela_end_stream", 15 ) )
 			{
 				printf("footer found!\n");
@@ -135,15 +159,17 @@ private:
 			char *block_name = data;
 			data += 16;
 			int block_length = ((int*)data)[0];
-			int block_length_padded = block_length + (15-(block_length-1)%16);
-			printf("  length %d\n", block_length );
-			printf("  padded length %d\n", block_length_padded );
+			int block_length_padded = ((block_length-1)|15)+1;
+			printf("  a length %d\n", block_length );
+			printf("  a padded length %d\n" );
+			data += 16;
 			char *block_data = data;
 			data += block_length_padded;
 
 			if( !strncmp( block_name, "cmd_data", strlen("cmd_data")) )
 			{
-				printf("Capturing cmd_data\n");
+				printf("Capturing cmd_data %p %c%c%c%c\n", block_data,
+					   block_data[0], block_data[1], block_data[2], block_data[3]);
 				h->cmd_data = block_data;
 				h->cmd_data_length = block_length;
 			}
@@ -161,14 +187,13 @@ private:
 			}
 		}
 	}
-
 };
 
-namespace {
 	auto backend = ArmBackend();
-	Backend backend_id{"ArmBackend", &backend};
-	static auto registered = register_backend(backend_id);
-} // namespace 
+	void arm_backend_register() {
+		Backend backend_id{"ArmBackend", &backend};
+		static auto registered = register_backend(backend_id);
+	}
 
 } // namespace executor
 } // namespace torch
