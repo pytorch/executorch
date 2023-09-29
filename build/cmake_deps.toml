@@ -118,3 +118,17 @@ deps = [
   "xnnpack_backend",
   "portable_kernels",
 ]
+
+[targets.extension_data_loader]
+buck_targets = [
+  "//extension/data_loader:buffer_data_loader",
+  "//extension/data_loader:file_data_loader",
+  "//extension/data_loader:mmap_data_loader",
+  "//extension/data_loader:shared_ptr_data_loader",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+]
