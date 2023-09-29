@@ -63,7 +63,7 @@ def serialize_executorch_program(exec_prog, model_name, compute_units):
     return
 
 
-compute_units = ["cpu", "gpu", "ane", "all"]
+compute_units = ["cpu_only", "cpu_and_gpu", "cpu_and_ane", "all"]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

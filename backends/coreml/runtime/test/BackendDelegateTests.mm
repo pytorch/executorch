@@ -128,7 +128,7 @@ std::vector<MultiArray> toMultiArrays(NSArray<MLMultiArray *> *mlMultiArrays) {
     std::string computeUnitsKey(ETCoreMLStrings.computeUnitsKeyName.UTF8String);
     {
         std::unordered_map<std::string, Buffer> compileSpecs;
-        NSData *specData = [@"cpu" dataUsingEncoding:NSUTF8StringEncoding];
+        NSData *specData = [@"cpu_only" dataUsingEncoding:NSUTF8StringEncoding];
         compileSpecs.emplace(computeUnitsKey, Buffer(specData.bytes, specData.length));
         BackendDelegate::Handle *handle = _delegate->init(Buffer(data.bytes, data.length), compileSpecs);
         ETCoreMLModel *model = (__bridge ETCoreMLModel *)handle;
@@ -138,7 +138,7 @@ std::vector<MultiArray> toMultiArrays(NSArray<MLMultiArray *> *mlMultiArrays) {
     
     {
         std::unordered_map<std::string, Buffer> compileSpecs;
-        NSData *specData = [@"gpu" dataUsingEncoding:NSUTF8StringEncoding];
+        NSData *specData = [@"cpu_and_gpu" dataUsingEncoding:NSUTF8StringEncoding];
         compileSpecs.emplace(computeUnitsKey, Buffer(specData.bytes, specData.length));
         BackendDelegate::Handle *handle = _delegate->init(Buffer(data.bytes, data.length), compileSpecs);
         ETCoreMLModel *model = (__bridge ETCoreMLModel *)handle;
@@ -148,7 +148,7 @@ std::vector<MultiArray> toMultiArrays(NSArray<MLMultiArray *> *mlMultiArrays) {
     
     {
         std::unordered_map<std::string, Buffer> compileSpecs;
-        NSData *specData = [@"ane" dataUsingEncoding:NSUTF8StringEncoding];
+        NSData *specData = [@"cpu_and_ane" dataUsingEncoding:NSUTF8StringEncoding];
         compileSpecs.emplace(computeUnitsKey, Buffer(specData.bytes, specData.length));
         BackendDelegate::Handle *handle = _delegate->init(Buffer(data.bytes, data.length), compileSpecs);
         ETCoreMLModel *model = (__bridge ETCoreMLModel *)handle;
