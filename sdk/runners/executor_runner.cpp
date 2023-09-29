@@ -19,13 +19,12 @@
 #include <executorch/sdk/etdump/etdump_flatcc.h>
 #include <executorch/util/bundled_program_verification.h>
 #include <executorch/util/util.h>
-#ifdef USE_ATEN_LIB
-#include <c10/core/impl/LocalDispatchKeySet.h>
-#endif
 
-#if !defined(USE_ATEN_LIB)
+#ifndef USE_ATEN_LIB
 #include <executorch/backends/xnnpack/threadpool/fb/threadpool_use_n_threads.h>
 #include <executorch/backends/xnnpack/threadpool/threadpool.h>
+#else
+#include <c10/core/impl/LocalDispatchKeySet.h>
 #endif
 
 // This tool includes all of the headers necessary to execute a model.
@@ -327,9 +326,7 @@ int main(int argc, char** argv) {
   // production environment, given that in xplat we are depending on a library
   // that enables C10_MOBILE (`torch_mobile_core`).
   c10::impl::ExcludeDispatchKeyGuard no_autograd(c10::autograd_dispatch_keyset);
-#endif
-
-#if !defined(USE_ATEN_LIB)
+#else
   // To enable intra-op parallelism
   // This sets the # of threads to use for running executorch model
   // to num_threads. Applicable to lean mode.
