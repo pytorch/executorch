@@ -31,3 +31,6 @@
 [submodule "backends/arm/third-party/serialization_lib"]
 	path = backends/arm/third-party/serialization_lib
 	url = https://git.mlplatform.org/tosa/serialization_lib.git
+[submodule "third-party/fbjni"]
+	path = third-party/fbjni
+	url = https://github.com/facebookincubator/fbjni.git

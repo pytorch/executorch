@@ -63,6 +63,17 @@ deps = [
   "portable_kernels",
 ]
 
+[targets.print_evalue]
+buck_targets = [
+  "//extension/evalue_util:print_evalue",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+]
+
 [targets.size_test]
 buck_targets = [
   "//test:size_test",
@@ -117,18 +128,4 @@ excludes = [
 deps = [
   "xnnpack_backend",
   "portable_kernels",
-]
-
-[targets.extension_data_loader]
-buck_targets = [
-  "//extension/data_loader:buffer_data_loader",
-  "//extension/data_loader:file_data_loader",
-  "//extension/data_loader:mmap_data_loader",
-  "//extension/data_loader:shared_ptr_data_loader",
-]
-filters = [
-  ".cpp$",
-]
-deps = [
-  "executorch",
 ]
