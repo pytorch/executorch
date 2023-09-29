@@ -12,25 +12,24 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp, TosaSerializerTensor
 
 
+q_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
+dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
+dq_q_ops = [q_op, dq_op]
+
+
 def isQuantNode(node):
     consumer_node = list(node.users)[0]
+    input = node.all_input_nodes[0]
     return (
-        consumer_node.target
-        == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
-        or node.target
-        in [
-            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        ]
+        consumer_node.target == q_op
+        or node.target in dq_q_ops
+        or input.target in dq_q_ops
     )
 
 
 def isQuantArg(arg):
     consumer_node = list(arg.users)[0]
-    return (
-        consumer_node.target
-        == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
-    )
+    return consumer_node.target == q_op
 
 
 # TOSA uses the RESCALE operation to scale between values with differing precision.
