@@ -5,7 +5,7 @@ load(
 )
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
-load("@fbsource//xplat/executorch/extension/pybindings:pybindings.bzl", "MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB", "MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB")
+load("@fbsource//xplat/executorch/extension/pybindings:pybindings.bzl", "MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -34,38 +34,56 @@ def define_common_targets():
 
     # Test driver for models, uses one of the following kernels:
     # (1) all portable kernels
-    # (2) aten kernels
-    # (3) optimized kernels, with portable kernels as fallback
-    for kernel_mode in ["portable", "aten", "optimized"]:
-        aten_mode = kernel_mode == "aten"
-        aten_suffix = ("_aten" if aten_mode else "")
+    # (2) optimized kernels, with portable kernels as fallback
+    for kernel_mode in ["portable", "optimized"]:
         binary_name = "executor_runner" if kernel_mode == "portable" else ("executor_runner_" + kernel_mode)
-        runtime.cxx_binary(
-            name = binary_name,
+
+        runtime.cxx_library(
+            name = binary_name + "_lib",
             srcs = ["executor_runner.cpp"],
             deps = [
-                "//executorch/runtime/executor/test:test_backend_compiler_lib" + aten_suffix,
-                "//executorch/runtime/executor/test:test_backend_with_delegate_mapping" + aten_suffix,
-                "//executorch/runtime/executor:program" + aten_suffix,
+                "//executorch/runtime/executor/test:test_backend_compiler_lib",
+                "//executorch/runtime/executor/test:test_backend_with_delegate_mapping",
+                "//executorch/runtime/executor:program",
                 "//executorch/sdk/etdump:etdump",
                 "//executorch/sdk/etdump:etdump_flatcc",
-                "//executorch/util:bundled_program_verification" + aten_suffix,
+                "//executorch/util:bundled_program_verification",
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
-                "//executorch/util:util" + aten_suffix,
-            ] + (MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB if aten_mode else [
+                "//executorch/util:util",
                 "//executorch/configurations:executor_cpu_optimized",
                 "//executorch/kernels/quantized:generated_lib",
             ] + (MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB if kernel_mode == "portable" else [
                 ":generated_op_lib_for_runner",
-            ])),
-            preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
+            ]),
+            preprocessor_flags = [],
             external_deps = [
                 "gflags",
             ],
             platforms = [ANDROID, CXX],
-            define_static_target = not aten_mode,
+            define_static_target = True,
+            visibility = [
+                "//executorch/sdk/runners/...",
+            ],
+        )
+
+        runtime.cxx_binary(
+            name = binary_name,
+            srcs = [],
+            deps = [
+                ":" + binary_name + "_lib",
+            ],
+            external_deps = [
+                "gflags",
+            ],
+            platforms = [ANDROID, CXX],
+            define_static_target = True,
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],
         )
+
+    runtime.export_file(
+        name = "executor_runner.cpp",
+        visibility = ["//executorch/sdk/runners/..."],
+    )
