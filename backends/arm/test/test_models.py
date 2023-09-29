@@ -37,7 +37,7 @@ class TorchBuilder:
     @register_test
     class simple_add(torch.nn.Module):
         inputs = {
-            TosaProfile.BI: (torch.ones(5, dtype=torch.int32),),
+            TosaProfile.BI: (torch.ones(5),),
             TosaProfile.MI: (torch.ones(5),),
         }
 
@@ -51,8 +51,8 @@ class TorchBuilder:
     class simple_add_broadcast(torch.nn.Module):
         inputs = {
             TosaProfile.BI: (
-                torch.ones(10, 1, dtype=torch.int32),
-                torch.ones(10, 10, dtype=torch.int32),
+                torch.ones(10, 1),
+                torch.ones(10, 10),
             ),
             TosaProfile.MI: (
                 torch.ones(10, 1),
@@ -69,7 +69,7 @@ class TorchBuilder:
     @register_test
     class simple_linear(torch.nn.Module):
         inputs = {
-            # TosaProfile.BI: ( torch.ones(128,20, dtype=torch.int32), ),
+            TosaProfile.BI: (torch.ones(128, 20),),
             TosaProfile.MI: (torch.ones(128, 20),),
         }
 
@@ -86,7 +86,14 @@ class TorchBuilder:
     @register_test
     class simple_conv2d(torch.nn.Module):
         inputs = {
-            # TosaProfile.BI: ( torch.ones(1,3,256,256, dtype=torch.int8), ),
+            TosaProfile.BI: (
+                torch.ones(
+                    1,
+                    3,
+                    256,
+                    256,
+                ),
+            ),
             TosaProfile.MI: (torch.ones(1, 3, 256, 256),),
         }
 
@@ -103,6 +110,7 @@ class TorchBuilder:
     @register_test
     class block_two_conv2d(torch.nn.Module):
         inputs = {
+            TosaProfile.BI: (torch.ones(1, 3, 256, 256),),
             TosaProfile.MI: (torch.ones(1, 3, 256, 256),),
         }
 
@@ -123,7 +131,14 @@ class TorchBuilder:
     @register_test
     class simple_depthwise_conv2d(torch.nn.Module):
         inputs = {
-            # TosaProfile.BI: ( torch.ones(1,3,256,256, dtype=torch.int8), ),
+            TosaProfile.BI: (
+                torch.ones(
+                    1,
+                    3,
+                    256,
+                    256,
+                ),
+            ),
             TosaProfile.MI: (torch.ones(1, 3, 256, 256),),
         }
 
@@ -140,8 +155,14 @@ class TorchBuilder:
     @register_test
     class simple_div(torch.nn.Module):
         inputs = {
-            # TODO: BUG: need to codegen for integer div, current float/recip one is not valid BI
-            # TosaProfile.BI: ( torch.ones(5, dtype=torch.int8), torch.ones(5, dtype=torch.int8), ),
+            TosaProfile.BI: (
+                torch.ones(
+                    5,
+                ),
+                torch.ones(
+                    5,
+                ),
+            ),
             TosaProfile.MI: (
                 torch.ones(5),
                 torch.ones(5),
@@ -157,8 +178,14 @@ class TorchBuilder:
     @register_test
     class simple_batch_norm(torch.nn.Module):
         inputs = {
-            # "RuntimeError: "batch_norm" not implemented for 'Char'"
-            # TosaProfile.BI: ( torch.ones(20,100,35,45, dtype=torch.int8), ),
+            TosaProfile.BI: (
+                torch.ones(
+                    20,
+                    100,
+                    35,
+                    45,
+                ),
+            ),
             TosaProfile.MI: (torch.ones(20, 100, 35, 45),),
         }
 
@@ -173,7 +200,14 @@ class TorchBuilder:
     @register_test
     class simple_avg_pool2d(torch.nn.Module):
         inputs = {
-            # TosaProfile.BI: ( torch.ones(20, 16, 50, 32, dtype=torch.int8), ),
+            TosaProfile.BI: (
+                torch.ones(
+                    20,
+                    16,
+                    50,
+                    32,
+                ),
+            ),
             TosaProfile.MI: (torch.ones(20, 16, 50, 32),),
         }
 
@@ -187,6 +221,7 @@ class TorchBuilder:
     @register_test
     class simple_softmax(torch.nn.Module):
         inputs = {
+            TosaProfile.BI: (torch.ones(2, 3),),
             TosaProfile.MI: (torch.ones(2, 3),),
         }
 
@@ -200,6 +235,7 @@ class TorchBuilder:
     @register_test
     class block_conv_norm_activation(torch.nn.Module):
         inputs = {
+            TosaProfile.BI: (torch.ones(1, 3, 256, 256),),
             TosaProfile.MI: (torch.ones(1, 3, 256, 256),),
         }
 
@@ -224,7 +260,14 @@ class TorchBuilder:
         # Ref: https://arxiv.org/abs/1801.04381
 
         inputs = {
-            # TosaProfile.BI: ( torch.ones(1,3,256,256, dtype=torch.int8), ),
+            TosaProfile.BI: (
+                torch.ones(
+                    1,
+                    64,
+                    81,
+                    81,
+                ),
+            ),
             TosaProfile.MI: (torch.ones(1, 64, 81, 81),),
         }
 
