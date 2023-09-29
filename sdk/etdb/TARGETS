@@ -3,30 +3,6 @@ load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 oncall("executorch")
 
 python_library(
-    name = "row_schema",
-    srcs = [
-        "row_schema.py",
-    ],
-    deps = [
-        "//executorch/sdk/edir:base_schema",
-        "//executorch/sdk/edir:et_schema",
-    ],
-)
-
-python_library(
-    name = "etdb",
-    srcs = [
-        "etdb.py",
-    ],
-    deps = [
-        "fbsource//third-party/pypi/tabulate:tabulate",
-        ":row_schema",
-        "//executorch/sdk/edir:base_schema",
-        "//executorch/sdk/edir:et_schema",
-    ],
-)
-
-python_library(
     name = "inspector",
     srcs = [
         "inspector.py",

@@ -1,8 +1,4 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
 from typing import (
     Any,
@@ -19,7 +15,7 @@ from typing import (
 
 from executorch.sdk.edir.base_schema import Node, OperatorGraph, OperatorNode, ValueNode
 from executorch.sdk.edir.et_schema import PROFILE_STAT_HEADER, RESERVED_METADATA_ARG
-from executorch.sdk.etdb.row_schema import (
+from executorch.sdk.fb.row_schema import (
     AbstractNodeInstanceRow,
     GraphInstanceRow,
     OpInstanceRow,
