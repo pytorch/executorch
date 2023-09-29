@@ -15,6 +15,7 @@ COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/coreml"
 IOS_TOOLCHAIN_PATH="$COREML_DIR_PATH/third-party/ios-cmake/ios.toolchain.cmake"
 CMAKE_BUILD_DIR_PATH="$COREML_DIR_PATH/cmake-ios-out"
 LIBRARIES_DIR_PATH="$COREML_DIR_PATH/runtime/libraries"
+INCLUDE_DIR_PATH="$COREML_DIR_PATH/runtime/include"
 
 echo "Executorch: Building executorchcoreml_runner "
 echo "Executorch: Removing build directory $CMAKE_BUILD_DIR_PATH"
@@ -24,6 +25,11 @@ rm -rf "$CMAKE_BUILD_DIR_PATH"
 echo "Executorch: Building coremldelegate"
 cmake "$EXECUTORCH_ROOT_PATH"  -B"$CMAKE_BUILD_DIR_PATH" -DCMAKE_TOOLCHAIN_FILE="$IOS_TOOLCHAIN_PATH" -DPLATFORM=MAC_UNIVERSAL -DDEPLOYMENT_TARGET=13.0 -DEXECUTORCH_BUILD_COREML_DELGATE=ON -DEXECUTORCH_BUILD_XNNPACK=OFF
 cmake --build "$CMAKE_BUILD_DIR_PATH"  -j9 -t coremldelegate
+
+# Copy include headers
+echo "Executorch: Copying headers"
+mkdir "$INCLUDE_DIR_PATH"
+cp -r "$CMAKE_BUILD_DIR_PATH/third-party/gflags/include/" "$INCLUDE_DIR_PATH"
 
 # Copy required libraries
 echo "Executorch: Copying libraries"
