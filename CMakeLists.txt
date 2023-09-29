@@ -92,8 +92,7 @@ option(REGISTER_QUANTIZED_OPS
 option(BUILD_SELECTIVE_BUILD_TEST
        "Whether to build binary for demo selective build" OFF)
 
-option(EXECUTORCH_BUILD_SIZE_TEST
-       "Whether to build size test" OFF)
+option(EXECUTORCH_BUILD_SIZE_TEST "Whether to build size test" OFF)
 
 if(BUILD_SELECTIVE_BUILD_TEST)
   option(SELECT_ALL_OPS
@@ -290,7 +289,13 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 
-# Add XNNPACK subdirectory
+option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
+       "Build the extension/data_loader directory" OFF)
+if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+endif()
+
+option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
 endif()
