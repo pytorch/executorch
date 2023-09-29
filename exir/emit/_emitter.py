@@ -30,7 +30,6 @@ their instructions.
 # pyre-strict
 import ctypes
 import operator
-import re
 import typing
 from dataclasses import dataclass, field
 from typing import Callable, cast, Dict, List, Mapping, Optional, Tuple, Union
@@ -39,14 +38,13 @@ import executorch.exir.memory as memory
 import executorch.extension.pytree as ex_pytree
 import torch
 import torch.fx
-from executorch.exir.common import add_cursor_to_graph
 from executorch.exir.delegate import executorch_call_delegate, is_lowered_module
 from executorch.exir.dialects.backend._ops import BackendOpOverload
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.operator.convert import is_out_variant
 from executorch.exir.passes.executorch_prim_ops_registry import is_sym_op
-from executorch.exir.print_program import pretty_print_stacktraces
+from executorch.exir.print_program import _stacktrace_to_framelist, inspect_node
 from executorch.exir.schema import (
     BackendDelegate,
     BackendDelegateDataReference,
@@ -62,8 +60,6 @@ from executorch.exir.schema import (
     DoubleList,
     EValue,
     ExecutionPlan,
-    Frame,
-    FrameList,
     FreeCall,
     Instruction,
     Int,
@@ -238,44 +234,12 @@ class _Emitter(torch.fx.Interpreter):
             int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]
         ] = {}
 
-    def _stacktrace_to_framelist(self, stacktrace: str) -> FrameList:
-        """Creates a frame list from a stacktrace string."""
-        pattern = r'File "(.*?)", line (\d+), in (.*?)\n'
-        matches = re.findall(pattern, stacktrace)
-        mapped_frame_list = [
-            Frame(
-                filename=match[0],
-                lineno=int(match[1]),
-                name=match[2],
-                context=stacktrace.split("\n")[i * 2 + 1].strip(),
-            )
-            for i, match in enumerate(matches)
-        ]
-        return FrameList(mapped_frame_list)
-
     def _emit_node_specific_error(self, node: torch.fx.Node, err_msg: str) -> str:
         """Returns 'err_msg' with node specific information attached."""
-        graph_str_with_cursor = add_cursor_to_graph(self.graph_module.graph, node)
-
-        error_msg = (
-            f"Failed with error: {str(err_msg)}\n"
-            f"Here is the failing node in the graph module:\n"
-            f"{graph_str_with_cursor}\n"
-            f"This node {self.node} has metadata of:\n"
+        err_msg = f"Failed with error: {str(err_msg)}\n" + inspect_node(
+            self.graph_module.graph, node
         )
-
-        # Node spec error message
-        if hasattr(self.node.meta, "spec"):
-            error_msg += f"The node spec:\n{self.node.meta['spec']}\n"
-
-        # Stacktrace error message
-        if hasattr(self.node.meta, "stack_trace"):
-            framelist = self._stacktrace_to_framelist(self.node.meta["stack_trace"])
-            error_msg += (
-                f"The node stacktrace:\n{pretty_print_stacktraces(framelist)}\n"
-            )
-
-        return error_msg
+        return err_msg
 
     def _internal_assert_emitter(
         self, pred: bool, node: torch.fx.Node, assert_msg: str
@@ -454,11 +418,13 @@ class _Emitter(torch.fx.Interpreter):
         # For constant tensors, allocation_info = None.
         return EValue(make_tensor_value(buffer_idx, None, spec))
 
-    def _get_list_jit_type(self, val: List[_Argument]) -> _SchemaType:
+    def _get_list_tuple_jit_type(
+        self, val: Union[Tuple[_Argument], List[_Argument]]
+    ) -> _SchemaType:
         """Returns the JIT type for the given python type."""
         assert isinstance(
-            val, list
-        ), f"Input to _get_list_jit_type was expected to be an instance of list but received {type(val)}"
+            val, (list, tuple)
+        ), f"Input to _get_list_tuple_jit_type was expected to be an instance of a list or tuple but received {type(val)}"
         is_tensor_type = all(
             isinstance(v, _AbstractValue) and v.tensor is not None for v in val
         )
@@ -474,7 +440,7 @@ class _Emitter(torch.fx.Interpreter):
         raise InternalError(
             self._emit_node_specific_error(
                 self.node,
-                "Couldn't determine JitType for list of elements. Only supports int, float, bool, and Tensor.",
+                "Couldn't determine JitType for list/tuple of elements. Only supports int, float, bool, and Tensor.",
             )
         )
 
@@ -492,11 +458,13 @@ class _Emitter(torch.fx.Interpreter):
         if val is None:
             return EValue(Null())
 
-        if isinstance(val, list):
+        if isinstance(val, (list, tuple)):
             # Refine Optional[List[T]] -> List[T] This works because if the val was None it would
             # have converted to Null before this function call.
             if val_type is None:
-                val_type = torch.ListType(self._get_list_jit_type(val))  # pyre-ignore
+                val_type = torch.ListType(
+                    self._get_list_tuple_jit_type(val)  # pyre-ignore
+                )
             if type(val_type) == torch.OptionalType:
                 val_type = val_type.getElementType()
             assert type(val_type) == torch.ListType
@@ -1129,7 +1097,7 @@ class _Emitter(torch.fx.Interpreter):
             stack_trace = self.node.meta["stack_trace"]
             chain_stacktrace = self.chain.stacktrace or []
 
-            chain_stacktrace.append(self._stacktrace_to_framelist(stack_trace))
+            chain_stacktrace.append(_stacktrace_to_framelist(stack_trace))
             self._internal_assert_emitter(
                 len(chain_stacktrace) == len(self.chain.instructions),
                 self.node,

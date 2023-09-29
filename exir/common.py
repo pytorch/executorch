@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
-import copy
 import logging
 import re
 import sys
@@ -90,43 +89,6 @@ def format_schema_name(schema: torch._C.FunctionSchema) -> str:
     if schema.overload_name != "":
         return schema.name + "." + schema.overload_name
     return schema.name
-
-
-def add_cursor_to_graph(graph: torch.fx.Graph, finding_node: torch.fx.Node) -> str:
-    """
-    Insert a cursor at the node location in the fx.Graph.
-    e.g:
-    # graph():
-    #   %x : [#users=1] = placeholder[target=x]
-    #   %param : [#users=1] = get_attr[target=param]
-    #   %add : [#users=1] = call_function[target=operator.add](args = (%x, %param), kwargs = {})
-    # --> %linear : [#users=1] = call_module[target=linear](args = (%add,), kwargs = {})
-    #   %clamp : [#users=1] = call_method[target=clamp](args = (%linear,), kwargs = {min: 0.0, max: 1.0})
-    #   return clamp
-
-    This is mostly used for error reporting
-    """
-
-    new_graph = copy.deepcopy(graph)
-
-    found_at = -1
-    for ix, node in enumerate(graph.nodes):
-        if node == finding_node:
-            found_at = ix
-
-    # This is heavily based on __str__ method of fx.Graph
-    def _format_graph(graph: torch.fx.Graph, offending_node_idx: int) -> str:
-        s = "graph():"
-        for ix, node in enumerate(graph.nodes):
-            node_str = node.format_node()
-            if node_str:
-                if ix != offending_node_idx:
-                    s += "\n    " + node_str
-                else:
-                    s += "\n--> " + node_str
-        return s
-
-    return _format_graph(new_graph, found_at)
 
 
 @contextmanager

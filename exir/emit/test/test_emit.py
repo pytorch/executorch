@@ -1280,6 +1280,52 @@ class TestEmit(unittest.TestCase):
         )
         exec_prog.buffer
 
+    def test_delegate_with_input_tuple(self) -> None:
+        class BackendWithCompilerDemo(BackendDetails):
+            @staticmethod
+            def preprocess(
+                edge_program,
+                compile_specs,
+            ) -> bytes:
+                return PreprocessResult(
+                    processed_bytes=bytes(str("test"), encoding="utf8"),
+                    debug_handle_map=None,
+                )
+
+        class AddMulModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, input):  # a, x, b):
+                y = torch.mm(input[0], input[1])
+                z = torch.add(y, input[2])
+                return z
+
+        model_inputs = ((torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2)),)
+        model = AddMulModule()
+        edgeir_m = exir.capture(model, model_inputs, exir.CaptureConfig()).to_edge(
+            exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
+        lowered_module = to_backend(
+            "BackendWithCompilerDemo", edgeir_m.exported_program, None
+        )
+
+        class CompositeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered_module = lowered_module
+
+            def forward(self, list_a):
+                return self.lowered_module(list_a)
+
+        composite_model = CompositeModule()
+        exec_prog = (
+            exir.capture(composite_model, model_inputs, exir.CaptureConfig())
+            .to_edge()
+            .to_executorch()
+        )
+        exec_prog.buffer
+
     def test_delegate_mapping(self) -> None:
         debug_handle_map = {1: [1, 2]}
 

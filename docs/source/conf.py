@@ -68,6 +68,8 @@ myst_enable_extensions = [
     "colon_fence",
 ]
 
+myst_heading_anchors = 3
+
 sphinx_gallery_conf = {
     "examples_dirs": ["tutorials_source"],
     "gallery_dirs": ["tutorials"],
@@ -123,9 +125,8 @@ html_theme_options = {
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 
-html_css_files = ["css/custom.css"]
-html_js_files = ["js/custom.js"]
-
+html_css_files = ["css/custom.css", "progress-bar.css"]
+html_js_files = ["js/progress-bar.js"]
 
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {

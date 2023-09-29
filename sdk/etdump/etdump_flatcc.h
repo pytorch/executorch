@@ -32,7 +32,7 @@ struct etdump_result {
 
 class ETDumpGen : public EventTracer {
  public:
-  ETDumpGen(void* buffer, size_t buf_size);
+  ETDumpGen();
 
   ~ETDumpGen() override;
   void clear_builder();
@@ -43,22 +43,20 @@ class ETDumpGen : public EventTracer {
       ChainID chain_id = -1,
       DebugHandle debug_handle = 0) override;
   virtual void end_profiling(EventTracerEntry prof_entry) override;
-  virtual void track_allocation(AllocatorID id, size_t size) override;
-  virtual AllocatorID track_allocator(const char* name) override;
   virtual EventTracerEntry start_profiling_delegate(
       const char* name,
-      DebugHandle delegate_debug_index) override {
-    return EventTracerEntry();
-  };
+      DebugHandle delegate_debug_index) override;
   virtual void end_profiling_delegate(
-      EventTracerEntry event_tracer_entry,
-      const char* metadata = nullptr) override{};
+      EventTracerEntry prof_entry,
+      const char* metadata) override;
   virtual void log_profiling_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
       et_timestamp_t start_time,
       et_timestamp_t end_time,
-      const char* metadata = nullptr) override{};
+      const char* metadata) override;
+  virtual void track_allocation(AllocatorID id, size_t size) override;
+  virtual AllocatorID track_allocator(const char* name) override;
   etdump_result get_etdump_data();
   size_t get_num_blocks();
 

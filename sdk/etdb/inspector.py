@@ -25,11 +25,33 @@ import pandas as pd
 import torch
 from executorch.exir import ExportedProgram
 
-from executorch.sdk.edir.et_schema import OperatorGraphWithStats
-from executorch.sdk.etdb._inspector_utils import gen_graphs_from_etrecord
+from executorch.sdk.edir.et_schema import OperatorGraphWithStats, OperatorNode
+from executorch.sdk.etdb._inspector_utils import (
+    create_debug_handle_to_op_node_mapping,
+    EDGE_DIALECT_GRAPH_KEY,
+    gen_etdump_object,
+    gen_etrecord_object,
+    gen_graphs_from_etrecord,
+)
 from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
-from executorch.sdk.etrecord import parse_etrecord
+
 from tabulate import tabulate
+
+
+FORWARD = "forward"
+RESERVED_SPECIAL_EVENT_NAMES = [
+    "Method::init",
+    "Program::load_method",
+    "Method::execute",
+]
+EXCLUDED_COLUMNS_WHEN_PRINTING = [
+    "raw",
+    "delegate_debug_identifier",
+    "stack_traces",
+    "module_hierarchy",
+    "debug_data",
+]
+
 
 log: logging.Logger = logging.getLogger(__name__)
 
@@ -50,7 +72,7 @@ class ProfileEventSignature:
         The Signature will convert these back to the intended None value
         """
         return ProfileEventSignature(
-            event.name,
+            event.name or "",
             event.instruction_id if event.instruction_id != -1 else None,
             event.delegate_debug_id_int if event.delegate_debug_id_int != -1 else None,
             event.delegate_debug_id_str if event.delegate_debug_id_str != "" else None,
@@ -112,7 +134,7 @@ class Event:
 
     name: str
     perf_data: PerfData
-    op_type: List[str] = dataclasses.field(default_factory=list)
+    op_types: List[str] = dataclasses.field(default_factory=list)
 
     # Instruction Id of the original profiling event
     instruction_id: Optional[int] = None
@@ -123,7 +145,7 @@ class Event:
     # Debug Handles in the model graph to which this event is correlated
     debug_handles: Optional[Union[int, Sequence[int]]] = None
 
-    stack_trace: Dict[str, str] = dataclasses.field(default_factory=dict)
+    stack_traces: Dict[str, str] = dataclasses.field(default_factory=dict)
     module_hierarchy: Dict[str, Dict] = dataclasses.field(default_factory=dict)
     is_delegated_op: Optional[bool] = None
     delegate_backend_name: Optional[str] = None
@@ -131,23 +153,31 @@ class Event:
 
     @staticmethod
     def _gen_from_profile_events(
-        signature: ProfileEventSignature, events: List[ProfileEvent]
+        signature: ProfileEventSignature,
+        events: List[ProfileEvent],
+        scale_factor: int = 1,
     ) -> "Event":
         """
         Given a ProfileEventSignature and a list of ProfileEvents with that signature,
         return an Event object matching the ProfileEventSignature, with perf_data
         populated from the list of ProfileEvents
+
+        An optional inverse scale factor can be provided to adjust the event timestamps
         """
-        delegate_debug_identifier = (
-            signature.delegate_id or signature.delegate_id_str or None
-        )
+        if signature.delegate_id is not None:  # 0 is a valid value
+            delegate_debug_identifier = signature.delegate_id
+        else:
+            delegate_debug_identifier = signature.delegate_id_str or None
 
         # Use the delegate identifier as the event name if delegated
         is_delegated_op = delegate_debug_identifier is not None
         name = signature.name if not is_delegated_op else str(delegate_debug_identifier)
 
         perf_data = PerfData(
-            [float(event.end_time - event.start_time) / 1000 for event in events]
+            [
+                float(event.end_time - event.start_time) / scale_factor
+                for event in events
+            ]
         )
 
         return Event(
@@ -157,6 +187,28 @@ class Event:
             delegate_debug_identifier=delegate_debug_identifier,
             is_delegated_op=is_delegated_op,
         )
+
+    def _associate_with_op_graph_nodes(
+        self, debug_handle_to_op_node_map: Dict[int, OperatorNode]
+    ) -> None:
+        """
+        Helper function to populate the stack_traces, module_hierarchy and op_types attributes
+        based on the debug handles of this event
+        """
+        if (debug_handles := self.debug_handles) is None:
+            return
+
+        if isinstance(debug_handles, int):
+            debug_handles = [debug_handles]
+
+        for handle in debug_handles:
+            node = debug_handle_to_op_node_map.get(handle)
+            if node is not None and (metadata := node.metadata) is not None:
+                self.stack_traces[node.name] = metadata.get("stack_trace")
+                self.module_hierarchy[node.name] = metadata.get("nn_module_stack")
+                if node.op:
+                    # TODO: consider having this as a dict from node.name -> node.op
+                    self.op_types += [node.op]
 
 
 @dataclass
@@ -186,11 +238,11 @@ class EventBlock:
             "min": [event.perf_data.min for event in self.events],
             "max": [event.perf_data.max for event in self.events],
             "median": [event.perf_data.median for event in self.events],
-            "op_type": [event.op_type for event in self.events],
+            "op_types": [event.op_types for event in self.events],
             "delegate_debug_identifier": [
                 event.delegate_debug_identifier for event in self.events
             ],
-            "stack_traces": [event.stack_trace for event in self.events],
+            "stack_traces": [event.stack_traces for event in self.events],
             "module_hierarchy": [event.module_hierarchy for event in self.events],
             "is_delegated_op": [event.is_delegated_op for event in self.events],
             "delegate_backend_name": [
@@ -202,10 +254,15 @@ class EventBlock:
         return df
 
     @staticmethod
-    def _gen_from_etdump(etdump: ETDumpFlatCC) -> List["EventBlock"]:
+    def _gen_from_etdump(
+        etdump: ETDumpFlatCC, scale_factor: int = 1
+    ) -> List["EventBlock"]:
         """
         Given an etdump, generate a list of EventBlocks corresponding to the
-        contents
+        contents.
+
+        An optional (inverse) scale factor can be provided to adjust the
+        etdump timestamps associated with each EventBlocks
         """
 
         # Group all the RunData by the set of profile events
@@ -241,17 +298,18 @@ class EventBlock:
             EventBlock(
                 name=str(index),
                 events=[
-                    Event._gen_from_profile_events(signature, event)
+                    Event._gen_from_profile_events(signature, event, scale_factor)
                     for signature, event in profile_events.items()
                 ],
             )
             for index, profile_events in enumerate(profile_run_groups.values())
         ]
 
+    # TODO: Considering changing ETRecord deserialization logic to cast the ints in string format to actual ints
     def _gen_resolve_debug_handles(
         self,
-        handle_map: Dict[int, List[int]],
-        delegate_map: Optional[Dict[int, DelegateMetadata]] = None,
+        handle_map: Dict[str, List[int]],
+        delegate_map: Optional[Dict[str, DelegateMetadata]] = None,
     ):
         """
         Given mappings from instruction id to debug handles, populate the
@@ -261,10 +319,12 @@ class EventBlock:
         to obtain the debug_handle via the delegate map
         """
         for event in self.events:
+            # Check if instruction_id is present in the event
+            if event.instruction_id is None:
+                continue
+
             # Check for the instruction_id in handle map
-            if (
-                instruction_id := event.instruction_id
-            ) is None or instruction_id not in handle_map:
+            if (instruction_id := str(event.instruction_id)) not in handle_map:
                 continue
 
             # For non-delegated event, handles are found in handle_map
@@ -285,32 +345,76 @@ class EventBlock:
 
             # For delegated events, handles are found via delegateMetadata
             event.delegate_backend_name = delegate_metadata.get("name", "")
-            event.debug_handles = delegate_metadata.get("delegate_map", {}).get(
+            delegate_metadata_delegate_map = delegate_metadata.get("delegate_map", {})
+
+            # delegate_debug_id can be either int based or string based, therefore we need to check both
+            debug_handles = delegate_metadata_delegate_map.get(
                 delegate_debug_id  # pyre-ignore
             )
+            if debug_handles is not None:
+                event.debug_handles = debug_handles
+            else:
+                event.debug_handles = delegate_metadata_delegate_map.get(
+                    str(delegate_debug_id)  # pyre-ignore
+                )
 
 
 class Inspector:
     """
-    APIs for examining model architecture and performance stats
+    APIs for examining model architecture and performance stats.
+
+    Public Attributes:
+        event_blocks: List["EventBlocks"]. Structured data accessible through Inspector for analysis.
+
+    Private Attributes:
+        _etrecord: Optional[ETRecord]. File under etrecord_path deserialized into an object.
+        _op_graph_dict: Mapping[str, OperatorGraphWithStats]. Graph objects parsed from etrecord matched with user defined graph names.
     """
 
     def __init__(
-        self, etdump_path: Optional[str] = None, etrecord_path: Optional[str] = None
+        self,
+        etdump_path: Optional[str] = None,
+        etrecord_path: Optional[str] = None,
+        etdump_scale: int = 1000,
     ) -> None:
         """
         Create an inspector instance from the provided ETDump/ETRecord
+
+        Args:
+            etdump_path: Path to the ETDump file.
+            etrecord_path: Path to the ETRecord file.
+            etdump_scale: Inverse Scale Factor used to cast the timestamps in ETDump
+                defaults to milli (1000ms = 1s).
         """
 
-        # Gen op graphs from etrecord
-        if etrecord_path is not None:
-            self._etrecord = parse_etrecord(etrecord_path=etrecord_path)
-            self._op_graph_dict: Mapping[
-                str, OperatorGraphWithStats
-            ] = gen_graphs_from_etrecord(etrecord=self._etrecord)
+        # TODO: etrecord_path can be optional, so need to support the case when it is not present
+        self._etrecord = gen_etrecord_object(etrecord_path=etrecord_path)
+        etdump = gen_etdump_object(etdump_path=etdump_path)
+        self.event_blocks = EventBlock._gen_from_etdump(etdump, etdump_scale)
 
-        self.event_blocks: List[EventBlock] = []
-        # TODO: create event blocks from etdump, and associate events with op graph nodes
+        self._op_graph_dict: Mapping[
+            str, OperatorGraphWithStats
+        ] = gen_graphs_from_etrecord(etrecord=self._etrecord)
+
+        # Use the delegate map from etrecord, associate debug handles with each event
+        for event_block in self.event_blocks:
+            event_block._gen_resolve_debug_handles(
+                self._etrecord._debug_handle_map[FORWARD],
+                self._etrecord._delegate_map[FORWARD]
+                if self._etrecord._delegate_map is not None
+                else None,
+            )
+
+        # Traverse the edge dialect op graph to create mapping from debug_handle to op node
+        debug_handle_to_op_node_map = {}
+        create_debug_handle_to_op_node_mapping(
+            self._op_graph_dict[EDGE_DIALECT_GRAPH_KEY],
+            debug_handle_to_op_node_map,
+        )
+
+        for event_block in self.event_blocks:
+            for event in event_block.events:
+                event._associate_with_op_graph_nodes(debug_handle_to_op_node_map)
 
     def print_data_tabular(self) -> None:
         """
@@ -322,14 +426,31 @@ class Inspector:
 
         df_list = [event_block.to_dataframe() for event_block in self.event_blocks]
         combined_df = pd.concat(df_list, ignore_index=True)
-        # TODO: filter out raw, delegate_debug_identifier, stack_traces and module_hierarchy
+        # Filter out some columns for better readability when printing
+        filtered_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
         try:
             from IPython.display import display
 
-            styled_df = combined_df.style.applymap(style_text_size)
+            styled_df = filtered_df.style.applymap(style_text_size)
             display(styled_df)
         except:
-            print(tabulate(combined_df, headers="keys", tablefmt="fancy_grid"))
+            # TODO: figure out how to trigger this path in python shell
+            print(tabulate(filtered_df, headers="keys", tablefmt="fancy_grid"))
+
+    # TODO: write unit test
+    def find_total_for_module(self, module_name: str):
+        total = 0.0
+        for block in self.event_blocks:
+            for event in block.events:
+                module_hierarchy = event.module_hierarchy.values()
+                for hierarchy in module_hierarchy:
+                    if not hierarchy:
+                        continue
+                    found = any(module_name in key for key in hierarchy.keys())
+                    if found:
+                        total += event.perf_data.avg
+                        break
+        return total
 
     def get_event_blocks(self) -> List[EventBlock]:
         """
@@ -353,12 +474,13 @@ class Inspector:
         # TODO: implement
         pass
 
-    # TODO: add a unittest for this function
-    def get_exported_program(self, graph: Optional[str]) -> ExportedProgram:
+    def get_exported_program(self, graph: Optional[str] = None) -> ExportedProgram:
         """
         Access helper for ETRecord, defaults to returning Edge Dialect Program
+
+        Args:
+            graph: Name of the graph to access. If None, returns the Edge Dialect Program.
         """
-        if not graph:
-            return self._etrecord["edge_dialect_output/forward"]
-        else:
-            return self._etrecord.get(graph)
+        if graph is None:
+            return self._etrecord.edge_dialect_program
+        return self._etrecord.graph_map.get(graph)

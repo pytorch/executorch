@@ -34,7 +34,7 @@ from executorch.sdk.etdump.serialize import deserialize_from_etdump
 class RESERVED_METADATA_ARG(Enum):
     DEBUG_HANDLE = "debug_handle"
     MODULE_STACK = "nn_module_stack"
-    SOURCE_FN = "source_fn"
+    SOURCE_FN_STACK = "source_fn_stack"
     MODULE_TYPE = "module_type"
     PROFILE_START_TIME = "profile_start_time"
     PROFILE_END_TIME = "profile_end_time"
@@ -463,9 +463,10 @@ class FXOperatorGraph(OperatorGraphWithStats):
         metadata: Dict[str, Any],
     ):
         if (
-            source_fn := metadata.get("source_fn")
+            source_fn_stack := metadata.get("source_fn_stack")
         ) is not None and "nn_module_stack" in metadata:
             # (module name, module type)
+            source_fn = source_fn_stack[-1]
             module_type = (
                 source_fn[1] if isinstance(source_fn[1], str) else source_fn[1].__name__
             )

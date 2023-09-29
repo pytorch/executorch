@@ -92,12 +92,11 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    export-overview
-   export-user-guide
 
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: Intermediate Representation (IR) Specification
+   :caption: IR Specification
    :hidden:
 
    ir-exir
@@ -110,6 +109,7 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Compiler Entry Points
    :hidden:
 
+   examples-end-to-end-to-lower-model-to-delegate
    compiler-delegate-and-partitioner
    compiler-kernel-fusion-pass
    compiler-custom-compiler-passes

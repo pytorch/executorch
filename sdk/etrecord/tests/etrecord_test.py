@@ -51,10 +51,10 @@ class TestETRecord(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdirname:
             generate_etrecord(
                 tmpdirname + "/etrecord.bin",
+                edge_output,
                 et_output,
                 {
                     "aten_dialect_output": captured_output,
-                    "edge_dialect_output": edge_output,
                 },
             )
 
@@ -64,7 +64,7 @@ class TestETRecord(unittest.TestCase):
                 captured_output.exported_program.graph_module,
             )
             self.check_graph_closeness(
-                etrecord.graph_map["edge_dialect_output/forward"],
+                etrecord.edge_dialect_program,
                 edge_output.exported_program.graph_module,
             )
             self.check_graph_closeness(
@@ -82,7 +82,10 @@ class TestETRecord(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdirname:
             with self.assertRaises(RuntimeError):
                 generate_etrecord(
-                    tmpdirname + "/etrecord.bin", {"fail_test_case": et_output}
+                    tmpdirname + "/etrecord.bin",
+                    edge_output,
+                    et_output,
+                    {"fail_test_case": et_output},
                 )
 
     def test_etrecord_reserved_name(self):
@@ -92,5 +95,7 @@ class TestETRecord(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     generate_etrecord(
                         tmpdirname + "/etrecord.bin",
+                        edge_output,
+                        et_output,
                         {reserved_name: captured_output.exported_program.graph_module},
                     )

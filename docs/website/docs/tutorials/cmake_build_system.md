@@ -1,3 +1,4 @@
+DEPRECATED: This document is moving to //executorch/docs/source/runtime-build-and-cross-compilation.md
 # Building with CMake
 
 Although buck2 is the main build system for the ExecuTorch project, it's also
