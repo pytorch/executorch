@@ -9,14 +9,14 @@ import unittest
 from typing import List, Optional, Tuple, Union
 
 import executorch.sdk.etdump.schema_flatcc as flatcc
-from executorch.sdk.etdb.inspector import (
+from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
+from executorch.sdk.inspector.inspector import (
     DelegateMetadata,
     Event,
     EventBlock,
     PerfData,
     ProfileEventSignature,
 )
-from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
 
 
 class TestEventBlock(unittest.TestCase):
