@@ -63,7 +63,11 @@ class MemoryManager final {
    * TODO(T162089316): Remove this once all users migrate to the new ctor.
    */
   __ET_DEPRECATED MemoryManager(
-      __ET_UNUSED MemoryAllocator* constant_allocator,
+      // We would normally use __ET_UNUSED here, but GCC older than 9.3 has a
+      // bug that triggers a syntax error when using [[maybe_unused]] on the
+      // first parameter of a constructor:
+      // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=81429
+      __attribute__((unused)) MemoryAllocator* constant_allocator,
       HierarchicalAllocator* non_constant_allocator,
       MemoryAllocator* runtime_allocator,
       MemoryAllocator* kernel_temporary_allocator)
