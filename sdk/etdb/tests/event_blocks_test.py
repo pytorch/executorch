@@ -128,7 +128,7 @@ class TestEventBlock(unittest.TestCase):
         - Correct number of Events and Raw Data values (iterations)
         """
         etdump: ETDumpFlatCC = TestEventBlock._get_sample_etdump_flatcc()
-        blocks: List[EventBlock] = EventBlock._gen_from_etdump(etdump)
+        blocks: List[EventBlock] = EventBlock._gen_from_etdump(etdump, 1000)
 
         self.assertEqual(len(blocks), 2, f"Expected 2 runs, got {len(blocks)}")
 
@@ -152,6 +152,7 @@ class TestEventBlock(unittest.TestCase):
             instruction_id: int,
             delegate_debug_id_int: Optional[int] = None,
             delegate_debug_id_str: Optional[str] = None,
+            scale_factor: int = 1000,
         ) -> None:
             """
             Helper function for testing that the provided ProfileEvent fields are
@@ -180,17 +181,19 @@ class TestEventBlock(unittest.TestCase):
                 TestEventBlock._gen_sample_profile_event(
                     name,
                     instruction_id,
-                    (0, 10),
+                    (0, time),
                     delegate_debug_id,
                 )
                 for time in durations
             ]
-            event = Event._gen_from_profile_events(signature, profile_events)
+            event = Event._gen_from_profile_events(
+                signature, profile_events, scale_factor=scale_factor
+            )
 
             is_delegated = delegate_debug_id is not None
             expected_event = Event(
                 str(delegate_debug_id) if is_delegated else name,
-                PerfData([float(duration) / 1000 for duration in durations]),
+                PerfData([float(duration) / scale_factor for duration in durations]),
                 instruction_id=signature.instruction_id,
                 delegate_debug_identifier=delegate_debug_id,
                 is_delegated_op=is_delegated,
@@ -205,6 +208,11 @@ class TestEventBlock(unittest.TestCase):
 
         # Delegate with String Debug ID
         _test_profile_event_generation("delegate", 1, None, "identifier")
+
+        # Manipulating the scale factor
+        _test_profile_event_generation(
+            "delegate", 1, None, "identifier", scale_factor=10000
+        )
 
     def test_gen_resolve_debug_handles(self) -> None:
         """
