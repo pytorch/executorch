@@ -17,15 +17,15 @@ implementation, along with related types (`torch::executor::ScalarType`, etc.)
 * ETensor's API is a source-compatible subset of `at::Tensor`. Code that is
   written against ETensor can also build against `at::Tensor`.
 * "portable mode kernels" are any operator implementations that are written to be
-  compatible with ETensor. But that means that the can also build against
+  compatible with ETensor. But that means they can also be built against
   `at::Tensor` if desired, and used in the same model as ATen kernels.
 * ETensor does not own or allocate memory on its own
   * To support dynamic shapes, kernels can allocate
     Tensor data using the MemoryAllocator provided by the client.
 
 ### Portable kernels
-See (`//executorch/kernels/portable/README.md`) for technical details.
-Portable kernels, which live under `//executorch/kernels/portable`, are:
+See ([`executorch/kernels/portable/README.md`](https://github.com/pytorch/executorch/blob/main/kernels/portable/README.md)) for technical details.
+Portable kernels, which live under `executorch/kernels/portable`, are:
 * Portable mode kernels
 * Compatible with ATen operator signatures
 * Written in portable C++ so that they can build for any target
