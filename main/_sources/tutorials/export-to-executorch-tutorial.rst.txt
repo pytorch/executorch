@@ -244,7 +244,7 @@ different than the ones we used while tracing, we will run into an error:
         return forward_call(*args, **kwargs)
       File "<eval_with_key>.34", line 11, in forward
         _assert_async = torch.ops.aten._assert_async.msg(scalar_tensor, 'Input arg1_1.shape[1] is specialized at 3');  scalar_tensor = None
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 498, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 499, in __call__
         return self._op(*args, **kwargs or {})
     RuntimeError: Input arg1_1.shape[1] is specialized at 3
 
@@ -379,7 +379,7 @@ Now let's try running the model with different shapes:
         return forward_call(*args, **kwargs)
       File "<eval_with_key>.68", line 20, in forward
         _assert_async_3 = torch.ops.aten._assert_async.msg(scalar_tensor_3, 'Input arg0_1.shape[1] is outside of specified dynamic range [2, 10]');  scalar_tensor_3 = None
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 498, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 499, in __call__
         return self._op(*args, **kwargs or {})
     RuntimeError: Input arg0_1.shape[1] is outside of specified dynamic range [2, 10]
     Traceback (most recent call last):
@@ -401,7 +401,7 @@ Now let's try running the model with different shapes:
         return forward_call(*args, **kwargs)
       File "<eval_with_key>.73", line 11, in forward
         _assert_async = torch.ops.aten._assert_async.msg(scalar_tensor, 'Input arg1_1.shape[1] is not equal to input arg0_1.shape[1]');  scalar_tensor = None
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 498, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 499, in __call__
         return self._op(*args, **kwargs or {})
     RuntimeError: Input arg1_1.shape[1] is not equal to input arg0_1.shape[1]
 
@@ -500,11 +500,7 @@ model properly for a specific backend.
             
                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:82, code: a = self.conv(x)
                 dequantize_per_tensor: f32[1, 3, 256, 256] = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor = None
-            
-                # No stacktrace found for following nodes
                 quantize_per_tensor_1: i8[16, 3, 3, 3] = torch.ops.quantized_decomposed.quantize_per_tensor.default(arg0_1, 1.0, 0, -127, 127, torch.int8);  arg0_1 = None
-            
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:82, code: a = self.conv(x)
                 dequantize_per_tensor_1: f32[16, 3, 3, 3] = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_1, 1.0, 0, -127, 127, torch.int8);  quantize_per_tensor_1 = None
                 convolution: f32[1, 16, 256, 256] = torch.ops.aten.convolution.default(dequantize_per_tensor, dequantize_per_tensor_1, arg1_1, [1, 1], [1, 1], [1, 1], False, [0, 0], 1);  dequantize_per_tensor = dequantize_per_tensor_1 = arg1_1 = None
             
@@ -1384,7 +1380,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 4.989 seconds)
+   **Total running time of the script:** (0 minutes 4.898 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
