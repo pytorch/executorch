@@ -153,12 +153,16 @@ class Event:
 
     @staticmethod
     def _gen_from_profile_events(
-        signature: ProfileEventSignature, events: List[ProfileEvent]
+        signature: ProfileEventSignature,
+        events: List[ProfileEvent],
+        scale_factor: int = 1,
     ) -> "Event":
         """
         Given a ProfileEventSignature and a list of ProfileEvents with that signature,
         return an Event object matching the ProfileEventSignature, with perf_data
         populated from the list of ProfileEvents
+
+        An optional inverse scale factor can be provided to adjust the event timestamps
         """
         if signature.delegate_id is not None:  # 0 is a valid value
             delegate_debug_identifier = signature.delegate_id
@@ -170,7 +174,10 @@ class Event:
         name = signature.name if not is_delegated_op else str(delegate_debug_identifier)
 
         perf_data = PerfData(
-            [float(event.end_time - event.start_time) / 1000 for event in events]
+            [
+                float(event.end_time - event.start_time) / scale_factor
+                for event in events
+            ]
         )
 
         return Event(
@@ -247,10 +254,15 @@ class EventBlock:
         return df
 
     @staticmethod
-    def _gen_from_etdump(etdump: ETDumpFlatCC) -> List["EventBlock"]:
+    def _gen_from_etdump(
+        etdump: ETDumpFlatCC, scale_factor: int = 1
+    ) -> List["EventBlock"]:
         """
         Given an etdump, generate a list of EventBlocks corresponding to the
-        contents
+        contents.
+
+        An optional (inverse) scale factor can be provided to adjust the
+        etdump timestamps associated with each EventBlocks
         """
 
         # Group all the RunData by the set of profile events
@@ -286,7 +298,7 @@ class EventBlock:
             EventBlock(
                 name=str(index),
                 events=[
-                    Event._gen_from_profile_events(signature, event)
+                    Event._gen_from_profile_events(signature, event, scale_factor)
                     for signature, event in profile_events.items()
                 ],
             )
@@ -360,16 +372,25 @@ class Inspector:
     """
 
     def __init__(
-        self, etdump_path: Optional[str] = None, etrecord_path: Optional[str] = None
+        self,
+        etdump_path: Optional[str] = None,
+        etrecord_path: Optional[str] = None,
+        etdump_scale: int = 1000,
     ) -> None:
         """
         Create an inspector instance from the provided ETDump/ETRecord
+
+        Args:
+            etdump_path: Path to the ETDump file.
+            etrecord_path: Path to the ETRecord file.
+            etdump_scale: Inverse Scale Factor used to cast the timestamps in ETDump
+                defaults to milli (1000ms = 1s).
         """
 
         # TODO: etrecord_path can be optional, so need to support the case when it is not present
         self._etrecord = gen_etrecord_object(etrecord_path=etrecord_path)
         etdump = gen_etdump_object(etdump_path=etdump_path)
-        self.event_blocks = EventBlock._gen_from_etdump(etdump)
+        self.event_blocks = EventBlock._gen_from_etdump(etdump, etdump_scale)
 
         self._op_graph_dict: Mapping[
             str, OperatorGraphWithStats
