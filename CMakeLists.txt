@@ -53,6 +53,19 @@ endif()
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
+
+# https://cmake.org/cmake/help/latest/command/add_definitions.html
+# Adds definitions to the compiler command line for
+# - targets in the current directory, before and after this command is invoked
+# - targets in sub-directories added after this command is invoked
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  # Avoid pulling in the logging strings, which can be large.
+  add_definitions(-DET_LOG_ENABLED=0)
+  # Avoid pulling in the flatbuffer data verification
+  # logic, which can add about 20kB.
+  add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
+endif()
+
 # -Os: Optimize for size. -ffunction-sections -fdata-sections: breaks function
 # and data into sections so they can be properly gc'd. -s: strip symbols
 set(CMAKE_CXX_FLAGS_RELEASE
@@ -79,8 +92,7 @@ option(REGISTER_QUANTIZED_OPS
 option(BUILD_SELECTIVE_BUILD_TEST
        "Whether to build binary for demo selective build" OFF)
 
-option(EXECUTORCH_BUILD_SIZE_TEST
-       "Whether to build size test" OFF)
+option(EXECUTORCH_BUILD_SIZE_TEST "Whether to build size test" OFF)
 
 if(BUILD_SELECTIVE_BUILD_TEST)
   option(SELECT_ALL_OPS
@@ -277,15 +289,21 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 
-# Add XNNPACK subdirectory
-if(EXECUTORCH_BUILD_XNNPACK)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
-endif()
-
 # Add Android demo app JNI subdirectory
 if(EXECUTORCH_BUILD_ANDROID_DEMO_APP_JNI)
   add_subdirectory(third-party/fbjni)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/android_demo_apps/jni)
+endif()
+
+option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
+       "Build the extension/data_loader directory" OFF)
+if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+endif()
+
+option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
+if(EXECUTORCH_BUILD_XNNPACK)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
 endif()
 
 # Add selective build subdirectory
