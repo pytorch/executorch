@@ -429,12 +429,17 @@ class Inspector:
         # Filter out some columns for better readability when printing
         filtered_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
         try:
+            from IPython import get_ipython
             from IPython.display import display
 
-            styled_df = filtered_df.style.applymap(style_text_size)
-            display(styled_df)
+            if get_ipython() is not None:
+                styled_df = filtered_df.style.applymap(style_text_size)
+                display(styled_df)
+            else:
+                raise Exception(
+                    "Environment unable to support IPython. Fall back to print()."
+                )
         except:
-            # TODO: figure out how to trigger this path in python shell
             print(tabulate(filtered_df, headers="keys", tablefmt="fancy_grid"))
 
     # TODO: write unit test
