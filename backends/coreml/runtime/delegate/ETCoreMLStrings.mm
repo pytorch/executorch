@@ -56,17 +56,17 @@
 }
 
 + (NSString *)cpuComputeUnitName {
-    static NSString * const ETCoreMLCPUComputeUnitName = @"cpu";
+    static NSString * const ETCoreMLCPUComputeUnitName = @"cpu_only";
     return ETCoreMLCPUComputeUnitName;
 }
 
 + (NSString *)cpuAndGpuComputeUnitsName {
-    static NSString * const ETCoreMLCPUAndGPUComputeUnitsName = @"gpu";
+    static NSString * const ETCoreMLCPUAndGPUComputeUnitsName = @"cpu_and_gpu";
     return ETCoreMLCPUAndGPUComputeUnitsName;
 }
 
 + (NSString *)cpuAndNeuralEngineComputeUnitsName {
-    static NSString * const ETCoreMLCPUAndNeuralEngineComputeUnitsName = @"ane";
+    static NSString * const ETCoreMLCPUAndNeuralEngineComputeUnitsName = @"cpu_and_ane";
     return ETCoreMLCPUAndNeuralEngineComputeUnitsName;
 }
 
