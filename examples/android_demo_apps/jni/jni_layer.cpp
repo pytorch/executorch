@@ -10,11 +10,10 @@
  * @file
  *
  * This tool can run ExecuTorch model files that only use operators that
- * are covered by the portable kernels, with possible delegate to the
- * test_backend_compiler_lib.
+ * are covered by the kernels and backends (XNNPACK) in the corresponding
+ * CMake rule.
  *
- * It sets all input tensor data to ones, and assumes that the outputs are
- * all fp32 tensors.
+ * It assumes that input is a fp32 tensor and output is a fp32 tensor.
  */
 
 #include <cassert>
