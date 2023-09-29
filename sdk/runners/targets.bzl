@@ -1,9 +1,4 @@
-load(
-    "@fbsource//tools/build_defs:default_platform_defs.bzl",
-    "ANDROID",
-    "CXX",
-)
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "runtime")
 load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
 load("@fbsource//xplat/executorch/extension/pybindings:pybindings.bzl", "MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB")
 
@@ -41,7 +36,7 @@ def define_common_targets():
         runtime.cxx_library(
             name = binary_name + "_lib",
             srcs = ["executor_runner.cpp"],
-            deps = [
+            exported_deps = [
                 "//executorch/runtime/executor/test:test_backend_compiler_lib",
                 "//executorch/runtime/executor/test:test_backend_with_delegate_mapping",
                 "//executorch/runtime/executor:program",
@@ -60,7 +55,7 @@ def define_common_targets():
             external_deps = [
                 "gflags",
             ],
-            platforms = [ANDROID, CXX],
+            platforms = get_default_executorch_platforms(),
             define_static_target = True,
             visibility = [
                 "//executorch/sdk/runners/...",
@@ -76,7 +71,7 @@ def define_common_targets():
             external_deps = [
                 "gflags",
             ],
-            platforms = [ANDROID, CXX],
+            platforms = get_default_executorch_platforms(),
             define_static_target = True,
             visibility = [
                 "@EXECUTORCH_CLIENTS",
