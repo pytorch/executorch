@@ -647,6 +647,7 @@
 					"$(SRCROOT)/../kvstore",
 					"$(SRCROOT)/../inmemoryfs",
 					"$(SRCROOT)/../../third-party/nlohmann/",
+					"$(SRCROOT)/../include",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../libraries";
@@ -677,6 +678,7 @@
 					"$(SRCROOT)/../kvstore",
 					"$(SRCROOT)/../inmemoryfs",
 					"$(SRCROOT)/../../third-party/nlohmann/",
+					"$(SRCROOT)/../include",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../libraries";

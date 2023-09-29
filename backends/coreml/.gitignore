@@ -16,7 +16,9 @@ xcuserdata/
 
 runtime/runner/build/
 runtime/libraries/
+runtime/include/
 runtime/inmemoryfs/build/
+
 xcode-runner-build/
 xcode-test-build/
 
