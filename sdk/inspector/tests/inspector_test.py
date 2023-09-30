@@ -16,12 +16,12 @@ from unittest.mock import patch
 
 from executorch.exir import ExportedProgram
 from executorch.sdk.edir.et_schema import OperatorNode
-
-from executorch.sdk.etdb import inspector
-
-from executorch.sdk.etdb.inspector import Event, EventBlock, Inspector, PerfData
 from executorch.sdk.etrecord import generate_etrecord, parse_etrecord
 from executorch.sdk.etrecord.tests.etrecord_test import TestETRecord
+
+from executorch.sdk.inspector import inspector
+
+from executorch.sdk.inspector.inspector import Event, EventBlock, Inspector, PerfData
 
 
 OP_TYPE = "aten::add"
