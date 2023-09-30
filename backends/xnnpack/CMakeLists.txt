@@ -64,15 +64,17 @@ target_include_directories(
 
 set(xnn_executor_runner_libs ${_executor_runner_libs} xnnpack_schema)
 
-list(TRANSFORM _dynamic_quant_utils__srcs PREPEND "${EXECUTORCH_ROOT}/")
-add_library(dynamic_quant_utils ${_dynamic_quant_utils__srcs})
-set_target_properties(dynamic_quant_utils PROPERTIES LINKER_LANGUAGE CXX)
-target_include_directories(dynamic_quant_utils
+list(TRANSFORM _xnnpack_dynamic_quant_utils__srcs PREPEND "${EXECUTORCH_ROOT}/")
+add_library(xnnpack_dynamic_quant_utils ${_xnnpack_dynamic_quant_utils__srcs})
+set_target_properties(xnnpack_dynamic_quant_utils PROPERTIES LINKER_LANGUAGE
+                                                             CXX)
+target_include_directories(xnnpack_dynamic_quant_utils
                            PUBLIC ${_common_include_directories})
-target_compile_options(dynamic_quant_utils PUBLIC ${_common_compile_options})
+target_compile_options(xnnpack_dynamic_quant_utils
+                       PUBLIC ${_common_compile_options})
 
 if(ENABLE_DYNAMIC_QUANTIZATION)
-  list(APPEND xnn_executor_runner_libs dynamic_quant_utils)
+  list(APPEND xnn_executor_runner_libs xnnpack_dynamic_quant_utils)
 endif()
 
 include(cmake/Dependencies.cmake)

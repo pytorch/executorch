@@ -117,7 +117,7 @@ deps = [
   "executorch",
 ]
 
-[targets.dynamic_quant_utils]
+[targets.xnnpack_dynamic_quant_utils]
 buck_targets = [
   "//backends/xnnpack:dynamic_quant_utils",
 ]
