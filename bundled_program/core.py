@@ -140,22 +140,22 @@ def assert_valid_bundle(
     bp_plan_id = 0
 
     method_name_of_program = {e.name for e in program.execution_plan}
-    method_name_of_test_suites = {
+    method_name_of_bundled_config = {
         t.method_name for t in bundled_config.execution_plan_tests
     }
 
-    assert method_name_of_test_suites.issubset(
+    assert method_name_of_bundled_config.issubset(
         method_name_of_program
-    ), f"All methods in method_test_suites should be found in program.execution_plan, \
-         but {str(method_name_of_test_suites - method_name_of_program)} does not include."
+    ), f"All method names in bundled config should be found in program.execution_plan, \
+         but {str(method_name_of_bundled_config - method_name_of_program)} does not include."
 
-    # check if method_tesdt_suites has been sorted in ascending alphabetical order of method name.
+    # check if  has been sorted in ascending alphabetical order of method name.
     for bp_plan_id in range(1, len(bundled_config.execution_plan_tests)):
         assert (
             bundled_config.execution_plan_tests[bp_plan_id - 1].method_name
             <= bundled_config.execution_plan_tests[bp_plan_id].method_name
-        ), f"The method name of test suite should be sorted in ascending alphabetical \
-            order of method name, but {bp_plan_id-1}-th and {bp_plan_id}-th method_test_suite aren't."
+        ), f"The method name of BundledConfig should be sorted in ascending alphabetical \
+            order of method name, but {bp_plan_id-1}-th and {bp_plan_id}-th methods aren't."
 
     # Check if the inputs' type meet Program's requirement
     while bp_plan_id < len(bundled_config.execution_plan_tests):
