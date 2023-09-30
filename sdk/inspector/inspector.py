@@ -26,14 +26,14 @@ import torch
 from executorch.exir import ExportedProgram
 
 from executorch.sdk.edir.et_schema import OperatorGraphWithStats, OperatorNode
-from executorch.sdk.etdb._inspector_utils import (
+from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
+from executorch.sdk.inspector._inspector_utils import (
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
     gen_etdump_object,
     gen_etrecord_object,
     gen_graphs_from_etrecord,
 )
-from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
 
 from tabulate import tabulate
 

@@ -8,9 +8,9 @@ python_unittest(
     deps = [
         "//executorch/exir:lib",
         "//executorch/sdk/edir:et_schema",
-        "//executorch/sdk/etdb:inspector",
         "//executorch/sdk/etrecord:etrecord",
         "//executorch/sdk/etrecord/tests:etrecord_test_library",
+        "//executorch/sdk/inspector:inspector",
     ],
 )
 
@@ -18,8 +18,8 @@ python_unittest(
     name = "event_blocks_test",
     srcs = ["event_blocks_test.py"],
     deps = [
-        "//executorch/sdk/etdb:inspector",
         "//executorch/sdk/etdump:schema_flatcc",
+        "//executorch/sdk/inspector:inspector",
     ],
 )
 
@@ -28,8 +28,8 @@ python_unittest(
     srcs = ["inspector_utils_test.py"],
     deps = [
         "//executorch/sdk/edir:et_schema",
-        "//executorch/sdk/etdb:inspector_utils",
         "//executorch/sdk/etrecord:etrecord",
         "//executorch/sdk/etrecord/tests:etrecord_test_library",
+        "//executorch/sdk/inspector:inspector_utils",
     ],
 )
