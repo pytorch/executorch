@@ -101,7 +101,7 @@ __Returns:__
 __Return type:__
 - `BundledProgram`
 
-### Example
+### Emit Example
 
 Here is a flow highlighting how to generate a `BundledProgram` given a PyTorch model and the representative inputs we want to test it along with.
 
@@ -334,7 +334,7 @@ __Returns:__
  execution.
 
 
-### Example
+### Runtime Example
 
 Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from [executor_runner](https://github.com/pytorch/executorch/blob/main/sdk/runners/executor_runner.cpp), and please review that file if you need more info and context:
 
