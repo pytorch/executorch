@@ -6,16 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-/**
- * @file
- *
- * This tool can run ExecuTorch model files that only use operators that
- * are covered by the kernels and backends (XNNPACK) in the corresponding
- * CMake rule.
- *
- * It assumes that input is a fp32 tensor and output is a fp32 tensor.
- */
-
 #include <cassert>
 #include <iostream>
 #include <memory>
@@ -68,8 +58,6 @@ constexpr static int kTensorDTypeFloat32 = 4;
 constexpr static int kTensorDTypeInt64 = 5;
 constexpr static int kTensorDTypeFloat64 = 6;
 
-/////////////////////////////////////////////////////////////////////
-
 class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
  public:
   constexpr static const char* kJavaDescriptor =
@@ -112,6 +100,10 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
     jTensorShape->setRegion(0, tensorShapeVec.size(), tensorShapeVec.data());
 
     static auto cls = TensorHybrid::javaClassStatic();
+    // Note: this is safe as long as the data stored in tensor is valid; the
+    // data won't go out of scope as long as the Method for the inference is
+    // valid and there is no other inference call. Java layer picks up this
+    // value immediately so the data is valid.
     facebook::jni::local_ref<facebook::jni::JByteBuffer> jTensorBuffer =
         facebook::jni::JByteBuffer::wrapBytes(
             (uint8_t*)tensor.data_ptr(), tensor.nbytes());
@@ -124,8 +116,9 @@ class TensorHybrid : public facebook::jni::HybridClass<TensorHybrid> {
             jint,
             jint,
             facebook::jni::alias_ref<jhybriddata>)>("nativeNewTensor");
+    constexpr int kMemoryFormat = 1;
     return jMethodNewTensor(
-        cls, jTensorBuffer, jTensorShape, jdtype, 1, makeCxxInstance(tensor));
+        cls, jTensorBuffer, jTensorShape, jdtype, kMemoryFormat, makeCxxInstance(tensor));
   }
 
  private:
@@ -141,21 +134,21 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
   constexpr static int kTypeCodeTensor = 2;
 
   static facebook::jni::local_ref<JEValue> newJEValueFromEValue(
-      EValue evalu) {
+      EValue evalue) {
     // Note: evalue is valid as long as Method is valid before next execution.
-    if (evalu.isTensor()) {
+    if (evalue.isTensor()) {
       static auto jMethodTensor =
           JEValue::javaClassStatic()
               ->getStaticMethod<facebook::jni::local_ref<JEValue>(
                   facebook::jni::local_ref<TensorHybrid::javaobject>)>("from");
-      const auto& tensor = evalu.toTensor();
+      const auto& tensor = evalue.toTensor();
       return jMethodTensor(
           JEValue::javaClassStatic(),
           TensorHybrid::newJTensorFromTensor(tensor));
     }
     facebook::jni::throwNewJavaException(
         facebook::jni::gJavaLangIllegalArgumentException,
-        "Unsupported EValue type");
+        "Unsupported EValue type: %d", evalue.tag);
   }
 
   static TensorImpl JEValueToEValue(
@@ -276,6 +269,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       facebook::jni::alias_ref<
           facebook::jni::JMap<facebook::jni::JString, facebook::jni::JString>>
           extraFiles) {
+  // Loads a model file (pte) from the Java model path. extraFiles are not used for now. The function loads the program and use `forward` method for now. It extracts the metadata for the `forward` method and initialize the memory allocator from the input/output data format. It only supports 1 tensor input and 1 tensor output for now. This initializes ExecuTorchJni data members such as `planned_memory`, `memory_manager`, `method_`, etc.
     std::string model_path_str = modelPath->toStdString();
     const char* model_path = model_path_str.c_str();
     Result<FileDataLoader> loader = FileDataLoader::from(model_path);
@@ -323,14 +317,13 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
       facebook::jni::alias_ref<
           facebook::jni::JArrayClass<JEValue::javaobject>::javaobject>
           jinputs) {
-    // Note: We only support NCHW (N, 3, 224, 224) inputs, with 1 input and 1 output for now.
     size_t n = jinputs->size();
-    auto dim_order = std::vector<uint8_t>({0, 1, 2, 3});
-    auto strides = std::vector<int32_t>({3 * 224 * 224, 224 * 224, 224, 1});
+    auto kDimOrder = std::vector<uint8_t>({0, 1, 2, 3});
+    auto kStrides = std::vector<int32_t>({3 * 224 * 224, 224 * 224, 224, 1});
     std::vector<exec_aten::SizesType> shapeVec;
     auto tensor_impl =
         JEValue::JEValueToEValue(
-            jinputs->getElement(0), shapeVec, dim_order, strides);
+            jinputs->getElement(0), shapeVec, kDimOrder, kStrides);
     EValue atEValue = EValue(exec_aten::Tensor(&tensor_impl));
     Error set_input_status = method_->set_input(atEValue, 0);
     ET_CHECK(set_input_status == Error::Ok);
