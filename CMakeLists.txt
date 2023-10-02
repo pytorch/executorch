@@ -103,6 +103,9 @@ if(BUILD_SELECTIVE_BUILD_TEST)
 
   # Option to register ops from yaml file
   option(SELECT_OPS_YAML "Register all the ops from a given yaml file" OFF)
+
+  # Option to manually register kernels
+  option(MANUAL_REGISTRATION "Manually register kernels" OFF)
 endif()
 
 # Build xnn_executor_runner which depends on XNNPACK

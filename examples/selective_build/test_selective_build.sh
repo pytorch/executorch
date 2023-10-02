@@ -53,6 +53,18 @@ test_buck2_select_ops_from_yaml() {
     rm "./custom_ops_1.pte"
 }
 
+test_buck2_select_add_manual() {
+    echo "Exporting add"
+    ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="add"
+
+    echo "Running selective build test"
+    $BUCK run //examples/selective_build:selective_build_test \
+        --config=executorch.select_ops=add_manual -- --model_path=./add.pte
+
+    echo "Removing add.pte"
+    rm "./add.pte"
+}
+
 test_cmake_select_all_ops() {
     echo "Exporting MobilenetV3"
     ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="mv3"
@@ -127,6 +139,30 @@ test_cmake_select_ops_in_yaml() {
     rm "./custom_ops_1.pte"
 }
 
+test_cmake_select_add_manual() {
+    echo "Exporting add"
+    ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="add"
+            # -DCMAKE_BUILD_TYPE=Release \
+
+    (rm -rf cmake-out \
+        && mkdir cmake-out \
+        && cd cmake-out \
+        && retry cmake -DBUCK2="$BUCK" \
+            -DBUILD_SELECTIVE_BUILD_TEST=ON \
+            -DSELECT_OPS_LIST="aten::add.out" \
+            -DMANUAL_REGISTRATION=ON \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+
+    echo "Build selective build test"
+    cmake --build cmake-out -j9
+
+    echo 'Running selective build test'
+    cmake-out/examples/selective_build/selective_build_test --model_path="./add.pte"
+
+    echo "Removing add.pte"
+    rm "./add.pte"
+}
+
 if [[ -z $BUCK ]];
 then
   BUCK=buck2
@@ -142,9 +178,11 @@ then
     test_cmake_select_all_ops
     test_cmake_select_ops_in_list
     test_cmake_select_ops_in_yaml
+    test_cmake_select_add_manual
 elif [[ $1 == "buck2" ]];
 then
     test_buck2_select_all_ops
     test_buck2_select_ops_in_list
     test_buck2_select_ops_from_yaml
+    test_buck2_select_add_manual
 fi

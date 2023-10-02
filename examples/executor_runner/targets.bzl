@@ -9,15 +9,19 @@ def define_common_targets():
 
     # Wraps a commandline executable that can be linked against any desired
     # kernel or backend implementations. Contains a main() function.
+    select_ops = native.read_config("executorch", "select_ops", None)
+
     runtime.cxx_library(
         name = "executor_runner_lib",
         srcs = ["executor_runner.cpp"],
         deps = [
             "//executorch/runtime/executor:program",
+            "//executorch/runtime/kernel:operator_registry",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/evalue_util:print_evalue",
             "//executorch/util:util",
-        ],
+        ] + (["//executorch/examples/selective_build:select_add_out_manual_lib"] if select_ops == "add_manual" else []),
+        preprocessor_flags = ["-DEXECUTORCH_MANUAL_KERNEL_REG"] if select_ops == "add_manual" else [],
         external_deps = [
             "gflags",
         ],

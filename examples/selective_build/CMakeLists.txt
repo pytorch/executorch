@@ -49,14 +49,28 @@ elseif(SELECT_OPS_YAML)
   list(APPEND _kernel_lib custom_kernels)
 endif()
 generate_bindings_for_kernels(${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
-                              "${_custom_ops_yaml}")
-gen_operators_lib("select_build_lib" ${_kernel_lib} executorch)
+                              "${_custom_ops_yaml}" ${MANUAL_REGISTRATION})
+gen_operators_lib(
+  "select_build_lib" ${_kernel_lib} executorch ${MANUAL_REGISTRATION})
 
 set(_updated__srcs)
 foreach(_src ${_executor_runner__srcs})
   list(APPEND _updated__srcs "${EXECUTORCH_ROOT}/${_src}")
 endforeach()
 
+if(${MANUAL_REGISTRATION})
+  # Create include directory with the header RegisterKernels.h
+  set(_include_dir "${CMAKE_BINARY_DIR}/examples/selective_build/include")
+  add_custom_command(TARGET select_build_lib POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+    ${CMAKE_CURRENT_BINARY_DIR}/RegisterKernels.h
+    ${_include_dir}/executorch/examples/selective_build/RegisterKernels.h)
+
+  target_include_directories(
+    select_build_lib INTERFACE ${_include_dir})
+  # Set preprocessor flags for manual registration
+  add_definitions(-DEXECUTORCH_MANUAL_KERNEL_REG)
+endif()
 #
 # selective_build_test: test binary to allow different operator libraries to
 # link to

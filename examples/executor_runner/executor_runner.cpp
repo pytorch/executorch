@@ -30,7 +30,9 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/util.h>
-
+#if defined(EXECUTORCH_MANUAL_KERNEL_REG)
+#include <executorch/examples/selective_build/RegisterKernels.h>
+#endif
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
 DEFINE_string(
@@ -47,7 +49,9 @@ using torch::executor::util::FileDataLoader;
 
 int main(int argc, char** argv) {
   runtime_init();
-
+#if defined(EXECUTORCH_MANUAL_KERNEL_REG)
+  register_all_kernels();
+#endif
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
     std::string msg = "Extra commandline args:";

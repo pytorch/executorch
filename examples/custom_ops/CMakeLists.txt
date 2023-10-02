@@ -43,7 +43,7 @@ elseif(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
   gen_selected_ops("" "my_ops::mul4.out" "")
 endif()
 # Expect gen_selected_ops output file to be selected_operators.yaml
-generate_bindings_for_kernels("" ${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml)
+generate_bindings_for_kernels("" ${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml "")
 message("Generated files ${gen_command_sources}")
 
 # Prepare for C++ libraries.
@@ -71,4 +71,4 @@ add_library(custom_kernels ${kernel_sources})
 target_link_libraries(custom_kernels PRIVATE executorch)
 target_compile_options(custom_kernels PUBLIC ${_common_compile_options})
 
-gen_operators_lib("custom_ops_lib" custom_kernels executorch)
+gen_operators_lib("custom_ops_lib" custom_kernels executorch "")
