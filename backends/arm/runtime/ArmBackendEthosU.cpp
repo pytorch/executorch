@@ -117,7 +117,7 @@ public:
 			if( !((i+1)%4) ) printf("\n");
 		}
 		printf("\n");
-
+		
 		// Allocate driver handle and synchronously invoke driver
 		ethosu_driver *drv = ethosu_reserve_driver();
 
@@ -135,9 +135,9 @@ public:
 		{
 			ET_LOG(Error, "ArmBackend::execute: Ethos-U invocation failed error (%d)", result);
 			return Error::InvalidProgram;
-		}											  
+		}
 		
-        // TMP emit scratch
+		// TMP emit scratch
         printf("Scratch after:\n");
         for( int i=0; i<handles.scratch_data_size; i++ )
         {
@@ -146,6 +146,17 @@ public:
         }
         printf("\n");
 		
+		// Process results into EValue storage
+		// TODO: optimise into direct write for compatible layouts
+		// TODO: get num in/out and layout?
+		int *output_address = (int*)(handles.scratch_data + handles.output_offset);
+		auto tensor = args[1]->toTensor();
+		for(int j=0; j<tensor.numel(); j++)
+		{
+			
+			tensor.mutable_data_ptr<int>()[j] = output_address[j];
+		}
+				
 		return Error::Ok;
 	}
 
@@ -158,6 +169,8 @@ private:
 		const char *cmd_data; size_t cmd_data_size;
 		const char *weight_data; size_t weight_data_size;
 		const char *scratch_data; size_t scratch_data_size;
+		size_t input_offset; size_t input_data_shape[3];
+		size_t output_offset; size_t output_data_shape[3];
 	} vela_handles;
 
 	typedef struct {
@@ -205,6 +218,34 @@ private:
 				h->scratch_data = b->data;
 				h->scratch_data_size = b->size;
 			}
+
+			// capture inputs and outputs
+			if( !strncmp( b->name, "scratch_data", strlen("scratch_data")) )
+			{
+				h->scratch_data = b->data;
+				h->scratch_data_size = b->size;
+			}
+			if( !strncmp( b->name, "input_offset", strlen("input_offset")) )
+			{
+				h->input_offset = ((int*)b->data)[0];
+			}
+			if( !strncmp( b->name, "output_offset", strlen("output_offset")) )
+			{
+				h->output_offset = ((int*)b->data)[0];
+			}
+			if( !strncmp( b->name, "input_shape", strlen("input_shape")) )
+			{
+				h->input_data_shape[0] = ((int*)b->data)[0];
+				h->input_data_shape[0] = ((int*)b->data)[1];
+				h->input_data_shape[0] = ((int*)b->data)[2];
+				
+			}
+			if( !strncmp( b->name, "output_shape", strlen("output_shape")) )
+			{
+				h->output_data_shape[0] = ((int*)b->data)[0];
+				h->output_data_shape[0] = ((int*)b->data)[1];
+                h->output_data_shape[0] = ((int*)b->data)[2];
+            }							
 		}
 	}
 
