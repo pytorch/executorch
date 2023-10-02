@@ -73,7 +73,7 @@ class InsertIOQDQ(ExportPass):
             if n.op == "placeholder" and n.meta.get("quant_attrs"):
                 self._insert_node(graph_module, n, n.meta["quant_attrs"]["encoding"])
 
-            # insert de before output
+            # insert dq before output
             users = list(n.users.keys())
             if (
                 n.meta.get("quant_attrs")
