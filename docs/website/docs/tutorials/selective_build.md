@@ -1,121 +1,144 @@
-# Selective Build
+## Overview
+
+_Selective build_ is a build mode on ExecuTorch that uses model metadata to guide ExecuTorch build. This build mode contains build tool APIs available on both CMake and buck2. ExecuTorch users can use selective build APIs to build an ExecuTorch runtime binary with minimal binary size by only including operators required by models.
+
+This document aims to help ExecuTorch users better use selective build, by listing out available APIs, providing an overview of high level architecture and showcasing examples.
+
+Preread: Overview of the ExecuTorch runtime, High-level architecture and components of ExecuTorch
+
+
+## Design Principles
+
+**Why selective build?** Many ExecuTorch use cases are constrained by binary size. Selective build can reduce the binary size of the ExecuTorch runtime without compromising support for a target model.
+
+**What are we selecting?** Our core ExecuTorch library is around 50kB with no operators/kernels or delegates. If we link in kernel libraries such as the ExecuTorch in-house portable kernel library, the binary size of the whole application surges, due to unused kernels being registered into the ExecuTorch runtime. Selective build is able to apply a filter on the kernel libraries, so that only the kernels actually being used are linked, thus reducing the binary size of the application.
+
+**How do we select? **Selective build provides APIs to allow users to pass in _op info_, operator metadata derived from target models. Selective build tools will gather these op info and build a filter for all kernel libraries being linked in.
+
+
+## High Level Architecture
 
 
 
-## Introduction
+![](./selective_build.png)
 
-**Warning: Selective build process is required by all ExecuTorch operator libraries! Not having it properly setup will cause the operator to not being registered.**
 
-Selective build helps reduce ExecuTorch build binary size, improving code structure by avoiding duplicate ATen-compliant operator schemas and definitions. It should be the by default build mode for ExecuTorch builds.
+Note that all of the selective build tools are running at build-time (to be distinguished from compile-time or runtime). Therefore selective build tools only have access to static data from user input or models.
 
-During development when binary size is not an issue, the option with a full list of operators is also provided (refer to `include_all_ops=True` below in detail).
+The basic flow looks like this:
 
-## How does it work
 
-On a high level, scripts under `codegen/*` extract out operators being used by a model (or multiple models) and write the information into a yaml file. Codegen system reads this yaml file and selectively generates C++ code to register the corresponding operators and code to call the kernels. All the generated files will be encapsulated into a BUCK (or TARGETS) target, which needs to depend on the kernel libraries. Then both generated library and kernel libraries will be included into this ExecuTorch build.
 
+1. For each of the models we plan to run, we extract op info from it, either manually or via a Python tool. Op info will be written into yaml files and generated at build time.
+2. An _op info aggregator _will collect these model op info and merge them into a single op info yaml file.
+3. A _kernel resolver _takes in the linked kernel libraries as well as the merged op info yaml file, then makes a decision on which kernels to be registered into ExecuTorch runtime.
 
 
 ## APIs
 
+We expose build macros for CMake and Buck2, to allow users specifying op info.
+
+On CMake:
+
+[gen_selected_ops](https://github.com/pytorch/executorch/blob/main/build/Codegen.cmake#L12)
+
+On Buck2:
+
+[et_operator_library](https://github.com/pytorch/executorch/blob/main/shim/xplat/executorch/codegen/codegen.bzl#L44C21-L44C21)
+
+Both of these build macros take the following inputs:
 
 
-### et_operator_library
+### Select all ops
 
-This is very much similar to PyTorch mobile selective build rule [`pt_operator_library`](https://fburl.com/code/i8wmbuq2). This rule takes 4 types of inputs:
+If this input is set to true, it means we are registering all the kernels from all the kernel libraries linked into the application. If set to true it is effectively turning off selective build mode.
 
-1. a target pointing to a model file
 
-For example, `//custom/models:model_1` is the target that points to a checked-in model file, we can write a rule similar as:
-```python
-load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library")
+### Select ops from schema yaml
 
-fb_native.export_file(
-  name = "model_1",
-  src = "model_1.pte", # checked in model
-)
+Context: each kernel library is designed to have a yaml file associated with it. For more information on this yaml file, see here (TODO: add link to kernel library documentation). This API allows users to pass in the schema yaml for a kernel library directly, effectively allowlisting all kernels in the library to be registered.
 
+
+### Select root ops from operator list
+
+This API lets users pass in a list of operator names. Note that this API can be combined with the API above and we will create a allowlist from the union of both API inputs.
+
+
+### Select from model (WIP)
+
+This API takes a model and extracts all op info from it.
+
+
+## Example Walkthrough
+
+
+### Buck2 example
+
+Let’s take a look at the following build:
+
+```starlark
+# Select a list of operators: defined in `ops`
 et_operator_library(
-  name = "selective_ops",
-  model = [
-    "//custom/models:model_1",
-  ],
+    name = "select_ops_in_list",
+    ops = [
+        "aten::add.out",
+        "aten::mm.out",
+    ],
 )
 ```
-Under the hood we will generate a `model_operators.yaml` file for this model.
+This target generates the yaml file containing op info for these two ops.
 
-2. a list of operators in plain text
+In addition to that, if we want to select all ops from a kernel library, we can do:
 
-For example, if we want to include `aten::add` and `aten::mul` into ExecuTorch build, we can write a rule like:
-```python
-load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library")
-
+```starlark
+# Select all ops from a yaml file
 et_operator_library(
-  name = "selective_ops",
-  ops = [
-    "aten::add",
-    "aten::mul",
-  ],
+    name = "select_ops_from_yaml",
+    ops_schema_yaml_target = "//executorch/examples/custom_ops:custom_ops.yaml",
 )
 ```
-3. a `functions.yaml` file or a `custom_ops.yaml` file. Pass the yaml file target into `et_operator_libary` and be done with it.
-```python
-load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library")
-
-export_file(
-  name = "functions.yaml"
-)
-
-et_operator_library(
-  name = "selective_ops",
-  ops_schema_yaml_path = ":functions.yaml",
-)
-```
-4. a boolean indicates that we want to include all ops.
-If we want to include all the operators listed in `functions.yaml` as well as `custom_ops.yaml` , we can simply do:
-```python
-load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library")
-
-et_operator_library(
-  name = "selective_ops",
-  include_all_ops = True,
-)
-```
-### executorch_generated_lib
-
-After setting up selected operators by using `et_operator_library` rule, user can let a `executorch_generated_lib` to be depending on them. Notice that one `executorch_generated_lib` can depend on multiple `et_operator_library`, and internally we will union all the selected operators by aggregating all the `model_operators.yaml` files into a `selective_operators.yaml`. This `selective_operators.yaml` will be consumed by codegen system later.
-
-## Example
-To show an example, say we have these two op libraries:
-
-```python
-load("@fbsource//xplat/executorch/codegen:codegen.bzl", "et_operator_library")
-
-et_operator_library(
-  name = "selective_ops_list",
-  ops = [
-    "aten::add",
-    "aten::mul",
-  ],
-)
-
-et_operator_library(
-  name = "selective_ops_model",
-  model = [
-    "//custom/models:model_1", # say it contains "aten::div"
-  ],
-)
-```
-Our `executorch_generated_lib` needs to be depending on both of them:
-```python
-load("@fbsource//xplat/executorch/codegen:codegen.bzl", "executorch_generated_lib")
-
+Then in the kernel registration library we can do:
+```starlark
 executorch_generated_lib(
-  name = "custom_generated_lib`,
-  deps = [
-    ":selective_ops_list",
-    ":selective_ops_model",
-  ],
+    name = "select_ops_lib",
+    custom_ops_yaml_target = "//executorch/examples/custom_ops:custom_ops.yaml",
+functions_yaml_target = "//executorch/kernels/portable:functions.yaml",
+    deps = [
+        "//executorch/examples/custom_ops:custom_ops_1", # kernel library
+        "//executorch/examples/custom_ops:custom_ops_2", # kernel library
+  "//executorch/kernels/portable:operators", # kernel library
+        ":select_ops_from_yaml",
+  ":select_ops_in_list",
+    ],
 )
 ```
-Then we will be able to generate code for all 3 operators: `aten::add`, `aten::mul` and `aten::div`.
+Notice we are allowlisting both add.out, mm.out from the list, and the ones from the schema yaml (`custom_ops.yaml`).
+
+
+### CMake example
+
+In CMakeLists.txt we have the following logic:
+```cmake
+set(_kernel_lib)
+if(SELECT_ALL_OPS)
+  gen_selected_ops("" "" "${SELECT_ALL_OPS}")
+elseif(SELECT_OPS_LIST)
+  gen_selected_ops("" "${SELECT_OPS_LIST}" "")
+elseif(SELECT_OPS_YAML)
+ set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/custom_ops/custom_ops.yaml)
+  gen_selected_ops("${_custom_ops_yaml}" "" "")
+endif()
+```
+Then when calling CMake, we can do:
+
+```
+cmake -D… -DSELECT_OPS_LIST="aten::add.out,aten::mm.out”
+```
+
+Or
+
+```
+cmake -D… -DSELECT_OPS_YAML=ON
+```
+
+To select from either an operator name list or a schema yaml from kernel library.
