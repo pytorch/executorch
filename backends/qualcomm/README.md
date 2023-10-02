@@ -26,14 +26,14 @@ Please check `generate_qnn_executorch_compiler_spec()` in
 
 ```
 backends/qualcomm
-├── builders # Codes for lowering each operators.
+├── builders # Codes for lowering each operators (AoT Part).
 ├── examples # Examples to run QNN backends.
-├── partition # QNN Partitioner.
-├── passes # Various passes helping lower models to QNN backend.
-├── python # Places to put pybind artifacts for accessing QNN APIs, structures, etc.
+├── partition # QNN Partitioner (AoT Part).
+├── passes # Various passes helping lower models to QNN backend (AoT Part).
+├── python # Places to put pybind artifacts for accessing QNN APIs, structures, etc (AoT Part).
 ├── runtime # Here is QNN runtime responsbile for compiling a model on x64.
-            # Meanwhile, this is also the runtime responsbile for executing compiled
-            # models on a device.
+|           # Meanwhile, this is also the runtime responsbile for executing compiled
+|           # models on a device (Device Part).
 ├── scripts # Misc supporting scripts, not related to core functionality.
 ├── tests # Unit tests and model tests go here.
 └── utils # Miscellaneous utilities.

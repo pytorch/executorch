@@ -10,6 +10,12 @@ from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 class ConvertHardsigmoid(ExportPass):
+    """
+    Merge decomposed operators from hardsigmoid back to few super nodes
+    which will be mathematically equivalent. (Since QNN currently doesn't
+    support hardsigmoid)
+    """
+
     def __init__(self, quantization_capture=False):
         self.quantization_capture = quantization_capture
         super(ConvertHardsigmoid, self).__init__()
@@ -40,7 +46,7 @@ class ConvertHardsigmoid(ExportPass):
                     output_node = output_nodes[-1]
 
                 with graph.inserting_after(input_node):
-                    # currently QNN does not support HardSigmoid, 
+                    # currently QNN does not support HardSigmoid,
                     # we have to replace it with equivalent representation
                     # replace following when op is available
                     """ hardsigmoid_op = exir_ops.edge.aten.hardsigmoid.default

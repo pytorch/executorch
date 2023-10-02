@@ -3,8 +3,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import List, Tuple
-
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -12,6 +10,10 @@ from executorch.exir.passes import dead_code_elimination_pass
 
 
 class RemoveClone(ExportPass):
+    """
+    Trim the 'identity' operators to reduce the unnecessary copy overhead.
+    """
+
     clone_ops = {
         torch.clone,
         torch.ops.aten.clone.default,

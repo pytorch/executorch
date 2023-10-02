@@ -89,11 +89,11 @@ typedef struct {  // NOLINT
   /// With using conv hmx with short depths, we might have better performance,
   /// but convolution that have short depth and/or weights that are not
   /// symmetric could exhibit inaccurate results.
-  bool useConvHmx;
+  bool use_conv_hmx;
   /// With using fold relu, we might have better performance, this optimization
   /// is correct when quantization ranges for convolution are equal or subset of
   /// the Relu operation.
-  bool useFoldRelu;
+  bool use_fold_relu;
 } QnnExecuTorchHtpBackendOptions;
 
 // clang-format off
@@ -103,8 +103,8 @@ typedef struct {  // NOLINT
     kHtpDefault,        /*performance_mode*/     \
     kHtpQuantized,      /*precision*/            \
     kHtpUnsignedPd,     /*pd_session*/           \
-    true,               /*useConvHmx*/           \
-    true,               /*useFoldRelu*/          \
+    true,               /*use_conv_hmx*/           \
+    true,               /*use_fold_relu*/          \
   }
 // clang-format on
 

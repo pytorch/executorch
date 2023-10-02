@@ -56,7 +56,7 @@ class OpElementWiseSubtract:
 
 @dataclass(init=False, frozen=True)
 class OpElementWiseDivide:
-    op_name: str = "ElementwiseDivide"
+    op_name: str = "ElementWiseDivide"
 
 
 @dataclass(init=False, frozen=True)

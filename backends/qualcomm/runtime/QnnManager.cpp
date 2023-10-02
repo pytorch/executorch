@@ -100,13 +100,13 @@ Error QnnManager::AllocateTensor() {
   for (auto& tensor : input_tensors) {
     std::shared_ptr<TensorWrapper> tensor_wrapper = CreateTensorWrapper(tensor);
     tensor_wrapper->UpdateQnnTensorMeta(tensor);
-    input_tensors_.emplace_back(tensor_wrapper);
+    input_tensors_.emplace_back(std::move(tensor_wrapper));
   }
 
   for (auto& tensor : output_tensors) {
     std::shared_ptr<TensorWrapper> tensor_wrapper = CreateTensorWrapper(tensor);
     tensor_wrapper->UpdateQnnTensorMeta(tensor);
-    output_tensors_.emplace_back(tensor_wrapper);
+    output_tensors_.emplace_back(std::move(tensor_wrapper));
   }
   return Error::Ok;
 }

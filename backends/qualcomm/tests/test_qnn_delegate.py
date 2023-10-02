@@ -5,7 +5,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import math
-from executorch.backends.qualcomm.tests.test_qnn_utils import (
+import unittest
+
+from executorch.backends.qualcomm.tests.qnn_test_utils import (
     TestQNN,
     save_model_and_expected_output,
     get_qdq_module,
@@ -20,6 +22,7 @@ from executorch.examples.models.edsr import EdsrModel
 import torch
 
 
+@unittest.skip('skip this for now until e2e test is enabled')
 class TestQNNFloatingPoint(TestQNN):
     def test_qnn_backend_sequential_conv2d(self):
         class TwoConv(torch.nn.Module):
@@ -806,6 +809,7 @@ class TestQNNFloatingPoint(TestQNN):
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
 
+@unittest.skip('skip this for now until e2e test is enabled')
 class TestQNNINT8(TestQNN):
     def test_qnn_backend_ptq_sequential_conv2d(self):
         class TwoConv(torch.nn.Module):
@@ -1190,3 +1194,7 @@ class TestQNNINT8(TestQNN):
         buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
         model_name = "ptq_qnn_edsr_model"
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+
+
+if __name__ == '__main__':
+    unittest.main()

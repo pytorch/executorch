@@ -14,6 +14,11 @@ from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class AnnotateAndQuantScalar(ExportPass):
+    """
+    For binary operators who take constant scalar as one of its inputs,
+    will annotate encoding to the constant if necessary.
+    """
+
     binary_op_sources = [
         operator.add,
         operator.sub,

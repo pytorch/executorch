@@ -11,11 +11,14 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+
 namespace py = pybind11;
 namespace torch {
 namespace executor {
 namespace qnn {
 PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
+  // TODO: Add related documents for configurations listed below
+  
   m.def("QnnExecuTorchOptionsDefault", &QnnExecuTorchOptionsDefault);
   py::enum_<QnnExecuTorchBackendType>(m, "QnnExecuTorchBackendType")
       .value("kUndefinedBackend", QnnExecuTorchBackendType::kUndefinedBackend)
@@ -23,6 +26,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .value("kHtpBackend", QnnExecuTorchBackendType::kHtpBackend)
       .value("kDspBackend", QnnExecuTorchBackendType::kDspBackend)
       .export_values();
+  
   py::enum_<QnnExecuTorchLogLevel>(m, "QnnExecuTorchLogLevel")
       .value("kLogOff", QnnExecuTorchLogLevel::kLogOff)
       .value("kLogLevelError", QnnExecuTorchLogLevel::kLogLevelError)
@@ -48,6 +52,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .value("kHtpUnsignedPd", QnnExecuTorchHtpPdSession::kHtpUnsignedPd)
       .value("kHtpSignedPd", QnnExecuTorchHtpPdSession::kHtpSignedPd)
       .export_values();
+  
   py::enum_<QnnExecuTorchHtpPerformanceMode>(m,
                                              "QnnExecuTorchHtpPerformanceMode")
       .value("kHtpDefault", QnnExecuTorchHtpPerformanceMode::kHtpDefault)
@@ -74,9 +79,10 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def_readwrite("performance_mode",
                      &QnnExecuTorchHtpBackendOptions::performance_mode)
       .def_readwrite("pd_session", &QnnExecuTorchHtpBackendOptions::pd_session)
-      .def_readwrite("useConvHmx", &QnnExecuTorchHtpBackendOptions::useConvHmx)
-      .def_readwrite("useFoldRelu",
-                     &QnnExecuTorchHtpBackendOptions::useFoldRelu);
+      .def_readwrite("use_conv_hmx",
+                     &QnnExecuTorchHtpBackendOptions::use_conv_hmx)
+      .def_readwrite("use_fold_relu",
+                     &QnnExecuTorchHtpBackendOptions::use_fold_relu);
 
   py::class_<QnnExecuTorchContextBinary>(m, "QnnExecuTorchContextBinary")
       .def(py::init<>());

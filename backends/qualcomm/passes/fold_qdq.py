@@ -3,8 +3,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import List, Tuple
-
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -12,16 +10,16 @@ from executorch.exir.passes import dead_code_elimination_pass
 
 
 class FoldQDQ(ExportPass):
+    """
+    Erase QDQ pattern and store encodings into corresponding graph nodes.
+    """
+
     q_ops = {
-        torch.ops.quantized_decomposed.quantize_per_channel.default,
-        torch.ops.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     }
     dq_ops = {
-        torch.ops.quantized_decomposed.dequantize_per_channel.default,
-        torch.ops.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
@@ -44,7 +42,7 @@ class FoldQDQ(ExportPass):
         for n in graph_module.graph.nodes:
             if n.target not in self.q_ops:
                 continue
-            to_be_remove = [n]
+            to_be_removed = [n]
             source_n = n.args[0]
 
             # To make constant value/tensor be tagged as delegatable during partition
@@ -56,11 +54,11 @@ class FoldQDQ(ExportPass):
             # add quantization attributes to the meta of source node
             for i in range(1, len(n.args)):
                 if type(n.args[i]) == torch.fx.node.Node:
-                    to_be_remove.append(n.args[i])
+                    to_be_removed.append(n.args[i])
             # connect source node to quant users and remove quant node
             for user_n in list(n.users.keys()):
                 user_n.replace_input_with(n, n.args[0])
-            for n in to_be_remove:
+            for n in to_be_removed:
                 graph_module.graph.erase_node(n)
 
     def call(self, graph_module: torch.fx.GraphModule):

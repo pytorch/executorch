@@ -65,8 +65,8 @@ def generate_qnn_executorch_option(
     option.htp_options.pd_session = (
         PyQnnManager.QnnExecuTorchHtpPdSession.kHtpUnsignedPd
     )
-    option.htp_options.useConvHmx = True
-    option.htp_options.useFoldRelu = True
+    option.htp_options.use_conv_hmx = True
+    option.htp_options.use_fold_relu = True
     for compiler_spec in compiler_specs:
         if compiler_spec.key == "backend_type":
             option.backend_type = PyQnnManager.QnnExecuTorchBackendType(

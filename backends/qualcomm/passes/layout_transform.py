@@ -13,6 +13,12 @@ import _operator
 
 
 class LayoutTransform(ExportPass):
+    """
+    QNN delegate requires channel last layout format, this pass aims to
+    help generate the correct transformation by inserting fewest ammount of
+    'permute' operators in the graph.
+    """
+
     layout_sensitive_ops = {
         exir_ops.edge.aten.convolution.default,
         exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
@@ -75,11 +81,12 @@ class LayoutTransform(ExportPass):
         self.insert_permute = insert_permute
 
     def mark_as_transformed(self, node: torch.fx.Node) -> None:
-        if isinstance(node.meta["val"], tuple):
+        if isinstance(node.meta["val"], (tuple, list)):
             getitem_node = list(node.users.keys())[0]
             if getitem_node.target.__name__ != "getitem":
                 raise AssertionError(
-                    f"Expected bn node's user to be getitem, got {getitem_node.target.__name__}"
+                    "Expected node's user to be getitem, "
+                    f"got {getitem_node.target.__name__}"
                 )
             index = getitem_node.args[1]
             node.meta[self.layout_transformed_tag] = self.get_axis_order(

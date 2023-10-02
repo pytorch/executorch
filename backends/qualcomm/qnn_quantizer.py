@@ -39,7 +39,7 @@ from torch.ao.quantization.quantizer.utils import (
 from executorch.backends.qualcomm.passes import (
     ConvertHardsigmoid,
     RemoveClone,
-    FoldPixelShuffle,
+    RecomposePixelShuffle,
 )
 
 __all__ = [
@@ -750,7 +750,7 @@ class QnnQuantizer(Quantizer):
     def _preprocess(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
         model = RemoveClone()(model).graph_module
         model = ConvertHardsigmoid(quantization_capture=True)(model).graph_module
-        model = FoldPixelShuffle()(model).graph_module
+        model = RecomposePixelShuffle()(model).graph_module
         return model
 
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:

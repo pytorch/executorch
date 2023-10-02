@@ -11,6 +11,13 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class InsertIOQDQ(ExportPass):
+    """
+    For delegated QNN subgraph, no more QDQ operators will appear after
+    'fold_qdq pass'.
+    This pass will insert quantize nodes right after inputs, dequantize nodes
+    right before outputs according to stored quantization encodings.
+    """
+
     q_dq_map = {
         #per tensor
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: \

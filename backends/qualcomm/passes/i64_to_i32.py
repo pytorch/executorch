@@ -3,7 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 import torch
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -11,6 +11,13 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class I64toI32(ExportPass):
+    """
+    Try cast unsuuported int64 datatype into int32.
+    Currently supported patterns are:
+
+    1. placeholder (int64) -> placeholder + cast (int32)
+    """
+
     def __init__(self):
         super(I64toI32, self).__init__()
 

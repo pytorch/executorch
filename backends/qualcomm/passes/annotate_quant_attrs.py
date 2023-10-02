@@ -12,6 +12,11 @@ from executorch.exir.dialects._ops import ops as exir_ops
 
 
 class AnnotateQuantAttrs(ExportPass):
+    """
+    Add "quant_attrs" to graph nodes' meta from the QDQ information
+    generated after quatization process.
+    """
+
     q_ops = {
         torch.ops.quantized_decomposed.quantize_per_channel.default,
         torch.ops.quantized_decomposed.quantize_per_tensor.default,

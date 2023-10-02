@@ -7,9 +7,14 @@ import torch
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
-class FoldPixelShuffle(ExportPass):
+class RecomposePixelShuffle(ExportPass):
+    """
+    Merge decomposed operators from mathematically equivalent implementation
+    back to one super node.
+    """
+
     def __init__(self):
-        super(FoldPixelShuffle, self).__init__()
+        super(RecomposePixelShuffle, self).__init__()
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
@@ -49,7 +54,7 @@ class FoldPixelShuffle(ExportPass):
                         ]
                     ):
                         continue
-                    
+
                     input_node = reshape_node.args[0]
                     args = (input_node, blk)
                     pixel_shuffle_node = graph.create_node(

@@ -10,6 +10,12 @@ from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 class ConvertInterpolateWithUpsample2D(ExportPass):
+    """
+    Merge decomposed operators from interpolate back to one super node.
+    TODO: Currently we only map to upsample2d version, should extend the
+    capability by reverse engineering the decomposition process.
+    """
+
     def __init__(self):
         super(ConvertInterpolateWithUpsample2D, self).__init__()
 

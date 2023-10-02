@@ -10,6 +10,10 @@ from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 class ConvertHardswish(ExportPass):
+    """
+    Merge decomposed operators from hardswish back to one super node.
+    """
+
     def __init__(self):
         super(ConvertHardswish, self).__init__()
 

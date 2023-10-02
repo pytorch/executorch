@@ -67,7 +67,11 @@ def save_model_and_expected_output(
     buffer: exir.ExirExportedProgram,
     inputs: Tuple[torch.Tensor],
     model_name: Literal,
+    export_pte: bool=False,
 ) -> None:
+    if not export_pte:
+        return
+
     input_list = ""
     for idx, inp in enumerate(inputs):
         input_name = f"input_{idx}.raw"

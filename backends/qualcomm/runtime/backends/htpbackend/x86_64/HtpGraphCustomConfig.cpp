@@ -15,7 +15,7 @@ HtpGraphCustomConfig::CreateGraphCustomConfig() {
   std::vector<QnnGraph_CustomConfig_t> ret;
   QnnHtpGraph_CustomConfig_t* p_custom_config = nullptr;
 
-  if (!htp_options_.useConvHmx) {
+  if (!htp_options_.use_conv_hmx) {
     p_custom_config = AllocGraphCustomConfig();
     p_custom_config->option =
         QNN_HTP_GRAPH_CONFIG_OPTION_SHORT_DEPTH_CONV_ON_HMX_OFF;
@@ -23,7 +23,7 @@ HtpGraphCustomConfig::CreateGraphCustomConfig() {
     ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
   }
 
-  if (!htp_options_.useFoldRelu) {
+  if (!htp_options_.use_fold_relu) {
     p_custom_config = AllocGraphCustomConfig();
     p_custom_config->option =
         QNN_HTP_GRAPH_CONFIG_OPTION_FOLD_RELU_ACTIVATION_INTO_CONV_OFF;

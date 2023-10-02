@@ -102,11 +102,11 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
                 compile_spec.value.buffer);
         break;
       case kHtpUseConvHmx:
-        options.htp_options.useConvHmx =
+        options.htp_options.use_conv_hmx =
             *static_cast<const bool*>(compile_spec.value.buffer);
         break;
       case kHtpUseFoldRelu:
-        options.htp_options.useFoldRelu =
+        options.htp_options.use_fold_relu =
             *static_cast<const bool*>(compile_spec.value.buffer);
         break;
       case kHtpPrecision:
@@ -155,14 +155,15 @@ Error QnnExecuTorchBackend::execute(
   std::vector<Qnn_Tensor_t> output_tensor_structs;
 
   for (int i = 0; i < input_tensors.size(); ++i) {
-    input_tensors[i]->FillDataBuffer(args[i]->toTensor().data_ptr(), true);
+    input_tensors[i]->FillDataBuffer(
+      args[i]->toTensor().data_ptr(), true /* copy_data */);
     input_tensor_structs.push_back(input_tensors[i]->CloneTensorStruct());
   }
 
   for (int i = input_tensors.size();
        i < input_tensors.size() + output_tensors.size(); ++i) {
     output_tensors[i - input_tensors.size()]->FillDataBuffer(
-        args[i]->toTensor().data_ptr(), false);
+        args[i]->toTensor().data_ptr(), false /* copy_data */);
     output_tensor_structs.push_back(
         output_tensors[i - input_tensors.size()]->CloneTensorStruct());
   }
