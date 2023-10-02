@@ -73,7 +73,7 @@ def define_common_targets():
         name = "selective_build_test",
         srcs = [],
         deps = [
-            "//executorch/examples/executor_runner:executor_runner_lib",
+            "//executorch/examples/runtime/portable:executor_runner_lib",
         ] + lib,
         define_static_target = True,
         **get_oss_build_kwargs()

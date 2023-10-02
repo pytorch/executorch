@@ -35,7 +35,7 @@ test_buck2_quantization() {
   ${PYTHON_EXECUTABLE} -m "examples.quantization.example" --so_library="$SO_LIB" --model_name="$1"
 
   echo 'Running executor_runner'
-  $BUCK run //examples/executor_runner:executor_runner -- --model_path="./${1}_quantized.pte"
+  $BUCK run //examples/runtime/portable:executor_runner -- --model_path="./${1}_quantized.pte"
   # should give correct result
 
   echo "Removing ${1}_quantized.pte"

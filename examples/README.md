@@ -1,6 +1,6 @@
 # Examples
 
-This dir contains scripts and other helper utilities to illustrate an end-to-end workflow to run a torch.nn.module on the ExecuTorch runtime.
+This dir contains scripts and other helper utilities to illustrate an end-to-end workflow to run a torch.nn.module on the Executorch runtime.
 It also includes a list of modules, from a simple `Add` to a full model like `MobileNetv2` and `MobileNetv3`, with more to come.
 
 
@@ -8,14 +8,14 @@ It also includes a list of modules, from a simple `Add` to a full model like `Mo
 ```bash
 examples
 |── backend                           # Contains examples for exporting delegate models and running them using custom executor runners
-├── custom_ops                        # Contains examples to register custom operators into PyTorch as well as register its kernels into ExecuTorch runtime
+├── custom_ops                        # Contains examples to register custom operators into PyTorch as well as register its kernels into Executorch runtime
 ├── example_quantizer_and_delegate    # Contains examples to to fully lowered a MobileNetV2 model to the example backend with an example quantizer
-├── executor_runner                   # This is an example C++ wrapper around the ET runtime
 ├── export                            # Python helper scripts to illustrate export workflow
 ├── ios_demo_apps                     # Contains iOS demo apps
-├── models                            # Contains a set of simple to PyTorch models
+├── models                            # Contains a set of out-of-box PyTorch models
 ├── quantization                      # Contains examples of quantization workflow
-├── arm                               # Contains examples of the Arm TOSA and Ethos-U NPU flows
+├── recipes                           # Contains recipes for a set of demos
+├── runtime                           # Contains examples of C++ wrapper around the ET runtime
 └── README.md                         # This file
 ```
 
@@ -23,13 +23,13 @@ examples
 
 We will walk through an example model to generate a binary file from a python torch.nn.module
 from the `models` dir using scripts from the `export` dir. Then we will run on these binary
-model files on the ExecuTorch (ET) runtime. For that we will use `executor_runner`. It is a simple
-wrapper for the ExecuTorch runtime to serve as an example. Although simple, it is capable of loading
+model files on the Executorch (ET) runtime. For that we will use `executor_runner`. It is a simple
+wrapper for the Executorch runtime to serve as an example. Although simple, it is capable of loading
 and executing previously exported binary file(s).
 
 
 1. Following the setup guide in [Setting up ExecuTorch from GitHub](/docs/website/docs/tutorials/00_setting_up_executorch.md)
-you should be able to get the basic development environment for ExecuTorch working.
+you should be able to get the basic development environment for Executorch working.
 
 2. Using the script `export/export_example.py` generate a model binary file by selecting a
 model name from the list of available models in the `models` dir.
@@ -49,10 +49,10 @@ python3 -m examples.export.export_example --model_name="mv2" # for MobileNetv2
 
 Use `-h` (or `--help`) to see all the supported models.
 
-3. Once we have the model binary (pte) file, then let's run it with ExecuTorch runtime using the `executor_runner`.
+3. Once we have the model binary (pte) file, then let's run it with Executorch runtime using the `executor_runner`.
 
 ```bash
-buck2 run examples/executor_runner:executor_runner -- --model_path mv2.pte
+buck2 run examples/runtime/portable:executor_runner -- --model_path mv2.pte
 ```
 
 ## Quantization
@@ -87,7 +87,7 @@ buck2 run executorch/examples/quantization:example -- --help
 Quantized model can be run via executor_runner, similar to floating point model, via, as shown above:
 
 ```bash
-buck2 run examples/executor_runner:executor_runner -- --model_path mv2.pte
+buck2 run examples/runtime/portable:executor_runner -- --model_path mv2.pte
 ```
 
 Note that, running quantized model, requires various quantized/dequantize operators, available in [quantized kernel lib](/kernels/quantized).

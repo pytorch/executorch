@@ -13,10 +13,10 @@ The following command will produce an floating-point XNNPACK delegated model `mv
 python3 -m examples.backend.xnnpack_examples --model_name="mv2" --delegate
 ```
 
-Once we have the model binary (pte) file, then let's run it with ExecuTorch runtime using the `xnn_executor_runner`.
+Once we have the model binary (pte) file, then let's run it with Executorch runtime using the `xnn_executor_runner`.
 
 ```bash
-buck2 run examples/backend:xnn_executor_runner -- --model_path ./mv2_xnnpack_fp32.pte
+buck2 run examples/runtime/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnnpack_fp32.pte
 ```
 
 ## XNNPACK quantization + delegation
@@ -26,10 +26,10 @@ The following command will produce an XNNPACK quantized and delegated model `mv2
 python3 -m examples.backend.xnnpack_examples --model_name="mv2" --quantize --delegate
 ```
 
-Once we have the model binary (pte) file, then let's run it with ExecuTorch runtime using the `xnn_executor_runner`.
+Once we have the model binary (pte) file, then let's run it with Executorch runtime using the `xnn_executor_runner`.
 
 ```bash
-buck2 run examples/backend:xnn_executor_runner -- --model_path ./mv2_xnnpack_q8.pte
+buck2 run examples/runtime/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnnpack_q8.pte
 ```
 
 ## XNNPACK performance gain
@@ -40,14 +40,14 @@ We tested the performance for MobileNet V2 and MobileNet V3 on Linux x86 and Mac
 
 For each model, we export three variations: portable (without any optimization), xnnpack fp32 (exported for XNNPACK delegation without quantization), xnnpack q8 (exported for XNNPACK delegation with qint8 delegation).
 
-We build the benchmarking binary (will be released in the near future, but it is similar to `examples/backend:xnn_executor_runner`). Benchmarking binary, by default, runs 10 iterations of warmup and 50 iterations of benchmarking. Number reported here are average measured latency, in ms, across 50 runs. The first iteration is slower due to warm up, and the performance is is stable on subsequent iterations, so we also report the execution time for the first iteration for reference. Below is the model execution time for first iteration and subsequent iterations (average after warmup), in milliseconds. We use a single thread to test the models. Details about the methodology and repro steps are below the tables.
+We build the benchmarking binary (will be released in the near future, but it is similar to `examples/runtime/xnnpack:xnn_executor_runner`). Benchmarking binary, by default, runs 10 iterations of warmup and 50 iterations of benchmarking. Number reported here are average measured latency, in ms, across 50 runs. The first iteration is slower due to warm up, and the performance is is stable on subsequent iterations, so we also report the execution time for the first iteration for reference. Below is the model execution time for first iteration and subsequent iterations (average after warmup), in milliseconds. We use a single thread to test the models. Details about the methodology and repro steps are below the tables.
 
 ### Methodology
 
-Models are exported with the steps above for XNNPACK delegation, and with `examples/export:export_example` for portable backend without any optimization. Then use `//examples/backend:xnn_executor_runner` with profiler (command listed below); or  in the future, use the runtime in `//sdk/runners:executor_runner` since it gives more options such as number of iterations after build rules for OSS is added.
+Models are exported with the steps above for XNNPACK delegation, and with `examples/export:export_example` for portable backend without any optimization. Then use `//examples/runtime/xnnpack:xnn_executor_runner` with profiler (command listed below); or  in the future, use the runtime in `//sdk/runners:executor_runner` since it gives more options such as number of iterations after build rules for OSS is added.
 
 ```
-buck run -c executorch.prof_enabled=true -c executorch.prof_buf_size=8096 -c executorch.num_prof_blocks=61 //examples/backend:xnn_executor_runner -- --model_path mv3.pte
+buck run -c executorch.prof_enabled=true -c executorch.prof_buf_size=8096 -c executorch.num_prof_blocks=61 //examples/runtime/xnnpack:xnn_executor_runner -- --model_path mv3.pte
 ```
 
 A rough number of execution time can be obtained via the log timestamp. The profiler result can be analyzed with `profiler:profiler_results_cli`.

@@ -98,7 +98,7 @@ You may want to copy the `buck2` binary into your `$PATH` so you can run it as `
 `executor_runner` is an example wrapper around executorch runtime which includes all the operators and backends
 
 ```bash
-/tmp/buck2 build //examples/executor_runner:executor_runner --show-output
+/tmp/buck2 build //examples/runtime/portable:executor_runner --show-output
 ```
 
 The `--show-output` flag will print the path to the executable if you want to run it directly.
@@ -112,10 +112,10 @@ conda install -c conda-forge lld
 
 ```bash
 # add.pte is the program generated from export_example.py during AOT Setup Step 3
-/tmp/buck2 run //examples/executor_runner:executor_runner -- --model_path add.pte
+/tmp/buck2 run //examples/runtime/portable:executor_runner -- --model_path add.pte
 
 # To run a delegated model
-/tmp/buck2 run //examples/executor_runner:executor_runner -- --model_path composite_model.pte
+/tmp/buck2 run //examples/runtime/portable:executor_runner -- --model_path composite_model.pte
 ```
 
 or execute the binary directly from the `--show-output` path shown when building.

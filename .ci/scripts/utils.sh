@@ -70,7 +70,7 @@ install_flatc_from_source() {
 
 build_executorch_runner_buck2() {
   # Build executorch runtime with retry as this step is flaky on macos CI
-  retry buck2 build //examples/executor_runner:executor_runner
+  retry buck2 build //examples/runtime/portable:executor_runner
 }
 
 build_executorch_runner_cmake() {

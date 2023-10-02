@@ -193,7 +193,7 @@ Complete the following steps:
 
 3. Build a binary:
    ```bash
-   /tmp/buck2 build //examples/executor_runner:executor_runner --show-output
+   /tmp/buck2 build //examples/runtime/portable:executor_runner --show-output
    ```
 
    :::{dropdown} Output
@@ -227,7 +227,7 @@ the `buck run` command to run our program.
    * To run the `add.pte` program:
 
      ```bash
-     /tmp/buck2 run //examples/executor_runner:executor_runner -- --model_path add.pte
+     /tmp/buck2 run //examples/runtime/portable:executor_runner -- --model_path add.pte
      ```
 
      :::{dropdown} Sample Output

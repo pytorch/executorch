@@ -56,7 +56,7 @@ Here is an example of what a ExecuTorch run + profile + post-procesing workflow 
 This runs the sample program with profiling enabled
 ```bash
 cd executorch
-buck2 run -c executorch.prof_enabled=true examples/executor_runner:executor_runner  -- --model_path add.pte
+buck2 run -c executorch.prof_enabled=true examples/runtime/portable:executor_runner  -- --model_path add.pte
 ```
 Run the post-processing CLI tool that calls into the same API's listed above and prints out the profiling results in a tabulated format in the terminal.
 

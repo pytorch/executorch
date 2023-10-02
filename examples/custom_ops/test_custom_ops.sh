@@ -21,7 +21,7 @@ test_buck2_custom_op_1() {
   # should save file custom_ops_1.pte
 
   echo 'Running executor_runner'
-  buck2 run //examples/executor_runner:executor_runner \
+  buck2 run //examples/runtime/portable:executor_runner \
       --config=executorch.register_custom_op=1 -- --model_path="./${model_name}.pte"
   # should give correct result
 
@@ -58,7 +58,7 @@ test_buck2_custom_op_2() {
   ${PYTHON_EXECUTABLE} -m "examples.custom_ops.${model_name}" --so_library="$SO_LIB"
   # should save file custom_ops_2.pte
 
-  buck2 run //examples/executor_runner:executor_runner \
+  buck2 run //examples/runtime/portable:executor_runner \
       --config=executorch.register_custom_op=2 -- --model_path="./${model_name}.pte"
   # should give correct result
   echo "Removing ${model_name}.pte"

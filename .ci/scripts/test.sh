@@ -57,7 +57,7 @@ test_model() {
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-    buck2 run //examples/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
+    buck2 run //examples/runtime/portable:executor_runner -- --model_path "./${MODEL_NAME}.pte"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
     if [[ ! -f ${CMAKE_OUTPUT_DIR}/executor_runner ]]; then
       build_cmake_executor_runner
@@ -109,7 +109,7 @@ test_model_with_xnnpack() {
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-    buck2 run //examples/backend:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
+    buck2 run //examples/runtime/xnnpack:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
     if [[ ! -f ${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner ]]; then
       build_cmake_xnn_executor_runner
@@ -129,9 +129,9 @@ test_demo_backend_delegation() {
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-    buck2 run //examples/executor_runner:executor_runner -- --model_path "./composite_model.pte"
-    buck2 run //examples/executor_runner:executor_runner -- --model_path "./partition_lowered_model.pte"
-    buck2 run //examples/executor_runner:executor_runner -- --model_path "./whole.pte"
+    buck2 run //examples/runtime/portable:executor_runner -- --model_path "./composite_model.pte"
+    buck2 run //examples/runtime/portable:executor_runner -- --model_path "./partition_lowered_model.pte"
+    buck2 run //examples/runtime/portable:executor_runner -- --model_path "./whole.pte"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
     if [[ ! -f ${CMAKE_OUTPUT_DIR}/executor_runner ]]; then
       build_cmake_executor_runner
