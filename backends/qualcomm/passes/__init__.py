@@ -17,7 +17,7 @@ from .fold_qdq import FoldQDQ
 from .annotate_quant_attrs import AnnotateQuantAttrs
 from .insert_io_qdq import InsertIOQDQ
 from .remove_clone import RemoveClone
-from .fold_pixel_shuffle import RecomposePixelShuffle
+from .recompose_pixel_shuffle import RecomposePixelShuffle
 
 qnn_partitioner_passes = PassManager(
     passes=[

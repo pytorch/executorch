@@ -11,7 +11,7 @@ Please follow [setup](setup.md) to setup environment, build, and run executorch 
 # Delegate options
 
 Please check `generate_qnn_executorch_compiler_spec()` in
-[utils.py](backends/qualcomm/utils/utils.py) for supported SoC and inference type.
+[utils.py](./utils/utils.py) for supported SoC and inference type.
 
 ### supported chipset
 - Snapdragon 8 Gen 1

@@ -59,7 +59,7 @@ class AnnotateQuantAttrs(ExportPass):
             if n.target not in self.q_ops:
                 continue
 
-            quant_attrs = self.get_quant_attrs(graph_module, n)
+            quant_attrs = get_quant_attrs(graph_module, n)
             self._annotate_source_nodes(n, quant_attrs)
 
         return graph_module

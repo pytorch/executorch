@@ -234,24 +234,3 @@ class OpDepthToSpace:
 @dataclass(init=False, frozen=True)
 class OpTanh:
     op_name: str = "Tanh"
-
-
-@dataclass(init=False, frozen=True)
-class OpElementWiseNeuron:
-    op_name: str = "ElementWiseNeuron"
-    param_operation: str = "operation"
-    param_alpha: str = "alpha"
-    param_beta: str = "beta"
-
-    @unique
-    class Operation(IntEnum):
-        ELU = 0
-        GELU = 1
-        HARD_SIGMOID = 2
-        HARD_SWISH = 3
-        RELU = 4
-        RELU_MIN_MAX = 5
-        SIGMOID = 6
-        SOFTPLUS = 7
-        TANH = 8
-

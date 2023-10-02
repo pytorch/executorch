@@ -133,17 +133,32 @@ def generate_qnn_executorch_compiler_spec(
         SoCModel.SM8475: PyQnnManager.QcomChipset.SM8475,
         SoCModel.SM8550: PyQnnManager.QcomChipset.SM8550,
     }
-    backend_type = CompileSpec("backend_type", bytes([2]))
+    backend_type = CompileSpec(
+        "backend_type",
+        bytes([PyQnnManager.QnnExecuTorchBackendType.kHtpBackend])
+    )
 
     if is_fp16:
-        htp_precision = CompileSpec("htp_precision", bytes([1]))
+        htp_precision = CompileSpec(
+            "htp_precision",
+            bytes([PyQnnManager.QnnExecuTorchHtpPrecision.kHtpFp16])
+        )
     else:
-        htp_precision = CompileSpec("htp_precision", bytes([0]))
+        htp_precision = CompileSpec(
+            "htp_precision",
+            bytes([PyQnnManager.QnnExecuTorchHtpPrecision.kHtpQuantized])
+        )
 
     if debug:
-        log_level = CompileSpec("log_level", bytes([5]))
+        log_level = CompileSpec(
+            "log_level",
+            bytes([PyQnnManager.QnnExecuTorchLogLevel.kLogLevelDebug])
+        )
     else:
-        log_level = CompileSpec("log_level", bytes([2]))
+        log_level = CompileSpec(
+            "log_level",
+            bytes([PyQnnManager.QnnExecuTorchLogLevel.kLogLevelWarn])
+        )
 
     # This actually is not an option which can affect the compiled blob.
     # But we don't have other place to pass this option at execution stage.

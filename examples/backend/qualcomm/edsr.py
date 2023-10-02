@@ -79,7 +79,8 @@ def get_dataset(hr_dir: str, lr_dir: str, default_dataset: str, dataset_dir: str
 
 def annotate_forward(gm: torch.fx.GraphModule) -> None:
     """
-    This function is specific for Edsr. It construct a nn module, which is inherited from nn.conv2d.
+    This function is specific for EDSR. It constructs a nn module, which is
+    inherited from nn.conv2d.
     The source_fn of the rewritten nn module turns out to be a string "forward"
     """
     import itertools
@@ -91,6 +92,7 @@ def annotate_forward(gm: torch.fx.GraphModule) -> None:
     from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
     from torch.fx import Node
     from torch.ao.quantization.quantize_pt2e import QuantizationAnnotation
+
     conv_partitions = get_source_partitions(gm.graph, ["forward"])
     conv_partitions = list(itertools.chain(*conv_partitions.values()))
     quantization_config = get_ptq_per_channel_weight_config()

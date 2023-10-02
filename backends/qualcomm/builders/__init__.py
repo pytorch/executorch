@@ -37,7 +37,6 @@ from . import (
     op_embedding,
     op_expand,
     op_hardswish,
-    op_hardsigmoid,
     op_depth_to_space,
     op_tanh,
 )
