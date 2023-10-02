@@ -14,11 +14,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_DEPTH_TO_SPACE,
-    QNN_OP_DEPTH_TO_SPACE_PARAM_BLOCK_SIZE,
-    QNN_OP_DEPTH_TO_SPACE_PARAM_MODE,
-    QNN_OP_DEPTH_TO_SPACE_MODE_DCR,
-    QNN_OP_DEPTH_TO_SPACE_MODE_CRD,
+    OpDepthToSpace,
 )
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -59,16 +55,16 @@ class DepthToSpaceVisitor(NodeVisitor):
             block_size.append(
                 output_tensor.shape[index] / input_tensor.shape[index]
             )
-        block_size = np.array(block_size, dtype=np.uint32)    
+        block_size = np.array(block_size, dtype=np.uint32)
         block_size_shape = [2]
 
         depth_to_space_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_DEPTH_TO_SPACE
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpDepthToSpace.op_name,
         )
         depth_to_space_op.AddInputTensors([input_tensor_wrapper])
         depth_to_space_op.AddOutputTensors([output_tensor_wrapper])
         depth_to_space_op.AddTensorParam(
-            QNN_OP_DEPTH_TO_SPACE_PARAM_BLOCK_SIZE,
+            OpDepthToSpace.param_block_size,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(block_size.shape),
             block_size_shape,
@@ -76,9 +72,9 @@ class DepthToSpaceVisitor(NodeVisitor):
             True,
         )
         depth_to_space_op.AddScalarParam(
-            QNN_OP_DEPTH_TO_SPACE_PARAM_MODE,
+            OpDepthToSpace.param_mode,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": QNN_OP_DEPTH_TO_SPACE_MODE_CRD},
+            {"data": np.uint32(OpDepthToSpace.Mode.CRD)},
         )
 
         return depth_to_space_op

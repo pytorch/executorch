@@ -169,7 +169,7 @@ def get_fine_tuned_mobilebert(artifacts_dir):
     )
 
     # start training
-    """ for epoch in range(1, epochs + 1):
+    for epoch in range(1, epochs + 1):
         loss_train_total = 0
         print(f'epoch {epoch}')
 
@@ -190,8 +190,8 @@ def get_fine_tuned_mobilebert(artifacts_dir):
         torch.save(
             model.state_dict(),
             f'{artifacts_dir}/finetuned_mobilebert_epoch_{epoch}.model'
-        ) """
-    
+        )
+
     model.load_state_dict(
         torch.load(f'{artifacts_dir}/finetuned_mobilebert_epoch_{epochs}.model',
         map_location=torch.device('cpu')),

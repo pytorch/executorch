@@ -9,8 +9,7 @@ from typing import cast, Dict, List
 import torch
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_TRANSPOSE,
-    QNN_OP_TRANSPOSE_PARAM_PERM,
+    OpTranspose,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 from executorch.backends.qualcomm.builders.node_visitor import (
@@ -57,7 +56,7 @@ class TransposeVisitor(NodeVisitor):
         )
 
         transpose_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_TRANSPOSE
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpTranspose.op_name,
         )
 
         # add input/output tensors
@@ -65,7 +64,7 @@ class TransposeVisitor(NodeVisitor):
         transpose_op.AddOutputTensors([output_tensor_wrapper])
 
         transpose_op.AddTensorParam(
-            QNN_OP_TRANSPOSE_PARAM_PERM,
+            OpTranspose.param_perm,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(permute_order_shape),
             permute_order_shape,

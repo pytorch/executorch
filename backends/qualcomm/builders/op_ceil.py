@@ -11,7 +11,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_ELEMENT_WISE_CEIL
+    OpElementWiseCeil,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
@@ -48,7 +48,7 @@ class Ceil(NodeVisitor):
         )
 
         ceil_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_ELEMENT_WISE_CEIL
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpElementWiseCeil.op_name,
         )
         ceil_op.AddInputTensors([input_tensor_wrapper])
         ceil_op.AddOutputTensors([output_tensor_wrapper])

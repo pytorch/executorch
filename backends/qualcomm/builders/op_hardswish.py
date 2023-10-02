@@ -13,7 +13,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_HARD_SWISH,
+    OpHardSwish,
 )
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -50,7 +50,7 @@ class HardSwishVisitor(NodeVisitor):
         )
 
         hardswish_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_HARD_SWISH
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpHardSwish.op_name,
         )
         hardswish_op.AddInputTensors([input_tensor_wrapper])
         hardswish_op.AddOutputTensors([output_tensor_wrapper])

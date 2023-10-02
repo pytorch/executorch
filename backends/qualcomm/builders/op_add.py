@@ -10,8 +10,8 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_ELEMENTWISE_ADD,
     QNN_OP_PACKAGE_NAME_QTI_AISW,
+    OpElementWiseAdd,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
@@ -53,7 +53,7 @@ class Add(NodeVisitor):
             add_input_tensors.append(input_tensor_wrapper)
 
         add_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_ELEMENTWISE_ADD
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpElementWiseAdd.op_name,
         )
         add_op.AddInputTensors(add_input_tensors)
         add_op.AddOutputTensors(add_output_tensors)

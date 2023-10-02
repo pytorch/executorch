@@ -13,9 +13,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_SOFTMAX,
-    QNN_OP_SOFTMAX_PARAM_AXIS,
-    QNN_OP_SOFTMAX_PARAM_BETA,
+    OpSoftmax,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
@@ -60,13 +58,13 @@ class Softmax(NodeVisitor):
             dim = node.meta["axis_order"].index(dim)
 
         softmax_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_SOFTMAX
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpSoftmax.op_name,
         )
         softmax_op.AddInputTensors(softmax_input_tensors)
         softmax_op.AddOutputTensors(softmax_output_tensors)
 
         softmax_op.AddScalarParam(
-            QNN_OP_SOFTMAX_PARAM_AXIS,
+            OpSoftmax.param_axis,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {"data": np.uint32(dim)},
         )

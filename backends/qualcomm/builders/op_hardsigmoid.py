@@ -15,11 +15,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_ELEMENTWISE_NEURON,
-    QNN_OP_ELEMENT_WISE_RULES_ALPHA,
-    QNN_OP_ELEMENT_WISE_RULES_BETA,
-    QNN_OP_ELEMENT_WISE_RULES_OPERATION,
-    ElementwiseNeuronOperation
+    OpElementWiseNeuron,
 )
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -56,22 +52,22 @@ class HardSigmoidVisitor(NodeVisitor):
         )
 
         hardsigmoid_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_ELEMENTWISE_NEURON
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpElementWiseNeuron.op_name,
         )
         hardsigmoid_op.AddInputTensors([input_tensor_wrapper])
         hardsigmoid_op.AddOutputTensors([output_tensor_wrapper])
         hardsigmoid_op.AddScalarParam(
-            QNN_OP_ELEMENT_WISE_RULES_OPERATION,
+            OpElementWiseNeuron.param_operation,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(ElementwiseNeuronOperation.HARD_SIGMOID.value)},
+            {"data": np.uint32(OpElementWiseNeuron.Operation.HARD_SIGMOID)},
         )
         hardsigmoid_op.AddScalarParam(
-            QNN_OP_ELEMENT_WISE_RULES_ALPHA,
+            OpElementWiseNeuron.param_alpha,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
             {"data": np.float32(1.0 / 6)},
         )
         hardsigmoid_op.AddScalarParam(
-            QNN_OP_ELEMENT_WISE_RULES_BETA,
+            OpElementWiseNeuron.param_beta,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
             {"data": np.float32(0.5)},
         )

@@ -11,8 +11,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_CONCAT,
-    QNN_OP_CONCAT_PARAM_AXIS,
+    OpConcat,
 )
 import numpy as np
 
@@ -62,13 +61,13 @@ class Cat(NodeVisitor):
             axis = node.meta["axis_order"].index(axis)
 
         concat_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_CONCAT
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpConcat.op_name,
         )
         concat_op.AddInputTensors(list_of_tensor_wrappers)
         concat_op.AddOutputTensors([output_tensor_wrapper])
 
         concat_op.AddScalarParam(
-            QNN_OP_CONCAT_PARAM_AXIS,
+            OpConcat.param_axis,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {"data": np.uint32(axis)},
         )

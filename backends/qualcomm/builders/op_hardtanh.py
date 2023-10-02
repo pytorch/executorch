@@ -13,9 +13,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_RELU_MIN_MAX,
-    QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE,
-    QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE,
+    OpReluMinMax,
 )
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -63,17 +61,17 @@ class HardTanhVisitor(NodeVisitor):
         )
 
         hardtanh_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_RELU_MIN_MAX
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpReluMinMax.op_name,
         )
         hardtanh_op.AddInputTensors([input_tensor_wrapper])
         hardtanh_op.AddOutputTensors([output_tensor_wrapper])
         hardtanh_op.AddScalarParam(
-            QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE,
+            OpReluMinMax.param_max_value,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
             {"data": np.float32(output_max)},
         )
         hardtanh_op.AddScalarParam(
-            QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE,
+            OpReluMinMax.param_min_value,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
             {"data": np.float32(output_min)},
         )

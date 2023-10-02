@@ -11,13 +11,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_POOL_MAX_2D,
-    QNN_OP_POOL_MAX_2D_PARAM_FILTER_SIZE,
-    QNN_OP_POOL_MAX_2D_PARAM_STRIDE,
-    QNN_OP_POOL_MAX_2D_PARAM_PAD_AMOUNT,
-    QNN_OP_POOL_MAX_2D_PARAM_ROUNDING_MODE,
-    QNN_OP_POOL_MAX_2D_ROUNDING_MODE_FLOOR,
-    QNN_OP_POOL_MAX_2D_ROUNDING_MODE_CEIL,
+    OpPoolMax2d,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 import numpy as np
@@ -92,20 +86,20 @@ class MaxPool2d(NodeVisitor):
                 return
 
         # if cail mode is True, use ceil instead of floor to compute the output shape
-        mode = QNN_OP_POOL_MAX_2D_ROUNDING_MODE_FLOOR
+        mode = OpPoolMax2d.RoundingMode.FLOOR
         if len(node.args) > 5:
             ceil_mode = cast(bool, node.args[5])
             if ceil_mode:
-                mode = QNN_OP_POOL_MAX_2D_ROUNDING_MODE_CEIL
+                mode = OpPoolMax2d.RoundingMode.CEIL
 
         max_pool2d_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_POOL_MAX_2D
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpPoolMax2d.op_name,
         )
         max_pool2d_op.AddInputTensors([input_tensor_wrapper])
         max_pool2d_op.AddOutputTensors([output_tensor_wrapper])
 
         max_pool2d_op.AddTensorParam(
-            QNN_OP_POOL_MAX_2D_PARAM_FILTER_SIZE,
+            OpPoolMax2d.param_filter_size,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(filter_size_shape),
             filter_size_shape,
@@ -116,7 +110,7 @@ class MaxPool2d(NodeVisitor):
             True,
         )
         max_pool2d_op.AddTensorParam(
-            QNN_OP_POOL_MAX_2D_PARAM_STRIDE,
+            OpPoolMax2d.param_stride,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(stride_shape),
             stride_shape,
@@ -127,7 +121,7 @@ class MaxPool2d(NodeVisitor):
             True,
         )
         max_pool2d_op.AddTensorParam(
-            QNN_OP_POOL_MAX_2D_PARAM_PAD_AMOUNT,
+            OpPoolMax2d.param_pad_amount,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(padding_shape),
             padding_shape,
@@ -139,7 +133,7 @@ class MaxPool2d(NodeVisitor):
         )
 
         max_pool2d_op.AddScalarParam(
-            QNN_OP_POOL_MAX_2D_PARAM_ROUNDING_MODE,
+            OpPoolMax2d.param_rounding_mode,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {"data": np.uint32(mode)},
         )

@@ -10,8 +10,8 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_BATCHNORM,
     QNN_OP_PACKAGE_NAME_QTI_AISW,
+    OpBatchnorm,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
@@ -82,7 +82,7 @@ class BatchNorm(NodeVisitor):
         batch_norm_output_tensors = [output_tensor_wrapper]
 
         batch_norm_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_BATCHNORM
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpBatchnorm.op_name,
         )
         batch_norm_op.AddInputTensors(batch_norm_input_tensors)
         batch_norm_op.AddOutputTensors(batch_norm_output_tensors)

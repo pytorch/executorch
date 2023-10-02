@@ -11,9 +11,8 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_RESHAPE,
-    QNN_OP_TILE,
-    QNN_OP_TILE_PARAM_MULTIPLES,
+    OpReshape,
+    OpTile,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 import numpy as np
@@ -71,12 +70,12 @@ class Expand(NodeVisitor):
         tile_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            QNN_OP_TILE,
+            OpTile.op_name,
         )
         tile_op.AddInputTensors([input_tensor_wrapper])
         tile_op.AddOutputTensors([output_tensor_wrapper])
         tile_op.AddTensorParam(
-            QNN_OP_TILE_PARAM_MULTIPLES,
+            OpTile.param_multiples,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(multiples_shape),
             multiples_shape,

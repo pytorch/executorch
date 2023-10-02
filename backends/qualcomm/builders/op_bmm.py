@@ -12,9 +12,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_MAT_MUL,
-    QNN_OP_MAT_MUL_PARAM_TRANSPOSE_IN0,
-    QNN_OP_MAT_MUL_PARAM_TRANSPOSE_IN1,
+    OpMatMul,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
@@ -60,7 +58,7 @@ class Bmm(NodeVisitor):
             bmm_input_tensors.append(input_tensor_wrapper)
 
         bmm_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_MAT_MUL
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpMatMul.op_name,
         )
         bmm_op.AddInputTensors(bmm_input_tensors)
         bmm_op.AddOutputTensors(bmm_output_tensors)

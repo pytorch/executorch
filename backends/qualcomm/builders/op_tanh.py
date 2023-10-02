@@ -13,7 +13,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_TANH,
+    OpTanh,
 )
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -50,7 +50,7 @@ class Tanh(NodeVisitor):
         )
 
         tanh_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_TANH
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpTanh.op_name,
         )
         tanh_op.AddInputTensors([input_tensor_wrapper])
         tanh_op.AddOutputTensors([output_tensor_wrapper])

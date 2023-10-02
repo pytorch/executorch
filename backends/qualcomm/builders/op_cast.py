@@ -11,7 +11,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_CAST,
+    OpCast,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
@@ -49,7 +49,7 @@ class Cast(NodeVisitor):
         )
 
         cast_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_CAST
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpCast.op_name,
         )
         cast_op.AddInputTensors([input_tensor_wrapper])
         cast_op.AddOutputTensors([output_tensor_wrapper])

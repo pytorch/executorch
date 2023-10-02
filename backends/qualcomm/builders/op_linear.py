@@ -13,8 +13,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_FULLY_CONNECTED_PARAM_KEEP_DIMS,
-    QNN_OP_FULLY_CONNECTED,
+    OpFullyConnected,
 )
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -74,7 +73,7 @@ class LinearVisitor(NodeVisitor):
         )
 
         linear_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_FULLY_CONNECTED
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpFullyConnected.op_name,
         )
         linear_op.AddInputTensors(linear_input_tensors)
         linear_op.AddOutputTensors([output_tensor_wrapper])

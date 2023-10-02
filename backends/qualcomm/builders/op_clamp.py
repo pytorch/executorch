@@ -11,9 +11,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_RELU_MIN_MAX,
-    QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE,
-    QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE,
+    OpReluMinMax,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 import numpy as np
@@ -63,17 +61,17 @@ class Clamp(NodeVisitor):
         )
 
         clamp_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_RELU_MIN_MAX
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpReluMinMax.op_name,
         )
         clamp_op.AddInputTensors([input_tensor_wrapper])
         clamp_op.AddOutputTensors([output_tensor_wrapper])
         clamp_op.AddScalarParam(
-            QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE,
+            OpReluMinMax.param_max_value,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
             {"data": np.float32(output_max)},
         )
         clamp_op.AddScalarParam(
-            QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE,
+            OpReluMinMax.param_min_value,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
             {"data": np.float32(output_min)},
         )

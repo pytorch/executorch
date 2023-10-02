@@ -11,7 +11,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_ELEMENT_WISE_MULTIPLY,
+    OpElementWiseMultiply,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
@@ -53,7 +53,7 @@ class Mul(NodeVisitor):
             mul_input_tensors.append(input_tensor_wrapper)
 
         mul_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_ELEMENT_WISE_MULTIPLY
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpElementWiseMultiply.op_name,
         )
         mul_op.AddInputTensors(mul_input_tensors)
         mul_op.AddOutputTensors(mul_output_tensors)

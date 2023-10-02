@@ -10,8 +10,8 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_DEQUANTIZE,
     QNN_OP_PACKAGE_NAME_QTI_AISW,
+    OpDequantize,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
@@ -48,7 +48,7 @@ class DequantizeOpBase(NodeVisitor):
         dequant_output_tensors = [output_tensor_wrapper]
 
         dequant_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.target.__name__, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_DEQUANTIZE
+            node.target.__name__, QNN_OP_PACKAGE_NAME_QTI_AISW, OpDequantize.op_name,
         )
         dequant_op.AddInputTensors(dequant_input_tensors)
         dequant_op.AddOutputTensors(dequant_output_tensors)

@@ -11,16 +11,9 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_CONV_2D,
-    QNN_OP_CONV_2D_PARAM_DILATION,
-    QNN_OP_CONV_2D_PARAM_GROUP,
-    QNN_OP_CONV_2D_PARAM_PAD_AMOUNT,
-    QNN_OP_CONV_2D_PARAM_STRIDE,
-    QNN_OP_DEPTH_WISE_CONV_2D,
-    QNN_OP_DEPTH_WISE_CONV_2D_PARAM_STRIDE,
-    QNN_OP_DEPTH_WISE_CONV_2D_PARAM_PAD_AMOUNT,
-    QNN_OP_DEPTH_WISE_CONV_2D_PARAM_DILATION,
     QNN_OP_PACKAGE_NAME_QTI_AISW,
+    OpConv2d,
+    OpDepthWiseConv2d,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 import numpy as np
@@ -117,13 +110,13 @@ class Conv2d(NodeVisitor):
 
         if is_depthwise_conv:
             conv_op = PyQnnWrapper.PyQnnOpWrapper(
-                node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_DEPTH_WISE_CONV_2D
+                node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpDepthWiseConv2d.op_name,
             )
             conv_op.AddInputTensors(conv_input_tensors)
             conv_op.AddOutputTensors(conv_output_tensors)
 
             conv_op.AddTensorParam(
-                QNN_OP_DEPTH_WISE_CONV_2D_PARAM_STRIDE,
+                OpDepthWiseConv2d.param_stride,
                 PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 len(stride_shape),
                 stride_shape,
@@ -131,7 +124,7 @@ class Conv2d(NodeVisitor):
                 True,
             )
             conv_op.AddTensorParam(
-                QNN_OP_DEPTH_WISE_CONV_2D_PARAM_PAD_AMOUNT,
+                OpDepthWiseConv2d.param_pad_amount,
                 PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 len(padding_shape),
                 padding_shape,
@@ -142,7 +135,7 @@ class Conv2d(NodeVisitor):
                 True,
             )
             conv_op.AddTensorParam(
-                QNN_OP_DEPTH_WISE_CONV_2D_PARAM_DILATION,
+                OpDepthWiseConv2d.param_dilation,
                 PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 len(dilation_shape),
                 dilation_shape,
@@ -152,12 +145,12 @@ class Conv2d(NodeVisitor):
 
         else:
             conv_op = PyQnnWrapper.PyQnnOpWrapper(
-                node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_CONV_2D
+                node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpConv2d.op_name,
             )
             conv_op.AddInputTensors(conv_input_tensors)
             conv_op.AddOutputTensors(conv_output_tensors)
             conv_op.AddTensorParam(
-                QNN_OP_CONV_2D_PARAM_STRIDE,
+                OpConv2d.param_stride,
                 PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 len(stride_shape),
                 stride_shape,
@@ -165,7 +158,7 @@ class Conv2d(NodeVisitor):
                 True,
             )
             conv_op.AddTensorParam(
-                QNN_OP_CONV_2D_PARAM_PAD_AMOUNT,
+                OpConv2d.param_pad_amount,
                 PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 len(padding_shape),
                 padding_shape,
@@ -176,7 +169,7 @@ class Conv2d(NodeVisitor):
                 True,
             )
             conv_op.AddTensorParam(
-                QNN_OP_CONV_2D_PARAM_DILATION,
+                OpConv2d.param_dilation,
                 PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 len(dilation_shape),
                 dilation_shape,
@@ -184,7 +177,7 @@ class Conv2d(NodeVisitor):
                 True,
             )
             conv_op.AddScalarParam(
-                QNN_OP_CONV_2D_PARAM_GROUP,
+                OpConv2d.param_group,
                 PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
                 {"data": np.uint32(groups)},
             )

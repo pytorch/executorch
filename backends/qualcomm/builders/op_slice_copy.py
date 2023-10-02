@@ -11,12 +11,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_STRIDED_SLICE,
-    QNN_OP_STRIDED_SLICE_PARAM_RANGES,
-    QNN_OP_STRIDED_SLICE_PARAM_BEGIN_MASK,
-    QNN_OP_STRIDED_SLICE_PARAM_END_MASK,
-    QNN_OP_STRIDED_SLICE_PARAM_SHRINK_AXES,
-    QNN_OP_STRIDED_SLICE_PARAM_NEW_AXES_MASK,
+    OpStridedSlice,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 import numpy as np
@@ -74,13 +69,13 @@ class StrideSlice(NodeVisitor):
         range_shape = [input_tensor_rank, 3]
 
         stride_slice_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_STRIDED_SLICE
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpStridedSlice.op_name,
         )
         stride_slice_op.AddInputTensors([input_tensor_wrapper])
         stride_slice_op.AddOutputTensors([output_tensor_wrapper])
 
         stride_slice_op.AddTensorParam(
-            QNN_OP_STRIDED_SLICE_PARAM_RANGES,
+            OpStridedSlice.param_ranges,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_32,
             len(range_shape),
             range_shape,

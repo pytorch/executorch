@@ -13,9 +13,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_REDUCE_MEAN,
-    QNN_OP_REDUCE_MEAN_PARAM_AXES,
-    QNN_OP_REDUCE_MEAN_PARAM_KEEP_DIMS,
+    OpReduceMean,
 )
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -64,12 +62,12 @@ class MeanDim(NodeVisitor):
         )
 
         reduce_mean_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_REDUCE_MEAN
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpReduceMean.op_name,
         )
         reduce_mean_op.AddInputTensors([input_tensor_wrapper])
         reduce_mean_op.AddOutputTensors([output_tensor_wrapper])
         reduce_mean_op.AddTensorParam(
-            QNN_OP_REDUCE_MEAN_PARAM_AXES,
+            OpReduceMean.param_axes,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(mean_dims_shape),
             mean_dims_shape,
@@ -79,7 +77,7 @@ class MeanDim(NodeVisitor):
         if len(node.args) > 2:
             keep_dims = cast(bool, node.args[2])
             reduce_mean_op.AddScalarParam(
-                QNN_OP_REDUCE_MEAN_PARAM_KEEP_DIMS,
+                OpReduceMean.param_keep_dims,
                 PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
                 {"data": keep_dims},
             )

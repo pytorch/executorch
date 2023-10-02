@@ -13,8 +13,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_GATHER,
-    QNN_OP_GATHER_PARAM_AXIS,
+    OpGather,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
@@ -63,14 +62,14 @@ class Embedding(NodeVisitor):
         gather_output_tensors = [output_tensor_wrapper]
 
         gather_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_GATHER
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpGather.op_name,
         )
         gather_op.AddInputTensors(gather_input_tensors)
         gather_op.AddOutputTensors(gather_output_tensors)
 
         # For now, default axis is zero.
         gather_op.AddScalarParam(
-            QNN_OP_GATHER_PARAM_AXIS,
+            OpGather.param_axis,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_32,
             {"data": np.int32(0)},
         )

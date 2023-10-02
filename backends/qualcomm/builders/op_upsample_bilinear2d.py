@@ -11,9 +11,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_RESIZE_BILINEAR,
-    QNN_OP_RESIZE_BILINEAR_ALIGN_CORNERS,
-    QNN_OP_RESIZE_BILINEAR_HALF_PIXEL_CENTERS,
+    OpResizeBilinear,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
@@ -50,18 +48,18 @@ class ResizeBilinear(NodeVisitor):
         )
 
         reisze_bilinear_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_RESIZE_BILINEAR
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpResizeBilinear.op_name,
         )
         reisze_bilinear_op.AddInputTensors([input_tensor_wrapper])
         reisze_bilinear_op.AddOutputTensors([output_tensor_wrapper])
 
         reisze_bilinear_op.AddScalarParam(
-            QNN_OP_RESIZE_BILINEAR_ALIGN_CORNERS,
+            OpResizeBilinear.param_align_corners,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {"data": node.args[2]},
         )
         reisze_bilinear_op.AddScalarParam(
-            QNN_OP_RESIZE_BILINEAR_HALF_PIXEL_CENTERS,
+            OpResizeBilinear.param_half_pixel_centers,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
             {"data": True},
         )

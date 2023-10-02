@@ -4,135 +4,254 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from enum import Enum
+from dataclasses import dataclass
+from enum import (
+    unique,
+    IntEnum,
+)
 
 QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
 
-QNN_OP_TRANSPOSE = "Transpose"
-QNN_OP_TRANSPOSE_PARAM_PERM = "perm"
+# Below constants should be same as those in QNN headers.
+# Maybe someday we should expose these constants by pynind
+# instead of replicating them here.
 
-QNN_OP_CONV_2D = "Conv2d"
-QNN_OP_CONV_2D_PARAM_STRIDE = "stride"
-QNN_OP_CONV_2D_PARAM_PAD_AMOUNT = "pad_amount"
-QNN_OP_CONV_2D_PARAM_GROUP = "group"
-QNN_OP_CONV_2D_PARAM_DILATION = "dilation"
+@dataclass(init=False, frozen=True)
+class OpTranspose:
+    op_name: str = "Transpose"
+    param_perm: str = "perm"
 
-QNN_OP_DEPTH_WISE_CONV_2D = "DepthWiseConv2d"
-QNN_OP_DEPTH_WISE_CONV_2D_PARAM_STRIDE = "stride"
-QNN_OP_DEPTH_WISE_CONV_2D_PARAM_PAD_AMOUNT = "pad_amount"
-QNN_OP_DEPTH_WISE_CONV_2D_PARAM_DILATION = "dilation"
 
-QNN_OP_ELEMENTWISE_ADD = "ElementWiseAdd"
+@dataclass(init=False, frozen=True)
+class OpConv2d:
+    op_name: str = "Conv2d"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_group: str = "group"
+    param_dilation: str = "dilation"
 
-QNN_OP_RELU = "Relu"
 
-QNN_OP_RELU_MIN_MAX = "ReluMinMax"
-QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE = "min_value"
-QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE = "max_value"
+@dataclass(init=False, frozen=True)
+class OpDepthWiseConv2d:
+    op_name: str = "DepthWiseConv2d"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_dilation: str = "dilation"
 
-QNN_OP_REDUCE_MEAN = "ReduceMean"
-QNN_OP_REDUCE_MEAN_PARAM_AXES = "axes"
-QNN_OP_REDUCE_MEAN_PARAM_KEEP_DIMS = "keep_dims"
 
-QNN_OP_FULLY_CONNECTED = "FullyConnected"
-QNN_OP_FULLY_CONNECTED_PARAM_KEEP_DIMS = "keep_dims"
+@dataclass(init=False, frozen=True)
+class OpElementWiseAdd:
+    op_name: str = "ElementWiseAdd"
 
-QNN_OP_BATCHNORM = "Batchnorm"
 
-QNN_OP_RESHAPE = "Reshape"
+@dataclass(init=False, frozen=True)
+class OpElementWiseMultiply:
+    op_name: str = "ElementWiseMultiply"
 
-QNN_OP_STRIDED_SLICE = "StridedSlice"
-QNN_OP_STRIDED_SLICE_PARAM_RANGES = "ranges"
-QNN_OP_STRIDED_SLICE_PARAM_BEGIN_MASK = "begin_mask"
-QNN_OP_STRIDED_SLICE_PARAM_END_MASK = "end_mask"
-QNN_OP_STRIDED_SLICE_PARAM_SHRINK_AXES = "shrink_axes"
-QNN_OP_STRIDED_SLICE_PARAM_NEW_AXES_MASK = "new_axes_mask"
 
-QNN_OP_EXPAND_DIMS = "ExpandDims"
-QNN_OP_EXPAND_DIMS_PARAM_AXIS = "axis"
+@dataclass(init=False, frozen=True)
+class OpElementWiseSubtract:
+    op_name = "ElementWiseSubtract"
 
-QNN_OP_ELEMENT_WISE_MULTIPLY = "ElementWiseMultiply"
 
-QNN_OP_CONCAT = "Concat"
-QNN_OP_CONCAT_PARAM_AXIS = "axis"
+@dataclass(init=False, frozen=True)
+class OpElementWiseDivide:
+    op_name: str = "ElementwiseDivide"
 
-QNN_OP_POOL_MAX_2D = "PoolMax2d"
-QNN_OP_POOL_MAX_2D_PARAM_FILTER_SIZE = "filter_size"
-QNN_OP_POOL_MAX_2D_PARAM_STRIDE = "stride"
-QNN_OP_POOL_MAX_2D_PARAM_PAD_AMOUNT = "pad_amount"
-QNN_OP_POOL_MAX_2D_PARAM_ROUNDING_MODE = "rounding_mode"
-QNN_OP_POOL_MAX_2D_ROUNDING_MODE_FLOOR = 0
-QNN_OP_POOL_MAX_2D_ROUNDING_MODE_CEIL = 1
 
-QNN_OP_QUANTIZE = "Quantize"
-QNN_OP_DEQUANTIZE = "Dequantize"
+@dataclass(init=False, frozen=True)
+class OpElementWiseCeil:
+    op_name = "ElementWiseCeil"
 
-QNN_OP_CAST = "Cast"
 
-QNN_OP_ELEMENT_WISE_SUBTRACT = "ElementWiseSubtract"
+@dataclass(init=False, frozen=True)
+class OpRelu:
+    op_name: str = "Relu"
 
-QNN_OP_ELEMENT_WISE_CEIL = "ElementWiseCeil"
 
-QNN_OP_POOL_AVG_2D = "PoolAvg2d"
-QNN_OP_POOL_AVG_2D_PARAM_FILTER_SIZE = "filter_size"
-QNN_OP_POOL_AVG_2D_PARAM_STRIDE = "stride"
-QNN_OP_POOL_AVG_2D_PARAM_PAD_AMOUNT = "pad_amount"
-QNN_OP_POOL_AVG_2D_PARAM_COUNT_PAD_FOR_EDGES = "count_pad_for_edges"
-QNN_OP_POOL_AVG_2D_PARAM_ROUNDING_MODE = "rounding_mode"
-QNN_OP_POOL_AVG_2D_ROUNDING_MODE_FLOOR = 0
-QNN_OP_POOL_AVG_2D_ROUNDING_MODE_CEIL = 1
+@dataclass(init=False, frozen=True)
+class OpReluMinMax:
+    op_name: str = "ReluMinMax"
+    param_min_value: str = "min_value"
+    param_max_value: str = "max_value"
 
-QNN_OP_RESIZE_BILINEAR = "ResizeBilinear"
-QNN_OP_RESIZE_BILINEAR_ALIGN_CORNERS = "align_corners"
-QNN_OP_RESIZE_BILINEAR_HALF_PIXEL_CENTERS = "half_pixel_centers"
 
-QNN_OP_ELEMENT_WISE_DIVIDE = "ElementWiseDivide"
+@dataclass(init=False, frozen=True)
+class OpReduceMean:
+    op_name: str = "ReduceMean"
+    param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
 
-QNN_OP_SOFTMAX = "Softmax"
-QNN_OP_SOFTMAX_PARAM_AXIS = "axis"
-QNN_OP_SOFTMAX_PARAM_BETA = "beta"
 
-QNN_OP_PAD = "Pad"
-QNN_OP_PAD_PARAM_SCHEME = "scheme"
-QNN_OP_PAD_SCHEME_CONSTANT = 0
-QNN_OP_PAD_SCHEME_MIRROR_SYMMETRIC = 1
-QNN_OP_PAD_SCHEME_MIRROR_REFLECT = 2
-QNN_OP_PAD_SCHEME_EDGE = 3
-QNN_OP_PAD_PARAM_PAD_AMOUNT = "pad_amount"
-QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE = "pad_constant_value"
+@dataclass(init=False, frozen=True)
+class OpFullyConnected:
+    op_name: str = "FullyConnected"
+    param_keep_dims: str = "keep_dims"
 
-QNN_OP_MAT_MUL = "MatMul"
-QNN_OP_MAT_MUL_PARAM_TRANSPOSE_IN0 = "transpose_in0"
-QNN_OP_MAT_MUL_PARAM_TRANSPOSE_IN1 = "transpose_in1"
 
-QNN_OP_GATHER = "Gather"
-QNN_OP_GATHER_PARAM_AXIS = "axis"
+@dataclass(init=False, frozen=True)
+class OpBatchnorm:
+    op_name: str = "Batchnorm"
 
-QNN_OP_TILE = "Tile"
-QNN_OP_TILE_PARAM_MULTIPLES = "multiples"
 
-QNN_OP_HARD_SWISH = "HardSwish"
+@dataclass(init=False, frozen=True)
+class OpReshape:
+    op_name: str = "Reshape"
 
-QNN_OP_DEPTH_TO_SPACE = "DepthToSpace"
-QNN_OP_DEPTH_TO_SPACE_PARAM_BLOCK_SIZE = "block_size"
-QNN_OP_DEPTH_TO_SPACE_PARAM_MODE = "mode"
-QNN_OP_DEPTH_TO_SPACE_MODE_DCR = 0
-QNN_OP_DEPTH_TO_SPACE_MODE_CRD = 1
 
-QNN_OP_TANH = "Tanh"
+@dataclass(init=False, frozen=True)
+class OpStridedSlice:
+    op_name: str = "StridedSlice"
+    param_ranges: str = "ranges"
+    param_begin_mask: str = "begin_mask"
+    param_end_mask: str = "end_mask"
+    param_shrink_axes: str = "shrink_axes"
+    param_new_axes_mask: str = "new_axes_mask"
 
-QNN_OP_ELEMENTWISE_NEURON = "ElementWiseNeuron"
-QNN_OP_ELEMENT_WISE_RULES_OPERATION = "operation"
-QNN_OP_ELEMENT_WISE_RULES_ALPHA = "alpha"
-QNN_OP_ELEMENT_WISE_RULES_BETA = "beta"
 
-class ElementwiseNeuronOperation(Enum):
-    ELU = 0
-    GELU = 1
-    HARD_SIGMOID = 2
-    HARD_SWISH = 3
-    RELU = 4
-    RELU_MIN_MAX = 5
-    SIGMOID = 6
-    SOFTPLUS = 7
-    TANH = 8
+@dataclass(init=False, frozen=True)
+class OpExpandDims:
+    op_name: str = "ExpandDims"
+    param_axis: str = "axis"
+
+
+@dataclass(init=False, frozen=True)
+class OpConcat:
+    op_name: str = "Concat"
+    param_axis: str = "axis"
+
+
+@dataclass(init=False, frozen=True)
+class OpPoolMax2d:
+    op_name: str = "PoolMax2d"
+    param_filter_size: str = "filter_size"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_rounding_mode: str = "rounding_mode"
+
+    @unique
+    class RoundingMode(IntEnum):
+        FLOOR = 0
+        CEIL = 1
+
+
+@dataclass(init=False, frozen=True)
+class OpPoolAvg2d:
+    op_name: str = "PoolAvg2d"
+    param_filter_size: str = "filter_size"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_count_pad_for_edges: str = "count_pad_for_edges"
+    param_rounding_mode: str = "rounding_mode"
+
+    @unique
+    class RoundingMode(IntEnum):
+        FLOOR = 0
+        CEIL = 1
+
+
+@dataclass(init=False, frozen=True)
+class OpQuantize:
+    op_name: str = "Quantize"
+
+
+@dataclass(init=False, frozen=True)
+class OpDequantize:
+    op_name: str = "Dequantize"
+
+
+@dataclass(init=False, frozen=True)
+class OpCast:
+    op_name: str = "Cast"
+
+
+@dataclass(init=False, frozen=True)
+class OpResizeBilinear:
+    op_name: str = "ResizeBilinear"
+    param_align_corners: str = "align_corners"
+    param_half_pixel_centers: str = "half_pixel_centers"
+
+
+@dataclass(init=False, frozen=True)
+class OpSoftmax:
+    op_name: str = "Softmax"
+    param_axis: str = "axis"
+    param_beta: str = "beta"
+
+
+@dataclass(init=False, frozen=True)
+class OpPad:
+    op_name: str = "Pad"
+    param_scheme: str = "scheme"
+    param_pad_amount: str = "pad_amount"
+    param_pad_constant_value: str = "pad_constant_value"
+
+    @unique
+    class Scheme(IntEnum):
+        CONSTANT = 0
+        MIRROR_SYMMETRIC = 1
+        MIRROR_REFLECT = 2
+        EDGE = 3
+
+
+@dataclass(init=False, frozen=True)
+class OpMatMul:
+    op_name: str = "MatMul"
+    param_transpose_in0: str = "transpose_in0"
+    param_transpose_in1: str = "transpose_in1"
+
+
+@dataclass(init=False, frozen=True)
+class OpGather:
+    op_name: str = "Gather"
+    param_axis: str = "axis"
+
+
+@dataclass(init=False, frozen=True)
+class OpTile:
+    op_name: str = "Tile"
+    param_multiples: str = "multiples"
+
+
+@dataclass(init=False, frozen=True)
+class OpHardSwish:
+    op_name: str = "HardSwish"
+
+
+@dataclass(init=False, frozen=True)
+class OpDepthToSpace:
+    op_name: str = "DepthToSpace"
+    param_block_size: str = "block_size"
+    param_mode: str = "mode"
+
+
+    @unique
+    class Mode(IntEnum):
+        DCR = 0
+        CRD = 1
+
+
+@dataclass(init=False, frozen=True)
+class OpTanh:
+    op_name: str = "Tanh"
+
+
+@dataclass(init=False, frozen=True)
+class OpElementWiseNeuron:
+    op_name: str = "ElementWiseNeuron"
+    param_operation: str = "operation"
+    param_alpha: str = "alpha"
+    param_beta: str = "beta"
+
+    @unique
+    class Operation(IntEnum):
+        ELU = 0
+        GELU = 1
+        HARD_SIGMOID = 2
+        HARD_SWISH = 3
+        RELU = 4
+        RELU_MIN_MAX = 5
+        SIGMOID = 6
+        SOFTPLUS = 7
+        TANH = 8
+

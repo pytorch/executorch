@@ -14,14 +14,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_PAD,
-    QNN_OP_PAD_PARAM_SCHEME,
-    QNN_OP_PAD_SCHEME_CONSTANT,
-    QNN_OP_PAD_SCHEME_MIRROR_SYMMETRIC,
-    QNN_OP_PAD_SCHEME_MIRROR_REFLECT,
-    QNN_OP_PAD_SCHEME_EDGE,
-    QNN_OP_PAD_PARAM_PAD_AMOUNT,
-    QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
+    OpPad,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
@@ -73,26 +66,26 @@ class Pad(NodeVisitor):
         pad_amount_val = node.args[2]
 
         pad_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_PAD
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpPad.op_name,
         )
         pad_op.AddInputTensors(pad_input_tensors)
         pad_op.AddOutputTensors(pad_output_tensors)
 
         # For now, we only support constant (0) padding due to torch implementation
         pad_op.AddScalarParam(
-            QNN_OP_PAD_PARAM_SCHEME,
+            OpPad.param_scheme,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(QNN_OP_PAD_SCHEME_CONSTANT)},
+            {"data": np.uint32(OpPad.Scheme.CONSTANT)},
         )
 
         pad_op.AddScalarParam(
-            QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
+            OpPad.param_pad_constant_value,
             QNN_TENSOR_TYPE_MAP[type(pad_amount_val)],
             {"data": pad_amount_val},
         )
 
         pad_op.AddTensorParam(
-            QNN_OP_PAD_PARAM_PAD_AMOUNT,
+            OpPad.param_pad_amount,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             len(pad_amount_shape),
             pad_amount_shape,

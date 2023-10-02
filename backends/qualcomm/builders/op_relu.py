@@ -11,8 +11,8 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_RELU,
     QNN_OP_PACKAGE_NAME_QTI_AISW,
+    OpRelu,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
@@ -51,7 +51,7 @@ class Relu(NodeVisitor):
         relu_output_tensors = [output_tensor_wrapper]
 
         relu_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_RELU
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpRelu.op_name,
         )
         relu_op.AddInputTensors(relu_input_tensors)
         relu_op.AddOutputTensors(relu_output_tensors)

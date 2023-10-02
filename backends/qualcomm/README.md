@@ -41,7 +41,7 @@ backends/qualcomm
 
 # Examples
 
-Please see [examples/README.md](examples/README.md).
+Please see this [README.md](../../examples/backend/qualcomm/README.md).
 
 Further, an example build script is provided as [build.sh](scripts/build.sh).
 

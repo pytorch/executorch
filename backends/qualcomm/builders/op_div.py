@@ -11,7 +11,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_ELEMENT_WISE_DIVIDE,
+    OpElementWiseDivide,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
@@ -53,7 +53,7 @@ class Div(NodeVisitor):
             div_input_tensors.append(input_tensor_wrapper)
 
         div_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_ELEMENT_WISE_DIVIDE
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpElementWiseDivide.op_name,
         )
         div_op.AddInputTensors(div_input_tensors)
         div_op.AddOutputTensors(div_output_tensors)

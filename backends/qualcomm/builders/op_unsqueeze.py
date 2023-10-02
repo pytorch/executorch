@@ -11,8 +11,7 @@ from executorch.backends.qualcomm.builders.node_visitor import (
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
     QNN_OP_PACKAGE_NAME_QTI_AISW,
-    QNN_OP_EXPAND_DIMS,
-    QNN_OP_EXPAND_DIMS_PARAM_AXIS,
+    OpExpandDims,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
 import numpy as np
@@ -53,13 +52,13 @@ class Unsqueeze(NodeVisitor):
         dim = cast(int, node.args[1])
 
         unsqueeze_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, QNN_OP_EXPAND_DIMS
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpExpandDims.op_name,
         )
         unsqueeze_op.AddInputTensors([input_tensor_wrapper])
         unsqueeze_op.AddOutputTensors([output_tensor_wrapper])
 
         unsqueeze_op.AddScalarParam(
-            QNN_OP_EXPAND_DIMS_PARAM_AXIS,
+            OpExpandDims.param_axis,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
             {"data": np.uint32(dim)},
         )
