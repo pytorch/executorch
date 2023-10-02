@@ -11,6 +11,7 @@ import torch
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 from executorch.exir.passes import dead_code_elimination_pass
 from executorch.exir.pass_base import ExportPass, PassResult
+from .annotate_quant_attrs import get_quant_attrs
 
 
 class AnnotateAndQuantScalar(ExportPass):
@@ -38,28 +39,14 @@ class AnnotateAndQuantScalar(ExportPass):
     def __init__(self):
         super(AnnotateAndQuantScalar, self).__init__()
 
-    def _get_quant_attrs(self, graph_module: torch.fx.GraphModule, quant_node: torch.fx.Node):
-        quant_attr_keys = [arg.name for arg in quant_node.target._schema.arguments][1:]
-        quant_attrs = dict.fromkeys(quant_attr_keys)
-
-        for i in range(1, len(quant_node.args)):
-            attr_n = quant_node.args[i]
-            value = attr_n
-            if type(attr_n) == torch.fx.node.Node:
-                value = getattr(graph_module, attr_n.target)
-            quant_attrs[quant_attr_keys[i - 1]] = value
-
-        quant_attrs["encoding"] = quant_node.target
-        return quant_attrs
-
     def _get_source_scalar_node(self, node: torch.fx.Node) -> torch.fx.Node:
         """
-        This recursion fucntion is specific for multiply followed by a cast
+        This recursion function is specific for multiply followed by a cast
         """
         if node.op == "get_attr":
             if not (shape := node.meta["val"].size()):
                 return node
-            assert "The output of node {} is not a scalar, but a tensor with shape {}".format(node, shape)
+            assert f"The output of node {node} is not a scalar, but a tensor with shape {shape}"
         return self._get_source_scalar_node(node.args[0])
 
     def _update_scalar_node_attrs(
@@ -76,7 +63,7 @@ class AnnotateAndQuantScalar(ExportPass):
         self, gm: torch.fx.GraphModule, be_annotated_node: torch.fx.Node, quant_attrs :Dict
         ) -> None:
         """
-        This recursion fucntion is specific for multiply followed by a cast
+        This recursion function is specific for multiply followed by a cast
         """
         if be_annotated_node.meta['val'].dtype not in [float, torch.float32]:
             return
@@ -93,7 +80,7 @@ class AnnotateAndQuantScalar(ExportPass):
             if output.meta.get(self.quant_attrs_key) and len(src_partition.input_nodes) == 1:
                 dq_node = src_partition.input_nodes[0]
                 q_node = dq_node.args[0]
-                q_node_attrs = self._get_quant_attrs(graph_module, q_node)
+                q_node_attrs = get_quant_attrs(graph_module, q_node)
 
                 scalar_node = [n for n in output.args if n != dq_node][0]
                 source_scalar_node = self._get_source_scalar_node(scalar_node)
