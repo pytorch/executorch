@@ -19,9 +19,6 @@
 #include <ethosu_driver.h>
 #include <pmu_ethosu.h>
 
-#include "command_stream.hpp"
-using namespace EthosU::CommandStream;
-
 namespace torch {
 namespace executor {
 
@@ -120,29 +117,26 @@ public:
 			if( !((i+1)%4) ) printf("\n");
 		}
 		printf("\n");
-		
-		// Invoke driver using the above pointers
-		CommandStream cs(
-			DataPointer(handles.cmd_data, handles.cmd_data_size),
-			BasePointers({
-					DataPointer(handles.weight_data, handles.weight_data_size),
-					DataPointer(handles.scratch_data, handles.scratch_data_size)
-				}),
-			PmuEvents({ETHOSU_PMU_CYCLE, ETHOSU_PMU_NPU_IDLE, ETHOSU_PMU_NPU_ACTIVE})
-			);
 
-		cs.getPmu().clear();
-		int res = cs.run(1);
-		if(res == 0)
+		// Allocate driver handle and synchronously invoke driver
+		ethosu_driver *drv = ethosu_reserve_driver();
+
+		uint64_t bases[2] = {(uint64_t)handles.weight_data, (uint64_t)handles.scratch_data};
+		size_t bases_size[2] = {handles.weight_data_size, handles.scratch_data_size};
+		int result = ethosu_invoke_v3(drv,
+									  (void*)handles.cmd_data,
+									  handles.cmd_data_size,
+									  bases,
+									  bases_size,
+									  2,
+									  nullptr);
+
+		if(result != 0)
 		{
-			uint64_t cycleCount = cs.getPmu().getCycleCount();
-			cs.getPmu().print();
-			printf("cycleCount=%llu, cycleCountPerJob=%llu\n", cycleCount, cycleCount);
-		} else {
-			printf("Error, failure executing job\n");
+			ET_LOG(Error, "ArmBackend::execute: Ethos-U invocation failed error (%d)", result);
 			return Error::InvalidProgram;
-		}
-
+		}											  
+		
         // TMP emit scratch
         printf("Scratch after:\n");
         for( int i=0; i<handles.scratch_data_size; i++ )
@@ -161,9 +155,9 @@ public:
 
 private:
 	typedef struct {
-		const char *cmd_data; int cmd_data_size;
-		const char *weight_data; int weight_data_size;
-		const char *scratch_data; int scratch_data_size;
+		const char *cmd_data; size_t cmd_data_size;
+		const char *weight_data; size_t weight_data_size;
+		const char *scratch_data; size_t scratch_data_size;
 	} vela_handles;
 
 	typedef struct {
