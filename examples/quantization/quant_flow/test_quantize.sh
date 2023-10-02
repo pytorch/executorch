@@ -10,7 +10,7 @@
 set -e
 
 # shellcheck source=/dev/null
-source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/../../../.ci/scripts/utils.sh"
 
 get_shared_lib_ext() {
   UNAME=$(uname)
@@ -32,7 +32,7 @@ test_buck2_quantization() {
   SO_LIB=$($BUCK build //kernels/quantized:aot_lib --show-output | grep "buck-out" | cut -d" " -f2)
 
   echo "Run example.py"
-  ${PYTHON_EXECUTABLE} -m "examples.quantization.example" --so_library="$SO_LIB" --model_name="$1"
+  ${PYTHON_EXECUTABLE} -m "examples.quantization.quant_flow.example" --so_library="$SO_LIB" --model_name="$1"
 
   echo 'Running executor_runner'
   $BUCK run //examples/runtime/portable:executor_runner -- --model_path="./${1}_quantized.pte"
@@ -62,7 +62,7 @@ test_cmake_quantization() {
   SO_LIB="cmake-out/kernels/quantized/libquantized_ops_aot_lib$EXT"
 
   echo "Run example.py, shared library $SO_LIB"
-  ${PYTHON_EXECUTABLE} -m "examples.quantization.example" --so_library="$SO_LIB" --model_name="$1"
+  ${PYTHON_EXECUTABLE} -m "examples.quantization.quant_flow.example" --so_library="$SO_LIB" --model_name="$1"
 
   echo 'Running executor_runner'
   cmake-out/executor_runner --model_path="./${1}_quantized.pte"

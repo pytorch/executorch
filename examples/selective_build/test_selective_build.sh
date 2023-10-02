@@ -17,7 +17,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
 
 test_buck2_select_all_ops() {
     echo "Exporting MobilenetV3"
-    ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="mv3"
+    ${PYTHON_EXECUTABLE} -m examples.export.portable --model_name="mv3"
 
     echo "Running selective build test"
     $BUCK run //examples/selective_build:selective_build_test \
@@ -29,7 +29,7 @@ test_buck2_select_all_ops() {
 
 test_buck2_select_ops_in_list() {
     echo "Exporting add_mul"
-    ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="add_mul"
+    ${PYTHON_EXECUTABLE} -m examples.export.portable --model_name="add_mul"
 
     echo "Running selective build test"
     # set max_kernel_num=17: 14 primops, add, mul
@@ -55,7 +55,7 @@ test_buck2_select_ops_from_yaml() {
 
 test_cmake_select_all_ops() {
     echo "Exporting MobilenetV3"
-    ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="mv3"
+    ${PYTHON_EXECUTABLE} -m examples.export.portable --model_name="mv3"
 
     (rm -rf cmake-out \
         && mkdir cmake-out \
@@ -78,7 +78,7 @@ test_cmake_select_all_ops() {
 
 test_cmake_select_ops_in_list() {
     echo "Exporting MobilenetV2"
-    ${PYTHON_EXECUTABLE} -m examples.export.export_example --model_name="mv2"
+    ${PYTHON_EXECUTABLE} -m examples.export.portable --model_name="mv2"
 
     # set MAX_KERNEL_NUM=17: 14 primops, add, mul
     (rm -rf cmake-out \

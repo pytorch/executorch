@@ -6,7 +6,7 @@
 
 """Example of showcasing registering custom operator through torch library API."""
 import torch
-from examples.export.export_example import export_to_exec_prog, save_pte_program
+from examples.export.utils import export_to_exec_prog, save_pte_program
 
 from executorch.exir import EdgeCompileConfig
 from torch.library import impl, Library

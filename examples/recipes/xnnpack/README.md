@@ -10,10 +10,10 @@ The following command will produce an floating-point XNNPACK delegated model `mv
 
 ```bash
 # For MobileNet V2
-python3 -m examples.backend.xnnpack_examples --model_name="mv2" --delegate
+python3 -m examples.recipes.xnnpack.aot_compiler --model_name="mv2" --delegate
 ```
 
-Once we have the model binary (pte) file, then let's run it with Executorch runtime using the `xnn_executor_runner`.
+Once we have the model binary (pte) file, then let's run it with ExecuTorch runtime using the `xnn_executor_runner`.
 
 ```bash
 buck2 run examples/runtime/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnnpack_fp32.pte
@@ -23,10 +23,10 @@ buck2 run examples/runtime/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnn
 The following command will produce an XNNPACK quantized and delegated model `mv2_xnnpack_q8.pte` that can be run using XNNPACK's operators. It will also print out the lowered graph, showing what parts of the models have been lowered to XNNPACK via `executorch_call_delegate`.
 
 ```bash
-python3 -m examples.backend.xnnpack_examples --model_name="mv2" --quantize --delegate
+python3 -m examples.recipes.xnnpack.aot_compiler --model_name="mv2" --quantize --delegate
 ```
 
-Once we have the model binary (pte) file, then let's run it with Executorch runtime using the `xnn_executor_runner`.
+Once we have the model binary (pte) file, then let's run it with ExecuTorch runtime using the `xnn_executor_runner`.
 
 ```bash
 buck2 run examples/runtime/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnnpack_q8.pte
@@ -44,7 +44,7 @@ We build the benchmarking binary (will be released in the near future, but it is
 
 ### Methodology
 
-Models are exported with the steps above for XNNPACK delegation, and with `examples/export:export_example` for portable backend without any optimization. Then use `//examples/runtime/xnnpack:xnn_executor_runner` with profiler (command listed below); or  in the future, use the runtime in `//sdk/runners:executor_runner` since it gives more options such as number of iterations after build rules for OSS is added.
+Models are exported with the steps above for XNNPACK delegation, and with `examples/export/portable.py` for portable backend without any optimization. Then use `//examples/runtime/xnnpack:xnn_executor_runner` with profiler (command listed below); or  in the future, use the runtime in `//sdk/runners:executor_runner` since it gives more options such as number of iterations after build rules for OSS is added.
 
 ```
 buck run -c executorch.prof_enabled=true -c executorch.prof_buf_size=8096 -c executorch.num_prof_blocks=61 //examples/runtime/xnnpack:xnn_executor_runner -- --model_path mv3.pte

@@ -10,7 +10,7 @@ import os
 from typing import Any
 
 from examples.models import MODEL_NAME_TO_MODEL
-from examples.recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS
+from examples.recipes.xnnpack import MODEL_NAME_TO_OPTIONS
 
 BUILD_TOOLS = [
     "buck2",
@@ -51,7 +51,8 @@ def export_models_for_ci() -> None:
     for name in MODEL_NAME_TO_MODEL.keys():
         quantization_configs = {
             False,
-            name in MODEL_NAME_TO_OPTIONS and MODEL_NAME_TO_OPTIONS[name].quantization,
+            name in MODEL_NAME_TO_OPTIONS
+            and MODEL_NAME_TO_OPTIONS[name].xnnpack_quantization,
         }
         delegation_configs = {
             False,

@@ -20,7 +20,7 @@ and UI looks like
 
 ![](./executorch_mobilenet_ui.png)
 
-Step 1. Export a MobileNetV2 model following example follwing executorch/examples/export/export_example.py. Instead of export mv2 directly, add a softmax at the end
+Step 1. Export a MobileNetV2 model following example follwing executorch/examples/export/portable.py. Instead of export mv2 directly, add a softmax at the end
 ```python
 class MobileNetV2Wrapper(torch.nn.Module):
     def __init__(self):

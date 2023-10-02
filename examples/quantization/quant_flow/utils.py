@@ -9,14 +9,14 @@ import logging
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
-    XNNPACKQuantizer,
 )
 
 
-def quantize(model, example_inputs):
-    """This is the official recommended flow for quantization in pytorch 2.0 export"""
+def quantize(model, example_inputs, quantizer):
+    """
+    This is the official recommended flow for quantization in pytorch 2.0 export
+    """
     logging.info(f"Original model: {model}")
-    quantizer = XNNPACKQuantizer()
     # if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel
     operator_config = get_symmetric_quantization_config(is_per_channel=False)
     quantizer.set_global(operator_config)

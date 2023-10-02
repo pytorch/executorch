@@ -58,10 +58,10 @@ corresponsing version of the repo.
 Via python script:
 ```bash
 # Creates the file `add.pte`
-python3 -m examples.export.export_example --model_name="add"
+python3 -m examples.export.portable --model_name="add"
 
 # Creates the delegated program `composite_model.pte`, other options are "whole" and "partition"
-python3 -m examples.export.export_and_delegate --option "composite"
+python3 -m examples.recipes.export_and_delegate --option "composite"
 ```
 
 Or via python interpreter:

@@ -15,12 +15,14 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPar
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.backend_api import to_backend
 
-from ..export.utils import export_to_edge, save_pte_program
+from torch.ao.quantization.quantizer.xnnpack_quantizer import XNNPACKQuantizer
 
-from ..models import MODEL_NAME_TO_MODEL
-from ..models.model_factory import EagerModelFactory
-from ..quantization.utils import quantize
-from ..recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS
+from ...export.utils import export_to_edge, save_pte_program
+
+from ...models import MODEL_NAME_TO_MODEL
+from ...models.model_factory import EagerModelFactory
+from ...quantization.quant_flow.utils import quantize
+from . import MODEL_NAME_TO_OPTIONS
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -77,7 +79,8 @@ if __name__ == "__main__":
 
     if args.quantize:
         logging.info("Quantizing Model...")
-        model = quantize(model, example_inputs)
+        quantizer = XNNPACKQuantizer()
+        model = quantize(model, example_inputs, quantizer)
 
     edge = export_to_edge(
         model,

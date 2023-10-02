@@ -28,10 +28,10 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from ..export.utils import export_to_edge, save_pte_program
-from ..models import MODEL_NAME_TO_MODEL
-from ..models.model_factory import EagerModelFactory
-from ..recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS
+from ...export.utils import export_to_edge, save_pte_program
+from ...models import MODEL_NAME_TO_MODEL
+from ...models.model_factory import EagerModelFactory
+from ...recipes.xnnpack import MODEL_NAME_TO_OPTIONS
 
 from .utils import quantize
 
@@ -176,8 +176,9 @@ if __name__ == "__main__":
     model = model.eval()
     # pre-autograd export. eventually this will become torch.export
     model = export.capture_pre_autograd_graph(model, example_inputs)
+    quantizer = XNNPACKQuantizer()
     start = time.perf_counter()
-    quantized_model = quantize(model, example_inputs)
+    quantized_model = quantize(model, example_inputs, quantizer)
     end = time.perf_counter()
     logging.info(f"Quantize time: {end - start}s")
 

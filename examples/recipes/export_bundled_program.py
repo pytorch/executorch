@@ -8,16 +8,21 @@
 
 import argparse
 
+import logging
+
 from executorch.bundled_program.config import BundledConfig
 from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 
+from ..export.utils import export_to_exec_prog, save_pte_program
+
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
 
-from .utils import export_to_exec_prog, save_pte_program
+FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
+logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 def save_bundled_program(
@@ -62,7 +67,7 @@ def export_to_pte(model_name, model, example_inputs):
     # create a list with the example_inputs tuple used twice. Each instance of example_inputs
     # is a Tuple[Union[torch.tenor, int, bool]] which represents one test set for the model.
     bundled_inputs = [example_inputs, example_inputs]
-    print(f"Saving exported program to {model_name}_bundled.pte")
+    logging.info(f"Saving exported program to {model_name}_bundled.pte")
     save_bundled_program(bundled_inputs, exec_prog, model, f"{model_name}_bundled.pte")
 
 

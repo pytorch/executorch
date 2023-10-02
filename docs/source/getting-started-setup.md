@@ -105,17 +105,17 @@ how to do it, we will generate an ExecuTorch program file from an `nn.Module`.
 You can generate an ExecuTorch program by using a sample script or by using
 the Python interpreter.
 
-We have created the `export_example.py` script that demonstrates a simple model
+We have created the `portable.py` script that demonstrates a simple model
 export to flatbuffer. This script is available
 in the [pytorch/executorch](https://github.com/pytorch/executorch/tree/main/examples/export)
 repository.
 
 To generate a sample program, complete the following steps:
 
-1. Run the `export_example.py` script:
+1. Run the `portable.py` script:
 
   ```bash
-  python3 -m examples.export.export_example --model_name="add"
+  python3 -m examples.export.portable --model_name="add"
   ```
 
   :::{dropdown} Output

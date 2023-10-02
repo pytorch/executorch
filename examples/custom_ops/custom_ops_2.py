@@ -11,7 +11,7 @@ library that calls PyTorch C++ op registration API.
 import argparse
 
 import torch
-from examples.export.export_example import export_to_exec_prog, save_pte_program
+from examples.export.utils import export_to_exec_prog, save_pte_program
 from executorch.exir import EdgeCompileConfig
 
 

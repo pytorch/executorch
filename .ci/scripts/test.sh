@@ -53,7 +53,7 @@ build_cmake_executor_runner() {
 }
 
 test_model() {
-  "${PYTHON_EXECUTABLE}" -m examples.export.export_example --model_name="${MODEL_NAME}"
+  "${PYTHON_EXECUTABLE}" -m examples.export.portable --model_name="${MODEL_NAME}"
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
@@ -92,17 +92,17 @@ test_model_with_xnnpack() {
 
   # Quantization-only
   if [[ ${WITH_QUANTIZATION} == true ]] && [[ ${WITH_DELEGATION} == false ]]; then
-    bash examples/quantization/test_quantize.sh "${BUILD_TOOL}" "${MODEL_NAME}"
+    bash examples/quantization/quant_flow/test_quantize.sh "${BUILD_TOOL}" "${MODEL_NAME}"
     exit 0
   fi
 
   # Delegation
   if [[ ${WITH_QUANTIZATION} == true ]]; then
     SUFFIX="q8"
-    "${PYTHON_EXECUTABLE}" -m examples.backend.xnnpack_examples --model_name="${MODEL_NAME}" --delegate --quantize
+    "${PYTHON_EXECUTABLE}" -m examples.recipes.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --quantize
   else
     SUFFIX="fp32"
-    "${PYTHON_EXECUTABLE}" -m examples.backend.xnnpack_examples --model_name="${MODEL_NAME}" --delegate
+    "${PYTHON_EXECUTABLE}" -m examples.recipes.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate
   fi
 
   OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_${SUFFIX}.pte"
@@ -123,9 +123,9 @@ test_model_with_xnnpack() {
 
 test_demo_backend_delegation() {
   echo "Testing demo backend delegation on AddMul"
-  "${PYTHON_EXECUTABLE}" -m examples.export.export_and_delegate  --option "composite"
-  "${PYTHON_EXECUTABLE}" -m examples.export.export_and_delegate  --option "partition"
-  "${PYTHON_EXECUTABLE}" -m examples.export.export_and_delegate  --option "whole"
+  "${PYTHON_EXECUTABLE}" -m examples.recipes.export_and_delegate  --option "composite"
+  "${PYTHON_EXECUTABLE}" -m examples.recipes.export_and_delegate  --option "partition"
+  "${PYTHON_EXECUTABLE}" -m examples.recipes.export_and_delegate  --option "whole"
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
