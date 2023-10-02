@@ -112,33 +112,21 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
         derived_from=[(input_act, node), (weight, node)],
         derive_qparams_fn=_derive_bias_qparams_fn,
         dtype=torch.int32,
-        quant_min=-(2**31),
-        quant_max=2**31 - 1,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
         ch_axis=0,
         qscheme=torch.per_channel_symmetric,
-    )
-
-def set_channel_axis(source_spec: QuantizationSpec, axis: int):
-    return QuantizationSpec(
-        dtype=source_spec.dtype,
-        quant_min=source_spec.quant_min,
-        quant_max=source_spec.quant_max,
-        qscheme=source_spec.qscheme,
-        ch_axis=axis,
-        observer_or_fake_quant_ctr=source_spec.observer_or_fake_quant_ctr
     )
 
 def get_default_qnn_ptq_config(
         enable_per_channel_conv_quant=False
     ) -> Tuple[QuantizationConfig, QnnQuantizerConfig]:
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
-
     act_quantization_spec = QuantizationSpec(
         dtype=torch.uint8,
         quant_min=0,
         quant_max=255,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(),
     )
 
     weight_quantization_spec = QuantizationSpec(
@@ -147,15 +135,15 @@ def get_default_qnn_ptq_config(
         quant_max=127,
         qscheme=torch.per_tensor_symmetric,
         ch_axis=0,
-        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(),
     )
 
     bias_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
-        quant_min=-(2**31) + 1,
-        quant_max=2**31 - 1,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
         qscheme=torch.per_tensor_symmetric,
-        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(),
     )
 
     quantization_config = QuantizationConfig(
@@ -173,14 +161,12 @@ def get_default_qnn_ptq_config(
 
 
 def get_ptq_per_channel_weight_config() -> QuantizationConfig:
-    extra_args: Dict[str, Any] = {"eps": 2**-12}
-
     act_quantization_spec = QuantizationSpec(
         dtype=torch.uint8,
         quant_min=0,
         quant_max=255,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(),
     )
 
     weight_quantization_spec = QuantizationSpec(
@@ -189,7 +175,7 @@ def get_ptq_per_channel_weight_config() -> QuantizationConfig:
         quant_max=127,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
-        observer_or_fake_quant_ctr=PerChannelMinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=PerChannelMinMaxObserver.with_args(),
     )
 
     bias_quantization_spec = _derived_bias_quant_spec
@@ -211,6 +197,7 @@ class QnnQuantizer(Quantizer):
         self.custom_quant_configs: Dict[
             Union[Type[torch.nn.Module], Callable], Optional[QuantizationConfig]
         ] = {}
+        self.custom_quant_annotations: List[Callable] = []
 
     def set_global_op_quant_config(
         self, quantization_config: Tuple[QuantizationConfig, QnnQuantizerConfig]
@@ -219,13 +206,11 @@ class QnnQuantizer(Quantizer):
         self.global_quant_config = quant_config
         self.configs = quantizer_config
 
-    def update_op_custom_quant_configs(
+    def add_custom_quant_annotations(
         self,
-        op_quant_configs: Dict[
-            Union[Type[torch.nn.Module], Callable], Optional[QuantizationConfig]
-        ],
+        custom_quant_annotations: List[Callable]
     ) -> None:
-        self.custom_quant_configs.update(op_quant_configs)
+        self.custom_quant_annotations = custom_quant_annotations
 
     def _get_qaunt_config(
         self, ops: List[Union[Type[torch.nn.Module], Callable]]
@@ -324,7 +309,7 @@ class QnnQuantizer(Quantizer):
             )
 
     def _annotate_relu(self, gm: torch.fx.GraphModule) -> None:
-        op_sources = [torch.nn.ReLU]
+        op_sources = [torch.nn.ReLU, F.relu]
         quantization_config = self._get_qaunt_config(op_sources)
         relu_partitions = get_source_partitions(gm.graph, op_sources)
 
@@ -433,7 +418,7 @@ class QnnQuantizer(Quantizer):
             )
 
     def _annotate_conv2d(self, gm: torch.fx.GraphModule) -> None:
-        op_sources = [torch.nn.Conv2d, torch.nn.functional.conv2d, "forward"]
+        op_sources = [torch.nn.Conv2d, torch.nn.functional.conv2d]
         quantization_config = self._get_qaunt_config(op_sources)
         conv_partitions = get_source_partitions(gm.graph, op_sources)
         conv_partitions = list(itertools.chain(*conv_partitions.values()))
@@ -454,9 +439,6 @@ class QnnQuantizer(Quantizer):
             input_act = conv_node.args[0]
             assert isinstance(input_act, Node)
             input_spec = quantization_config.input_activation
-            # because the input shape of a picture of conv should be NCHW
-            if input_act.op == "placeholder":
-                input_spec = set_channel_axis(quantization_config.input_activation, 1)
             input_qspec_map[input_act] = input_spec
 
             weight = conv_node.args[1]
@@ -753,6 +735,10 @@ class QnnQuantizer(Quantizer):
         model = RecomposePixelShuffle()(model).graph_module
         return model
 
+    def _annotate_custom_annotation(self, gm: torch.fx.GraphModule) -> None:
+        for annotation_func in self.custom_quant_annotations:
+            annotation_func(gm)
+
     def annotate(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
         """just handling global spec for now"""
         model = self._preprocess(model)
@@ -771,6 +757,7 @@ class QnnQuantizer(Quantizer):
         self._annotate_cat(model)
         self._annotate_unsqueeze(model)
         self._annotate_flatten(model)
+        self._annotate_custom_annotation(model)
         return model
 
     def validate(self, model: torch.fx.GraphModule) -> None:

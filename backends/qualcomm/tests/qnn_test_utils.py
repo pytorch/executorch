@@ -5,7 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import collections
-from typing import Any, Literal, Tuple, Optional
+from typing import Any, Literal, Tuple, Optional, List, Callable
 import unittest
 
 import torch
@@ -37,10 +37,12 @@ def get_qdq_module(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
     is_conv_per_channel: Optional[bool] = True,
+    custom_quant_annotations: List[Callable] = []
 ) -> torch.fx.GraphModule:
     m = torch._export.capture_pre_autograd_graph(module, inputs)
 
     quantizer = QnnQuantizer()
+    quantizer.add_custom_quant_annotations(custom_quant_annotations)
     quant_annotation_config = get_default_qnn_ptq_config()
     if is_conv_per_channel:
         quant_annotation_config = get_default_qnn_ptq_config(

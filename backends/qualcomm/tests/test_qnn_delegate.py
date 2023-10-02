@@ -1187,10 +1187,16 @@ class TestQNNINT8(TestQNN):
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
     def test_qnn_backend_ptq_edsr(self):
+        from executorch.examples.backend.qualcomm.edsr import annotate_forward
         model = EdsrModel()
         instance = model.get_eager_model().eval()
         example_inputs = model.get_example_inputs()
-        quant_instance = get_qdq_module(instance, example_inputs, is_conv_per_channel=False)
+        quant_instance = get_qdq_module(
+            instance,
+            example_inputs,
+            is_conv_per_channel=False,
+            custom_quant_annotations=[annotate_forward]
+        )
         buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
         model_name = "ptq_qnn_edsr_model"
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)

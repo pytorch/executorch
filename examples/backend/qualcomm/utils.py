@@ -125,9 +125,18 @@ class SimpleADB:
             callback()
 
 
-def build_executorch_binary(model, inputs, soc_model, file_name, dataset, use_fp16=False):
+def build_executorch_binary(
+    model,
+    inputs,
+    soc_model,
+    file_name,
+    dataset,
+    use_fp16=False,
+    custom_annotations=[]
+):
     if not use_fp16:
         quantizer = QnnQuantizer()
+        quantizer.add_custom_quant_annotations(custom_annotations)
         quant_annotation_config = get_default_qnn_ptq_config(enable_per_channel_conv_quant=True)
         quantizer.set_global_op_quant_config(quant_annotation_config)
 
