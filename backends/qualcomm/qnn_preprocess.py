@@ -9,10 +9,11 @@ import copy
 import logging
 from typing import final, List
 
-from executorch.backends.qualcomm.utils.utils import (
-    generate_qnn_executorch_option,
-)
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
+from executorch.backends.qualcomm.passes import qnn_compiler_passes
+
+from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -20,8 +21,6 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from torch._export.exported_program import ExportedProgram
-from executorch.backends.qualcomm.passes import qnn_compiler_passes
-import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 DEFAULT_DEBUG_HANDLE = 65535
 
@@ -73,7 +72,7 @@ class QnnBackend(BackendDetails):
                 raise RuntimeError(f"{node.op} is not supported in Qnn")
 
         qnn_context_binary = qnn_manager.Compile(
-            list(py_op_wrapper.GetOpWrapper() for py_op_wrapper in py_op_wrapper_list)
+            [py_op_wrapper.GetOpWrapper() for py_op_wrapper in py_op_wrapper_list]
         )
         assert len(qnn_context_binary) != 0, "Failed to generate Qnn context binary."
         qnn_manager.Destroy()

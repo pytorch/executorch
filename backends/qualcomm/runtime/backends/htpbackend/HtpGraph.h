@@ -18,9 +18,11 @@ namespace executor {
 namespace qnn {
 class HtpGraph : public QnnGraph {
  public:
-  HtpGraph(const QnnImplementation& implementation, QnnContext* context,
-           const std::string& graph_name,
-           const QnnExecuTorchHtpBackendOptions& htp_options)
+  HtpGraph(
+      const QnnImplementation& implementation,
+      QnnContext* context,
+      const std::string& graph_name,
+      const QnnExecuTorchHtpBackendOptions& htp_options)
       : QnnGraph(implementation, context, graph_name),
         htp_options_(htp_options) {
     htp_graph_custom_config_ =
@@ -36,6 +38,6 @@ class HtpGraph : public QnnGraph {
   std::unique_ptr<HtpGraphCustomConfig> htp_graph_custom_config_;
   [[maybe_unused]] QnnExecuTorchHtpBackendOptions htp_options_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

@@ -19,7 +19,8 @@ Error QnnSystemImplementation::Load() {
     QNN_EXECUTORCH_LOG(
         kLogLevelError,
         "[Qnn ExecuTorch] Cannot Open QNN library %s, with error: %s",
-        lib_path_.c_str(), dlerror());
+        lib_path_.c_str(),
+        dlerror());
     return Error::Internal;
   }
 
@@ -40,18 +41,21 @@ Error QnnSystemImplementation::Load() {
   const QnnSystemInterface_t** provider_list = nullptr;
   error = get_providers(&provider_list, &num_providers);
   if (error != QNN_SUCCESS) {
-    QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn ExecuTorch] QnnSystemInterface failed to "
-                       "get providers. Error %d",
-                       QNN_GET_ERROR_CODE(error));
+    QNN_EXECUTORCH_LOG(
+        kLogLevelError,
+        "[Qnn ExecuTorch] QnnSystemInterface failed to "
+        "get providers. Error %d",
+        QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
 
   if (num_providers != required_num_providers_) {
-    QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn ExecuTorch] QnnSystemInterface Num "
-                       "Providers is %d instead of required %d",
-                       num_providers, required_num_providers_);
+    QNN_EXECUTORCH_LOG(
+        kLogLevelError,
+        "[Qnn ExecuTorch] QnnSystemInterface Num "
+        "Providers is %d instead of required %d",
+        num_providers,
+        required_num_providers_);
     return Error::Internal;
   }
 
@@ -61,7 +65,8 @@ Error QnnSystemImplementation::Load() {
 }
 
 Error QnnSystemImplementation::Unload() {
-  if (lib_handle_ == nullptr) return Error::Ok;
+  if (lib_handle_ == nullptr)
+    return Error::Ok;
 
   int dlclose_error = dlclose(lib_handle_);
   if (dlclose_error != 0) {
@@ -87,6 +92,6 @@ const QnnSystemInterface& QnnSystemImplementation::GetQnnSystemInterface()
   }
   return qnn_sys_interface_;
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

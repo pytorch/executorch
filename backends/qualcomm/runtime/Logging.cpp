@@ -57,13 +57,13 @@ void Log(QnnExecuTorchLogLevel log_level, const char* format, ...) {
       android_severity = ANDROID_LOG_DEBUG;
       break;
   }
-  __android_log_vprint(android_severity, "[Qnn Executorch]", format, args);
+  __android_log_vprint(android_severity, "[Qnn ExecuTorch]", format, args);
 #endif
   fprintf(stderr, "[%s]", serverity_name);
   vfprintf(stderr, format, args);
   va_end(args);
   fputc('\n', stderr);
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

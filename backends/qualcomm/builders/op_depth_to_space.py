@@ -4,8 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import numpy as np
 from typing import Dict
+
+import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import numpy as np
 
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
@@ -13,11 +15,9 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
     OpDepthToSpace,
+    QNN_OP_PACKAGE_NAME_QTI_AISW,
 )
-
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
 
@@ -52,14 +52,14 @@ class DepthToSpaceVisitor(NodeVisitor):
 
         block_size = []
         for index in range(1, 3):
-            block_size.append(
-                output_tensor.shape[index] / input_tensor.shape[index]
-            )
+            block_size.append(output_tensor.shape[index] / input_tensor.shape[index])
         block_size = np.array(block_size, dtype=np.uint32)
         block_size_shape = [2]
 
         depth_to_space_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpDepthToSpace.op_name,
+            node.name,
+            QNN_OP_PACKAGE_NAME_QTI_AISW,
+            OpDepthToSpace.op_name,
         )
         depth_to_space_op.AddInputTensors([input_tensor_wrapper])
         depth_to_space_op.AddOutputTensors([output_tensor_wrapper])

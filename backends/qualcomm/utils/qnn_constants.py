@@ -5,16 +5,14 @@
 # LICENSE file in the root directory of this source tree.
 
 from dataclasses import dataclass
-from enum import (
-    unique,
-    IntEnum,
-)
+from enum import IntEnum, unique
 
 QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
 
 # Below constants should be same as those in QNN headers.
 # Maybe someday we should expose these constants by pynind
 # instead of replicating them here.
+
 
 @dataclass(init=False, frozen=True)
 class OpTranspose:
@@ -223,7 +221,6 @@ class OpDepthToSpace:
     op_name: str = "DepthToSpace"
     param_block_size: str = "block_size"
     param_mode: str = "mode"
-
 
     @unique
     class Mode(IntEnum):

@@ -19,16 +19,19 @@ class QnnExecuTorchBackend final : public PyTorchBackendInterface {
   ~QnnExecuTorchBackend(){};
 
   Result<DelegateHandle*> init(
-      BackendInitContext& context, FreeableBuffer* processed,
+      BackendInitContext& context,
+      FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override;
 
-  Error execute(__ET_UNUSED BackendExecutionContext& context,
-                DelegateHandle* handle, EValue** args) const override;
+  Error execute(
+      __ET_UNUSED BackendExecutionContext& context,
+      DelegateHandle* handle,
+      EValue** args) const override;
 
   void destroy(DelegateHandle* handle) const override;
 
   bool is_available() const override;
 };
 
-}  // namespace executor
-}  // namespace torch
+} // namespace executor
+} // namespace torch

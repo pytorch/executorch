@@ -14,11 +14,12 @@ namespace executor {
 namespace qnn {
 template <typename Fn>
 Fn loadQnnFunction(void* handle, const char* function_name) {
-  return reinterpret_cast<Fn>(dlsym(handle, function_name));  // NOLINT
+  return reinterpret_cast<Fn>(dlsym(handle, function_name)); // NOLINT
 }
 
-Error QnnImplementation::InitBackend(void* const lib_handle,
-                                     const QnnSaver_Config_t** saver_config) {
+Error QnnImplementation::InitBackend(
+    void* const lib_handle,
+    const QnnSaver_Config_t** saver_config) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   // saver_config must be set before backend initialization
   auto saver_initialize =
@@ -26,10 +27,11 @@ Error QnnImplementation::InitBackend(void* const lib_handle,
   if (saver_initialize != nullptr) {
     error = saver_initialize(saver_config);
     if (error != QNN_SUCCESS) {
-      QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn Delegate] QnnSaver Backend Failed to "
-                         "saver_initialize. Error %d",
-                         QNN_GET_ERROR_CODE(error));
+      QNN_EXECUTORCH_LOG(
+          kLogLevelError,
+          "[Qnn Delegate] QnnSaver Backend Failed to "
+          "saver_initialize. Error %d",
+          QNN_GET_ERROR_CODE(error));
       return Error::Internal;
     }
   }
@@ -49,8 +51,9 @@ std::unordered_map<QnnImplementation::BackendIdType, void*>
 // NOLINTNEXTLINE(fuchsia-statically-constructed-objects)
 std::mutex QnnImplementation::be_init_mutex_;
 
-Error QnnImplementation::StartBackend(const std::string& lib_path,
-                                      const QnnSaver_Config_t** saver_config) {
+Error QnnImplementation::StartBackend(
+    const std::string& lib_path,
+    const QnnSaver_Config_t** saver_config) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   void* lib_handle = dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL);
 
@@ -58,7 +61,8 @@ Error QnnImplementation::StartBackend(const std::string& lib_path,
     QNN_EXECUTORCH_LOG(
         kLogLevelError,
         "[Qnn ExecuTorch] Cannot Open QNN library %s, with error: %s",
-        lib_path.c_str(), dlerror());
+        lib_path.c_str(),
+        dlerror());
     return Error::Internal;
   }
 
@@ -89,10 +93,12 @@ Error QnnImplementation::StartBackend(const std::string& lib_path,
   }
 
   if (num_providers != required_num_providers_) {
-    QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn ExecuTorch] Qnn Interface Num Providers is "
-                       "%d instead of required %d",
-                       num_providers, required_num_providers_);
+    QNN_EXECUTORCH_LOG(
+        kLogLevelError,
+        "[Qnn ExecuTorch] Qnn Interface Num Providers is "
+        "%d instead of required %d",
+        num_providers,
+        required_num_providers_);
     return Error::Internal;
   }
 
@@ -112,20 +118,24 @@ Error QnnImplementation::StartBackend(const std::string& lib_path,
         kLogLevelWarn,
         "[Qnn ExecuTorch] lib_path %s is loaded, but backend %d "
         "already exists. Overwriting previous loaded backend...",
-        lib_path.c_str(), backend_id);
+        lib_path.c_str(),
+        backend_id);
   }
   loaded_backend_[backend_id] = provider_list[0];
 
   if (loaded_lib_handle_.count(backend_id) > 0) {
-    QNN_EXECUTORCH_LOG(kLogLevelWarn, "[Qnn ExecuTorch] closing %pK...",
-                       loaded_lib_handle_[backend_id]);
+    QNN_EXECUTORCH_LOG(
+        kLogLevelWarn,
+        "[Qnn ExecuTorch] closing %pK...",
+        loaded_lib_handle_[backend_id]);
 
     int dlclose_error = dlclose(loaded_lib_handle_[backend_id]);
     if (dlclose_error != 0) {
       QNN_EXECUTORCH_LOG(
           kLogLevelWarn,
           "[Qnn ExecuTorch] Sadly, fail to close %pK with error %s",
-          loaded_lib_handle_[backend_id], dlerror());
+          loaded_lib_handle_[backend_id],
+          dlerror());
     }
   }
   loaded_lib_handle_[backend_id] = lib_handle;
@@ -144,7 +154,8 @@ Error QnnImplementation::StartBackend(const std::string& lib_path,
           kLogLevelWarn,
           "[Qnn ExecuTorch] fail to close %pK after backend-init "
           "failure, with error %s",
-          loaded_lib_handle_[backend_id], dlerror());
+          loaded_lib_handle_[backend_id],
+          dlerror());
     }
 
     loaded_lib_handle_.erase(backend_id);
@@ -165,7 +176,8 @@ Error QnnImplementation::TerminateAllBackends() {
       QNN_EXECUTORCH_LOG(
           kLogLevelError,
           "[Qnn ExecuTorch] Fail to close QNN backend %d with error %s",
-          it.first, dlerror());
+          it.first,
+          dlerror());
       ret_status = Error::Internal;
     }
   }
@@ -182,8 +194,8 @@ Error QnnImplementation::Load(const QnnSaver_Config_t** saver_config) {
 
     if (lib_path_to_backend_id_.count(lib_path_) == 0) {
       Error st = StartBackend(lib_path_, saver_config);
-      ET_CHECK_OR_RETURN_ERROR(st == Error::Ok, Internal,
-                               "Fail to start backend");
+      ET_CHECK_OR_RETURN_ERROR(
+          st == Error::Ok, Internal, "Fail to start backend");
     }
 
     // Get backend ID
@@ -192,15 +204,17 @@ Error QnnImplementation::Load(const QnnSaver_Config_t** saver_config) {
     // really don't expect.
     if (loaded_backend_.count(backend_id) == 0 ||
         loaded_lib_handle_.count(backend_id) == 0) {
-      QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn ExecuTorch] library %s is loaded but "
-                         "loaded backend count=%zu, "
-                         "loaded lib_handle count=%zu",
-                         lib_path_.c_str(), loaded_backend_.count(backend_id),
-                         loaded_lib_handle_.count(backend_id));
+      QNN_EXECUTORCH_LOG(
+          kLogLevelError,
+          "[Qnn ExecuTorch] library %s is loaded but "
+          "loaded backend count=%zu, "
+          "loaded lib_handle count=%zu",
+          lib_path_.c_str(),
+          loaded_backend_.count(backend_id),
+          loaded_lib_handle_.count(backend_id));
       return Error::Internal;
     }
-  }  // be_init_mutex_ release.
+  } // be_init_mutex_ release.
 
   // Connect QnnInterface
   qnn_interface_.SetQnnInterface(loaded_backend_[backend_id]);
@@ -217,6 +231,6 @@ const QnnInterface& QnnImplementation::GetQnnInterface() const {
   }
   return qnn_interface_;
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

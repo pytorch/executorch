@@ -22,6 +22,6 @@ class HtpBackend : public QnnBackend {
     return Error::Ok;
   }
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

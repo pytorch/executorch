@@ -19,8 +19,10 @@ namespace executor {
 namespace qnn {
 class PyQnnOpWrapper {
  public:
-  explicit PyQnnOpWrapper(const std::string& name, const std::string& package_name,
-                          const std::string& op_type) {
+  explicit PyQnnOpWrapper(
+      const std::string& name,
+      const std::string& package_name,
+      const std::string& op_type) {
     op_wrapper_ = std::make_shared<OpWrapper>(name, package_name, op_type);
   }
   void AddInputTensors(
@@ -33,60 +35,68 @@ class PyQnnOpWrapper {
     op_wrapper_->AddOutputTensors(tensors);
   }
 
-  void AddTensorParam(const std::string& name, Qnn_DataType_t data_type,
-                      std::uint32_t rank, const std::vector<uint32_t>& dims,
-                      py::array& data, bool copy_data) {
-    op_wrapper_->AddTensorParam(name, data_type, rank, dims.data(), data.data(),
-                                copy_data);
+  void AddTensorParam(
+      const std::string& name,
+      Qnn_DataType_t data_type,
+      std::uint32_t rank,
+      const std::vector<uint32_t>& dims,
+      py::array& data,
+      bool copy_data) {
+    op_wrapper_->AddTensorParam(
+        name, data_type, rank, dims.data(), data.data(), copy_data);
   }
 
-  void AddScalarParam(const std::string& name, Qnn_DataType_t data_type,
-                      py::dict& attrData) {
+  void AddScalarParam(
+      const std::string& name,
+      Qnn_DataType_t data_type,
+      py::dict& attrData) {
     switch (data_type) {
       case Qnn_DataType_t::QNN_DATATYPE_INT_32:
-        op_wrapper_->AddScalarParam(name, data_type,
-                                    attrData["data"].cast<int32_t>());
+        op_wrapper_->AddScalarParam(
+            name, data_type, attrData["data"].cast<int32_t>());
         break;
       case Qnn_DataType_t::QNN_DATATYPE_INT_16:
-        op_wrapper_->AddScalarParam(name, data_type,
-                                    attrData["data"].cast<int16_t>());
+        op_wrapper_->AddScalarParam(
+            name, data_type, attrData["data"].cast<int16_t>());
         break;
       case Qnn_DataType_t::QNN_DATATYPE_INT_8:
-        op_wrapper_->AddScalarParam(name, data_type,
-                                    attrData["data"].cast<int8_t>());
+        op_wrapper_->AddScalarParam(
+            name, data_type, attrData["data"].cast<int8_t>());
         break;
       case Qnn_DataType_t::QNN_DATATYPE_UINT_32:
-        op_wrapper_->AddScalarParam(name, data_type,
-                                    attrData["data"].cast<uint32_t>());
+        op_wrapper_->AddScalarParam(
+            name, data_type, attrData["data"].cast<uint32_t>());
         break;
       case Qnn_DataType_t::QNN_DATATYPE_UINT_16:
-        op_wrapper_->AddScalarParam(name, data_type,
-                                    attrData["data"].cast<uint16_t>());
+        op_wrapper_->AddScalarParam(
+            name, data_type, attrData["data"].cast<uint16_t>());
         break;
       case Qnn_DataType_t::QNN_DATATYPE_UINT_8:
-        op_wrapper_->AddScalarParam(name, data_type,
-                                    attrData["data"].cast<uint8_t>());
+        op_wrapper_->AddScalarParam(
+            name, data_type, attrData["data"].cast<uint8_t>());
         break;
       case Qnn_DataType_t::QNN_DATATYPE_FLOAT_32:
       case Qnn_DataType_t::QNN_DATATYPE_FLOAT_16:
-        op_wrapper_->AddScalarParam(name, data_type,
-                                    attrData["data"].cast<float>());
+        op_wrapper_->AddScalarParam(
+            name, data_type, attrData["data"].cast<float>());
         break;
       case Qnn_DataType_t::QNN_DATATYPE_BOOL_8:
-        op_wrapper_->AddScalarParam(name, data_type,
-                                    attrData["data"].cast<bool>());
+        op_wrapper_->AddScalarParam(
+            name, data_type, attrData["data"].cast<bool>());
         break;
       default:
-        QNN_EXECUTORCH_LOG(kLogLevelError,
-                           "[Qnn ExecuTorch] tensor.v1.name: %d", data_type);
+        QNN_EXECUTORCH_LOG(
+            kLogLevelError, "[Qnn ExecuTorch] tensor.v1.name: %d", data_type);
         break;
     }
   }
-  std::shared_ptr<OpWrapper>& GetOpWrapper() { return op_wrapper_; }
+  std::shared_ptr<OpWrapper>& GetOpWrapper() {
+    return op_wrapper_;
+  }
 
  private:
   std::shared_ptr<OpWrapper> op_wrapper_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

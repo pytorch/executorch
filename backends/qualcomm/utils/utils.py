@@ -9,22 +9,20 @@ import sys
 
 from typing import cast, List, Tuple
 
-import torch
-from torch.fx import passes
+import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import executorch.exir as exir
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.backends.qualcomm.passes import (
-    qnn_partitioner_passes,
-)
 
-import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
+import torch
+from executorch.backends.qualcomm.passes import qnn_partitioner_passes
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+from torch.fx import passes
 
 
 class SoCModel(enum.Enum):
-   SM8450 = 1
-   SM8475 = 2
-   SM8550 = 3
+    SM8450 = 1
+    SM8475 = 2
+    SM8550 = 3
 
 
 def qnn_capture_config():
@@ -93,9 +91,7 @@ def generate_qnn_executorch_option(
                 int.from_bytes(compiler_spec.value, sys.byteorder)
             )
         else:
-            raise ValueError(
-                f"unknown compiler spec key value: {compiler_spec.key}"
-            )
+            raise ValueError(f"unknown compiler spec key value: {compiler_spec.key}")
 
     return option
 
@@ -134,37 +130,34 @@ def generate_qnn_executorch_compiler_spec(
         SoCModel.SM8550: PyQnnManager.QcomChipset.SM8550,
     }
     backend_type = CompileSpec(
-        "backend_type",
-        bytes([PyQnnManager.QnnExecuTorchBackendType.kHtpBackend])
+        "backend_type", bytes([PyQnnManager.QnnExecuTorchBackendType.kHtpBackend])
     )
 
     if is_fp16:
         htp_precision = CompileSpec(
-            "htp_precision",
-            bytes([PyQnnManager.QnnExecuTorchHtpPrecision.kHtpFp16])
+            "htp_precision", bytes([PyQnnManager.QnnExecuTorchHtpPrecision.kHtpFp16])
         )
     else:
         htp_precision = CompileSpec(
             "htp_precision",
-            bytes([PyQnnManager.QnnExecuTorchHtpPrecision.kHtpQuantized])
+            bytes([PyQnnManager.QnnExecuTorchHtpPrecision.kHtpQuantized]),
         )
 
     if debug:
         log_level = CompileSpec(
-            "log_level",
-            bytes([PyQnnManager.QnnExecuTorchLogLevel.kLogLevelDebug])
+            "log_level", bytes([PyQnnManager.QnnExecuTorchLogLevel.kLogLevelDebug])
         )
     else:
         log_level = CompileSpec(
-            "log_level",
-            bytes([PyQnnManager.QnnExecuTorchLogLevel.kLogLevelWarn])
+            "log_level", bytes([PyQnnManager.QnnExecuTorchLogLevel.kLogLevelWarn])
         )
 
     # This actually is not an option which can affect the compiled blob.
     # But we don't have other place to pass this option at execution stage.
     htp_performance_mode = CompileSpec(
         "htp_performance_mode",
-        bytes([PyQnnManager.QnnExecuTorchHtpPerformanceMode.kHtpBurst]))
+        bytes([PyQnnManager.QnnExecuTorchHtpPerformanceMode.kHtpBurst]),
+    )
 
     compiler_spec = [backend_type, htp_precision, log_level, htp_performance_mode]
 

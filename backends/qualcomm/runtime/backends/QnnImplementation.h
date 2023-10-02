@@ -32,11 +32,13 @@ class QnnImplementation {
  private:
   static constexpr const int required_num_providers_{1};
 
-  static Error StartBackend(const std::string& lib_path,
-                            const QnnSaver_Config_t** saver_config);
+  static Error StartBackend(
+      const std::string& lib_path,
+      const QnnSaver_Config_t** saver_config);
 
-  static Error InitBackend(void* const lib_handle,
-                           const QnnSaver_Config_t** saver_config);
+  static Error InitBackend(
+      void* const lib_handle,
+      const QnnSaver_Config_t** saver_config);
 
   std::string lib_path_;
   QnnInterface qnn_interface_;
@@ -47,6 +49,6 @@ class QnnImplementation {
   static std::unordered_map<BackendIdType, void*> loaded_lib_handle_;
   static std::mutex be_init_mutex_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

@@ -6,39 +6,38 @@
 
 import argparse
 import json
-import numpy as np
 import os
 import random
 import re
 
-from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
+import numpy as np
 from executorch.examples.backend.qualcomm.utils import (
-    SimpleADB,
     build_executorch_binary,
-    segmentation_metrics,
     make_output_dir,
+    segmentation_metrics,
+    SimpleADB,
 )
+
+from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 
 
 def get_dataset(data_size, dataset_dir, download):
     import numpy as np
-    from torchvision import transforms, datasets
+    from torchvision import datasets, transforms
 
     input_size = (224, 224)
     preprocess = transforms.Compose(
         [
             transforms.Resize(input_size),
             transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-            ),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ]
     )
     dataset = list(
         datasets.VOCSegmentation(
             root=os.path.join(dataset_dir, "voc_image"),
             year="2012",
-            image_set='val',
+            image_set="val",
             transform=preprocess,
             download=download,
         )
@@ -110,8 +109,10 @@ if __name__ == "__main__":
     print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
 
     if "LD_LIBRARY_PATH" not in os.environ:
-        print("[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
-              "not found happen, please follow setup.md to set environment.")
+        print(
+            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
+            "not found happen, please follow setup.md to set environment."
+        )
     else:
         print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
 
@@ -120,9 +121,9 @@ if __name__ == "__main__":
     os.makedirs(args.artifact, exist_ok=True)
 
     data_num = 100
-    inputs, targets, input_list = get_dataset(data_size=data_num,
-                                              dataset_dir=args.artifact,
-                                              download=args.download)
+    inputs, targets, input_list = get_dataset(
+        data_size=data_num, dataset_dir=args.artifact, download=args.download
+    )
     pte_filename = "dlv3_qnn"
     instance = DeepLabV3ResNet101Model()
 
@@ -131,7 +132,7 @@ if __name__ == "__main__":
         instance.get_example_inputs(),
         args.model,
         f"{args.artifact}/{pte_filename}",
-        inputs
+        inputs,
     )
     # setup required paths accordingly
     # qnn_sdk       : QNN SDK path setup in environment variable
@@ -158,11 +159,28 @@ if __name__ == "__main__":
     # remove the auxiliary output and data processing
     classes = [
         "Backround",
-        "Aeroplane", "Bicycle", "Bird", "Boat", "Bottle",
-        "Bus", "Car", "Cat", "Chair", "Cow",
-        "DiningTable", "Dog", "Horse", "MotorBike", "Person",
-        "PottedPlant", "Sheep", "Sofa", "Train", "TvMonitor",
+        "Aeroplane",
+        "Bicycle",
+        "Bird",
+        "Boat",
+        "Bottle",
+        "Bus",
+        "Car",
+        "Cat",
+        "Chair",
+        "Cow",
+        "DiningTable",
+        "Dog",
+        "Horse",
+        "MotorBike",
+        "Person",
+        "PottedPlant",
+        "Sheep",
+        "Sofa",
+        "Train",
+        "TvMonitor",
     ]
+
     def post_process():
         for f in os.listdir(output_data_folder):
             filename = os.path.join(output_data_folder, f)
@@ -181,13 +199,11 @@ if __name__ == "__main__":
     for i in range(data_num):
         predictions.append(
             np.fromfile(
-                os.path.join(output_data_folder, f"output_{i}_0.raw"),
-                dtype=np.uint8)
+                os.path.join(output_data_folder, f"output_{i}_0.raw"), dtype=np.uint8
             )
+        )
 
-    pa, mpa, miou, cls_iou = segmentation_metrics(
-        predictions, targets, classes
-    )
+    pa, mpa, miou, cls_iou = segmentation_metrics(predictions, targets, classes)
     print(f"PA   : {pa}%")
     print(f"MPA  : {mpa}%")
     print(f"MIoU : {miou}%")

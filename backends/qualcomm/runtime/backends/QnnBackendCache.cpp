@@ -19,14 +19,18 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary() {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   error = qnn_sys_interface.qnn_system_context_get_binary_info(
-      sys_context_handle_, qnn_context_blob_.buffer, qnn_context_blob_.nbytes,
-      &binaryinfo, &binaryinfo_size);
+      sys_context_handle_,
+      qnn_context_blob_.buffer,
+      qnn_context_blob_.nbytes,
+      &binaryinfo,
+      &binaryinfo_size);
 
   if (error != QNN_SUCCESS) {
-    QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                       "[Qnn ExecuTorch] Failed to interpret QNN Context "
-                       "binary. Error code %d",
-                       QNN_GET_ERROR_CODE(error));
+    QNN_EXECUTORCH_LOG(
+        kLogLevelWarn,
+        "[Qnn ExecuTorch] Failed to interpret QNN Context "
+        "binary. Error code %d",
+        QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
 
@@ -37,9 +41,10 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary() {
     num_graphs = binaryinfo->contextBinaryInfoV2.numGraphs;
     graph = binaryinfo->contextBinaryInfoV2.graphs;
   } else {
-    QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                       "[Qnn ExecuTorch] Unknown QNN BinaryInfo version %d.",
-                       binaryinfo->version);
+    QNN_EXECUTORCH_LOG(
+        kLogLevelWarn,
+        "[Qnn ExecuTorch] Unknown QNN BinaryInfo version %d.",
+        binaryinfo->version);
     return Error::Internal;
   }
 
@@ -54,9 +59,10 @@ Error QnnBackendCache::GetQnnGraphInfoFromBinary() {
 
   // only have version_1 now
   if (graph[0].version != QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_1) {
-    QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                       "[Qnn ExecuTorch] Unknown QNN GraphInfo version %d.",
-                       graph[0].version);
+    QNN_EXECUTORCH_LOG(
+        kLogLevelWarn,
+        "[Qnn ExecuTorch] Unknown QNN GraphInfo version %d.",
+        graph[0].version);
     return Error::Internal;
   }
   // get graph name from metadata
@@ -84,15 +90,16 @@ QnnBackendCache::QnnBackendCache(
     : qnn_context_blob_(qnn_context_blob) {
   if (qnn_context_blob_.buffer == nullptr) {
     state_ = SERIALIZE;
-    QNN_EXECUTORCH_LOG(kLogLevelInfo,
-                       "[Qnn ExecuTorch] Caching: Caching is in SAVE MODE.");
+    QNN_EXECUTORCH_LOG(
+        kLogLevelInfo, "[Qnn ExecuTorch] Caching: Caching is in SAVE MODE.");
     return;
   }
 
   if (qnn_sys_impl_.Load() != Error::Ok) {
-    QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn ExecuTorch] Failed to Load QnnSystem "
-                       "APIs. Caching mechanism is being disabled.");
+    QNN_EXECUTORCH_LOG(
+        kLogLevelError,
+        "[Qnn ExecuTorch] Failed to Load QnnSystem "
+        "APIs. Caching mechanism is being disabled.");
     return;
   }
 
@@ -114,8 +121,8 @@ QnnBackendCache::QnnBackendCache(
 
   // DO DESERIALIZE
   state_ = DESERIALIZE;
-  QNN_EXECUTORCH_LOG(kLogLevelInfo,
-                     "[Qnn ExecuTorch] Caching: Caching is in RESTORE MODE.");
+  QNN_EXECUTORCH_LOG(
+      kLogLevelInfo, "[Qnn ExecuTorch] Caching: Caching is in RESTORE MODE.");
   Error status = GetQnnGraphInfoFromBinary();
   if (status == Error::Internal) {
     QNN_EXECUTORCH_LOG(
@@ -136,8 +143,7 @@ QnnBackendCache::~QnnBackendCache() {
     error = qnn_sys_interface.qnn_system_context_free(sys_context_handle_);
     if (error != QNN_SUCCESS) {
       QNN_EXECUTORCH_LOG(
-          kLogLevelWarn,
-          "[Qnn ExecuTorch] Failed to free QNN system context.");
+          kLogLevelWarn, "[Qnn ExecuTorch] Failed to free QNN system context.");
     }
     sys_context_handle_ = nullptr;
   }
@@ -145,15 +151,17 @@ QnnBackendCache::~QnnBackendCache() {
 }
 
 std::vector<Qnn_Tensor_t> QnnBackendCache::GetGraphInputs() {
-  if (state_ != DESERIALIZE) return {};
+  if (state_ != DESERIALIZE)
+    return {};
 
   return input_tensor_structs_;
 }
 
 std::vector<Qnn_Tensor_t> QnnBackendCache::GetGraphOutputs() {
-  if (state_ != DESERIALIZE) return {};
+  if (state_ != DESERIALIZE)
+    return {};
   return output_tensor_structs_;
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

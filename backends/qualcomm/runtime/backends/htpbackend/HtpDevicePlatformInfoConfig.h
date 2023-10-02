@@ -64,6 +64,6 @@ class HtpDevicePlatformInfoConfig {
   std::vector<std::unique_ptr<QnnHtpDevice_DeviceInfoExtension_t>>
       htp_device_info_extension_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

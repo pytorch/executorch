@@ -33,7 +33,7 @@ enum QnnExecuTorchOptionsTypes {
 };
 
 constexpr std::array<std::pair<const char*, int>, kNumOptions - 1>
-    kOptionsMap  // NOLINT(cert-err58-cpp)
+    kOptionsMap // NOLINT(cert-err58-cpp)
     = {{
         {"backend_type", kBackendType},
         {"library_path", kLibraryPath},
@@ -48,8 +48,9 @@ constexpr std::array<std::pair<const char*, int>, kNumOptions - 1>
     }};
 
 template <std::size_t SIZE>
-int FindOptionInMap(const char* option,
-                    const std::array<std::pair<const char*, int>, SIZE> map) {
+int FindOptionInMap(
+    const char* option,
+    const std::array<std::pair<const char*, int>, SIZE> map) {
   for (size_t i = 0; i < map.size(); ++i) {
     if (std::strcmp(option, (map.at(i)).first) == 0) {
       return (map.at(i)).second;
@@ -62,7 +63,8 @@ int FindOptionInMap(const char* option,
 using namespace qnn;
 
 Result<DelegateHandle*> QnnExecuTorchBackend::init(
-    BackendInitContext& context, FreeableBuffer* processed,
+    BackendInitContext& context,
+    FreeableBuffer* processed,
     ArrayRef<CompileSpec> compile_specs) const {
   QnnExecuTorchOptions options = QnnExecuTorchOptionsDefault();
 
@@ -121,9 +123,10 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
         break;
       case kUndefinedOption:
       default:
-        QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                           "[Qnn ExecuTorch]: unknown argument: %s",
-                           compile_spec.key);
+        QNN_EXECUTORCH_LOG(
+            kLogLevelWarn,
+            "[Qnn ExecuTorch]: unknown argument: %s",
+            compile_spec.key);
     }
   }
   // Create QnnManager
@@ -135,15 +138,20 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
   // destructible, we must call the destructor manually in destroy().
   new (qnn_manager) QnnManager(&options);
 
-  ET_CHECK_OR_RETURN_ERROR(qnn_manager->Init() == Error::Ok, Internal,
-                           "Fail to initialize Qnn Manager");
-  ET_CHECK_OR_RETURN_ERROR(qnn_manager->AllocateTensor() == Error::Ok, Internal,
-                           "Fail to allocate tensor");
+  ET_CHECK_OR_RETURN_ERROR(
+      qnn_manager->Init() == Error::Ok,
+      Internal,
+      "Fail to initialize Qnn Manager");
+  ET_CHECK_OR_RETURN_ERROR(
+      qnn_manager->AllocateTensor() == Error::Ok,
+      Internal,
+      "Fail to allocate tensor");
   return qnn_manager;
 }
 
 Error QnnExecuTorchBackend::execute(
-    __ET_UNUSED BackendExecutionContext& context, DelegateHandle* handle,
+    __ET_UNUSED BackendExecutionContext& context,
+    DelegateHandle* handle,
     EValue** args) const {
   QnnManager* qnn_manager = static_cast<QnnManager*>(handle);
 
@@ -156,12 +164,13 @@ Error QnnExecuTorchBackend::execute(
 
   for (int i = 0; i < input_tensors.size(); ++i) {
     input_tensors[i]->FillDataBuffer(
-      args[i]->toTensor().data_ptr(), true /* copy_data */);
+        args[i]->toTensor().data_ptr(), true /* copy_data */);
     input_tensor_structs.push_back(input_tensors[i]->CloneTensorStruct());
   }
 
   for (int i = input_tensors.size();
-       i < input_tensors.size() + output_tensors.size(); ++i) {
+       i < input_tensors.size() + output_tensors.size();
+       ++i) {
     output_tensors[i - input_tensors.size()]->FillDataBuffer(
         args[i]->toTensor().data_ptr(), false /* copy_data */);
     output_tensor_structs.push_back(
@@ -171,7 +180,8 @@ Error QnnExecuTorchBackend::execute(
   ET_CHECK_OR_RETURN_ERROR(
       qnn_manager->Execute(input_tensor_structs, output_tensor_structs) ==
           Error::Ok,
-      Internal, "Fail to execute graph");
+      Internal,
+      "Fail to execute graph");
   return Error::Ok;
 }
 
@@ -182,12 +192,14 @@ void QnnExecuTorchBackend::destroy(DelegateHandle* handle) const {
   }
 }
 
-bool QnnExecuTorchBackend::is_available() const { return true; }
+bool QnnExecuTorchBackend::is_available() const {
+  return true;
+}
 
 namespace {
 auto cls = QnnExecuTorchBackend();
 Backend backend{"QnnBackend", &cls};
 static auto success_with_compiler = register_backend(backend);
-}  // namespace
-}  // namespace executor
-}  // namespace torch
+} // namespace
+} // namespace executor
+} // namespace torch

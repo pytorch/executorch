@@ -32,6 +32,6 @@ class QnnSystemImplementation {
   QnnSystemInterface qnn_sys_interface_;
   void* lib_handle_{nullptr};
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

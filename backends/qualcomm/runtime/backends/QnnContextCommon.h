@@ -18,9 +18,11 @@ namespace executor {
 namespace qnn {
 class QnnContext {
  public:
-  explicit QnnContext(const QnnImplementation& implementation,
-                      QnnBackend* backend, QnnDevice* device,
-                      const QnnExecuTorchContextBinary& qnn_context_blob)
+  explicit QnnContext(
+      const QnnImplementation& implementation,
+      QnnBackend* backend,
+      QnnDevice* device,
+      const QnnExecuTorchContextBinary& qnn_context_blob)
       : handle_(nullptr),
         implementation_(implementation),
         backend_(backend),
@@ -31,9 +33,13 @@ class QnnContext {
   virtual ~QnnContext();
   Error Configure();
 
-  Qnn_ContextHandle_t GetHandle() { return handle_; }
+  Qnn_ContextHandle_t GetHandle() {
+    return handle_;
+  }
 
-  std::string GetGraphName() { return cache_->GetGraphName(); }
+  std::string GetGraphName() {
+    return cache_->GetGraphName();
+  }
 
   std::vector<Qnn_Tensor_t> GetGraphInputs() {
     return cache_->GetGraphInputs();
@@ -61,6 +67,6 @@ class QnnContext {
   std::unique_ptr<QnnBackendCache> cache_;
   std::vector<char> binary_buffer_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

@@ -22,8 +22,9 @@ namespace qnn {
 // qnn backend
 class QnnBackend {
  public:
-  explicit QnnBackend(const QnnImplementation& implementation,
-                      QnnLogger* logger)
+  explicit QnnBackend(
+      const QnnImplementation& implementation,
+      QnnLogger* logger)
       : handle_(nullptr), implementation_(implementation), logger_(logger) {}
 
   virtual ~QnnBackend();
@@ -35,7 +36,9 @@ class QnnBackend {
         handle_, op_config);
   };
 
-  Qnn_BackendHandle_t GetHandle() { return handle_; }
+  Qnn_BackendHandle_t GetHandle() {
+    return handle_;
+  }
 
  protected:
   virtual Error MakeConfig(std::vector<const QnnBackend_Config_t*>& config) {
@@ -47,6 +50,6 @@ class QnnBackend {
   const QnnImplementation& implementation_;
   QnnLogger* logger_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

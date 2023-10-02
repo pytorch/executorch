@@ -1,30 +1,22 @@
 import argparse
 
 import torch
-
-from torch.ao.quantization.quantize_pt2e import (
-    convert_pt2e,
-    prepare_pt2e,
-)
-from executorch.examples.models import MODEL_NAME_TO_MODEL
-from executorch.examples.models.model_factory import EagerModelFactory
-from executorch.examples.export.utils import save_pte_program
-from executorch.exir.backend.backend_api import (
-    to_backend,
-    validation_disabled,
-)
-from executorch.backends.qualcomm.partition.qnn_partitioner import (
-    QnnPartitioner,
-)
+from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_quantizer import (
-    QnnQuantizer,
     get_default_qnn_ptq_config,
+    QnnQuantizer,
 )
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     generate_qnn_executorch_compiler_spec,
     SoCModel,
 )
+from executorch.examples.export.utils import save_pte_program
+from executorch.examples.models import MODEL_NAME_TO_MODEL
+from executorch.examples.models.model_factory import EagerModelFactory
+from executorch.exir.backend.backend_api import to_backend, validation_disabled
+
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -66,7 +58,10 @@ if __name__ == "__main__":
     # Delegate to QNN backend
     QnnPartitioner.set_compiler_spec(
         generate_qnn_executorch_compiler_spec(
-            is_fp16=False, soc_model=SoCModel.SM8550, debug=False, saver=False,
+            is_fp16=False,
+            soc_model=SoCModel.SM8550,
+            debug=False,
+            saver=False,
         )
     )
     with validation_disabled():

@@ -16,12 +16,13 @@ QnnBackend::~QnnBackend() {
     QNN_EXECUTORCH_LOG(kLogLevelInfo, "[Qnn ExecuTorch] Destroy Qnn backend");
     error = qnn_interface.qnn_backend_free(handle_);
     if (error != QNN_SUCCESS) {
-      QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn ExecuTorch] Failed to free QNN "
-                         "backend_handle. Backend "
-                         "ID %u, error %d",
-                         qnn_interface.GetBackendId(),
-                         QNN_GET_ERROR_CODE(error));
+      QNN_EXECUTORCH_LOG(
+          kLogLevelError,
+          "[Qnn ExecuTorch] Failed to free QNN "
+          "backend_handle. Backend "
+          "ID %u, error %d",
+          qnn_interface.GetBackendId(),
+          QNN_GET_ERROR_CODE(error));
     }
     handle_ = nullptr;
   }
@@ -33,23 +34,27 @@ Error QnnBackend::Configure() {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   std::vector<const QnnBackend_Config_t*> temp_backend_config;
-  ET_CHECK_OR_RETURN_ERROR(MakeConfig(temp_backend_config) == Error::Ok,
-                           Internal, "Fail to make backend config.");
+  ET_CHECK_OR_RETURN_ERROR(
+      MakeConfig(temp_backend_config) == Error::Ok,
+      Internal,
+      "Fail to make backend config.");
 
   error = qnn_interface.qnn_backend_create(
       logger_->GetHandle(),
       temp_backend_config.empty() ? nullptr : temp_backend_config.data(),
       &handle_);
   if (error != QNN_SUCCESS) {
-    QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn ExecuTorch] Failed to create "
-                       "backend_handle for Backend "
-                       "ID %u, error=%d",
-                       qnn_interface.GetBackendId(), QNN_GET_ERROR_CODE(error));
+    QNN_EXECUTORCH_LOG(
+        kLogLevelError,
+        "[Qnn ExecuTorch] Failed to create "
+        "backend_handle for Backend "
+        "ID %u, error=%d",
+        qnn_interface.GetBackendId(),
+        QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
   return Error::Ok;
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

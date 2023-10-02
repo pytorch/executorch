@@ -20,6 +20,6 @@ class QnnFactory {
     }
   };
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

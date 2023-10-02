@@ -4,18 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 from typing import Dict
+
+import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
     OpElementWiseDivide,
+    QNN_OP_PACKAGE_NAME_QTI_AISW,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
-
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 
 @register_node_visitor
@@ -53,7 +53,9 @@ class Div(NodeVisitor):
             div_input_tensors.append(input_tensor_wrapper)
 
         div_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpElementWiseDivide.op_name,
+            node.name,
+            QNN_OP_PACKAGE_NAME_QTI_AISW,
+            OpElementWiseDivide.op_name,
         )
         div_op.AddInputTensors(div_input_tensors)
         div_op.AddOutputTensors(div_output_tensors)

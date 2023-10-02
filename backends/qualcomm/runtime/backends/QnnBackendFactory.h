@@ -55,12 +55,13 @@ typedef struct BackendConfigParameters {
 class QnnBackendFactory : public QnnFactory {
  public:
   std::unique_ptr<BackendConfigParameters> Create(
-      const QnnImplementation& implementation, QnnLogger* logger,
+      const QnnImplementation& implementation,
+      QnnLogger* logger,
       const QnnExecuTorchContextBinary& qnn_context_blob,
       const QnnExecuTorchBackendType& backend_type,
       const std::string& graph_name,
       const QnnExecuTorchHtpBackendOptions& htp_options);
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

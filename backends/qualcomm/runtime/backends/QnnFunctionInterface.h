@@ -33,25 +33,30 @@ class QnnInterface {
   // --------- QnnBackend ---------
   DEFINE_SHIM_FUNCTION_INTERFACE(backend_create, backendCreate);
   DEFINE_SHIM_FUNCTION_INTERFACE(backend_free, backendFree);
-  DEFINE_SHIM_FUNCTION_INTERFACE(backend_register_op_package,
-                                 backendRegisterOpPackage);
-  DEFINE_SHIM_FUNCTION_INTERFACE(backend_validate_op_config,
-                                 backendValidateOpConfig);
+  DEFINE_SHIM_FUNCTION_INTERFACE(
+      backend_register_op_package,
+      backendRegisterOpPackage);
+  DEFINE_SHIM_FUNCTION_INTERFACE(
+      backend_validate_op_config,
+      backendValidateOpConfig);
   DEFINE_SHIM_FUNCTION_INTERFACE(backend_get_api_version, backendGetApiVersion);
   // --------- QnnDevice ---------
   DEFINE_SHIM_FUNCTION_INTERFACE(device_create, deviceCreate);
   DEFINE_SHIM_FUNCTION_INTERFACE(device_free, deviceFree);
-  DEFINE_SHIM_FUNCTION_INTERFACE(device_get_infrastructure,
-                                 deviceGetInfrastructure);
-  DEFINE_SHIM_FUNCTION_INTERFACE(device_get_platform_info,
-                                 deviceGetPlatformInfo);
+  DEFINE_SHIM_FUNCTION_INTERFACE(
+      device_get_infrastructure,
+      deviceGetInfrastructure);
+  DEFINE_SHIM_FUNCTION_INTERFACE(
+      device_get_platform_info,
+      deviceGetPlatformInfo);
   // DEFINE_SHIM_FUNCTION_INTERFACE(device_get_info, deviceGetInfo);
   // --------- QnnContext ---------
   DEFINE_SHIM_FUNCTION_INTERFACE(context_create, contextCreate);
   DEFINE_SHIM_FUNCTION_INTERFACE(context_get_binary_size, contextGetBinarySize);
   DEFINE_SHIM_FUNCTION_INTERFACE(context_get_binary, contextGetBinary);
-  DEFINE_SHIM_FUNCTION_INTERFACE(context_create_from_binary,
-                                 contextCreateFromBinary);
+  DEFINE_SHIM_FUNCTION_INTERFACE(
+      context_create_from_binary,
+      contextCreateFromBinary);
   DEFINE_SHIM_FUNCTION_INTERFACE(context_free, contextFree);
   // --------- QnnGraph ---------
   DEFINE_SHIM_FUNCTION_INTERFACE(graph_create, graphCreate);
@@ -73,26 +78,33 @@ class QnnInterface {
   DEFINE_SHIM_FUNCTION_INTERFACE(mem_register, memRegister);
   DEFINE_SHIM_FUNCTION_INTERFACE(mem_de_register, memDeRegister);
   // --------- QnnProperty --------
-  DEFINE_SHIM_FUNCTION_INTERFACE(property_has_capability,
-                                 propertyHasCapability);
+  DEFINE_SHIM_FUNCTION_INTERFACE(
+      property_has_capability,
+      propertyHasCapability);
   // --------- QnnTensor ---------
-  DEFINE_SHIM_FUNCTION_INTERFACE(tensor_create_context_tensor,
-                                 tensorCreateContextTensor);
-  DEFINE_SHIM_FUNCTION_INTERFACE(tensor_create_graph_tensor,
-                                 tensorCreateGraphTensor);
+  DEFINE_SHIM_FUNCTION_INTERFACE(
+      tensor_create_context_tensor,
+      tensorCreateContextTensor);
+  DEFINE_SHIM_FUNCTION_INTERFACE(
+      tensor_create_graph_tensor,
+      tensorCreateGraphTensor);
 
   void SetQnnInterface(const QnnInterface_t* qnn_interface) {
     qnn_interface_ = qnn_interface;
   }
 
-  uint32_t GetBackendId() const { return qnn_interface_->backendId; }
+  uint32_t GetBackendId() const {
+    return qnn_interface_->backendId;
+  }
 
-  bool IsLoaded() const { return qnn_interface_ != nullptr; }
+  bool IsLoaded() const {
+    return qnn_interface_ != nullptr;
+  }
 
  private:
   // --------- QnnInterface ---------
   const QnnInterface_t* qnn_interface_{nullptr};
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

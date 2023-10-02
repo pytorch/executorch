@@ -3,13 +3,13 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import _operator
 from typing import List, Tuple
 
 import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.sym_util import eval_shape
-import _operator
 
 
 class LayoutTransform(ExportPass):
@@ -74,7 +74,7 @@ class LayoutTransform(ExportPass):
         old_layout, new_layout = cls.layout_type[len(size)]
         if reverse:
             old_layout, new_layout = new_layout, old_layout
-        return tuple(map(lambda x: old_layout.find(x), new_layout))
+        return tuple(old_layout.find(x) for x in new_layout)
 
     def __init__(self, insert_permute=False):
         super(LayoutTransform, self).__init__()
@@ -112,6 +112,61 @@ class LayoutTransform(ExportPass):
                 return False
         return node.target in self.layout_agnostic_ops
 
+    def is_edge_condition(self, node):
+        if not isinstance(node, torch.fx.Node):
+            return True
+
+        if any(
+            [
+                self.is_transformed_node(node),
+                node.op == "get_attr",
+                (
+                    node.target == exir_ops.edge.aten.permute_copy.default
+                    and node.meta.get(self.inserted_permute_tag, False)
+                ),
+                (
+                    node.op != "output"
+                    and not isinstance(node.meta["val"], tuple)
+                    and len(node.meta["val"].shape) == 0
+                ),
+            ]
+        ):
+            return True
+
+        return False
+
+    def insert_node(self, graph_module, node, revert_layout: bool) -> None:
+        if not self.insert_permute:
+            return
+        with graph_module.graph.inserting_after(node):
+            users = node.users.copy()
+            if isinstance(node.meta["val"], tuple):
+                getitem_node = list(node.users.keys())[0]
+                if getitem_node.target.__name__ != "getitem":
+                    raise AssertionError(
+                        f"Expected bn node's user to be getitem, got {getitem_node.target.__name__}"
+                    )
+                index = getitem_node.args[1]
+                tensor = node.meta["val"][index]
+            else:
+                tensor = node.meta["val"]
+
+            permute = self.create_call_function_node(
+                graph_module,
+                exir_ops.edge.aten.permute_copy.default,
+                (
+                    node,
+                    self.get_axis_order(eval_shape(tensor.shape), revert_layout),
+                ),
+            )
+            permute.meta["val"] = tensor
+            permute.meta["quant_attrs"] = node.meta.get("quant_attrs")
+            # we need this to check the annotation boundary
+            permute.meta[self.inserted_permute_tag] = True
+
+            for user in users:
+                user.replace_input_with(node, permute)
+
     def create_call_function_node(
         self,
         graph_module: torch.fx.GraphModule,
@@ -136,73 +191,20 @@ class LayoutTransform(ExportPass):
     def annotate_layout(
         self, node: torch.fx.Node, graph_module: torch.fx.GraphModule, revert_layout
     ) -> None:
-        def is_edge_condition(node):
-            if not isinstance(node, torch.fx.Node):
-                return True
 
-            if any(
-                [
-                    self.is_transformed_node(node),
-                    node.op == "get_attr",
-                    (
-                        node.target == exir_ops.edge.aten.permute_copy.default
-                        and node.meta.get(self.inserted_permute_tag, False)
-                    ),
-                    (
-                        node.op != "output" and
-                        not isinstance(node.meta["val"], tuple) and
-                        len(node.meta["val"].shape) == 0
-                    ),
-                ]
-            ):
-                return True
-
-            return False
-
-        def insert_node(node, revert_layout: bool) -> None:
-            if not self.insert_permute:
-                return
-            with graph_module.graph.inserting_after(node):
-                users = node.users.copy()
-                if isinstance(node.meta["val"], tuple):
-                    getitem_node = list(node.users.keys())[0]
-                    if getitem_node.target.__name__ != "getitem":
-                        raise AssertionError(
-                            f"Expected bn node's user to be getitem, got {getitem_node.target.__name__}"
-                        )
-                    index = getitem_node.args[1]
-                    tensor = node.meta["val"][index]
-                else:
-                    tensor = node.meta["val"]
-
-                permute = self.create_call_function_node(
-                    graph_module,
-                    exir_ops.edge.aten.permute_copy.default,
-                    (
-                        node,
-                        self.get_axis_order(eval_shape(tensor.shape), revert_layout),
-                    ),
-                )
-                permute.meta["val"] = tensor
-                permute.meta["quant_attrs"] = node.meta.get("quant_attrs")
-                # we need this to check the annotation boundary
-                permute.meta[self.inserted_permute_tag] = True
-
-                for user in users:
-                    user.replace_input_with(node, permute)
-
-        if is_edge_condition(node):
+        if self.is_edge_condition(node):
             return
         elif self.is_layout_agnostic(node) or self.is_layout_sensitive(node):
             self.mark_as_transformed(node)
             self.traverse(node, graph_module)
         else:
+
             def check_arg(arg):
                 if self.is_transformed_node(arg):
-                    insert_node(arg, revert_layout=revert_layout)
+                    self.insert_node(graph_module, arg, revert_layout=revert_layout)
 
             if not revert_layout:
-                insert_node(node, revert_layout=revert_layout)
+                self.insert_node(graph_module, node, revert_layout=revert_layout)
             else:
                 for args in node.args:
                     if isinstance(args, torch.fx.immutable_collections.immutable_list):

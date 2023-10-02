@@ -4,11 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import operator
-from typing import Dict, Any
+from typing import Any, Dict
 
 import torch
-from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass, PassResult
 
 
 def get_quant_attrs(graph_module: torch.fx.GraphModule, quant_node: torch.fx.Node):
@@ -25,6 +25,7 @@ def get_quant_attrs(graph_module: torch.fx.GraphModule, quant_node: torch.fx.Nod
     quant_attrs["encoding"] = quant_node.target
     return quant_attrs
 
+
 class AnnotateQuantAttrs(ExportPass):
     """
     Add "quant_attrs" to graph nodes' meta from the QDQ information
@@ -39,10 +40,12 @@ class AnnotateQuantAttrs(ExportPass):
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     }
 
-    def __init__(self, annotate_only: bool=True):
+    def __init__(self, annotate_only: bool = True):
         super(AnnotateQuantAttrs, self).__init__()
 
-    def _annotate_source_nodes(self, quant_node: torch.fx.Node, quant_attrs: Dict[str, Any]):
+    def _annotate_source_nodes(
+        self, quant_node: torch.fx.Node, quant_attrs: Dict[str, Any]
+    ):
         if quant_node.args[0].target == operator.getitem:
             getitem_node = quant_node.args[0]
             getitem_node.meta["quant_attrs"] = quant_attrs

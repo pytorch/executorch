@@ -4,14 +4,15 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict, List, cast
+from typing import Dict
+
+import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 
 class OpSkipOps(NodeVisitor):

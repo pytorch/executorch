@@ -6,19 +6,19 @@
 
 from typing import cast, Dict
 
+import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import numpy as np
+
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
     OpReluMinMax,
+    QNN_OP_PACKAGE_NAME_QTI_AISW,
 )
-
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 from executorch.backends.qualcomm.utils.utils import get_input_node
-import numpy as np
 
 
 @register_node_visitor
@@ -61,7 +61,9 @@ class HardTanhVisitor(NodeVisitor):
         )
 
         hardtanh_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpReluMinMax.op_name,
+            node.name,
+            QNN_OP_PACKAGE_NAME_QTI_AISW,
+            OpReluMinMax.op_name,
         )
         hardtanh_op.AddInputTensors([input_tensor_wrapper])
         hardtanh_op.AddOutputTensors([output_tensor_wrapper])

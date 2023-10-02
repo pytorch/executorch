@@ -22,8 +22,9 @@ Qnn_ErrorHandle_t HtpPerfInfraStubForSaver(Args... args) {
   return QNN_SUCCESS;
 }
 
-Error GetPerfInfra(const QnnInterface& qnn_interface,
-                   QnnHtpDevice_PerfInfrastructure_t* p_out) {
+Error GetPerfInfra(
+    const QnnInterface& qnn_interface,
+    QnnHtpDevice_PerfInfrastructure_t* p_out) {
   if (qnn_interface.GetBackendId() == QNN_BACKEND_ID_SAVER) {
     p_out->createPowerConfigId = HtpPerfInfraStubForSaver;
     p_out->destroyPowerConfigId = HtpPerfInfraStubForSaver;
@@ -37,19 +38,21 @@ Error GetPerfInfra(const QnnInterface& qnn_interface,
       qnn_interface.qnn_device_get_infrastructure(&device_infra);
 
   if (error != QNN_SUCCESS) {
-    QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn ExecuTorch] HTP backend perf_infrastructure "
-                       "creation failed. Error %d",
-                       QNN_GET_ERROR_CODE(error));
+    QNN_EXECUTORCH_LOG(
+        kLogLevelError,
+        "[Qnn ExecuTorch] HTP backend perf_infrastructure "
+        "creation failed. Error %d",
+        QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
 
   auto* htp_infra = static_cast<QnnHtpDevice_Infrastructure_t*>(device_infra);
   if (htp_infra->infraType != QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF) {
-    QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn ExecuTorch] HTP infra type = %d, which is "
-                       "not perf infra type.",
-                       htp_infra->infraType);
+    QNN_EXECUTORCH_LOG(
+        kLogLevelError,
+        "[Qnn ExecuTorch] HTP infra type = %d, which is "
+        "not perf infra type.",
+        htp_infra->infraType);
     return Error::Internal;
   }
 
@@ -73,15 +76,15 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetVotePowerConfig(
 
   // Check DownVote before performance mode
   if (vote_type == HtpDevice::PerformanceModeVoteType::kDownVote) {
-    dcvs_v3.setSleepDisable = 0;  // false
+    dcvs_v3.setSleepDisable = 0; // false
     dcvs_v3.sleepDisable = 0;
 
-    dcvs_v3.setDcvsEnable = 1;  // true
+    dcvs_v3.setDcvsEnable = 1; // true
     dcvs_v3.dcvsEnable = kDcvsEnable;
 
     dcvs_v3.powerMode = QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE;
 
-    dcvs_v3.setSleepLatency = 1;  // true
+    dcvs_v3.setSleepLatency = 1; // true
     dcvs_v3.sleepLatency = kSleepHighLatency;
 
     dcvs_v3.setBusParams = 1;
@@ -109,7 +112,7 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetVotePowerConfig(
   // choose performance mode
   switch (perf_mode) {
     case QnnExecuTorchHtpPerformanceMode::kHtpBurst:
-      dcvs_v3.setSleepLatency = 1;  // true
+      dcvs_v3.setSleepLatency = 1; // true
       dcvs_v3.sleepLatency = kSleepMinLatency;
 
       dcvs_v3.setBusParams = 1;
@@ -124,7 +127,7 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetVotePowerConfig(
       break;
     case QnnExecuTorchHtpPerformanceMode::kHtpSustainedHighPerformance:
     case QnnExecuTorchHtpPerformanceMode::kHtpHighPerformance:
-      dcvs_v3.setSleepLatency = 1;  // true
+      dcvs_v3.setSleepLatency = 1; // true
       dcvs_v3.sleepLatency = kSleepLowLatency;
 
       dcvs_v3.setBusParams = 1;
@@ -138,7 +141,7 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetVotePowerConfig(
       dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_TURBO;
       break;
     case QnnExecuTorchHtpPerformanceMode::kHtpPowerSaver:
-      dcvs_v3.setSleepLatency = 1;  // true
+      dcvs_v3.setSleepLatency = 1; // true
       dcvs_v3.sleepLatency = kSleepMediumLatency;
 
       dcvs_v3.setBusParams = 1;
@@ -152,7 +155,7 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetVotePowerConfig(
       dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_SVS;
       break;
     case QnnExecuTorchHtpPerformanceMode::kHtpLowPowerSaver:
-      dcvs_v3.setSleepLatency = 1;  // true
+      dcvs_v3.setSleepLatency = 1; // true
       dcvs_v3.sleepLatency = kSleepMediumLatency;
 
       dcvs_v3.setBusParams = 1;
@@ -166,7 +169,7 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetVotePowerConfig(
       dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_SVS2;
       break;
     case QnnExecuTorchHtpPerformanceMode::kHtpHighPowerSaver:
-      dcvs_v3.setSleepLatency = 1;  // true
+      dcvs_v3.setSleepLatency = 1; // true
       dcvs_v3.sleepLatency = kSleepMediumLatency;
 
       dcvs_v3.setBusParams = 1;
@@ -180,7 +183,7 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetVotePowerConfig(
       dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_SVS_PLUS;
       break;
     case QnnExecuTorchHtpPerformanceMode::kHtpLowBalanced:
-      dcvs_v3.setSleepLatency = 1;  // true
+      dcvs_v3.setSleepLatency = 1; // true
       dcvs_v3.sleepLatency = kSleepMediumLatency;
 
       dcvs_v3.setBusParams = 1;
@@ -194,7 +197,7 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetVotePowerConfig(
       dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_NOM;
       break;
     case QnnExecuTorchHtpPerformanceMode::kHtpBalanced:
-      dcvs_v3.setSleepLatency = 1;  // true
+      dcvs_v3.setSleepLatency = 1; // true
       dcvs_v3.sleepLatency = kSleepMediumLatency;
 
       dcvs_v3.setBusParams = 1;
@@ -208,10 +211,11 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetVotePowerConfig(
       dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
       break;
     default:
-      QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn ExecuTorch] Invalid performance profile "
-                         "%d to set power configs",
-                         perf_mode);
+      QNN_EXECUTORCH_LOG(
+          kLogLevelError,
+          "[Qnn ExecuTorch] Invalid performance profile "
+          "%d to set power configs",
+          perf_mode);
       break;
   }
 
@@ -249,22 +253,23 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetRpcPollingPowerConfig(
       rpc_polling_time.rpcPollingTimeConfig = kRpcPollingTimeLowPower;
       break;
     default:
-      QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn ExecuTorch] Invalid performance profile "
-                         "%d to set power configs",
-                         perf_mode);
+      QNN_EXECUTORCH_LOG(
+          kLogLevelError,
+          "[Qnn ExecuTorch] Invalid performance profile "
+          "%d to set power configs",
+          perf_mode);
       break;
   }
   return power_configs;
 }
 
-}  // namespace
+} // namespace
 
 HtpDevice::~HtpDevice() {
   if (htp_perf_infra_ != nullptr && powerconfig_client_id_ != 0 &&
       !down_vote_power_configs_ptr_.empty()) {
-    htp_perf_infra_->setPowerConfig(powerconfig_client_id_,
-                                    down_vote_power_configs_ptr_.data());
+    htp_perf_infra_->setPowerConfig(
+        powerconfig_client_id_, down_vote_power_configs_ptr_.data());
     htp_perf_infra_->destroyPowerConfigId(powerconfig_client_id_);
   } else if (htp_perf_infra_ != nullptr && powerconfig_client_id_ != 0) {
     htp_perf_infra_->destroyPowerConfigId(powerconfig_client_id_);
@@ -286,10 +291,12 @@ Error HtpDevice::MakeConfig(std::vector<const QnnDevice_Config_t*>& config) {
   auto soc_pair = soc_info_table.find(htp_options_.soc_model);
   if (soc_pair == soc_info_table.end()) {
     QcomChipset default_soc_model = QcomChipset::SM8550;
-    QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                       "[Qnn ExecuTorch] Failed to get soc info for "
-                       "soc model %d. Using default soc_model=%d",
-                       htp_options_.soc_model, default_soc_model);
+    QNN_EXECUTORCH_LOG(
+        kLogLevelWarn,
+        "[Qnn ExecuTorch] Failed to get soc info for "
+        "soc model %d. Using default soc_model=%d",
+        htp_options_.soc_model,
+        default_soc_model);
 
     qcom_target_soc_info_ = soc_info_table.find(default_soc_model)->second;
   } else {
@@ -334,7 +341,8 @@ Error HtpDevice::MakeConfig(std::vector<const QnnDevice_Config_t*>& config) {
     // Below codes use `Device_config_[ret.size()]` which imply the length of
     // platform info can only be 1.
     ET_CHECK_OR_RETURN_ERROR(
-        device_platform_info.size() == 1u, Internal,
+        device_platform_info.size() == 1u,
+        Internal,
         "[QNN ExecuTorch] Error! Device platform info size != 1, got %zu",
         device_platform_info.size());
     device_config_[ret.size()].option = QNN_DEVICE_CONFIG_OPTION_PLATFORM_INFO;
@@ -350,15 +358,15 @@ Error HtpDevice::MakeConfig(std::vector<const QnnDevice_Config_t*>& config) {
 
 void HtpDevice::PerformanceVote() {
   if (IsPerfModeEnabled()) {
-    htp_perf_infra_->setPowerConfig(powerconfig_client_id_,
-                                    perf_power_configs_ptr_.data());
+    htp_perf_infra_->setPowerConfig(
+        powerconfig_client_id_, perf_power_configs_ptr_.data());
   }
 };
 
 void HtpDevice::ReleasePerformanceVote() {
   if (IsPerfModeEnabled()) {
-    htp_perf_infra_->setPowerConfig(powerconfig_client_id_,
-                                    down_vote_power_configs_ptr_.data());
+    htp_perf_infra_->setPowerConfig(
+        powerconfig_client_id_, down_vote_power_configs_ptr_.data());
   }
 };
 
@@ -378,21 +386,24 @@ Error HtpDevice::AfterCreateDevice() {
         /*device_id=*/0, /*core_id=*/0, &powerconfig_client_id_);
 
     if (error != QNN_SUCCESS) {
-      QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn ExecuTorch] HTP backend unable to create "
-                         "power config. Error %d",
-                         QNN_GET_ERROR_CODE(error));
+      QNN_EXECUTORCH_LOG(
+          kLogLevelError,
+          "[Qnn ExecuTorch] HTP backend unable to create "
+          "power config. Error %d",
+          QNN_GET_ERROR_CODE(error));
       return Error::Internal;
     }
 
     // Set vector of PowerConfigs and map it to a vector of pointers.
-    perf_power_configs_ = SetVotePowerConfig(powerconfig_client_id_,
-                                             htp_options_.performance_mode,
-                                             PerformanceModeVoteType::kUpVote);
+    perf_power_configs_ = SetVotePowerConfig(
+        powerconfig_client_id_,
+        htp_options_.performance_mode,
+        PerformanceModeVoteType::kUpVote);
     perf_power_configs_ptr_ = ObtainNullTermPtrVector(perf_power_configs_);
 
     down_vote_power_configs_ = SetVotePowerConfig(
-        powerconfig_client_id_, QnnExecuTorchHtpPerformanceMode::kHtpDefault,
+        powerconfig_client_id_,
+        QnnExecuTorchHtpPerformanceMode::kHtpDefault,
         PerformanceModeVoteType::kDownVote);
     down_vote_power_configs_ptr_ =
         ObtainNullTermPtrVector(down_vote_power_configs_);
@@ -405,13 +416,13 @@ Error HtpDevice::AfterCreateDevice() {
         SetRpcPollingPowerConfig(htp_options_.performance_mode);
     rpc_power_configs_ptr_ = ObtainNullTermPtrVector(rpc_power_configs_);
 
-    htp_perf_infra_->setPowerConfig(powerconfig_client_id_,
-                                    rpc_power_configs_ptr_.data());
+    htp_perf_infra_->setPowerConfig(
+        powerconfig_client_id_, rpc_power_configs_ptr_.data());
   }
 
   return Error::Ok;
 }
 
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

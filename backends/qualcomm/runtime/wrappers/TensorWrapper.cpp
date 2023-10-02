@@ -55,14 +55,20 @@ std::uint32_t GetDataTypeSize(Qnn_DataType_t data_type) {
 std::atomic<std::uint32_t> intermediate_tensor_id{
     std::numeric_limits<std::uint32_t>::max()};
 
-std::uint32_t CreateIntermediateTensorId() { return --intermediate_tensor_id; }
+std::uint32_t CreateIntermediateTensorId() {
+  return --intermediate_tensor_id;
+}
 
 TensorWrapper::TensorWrapper(
-    const std::string& tensor_name, Qnn_TensorType_t tensor_type,
+    const std::string& tensor_name,
+    Qnn_TensorType_t tensor_type,
     Qnn_DataType_t data_type,
     std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper,
-    std::uint32_t rank, const std::uint32_t dims[], std::uint32_t bytes,
-    const void* data, bool copy_data)
+    std::uint32_t rank,
+    const std::uint32_t dims[],
+    std::uint32_t bytes,
+    const void* data,
+    bool copy_data)
     : qnn_tensor_name_(tensor_name),
       quantize_param_wrapper_(std::move(quantize_param_wrapper)),
       dims_(dims, dims + rank),
@@ -110,8 +116,8 @@ Error TensorWrapper::FillDataBuffer(const void* data, bool copy_data) {
       QNN_VER_PTR(tensor_)->clientBuf.data = const_cast<void*>(data);
     }
   } else {
-    QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                       "[Qnn ExecuTorch] Data pointer is nullptr");
+    QNN_EXECUTORCH_LOG(
+        kLogLevelWarn, "[Qnn ExecuTorch] Data pointer is nullptr");
   }
   return Error::Ok;
 }
@@ -128,39 +134,63 @@ Error TensorWrapper::SetName(const std::string& name) {
 
 // base function for Create TensorWrapper
 std::shared_ptr<TensorWrapper> CreateTensorWrapper(
-    const std::string& tensor_name, Qnn_TensorType_t tensor_type,
+    const std::string& tensor_name,
+    Qnn_TensorType_t tensor_type,
     Qnn_DataType_t data_type,
     std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper,
-    std::uint32_t rank, const std::uint32_t dims[], std::uint32_t bytes,
-    const void* data, bool copy_data) {
+    std::uint32_t rank,
+    const std::uint32_t dims[],
+    std::uint32_t bytes,
+    const void* data,
+    bool copy_data) {
   if (bytes == 0) {
-    bytes = std::accumulate(dims, dims + rank, GetDataTypeSize(data_type),
-                            std::multiplies<>());
+    bytes = std::accumulate(
+        dims, dims + rank, GetDataTypeSize(data_type), std::multiplies<>());
   }
-  return std::make_shared<TensorWrapper>(tensor_name, tensor_type, data_type,
-                                         std::move(quantize_param_wrapper),
-                                         rank, dims, bytes, data, copy_data);
+  return std::make_shared<TensorWrapper>(
+      tensor_name,
+      tensor_type,
+      data_type,
+      std::move(quantize_param_wrapper),
+      rank,
+      dims,
+      bytes,
+      data,
+      copy_data);
 }
 
 std::shared_ptr<TensorWrapper> CreateTensorWrapper(
-    Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
+    Qnn_TensorType_t tensor_type,
+    Qnn_DataType_t data_type,
     std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper,
-    std::uint32_t rank, const std::uint32_t dims[], std::uint32_t bytes,
-    const void* data, bool copy_data) {
+    std::uint32_t rank,
+    const std::uint32_t dims[],
+    std::uint32_t bytes,
+    const void* data,
+    bool copy_data) {
   return CreateTensorWrapper(
-      std::to_string(CreateIntermediateTensorId()), tensor_type, data_type,
-      std::move(quantize_param_wrapper), rank, dims, bytes, data, copy_data);
+      std::to_string(CreateIntermediateTensorId()),
+      tensor_type,
+      data_type,
+      std::move(quantize_param_wrapper),
+      rank,
+      dims,
+      bytes,
+      data,
+      copy_data);
 }
 
 // Factory functions to create TensorWrappers
 std::shared_ptr<TensorWrapper> CreateTensorWrapper(const Qnn_Tensor_t& tensor) {
   return CreateTensorWrapper(
-      std::string(QNN_VER_PTR(tensor)->name), QNN_VER_PTR(tensor)->type,
+      std::string(QNN_VER_PTR(tensor)->name),
+      QNN_VER_PTR(tensor)->type,
       QNN_VER_PTR(tensor)->dataType,
       CreateQuantizationParamWrapper(QNN_VER_PTR(tensor)->quantizeParams),
-      QNN_VER_PTR(tensor)->rank, QNN_VER_PTR(tensor)->dimensions,
+      QNN_VER_PTR(tensor)->rank,
+      QNN_VER_PTR(tensor)->dimensions,
       QNN_VER_PTR(tensor)->clientBuf.dataSize);
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

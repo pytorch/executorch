@@ -16,12 +16,13 @@ QnnDevice::~QnnDevice() {
     QNN_EXECUTORCH_LOG(kLogLevelInfo, "[Qnn ExecuTorch] Destroy Qnn device");
     error = qnn_interface.qnn_device_free(handle_);
     if (error != QNN_SUCCESS) {
-      QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn ExecuTorch] Failed to free QNN "
-                         "device_handle. Backend "
-                         "ID %u, error %d",
-                         qnn_interface.GetBackendId(),
-                         QNN_GET_ERROR_CODE(error));
+      QNN_EXECUTORCH_LOG(
+          kLogLevelError,
+          "[Qnn ExecuTorch] Failed to free QNN "
+          "device_handle. Backend "
+          "ID %u, error %d",
+          qnn_interface.GetBackendId(),
+          QNN_GET_ERROR_CODE(error));
     }
     handle_ = nullptr;
   }
@@ -33,27 +34,33 @@ Error QnnDevice::Configure() {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   std::vector<const QnnDevice_Config_t*> temp_device_config;
-  ET_CHECK_OR_RETURN_ERROR(MakeConfig(temp_device_config) == Error::Ok,
-                           Internal, "Fail to make device config.");
+  ET_CHECK_OR_RETURN_ERROR(
+      MakeConfig(temp_device_config) == Error::Ok,
+      Internal,
+      "Fail to make device config.");
 
   error = qnn_interface.qnn_device_create(
       logger_->GetHandle(),
       temp_device_config.empty() ? nullptr : temp_device_config.data(),
       &handle_);
   if (error != QNN_SUCCESS) {
-    QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn ExecuTorch] Failed to create "
-                       "device_handle for Backend "
-                       "ID %u, error=%d",
-                       qnn_interface.GetBackendId(), QNN_GET_ERROR_CODE(error));
+    QNN_EXECUTORCH_LOG(
+        kLogLevelError,
+        "[Qnn ExecuTorch] Failed to create "
+        "device_handle for Backend "
+        "ID %u, error=%d",
+        qnn_interface.GetBackendId(),
+        QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
 
-  ET_CHECK_OR_RETURN_ERROR(AfterCreateDevice() == Error::Ok, Internal,
-                           "Fail to configure performance config.");
+  ET_CHECK_OR_RETURN_ERROR(
+      AfterCreateDevice() == Error::Ok,
+      Internal,
+      "Fail to configure performance config.");
 
   return Error::Ok;
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

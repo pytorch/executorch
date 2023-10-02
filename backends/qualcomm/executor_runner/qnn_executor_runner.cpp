@@ -10,7 +10,7 @@
 /**
  * @file
  *
- * This tool can run Executorch model files with Qualcomm AI Engine Direct
+ * This tool can run ExecuTorch model files with Qualcomm AI Engine Direct
  * and the portable kernels.
  *
  * User could specify arguments like desired input data, iterfations, etc.
@@ -31,12 +31,18 @@
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
-DEFINE_string(model_path, "model.pte",
-              "Model serialized in flatbuffer format.");
-DEFINE_string(prof_result_path, "prof_result.bin",
-              "Executorch profiler output path.");
-DEFINE_string(output_folder_path, "outputs",
-              "Executorch inference data output path.");
+DEFINE_string(
+    model_path,
+    "model.pte",
+    "Model serialized in flatbuffer format.");
+DEFINE_string(
+    prof_result_path,
+    "prof_result.bin",
+    "Executorch profiler output path.");
+DEFINE_string(
+    output_folder_path,
+    "outputs",
+    "Executorch inference data output path.");
 DEFINE_string(input_list_path, "input_list.txt", "Model input list path.");
 DEFINE_int32(iteration, 1, "Iterations of inference.");
 DEFINE_int32(warm_up, 0, "Pre-run before inference.");
@@ -189,7 +195,8 @@ int main(int argc, char** argv) {
       ET_CHECK_MSG(
           input_files.size() == num_inputs,
           "Number of inputs (%zu) mismatch with input files (%zu)",
-          num_inputs, input_files.size());
+          num_inputs,
+          input_files.size());
 
       for (int input_index = 0; input_index < num_inputs; ++input_index) {
         exec_aten::Tensor& t = method->mutable_input(input_index).toTensor();
@@ -201,23 +208,23 @@ int main(int argc, char** argv) {
         ET_CHECK_MSG(
             file_size == t.nbytes(),
             "Input(%d) size mismatch. file bytes: %zu, tensor bytes: %zu",
-            input_index, file_size, t.nbytes());
+            input_index,
+            file_size,
+            t.nbytes());
 
         fin.seekg(0, fin.beg);
         fin.read(input_data.data(), file_size);
         fin.close();
-        
+
         std::vector<TensorImpl::SizesType> sizes(t.dim());
         for (int i = 0; i < sizes.size(); ++i) {
           sizes[i] = t.sizes().data()[i];
         }
 
         auto t_impl = TensorImpl(
-          t.scalar_type(), t.dim(), sizes.data(), input_data.data());
+            t.scalar_type(), t.dim(), sizes.data(), input_data.data());
         Error ret = method->set_input(EValue(Tensor(&t_impl)), input_index);
-        ET_CHECK_MSG(
-            ret == Error::Ok,
-            "Failed to set input tensor: %d", ret);
+        ET_CHECK_MSG(ret == Error::Ok, "Failed to set input tensor: %d", ret);
       }
 
       Error status = Error::Ok;
@@ -235,17 +242,23 @@ int main(int argc, char** argv) {
       }
       auto after_exec = std::chrono::high_resolution_clock::now();
       double interval_infs =
-          std::chrono::duration_cast<std::chrono::microseconds>(after_exec -
-                                                                before_exec)
+          std::chrono::duration_cast<std::chrono::microseconds>(
+              after_exec - before_exec)
               .count() /
           1000.0;
       elapsed_time += interval_infs;
 
-      ET_LOG(Info, "%d inference took %f ms, avg %f ms", FLAGS_iteration,
-             interval_infs, interval_infs / (float)FLAGS_iteration);
-      ET_CHECK_MSG(status == Error::Ok,
-                   "Execution of method %s failed with status 0x%" PRIx32,
-                   method_name, status);
+      ET_LOG(
+          Info,
+          "%d inference took %f ms, avg %f ms",
+          FLAGS_iteration,
+          interval_infs,
+          interval_infs / (float)FLAGS_iteration);
+      ET_CHECK_MSG(
+          status == Error::Ok,
+          "Execution of method %s failed with status 0x%" PRIx32,
+          method_name,
+          status);
 
       std::vector<EValue> outputs(method->outputs_size());
       status = method->get_outputs(outputs.data(), method->outputs_size());
@@ -259,11 +272,11 @@ int main(int argc, char** argv) {
            output_index++) {
         auto output_tensor = outputs[output_index].toTensor();
         auto output_file_name = FLAGS_output_folder_path + "/output_" +
-                                std::to_string(inference_index) + "_" +
-                                std::to_string(output_index) + ".raw";
+            std::to_string(inference_index) + "_" +
+            std::to_string(output_index) + ".raw";
         std::ofstream fout(output_file_name.c_str(), std::ios::binary);
-        fout.write(output_tensor.const_data_ptr<char>(),
-                   output_tensor.nbytes());
+        fout.write(
+            output_tensor.const_data_ptr<char>(), output_tensor.nbytes());
         fout.close();
       }
 
@@ -277,14 +290,20 @@ int main(int argc, char** argv) {
       }
       ++inference_index;
     }
-    ET_LOG(Info, "%d inference took %f ms, avg %f ms", inference_index,
-           elapsed_time, elapsed_time / inference_index);
+    ET_LOG(
+        Info,
+        "%d inference took %f ms, avg %f ms",
+        inference_index,
+        elapsed_time,
+        elapsed_time / inference_index);
   } else {
     // if no input is provided, run with default input as executor_runner.
     Error status = method->execute();
-    ET_CHECK_MSG(status == Error::Ok,
-                 "Execution of method %s failed with status 0x%" PRIx32,
-                 method_name, status);
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "Execution of method %s failed with status 0x%" PRIx32,
+        method_name,
+        status);
     ET_LOG(Info, "Model executed successfully.");
   }
 

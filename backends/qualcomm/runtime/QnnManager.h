@@ -28,8 +28,9 @@ class QnnManager {
   Error Init();
   Error AllocateTensor();
 
-  Error Execute(const std::vector<Qnn_Tensor_t>& input_tensor_structs,
-                std::vector<Qnn_Tensor_t>& output_tensor_structs);
+  Error Execute(
+      const std::vector<Qnn_Tensor_t>& input_tensor_structs,
+      std::vector<Qnn_Tensor_t>& output_tensor_structs);
 
   void Destroy();
 
@@ -38,8 +39,9 @@ class QnnManager {
   bool IsNodeSupportedByBackend(
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
 
-  Error Compile(std::vector<std::shared_ptr<OpWrapper>>& op_wrappers,
-                QnnExecuTorchContextBinary& qnn_executorch_context_binary);
+  Error Compile(
+      std::vector<std::shared_ptr<OpWrapper>>& op_wrappers,
+      QnnExecuTorchContextBinary& qnn_executorch_context_binary);
 
   std::vector<std::shared_ptr<TensorWrapper>> GetGraphInputs() {
     return input_tensors_;
@@ -68,6 +70,6 @@ class QnnManager {
   std::vector<std::shared_ptr<TensorWrapper>> input_tensors_;
   std::vector<std::shared_ptr<TensorWrapper>> output_tensors_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

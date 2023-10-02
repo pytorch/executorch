@@ -5,39 +5,34 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import collections
-from typing import Any, Literal, Tuple, Optional, List, Callable
 import unittest
+from typing import Any, Callable, Literal, Optional, Tuple
 
 import torch
-from executorch.backends.qualcomm.partition.qnn_partitioner import (
-    QnnPartitioner,
+
+from executorch import exir
+from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
+from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
+
+from executorch.backends.qualcomm.qnn_quantizer import (
+    get_default_qnn_ptq_config,
+    QnnQuantizer,
 )
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     generate_qnn_executorch_compiler_spec,
     SoCModel,
 )
-from torch.ao.quantization.quantize_pt2e import (
-    convert_pt2e,
-    prepare_pt2e,
-)
 from executorch.examples.export.utils import _EDGE_COMPILE_CONFIG
 from executorch.exir.backend.backend_api import to_backend
-from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-
-from executorch import exir
-
-from executorch.backends.qualcomm.qnn_quantizer import (
-    QnnQuantizer,
-    get_default_qnn_ptq_config,
-)
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 def get_qdq_module(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
     is_conv_per_channel: Optional[bool] = True,
-    custom_quant_annotations: List[Callable] = []
+    custom_quant_annotations: Tuple[Callable] = (),
 ) -> torch.fx.GraphModule:
     m = torch._export.capture_pre_autograd_graph(module, inputs)
 
@@ -69,7 +64,7 @@ def save_model_and_expected_output(
     buffer: exir.ExirExportedProgram,
     inputs: Tuple[torch.Tensor],
     model_name: Literal,
-    export_pte: bool=False,
+    export_pte: bool = False,
 ) -> None:
     if not export_pte:
         return
@@ -177,4 +172,3 @@ class TestQNN(unittest.TestCase):
         )
 
         return exec_prog.buffer
-

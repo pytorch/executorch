@@ -5,19 +5,19 @@
 # LICENSE file in the root directory of this source tree.
 
 from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
+from executorch.exir.passes import PassManager
 
 from .annotate_and_quant_scalar import AnnotateAndQuantScalar
-from .i64_to_i32 import I64toI32
-from .convert_hardswish import ConvertHardswish
-from .convert_hardsigmoid import ConvertHardsigmoid
-from .convert_interpolate_with_upsample2d import ConvertInterpolateWithUpsample2D
-from executorch.exir.passes import PassManager
-from .layout_transform import LayoutTransform
-from .fold_qdq import FoldQDQ
 from .annotate_quant_attrs import AnnotateQuantAttrs
+from .convert_hardsigmoid import ConvertHardsigmoid
+from .convert_hardswish import ConvertHardswish
+from .convert_interpolate_with_upsample2d import ConvertInterpolateWithUpsample2D
+from .fold_qdq import FoldQDQ
+from .i64_to_i32 import I64toI32
 from .insert_io_qdq import InsertIOQDQ
-from .remove_clone import RemoveClone
+from .layout_transform import LayoutTransform
 from .recompose_pixel_shuffle import RecomposePixelShuffle
+from .remove_clone import RemoveClone
 
 qnn_partitioner_passes = PassManager(
     passes=[
@@ -41,3 +41,20 @@ qnn_compiler_passes = PassManager(
         LayoutTransform(insert_permute=True),
     ]
 )
+
+__all__ = [
+    qnn_partitioner_passes,
+    qnn_compiler_passes,
+    AddmmToLinearTransform,
+    AnnotateAndQuantScalar,
+    AnnotateQuantAttrs,
+    ConvertHardsigmoid,
+    ConvertHardswish,
+    ConvertInterpolateWithUpsample2D,
+    FoldQDQ,
+    I64toI32,
+    InsertIOQDQ,
+    LayoutTransform,
+    RecomposePixelShuffle,
+    RemoveClone,
+]

@@ -19,8 +19,10 @@ namespace executor {
 namespace qnn {
 class HtpDevice : public QnnDevice {
  public:
-  HtpDevice(const QnnImplementation& implementation, QnnLogger* logger,
-            const QnnExecuTorchHtpBackendOptions& htp_options)
+  HtpDevice(
+      const QnnImplementation& implementation,
+      QnnLogger* logger,
+      const QnnExecuTorchHtpBackendOptions& htp_options)
       : QnnDevice(implementation, logger), htp_options_(htp_options) {
     htp_device_platform_info_config_ =
         std::make_unique<HtpDevicePlatformInfoConfig>(htp_options);
@@ -45,7 +47,7 @@ class HtpDevice : public QnnDevice {
 
   inline bool IsPerfModeEnabled() {
     return htp_options_.performance_mode !=
-           QnnExecuTorchHtpPerformanceMode::kHtpDefault;
+        QnnExecuTorchHtpPerformanceMode::kHtpDefault;
   }
 
   template <typename T>
@@ -82,6 +84,6 @@ class HtpDevice : public QnnDevice {
   QnnExecuTorchHtpBackendOptions htp_options_;
   HtpInfo qcom_target_soc_info_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

@@ -17,8 +17,9 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
   if (quantization.quantizationEncoding ==
       QNN_QUANTIZATION_ENCODING_UNDEFINED) {
     quantize_param_wrapper = std::make_unique<UndefinedQuantizeParamsWrapper>();
-  } else if (quantization.quantizationEncoding ==
-             QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET) {
+  } else if (
+      quantization.quantizationEncoding ==
+      QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET) {
     std::vector<Qnn_ScaleOffset_t> scale_offset(
         quantization.axisScaleOffsetEncoding.scaleOffset,
         quantization.axisScaleOffsetEncoding.scaleOffset +
@@ -26,8 +27,9 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
     quantize_param_wrapper =
         std::make_unique<AxisScaleOffsetQuantizeParamsWrapper>(
             quantization.axisScaleOffsetEncoding.axis, scale_offset);
-  } else if (quantization.quantizationEncoding ==
-             QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) {
+  } else if (
+      quantization.quantizationEncoding ==
+      QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) {
     quantize_param_wrapper = std::make_unique<ScaleOffsetQuantizeParamsWrapper>(
         quantization.scaleOffsetEncoding.scale,
         quantization.scaleOffsetEncoding.offset);
@@ -40,6 +42,6 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
 
   return quantize_param_wrapper;
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

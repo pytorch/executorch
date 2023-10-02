@@ -25,6 +25,6 @@ constexpr const int kRpcControlLatency = 100;
 constexpr const int kRpcPollingTimeHighPower = 9999;
 // default rpc polling time for low power modes - 0 us
 constexpr const int kRpcPollingTimeLowPower = 0;
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

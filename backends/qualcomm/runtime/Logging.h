@@ -18,6 +18,6 @@ void Log(QnnExecuTorchLogLevel log_level, const char* format, ...);
   do {                                             \
     Log(log_level, format, ##__VA_ARGS__);         \
   } while (false);
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

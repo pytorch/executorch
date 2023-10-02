@@ -3,20 +3,20 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Dict, List, cast
+from typing import cast, Dict, List
+
+import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import numpy as np
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
     OpPoolAvg2d,
+    QNN_OP_PACKAGE_NAME_QTI_AISW,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
-import numpy as np
-
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 
 @register_node_visitor
@@ -91,7 +91,9 @@ class AvgPool2d(NodeVisitor):
             return
 
         avg_pool2d_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpPoolAvg2d.op_name,
+            node.name,
+            QNN_OP_PACKAGE_NAME_QTI_AISW,
+            OpPoolAvg2d.op_name,
         )
         avg_pool2d_op.AddInputTensors([input_tensor_wrapper])
         avg_pool2d_op.AddOutputTensors([output_tensor_wrapper])

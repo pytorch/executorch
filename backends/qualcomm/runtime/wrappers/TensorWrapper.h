@@ -22,12 +22,16 @@ namespace executor {
 namespace qnn {
 class TensorWrapper {
  public:
-  explicit TensorWrapper(const std::string& tensor_name, Qnn_TensorType_t tensor_type,
-                         Qnn_DataType_t data_type,
-                         std::unique_ptr<QuantizeParamsWrapper> quantize_params,
-                         std::uint32_t rank, const std::uint32_t dims[],
-                         std::uint32_t bytes, const void* data = nullptr,
-                         bool copy_data = false);
+  explicit TensorWrapper(
+      const std::string& tensor_name,
+      Qnn_TensorType_t tensor_type,
+      Qnn_DataType_t data_type,
+      std::unique_ptr<QuantizeParamsWrapper> quantize_params,
+      std::uint32_t rank,
+      const std::uint32_t dims[],
+      std::uint32_t bytes,
+      const void* data = nullptr,
+      bool copy_data = false);
 
   Error FillDataBuffer(const void* data, bool copy_data = false);
 
@@ -35,12 +39,18 @@ class TensorWrapper {
   // this function is used to recover metadata from QNN context binary.
   void UpdateQnnTensorMeta(const Qnn_Tensor_t& tensor_src);
 
-  Qnn_Tensor_t CloneTensorStruct() const { return tensor_; };
+  Qnn_Tensor_t CloneTensorStruct() const {
+    return tensor_;
+  };
 
   // Return true if the tensor_handle_ is not null, and has been created:
-  bool IsTensorCreated() const { return created_; };
+  bool IsTensorCreated() const {
+    return created_;
+  };
 
-  void SetTensorCreated() { created_ = true; }
+  void SetTensorCreated() {
+    created_ = true;
+  }
 
   // Return true if the tensor is static:
   bool IsTensorStatic() const {
@@ -51,7 +61,9 @@ class TensorWrapper {
     return QNN_VER_PTR(tensor_)->clientBuf.data;
   };
 
-  std::string GetName() const { return qnn_tensor_name_; };
+  std::string GetName() const {
+    return qnn_tensor_name_;
+  };
 
   Error SetName(const std::string& name);
 
@@ -68,20 +80,28 @@ class TensorWrapper {
 };
 // base function for Create TensorWrapper
 std::shared_ptr<TensorWrapper> CreateTensorWrapper(
-    const std::string& tensor_name, Qnn_TensorType_t tensor_type,
+    const std::string& tensor_name,
+    Qnn_TensorType_t tensor_type,
     Qnn_DataType_t data_type,
     std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper,
-    std::uint32_t rank, const std::uint32_t dims[], std::uint32_t bytes = 0,
-    const void* data = nullptr, bool copy_data = false);
+    std::uint32_t rank,
+    const std::uint32_t dims[],
+    std::uint32_t bytes = 0,
+    const void* data = nullptr,
+    bool copy_data = false);
 
 // Factory function to create TensorWrapper
 std::shared_ptr<TensorWrapper> CreateTensorWrapper(
-    Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
+    Qnn_TensorType_t tensor_type,
+    Qnn_DataType_t data_type,
     std::unique_ptr<QuantizeParamsWrapper> quantize_param_wrapper,
-    std::uint32_t rank, const std::uint32_t dims[], std::uint32_t bytes,
-    const void* data = nullptr, bool copy_data = false);
+    std::uint32_t rank,
+    const std::uint32_t dims[],
+    std::uint32_t bytes,
+    const void* data = nullptr,
+    bool copy_data = false);
 
 std::shared_ptr<TensorWrapper> CreateTensorWrapper(const Qnn_Tensor_t& tensor);
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

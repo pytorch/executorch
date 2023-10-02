@@ -30,6 +30,6 @@ Error HtpGraph::MakeConfig(std::vector<const QnnGraph_Config_t*>& config) {
 
   return Error::Ok;
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

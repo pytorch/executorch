@@ -7,22 +7,23 @@
 import math
 import unittest
 
-from executorch.backends.qualcomm.tests.qnn_test_utils import (
-    TestQNN,
-    save_model_and_expected_output,
-    get_qdq_module,
-)
-from executorch.exir.backend.backend_api import disable_validation
-from executorch.examples.models.mobilenet_v2 import MV2Model
-from executorch.examples.models.mobilenet_v3 import MV3Model
-from executorch.examples.models.inception_v4 import InceptionV4Model
-from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
-from executorch.examples.models.mobilebert import MobileBertModelExample
-from executorch.examples.models.edsr import EdsrModel
 import torch
 
+from executorch.backends.qualcomm.tests.qnn_test_utils import (
+    get_qdq_module,
+    save_model_and_expected_output,
+    TestQNN,
+)
+from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
+from executorch.examples.models.edsr import EdsrModel
+from executorch.examples.models.inception_v4 import InceptionV4Model
+from executorch.examples.models.mobilebert import MobileBertModelExample
+from executorch.examples.models.mobilenet_v2 import MV2Model
+from executorch.examples.models.mobilenet_v3 import MV3Model
+from executorch.exir.backend.backend_api import disable_validation
 
-@unittest.skip('skip this for now until e2e test is enabled')
+
+@unittest.skip("skip this for now until e2e test is enabled")
 class TestQNNFloatingPoint(TestQNN):
     def test_qnn_backend_sequential_conv2d(self):
         class TwoConv(torch.nn.Module):
@@ -284,7 +285,7 @@ class TestQNNFloatingPoint(TestQNN):
                 self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=1000)
 
             def forward(self, x):
-                return self.conv(x)[0,1,1:2]
+                return self.conv(x)[0, 1, 1:2]
 
         instance = SelectCopy()
         example_inputs = (torch.randn([1, 3, 3, 3]),)
@@ -605,6 +606,7 @@ class TestQNNFloatingPoint(TestQNN):
             def __init__(self):
                 super().__init__()
                 self.position_ids = torch.randn([1, 512])
+
             def forward(self, x, y):
                 seq_length = y.size()[1]
                 return x[:, :seq_length] + self.position_ids[:, :seq_length]
@@ -809,7 +811,7 @@ class TestQNNFloatingPoint(TestQNN):
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
 
-@unittest.skip('skip this for now until e2e test is enabled')
+@unittest.skip("skip this for now until e2e test is enabled")
 class TestQNNINT8(TestQNN):
     def test_qnn_backend_ptq_sequential_conv2d(self):
         class TwoConv(torch.nn.Module):
@@ -1041,7 +1043,7 @@ class TestQNNINT8(TestQNN):
                 self.linear = torch.nn.Linear(4, 5)
 
             def forward(self, x):
-                return x[:, None, None,:]
+                return x[:, None, None, :]
 
         example_inputs = (torch.ones([3, 4]),)
         instance = Unsqueeze()
@@ -1053,7 +1055,7 @@ class TestQNNINT8(TestQNN):
     def test_qnn_backend_ptq_constant_mul(self):
         class ConstantMul(torch.nn.Module):
             def forward(self, x):
-                return x *255
+                return x * 255
 
         example_inputs = (torch.ones([3, 4]),)
         instance = ConstantMul()
@@ -1188,6 +1190,7 @@ class TestQNNINT8(TestQNN):
 
     def test_qnn_backend_ptq_edsr(self):
         from executorch.examples.backend.qualcomm.edsr import annotate_forward
+
         model = EdsrModel()
         instance = model.get_eager_model().eval()
         example_inputs = model.get_example_inputs()
@@ -1195,12 +1198,12 @@ class TestQNNINT8(TestQNN):
             instance,
             example_inputs,
             is_conv_per_channel=False,
-            custom_quant_annotations=[annotate_forward]
+            custom_quant_annotations=(annotate_forward),
         )
         buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
         model_name = "ptq_qnn_edsr_model"
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

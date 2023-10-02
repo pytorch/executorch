@@ -15,10 +15,10 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif  // __cplusplus
+#endif // __cplusplus
 
 /// Logging level of the delegate and QNN backend.
-typedef enum {  // NOLINT(modernize-use-using)
+typedef enum { // NOLINT(modernize-use-using)
   kLogOff = 0,
   kLogLevelError,
   kLogLevelWarn,
@@ -29,7 +29,7 @@ typedef enum {  // NOLINT(modernize-use-using)
 
 /// The QNN backend used to delegate the model's nodes. Each backend has
 /// its own set of supported ops and tensor types.
-typedef enum {  // NOLINT(modernize-use-using)
+typedef enum { // NOLINT(modernize-use-using)
   kUndefinedBackend = 0,
   /// Backend for Adreno<sup>TM</sup> GPU hardware accelerator.
   kGpuBackend,
@@ -40,7 +40,7 @@ typedef enum {  // NOLINT(modernize-use-using)
 } QnnExecuTorchBackendType;
 
 /// Defines performance modes available for HTP backend.
-typedef enum {  // NOLINT(modernize-use-using)
+typedef enum { // NOLINT(modernize-use-using)
   kHtpDefault = 0,
   kHtpSustainedHighPerformance,
   kHtpBurst,
@@ -53,7 +53,7 @@ typedef enum {  // NOLINT(modernize-use-using)
 } QnnExecuTorchHtpPerformanceMode;
 
 /// Defines pd sessions available for HTP backend.
-typedef enum {  // NOLINT(modernize-use-using)
+typedef enum { // NOLINT(modernize-use-using)
   kHtpUnsignedPd = 0,
   kHtpSignedPd,
 } QnnExecuTorchHtpPdSession;
@@ -61,7 +61,7 @@ typedef enum {  // NOLINT(modernize-use-using)
 /// Defines the optimization levels of the graph tensors that are not input nor
 /// output tensors. This enum controls the trade-off between performance and
 /// accuracy.
-typedef enum {  // NOLINT(modernize-use-using)
+typedef enum { // NOLINT(modernize-use-using)
   kHtpQuantized = 0,
   kHtpFp16,
 } QnnExecuTorchHtpPrecision;
@@ -70,13 +70,13 @@ typedef enum {  // NOLINT(modernize-use-using)
 /// reuse values of retired chipsets.
 typedef enum {
   UNKNOWN_SM = 0,
-  SM8450 = 36,  // v69
-  SM8475 = 42,  // v69
-  SM8550 = 43,  // v73
+  SM8450 = 36, // v69
+  SM8475 = 42, // v69
+  SM8550 = 43, // v73
 } QcomChipset;
 
 /// Specifies the backend options for the HTP backend.
-typedef struct {  // NOLINT
+typedef struct { // NOLINT
   /// Specify SoC to generate HTP Offline Cache for.
   QcomChipset soc_model;
   /// The default performance mode sets no configurations on the HTP.
@@ -123,7 +123,7 @@ typedef struct {
   }
 // clang-format on
 
-typedef struct {  // NOLINT
+typedef struct { // NOLINT
   /// The backend QNN library to open and execute the graph with. This is a
   /// required argument and will error out if kUndefinedBackend is supplied.
   QnnExecuTorchBackendType backend_type;
@@ -167,4 +167,4 @@ QnnExecuTorchOptions QnnExecuTorchOptionsDefault();
 
 #ifdef __cplusplus
 }
-#endif  // __cplusplus
+#endif // __cplusplus

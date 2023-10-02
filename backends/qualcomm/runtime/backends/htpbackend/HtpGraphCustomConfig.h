@@ -35,6 +35,6 @@ class HtpGraphCustomConfig {
   [[maybe_unused]] QnnExecuTorchHtpBackendOptions htp_options_;
   std::vector<std::unique_ptr<QnnHtpGraph_CustomConfig_t>> htp_graph_config_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

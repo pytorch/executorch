@@ -14,10 +14,12 @@ namespace executor {
 namespace qnn {
 class HtpContext : public QnnContext {
  public:
-  HtpContext(const QnnImplementation& implementation, QnnBackend* backend,
-             QnnDevice* device,
-             const QnnExecuTorchContextBinary& qnn_context_blob,
-             const QnnExecuTorchHtpBackendOptions& htp_options)
+  HtpContext(
+      const QnnImplementation& implementation,
+      QnnBackend* backend,
+      QnnDevice* device,
+      const QnnExecuTorchContextBinary& qnn_context_blob,
+      const QnnExecuTorchHtpBackendOptions& htp_options)
       : QnnContext(implementation, backend, device, qnn_context_blob) {}
   ~HtpContext() {}
 
@@ -26,6 +28,6 @@ class HtpContext : public QnnContext {
     return Error::Ok;
   }
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

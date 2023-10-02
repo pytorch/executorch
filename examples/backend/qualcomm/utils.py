@@ -4,29 +4,25 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import numpy as np
 import os
 import subprocess
 from pathlib import Path
 
+import numpy as np
+
 import torch
-from executorch.exir.backend.backend_api import to_backend
-from executorch.backends.qualcomm.partition.qnn_partitioner import (
-    QnnPartitioner,
+from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
+from executorch.backends.qualcomm.qnn_quantizer import (
+    get_default_qnn_ptq_config,
+    QnnQuantizer,
 )
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     generate_qnn_executorch_compiler_spec,
     SoCModel,
 )
-from executorch.backends.qualcomm.qnn_quantizer import (
-    QnnQuantizer,
-    get_default_qnn_ptq_config,
-)
-from torch.ao.quantization.quantize_pt2e import (
-    convert_pt2e,
-    prepare_pt2e,
-)
+from executorch.exir.backend.backend_api import to_backend
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 class SimpleADB:
@@ -102,14 +98,14 @@ class SimpleADB:
     def execute(self):
         self._adb(["shell", f"mkdir -p {self.output_folder}"])
         # run the delegation
-        qnn_executor_runner_args = ' '.join(
+        qnn_executor_runner_args = " ".join(
             [
                 f"--model_path {os.path.basename(self.pte_path)}",
                 f"--output_folder_path {self.output_folder}",
                 f"--input_list_path {self.input_list_filename}",
             ]
         )
-        qnn_executor_runner_cmds = ' '.join(
+        qnn_executor_runner_cmds = " ".join(
             [
                 f"cd {self.workspace} &&",
                 "export ADSP_LIBRARY_PATH=. &&",
@@ -126,18 +122,20 @@ class SimpleADB:
 
 
 def build_executorch_binary(
-    model,
-    inputs,
+    model,  # noqa: B006
+    inputs,  # noqa: B006
     soc_model,
     file_name,
     dataset,
     use_fp16=False,
-    custom_annotations=[]
+    custom_annotations=(),
 ):
     if not use_fp16:
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_annotations)
-        quant_annotation_config = get_default_qnn_ptq_config(enable_per_channel_conv_quant=True)
+        quant_annotation_config = get_default_qnn_ptq_config(
+            enable_per_channel_conv_quant=True
+        )
         quantizer.set_global_op_quant_config(quant_annotation_config)
 
         captured_model = torch._export.capture_pre_autograd_graph(model, inputs)
@@ -184,7 +182,7 @@ def topk_accuracy(predictions, targets, k):
     def solve(prob, target, k):
         _, indices = torch.topk(prob, k=k, sorted=True)
         golden = torch.reshape(target, [-1, 1])
-        correct = (golden == indices) * 1.
+        correct = (golden == indices) * 1.0
         top_k_accuracy = torch.mean(correct) * k
         return top_k_accuracy
 
@@ -192,7 +190,7 @@ def topk_accuracy(predictions, targets, k):
     for index, pred in enumerate(predictions):
         cnt += solve(torch.from_numpy(pred), targets[index], k)
 
-    return cnt*100.0 / len(predictions)
+    return cnt * 100.0 / len(predictions)
 
 
 def segmentation_metrics(predictions, targets, classes):
@@ -201,7 +199,7 @@ def segmentation_metrics(predictions, targets, classes):
             mask = golden < num_classes
             hist = np.bincount(
                 num_classes * golden[mask].astype(int) + predict[mask],
-                minlength=num_classes ** 2,
+                minlength=num_classes**2,
             ).reshape(num_classes, num_classes)
             return hist
 
@@ -215,9 +213,9 @@ def segmentation_metrics(predictions, targets, classes):
     confusion = make_confusion(targets, predictions, len(classes))
     pa = np.diag(confusion).sum() / (confusion.sum() + eps)
     mpa = np.mean(np.diag(confusion) / (confusion.sum(axis=1) + eps))
-    iou = np.diag(confusion) /\
-        (confusion.sum(axis=1) + confusion.sum(axis=0) - np.diag(confusion) + eps)
+    iou = np.diag(confusion) / (
+        confusion.sum(axis=1) + confusion.sum(axis=0) - np.diag(confusion) + eps
+    )
     miou = np.mean(iou)
     cls_iou = dict(zip(classes, iou))
     return (pa, mpa, miou, cls_iou)
-

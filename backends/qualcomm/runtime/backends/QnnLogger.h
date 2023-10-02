@@ -12,22 +12,28 @@
 namespace torch {
 namespace executor {
 namespace qnn {
-void LoggingCallback(const char* fmt, QnnLog_Level_t level,
-                     std::uint64_t /*timestamp*/, va_list args);
+void LoggingCallback(
+    const char* fmt,
+    QnnLog_Level_t level,
+    std::uint64_t /*timestamp*/,
+    va_list args);
 
 class QnnLogger {
  public:
-  explicit QnnLogger(const QnnImplementation& implementation,
-                     QnnLog_Callback_t callback,
-                     QnnExecuTorchLogLevel log_level);
+  explicit QnnLogger(
+      const QnnImplementation& implementation,
+      QnnLog_Callback_t callback,
+      QnnExecuTorchLogLevel log_level);
   ~QnnLogger();
 
-  Qnn_LogHandle_t GetHandle() { return handle_; }
+  Qnn_LogHandle_t GetHandle() {
+    return handle_;
+  }
 
  private:
   Qnn_LogHandle_t handle_;
   const QnnImplementation& implementation_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

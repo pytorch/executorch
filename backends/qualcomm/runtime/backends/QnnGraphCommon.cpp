@@ -15,36 +15,41 @@ Error QnnGraph::Configure() {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   std::vector<const QnnGraph_Config_t*> temp_graph_config;
-  ET_CHECK_OR_RETURN_ERROR(MakeConfig(temp_graph_config) == Error::Ok, Internal,
-                           "Fail to make graph config.");
+  ET_CHECK_OR_RETURN_ERROR(
+      MakeConfig(temp_graph_config) == Error::Ok,
+      Internal,
+      "Fail to make graph config.");
 
   if (context_->GetCacheState() == QnnBackendCache::DESERIALIZE) {
     // retrieve QNN Graph
     error = qnn_interface.qnn_graph_retrieve(
         context_->GetHandle(), context_->GetGraphName().c_str(), &handle_);
     if (error != QNN_SUCCESS) {
-      QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn ExecuTorch] Can't retrieve graph "
-                         "%s from context. Error %d.",
-                         context_->GetGraphName().c_str(),
-                         QNN_GET_ERROR_CODE(error));
+      QNN_EXECUTORCH_LOG(
+          kLogLevelError,
+          "[Qnn ExecuTorch] Can't retrieve graph "
+          "%s from context. Error %d.",
+          context_->GetGraphName().c_str(),
+          QNN_GET_ERROR_CODE(error));
       return Error::Internal;
     }
   } else if (context_->GetCacheState() == QnnBackendCache::SERIALIZE) {
     Qnn_ErrorHandle_t error = qnn_interface.qnn_graph_create(
-        context_->GetHandle(), graph_name_.c_str(),
+        context_->GetHandle(),
+        graph_name_.c_str(),
         temp_graph_config.empty() ? nullptr : temp_graph_config.data(),
         &handle_);
 
     if (error != QNN_SUCCESS) {
-      QNN_EXECUTORCH_LOG(kLogLevelError,
-                         "[Qnn ExecuTorch] qnn_graph_create failed. Error  %d",
-                         QNN_GET_ERROR_CODE(error));
+      QNN_EXECUTORCH_LOG(
+          kLogLevelError,
+          "[Qnn ExecuTorch] qnn_graph_create failed. Error  %d",
+          QNN_GET_ERROR_CODE(error));
       return Error::Internal;
     }
   } else {
-    QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn ExecuTorch] QNN context cache is invalid.");
+    QNN_EXECUTORCH_LOG(
+        kLogLevelError, "[Qnn ExecuTorch] QNN context cache is invalid.");
     return Error::Internal;
   }
 
@@ -73,7 +78,8 @@ Error QnnGraph::EnsureTensorInQnnGraph(
       QNN_EXECUTORCH_LOG(
           kLogLevelInfo,
           "[Qnn ExecuTorch] tensor name %s hash collision, change to %s",
-          old_name.c_str(), new_name.c_str());
+          old_name.c_str(),
+          new_name.c_str());
 
       // update
       name_conflict_count++;
@@ -84,6 +90,6 @@ Error QnnGraph::EnsureTensorInQnnGraph(
   }
   return Error::Ok;
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

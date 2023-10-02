@@ -6,8 +6,8 @@
 from typing import Dict, Tuple
 
 import torch
-from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class I64toI32(ExportPass):

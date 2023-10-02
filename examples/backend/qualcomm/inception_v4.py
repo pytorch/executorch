@@ -10,24 +10,28 @@ import os
 import numpy as np
 
 import torch
-from executorch.examples.models.inception_v4 import InceptionV4Model
 from executorch.examples.backend.qualcomm.utils import (
-    SimpleADB,
     build_executorch_binary,
-    topk_accuracy,
     make_output_dir,
+    SimpleADB,
+    topk_accuracy,
 )
+from executorch.examples.models.inception_v4 import InceptionV4Model
 
 
 def get_dataset(dataset_path, data_size):
-    from torchvision import transforms, datasets
+    from torchvision import datasets, transforms
 
     def get_data_loader():
-        preprocess = transforms.Compose([
-            transforms.Resize((299, 299)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
+        preprocess = transforms.Compose(
+            [
+                transforms.Resize((299, 299)),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ),
+            ]
+        )
         imagenet_data = datasets.ImageFolder(dataset_path, transform=preprocess)
         return torch.utils.data.DataLoader(
             imagenet_data,
@@ -65,7 +69,7 @@ if __name__ == "__main__":
         "-a",
         "--artifact",
         help="path for storing generated artifacts by this example. "
-             "Default ./inception_v4",
+        "Default ./inception_v4",
         default="./inception_v4",
         type=str,
     )
@@ -105,8 +109,10 @@ if __name__ == "__main__":
     print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
 
     if "LD_LIBRARY_PATH" not in os.environ:
-        print("[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
-              "not found happen, please follow setup.md to set environment.")
+        print(
+            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
+            "not found happen, please follow setup.md to set environment."
+        )
     else:
         print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
 
@@ -127,7 +133,7 @@ if __name__ == "__main__":
         instance.get_example_inputs(),
         args.model,
         f"{args.artifact}/{pte_filename}",
-        inputs
+        inputs,
     )
     # setup required paths accordingly
     # qnn_sdk       : QNN SDK path setup in environment variable
@@ -158,9 +164,9 @@ if __name__ == "__main__":
     for i in range(data_num):
         predictions.append(
             np.fromfile(
-                os.path.join(output_data_folder, f"output_{i}_0.raw"),
-                dtype=np.float32)
+                os.path.join(output_data_folder, f"output_{i}_0.raw"), dtype=np.float32
             )
+        )
 
     print(f"top_1->{topk_accuracy(predictions, targets, 1)}%")
     print(f"top_5->{topk_accuracy(predictions, targets, 5)}%")

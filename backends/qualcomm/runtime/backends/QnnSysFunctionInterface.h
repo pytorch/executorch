@@ -31,17 +31,21 @@ class QnnSystemInterface {
     qnn_sys_interface_ = qnn_sys_interface;
   }
 
-  bool IsLoaded() const { return qnn_sys_interface_ != nullptr; }
+  bool IsLoaded() const {
+    return qnn_sys_interface_ != nullptr;
+  }
 
-  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(system_context_create,
-                                     systemContextCreate);
-  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(system_context_get_binary_info,
-                                     systemContextGetBinaryInfo);
+  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(
+      system_context_create,
+      systemContextCreate);
+  DEFINE_SHIM_FUNCTION_SYS_INTERFACE(
+      system_context_get_binary_info,
+      systemContextGetBinaryInfo);
   DEFINE_SHIM_FUNCTION_SYS_INTERFACE(system_context_free, systemContextFree);
 
  private:
   const QnnSystemInterface_t* qnn_sys_interface_{nullptr};
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

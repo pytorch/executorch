@@ -15,8 +15,10 @@ namespace qnn {
 template <typename T>
 class ScalarParamWrapper final : public ParamWrapper {
  public:
-  explicit ScalarParamWrapper(std::string name, Qnn_DataType_t data_type,
-                              T data)
+  explicit ScalarParamWrapper(
+      std::string name,
+      Qnn_DataType_t data_type,
+      T data)
       : ParamWrapper(QNN_PARAMTYPE_SCALAR, std::move(name)),
         data_type_(data_type),
         data_(data) {}
@@ -61,12 +63,14 @@ class ScalarParamWrapper final : public ParamWrapper {
     return Error::Ok;
   }
 
-  const T& GetData() const { return data_; };
+  const T& GetData() const {
+    return data_;
+  };
 
  private:
   Qnn_DataType_t data_type_;
   T data_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

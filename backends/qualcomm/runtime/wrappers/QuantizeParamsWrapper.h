@@ -50,11 +50,13 @@ class QuantizeParamsWrapper {
 class UndefinedQuantizeParamsWrapper final : public QuantizeParamsWrapper {
  public:
   UndefinedQuantizeParamsWrapper()
-      : QuantizeParamsWrapper(QNN_DEFINITION_UNDEFINED,
-                              QNN_QUANTIZATION_ENCODING_UNDEFINED) {}
+      : QuantizeParamsWrapper(
+            QNN_DEFINITION_UNDEFINED,
+            QNN_QUANTIZATION_ENCODING_UNDEFINED) {}
   UndefinedQuantizeParamsWrapper(const UndefinedQuantizeParamsWrapper& rhs)
-      : QuantizeParamsWrapper(rhs.GetEncodingDefinition(),
-                              rhs.GetQuantizationEncoding()) {}
+      : QuantizeParamsWrapper(
+            rhs.GetEncodingDefinition(),
+            rhs.GetQuantizationEncoding()) {}
   UndefinedQuantizeParamsWrapper(UndefinedQuantizeParamsWrapper&& rhs) = delete;
   UndefinedQuantizeParamsWrapper& operator=(
       const UndefinedQuantizeParamsWrapper& rhs) = delete;
@@ -78,14 +80,16 @@ class UndefinedQuantizeParamsWrapper final : public QuantizeParamsWrapper {
 class ScaleOffsetQuantizeParamsWrapper final : public QuantizeParamsWrapper {
  public:
   explicit ScaleOffsetQuantizeParamsWrapper(float scale, std::int32_t offset)
-      : QuantizeParamsWrapper(QNN_DEFINITION_DEFINED,
-                              QNN_QUANTIZATION_ENCODING_SCALE_OFFSET),
+      : QuantizeParamsWrapper(
+            QNN_DEFINITION_DEFINED,
+            QNN_QUANTIZATION_ENCODING_SCALE_OFFSET),
         scale_(scale),
         offset_(offset) {}
 
   ScaleOffsetQuantizeParamsWrapper(const ScaleOffsetQuantizeParamsWrapper& rhs)
-      : QuantizeParamsWrapper(rhs.GetEncodingDefinition(),
-                              rhs.GetQuantizationEncoding()),
+      : QuantizeParamsWrapper(
+            rhs.GetEncodingDefinition(),
+            rhs.GetQuantizationEncoding()),
         scale_(rhs.scale_),
         offset_(rhs.offset_) {}
   ScaleOffsetQuantizeParamsWrapper(ScaleOffsetQuantizeParamsWrapper&& rhs) =
@@ -119,16 +123,19 @@ class AxisScaleOffsetQuantizeParamsWrapper final
     : public QuantizeParamsWrapper {
  public:
   explicit AxisScaleOffsetQuantizeParamsWrapper(
-      std::int32_t axis, const std::vector<Qnn_ScaleOffset_t>& scale_offsets)
-      : QuantizeParamsWrapper(QNN_DEFINITION_DEFINED,
-                              QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET),
+      std::int32_t axis,
+      const std::vector<Qnn_ScaleOffset_t>& scale_offsets)
+      : QuantizeParamsWrapper(
+            QNN_DEFINITION_DEFINED,
+            QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET),
         axis_(axis),
         scale_offsets_(scale_offsets) {}
 
   AxisScaleOffsetQuantizeParamsWrapper(
       const AxisScaleOffsetQuantizeParamsWrapper& rhs)
-      : QuantizeParamsWrapper(rhs.GetEncodingDefinition(),
-                              rhs.GetQuantizationEncoding()),
+      : QuantizeParamsWrapper(
+            rhs.GetEncodingDefinition(),
+            rhs.GetQuantizationEncoding()),
         axis_(rhs.axis_),
         scale_offsets_(rhs.scale_offsets_) {}
   AxisScaleOffsetQuantizeParamsWrapper(
@@ -140,7 +147,9 @@ class AxisScaleOffsetQuantizeParamsWrapper final
 
   ~AxisScaleOffsetQuantizeParamsWrapper() override = default;
 
-  void SetAxis(std::int32_t axis) { axis_ = axis; }
+  void SetAxis(std::int32_t axis) {
+    axis_ = axis;
+  }
 
   std::unique_ptr<QuantizeParamsWrapper> Clone() override {
     return std::make_unique<AxisScaleOffsetQuantizeParamsWrapper>(*this);
@@ -164,6 +173,6 @@ class AxisScaleOffsetQuantizeParamsWrapper final
 // Factory function to create quantization param wrapper from QnnQuantization
 std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
     const Qnn_QuantizeParams_t& quantization);
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

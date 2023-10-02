@@ -6,17 +6,17 @@
 
 from typing import Dict
 
+import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
     OpTanh,
+    QNN_OP_PACKAGE_NAME_QTI_AISW,
 )
-
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 from executorch.backends.qualcomm.utils.utils import get_input_node
 
 
@@ -50,7 +50,9 @@ class Tanh(NodeVisitor):
         )
 
         tanh_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpTanh.op_name,
+            node.name,
+            QNN_OP_PACKAGE_NAME_QTI_AISW,
+            OpTanh.op_name,
         )
         tanh_op.AddInputTensors([input_tensor_wrapper])
         tanh_op.AddOutputTensors([output_tensor_wrapper])

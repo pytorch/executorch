@@ -5,14 +5,15 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
-import numpy as np
 import os
+
+import numpy as np
 
 import torch
 from executorch.examples.backend.qualcomm.utils import (
-    SimpleADB,
     build_executorch_binary,
     make_output_dir,
+    SimpleADB,
 )
 from transformers import BertTokenizer, MobileBertForSequenceClassification
 
@@ -21,12 +22,12 @@ def evaluate(model, data_val):
     predictions, true_vals = [], []
     for data in data_val:
         inputs = {
-            'input_ids': data[0],
-            'attention_mask': data[1],
-            'labels': data[2],
+            "input_ids": data[0],
+            "attention_mask": data[1],
+            "labels": data[2],
         }
         logits = model(**inputs)[1].detach().numpy()
-        label_ids = inputs['labels'].numpy()
+        label_ids = inputs["labels"].numpy()
         predictions.append(logits)
         true_vals.append(label_ids)
 
@@ -44,10 +45,7 @@ def accuracy_per_class(preds, goldens, labels):
     for golden in np.unique(goldens_flat):
         pred = preds_flat[goldens_flat == golden]
         true = goldens_flat[goldens_flat == golden]
-        print(
-            f'{labels_inverse[golden]}: '
-            f'{len(pred[pred == golden])}/{len(true)}'
-        )
+        print(f"{labels_inverse[golden]}: " f"{len(pred[pred == golden])}/{len(true)}")
 
 
 def get_dataset(data_val):
@@ -65,16 +63,17 @@ def get_dataset(data_val):
 
 def get_fine_tuned_mobilebert(artifacts_dir):
     from io import BytesIO
+
     import pandas as pd
     import requests
     from sklearn.model_selection import train_test_split
-    from tqdm import tqdm
     from torch.utils.data import (
         DataLoader,
         RandomSampler,
         SequentialSampler,
         TensorDataset,
     )
+    from tqdm import tqdm
     from transformers import get_linear_schedule_with_warmup
 
     # grab dataset
@@ -86,22 +85,21 @@ def get_fine_tuned_mobilebert(artifacts_dir):
     data = pd.read_csv(BytesIO(content))
 
     # get training / validation data
-    labels = {
-        key: index for index, key in enumerate(data.Conference.unique())
-    }
-    data['label'] = data.Conference.replace(labels)
+    labels = {key: index for index, key in enumerate(data.Conference.unique())}
+    data["label"] = data.Conference.replace(labels)
 
     train, val, _, _ = train_test_split(
         data.index.values,
         data.label.values,
         test_size=0.15,
         random_state=42,
-        stratify=data.label.values)
+        stratify=data.label.values,
+    )
 
-    data['data_type'] = ['not_set']*data.shape[0]
-    data.loc[train, 'data_type'] = 'train'
-    data.loc[val, 'data_type'] = 'val'
-    data.groupby(['Conference', 'label', 'data_type']).count()
+    data["data_type"] = ["not_set"] * data.shape[0]
+    data.loc[train, "data_type"] = "train"
+    data.loc[val, "data_type"] = "val"
+    data.groupby(["Conference", "label", "data_type"]).count()
 
     # get pre-trained mobilebert
     tokenizer = BertTokenizer.from_pretrained(
@@ -116,38 +114,34 @@ def get_fine_tuned_mobilebert(artifacts_dir):
 
     # tokenize dataset
     encoded_data_train = tokenizer.batch_encode_plus(
-        data[data.data_type=='train'].Title.values,
+        data[data.data_type == "train"].Title.values,
         add_special_tokens=True,
         return_attention_mask=True,
         max_length=256,
         padding="max_length",
         truncation=True,
-        return_tensors='pt'
+        return_tensors="pt",
     )
     encoded_data_val = tokenizer.batch_encode_plus(
-        data[data.data_type=='val'].Title.values,
+        data[data.data_type == "val"].Title.values,
         add_special_tokens=True,
         return_attention_mask=True,
         max_length=256,
         padding="max_length",
         truncation=True,
-        return_tensors='pt'
+        return_tensors="pt",
     )
 
-    input_ids_train = encoded_data_train['input_ids']
-    attention_masks_train = encoded_data_train['attention_mask']
-    labels_train = torch.tensor(data[data.data_type=='train'].label.values)
+    input_ids_train = encoded_data_train["input_ids"]
+    attention_masks_train = encoded_data_train["attention_mask"]
+    labels_train = torch.tensor(data[data.data_type == "train"].label.values)
 
-    input_ids_val = encoded_data_val['input_ids']
-    attention_masks_val = encoded_data_val['attention_mask']
-    labels_val = torch.tensor(data[data.data_type=='val'].label.values)
+    input_ids_val = encoded_data_val["input_ids"]
+    attention_masks_val = encoded_data_val["attention_mask"]
+    labels_val = torch.tensor(data[data.data_type == "val"].label.values)
 
-    dataset_train = TensorDataset(
-        input_ids_train, attention_masks_train, labels_train
-    )
-    dataset_val = TensorDataset(
-        input_ids_val, attention_masks_val, labels_val
-    )
+    dataset_train = TensorDataset(input_ids_train, attention_masks_train, labels_train)
+    dataset_val = TensorDataset(input_ids_val, attention_masks_val, labels_val)
 
     batch_size, epochs = 3, 5
     dataloader_train = DataLoader(
@@ -163,22 +157,20 @@ def get_fine_tuned_mobilebert(artifacts_dir):
     )
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
     scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=0,
-        num_training_steps=len(dataloader_train) * epochs
+        optimizer, num_warmup_steps=0, num_training_steps=len(dataloader_train) * epochs
     )
 
     # start training
     for epoch in range(1, epochs + 1):
         loss_train_total = 0
-        print(f'epoch {epoch}')
+        print(f"epoch {epoch}")
 
         for batch in tqdm(dataloader_train):
             model.zero_grad()
             inputs = {
-                'input_ids': batch[0],
-                'attention_mask': batch[1],
-                'labels': batch[2],
+                "input_ids": batch[0],
+                "attention_mask": batch[1],
+                "labels": batch[2],
             }
             loss = model(**inputs)[0]
             loss_train_total += loss.item()
@@ -189,12 +181,14 @@ def get_fine_tuned_mobilebert(artifacts_dir):
 
         torch.save(
             model.state_dict(),
-            f'{artifacts_dir}/finetuned_mobilebert_epoch_{epoch}.model'
+            f"{artifacts_dir}/finetuned_mobilebert_epoch_{epoch}.model",
         )
 
     model.load_state_dict(
-        torch.load(f'{artifacts_dir}/finetuned_mobilebert_epoch_{epochs}.model',
-        map_location=torch.device('cpu')),
+        torch.load(
+            f"{artifacts_dir}/finetuned_mobilebert_epoch_{epochs}.model",
+            map_location=torch.device("cpu"),
+        ),
     )
 
     return model.eval(), dataloader_val, batch_size, labels
@@ -245,8 +239,10 @@ if __name__ == "__main__":
     print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
 
     if "LD_LIBRARY_PATH" not in os.environ:
-        print("[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
-              "not found happen, please follow setup.md to set environment.")
+        print(
+            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
+            "not found happen, please follow setup.md to set environment."
+        )
     else:
         print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
 

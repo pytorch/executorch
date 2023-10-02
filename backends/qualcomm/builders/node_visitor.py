@@ -4,13 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict, Tuple, Any
-
-import torch
+from typing import Any, Dict, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
-from executorch.exir.dialects._ops import ops as exir_ops
 import numpy as np
+
+import torch
+from executorch.exir.dialects._ops import ops as exir_ops
 
 QNN_TENSOR_TYPE_MAP = {
     torch.float32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
@@ -33,19 +33,14 @@ QNN_SCALAR_TYPE_MAP = {
 }
 
 PER_CHANNEL_ENCODING_MAPPING = {
-    exir_ops.edge.quantized_decomposed.quantize_per_channel.default: \
-        PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default: PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET,
 }
 
 PER_TENSOR_ENCODING_MAPPING = {
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: \
-        PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor: \
-        PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: \
-        PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor: \
-        PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor: PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor: PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
 }
 
 

@@ -6,19 +6,19 @@
 
 from typing import cast, Dict, List
 
+import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import numpy as np
+
 import torch
-from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
-    OpTranspose,
-)
-from executorch.backends.qualcomm.utils.utils import get_input_node
 from executorch.backends.qualcomm.builders.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
-import numpy as np
-
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+from executorch.backends.qualcomm.utils.qnn_constants import (
+    OpTranspose,
+    QNN_OP_PACKAGE_NAME_QTI_AISW,
+)
+from executorch.backends.qualcomm.utils.utils import get_input_node
 
 
 @register_node_visitor
@@ -56,7 +56,9 @@ class TransposeVisitor(NodeVisitor):
         )
 
         transpose_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpTranspose.op_name,
+            node.name,
+            QNN_OP_PACKAGE_NAME_QTI_AISW,
+            OpTranspose.op_name,
         )
 
         # add input/output tensors

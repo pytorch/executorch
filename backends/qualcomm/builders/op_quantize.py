@@ -4,18 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 from typing import Dict
+
+import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
     OpQuantize,
+    QNN_OP_PACKAGE_NAME_QTI_AISW,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
-
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 
 class QuantizeOpBase(NodeVisitor):
@@ -39,7 +39,7 @@ class QuantizeOpBase(NodeVisitor):
         quant_input_tensors.append(inp_tensor_wrapper)
 
         node.meta["quant_attrs"] = {"encoding": node.target}
-        arg_schemas = [arg for arg in node.target._schema.arguments][1:]
+        arg_schemas = list(node.target._schema.arguments)[1:]
         for i, arg_schema in enumerate(arg_schemas):
             name = arg_schema.name
             node.meta["quant_attrs"][name] = get_input_node(node, i + 1)
@@ -54,7 +54,9 @@ class QuantizeOpBase(NodeVisitor):
         quant_output_tensors = [output_tensor_wrapper]
 
         quant_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.target.__name__, QNN_OP_PACKAGE_NAME_QTI_AISW, OpQuantize.op_name,
+            node.target.__name__,
+            QNN_OP_PACKAGE_NAME_QTI_AISW,
+            OpQuantize.op_name,
         )
         quant_op.AddInputTensors(quant_input_tensors)
         quant_op.AddOutputTensors(quant_output_tensors)
@@ -65,6 +67,7 @@ class QuantizeOpBase(NodeVisitor):
 @register_node_visitor
 class PerTensorQuantize(QuantizeOpBase):
     target = "quantized_decomposed.quantize_per_tensor.default"
+
 
 @register_node_visitor
 class PerChannelQuantize(QuantizeOpBase):

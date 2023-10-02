@@ -4,43 +4,43 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from dataclasses import dataclass
 import itertools
 import operator
-from typing import Any, Dict, List, Tuple, Optional, Union, Type, Callable, Sequence
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
+
 import torch
 import torch.nn.functional as F
+
+from executorch.backends.qualcomm.passes import (
+    ConvertHardsigmoid,
+    RecomposePixelShuffle,
+    RemoveClone,
+)
 from torch import Tensor
-from torch.fx import Node
 
 from torch.ao.quantization.observer import (
-    HistogramObserver,
     MinMaxObserver,
     MovingAverageMinMaxObserver,
     PerChannelMinMaxObserver,
 )
-from torch.ao.quantization.quantizer import SharedQuantizationSpec
 from torch.ao.quantization.quantize_pt2e import (
+    DerivedQuantizationSpec,
     QuantizationAnnotation,
     QuantizationSpec,
     Quantizer,
-    DerivedQuantizationSpec,
 )
-
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
+from torch.ao.quantization.quantizer import SharedQuantizationSpec
 
 from torch.ao.quantization.quantizer.utils import (
-    _node_only_used_for_sym_size,
-    _is_sym_size_node,
     _annotate_input_qspec_map,
     _annotate_output_qspec,
+    _is_sym_size_node,
+    _node_only_used_for_sym_size,
 )
+from torch.fx import Node
 
-from executorch.backends.qualcomm.passes import (
-    ConvertHardsigmoid,
-    RemoveClone,
-    RecomposePixelShuffle,
-)
+from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 __all__ = [
     "QnnQuantizer",
@@ -48,6 +48,7 @@ __all__ = [
 ]
 
 QUANT_ANNOTATION_KEY = "quantization_annotation"
+
 
 @dataclass(repr=False, eq=False, frozen=True)
 class QnnQuantizerConfig:
@@ -118,9 +119,10 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
         qscheme=torch.per_channel_symmetric,
     )
 
+
 def get_default_qnn_ptq_config(
-        enable_per_channel_conv_quant=False
-    ) -> Tuple[QuantizationConfig, QnnQuantizerConfig]:
+    enable_per_channel_conv_quant=False,
+) -> Tuple[QuantizationConfig, QnnQuantizerConfig]:
     act_quantization_spec = QuantizationSpec(
         dtype=torch.uint8,
         quant_min=0,
@@ -197,7 +199,7 @@ class QnnQuantizer(Quantizer):
         self.custom_quant_configs: Dict[
             Union[Type[torch.nn.Module], Callable], Optional[QuantizationConfig]
         ] = {}
-        self.custom_quant_annotations: List[Callable] = []
+        self.custom_quant_annotations: Tuple[Callable] = []
 
     def set_global_op_quant_config(
         self, quantization_config: Tuple[QuantizationConfig, QnnQuantizerConfig]
@@ -207,8 +209,7 @@ class QnnQuantizer(Quantizer):
         self.configs = quantizer_config
 
     def add_custom_quant_annotations(
-        self,
-        custom_quant_annotations: List[Callable]
+        self, custom_quant_annotations: Tuple[Callable]
     ) -> None:
         self.custom_quant_annotations = custom_quant_annotations
 
@@ -225,8 +226,10 @@ class QnnQuantizer(Quantizer):
             if op in self.custom_quant_configs:
                 return self.custom_quant_configs[op]
 
-        conv_ops = set([torch.nn.Conv2d, torch.nn.functional.conv2d])
-        if self.configs.enable_per_channel_conv_quant and set(ops).intersection(conv_ops):
+        conv_ops = {torch.nn.Conv2d, torch.nn.functional.conv2d}
+        if self.configs.enable_per_channel_conv_quant and set(ops).intersection(
+            conv_ops
+        ):
             return get_ptq_per_channel_weight_config()
 
         return self.global_quant_config
@@ -256,9 +259,7 @@ class QnnQuantizer(Quantizer):
                 continue
 
             act_qspec = SharedQuantizationSpec(input_act)
-            io_obs_sharing_node.meta[
-                QUANT_ANNOTATION_KEY
-            ] = QuantizationAnnotation(
+            io_obs_sharing_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
                 input_qspec_map={
                     input_act: act_qspec,
                 },
@@ -459,7 +460,7 @@ class QnnQuantizer(Quantizer):
                 _annotated=True,
             )
 
-    def _annotate_linear(self, gm: torch.fx.GraphModule) -> None:
+    def _annotate_linear(self, gm: torch.fx.GraphModule) -> None:  # noqa: C901
         op_sources = [torch.nn.Linear, torch.nn.functional.linear]
         linear_partitions = get_source_partitions(gm.graph, op_sources)
         quantization_config = self._get_qaunt_config(op_sources)
@@ -590,18 +591,25 @@ class QnnQuantizer(Quantizer):
         op_sources = [torch.ops.aten.unsqueeze_copy.default, torch.unsqueeze]
         qconfig = self._get_qaunt_config(op_sources)
         if qconfig and qconfig != self.global_quant_config:
-            raise NotImplementedError("Havn't done custom annotation for input_out_obs_sharing_op yet")
+            raise NotImplementedError(
+                "Havn't done custom annotation for input_out_obs_sharing_op yet"
+            )
         self._annotate_input_out_obs_sharing_op(op_sources, gm)
 
     def _annotate_flatten(self, gm: torch.fx.GraphModule) -> None:
         op_sources = [torch.ops.aten.flatten.using_ints, torch.flatten]
         qconfig = self._get_qaunt_config(op_sources)
         if qconfig and qconfig != self.global_quant_config:
-            raise NotImplementedError("Havn't done custom annotation for input_out_obs_sharing_op yet")
+            raise NotImplementedError(
+                "Havn't done custom annotation for input_out_obs_sharing_op yet"
+            )
         self._annotate_input_out_obs_sharing_op(op_sources, gm)
 
     def _annotate_maxpool2d(self, gm: torch.fx.GraphModule) -> None:
-        op_sources = [torch.ops.aten.max_pool2d_with_indices.default, torch.nn.MaxPool2d]
+        op_sources = [
+            torch.ops.aten.max_pool2d_with_indices.default,
+            torch.nn.MaxPool2d,
+        ]
         qconfig = self._get_qaunt_config(op_sources)
         maxpool_partitions = get_source_partitions(gm.graph, op_sources)
 
@@ -628,12 +636,14 @@ class QnnQuantizer(Quantizer):
         op_sources = [
             torch.ops.aten.adaptive_avg_pool2d.default,
             torch.nn.functional.adaptive_avg_pool2d,
-            torch.nn.AdaptiveAvgPool2d
+            torch.nn.AdaptiveAvgPool2d,
         ]
         qconfig = self._get_qaunt_config(op_sources)
         adaptive_avgpool_partitions = get_source_partitions(gm.graph, op_sources)
 
-        adaptive_avgpool_partitions = list(itertools.chain(*adaptive_avgpool_partitions.values()))
+        adaptive_avgpool_partitions = list(
+            itertools.chain(*adaptive_avgpool_partitions.values())
+        )
         for adaptive_avgpool_partition in adaptive_avgpool_partitions:
             adaptive_avgpool_node = adaptive_avgpool_partition.output_nodes[0]
             if _is_annotated([adaptive_avgpool_node]):

@@ -3,7 +3,9 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Dict, List, cast
+from typing import cast, Dict
+
+import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import numpy as np
 import torch
 
@@ -12,12 +14,10 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
     OpSoftmax,
+    QNN_OP_PACKAGE_NAME_QTI_AISW,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
-
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 
 @register_node_visitor
@@ -58,7 +58,9 @@ class Softmax(NodeVisitor):
             dim = node.meta["axis_order"].index(dim)
 
         softmax_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpSoftmax.op_name,
+            node.name,
+            QNN_OP_PACKAGE_NAME_QTI_AISW,
+            OpSoftmax.op_name,
         )
         softmax_op.AddInputTensors(softmax_input_tensors)
         softmax_op.AddOutputTensors(softmax_output_tensors)

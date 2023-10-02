@@ -43,9 +43,10 @@ QnnManager::QnnManager(const QnnExecuTorchOptions* options)
         library_path_ = gpu_library_name_;
         break;
       default:
-        QNN_EXECUTORCH_LOG(kLogLevelError,
-                           "[Qnn ExecuTorch] Unknown backend type: %s",
-                           backend_type_);
+        QNN_EXECUTORCH_LOG(
+            kLogLevelError,
+            "[Qnn ExecuTorch] Unknown backend type: %s",
+            backend_type_);
         break;
     }
   }
@@ -59,30 +60,39 @@ Error QnnManager::LoadQnnLibrary() {
 }
 
 Error QnnManager::Init() {
-  ET_CHECK_OR_RETURN_ERROR(LoadQnnLibrary() == Error::Ok, Internal,
-                           "Fail to load Qnn library");
-  logger_ = std::make_unique<QnnLogger>(qnn_loaded_backend_, LoggingCallback,
-                                        log_level_);
+  ET_CHECK_OR_RETURN_ERROR(
+      LoadQnnLibrary() == Error::Ok, Internal, "Fail to load Qnn library");
+  logger_ = std::make_unique<QnnLogger>(
+      qnn_loaded_backend_, LoggingCallback, log_level_);
   if (backend_params_ptr_->backend_init_state_ ==
       BackendInitializeState::UNINITIALIZED) {
-    QNN_EXECUTORCH_LOG(kLogLevelInfo,
-                       "[Qnn ExecuTorch] Initialize Qnn backend "
-                       "parameters for Qnn executorch backend type %d",
-                       backend_type_);
+    QNN_EXECUTORCH_LOG(
+        kLogLevelInfo,
+        "[Qnn ExecuTorch] Initialize Qnn backend "
+        "parameters for Qnn executorch backend type %d",
+        backend_type_);
     backend_params_ptr_ = QnnBackendFactory().Create(
-        qnn_loaded_backend_, logger_.get(), qnn_context_blob_, backend_type_,
-        graph_name_, htp_options_);
+        qnn_loaded_backend_,
+        logger_.get(),
+        qnn_context_blob_,
+        backend_type_,
+        graph_name_,
+        htp_options_);
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
-        Internal, "Fail to configure Qnn backend");
+        Internal,
+        "Fail to configure Qnn backend");
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_device_ptr_->Configure() == Error::Ok,
-        Internal, "Fail to configure Qnn device");
+        Internal,
+        "Fail to configure Qnn device");
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_context_ptr_->Configure() == Error::Ok,
-        Internal, "Fail to configure Qnn context");
+        Internal,
+        "Fail to configure Qnn context");
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_graph_ptr_->Configure() == Error::Ok, Internal,
+        backend_params_ptr_->qnn_graph_ptr_->Configure() == Error::Ok,
+        Internal,
         "Fail to configure Qnn graph");
     backend_params_ptr_->backend_init_state_ =
         BackendInitializeState::INITIALIZED;
@@ -111,17 +121,19 @@ Error QnnManager::AllocateTensor() {
   return Error::Ok;
 }
 
-Error QnnManager::Execute(const std::vector<Qnn_Tensor_t>& input_tensor_structs,
-                          std::vector<Qnn_Tensor_t>& output_tensor_structs) {
+Error QnnManager::Execute(
+    const std::vector<Qnn_Tensor_t>& input_tensor_structs,
+    std::vector<Qnn_Tensor_t>& output_tensor_structs) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
 
   error = backend_params_ptr_->qnn_graph_ptr_->GraphExecute(
       input_tensor_structs, output_tensor_structs);
 
   if (error != QNN_SUCCESS) {
-    QNN_EXECUTORCH_LOG(kLogLevelError,
-                       "[Qnn ExecuTorch] qnn_graph_execute failed. Error %d",
-                       QNN_GET_ERROR_CODE(error));
+    QNN_EXECUTORCH_LOG(
+        kLogLevelError,
+        "[Qnn ExecuTorch] qnn_graph_execute failed. Error %d",
+        QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
 
@@ -129,15 +141,17 @@ Error QnnManager::Execute(const std::vector<Qnn_Tensor_t>& input_tensor_structs,
 }
 
 void QnnManager::Destroy() {
-  QNN_EXECUTORCH_LOG(kLogLevelInfo,
-                     "[Qnn ExecuTorch] Destroy Qnn backend parameters");
+  QNN_EXECUTORCH_LOG(
+      kLogLevelInfo, "[Qnn ExecuTorch] Destroy Qnn backend parameters");
   backend_params_ptr_.reset(new BackendConfigParameters());
   logger_.reset();
 
   qnn_loaded_backend_.TerminateAllBackends();
 }
 
-bool QnnManager::IsAvailable() { return true; }
+bool QnnManager::IsAvailable() {
+  return true;
+}
 
 bool QnnManager::IsNodeSupportedByBackend(
     std::vector<std::shared_ptr<OpWrapper>>& op_wrappers) {
@@ -148,10 +162,11 @@ bool QnnManager::IsNodeSupportedByBackend(
       // unused?
       // auto* p_tensor_param = dynamic_cast<TensorParamWrapper*>(param.get());
       if (param->PopulateQnnParam() != Error::Ok) {
-        QNN_EXECUTORCH_LOG(kLogLevelWarn,
-                           "[Qnn ExecuTorch] Qnn Backend op validation failed "
-                           "with PopulateQnnParam: %d",
-                           QNN_GET_ERROR_CODE(error));
+        QNN_EXECUTORCH_LOG(
+            kLogLevelWarn,
+            "[Qnn ExecuTorch] Qnn Backend op validation failed "
+            "with PopulateQnnParam: %d",
+            QNN_GET_ERROR_CODE(error));
         return false;
       }
     }
@@ -180,7 +195,8 @@ Error QnnManager::Compile(
       ET_CHECK_OR_RETURN_ERROR(
           backend_params_ptr_->qnn_graph_ptr_->EnsureTensorInQnnGraph(
               tensor_wrapper) == Error::Ok,
-          Internal, "Tensor name %s isn't added to Qnn Graph",
+          Internal,
+          "Tensor name %s isn't added to Qnn Graph",
           tensor_wrapper->GetName().c_str());
     }
 
@@ -188,7 +204,8 @@ Error QnnManager::Compile(
       ET_CHECK_OR_RETURN_ERROR(
           backend_params_ptr_->qnn_graph_ptr_->EnsureTensorInQnnGraph(
               tensor_wrapper) == Error::Ok,
-          Internal, "Tensor name %s isn't added to Qnn Graph",
+          Internal,
+          "Tensor name %s isn't added to Qnn Graph",
           tensor_wrapper->GetName().c_str());
     }
 
@@ -198,11 +215,14 @@ Error QnnManager::Compile(
         ET_CHECK_OR_RETURN_ERROR(
             backend_params_ptr_->qnn_graph_ptr_->EnsureTensorInQnnGraph(
                 p_tensor_param->GetTensorWrapper()) == Error::Ok,
-            Internal, "Param tensor name %s isn't added to Qnn Graph",
+            Internal,
+            "Param tensor name %s isn't added to Qnn Graph",
             p_tensor_param->GetName().c_str());
       }
-      ET_CHECK_OR_RETURN_ERROR(param->PopulateQnnParam() == Error::Ok, Internal,
-                               "Fail to configure Qnn backend");
+      ET_CHECK_OR_RETURN_ERROR(
+          param->PopulateQnnParam() == Error::Ok,
+          Internal,
+          "Fail to configure Qnn backend");
     }
 
     error = backend_params_ptr_->qnn_graph_ptr_->GraphAddNode(
@@ -228,17 +248,20 @@ Error QnnManager::Compile(
   ET_CHECK_OR_RETURN_ERROR(
       backend_params_ptr_->qnn_context_ptr_->GetContextBinary(
           qnn_executorch_context_binary) == Error::Ok,
-      Internal, "Fail to get context binary.");
+      Internal,
+      "Fail to get context binary.");
   return Error::Ok;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch
 
 QnnExecuTorchOptions QnnExecuTorchOptionsDefault() {
   QnnExecuTorchOptions options;
-  std::memset(&options, 0,
-              sizeof(QnnExecuTorchOptions));  // clean struct padding
+  std::memset(
+      &options,
+      0,
+      sizeof(QnnExecuTorchOptions)); // clean struct padding
   options = QNN_EXECUTORCH_OPTION_INIT;
   return options;
 }

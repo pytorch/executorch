@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 from typing import Dict
+
+import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import numpy as np
 import torch
 
@@ -12,12 +14,10 @@ from executorch.backends.qualcomm.builders.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
     OpGather,
+    QNN_OP_PACKAGE_NAME_QTI_AISW,
 )
 from executorch.backends.qualcomm.utils.utils import get_input_node
-
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 
 @register_node_visitor
@@ -62,7 +62,9 @@ class Embedding(NodeVisitor):
         gather_output_tensors = [output_tensor_wrapper]
 
         gather_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpGather.op_name,
+            node.name,
+            QNN_OP_PACKAGE_NAME_QTI_AISW,
+            OpGather.op_name,
         )
         gather_op.AddInputTensors(gather_input_tensors)
         gather_op.AddOutputTensors(gather_output_tensors)

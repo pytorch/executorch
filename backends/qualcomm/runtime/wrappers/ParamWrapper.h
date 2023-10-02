@@ -30,9 +30,13 @@ class ParamWrapper {
 
   // Return value to internal Qnn param struct that will be
   // populated with the parameter information
-  Qnn_Param_t GetQnnParam() { return qnn_param_; }
+  Qnn_Param_t GetQnnParam() {
+    return qnn_param_;
+  }
 
-  const std::string& GetName() const { return name_; }
+  const std::string& GetName() const {
+    return name_;
+  }
 
  protected:
   explicit ParamWrapper(Qnn_ParamType_t type, std::string name)
@@ -45,6 +49,6 @@ class ParamWrapper {
  private:
   std::string name_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

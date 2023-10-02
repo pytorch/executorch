@@ -18,7 +18,7 @@ namespace executor {
 namespace qnn {
 PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
   // TODO: Add related documents for configurations listed below
-  
+
   m.def("QnnExecuTorchOptionsDefault", &QnnExecuTorchOptionsDefault);
   py::enum_<QnnExecuTorchBackendType>(m, "QnnExecuTorchBackendType")
       .value("kUndefinedBackend", QnnExecuTorchBackendType::kUndefinedBackend)
@@ -26,7 +26,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .value("kHtpBackend", QnnExecuTorchBackendType::kHtpBackend)
       .value("kDspBackend", QnnExecuTorchBackendType::kDspBackend)
       .export_values();
-  
+
   py::enum_<QnnExecuTorchLogLevel>(m, "QnnExecuTorchLogLevel")
       .value("kLogOff", QnnExecuTorchLogLevel::kLogOff)
       .value("kLogLevelError", QnnExecuTorchLogLevel::kLogLevelError)
@@ -52,37 +52,41 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .value("kHtpUnsignedPd", QnnExecuTorchHtpPdSession::kHtpUnsignedPd)
       .value("kHtpSignedPd", QnnExecuTorchHtpPdSession::kHtpSignedPd)
       .export_values();
-  
-  py::enum_<QnnExecuTorchHtpPerformanceMode>(m,
-                                             "QnnExecuTorchHtpPerformanceMode")
+
+  py::enum_<QnnExecuTorchHtpPerformanceMode>(
+      m, "QnnExecuTorchHtpPerformanceMode")
       .value("kHtpDefault", QnnExecuTorchHtpPerformanceMode::kHtpDefault)
-      .value("kHtpSustainedHighPerformance",
-             QnnExecuTorchHtpPerformanceMode::kHtpSustainedHighPerformance)
+      .value(
+          "kHtpSustainedHighPerformance",
+          QnnExecuTorchHtpPerformanceMode::kHtpSustainedHighPerformance)
       .value("kHtpBurst", QnnExecuTorchHtpPerformanceMode::kHtpBurst)
-      .value("kHtpHighPerformance",
-             QnnExecuTorchHtpPerformanceMode::kHtpHighPerformance)
+      .value(
+          "kHtpHighPerformance",
+          QnnExecuTorchHtpPerformanceMode::kHtpHighPerformance)
       .value("kHtpPowerSaver", QnnExecuTorchHtpPerformanceMode::kHtpPowerSaver)
-      .value("kHtpLowPowerSaver",
-             QnnExecuTorchHtpPerformanceMode::kHtpLowPowerSaver)
-      .value("kHtpHighPowerSaver",
-             QnnExecuTorchHtpPerformanceMode::kHtpHighPowerSaver)
-      .value("kHtpLowBalanced",
-             QnnExecuTorchHtpPerformanceMode::kHtpLowBalanced)
+      .value(
+          "kHtpLowPowerSaver",
+          QnnExecuTorchHtpPerformanceMode::kHtpLowPowerSaver)
+      .value(
+          "kHtpHighPowerSaver",
+          QnnExecuTorchHtpPerformanceMode::kHtpHighPowerSaver)
+      .value(
+          "kHtpLowBalanced", QnnExecuTorchHtpPerformanceMode::kHtpLowBalanced)
       .value("kHtpBalanced", QnnExecuTorchHtpPerformanceMode::kHtpBalanced)
       .export_values();
 
-  py::class_<QnnExecuTorchHtpBackendOptions>(m,
-                                             "QnnExecuTorchHtpBackendOptions")
+  py::class_<QnnExecuTorchHtpBackendOptions>(
+      m, "QnnExecuTorchHtpBackendOptions")
       .def(py::init<>())
       .def_readwrite("soc_model", &QnnExecuTorchHtpBackendOptions::soc_model)
       .def_readwrite("precision", &QnnExecuTorchHtpBackendOptions::precision)
-      .def_readwrite("performance_mode",
-                     &QnnExecuTorchHtpBackendOptions::performance_mode)
+      .def_readwrite(
+          "performance_mode", &QnnExecuTorchHtpBackendOptions::performance_mode)
       .def_readwrite("pd_session", &QnnExecuTorchHtpBackendOptions::pd_session)
-      .def_readwrite("use_conv_hmx",
-                     &QnnExecuTorchHtpBackendOptions::use_conv_hmx)
-      .def_readwrite("use_fold_relu",
-                     &QnnExecuTorchHtpBackendOptions::use_fold_relu);
+      .def_readwrite(
+          "use_conv_hmx", &QnnExecuTorchHtpBackendOptions::use_conv_hmx)
+      .def_readwrite(
+          "use_fold_relu", &QnnExecuTorchHtpBackendOptions::use_fold_relu);
 
   py::class_<QnnExecuTorchContextBinary>(m, "QnnExecuTorchContextBinary")
       .def(py::init<>());
@@ -94,18 +98,18 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def_readwrite("log_level", &QnnExecuTorchOptions::log_level)
       .def_property(
           "library_path",
-          [](const QnnExecuTorchOptions &self) -> py::str {
+          [](const QnnExecuTorchOptions& self) -> py::str {
             return self.library_path;
           },
-          [](QnnExecuTorchOptions &self, const std::string &new_library_path) {
+          [](QnnExecuTorchOptions& self, const std::string& new_library_path) {
             self.library_path = strdup(new_library_path.data());
           })
       .def_property(
           "graph_name",
-          [](const QnnExecuTorchOptions &self) -> py::str {
+          [](const QnnExecuTorchOptions& self) -> py::str {
             return self.graph_name;
           },
-          [](QnnExecuTorchOptions &self, const std::string &new_graph_name) {
+          [](QnnExecuTorchOptions& self, const std::string& new_graph_name) {
             self.graph_name = strdup(new_graph_name.data());
           });
 
@@ -115,28 +119,29 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .export_values();
 
   py::class_<QnnManager>(m, "QnnManager")
-      .def(py::init<const QnnExecuTorchOptions *>())
+      .def(py::init<const QnnExecuTorchOptions*>())
       .def("Init", &QnnManager::Init)
       .def("IsNodeSupportedByBackend", &QnnManager::IsNodeSupportedByBackend)
-      .def("Compile",
-           [](QnnManager &self,
-              std::vector<std::shared_ptr<OpWrapper>> &op_wrappers) {
-             QnnExecuTorchContextBinary context_binary;
-             if (self.Compile(op_wrappers, context_binary) != Error::Ok) {
-               return py::array_t<char>(0);
-             }
-             // allocate py::array (to pass the result of the C++ function to
-             // Python)
-             auto result = py::array_t<char>(context_binary.nbytes);
-             auto result_buffer = result.request();
-             char *result_ptr = (char *)result_buffer.ptr;
-             std::memcpy(result_ptr, context_binary.buffer,
-                         context_binary.nbytes);
-             return result;
-           })
+      .def(
+          "Compile",
+          [](QnnManager& self,
+             std::vector<std::shared_ptr<OpWrapper>>& op_wrappers) {
+            QnnExecuTorchContextBinary context_binary;
+            if (self.Compile(op_wrappers, context_binary) != Error::Ok) {
+              return py::array_t<char>(0);
+            }
+            // allocate py::array (to pass the result of the C++ function to
+            // Python)
+            auto result = py::array_t<char>(context_binary.nbytes);
+            auto result_buffer = result.request();
+            char* result_ptr = (char*)result_buffer.ptr;
+            std::memcpy(
+                result_ptr, context_binary.buffer, context_binary.nbytes);
+            return result;
+          })
       .def("Destroy", &QnnManager::Destroy)
       .def("IsAvailable", &QnnManager::IsAvailable);
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

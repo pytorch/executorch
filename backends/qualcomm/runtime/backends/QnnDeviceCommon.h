@@ -25,7 +25,9 @@ class QnnDevice {
 
   virtual ~QnnDevice();
 
-  Qnn_DeviceHandle_t GetHandle() { return handle_; }
+  Qnn_DeviceHandle_t GetHandle() {
+    return handle_;
+  }
 
   Error Configure();
 
@@ -34,13 +36,15 @@ class QnnDevice {
     return Error::Ok;
   };
 
-  virtual Error AfterCreateDevice() { return Error::Ok; };
+  virtual Error AfterCreateDevice() {
+    return Error::Ok;
+  };
   const QnnImplementation& implementation_;
 
  private:
   Qnn_DeviceHandle_t handle_;
   QnnLogger* logger_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

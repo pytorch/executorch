@@ -6,8 +6,8 @@
 from typing import Dict
 
 import torch
-from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class InsertIOQDQ(ExportPass):
@@ -19,14 +19,11 @@ class InsertIOQDQ(ExportPass):
     """
 
     q_dq_map = {
-        #per tensor
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: \
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor: \
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-        #per channel
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default: \
-            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        # per tensor
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor: exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+        # per channel
+        exir_ops.edge.quantized_decomposed.quantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     }
 
     def __init__(self):
@@ -35,7 +32,7 @@ class InsertIOQDQ(ExportPass):
     def _ceate_args(self, target: torch.fx.node.Target, quant_attrs: Dict):
         ret = []
 
-        arg_schemas = [arg for arg in target._schema.arguments][1:]
+        arg_schemas = list(target._schema.arguments)[1:]
         for arg_schema in arg_schemas:
             name = arg_schema.name
             value = quant_attrs[name]

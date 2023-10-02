@@ -3,19 +3,19 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Dict, List, cast
+from typing import cast, Dict, List
+
+import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+import numpy as np
 import torch
 from executorch.backends.qualcomm.builders.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
 from executorch.backends.qualcomm.utils.qnn_constants import (
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
     OpConcat,
+    QNN_OP_PACKAGE_NAME_QTI_AISW,
 )
-import numpy as np
-
-import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 
 @register_node_visitor
@@ -45,7 +45,9 @@ class Cat(NodeVisitor):
             )
 
         if len(list_of_tensors) != len(list_of_tensor_wrappers):
-            print("The number or input tensors is not equal to the number of input tensor wrappers.")
+            print(
+                "The number or input tensors is not equal to the number of input tensor wrappers."
+            )
             return
 
         output_tensor, _ = self.get_tensor_shape(node, node)
@@ -61,7 +63,9 @@ class Cat(NodeVisitor):
             axis = node.meta["axis_order"].index(axis)
 
         concat_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpConcat.op_name,
+            node.name,
+            QNN_OP_PACKAGE_NAME_QTI_AISW,
+            OpConcat.op_name,
         )
         concat_op.AddInputTensors(list_of_tensor_wrappers)
         concat_op.AddOutputTensors([output_tensor_wrapper])

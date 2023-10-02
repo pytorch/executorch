@@ -10,9 +10,11 @@ namespace torch {
 namespace executor {
 namespace qnn {
 std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
-    const QnnImplementation& implementation, QnnLogger* logger,
+    const QnnImplementation& implementation,
+    QnnLogger* logger,
     const QnnExecuTorchContextBinary& qnn_context_blob,
-    const QnnExecuTorchBackendType& backend_type, const std::string& graph_name,
+    const QnnExecuTorchBackendType& backend_type,
+    const std::string& graph_name,
     const QnnExecuTorchHtpBackendOptions& htp_options) {
   auto backend_params = std::make_unique<BackendConfigParameters>();
   switch (backend_type) {
@@ -25,11 +27,16 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
           std::make_unique<HtpDevice>(implementation, logger, htp_options);
 
       backend_params->qnn_context_ptr_ = std::make_unique<HtpContext>(
-          implementation, backend_params->qnn_backend_ptr_.get(),
-          backend_params->qnn_device_ptr_.get(), qnn_context_blob, htp_options);
+          implementation,
+          backend_params->qnn_backend_ptr_.get(),
+          backend_params->qnn_device_ptr_.get(),
+          qnn_context_blob,
+          htp_options);
 
       backend_params->qnn_graph_ptr_ = std::make_unique<HtpGraph>(
-          implementation, backend_params->qnn_context_ptr_.get(), graph_name,
+          implementation,
+          backend_params->qnn_context_ptr_.get(),
+          graph_name,
           htp_options);
       backend_params->backend_init_state_ = BackendInitializeState::INITIALIZED;
       return backend_params;
@@ -44,6 +51,6 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
   // should not reach here
   return nullptr;
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

@@ -5,25 +5,24 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
-import numpy as np
 import os
 import re
-import torch
+
+import numpy as np
 import piq
+import torch
+from executorch.examples.backend.qualcomm.utils import (
+    build_executorch_binary,
+    make_output_dir,
+    SimpleADB,
+)
+from executorch.examples.models.edsr import EdsrModel
 
 from PIL import Image
 from torch.utils.data import Dataset
-from executorch.examples.backend.qualcomm.utils import (
-    SimpleADB,
-    build_executorch_binary,
-    make_output_dir,
-)
-from executorch.examples.models.edsr import EdsrModel
-from torchvision.transforms.functional import (
-    to_pil_image,
-    to_tensor
-)
 from torchsr.datasets import B100
+from torchvision.transforms.functional import to_pil_image, to_tensor
+
 
 class SrDataset(Dataset):
     def __init__(self, hr_dir: str, lr_dir: str):
@@ -37,8 +36,11 @@ class SrDataset(Dataset):
         for file in sorted(os.listdir(lr_dir)):
             self.lr.append(self._resize_img(os.path.join(lr_dir, file), 1))
 
-        if len(self.hr) !=  len(self.lr):
-            assert False, "The number of high resolution pics is not equal to low resolution pics"
+        if len(self.hr) != len(self.lr):
+            raise AssertionError(
+                "The number of high resolution pics is not equal to low "
+                "resolution pics"
+            )
 
     def __getitem__(self, idx: int):
         return self.hr[idx], self.lr[idx]
@@ -56,7 +58,10 @@ class SrDataset(Dataset):
             input_list += f"input_{i}_0.raw\n"
         return input_list
 
-def get_b100(dataset_dir: str,):
+
+def get_b100(
+    dataset_dir: str,
+):
     hr_dir = f"{dataset_dir}/sr_bm_dataset/SRBenchmarks/benchmark/B100/HR"
     lr_dir = f"{dataset_dir}/sr_bm_dataset/SRBenchmarks/benchmark/B100/LR_bicubic/X2"
 
@@ -65,9 +70,12 @@ def get_b100(dataset_dir: str,):
 
     return SrDataset(hr_dir, lr_dir)
 
+
 def get_dataset(hr_dir: str, lr_dir: str, default_dataset: str, dataset_dir: str):
     if not (lr_dir and hr_dir) and not default_dataset:
-        raise RuntimeError("Nither custom dataset is provided nor using default dataset.")
+        raise RuntimeError(
+            "Nither custom dataset is provided nor using default dataset."
+        )
 
     if (lr_dir and hr_dir) and default_dataset:
         raise RuntimeError("Either use custom dataset, or use default dataset.")
@@ -77,6 +85,7 @@ def get_dataset(hr_dir: str, lr_dir: str, default_dataset: str, dataset_dir: str
 
     return SrDataset(hr_dir, lr_dir)
 
+
 def annotate_forward(gm: torch.fx.GraphModule) -> None:
     """
     This function is specific for EDSR. It constructs a nn module, which is
@@ -84,14 +93,15 @@ def annotate_forward(gm: torch.fx.GraphModule) -> None:
     The source_fn of the rewritten nn module turns out to be a string "forward"
     """
     import itertools
+
     from executorch.backends.qualcomm.qnn_quantizer import (
         _is_annotated,
         get_ptq_per_channel_weight_config,
-        QUANT_ANNOTATION_KEY
+        QUANT_ANNOTATION_KEY,
     )
-    from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
-    from torch.fx import Node
     from torch.ao.quantization.quantize_pt2e import QuantizationAnnotation
+    from torch.fx import Node
+    from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
     conv_partitions = get_source_partitions(gm.graph, ["forward"])
     conv_partitions = list(itertools.chain(*conv_partitions.values()))
@@ -132,6 +142,8 @@ def annotate_forward(gm: torch.fx.GraphModule) -> None:
             output_qspec=quantization_config.output_activation,
             _annotated=True,
         )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -198,8 +210,10 @@ if __name__ == "__main__":
     print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
 
     if "LD_LIBRARY_PATH" not in os.environ:
-        print("[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
-              "not found happen, please follow setup.md to set environment.")
+        print(
+            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
+            "not found happen, please follow setup.md to set environment."
+        )
     else:
         print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
 
@@ -218,11 +232,11 @@ if __name__ == "__main__":
 
     build_executorch_binary(
         instance.get_eager_model().eval(),
-        (inputs[0], ),
+        (inputs[0],),
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,
-        custom_annotations=[annotate_forward]
+        custom_annotations=[annotate_forward],
     )
     # setup required paths accordingly
     # qnn_sdk       : QNN SDK path setup in environment variable
@@ -249,10 +263,13 @@ if __name__ == "__main__":
     make_output_dir(output_pic_folder)
 
     output_raws = []
+
     def post_process():
         cnt = 0
         output_shape = tuple(targets[0].size())
-        for f in sorted(os.listdir(output_data_folder), key=lambda f: int(f.split("_")[1])):
+        for f in sorted(
+            os.listdir(output_data_folder), key=lambda f: int(f.split("_")[1])
+        ):
             filename = os.path.join(output_data_folder, f)
             if re.match(r"^output_[0-9]+_[1-9].raw$", f):
                 os.remove(filename)
@@ -260,7 +277,9 @@ if __name__ == "__main__":
                 output = np.fromfile(filename, dtype=np.float32)
                 output = torch.tensor(output).reshape(output_shape).clamp(0, 1)
                 output_raws.append(output)
-                to_pil_image(output.squeeze(0)).save(os.path.join(output_pic_folder, str(cnt) + ".png"))
+                to_pil_image(output.squeeze(0)).save(
+                    os.path.join(output_pic_folder, str(cnt) + ".png")
+                )
                 cnt += 1
 
     adb.pull(output_path=args.artifact, callback=post_process)

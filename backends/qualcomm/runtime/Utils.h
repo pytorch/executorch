@@ -19,10 +19,16 @@ namespace qnn {
 class HtpInfo {
  public:
   HtpInfo()
-      : HtpInfo(QcomChipset::UNKNOWN_SM,
-                QnnHtpDevice_Arch_t::QNN_HTP_DEVICE_ARCH_NONE, "", 0){};
-  HtpInfo(QcomChipset socModel, QnnHtpDevice_Arch_t htpArch, std::string socName,
-          size_t vtcmSizeinMB)
+      : HtpInfo(
+            QcomChipset::UNKNOWN_SM,
+            QnnHtpDevice_Arch_t::QNN_HTP_DEVICE_ARCH_NONE,
+            "",
+            0){};
+  HtpInfo(
+      QcomChipset socModel,
+      QnnHtpDevice_Arch_t htpArch,
+      std::string socName,
+      size_t vtcmSizeinMB)
       : m_socModel(socModel),
         m_htpArch(htpArch),
         m_socName(std::move(socName)),
@@ -34,6 +40,6 @@ class HtpInfo {
 };
 
 const std::map<QcomChipset, HtpInfo>& PopulateSocInfoTable();
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

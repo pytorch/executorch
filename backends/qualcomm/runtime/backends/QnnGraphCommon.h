@@ -21,8 +21,10 @@ namespace qnn {
 // qnn graph
 class QnnGraph {
  public:
-  explicit QnnGraph(const QnnImplementation& implementation,
-                    QnnContext* context, const std::string& graph_name)
+  explicit QnnGraph(
+      const QnnImplementation& implementation,
+      QnnContext* context,
+      const std::string& graph_name)
       : handle_(nullptr),
         implementation_(implementation),
         context_(context),
@@ -36,14 +38,18 @@ class QnnGraph {
       const std::vector<Qnn_Tensor_t>& input_tensor_structs,
       std::vector<Qnn_Tensor_t>& output_tensor_structs) {
     return implementation_.GetQnnInterface().qnn_graph_execute(
-        handle_, input_tensor_structs.data(), input_tensor_structs.size(),
-        output_tensor_structs.data(), output_tensor_structs.size(),
-        /*profile=*/nullptr, /*signalHandle=*/nullptr);
+        handle_,
+        input_tensor_structs.data(),
+        input_tensor_structs.size(),
+        output_tensor_structs.data(),
+        output_tensor_structs.size(),
+        /*profile=*/nullptr,
+        /*signalHandle=*/nullptr);
   };
 
   Qnn_ErrorHandle_t GraphAddNode(const Qnn_OpConfig_t& op_config) {
-    return implementation_.GetQnnInterface().qnn_graph_add_node(handle_,
-                                                                op_config);
+    return implementation_.GetQnnInterface().qnn_graph_add_node(
+        handle_, op_config);
   };
   Error EnsureTensorInQnnGraph(
       const std::shared_ptr<TensorWrapper>& tensor_wrapper);
@@ -53,7 +59,9 @@ class QnnGraph {
         handle_, nullptr /* profile_handle */, nullptr /* signal_handle */);
   };
 
-  Qnn_GraphHandle_t GetHandle() { return handle_; }
+  Qnn_GraphHandle_t GetHandle() {
+    return handle_;
+  }
 
  protected:
   virtual Error MakeConfig(std::vector<const QnnGraph_Config_t*>& config) {
@@ -66,6 +74,6 @@ class QnnGraph {
   QnnContext* context_;
   std::string graph_name_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

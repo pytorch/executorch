@@ -37,11 +37,17 @@ class QnnBackendCache {
     return qnn_context_blob_;
   };
 
-  QnnBackendCache::CacheState GetCacheState() { return state_; };
+  QnnBackendCache::CacheState GetCacheState() {
+    return state_;
+  };
 
-  void InvalidateCache() { state_ = INVALID; }
+  void InvalidateCache() {
+    state_ = INVALID;
+  }
 
-  std::string GetGraphName() { return graph_name_; }
+  std::string GetGraphName() {
+    return graph_name_;
+  }
 
  private:
   Error GetQnnGraphInfoFromBinary();
@@ -55,6 +61,6 @@ class QnnBackendCache {
   std::vector<Qnn_Tensor_t> input_tensor_structs_;
   std::vector<Qnn_Tensor_t> output_tensor_structs_;
 };
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch
