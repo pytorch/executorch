@@ -6,7 +6,8 @@
  */
 
 /*
- * Arm backend for Ethos-U baremetal driver stack relies on ethos-u-core-driver
+ * Arm backend for Ethos-U baremetal driver stack, this relies on the
+ * ethos-u-core-driver for hardware interaction.
  */
 
 #include <memory>
@@ -21,21 +22,19 @@
 #include "command_stream.hpp"
 using namespace EthosU::CommandStream;
 
-// Required byte alignment of all input pointers
-#define ETHOS_U_ALIGN 0xF
-char *ethos_align( char *ptr )
-{
-	return (char*)((uintptr_t)~ETHOS_U_ALIGN & (uintptr_t)(ptr + (ETHOS_U_ALIGN-1)));
-}
-
 namespace torch {
 namespace executor {
+
+// TODO we should be in 0x31, not this lower 1MB sRAM
+// SRAM (rwx) : ORIGIN = 0x31000000, LENGTH = 0x00200000
+#define CS300_SRAM_LOW ((void*)0x11000000)
+#define CS300_SRAM_HIGH ((void*)0x110FFFFF)
 
 class ArmBackend final : public PyTorchBackendInterface {
 
 public:
 	ArmBackend() {
-		printf("Constructing ARM Backend\n");
+		ET_LOG(Debug, "Constructing ARM Backend");
 	}
 	
 	~ArmBackend() = default;
@@ -49,19 +48,37 @@ public:
 		FreeableBuffer* processed,
 		ArrayRef<CompileSpec> compile_specs) const override {
 
-		printf("ArmBackend::init 0x%X\n", processed->data());
+        ET_LOG(Info, "ArmBackend::init %p", processed->data() );
 
 		char *data = (char*)processed->data();
 		size_t size = processed->size();
-		
-		//the model should have been placed in sram with
-		//__attribute__((section(".sram.data"), aligned(16)))
-		void *aligned = ethos_align(data);
-		if( data != ethos_align(data)) return Error::InvalidProgram;
+		char *foot = data + size - 16;
 
-		// TODO: Verify address range is accessible to Ethos-U
-		// current expectation is the program is in SRAM
-		if(0) return Error::InvalidProgram;
+		// Header and footer both 16 bit aligned suggest valid structure and we
+		// wont walk off the end of the chunks and segfault
+		if( !((int)data == next_mul_16((int)data)) )
+		{
+			ET_LOG(Error, "ArmBackend::init header unaligned");
+			return Error::InvalidProgram;
+		}
+		if( !((int)foot == next_mul_16((int)foot)) )
+		{
+			ET_LOG(Error, "ArmBackend::init header unaligned");
+			return Error::InvalidProgram;
+		}
+		if( !(0 == strncmp( data, "vela_bin_stream", 15 )) )
+		{
+			ET_LOG(Error, "ArmBackend::init header unaligned");
+			return Error::InvalidProgram;
+		}
+		if( !(0 == strncmp( foot, "vela_end_stream", 15 )) )
+		{
+			ET_LOG(Error, "ArmBackend::init header unaligned");
+			return Error::InvalidProgram;
+		}
+		// Verify address range is accessible current expectation is the program
+		// is wholly stored in SRAM
+		if( !(data > CS300_SRAM_LOW || foot < CS300_SRAM_HIGH) );
 		
 		// Return the same buffer we were passed - this data will be
 		// executed directly
@@ -75,7 +92,7 @@ public:
 
 		FreeableBuffer* processed = (FreeableBuffer*)input_handle;
 
-		printf("ArmBackend::execute 0x%X\n", processed->data());
+		ET_LOG(Info, "ArmBackend::execute %p", processed->data() );
 
 		vela_handles handles = { 0, 0, 0, 0, 0, 0 };
 
@@ -83,16 +100,20 @@ public:
 		char *data = (char*)processed->data();
 
 		// Read key sections from the vela_bin_stream
-		this->vela_read( data, &handles );
+		if( !this->vela_read( data, &handles, processed->size() ) )
+		{
+			ET_LOG(Error, "ArmBackend::vela_read: error, invalid binary layout" );
+			return Error::InvalidProgram;
+		}
 
-		printf("Running program data:\n  cmd %p %d\n  weight %p %d\n  scratch %p %d\n",
-			   handles.cmd_data, handles.cmd_data_length,
-			   handles.weight_data, handles.weight_data_length,
-			   handles.scratch_data, handles.scratch_data_length );
+		ET_LOG(Debug, "ArmBackend::execute: Running program data:\n  cmd %p %d\n  weight %p %d\n  scratch %p %d\n",
+			   handles.cmd_data, handles.cmd_data_size,
+			   handles.weight_data, handles.weight_data_size,
+			   handles.scratch_data, handles.scratch_data_size );
 
 		// TMP emit scratch
 		printf("Scratch before:\n");
-		for( int i=0; i<handles.scratch_data_length; i++ )
+		for( int i=0; i<handles.scratch_data_size; i++ )
 		{
 			if( i%4 == 0 ) ((char*)handles.scratch_data)[i] = 1;
 			printf("%02x ", ((char*)handles.scratch_data)[i]);
@@ -102,10 +123,10 @@ public:
 		
 		// Invoke driver using the above pointers
 		CommandStream cs(
-			DataPointer(handles.cmd_data, handles.cmd_data_length),
+			DataPointer(handles.cmd_data, handles.cmd_data_size),
 			BasePointers({
-					DataPointer(handles.weight_data, handles.weight_data_length),
-					DataPointer(handles.scratch_data, handles.scratch_data_length)
+					DataPointer(handles.weight_data, handles.weight_data_size),
+					DataPointer(handles.scratch_data, handles.scratch_data_size)
 				}),
 			PmuEvents({ETHOSU_PMU_CYCLE, ETHOSU_PMU_NPU_IDLE, ETHOSU_PMU_NPU_ACTIVE})
 			);
@@ -124,7 +145,7 @@ public:
 
         // TMP emit scratch
         printf("Scratch after:\n");
-        for( int i=0; i<handles.scratch_data_length; i++ )
+        for( int i=0; i<handles.scratch_data_size; i++ )
         {
             printf("%02x ", ((char*)handles.scratch_data)[i]);
             if( !((i+1)%4) ) printf("\n");
@@ -140,53 +161,59 @@ public:
 
 private:
 	typedef struct {
-		const char *cmd_data; int cmd_data_length;
-		const char *weight_data; int weight_data_length;
-		const char *scratch_data; int scratch_data_length;
+		const char *cmd_data; int cmd_data_size;
+		const char *weight_data; int weight_data_size;
+		const char *scratch_data; int scratch_data_size;
 	} vela_handles;
 
-	int vela_read(char* data, vela_handles *h ) const {
-		if( strncmp( data, "vela_bin_stream", 15 ) ) return 0;
+	typedef struct {
+		char name[16];
+		int size; char _pad[12];
+		char data[];
+	} vela_bin_block;
+
+	static int next_mul_16( int n ) {
+		return ((n-1)|15)+1;
+	}
+	
+	int vela_read(char* data, vela_handles *h, int size ) const {
+
+		// Read header string
+		if( strncmp( data, "vela_bin_stream", 15 ) )
+		{
+			return 0;
+		}
 		data += 16;
+
+		// Expect one or more 'vela_bin_block's
 		while( 1 )
 		{
-			if( !strncmp( data, "vela_end_stream", 15 ) )
-			{
-				printf("footer found!\n");
-				return 1;
-			}
-			printf("reading block '%s':\n", data);
-			char *block_name = data;
-			data += 16;
-			int block_length = ((int*)data)[0];
-			int block_length_padded = ((block_length-1)|15)+1;
-			printf("  a length %d\n", block_length );
-			printf("  a padded length %d\n" );
-			data += 16;
-			char *block_data = data;
-			data += block_length_padded;
+			vela_bin_block *b = (vela_bin_block*)data;
+			data += 16 + 16 + next_mul_16(b->size);
 
-			if( !strncmp( block_name, "cmd_data", strlen("cmd_data")) )
+			// Exit with success on finding end of stream
+			if( !strncmp( b->name, "vela_end_stream", 15 ) ) return 1;
+
+			if( !strncmp( b->name, "cmd_data", strlen("cmd_data")) )
 			{
-				printf("Capturing cmd_data %p %c%c%c%c\n", block_data,
-					   block_data[0], block_data[1], block_data[2], block_data[3]);
-				h->cmd_data = block_data;
-				h->cmd_data_length = block_length;
+				// This magic header confirms a valid command stream in binary
+				if( strncmp( b->data, "COP1", 4 ) ) return 0;
+				h->cmd_data = b->data;
+				h->cmd_data_size = b->size;
 			}
-			if( !strncmp( block_name, "weight_data", strlen("weight_data")) )
+			if( !strncmp( b->name, "weight_data", strlen("weight_data")) )
 			{
-				printf("Capturing weight_data\n");
-				h->weight_data = block_data;
-				h->weight_data_length = block_length;
+				h->weight_data = b->data;;
+				h->weight_data_size = b->size;
 			}
-			if( !strncmp( block_name, "scratch_data", strlen("scratch_data")) )
+			if( !strncmp( b->name, "scratch_data", strlen("scratch_data")) )
 			{
-				printf("Capturing scratch_data\n");
-				h->scratch_data = block_data;
-				h->scratch_data_length = block_length;
+				h->scratch_data = b->data;
+				h->scratch_data_size = b->size;
 			}
 		}
 	}
+
 };
 
 	auto backend = ArmBackend();
