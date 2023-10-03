@@ -7,7 +7,7 @@
 import itertools
 import operator
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
 import torch.nn.functional as F
@@ -123,12 +123,14 @@ def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
 def get_default_qnn_ptq_config(
     enable_per_channel_conv_quant=False,
 ) -> Tuple[QuantizationConfig, QnnQuantizerConfig]:
+    extra_args: Dict[str, Any] = {"eps": 2**-12}
+
     act_quantization_spec = QuantizationSpec(
         dtype=torch.uint8,
         quant_min=0,
         quant_max=255,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=HistogramObserver.with_args(),
+        observer_or_fake_quant_ctr=HistogramObserver.with_args(**extra_args),
     )
 
     weight_quantization_spec = QuantizationSpec(
@@ -137,7 +139,7 @@ def get_default_qnn_ptq_config(
         quant_max=127,
         qscheme=torch.per_tensor_symmetric,
         ch_axis=0,
-        observer_or_fake_quant_ctr=MinMaxObserver.with_args(),
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
     )
 
     bias_quantization_spec = QuantizationSpec(
@@ -145,7 +147,7 @@ def get_default_qnn_ptq_config(
         quant_min=torch.iinfo(torch.int32).min,
         quant_max=torch.iinfo(torch.int32).max,
         qscheme=torch.per_tensor_symmetric,
-        observer_or_fake_quant_ctr=MinMaxObserver.with_args(),
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
     )
 
     quantization_config = QuantizationConfig(
@@ -163,12 +165,14 @@ def get_default_qnn_ptq_config(
 
 
 def get_ptq_per_channel_weight_config() -> QuantizationConfig:
+    extra_args: Dict[str, Any] = {"eps": 2**-12}
+
     act_quantization_spec = QuantizationSpec(
         dtype=torch.uint8,
         quant_min=0,
         quant_max=255,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=HistogramObserver.with_args(),
+        observer_or_fake_quant_ctr=HistogramObserver.with_args(**extra_args),
     )
 
     weight_quantization_spec = QuantizationSpec(
@@ -177,7 +181,7 @@ def get_ptq_per_channel_weight_config() -> QuantizationConfig:
         quant_max=127,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
-        observer_or_fake_quant_ctr=PerChannelMinMaxObserver.with_args(),
+        observer_or_fake_quant_ctr=PerChannelMinMaxObserver.with_args(**extra_args),
     )
 
     bias_quantization_spec = _derived_bias_quant_spec
