@@ -12,6 +12,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/util/util.h>
 #include <stdio.h>
 
 using namespace torch::executor;
@@ -64,13 +65,7 @@ int main(int argc, char** argv) {
 
   // Prepare for inputs
   // It assumes the input is one tensor.
-  float data[] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
-  Tensor::SizesType sizes[] = {6};
-  Tensor::DimOrderType dim_order[] = {0};
-  TensorImpl impl(ScalarType::Float, 1, sizes, data, dim_order);
-  Tensor t(&impl);
-  Error set_input_error = method->set_input(t, 0);
-  ET_CHECK(set_input_error == Error::Ok);
+  auto inputs = torch::executor::util::PrepareInputTensors(*method);
 
   ET_LOG(Info, "Inputs prepared.");
 
@@ -95,6 +90,7 @@ int main(int argc, char** argv) {
       ET_LOG(Info, "%f", data_output[j]);
     }
   }
+  torch::executor::util::FreeInputs(inputs);
   prof_result_t prof_result;
   EXECUTORCH_DUMP_PROFILE_RESULTS(&prof_result);
   if (prof_result.num_bytes != 0) {
