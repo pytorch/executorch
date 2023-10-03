@@ -1100,6 +1100,17 @@ Error Method::execute() {
   return experimental_reset_execution();
 }
 
+MethodMeta Method::method_meta() const {
+  auto name = serialization_plan_->name()->c_str();
+  auto method_meta = program_->method_meta(name);
+  ET_CHECK_MSG(
+      method_meta.ok(),
+      "Internal error: method_meta(%s) returned 0x%" PRIx32,
+      name,
+      static_cast<uint32_t>(method_meta.error()));
+  return method_meta.get();
+}
+
 size_t Method::values_size() const {
   return n_value_;
 }
