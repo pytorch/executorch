@@ -364,7 +364,7 @@ class Inspector:
     APIs for examining model architecture and performance stats.
 
     Public Attributes:
-        event_blocks: List["EventBlocks"]. Structured data accessible through Inspector for analysis.
+        event_blocks: List["EventBlocks"]. Structured data from ETDump (correlated with ETRecord if provided).
 
     Private Attributes:
         _etrecord: Optional[ETRecord]. File under etrecord_path deserialized into an object.
@@ -460,12 +460,6 @@ class Inspector:
                         total += event.perf_data.avg
                         break
         return total
-
-    def get_event_blocks(self) -> List[EventBlock]:
-        """
-        Returns EventBlocks containing contents from ETDump (correlated to ETRecord if provided)
-        """
-        return self.event_blocks
 
     def get_op_list(
         self, event_block: str, show_delegated_ops: Optional[bool] = True
