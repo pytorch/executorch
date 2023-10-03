@@ -47,6 +47,7 @@ include(ExternalProject)
 set(_program_schema__include_dir "${CMAKE_BINARY_DIR}/sdk/include")
 
 # Add the host project
+# lint_cmake: -readability/wonkycase
 ExternalProject_Add(
   flatcc_project
   PREFIX ${CMAKE_BINARY_DIR}/_host_build
