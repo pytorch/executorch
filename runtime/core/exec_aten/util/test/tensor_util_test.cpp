@@ -543,3 +543,11 @@ TEST_F(TensorUtilTest, TensorIsContiguous) {
   EXPECT_TRUE(tensor_is_contiguous(c));
   EXPECT_TRUE(tensor_is_contiguous(d));
 }
+
+TEST_F(TensorUtilTest, ResizeZeroDimTensor) {
+  using namespace torch::executor;
+  Tensor a = tf_float_.ones({});
+
+  EXPECT_EQ(resize_tensor(a, {}), Error::Ok);
+  EXPECT_EQ(a.dim(), 0);
+}
