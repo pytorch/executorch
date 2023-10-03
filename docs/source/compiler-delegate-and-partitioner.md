@@ -62,12 +62,15 @@ function which will be called when the program is out of its lifespan.
 ```cpp
 // Runtime initialization
 __ET_NODISCARD virtual Result<DelegateHandle*> init(
+    BackendInitContext& context,
     FreeableBuffer* processed,
-    ArrayRef<CompileSpec> compile_specs,
-    MemoryAllocator* memory_allocator);
+    ArrayRef<CompileSpec> compile_specs);
 
 // Runtime execution
-__ET_NODISCARD virtual Error execute(DelegateHandle* handle, EValue** args);
+__ET_NODISCARD virtual Error execute(
+    BackendExecutionContext& context,
+    DelegateHandle* handle,
+    EValue** args);
 
 // [optional] Runtime destroy. Destroy the resource held by the backend
 virtual void destroy(__ET_UNUSED DelegateHandle* handle);
