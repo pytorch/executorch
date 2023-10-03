@@ -8,12 +8,9 @@ import tempfile
 import unittest
 from typing import Dict, Tuple
 
-from executorch.sdk.edir.et_schema import (
-    FXOperatorGraph,
-    OperatorGraphWithStats,
-    OperatorNode,
-    ValueNode,
-)
+from executorch.sdk.edir.base_schema import OperatorGraph, OperatorNode, ValueNode
+
+from executorch.sdk.edir.et_schema import FXOperatorGraph
 from executorch.sdk.etrecord import generate_etrecord, parse_etrecord
 
 from executorch.sdk.etrecord.tests.etrecord_test import TestETRecord
@@ -62,7 +59,7 @@ class TestInspectorUtils(unittest.TestCase):
 
 
 def gen_mock_operator_graph_with_expected_map() -> Tuple[
-    OperatorGraphWithStats, Dict[int, OperatorNode]
+    OperatorGraph, Dict[int, OperatorNode]
 ]:
     # Make a mock OperatorGraph instance for testing
     node_input = ValueNode("input")
@@ -113,7 +110,7 @@ def gen_mock_operator_graph_with_expected_map() -> Tuple[
     mapping[444] = node_div
     node_output = ValueNode("output", [node_div])
     return (
-        OperatorGraphWithStats(
+        OperatorGraph(
             "mock_et_model",
             [
                 node_input,
