@@ -29,6 +29,8 @@
 		036834D62ACB710D00BA100F /* mv3.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D42ACB710D00BA100F /* mv3.pte */; };
 		036834D82ACB893700BA100F /* mv3_coreml.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D72ACB893700BA100F /* mv3_coreml.pte */; };
 		036834D92ACB893700BA100F /* mv3_coreml.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D72ACB893700BA100F /* mv3_coreml.pte */; };
+		03BA4CE62ACC9D8600C94DDA /* mv3_mps.pte in Resources */ = {isa = PBXBuildFile; fileRef = 03BA4CE52ACC9D8600C94DDA /* mv3_mps.pte */; };
+		03BA4CE72ACC9D8600C94DDA /* mv3_mps.pte in Resources */ = {isa = PBXBuildFile; fileRef = 03BA4CE52ACC9D8600C94DDA /* mv3_mps.pte */; };
 		03C818192AC671980084CC29 /* Samoyed.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 03C818182AC671980084CC29 /* Samoyed.jpg */; };
 		03C8181D2AC69C280084CC29 /* Arctic fox.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 03C8181C2AC69C280084CC29 /* Arctic fox.jpg */; };
 		03C8181F2AC69DFF0084CC29 /* hot pot.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 03C8181E2AC69DFF0084CC29 /* hot pot.jpg */; };
@@ -114,6 +116,7 @@
 		032C02122AC4EE1B002955E1 /* libXNNPACK.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libXNNPACK.a; sourceTree = "<group>"; };
 		036834D42ACB710D00BA100F /* mv3.pte */ = {isa = PBXFileReference; lastKnownFileType = file; path = mv3.pte; sourceTree = "<group>"; };
 		036834D72ACB893700BA100F /* mv3_coreml.pte */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = mv3_coreml.pte; sourceTree = "<group>"; };
+		03BA4CE52ACC9D8600C94DDA /* mv3_mps.pte */ = {isa = PBXFileReference; lastKnownFileType = file; path = mv3_mps.pte; sourceTree = "<group>"; };
 		03C8180A2AC66FC30084CC29 /* MobileNetClassifierTest.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MobileNetClassifierTest.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		03C818182AC671980084CC29 /* Samoyed.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = Samoyed.jpg; sourceTree = "<group>"; };
 		03C8181C2AC69C280084CC29 /* Arctic fox.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "Arctic fox.jpg"; sourceTree = "<group>"; };
@@ -273,6 +276,7 @@
 			children = (
 				032C02012AC47CFB002955E1 /* imagenet_classes.txt */,
 				036834D72ACB893700BA100F /* mv3_coreml.pte */,
+				03BA4CE52ACC9D8600C94DDA /* mv3_mps.pte */,
 				032C01FC2AC47CFB002955E1 /* mv3_xnnpack_fp32.pte */,
 				036834D42ACB710D00BA100F /* mv3.pte */,
 			);
@@ -437,6 +441,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				03BA4CE62ACC9D8600C94DDA /* mv3_mps.pte in Resources */,
 				036834D82ACB893700BA100F /* mv3_coreml.pte in Resources */,
 				036834D52ACB710D00BA100F /* mv3.pte in Resources */,
 				032C02082AC47CFB002955E1 /* imagenet_classes.txt in Resources */,
@@ -455,6 +460,7 @@
 				03C818192AC671980084CC29 /* Samoyed.jpg in Resources */,
 				036834D92ACB893700BA100F /* mv3_coreml.pte in Resources */,
 				03C8181F2AC69DFF0084CC29 /* hot pot.jpg in Resources */,
+				03BA4CE72ACC9D8600C94DDA /* mv3_mps.pte in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -559,6 +565,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = arm64;
 				GCC_C_LANGUAGE_STANDARD = c17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -623,6 +630,7 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = arm64;
 				GCC_C_LANGUAGE_STANDARD = c17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -645,11 +653,10 @@
 		032C017E2AC228E7002955E1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
-				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = V9WTTPBFK9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "";
@@ -670,7 +677,6 @@
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.demo;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "Facebook Generic";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -679,11 +685,10 @@
 		032C017F2AC228E7002955E1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
-				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = V9WTTPBFK9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "";
@@ -704,7 +709,6 @@
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.demo;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "Facebook Generic";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -745,17 +749,15 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_ENABLE_MODULES = YES;
-				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
-				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = V9WTTPBFK9;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.demo.test;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "Facebook Generic";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -768,17 +770,15 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_ENABLE_MODULES = YES;
-				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
-				"DEVELOPMENT_TEAM[sdk=iphoneos*]" = V9WTTPBFK9;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.demo.test;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
-				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "Facebook Generic";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ExecuTorchDemo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ExecuTorchDemo";

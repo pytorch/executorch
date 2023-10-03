@@ -14,6 +14,7 @@ enum Mode: String, CaseIterable {
   case xnnpack = "XNNPACK"
   case benchmark = "Benchmark"
   case coreML = "Core ML"
+  case mps = "MPS"
 }
 
 class ClassificationController: ObservableObject {
@@ -67,6 +68,8 @@ class ClassificationController: ObservableObject {
       modelFileName = "mv3"
     case .coreML:
       modelFileName = "mv3_coreml"
+    case .mps:
+      modelFileName = "mv3_mps"
     }
     guard let modelFilePath = Bundle.main.path(forResource: modelFileName, ofType: "pte"),
           let labelsFilePath = Bundle.main.path(forResource: "imagenet_classes", ofType: "txt")
