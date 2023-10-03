@@ -54,6 +54,6 @@ HtpDevicePlatformInfoConfig::CreateDevicePlatformInfo(
 
   return ret;
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

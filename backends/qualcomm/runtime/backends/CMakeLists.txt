@@ -42,6 +42,10 @@ target_sources(qnn_logger
 )
 
 # qnn_device
+set(HOST_ARCHITECTURE
+    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/${CMAKE_SYSTEM_PROCESSOR}
+)
+
 target_sources(qnn_device
     PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/QnnDeviceCommon.h
@@ -50,8 +54,9 @@ target_sources(qnn_device
     ${CMAKE_CURRENT_LIST_DIR}/QnnDeviceCommon.cpp
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpDevice.cpp
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpDevicePlatformInfoConfig.h
-    # When offline prepare context cache in x86 host, we have to provide platform infomation to Qnn
-    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/${CMAKE_SYSTEM_PROCESSOR}/HtpDevicePlatformInfoConfig.cpp
+    # When offline prepare context cache in x86 host
+    # we have to provide platform infomation to Qnn
+    ${HOST_ARCHITECTURE}/HtpDevicePlatformInfoConfig.cpp
 )
 
 # qnn_context
@@ -81,7 +86,7 @@ target_sources(qnn_graph
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraph.cpp
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraphCustomConfig.h
     # When preparation on x86 host, need to set graph config from Qnn Graph.
-    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/${CMAKE_SYSTEM_PROCESSOR}/HtpGraphCustomConfig.cpp
+    ${HOST_ARCHITECTURE}/HtpGraphCustomConfig.cpp
 )
 
 # qnn_backend
@@ -138,12 +143,14 @@ set(qnn_header_basenames
 
 set(QNN_HEADER_DIR_DST
     ${CMAKE_CURRENT_BINARY_DIR}/QNN/include)
-    
 
 # add the custom commands to copy each headers
 foreach(_qnn_header ${qnn_header_basenames})
     # copy at generation time to make below target_sources(qnn_header) happy.
-    configure_file( ${QNN_SDK_ROOT}/include/QNN/${_qnn_header} ${QNN_HEADER_DIR_DST}/${_qnn_header} COPYONLY)
+    configure_file(${QNN_SDK_ROOT}/include/QNN/${_qnn_header}
+        ${QNN_HEADER_DIR_DST}/${_qnn_header}
+        COPYONLY
+    )
     list(APPEND qnn_header_files ${QNN_HEADER_DIR_DST}/${_qnn_header})
 endforeach()
 

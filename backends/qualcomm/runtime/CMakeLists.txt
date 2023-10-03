@@ -33,7 +33,7 @@ target_sources(qnn_manager
 )
 
 # logging
-target_sources(logging
+target_sources(qnn_logging
     PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/Logging.h
     PRIVATE

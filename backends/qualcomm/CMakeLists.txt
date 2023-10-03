@@ -23,7 +23,8 @@ get_filename_component(_common_include_directories
                        ABSOLUTE)
 
 if(NOT DEFINED QNN_SDK_ROOT)
-    message(FATAL_ERROR "Please define QNN_SDK_ROOT, e.g., cmake <..> -DQNN_SDK_ROOT=<...>")
+    message(FATAL_ERROR
+            "Please define QNN_SDK_ROOT, e.g. cmake <..> -DQNN_SDK_ROOT=<...>")
 endif()
 
 message(STATUS "Using qnn sdk root ${QNN_SDK_ROOT}")
@@ -82,7 +83,7 @@ add_library(qnn_graph STATIC)
 add_library(qnn_backend STATIC)
 add_library(qnn_factory STATIC)
 add_library(qnn_header INTERFACE)
-add_library(logging STATIC)
+add_library(qnn_logging STATIC)
 add_library(wrappers STATIC)
 add_library(utils STATIC)
 
@@ -101,7 +102,7 @@ target_link_libraries(qnn_implementation
     PRIVATE
     qnn_function_interface
     qnn_header
-    logging
+    qnn_logging
     ${CMAKE_DL_LIBS}
 )
 target_link_libraries(qnn_sys_function_interface
@@ -112,7 +113,7 @@ target_link_libraries(qnn_sys_implementation
     PRIVATE
     qnn_sys_function_interface
     qnn_header
-    logging
+    qnn_logging
     ${CMAKE_DL_LIBS}
 )
 target_link_libraries(qnn_logger
@@ -210,7 +211,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
       pybind11::module
       pybind11::lto
       wrappers
-      logging
+      qnn_logging
       qnn_executorch_header
   )
 
@@ -244,7 +245,11 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
     ${CMAKE_CURRENT_LIST_DIR}/executor_runner/qnn_executor_runner.cpp
   )
   add_executable(qnn_executor_runner ${_qnn_executor_runner__srcs})
-  target_link_libraries(qnn_executor_runner ${_executor_runner_libs} qnn_executorch_backend gflags)
+  target_link_libraries(qnn_executor_runner
+    ${_executor_runner_libs}
+    qnn_executorch_backend
+    gflags
+  )
   target_compile_options(qnn_executor_runner PUBLIC ${_common_compile_options})
 endif()
 

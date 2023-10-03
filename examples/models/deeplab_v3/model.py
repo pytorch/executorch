@@ -9,8 +9,8 @@ import logging
 import torch
 from torchvision.models.segmentation import (
     deeplabv3,
-    deeplabv3_resnet50,
     deeplabv3_resnet101,
+    deeplabv3_resnet50,
 )
 
 from ..model_base import EagerModelBase

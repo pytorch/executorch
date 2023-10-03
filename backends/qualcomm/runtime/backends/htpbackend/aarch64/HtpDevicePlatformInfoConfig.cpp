@@ -14,6 +14,6 @@ HtpDevicePlatformInfoConfig::CreateDevicePlatformInfo(
     const HtpInfo& qcom_target_soc_info) {
   return {};
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch

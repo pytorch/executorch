@@ -13,6 +13,6 @@ std::vector<QnnGraph_CustomConfig_t>
 HtpGraphCustomConfig::CreateGraphCustomConfig() {
   return {};
 }
-}  // namespace qnn
-}  // namespace executor
-}  // namespace torch
+} // namespace qnn
+} // namespace executor
+} // namespace torch
