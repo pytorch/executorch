@@ -225,7 +225,7 @@ class XnnpackBackend(BackendDetails):
                     )
                 else:
                     raise RuntimeError(
-                        f"For {node}, {node.op}:{node.target.__name__} is not supported in XNNPack Delegate"
+                        f"For {node}, {node.op}:{node.target.__name__} is not supported in XNNPACK Delegate"
                     )
             elif node.op in [
                 "get_attr",
@@ -234,5 +234,5 @@ class XnnpackBackend(BackendDetails):
             ]:
                 continue
             else:
-                raise RuntimeError(f"{node.op} is not supported in XNNPack")
+                raise RuntimeError(f"{node.op} is not supported in XNNPACK")
         return PreprocessResult(processed_bytes=convert_to_flatbuffer(xnnpack_graph))

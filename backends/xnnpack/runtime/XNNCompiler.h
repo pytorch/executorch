@@ -21,7 +21,7 @@ namespace delegate {
 
 class XNNCompiler {
  public:
-  // Takes Flatbuffer Serialized XNNPack Model and rebuilds the xnn-subgraph
+  // Takes Flatbuffer Serialized XNNPACK Model and rebuilds the xnn-subgraph
   // returns an executor object that holds the xnn runtime object which we
   // can then use to set inputs and run inference using the xnn graph.
   __ET_NODISCARD static Error compileModel(

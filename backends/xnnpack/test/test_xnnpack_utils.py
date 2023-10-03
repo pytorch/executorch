@@ -126,7 +126,7 @@ class TestXNNPACK(unittest.TestCase):
         """
         Helper testing function that asserts that the model output and the reference output
         are equal with some tolerance. Due to numerical differences between eager mode and
-        the XNNPack's backend, we relax the detal such that absolute tolerance is 1e-3. and
+        the XNNPACK's backend, we relax the detal such that absolute tolerance is 1e-3. and
         relative tolerance is 1e-3.
         """
 
