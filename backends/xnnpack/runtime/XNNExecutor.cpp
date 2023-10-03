@@ -68,6 +68,17 @@ Error XNNExecutor::set_external_input(uint32_t id, Tensor* input) {
     return Error::NotSupported;
 #endif
   } else {
+    // TODO(T165403530): Test insure accuracy for int64 --> float32 conversion
+    if (input->scalar_type() == ScalarType::Long) {
+      // Input data type is int64. However, XNNPACK doesn't support
+      // int64. This means that the data needs to be casted to float
+      // In order for XNNPACK to properly use it.
+      const int64_t* data_64 = input->const_data_ptr<int64_t>();
+      float* data_f32 = input->mutable_data_ptr<float>();
+      for (int j = 0; j < input->numel(); j++) {
+        data_f32[j] = data_64[j];
+      }
+    }
     externals_.emplace_back(xnn_external_value{id, input->mutable_data_ptr()});
   }
   return Error::Ok;
