@@ -5,12 +5,15 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import sys
 
 import torch
 
 from transformers import AutoTokenizer, MobileBertModel  # @manual
 
 from ..model_base import EagerModelBase
+
+sys.setrecursionlimit(30000)
 
 
 class MobileBertModelExample(EagerModelBase):
