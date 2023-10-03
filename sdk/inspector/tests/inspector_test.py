@@ -75,7 +75,7 @@ class TestInspector(unittest.TestCase):
             # Because we mocked parse_etrecord() to return None, this method shouldn't be called
             mock_gen_graphs_from_etrecord.assert_not_called()
 
-    def test_inspector_get_event_blocks_and_print_data_tabular(self):
+    def test_inspector_print_data_tabular(self):
         # Create a context manager to patch functions called by Inspector.__init__
         with patch.object(inspector, "parse_etrecord", return_value=None), patch.object(
             inspector, "gen_etdump_object", return_value=None
@@ -88,14 +88,11 @@ class TestInspector(unittest.TestCase):
                 etrecord_path=ETRECORD_PATH,
             )
 
-            # Test get_event_blocks() method. The mock inspector instance should start with having an empty event blocks list
-            event_block_list = [
+            # The mock inspector instance starts with having an empty event blocks list.
+            # Add non-empty event blocks to test print_data_tabular().
+            inspector_instance.event_blocks = [
                 EventBlock(name=EVENT_BLOCK_NAME, events=self._gen_random_events())
             ]
-            # Add non-empty event blocks to test get_event_blocks() and print_data_tabular()
-            inspector_instance.event_blocks = event_block_list
-            self.assertEqual(inspector_instance.get_event_blocks(), event_block_list)
-
             # Call print_data_tabular(), make sure it doesn't crash
             with redirect_stdout(None):
                 inspector_instance.print_data_tabular()
