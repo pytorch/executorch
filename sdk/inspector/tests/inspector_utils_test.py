@@ -14,14 +14,14 @@ from executorch.sdk.edir.et_schema import (
     OperatorNode,
     ValueNode,
 )
-from executorch.sdk.etdb._inspector_utils import (
+from executorch.sdk.etrecord import generate_etrecord, parse_etrecord
+
+from executorch.sdk.etrecord.tests.etrecord_test import TestETRecord
+from executorch.sdk.inspector._inspector_utils import (
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
     gen_graphs_from_etrecord,
 )
-from executorch.sdk.etrecord import generate_etrecord, parse_etrecord
-
-from executorch.sdk.etrecord.tests.etrecord_test import TestETRecord
 
 
 class TestInspectorUtils(unittest.TestCase):

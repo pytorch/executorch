@@ -54,15 +54,15 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
 
-# https://cmake.org/cmake/help/latest/command/add_definitions.html
-# Adds definitions to the compiler command line for
-# - targets in the current directory, before and after this command is invoked
-# - targets in sub-directories added after this command is invoked
+# https://cmake.org/cmake/help/latest/command/add_definitions.html Adds
+# definitions to the compiler command line for - targets in the current
+# directory, before and after this command is invoked - targets in
+# sub-directories added after this command is invoked
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
   # Avoid pulling in the logging strings, which can be large.
   add_definitions(-DET_LOG_ENABLED=0)
-  # Avoid pulling in the flatbuffer data verification
-  # logic, which can add about 20kB.
+  # Avoid pulling in the flatbuffer data verification logic, which can add about
+  # 20kB.
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
@@ -108,6 +108,9 @@ endif()
 # Build xnn_executor_runner which depends on XNNPACK
 option(EXECUTORCH_BUILD_XNNPACK
        "Build xnn_executor_runner which depends on XNNPACK" OFF)
+
+option(EXECUTORCH_BUILD_SDK
+       "Build the ExecuTorch SDK library and the SDK example runner.")
 
 if(NOT BUCK2)
   set(BUCK2 buck2)
@@ -309,5 +312,10 @@ endif()
 if(EXECUTORCH_BUILD_SIZE_TEST)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test)
 endif()
+
+if (EXECUTORCH_BUILD_SDK)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+endif()
+
 # Print all summary
 executorch_print_configuration_summary()

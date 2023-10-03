@@ -1,30 +1,7 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 oncall("executorch")
-
-python_library(
-    name = "row_schema",
-    srcs = [
-        "row_schema.py",
-    ],
-    deps = [
-        "//executorch/sdk/edir:base_schema",
-        "//executorch/sdk/edir:et_schema",
-    ],
-)
-
-python_library(
-    name = "etdb",
-    srcs = [
-        "etdb.py",
-    ],
-    deps = [
-        "fbsource//third-party/pypi/tabulate:tabulate",
-        ":row_schema",
-        "//executorch/sdk/edir:base_schema",
-        "//executorch/sdk/edir:et_schema",
-    ],
-)
 
 python_library(
     name = "inspector",
@@ -42,6 +19,12 @@ python_library(
         "//executorch/sdk/edir:et_schema",
         "//executorch/sdk/etdump:schema_flatcc",
     ],
+)
+
+python_binary(
+    name = "inspector_cli",
+    main_src = "inspector_cli.py",
+    deps = [":inspector"],
 )
 
 python_library(

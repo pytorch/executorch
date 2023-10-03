@@ -36,6 +36,9 @@ TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
 TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
 TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
 
+# Copy requirements-lintrunner.txt from root to here
+cp ../../requirements-lintrunner.txt ./
+
 docker build \
   --no-cache \
   --progress=plain \

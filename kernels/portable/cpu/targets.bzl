@@ -692,6 +692,12 @@ _ATEN_OPS = (
         name = "op_split_copy",
     ),
     op_target(
+        name = "op_split_with_sizes_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_sqrt",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",

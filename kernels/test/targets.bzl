@@ -260,6 +260,7 @@ def define_common_targets():
     _common_op_test("op_slice_copy_test", ["aten", "portable"])
     _common_op_test("op_softmax_test", ["aten", "portable"])
     _common_op_test("op_split_copy_test", ["aten", "portable"])
+    _common_op_test("op_split_with_sizes_copy_test", ["aten", "portable"])
     _common_op_test("op_sqrt_test", ["aten", "portable"])
     _common_op_test("op_squeeze_copy_test", ["aten", "portable"])
     _common_op_test("op_stack_test", ["aten", "portable"])

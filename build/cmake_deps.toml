@@ -11,12 +11,19 @@ excludes = [
   "^third-party",
 ]
 
-[targets.program_schema]
+[targets.executor_runner]
 buck_targets = [
-  "//schema:program",
+  "//examples/executor_runner:executor_runner",
 ]
 filters = [
-  ".fbs$",
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "portable_kernels",
 ]
 
 [targets.executorch]
@@ -28,6 +35,20 @@ deps = [
 ]
 filters = [
   ".cpp$",
+]
+
+[targets.extension_data_loader]
+buck_targets = [
+  "//extension/data_loader:buffer_data_loader",
+  "//extension/data_loader:file_data_loader",
+  "//extension/data_loader:mmap_data_loader",
+  "//extension/data_loader:shared_ptr_data_loader",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
 ]
 
 [targets.portable_kernels]
@@ -48,19 +69,12 @@ deps = [
   "executorch",
 ]
 
-[targets.executor_runner]
+[targets.program_schema]
 buck_targets = [
-  "//examples/executor_runner:executor_runner",
+  "//schema:program",
 ]
 filters = [
-  ".cpp$",
-]
-excludes = [
-  "^codegen",
-]
-deps = [
-  "executorch",
-  "portable_kernels",
+  ".fbs$",
 ]
 
 [targets.size_test]
@@ -72,33 +86,6 @@ filters = [
 ]
 excludes = [
   "^codegen",
-]
-deps = [
-  "executorch",
-]
-
-[targets.xnnpack_schema]
-buck_targets = [
-  "//backends/xnnpack:xnnpack_schema"
-]
-filters = [
-  ".fbs$",
-]
-
-[targets.dynamic_quant_utils]
-buck_targets = [
-  "//backends/xnnpack:dynamic_quant_utils"
-]
-filters = [
-  ".cpp$",
-]
-
-[targets.xnnpack_backend]
-buck_targets = [
-  "//backends/xnnpack:xnnpack_backend"
-]
-filters = [
-  ".cpp$",
 ]
 deps = [
   "executorch",
@@ -119,16 +106,29 @@ deps = [
   "portable_kernels",
 ]
 
-[targets.extension_data_loader]
+[targets.xnnpack_backend]
 buck_targets = [
-  "//extension/data_loader:buffer_data_loader",
-  "//extension/data_loader:file_data_loader",
-  "//extension/data_loader:mmap_data_loader",
-  "//extension/data_loader:shared_ptr_data_loader",
+  "//backends/xnnpack:xnnpack_backend",
 ]
 filters = [
   ".cpp$",
 ]
 deps = [
   "executorch",
+]
+
+[targets.xnnpack_dynamic_quant_utils]
+buck_targets = [
+  "//backends/xnnpack:dynamic_quant_utils",
+]
+filters = [
+  ".cpp$",
+]
+
+[targets.xnnpack_schema]
+buck_targets = [
+  "//backends/xnnpack:xnnpack_schema",
+]
+filters = [
+  ".fbs$",
 ]

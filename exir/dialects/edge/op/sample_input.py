@@ -1150,6 +1150,23 @@ SAMPLE_INPUT = {
             ),
         ],
     },
+    "split_with_sizes_copy.default": {  # (Tensor self, SymInt[] split_sizes, int dim=0) -> Tensor[]
+        "args": [
+            InArg(ArgType.Tensor, size=[2, 6, 3]),
+            InArg(ArgType.LengthList, value=[3, 1, 2]),
+            InArg(ArgType.Dim, value=1),
+        ],
+        "returns": [
+            Return(
+                ArgType.TensorList,
+                value=[
+                    Return(ArgType.Tensor, size=[2, 3, 3]),
+                    Return(ArgType.Tensor, size=[2, 1, 3]),
+                    Return(ArgType.Tensor, size=[2, 2, 3]),
+                ],
+            ),
+        ],
+    },
     "sqrt.default": {  # (Tensor self) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
