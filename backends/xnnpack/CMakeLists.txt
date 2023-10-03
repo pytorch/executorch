@@ -91,7 +91,7 @@ target_link_options_shared_lib(xnnpack_backend)
 list(APPEND xnn_executor_runner_libs xnnpack_backend)
 
 # ios can only build library but not binary
-if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
+if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   #
   # xnn_executor_runner: Like executor_runner but with XNNPACK, the binary will
   # be at ${CMAKE_BINARY_DIR}/backends/xnnpack
