@@ -31,3 +31,6 @@
 [submodule "backends/arm/third-party/serialization_lib"]
 	path = backends/arm/third-party/serialization_lib
 	url = https://git.mlplatform.org/tosa/serialization_lib.git
+[submodule "third-party/flatcc"]
+	path = third-party/flatcc
+	url = https://github.com/dvidelabs/flatcc.git

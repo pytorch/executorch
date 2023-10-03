@@ -17,7 +17,7 @@ pip install .
 # models in executorch/examples/models.
 # The version in this file will be the correct version for the
 # corresponsing version of the repo.
-NIGHTLY_VERSION=dev20230929
+NIGHTLY_VERSION=dev20231002
 
 TORCH_VERSION=2.2.0.${NIGHTLY_VERSION}
 pip install --force-reinstall --pre torch=="${TORCH_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
@@ -36,3 +36,6 @@ pip install --pre transformers==${TRANSFORMERS_VERSION}
 
 TORCHSR_VERSION=1.0.4
 pip install --pre torchsr==${TORCHSR_VERSION}
+
+# Install flatc dependency
+bash build/install_flatc.sh

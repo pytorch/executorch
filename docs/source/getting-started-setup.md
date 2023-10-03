@@ -65,12 +65,6 @@ the steps in the [conda installation guide](https://conda.io/projects/conda/en/l
    conda activate executorch
    ```
 
-1. Install the flatbuffers `flatc` command line tool if you do not already have it:
-
-   ```bash
-   conda install -c conda-forge flatbuffers
-   ```
-
 1. Clone the `executorch` repository:
 
    ```bash

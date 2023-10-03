@@ -81,7 +81,7 @@ semantics whenever possible.
   [`aten_bridge`](https://github.com/pytorch/executorch/blob/main/extension/aten_util/aten_bridge.h)
   to convert between the two. This can be helpful for projects that already use
   PyTorch C++ types.
-* The behavior of operators like "aten::add" and "aten::sigmoid" are identical
+* The semantics of operators like "aten::add" and "aten::sigmoid" are identical
   between ExecuTorch and core PyTorch. ExecuTorch provides a testing framework
   to ensure this, and to help test future implementations of these operators.
 

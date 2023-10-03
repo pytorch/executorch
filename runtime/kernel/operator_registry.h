@@ -42,7 +42,9 @@ namespace executor {
 
 class KernelRuntimeContext; // Forward declaration
 using RuntimeContext = KernelRuntimeContext; // TODO(T147221312): Remove
-using OpFunction = FunctionRef<void(KernelRuntimeContext&, EValue**)>;
+using OpFunction =
+    FunctionRef<void(KernelRuntimeContext&, EValue**)>; // TODO(T165139545):
+                                                        // Remove FunctionRef
 
 /**
  * Dtype and dim order metadata for a Tensor argument to an operator.

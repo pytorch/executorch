@@ -113,6 +113,18 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
       dim_,
       new_sizes.size());
 
+  // Kernels don't check that the provided out tensors have the right size.
+  // Instead they always attempt to resize the out tensor to the right size,
+  // even when the out tensor already had the right size. Therefore, if we call
+  // an op with inputs that will produce a zero-dimensional output, and the out
+  // tensor that we pass has non-STATIC dynamism, then we will end up here.
+  // Since we have already checked above that the out tensor has the right
+  // number of dimensions, it must be that the provided out tensor has zero
+  // rank, therefore it already has the right size and we should just return.
+  if (dim_ == 0) {
+    return Error::Ok;
+  }
+
   // Can only resize a StaticShape Tensor to the same size
   if (shape_dynamism_ == TensorShapeDynamism::STATIC) {
     for (int i = 0; i < new_sizes.size(); i++) {

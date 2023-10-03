@@ -122,12 +122,22 @@ Assuming NDK is available on installed, run
 # Run the following lines from executorch folder
 rm -rf cmake-android-out && mkdir cmake-android-out && cd cmake-android-out
 
-# point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
-# Run `which buck2`, if it returns empty (meaning the system doesn't know where buck2 is installed), pass in pass in this flag `-DBUCK2=/path/to/buck2` pointing to buck2
-cmake -DCMAKE_TOOLCHAIN_FILE=/Users/{user_name}/Library/Android/sdk/ndk/25.2.9519653/build/cmake/android.toolchain.cmake  -DANDROID_ABI=arm64-v8a ..
+BUCK2=/path/to/buck2
+FLATC=/path/to/flatc
+NDK_ROOT=${HOME}/Library/Android/sdk/ndk/25.2.9519653
 
-cd  ..
-cmake --build  cmake-android-out  -j9
+# Point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed.
+# If BUCK2 or FLATC aren't specified, fall back to using
+# the commands on the PATH.
+cmake \
+  -DCMAKE_TOOLCHAIN_FILE=${NDK_ROOT}/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI=arm64-v8a \
+  -DBUCK2="${BUCK2:-$(which buck2)}" \
+  -DFLATC_EXECUTABLE="${FLATC:-$(which flatc)}" \
+  ..
+
+# Move to the executorch folder and build
+cd .. && cmake --build cmake-android-out -j9
 
 # push the binary to an Android device
 adb push  cmake-android-out/executor_runner  /data/local/tmp/executorch
@@ -162,14 +172,28 @@ git clone  https://github.com/leetal/ios-cmake.git
 ```bash
 rm -rf cmake-ios-out && mkdir cmake-ios-out && cd cmake-ios-out
 
-# change the platform accordingly, please refer to the table listed in Readme
-cmake . -G Xcode -DCMAKE_TOOLCHAIN_FILE=~/ios-cmake/ios.toolchain.cmake -DPLATFORM=SIMULATOR
+BUCK2=/path/to/buck2
+FLATC=/path/to/flatc
+PYTHON=/path/to/miniconda/envs/executorch/bin/python3
+# The path to the cloned ios-cmake repo
+IOS_CMAKE=/path/to/ios-cmake
+
+# Change the PLATFORM accordingly; please refer to the table listed in https://github.com/leetal/ios-cmake#readme
+cmake \
+  -G Xcode \
+  -DCMAKE_TOOLCHAIN_FILE=${IOS_CMAKE}/ios.toolchain.cmake \
+  -DPLATFORM=SIMULATOR \
+  -DBUCK2="${BUCK2:-$(which buck2)}" \
+  -DFLATC_EXECUTABLE="${FLATC:-$(which flatc)}" \
+  -DPYTHON_EXECUTABLE="${PYTHON:-$(which python3)}" \
+  ..
+
+# Move to the executorch folder and build
+cd .. && cmake --build cmake-ios-out -j9
 
 # Create an include folder in cmake-ios-out to include all header files
-mkdir include
-cp -r ../runtime include
-cp -r ../extension include
-cp -r ../utils include
+(cd cmake-ios-out && mkdir include && cd include && \
+ ln -s ../../runtime ../../util ../../extension .)
 ```
 
 

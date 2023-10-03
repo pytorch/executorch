@@ -290,7 +290,7 @@ class TestDelegate(unittest.TestCase):
         for node in gm.graph.nodes:
             if (
                 node.op == "call_function"
-                and node.target == exir_ops.edge.aten.split_copy.Tensor
+                and node.target == exir_ops.edge.aten.split_with_sizes_copy.default
             ):
                 node_list.append(node)
 
