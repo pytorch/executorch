@@ -313,7 +313,7 @@ if(EXECUTORCH_BUILD_SIZE_TEST)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test)
 endif()
 
-if (EXECUTORCH_BUILD_SDK)
+if(EXECUTORCH_BUILD_SDK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
 endif()
 
