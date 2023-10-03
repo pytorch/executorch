@@ -85,7 +85,7 @@ bool isQuantizedDataType(const xnn_datatype data_type) {
 
 /**
 Converts dims from uint32 to size_t. Takes in a flatbuffer vector
-of uint32_t and returns a std::vector of size_t. XNNPack takes in
+of uint32_t and returns a std::vector of size_t. XNNPACK takes in
 dims of size_t* but tensor shape is serialized in flatbuffer as
 int32_t. As a result, we need to static cast the shapes to size_t
 */
@@ -143,7 +143,7 @@ Error defineTensor(
   // to properly convert the uint32_t* to size_t*
   std::vector<size_t> dims_data = flatbufferDimsToVector(tensor_value->dims());
 
-  // XNNPack Id
+  // XNNPACK Id
   uint32_t id = XNN_INVALID_VALUE_ID;
 
   // Get Pointer to constant data from flatbuffer, if its non-constant
