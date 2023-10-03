@@ -25,13 +25,13 @@ import pandas as pd
 import torch
 from executorch.exir import ExportedProgram
 
-from executorch.sdk.edir.base_schema import OperatorGraph, OperatorNode
+from executorch.sdk.edir.et_schema import OperatorNode
 from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
+from executorch.sdk.etrecord import parse_etrecord
 from executorch.sdk.inspector._inspector_utils import (
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
     gen_etdump_object,
-    gen_etrecord_object,
     gen_graphs_from_etrecord,
 )
 
@@ -368,7 +368,6 @@ class Inspector:
 
     Private Attributes:
         _etrecord: Optional[ETRecord]. File under etrecord_path deserialized into an object.
-        _op_graph_dict: Mapping[str, OperatorGraphWithStats]. Graph objects parsed from etrecord matched with user defined graph names.
     """
 
     def __init__(
@@ -387,14 +386,18 @@ class Inspector:
                 defaults to milli (1000ms = 1s).
         """
 
-        # TODO: etrecord_path can be optional, so need to support the case when it is not present
-        self._etrecord = gen_etrecord_object(etrecord_path=etrecord_path)
+        self._etrecord = (
+            parse_etrecord(etrecord_path=etrecord_path)
+            if etrecord_path is not None
+            else None
+        )
+
         etdump = gen_etdump_object(etdump_path=etdump_path)
         self.event_blocks = EventBlock._gen_from_etdump(etdump, etdump_scale)
 
-        self._op_graph_dict: Mapping[str, OperatorGraph] = gen_graphs_from_etrecord(
-            etrecord=self._etrecord
-        )
+        # No additional data association can be done without ETRecord, so return early
+        if self._etrecord is None:
+            return
 
         # Use the delegate map from etrecord, associate debug handles with each event
         for event_block in self.event_blocks:
@@ -406,9 +409,10 @@ class Inspector:
             )
 
         # Traverse the edge dialect op graph to create mapping from debug_handle to op node
+        op_graph_dict = gen_graphs_from_etrecord(etrecord=self._etrecord)
         debug_handle_to_op_node_map = {}
         create_debug_handle_to_op_node_mapping(
-            self._op_graph_dict[EDGE_DIALECT_GRAPH_KEY],
+            op_graph_dict[EDGE_DIALECT_GRAPH_KEY],
             debug_handle_to_op_node_map,
         )
 
@@ -479,13 +483,22 @@ class Inspector:
         # TODO: implement
         pass
 
-    def get_exported_program(self, graph: Optional[str] = None) -> ExportedProgram:
+    def get_exported_program(
+        self, graph: Optional[str] = None
+    ) -> Optional[ExportedProgram]:
         """
         Access helper for ETRecord, defaults to returning Edge Dialect Program
 
         Args:
             graph: Name of the graph to access. If None, returns the Edge Dialect Program.
         """
-        if graph is None:
-            return self._etrecord.edge_dialect_program
-        return self._etrecord.graph_map.get(graph)
+        if self._etrecord is None:
+            log.warning(
+                "Exported program is only available when a valid etrecord_path was provided at the time of Inspector construction"
+            )
+            return None
+        return (
+            self._etrecord.edge_dialect_program
+            if graph is None
+            else self._etrecord.graph_map.get(graph)
+        )
