@@ -57,6 +57,7 @@ setup(
         "executorch/backends": "backends",
         "executorch/exir": "exir",
         "executorch/schema": "schema",
+        "executorch/sdk": "sdk",
         "executorch/extension": "extension",
         "executorch/bundled_program": "bundled_program",
         "tosa": "backends/arm/third-party/serialization_lib/python/tosa",

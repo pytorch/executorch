@@ -10,13 +10,9 @@ def define_common_targets():
     runtime.cxx_library(
         name = "pytree",
         srcs = [],
-        exported_headers = ["pytree.h"],
+        exported_headers = ["pytree.h", "function_ref.h"],
         visibility = [
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/platform:platform",
-            "//executorch/runtime/core:core",
         ],
     )

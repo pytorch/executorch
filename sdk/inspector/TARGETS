@@ -1,3 +1,4 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
 oncall("executorch")
@@ -15,9 +16,15 @@ python_library(
         ":inspector_utils",
         "//caffe2:torch",
         "//executorch/exir:lib",
-        "//executorch/sdk/edir:et_schema",
+        "//executorch/sdk/edir:base_schema",
         "//executorch/sdk/etdump:schema_flatcc",
     ],
+)
+
+python_binary(
+    name = "inspector_cli",
+    main_src = "inspector_cli.py",
+    deps = [":inspector"],
 )
 
 python_library(
@@ -26,6 +33,7 @@ python_library(
         "_inspector_utils.py",
     ],
     deps = [
+        "//executorch/sdk/edir:base_schema",
         "//executorch/sdk/edir:et_schema",
         "//executorch/sdk/etdump:schema_flatcc",
         "//executorch/sdk/etdump:serialize",

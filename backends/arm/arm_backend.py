@@ -217,6 +217,12 @@ def getNodeArgs(node):
     return [tosa_mapping.TosaArg(arg) for arg in node.args]
 
 
+def getQuantNodeArgs(node):
+    quant_args = [tosa_mapping.TosaArg(arg) for arg in node.args]
+    # Return the scale and zp
+    return quant_args[1].number, quant_args[2].number
+
+
 @final
 class ArmBackend(BackendDetails):
     @staticmethod
@@ -253,6 +259,7 @@ class ArmBackend(BackendDetails):
                 outp = tosa_mapping.TosaArg(node)
 
                 is_quant_node = tosa_quant_utils.isQuantNode(node)
+
                 if is_quant_node:
                     tosa_fb.currRegion.currBasicBlock.addTensor(
                         outp.name, outp.shape, ts.DType.INT8
@@ -345,13 +352,17 @@ class ArmBackend(BackendDetails):
                 elif exir_ops.edge.aten.addmm.default == node.target:
                     bias, input, weight = inputs
 
+                    output_dtype = ts.DType.INT8 if is_quant_node else outp.dtype
+
                     # Reshape input, weight, bias tensors
                     input_reshape_res = promote_shape(
-                        tosa_fb, input, (1,) + input.shape, outp.dtype
+                        tosa_fb, input, (1,) + input.shape, output_dtype
                     )
                     weight_reshape_res = promote_shape(
-                        tosa_fb, weight, (1,) + weight.shape, outp.dtype
+                        tosa_fb, weight, (1,) + weight.shape, output_dtype
                     )
+
+                    bias_dtype = ts.DType.INT32 if is_quant_node else outp.dtype
                     bias_reshape_res = promote_shape(
                         tosa_fb,
                         bias,
@@ -360,24 +371,32 @@ class ArmBackend(BackendDetails):
                             1,
                         )
                         + bias.shape,
-                        outp.dtype,
+                        bias_dtype,
                     )
 
                     # Add dummy batch 1 to mm_shape
                     mm_shape = (1, input.shape[0], weight.shape[1])
                     # Define Intermediate tensor for MatMul res
-                    mm_res = tosa_fb.addIntermediate(mm_shape, outp.dtype)
+                    mm_res = tosa_fb.addIntermediate(
+                        mm_shape, ts.DType.INT32 if is_quant_node else output_dtype
+                    )
 
                     # Add MatMulOp
+                    attr_matmul = ts.TosaSerializerAttribute()
+                    a_zp, b_zp = (-128, 0) if is_quant_node else (0, 0)
+                    attr_matmul.MatMulAttribute(a_zp, b_zp)
                     tosa_fb.addOperator(
                         TosaOp.Op().MATMUL,
                         [input_reshape_res.name, weight_reshape_res.name],
                         [mm_res.name],
-                        attr_torch_to_tosa(TosaOp.Op().MATMUL, node),
+                        attr_matmul,
                     )
 
                     # Add AddOp
-                    add_res = tosa_fb.addIntermediate(mm_shape, outp.dtype)
+                    add_res = tosa_fb.addIntermediate(
+                        mm_shape, ts.DType.INT32 if is_quant_node else output_dtype
+                    )
+
                     tosa_fb.addOperator(
                         TosaOp.Op().ADD,
                         [bias_reshape_res.name, mm_res.name],
@@ -385,11 +404,54 @@ class ArmBackend(BackendDetails):
                         None,
                     )
 
+                    if is_quant_node:
+                        # Read inputs' parent nodes
+                        #
+                        _, input_node, weight_node = node.all_input_nodes
+                        input_scale, _ = getQuantNodeArgs(input_node)
+                        weight_node_q_node = weight_node.all_input_nodes[0]
+                        weight_scale, _ = getQuantNodeArgs(weight_node_q_node)
+
+                        consumer_node = list(node.users)[0]
+                        consumer_node_scale, consumer_node_node_zp = getQuantNodeArgs(
+                            consumer_node
+                        )
+
+                        output_rescale_scale = (
+                            input_scale * weight_scale
+                        ) / consumer_node_scale
+                        (
+                            multiplier_output,
+                            shift_output,
+                        ) = tosa_quant_utils.computeMultiplierAndShift(
+                            output_rescale_scale
+                        )
+
+                        attr_rescale_output = ts.TosaSerializerAttribute()
+                        attr_rescale_output.RescaleAttribute(
+                            input_zp=0,
+                            output_zp=consumer_node_node_zp,
+                            multiplier=[multiplier_output],
+                            shift=[shift_output],
+                            scale32=True,
+                            double_round=True,
+                            per_channel=False,
+                        )
+                        add_res_int8 = tosa_fb.addIntermediate(mm_shape, ts.DType.INT8)
+                        tosa_fb.addOperator(
+                            TosaOp.Op().RESCALE,
+                            [add_res.name],
+                            [add_res_int8.name],
+                            attr_rescale_output,
+                        )
                     # Reshape final result to original shape
                     attr_out = ts.TosaSerializerAttribute()
                     attr_out.ReshapeAttribute(outp.shape)
                     tosa_fb.addOperator(
-                        TosaOp.Op().RESHAPE, [add_res.name], [outp.name], attr_out
+                        TosaOp.Op().RESHAPE,
+                        [add_res_int8.name if is_quant_node else add_res.name],
+                        [outp.name],
+                        attr_out,
                     )
                 elif exir_ops.edge.aten.permute_copy.default == node.target:
                     attr = ts.TosaSerializerAttribute()
@@ -700,20 +762,11 @@ class ArmBackend(BackendDetails):
                         [outp.name],
                         attr_mul,
                     )
-                elif operator.getitem == node.target:
-                    item_name = inputs[0].name
-                    ## Simply add an identityOp
-                    tosa_fb.addOperator(TosaOp.Op().IDENTITY, [item_name], [outp.name])
-                elif (
-                    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
-                    == node.target
-                ):
-                    item_name = inputs[0].name
-                    tosa_fb.addOperator(TosaOp.Op().IDENTITY, [item_name], [outp.name])
-                elif (
-                    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
-                    == node.target
-                ):
+                elif node.target in [
+                    operator.getitem,
+                    tosa_quant_utils.q_op,
+                    tosa_quant_utils.dq_op,
+                ]:
                     item_name = inputs[0].name
                     ## Simply add an identityOp
                     tosa_fb.addOperator(TosaOp.Op().IDENTITY, [item_name], [outp.name])
@@ -740,9 +793,54 @@ class ArmBackend(BackendDetails):
 
                     assert isinstance(p_data, torch.Tensor), "Expect Attr to be tensor"
                     weight_values = p_data.detach().numpy()
-                    tosa_fb.addConst(
-                        inputs[0].shape, inputs[0].dtype, weight_values, name=out
-                    )
+
+                    # Check if they're for quantized nodes
+                    consumer_node = list(node.users)[0]
+                    if consumer_node.target in tosa_quant_utils.dq_q_ops:
+                        _, weight_node_scale, weight_node_zp, _, _, _ = getNodeArgs(
+                            consumer_node
+                        )
+
+                        weight_values_quantized = (
+                            (weight_values / weight_node_scale.number)
+                            + weight_node_zp.number
+                        ).astype(np.int8)
+                        tosa_fb.addConst(
+                            inputs[0].shape,
+                            ts.DType.INT8,
+                            weight_values_quantized,
+                            name=out,
+                        )
+                    elif (
+                        consumer_node.target == exir_ops.edge.aten.addmm.default
+                        and list(consumer_node.users)[0].target == tosa_quant_utils.q_op
+                    ):
+                        (
+                            _,
+                            input_node,
+                            weight_node_permuted,
+                        ) = consumer_node.all_input_nodes
+                        weight_node = weight_node_permuted.all_input_nodes[0]
+
+                        input_node_scale, _ = getQuantNodeArgs(input_node)
+                        weight_node_scale, weight_node_zp = getQuantNodeArgs(
+                            weight_node
+                        )
+
+                        weight_values_quantized = (
+                            weight_values / (input_node_scale * weight_node_scale)
+                        ).astype(np.int32)
+
+                        tosa_fb.addConst(
+                            inputs[0].shape,
+                            ts.DType.INT32,
+                            weight_values_quantized,
+                            name=out,
+                        )
+                    else:
+                        tosa_fb.addConst(
+                            inputs[0].shape, inputs[0].dtype, weight_values, name=out
+                        )
                 elif out in edge_program.graph_signature.inputs_to_buffers:
                     parameter_name = edge_program.graph_signature.inputs_to_buffers[
                         node.name

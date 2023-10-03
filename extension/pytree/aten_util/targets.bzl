@@ -17,6 +17,7 @@ def define_common_targets():
         ],
         exported_deps = [
             "//executorch/extension/pytree:pytree",
+            "//executorch/runtime/platform:platform",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
         fbcode_deps = [
