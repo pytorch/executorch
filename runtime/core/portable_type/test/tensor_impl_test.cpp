@@ -181,6 +181,30 @@ TEST_F(TensorImplTest, TestSetSizesContigUpperBounded) {
   ET_EXPECT_DEATH(t.set_sizes_contiguous({new_sizes_4, 1}), "");
 }
 
+TEST_F(TensorImplTest, TestZeroDimSetEmptySizesContig) {
+  SizesType sizes[0] = {};
+  DimOrderType dim_order[0] = {};
+  StridesType strides[0] = {};
+  float data[1] = {1.0};
+  TensorImpl t(
+      ScalarType::Float,
+      0,
+      sizes,
+      data,
+      dim_order,
+      strides,
+      TensorShapeDynamism::DYNAMIC_BOUND);
+
+  ArrayRef<SizesType> new_sizes_empty{};
+  // Can resize with empty sizes
+  t.set_sizes_contiguous(new_sizes_empty);
+  EXPECT_EQ(t.dim(), 0);
+
+  SizesType new_sizes_1[1] = {1};
+  // Can't change rank of tensor
+  ET_EXPECT_DEATH(t.set_sizes_contiguous({new_sizes_1, 1}), "");
+}
+
 TEST_F(TensorImplTest, TestWriteRead) {
   SizesType sizes[1] = {1};
   DimOrderType dim_order[1] = {0};
