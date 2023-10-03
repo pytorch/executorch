@@ -260,21 +260,21 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
         print(torch_output)
         print("\033[0m")
 
-    # if profile == TosaProfile.BI:
-    #     cmd_vela = "cd " + TOSA_OUT_PATH + "; " + VELA_COMPILER_PATH + " ./output.tosa"
-    #     try:
-    #         subprocess.run([cmd_vela], shell=True, check=True)
-    #         print("\033[92m" + "Vela compile worked for: " + op + "\033[0m")
-    #     except:
-    #         print("\033[91m" + "Vela compile failed for: " + op + "\033[0m")
-    # else:
-    #     print("\033[96m" + "Skipping Vela test on non-BI profile." + "\033[0m")
+    if profile == TosaProfile.BI:
+        cmd_vela = "cd " + TOSA_OUT_PATH + "; " + VELA_COMPILER_PATH + " ./output.tosa"
+        try:
+            subprocess.run([cmd_vela], shell=True, check=True)
+            print("\033[92m" + "Vela compile worked for: " + op + "\033[0m")
+        except:
+            print("\033[91m" + "Vela compile failed for: " + op + "\033[0m")
+    else:
+        print("\033[96m" + "Skipping Vela test on non-BI profile." + "\033[0m")
 
 
 # Temp systest mode for running all models against both inference profiles
 if __name__ == "__main__":
     for op in TestList:
-        tosa_run_test(op, profile=TosaProfile.MI)
+        tosa_run_test(op, profile=TosaProfile.BI)
 
     for op in TestList:
         tosa_run_test(op, profile=TosaProfile.BI)
