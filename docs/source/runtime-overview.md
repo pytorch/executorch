@@ -1,4 +1,4 @@
-# Runtime Overview
+# ExecuTorch Runtime Overview
 
 This document discusses the design of the ExecuTorch runtime, which executes
 ExecuTorch program files on edge devices like smartphones, wearables, and
@@ -81,7 +81,7 @@ semantics whenever possible.
   [`aten_bridge`](https://github.com/pytorch/executorch/blob/main/extension/aten_util/aten_bridge.h)
   to convert between the two. This can be helpful for projects that already use
   PyTorch C++ types.
-* The semantics of operators like "aten::add" and "aten::sigmoid" are identical
+* The semantics of operators like `aten::add` and `aten::sigmoid` are identical
   between ExecuTorch and core PyTorch. ExecuTorch provides a testing framework
   to ensure this, and to help test future implementations of these operators.
 
@@ -95,7 +95,7 @@ can build it for a wide variety of target systems.
 * The code is C++11-compatible to work with older toolchains.
 * The runtime does not use exceptions or RTTI, although it is not antagonistic
   to them.
-* The code is compatible with gcc and clang, and has also been built with
+* The code is compatible with GCC and Clang, and has also been built with
   several proprietary embedded toolchains.
 * The repo provides both CMake and buck2 build systems to make integration
   easier.
@@ -113,11 +113,11 @@ Applications can control all memory allocation through the `MemoryManager`,
 runtime makes no direct calls to `malloc()` or `new`, or to types like
 `std::vector` that allocate under the hood. This makes it possible to:
 
-* run in environments without a heap, but still use the heap if desired.
-* avoid synchronization on the heap during model load and execution.
-* control which memory region to use for different types of data. For example,
+* Run in environments without a heap, but still use the heap if desired.
+* Avoid synchronization on the heap during model load and execution.
+* Control which memory region to use for different types of data. For example,
   one set of mutable tensors could live in SRAM while another set lived in DRAM.
-* easily monitor how much memory the runtime uses.
+* Easily monitor how much memory the runtime uses.
 
 However, please note that specific kernel or backend implementations may use
 arbitrary runtime or operating system features. Users should double-check the
