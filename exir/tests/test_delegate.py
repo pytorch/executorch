@@ -288,9 +288,13 @@ class TestDelegate(unittest.TestCase):
 
         node_list = []
         for node in gm.graph.nodes:
-            if (
-                node.op == "call_function"
-                and node.target == exir_ops.edge.aten.split_with_sizes_copy.default
+            # TODO(ssjia): split.Tensor now gets decomposed to split_with_sizes. Due to how executorch uses a pinned Pytorch
+            # nightly, the CI may not catch the changes to Pytorch's core decomposition table. As a temporary workaround,
+            # make the test backwards compatible with the old decomposition table. Remove the or statement once Pytorch nightly
+            # has been updated.
+            if node.op == "call_function" and (
+                node.target == exir_ops.edge.aten.split_with_sizes_copy.default
+                or node.target == exir_ops.edge.aten.split_copy.Tensor
             ):
                 node_list.append(node)
 
