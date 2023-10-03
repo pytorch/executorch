@@ -101,7 +101,7 @@ class BackendDelegate final {
     if (!handle.ok()) {
       ET_LOG(
           Error,
-          "Init failed for backend %s: %" PRIu32,
+          "Init failed for backend %s: 0x%" PRIx32,
           backend_id,
           static_cast<uint32_t>(handle.error()));
       out->segment_.Free();
@@ -341,7 +341,7 @@ Error Method::parse_values() {
         if (!t.ok()) {
           ET_LOG(
               Error,
-              "Failed parsing tensor at index %zu: %" PRIu32,
+              "Failed parsing tensor at index %zu: 0x%" PRIx32,
               i,
               static_cast<uint32_t>(t.error()));
           return t.error();
@@ -358,7 +358,7 @@ Error Method::parse_values() {
         if (!tensors.ok()) {
           ET_LOG(
               Error,
-              "Failed parsing tensor list at index %zu: %" PRIu32,
+              "Failed parsing tensor list at index %zu: 0x%" PRIx32,
               i,
               static_cast<uint32_t>(tensors.error()));
           return tensors.error();
@@ -375,7 +375,7 @@ Error Method::parse_values() {
         if (!tensors.ok()) {
           ET_LOG(
               Error,
-              "Failed parsing optional tensor list at index %zu: %" PRIu32,
+              "Failed parsing optional tensor list at index %zu: 0x%" PRIx32,
               i,
               static_cast<uint32_t>(tensors.error()));
           return tensors.error();
@@ -687,17 +687,18 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
   ET_CHECK_OR_RETURN_ERROR(
       e.isTensor() || e.isScalar(),
       InvalidArgument,
-      "The %zu-th input in method is expected Tensor or prim, but received %u",
+      "The %zu-th input in method is expected Tensor or prim, but received %" PRIu32,
       input_idx,
       static_cast<uint32_t>(e.tag));
 
   ET_CHECK_OR_RETURN_ERROR(
       e.tag == input_evalue.tag,
       InvalidArgument,
-      "The %zu-th input of method should have the same type as the input_evalue, but get tag %u and tag %u",
+      "The %zu-th input of method should have the same type as the input_evalue, but get tag %" PRIu32
+      " and tag %" PRIu32,
       input_idx,
       static_cast<uint32_t>(e.tag),
-      (unsigned int)input_evalue.tag);
+      static_cast<uint32_t>(input_evalue.tag));
 
   if (e.isTensor()) {
     const auto& t_dst = e.toTensor();
@@ -960,7 +961,7 @@ Error Method::execute_instruction() {
       if (err != Error::Ok) {
         ET_LOG(
             Error,
-            "CALL_DELEGATE execute failed at instruction %zu: %" PRIu32,
+            "CALL_DELEGATE execute failed at instruction %zu: 0x%" PRIx32,
             step_state_.instr_idx,
             static_cast<uint32_t>(err));
         return err;
