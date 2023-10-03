@@ -12,7 +12,6 @@
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/method.h>
-#include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/log.h>
 #ifdef USE_ATEN_LIB
 #include <ATen/ATen.h> // @manual=//caffe2/aten:ATen-core
@@ -62,77 +61,51 @@ inline void FillOnes(Tensor tensor) {
  * @returns An array of pointers that must be passed to `FreeInputs()` after
  *     the Method is no longer needed.
  */
-inline exec_aten::ArrayRef<void*> PrepareInputTensors(Method& method) {
-  auto method_meta = method.method_meta();
+inline exec_aten::ArrayRef<void*> PrepareInputTensors(const Method& method) {
   size_t input_size = method.inputs_size();
   size_t num_allocated = 0;
   void** inputs = (void**)malloc(input_size * sizeof(void*));
-
+#ifdef USE_ATEN_LIB
+  auto deleteByNone = [](void* p) {};
   for (size_t i = 0; i < input_size; i++) {
-    if (*method_meta.input_tag(i) != Tag::Tensor) {
+    if (!method.get_input(i).isTensor()) {
       ET_LOG(Info, "input %zu is not a tensor, skipping", i);
       continue;
     }
-
-    // Tensor Input. Grab meta data and allocate buffer
-    auto tensor_meta = method_meta.input_tensor_meta(i);
-    inputs[num_allocated++] = malloc(tensor_meta->nbytes());
-
-#ifdef USE_ATEN_LIB
-    std::vector<int64_t> at_tensor_sizes;
-    for (auto s : tensor_meta->sizes()) {
-      at_tensor_sizes.push_back(s);
+    const auto& t = method.get_input(i).toTensor();
+    at::StorageImpl* storage =
+        t.unsafeGetTensorImpl()->unsafe_storage().unsafeGetStorageImpl();
+    if (storage->data_ptr().get() == nullptr) {
+      ET_LOG(Info, "input not initialized.");
+      inputs[num_allocated++] = malloc(t.nbytes());
+      storage->set_data_ptr(at::DataPtr(
+          inputs[num_allocated - 1],
+          inputs[num_allocated - 1],
+          deleteByNone,
+          DeviceType::CPU));
+      storage->set_nbytes(t.nbytes());
+    } else {
+      ET_LOG(Info, "input already initialized, refilling.");
     }
-    at::Tensor t = at::from_blob(
-        inputs[num_allocated - 1],
-        at_tensor_sizes,
-        at::TensorOptions(tensor_meta->scalar_type()));
     t.fill_(1.0f);
-
-#else // Portable Tensor
-    // The only memory that needs to persist after set_input is called is the
-    // data ptr of the input tensor, and that is only if the Method did not
-    // memory plan buffer space for the inputs and instead is expecting the user
-    // to provide them. Meta data like sizes and dim order are used to ensure
-    // the input aligns with the values expected by the plan, but references to
-    // them are not held onto.
-
-    TensorImpl::SizesType* sizes = static_cast<TensorImpl::SizesType*>(
-        malloc(sizeof(TensorImpl::SizesType) * tensor_meta->sizes().size()));
-    TensorImpl::DimOrderType* dim_order =
-        static_cast<TensorImpl::DimOrderType*>(malloc(
-            sizeof(TensorImpl::DimOrderType) *
-            tensor_meta->dim_order().size()));
-
-    for (size_t size_idx = 0; size_idx < tensor_meta->sizes().size();
-         size_idx++) {
-      sizes[size_idx] = tensor_meta->sizes()[size_idx];
-    }
-    for (size_t dim_idx = 0; dim_idx < tensor_meta->dim_order().size();
-         dim_idx++) {
-      dim_order[dim_idx] = tensor_meta->dim_order()[dim_idx];
-    }
-
-    TensorImpl impl = TensorImpl(
-        tensor_meta->scalar_type(),
-        tensor_meta->sizes().size(),
-        sizes,
-        inputs[num_allocated - 1],
-        dim_order);
-    Tensor t(&impl);
-    FillOnes(t);
-#endif
-    auto error = method.set_input(t, i);
-    ET_CHECK_MSG(
-        error == Error::Ok,
-        "Error: 0x%" PRIx32 " setting input %zu.",
-        error,
-        i);
-#ifndef USE_ATEN_LIB // Portable Tensor
-    free(sizes);
-    free(dim_order);
-#endif
   }
+#else
+  for (size_t i = 0; i < input_size; i++) {
+    if (!method.get_input(i).isTensor()) {
+      ET_LOG(Info, "input %zu is not a tensor, skipping", i);
+      continue;
+    }
+    const auto& t = method.get_input(i).toTensor();
+    if (t.const_data_ptr() == nullptr) {
+      ET_LOG(Info, "input not initialized.");
+      inputs[num_allocated++] = malloc(t.nbytes());
+      t.set_data(inputs[num_allocated - 1]);
+    } else {
+      ET_LOG(Info, "input already initialized, refilling.");
+    }
+    FillOnes(t);
+  }
+#endif
   return {inputs, num_allocated};
 }
 

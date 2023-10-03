@@ -89,18 +89,17 @@ class Method final {
   }
 
   /**
-   * Sets the internal input value to be equivalent to the to the provided
-   * value.
+   * Sets a specific method input to the provided value.
    *
-   * @param[in] input_evalue The evalue to copy into the method input. If the
-   *     evalue is a tensor, the data is copied in most cases, so the tensor
-   *     passed in here does not always need to outlive this call. But there is
-   *     a case where the Method will keep a pointer to the tensor's data.
-   *     Based on the memory plan of the method, the inputs may not have
-   *     buffer space pre-allocated for them. In this case the executor will
-   *     alias the memory of the tensors provided as inputs here rather then
-   *     deepcopy the input into the memory planned arena.
+   * NOTE: Based on the memory plan of the method, the inputs may not have
+   * buffer space pre-allocated for them, in this case the executor will alias
+   * the memory of the tensors provided as inputs here, so the user should take
+   * care that the life span of this memory outlasts the executor forward.
    *
+   * @param[in] input_evalue The value to set the input to. The type of this
+   *     must match the type of the corresponding input. If this value is a
+   *     tensor, attempts to allow dynamic shape, but the dtype must always
+   *     agree.
    * @param[in] input_idx Zero-based index of the input to set. Must be less
    *     than the value returned by inputs_size().
    *
@@ -111,7 +110,7 @@ class Method final {
   /**
    * Sets the values of all method inputs.
    *
-   * See set_input() for a more detailed description of the behavior.
+   * See NOTE on set_input().
    *
    * @param[in] input_evalues The new values for all of the method inputs. The
    *     type of each element must match the type of corresponding input. If the
