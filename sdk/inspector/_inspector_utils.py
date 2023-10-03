@@ -12,7 +12,7 @@ from executorch.sdk.edir.et_schema import FXOperatorGraph, OperatorGraph
 from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC
 
 from executorch.sdk.etdump.serialize import deserialize_from_etdump_flatcc
-from executorch.sdk.etrecord import ETRecord, parse_etrecord
+from executorch.sdk.etrecord import ETRecord
 
 EDGE_DIALECT_GRAPH_KEY = "edge_dialect_graph_module"
 
@@ -59,13 +59,6 @@ def create_debug_handle_to_op_node_mapping(
                         "No two op nodes of the same graph should have the same debug handle."
                     )
                 debug_handle_to_op_node_map[debug_handle] = element
-
-
-def gen_etrecord_object(etrecord_path: Optional[str] = None) -> ETRecord:
-    # Gen op graphs from etrecord
-    if etrecord_path is None:
-        raise ValueError("Etrecord_path must be specified.")
-    return parse_etrecord(etrecord_path=etrecord_path)
 
 
 def gen_etdump_object(etdump_path: Optional[str] = None) -> ETDumpFlatCC:
