@@ -11,7 +11,6 @@
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/profiler.h>
 #include "${fn_header}" // Generated Function import headers
-#include <executorch/manual.h>
 
 // ${generated_comment}
 
@@ -26,6 +25,8 @@
 using KernelArrayRef = ::torch::executor::ArrayRef<::torch::executor::Kernel>;
 namespace torch {
 namespace executor {
+namespace function {
+namespace {
 
 static Kernel kernels_to_register[] = {
     ${unboxed_kernels} // Generated kernels
@@ -39,11 +40,9 @@ static KernelArrayRef kernel_array_ref(
 
 // Return value not used. Keep the static variable assignment to register
 // kernels in static initialization time.
-// static auto success_with_kernel_reg = register_kernels(kernel_array_ref);
+static auto success_with_kernel_reg = register_kernels(kernel_array_ref);
 
-void manual_override() {
-    static auto success_with_kernel_reg = register_kernels(kernel_array_ref);
 }
-
+} // namespace function
 } // namespace executor
 } // namespace torch

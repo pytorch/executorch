@@ -33,7 +33,7 @@ public:
 	ArmBackend() {
 		ET_LOG(Debug, "Constructing ARM Backend");
 	}
-	
+
 	~ArmBackend() = default;
 
 	virtual bool is_available() const override {
@@ -76,7 +76,7 @@ public:
 		// Verify address range is accessible current expectation is the program
 		// is wholly stored in SRAM
 		if( !(data > CS300_SRAM_LOW || foot < CS300_SRAM_HIGH) );
-		
+
 		// Return the same buffer we were passed - this data will be
 		// executed directly
 		return processed;
@@ -117,7 +117,7 @@ public:
 			if( !((i+1)%4) ) printf("\n");
 		}
 		printf("\n");
-		
+
 		// Allocate driver handle and synchronously invoke driver
 		ethosu_driver *drv = ethosu_reserve_driver();
 
@@ -136,7 +136,7 @@ public:
 			ET_LOG(Error, "ArmBackend::execute: Ethos-U invocation failed error (%d)", result);
 			return Error::InvalidProgram;
 		}
-		
+
 		// TMP emit scratch
         printf("Scratch after:\n");
         for( int i=0; i<handles.scratch_data_size; i++ )
@@ -145,7 +145,7 @@ public:
             if( !((i+1)%4) ) printf("\n");
         }
         printf("\n");
-		
+
 		// Process results into EValue storage
 		// TODO: optimise into direct write for compatible layouts
 		// TODO: get num in/out and layout?
@@ -153,10 +153,10 @@ public:
 		auto tensor = args[1]->toTensor();
 		for(int j=0; j<tensor.numel(); j++)
 		{
-			
+
 			tensor.mutable_data_ptr<int>()[j] = output_address[j];
 		}
-				
+
 		return Error::Ok;
 	}
 
@@ -182,7 +182,7 @@ private:
 	static int next_mul_16( int n ) {
 		return ((n-1)|15)+1;
 	}
-	
+
 	int vela_read(char* data, vela_handles *h, int size ) const {
 
 		// Read header string
@@ -238,24 +238,26 @@ private:
 				h->input_data_shape[0] = ((int*)b->data)[0];
 				h->input_data_shape[0] = ((int*)b->data)[1];
 				h->input_data_shape[0] = ((int*)b->data)[2];
-				
+
 			}
 			if( !strncmp( b->name, "output_shape", strlen("output_shape")) )
 			{
 				h->output_data_shape[0] = ((int*)b->data)[0];
 				h->output_data_shape[0] = ((int*)b->data)[1];
                 h->output_data_shape[0] = ((int*)b->data)[2];
-            }							
+            }
 		}
 	}
 
 };
 
-	auto backend = ArmBackend();
-	void arm_backend_register() {
-		Backend backend_id{"ArmBackend", &backend};
-		static auto registered = register_backend(backend_id);
-	}
+
+namespace {
+auto cls = ArmBackend();
+Backend backend{"ArmBackend", &cls};
+static auto hope_for_success = register_backend(backend);
+} // namespace
+
 
 } // namespace executor
 } // namespace torch
