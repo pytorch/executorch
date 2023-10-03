@@ -162,7 +162,7 @@ include(${EXECUTORCH_SRCS_FILE})
 # _default_build_host_targets: The default value for the
 # EXECUTORCH_BUILD_HOST_TARGETS option.
 set(_default_build_host_targets ON)
-if(CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
+if(CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   # TODO(dbort): Refactor toolchain-specific matching. Ideally this file would
   # not know about specific targets, and work with more abstract concepts like
   # "is cross compiling".
