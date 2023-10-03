@@ -10,8 +10,6 @@ from executorch.sdk.etrecord._etrecord import (
     parse_etrecord,
 )
 
-__all__ = [
-    "ETRecord",
-    "generate_etrecord",
-    "parse_etrecord",
-]
+from executorch.sdk.inspector.inspector import Inspector
+
+__all__ = ["ETRecord", "generate_etrecord", "parse_etrecord", "Inspector"]
