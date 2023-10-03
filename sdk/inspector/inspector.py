@@ -25,7 +25,7 @@ import pandas as pd
 import torch
 from executorch.exir import ExportedProgram
 
-from executorch.sdk.edir.et_schema import OperatorGraphWithStats, OperatorNode
+from executorch.sdk.edir.base_schema import OperatorGraph, OperatorNode
 from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
 from executorch.sdk.inspector._inspector_utils import (
     create_debug_handle_to_op_node_mapping,
@@ -392,9 +392,9 @@ class Inspector:
         etdump = gen_etdump_object(etdump_path=etdump_path)
         self.event_blocks = EventBlock._gen_from_etdump(etdump, etdump_scale)
 
-        self._op_graph_dict: Mapping[
-            str, OperatorGraphWithStats
-        ] = gen_graphs_from_etrecord(etrecord=self._etrecord)
+        self._op_graph_dict: Mapping[str, OperatorGraph] = gen_graphs_from_etrecord(
+            etrecord=self._etrecord
+        )
 
         # Use the delegate map from etrecord, associate debug handles with each event
         for event_block in self.event_blocks:

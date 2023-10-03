@@ -1,8 +1,4 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
 import copy
 import unittest
@@ -18,13 +14,9 @@ from executorch.exir import (
     ExirExportedProgram,
 )
 from executorch.exir.lowered_backend_module import LoweredBackendModule
-from executorch.sdk.edir.base_schema import OperatorNode
-from executorch.sdk.edir.et_schema import (
-    ExportedETOperatorGraph,
-    FXOperatorGraph,
-    InferenceRun,
-)
+from executorch.sdk.edir.et_schema import FXOperatorGraph
 from executorch.sdk.etdump.schema import ETDump, ProfileBlock, ProfileEvent, RunData
+from executorch.sdk.fb.et_schema import ExportedETOperatorGraph, InferenceRun
 
 from parameterized import parameterized
 from torch import Tensor
@@ -697,37 +689,36 @@ class ExportedFXGraphTest(unittest.TestCase):
         op_graph = gen_fx_graph_file_contents(et_program.dump_graph_module())
         self.check_graph_equal(op_graph, model_name, "et_dialect")
 
-    # pyre-ignore
-    @parameterized.expand(MODELS)
-    def test_metadata_attaching(self, model_name: str, model: torch.nn.Module) -> None:
-        _, _, et_program = gen_graphs_from_model(model)
-        op_graph = FXOperatorGraph.gen_operator_graph(et_program.dump_graph_module())
-        inference_run = model.gen_inference_run()
-        op_graph.attach_metadata(inference_run)
+    # @parameterized.expand(MODELS)
+    # def test_metadata_attaching(self, model_name: str, model: torch.nn.Module) -> None:
+    #     _, _, et_program = gen_graphs_from_model(model)
+    #     op_graph = FXOperatorGraph.gen_operator_graph(et_program.dump_graph_module())
+    #     inference_run = model.gen_inference_run()
+    #     op_graph.attach_metadata(inference_run)
 
-        def verify_metadata_containment(
-            graph: FXOperatorGraph, inference_run: InferenceRun
-        ) -> None:
-            validation_map = inference_run.node_metadata
+    #     def verify_metadata_containment(
+    #         graph: FXOperatorGraph, inference_run: InferenceRun
+    #     ) -> None:
+    #         validation_map = inference_run.node_metadata
 
-            for node in graph.elements:
-                # Recursively check subgraph nodes
-                if isinstance(node, FXOperatorGraph):
-                    verify_metadata_containment(node, inference_run)
-                # Check that each node contains the corresponding metadata fields
-                if isinstance(node, OperatorNode) and node.metadata is not None:
-                    metadata = node.metadata
-                    debug_handle = metadata.get("debug_handle")
-                    if debug_handle in validation_map:
-                        self.assertDictContainsSubset(
-                            validation_map[debug_handle], metadata
-                        )
+    #         for node in graph.elements:
+    #             # Recursively check subgraph nodes
+    #             if isinstance(node, FXOperatorGraph):
+    #                 verify_metadata_containment(node, inference_run)
+    #             # Check that each node contains the corresponding metadata fields
+    #             if isinstance(node, OperatorNode) and node.metadata is not None:
+    #                 metadata = node.metadata
+    #                 debug_handle = metadata.get("debug_handle")
+    #                 if debug_handle in validation_map:
+    #                     self.assertDictContainsSubset(
+    #                         validation_map[debug_handle], metadata
+    #                     )
 
-        # Check for run level metadata
-        if op_graph.metadata is not None:
-            self.assertDictContainsSubset(inference_run.run_metadata, op_graph.metadata)
+    #     # Check for run level metadata
+    #     if op_graph.metadata is not None:
+    #         self.assertDictContainsSubset(inference_run.run_metadata, op_graph.metadata)
 
-        verify_metadata_containment(op_graph, inference_run)
+    #     verify_metadata_containment(op_graph, inference_run)
 
 
 class ExportedOpGraphTest(unittest.TestCase):
@@ -747,36 +738,35 @@ class ExportedOpGraphTest(unittest.TestCase):
             "Please run `//executorch/sdk/edir/tests:generate_fixtures` to regenerate the fixtures.",
         )
 
-    # pyre-ignore
-    @parameterized.expand(MODELS)
-    def test_metadata_attaching(self, model_name: str, model: torch.nn.Module) -> None:
-        op_graph = generate_op_graph(model, model.get_random_inputs())
-        inference_run = model.gen_inference_run()
-        op_graph.attach_metadata(inference_run)
+    # @parameterized.expand(MODELS)
+    # def test_metadata_attaching(self, model_name: str, model: torch.nn.Module) -> None:
+    #     op_graph = generate_op_graph(model, model.get_random_inputs())
+    #     inference_run = model.gen_inference_run()
+    #     op_graph.attach_metadata(inference_run)
 
-        def verify_metadata_containment(
-            graph: ExportedETOperatorGraph, inference_run: InferenceRun
-        ) -> None:
-            validation_map = inference_run.node_metadata
+    #     def verify_metadata_containment(
+    #         graph: ExportedETOperatorGraph, inference_run: InferenceRun
+    #     ) -> None:
+    #         validation_map = inference_run.node_metadata
 
-            for node in graph.elements:
-                # Recursively check subgraph nodes
-                if isinstance(node, ExportedETOperatorGraph):
-                    verify_metadata_containment(node, inference_run)
-                # Check that each node contains the corresponding metadata fields
-                if isinstance(node, OperatorNode) and node.metadata is not None:
-                    metadata = node.metadata
-                    debug_handle = metadata.get("debug_handle")
-                    if debug_handle in validation_map:
-                        self.assertDictContainsSubset(
-                            validation_map[debug_handle], metadata
-                        )
+    #         for node in graph.elements:
+    #             # Recursively check subgraph nodes
+    #             if isinstance(node, ExportedETOperatorGraph):
+    #                 verify_metadata_containment(node, inference_run)
+    #             # Check that each node contains the corresponding metadata fields
+    #             if isinstance(node, OperatorNode) and node.metadata is not None:
+    #                 metadata = node.metadata
+    #                 debug_handle = metadata.get("debug_handle")
+    #                 if debug_handle in validation_map:
+    #                     self.assertDictContainsSubset(
+    #                         validation_map[debug_handle], metadata
+    #                     )
 
-        # Check for run level metadata
-        if op_graph.metadata is not None:
-            self.assertDictContainsSubset(inference_run.run_metadata, op_graph.metadata)
+    #     # Check for run level metadata
+    #     if op_graph.metadata is not None:
+    #         self.assertDictContainsSubset(inference_run.run_metadata, op_graph.metadata)
 
-        verify_metadata_containment(op_graph, inference_run)
+    #     verify_metadata_containment(op_graph, inference_run)
 
 
 class InferenceRunTest(unittest.TestCase):

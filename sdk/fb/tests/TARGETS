@@ -15,9 +15,9 @@ python_unittest(
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir:lowered_backend_module",
-        "//executorch/sdk/edir:base_schema",
         "//executorch/sdk/edir:et_schema",
         "//executorch/sdk/etdump:schema",
+        "//executorch/sdk/fb:et_schema",
     ],
 )
 
@@ -31,9 +31,9 @@ python_library(
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir:lowered_backend_module",
-        "//executorch/sdk/edir:base_schema",
         "//executorch/sdk/edir:et_schema",
         "//executorch/sdk/etdump:schema",
+        "//executorch/sdk/fb:et_schema",
     ],
 )
 
@@ -42,14 +42,14 @@ python_binary(
     srcs = [
         "exported_op_graph_test.py",
     ],
-    main_module = "executorch.sdk.edir.tests.exported_op_graph_test",
+    main_module = "executorch.sdk.fb.tests.exported_op_graph_test",
     deps = [
         "fbsource//third-party/pypi/parameterized:parameterized",
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir:lowered_backend_module",
-        "//executorch/sdk/edir:base_schema",
         "//executorch/sdk/edir:et_schema",
         "//executorch/sdk/etdump:schema",
+        "//executorch/sdk/fb:et_schema",
     ],
 )

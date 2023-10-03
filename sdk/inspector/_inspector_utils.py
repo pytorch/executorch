@@ -6,11 +6,9 @@
 
 from typing import Dict, Mapping, Optional
 
-from executorch.sdk.edir.et_schema import (
-    FXOperatorGraph,
-    OperatorGraphWithStats,
-    OperatorNode,
-)
+from executorch.sdk.edir.base_schema import OperatorNode
+
+from executorch.sdk.edir.et_schema import FXOperatorGraph, OperatorGraph
 from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC
 
 from executorch.sdk.etdump.serialize import deserialize_from_etdump_flatcc
@@ -21,7 +19,7 @@ EDGE_DIALECT_GRAPH_KEY = "edge_dialect_graph_module"
 
 def gen_graphs_from_etrecord(
     etrecord: ETRecord,
-) -> Mapping[str, OperatorGraphWithStats]:
+) -> Mapping[str, OperatorGraph]:
     op_graph_map = {}
     if etrecord.graph_map is not None:
         op_graph_map = {
@@ -39,7 +37,7 @@ def gen_graphs_from_etrecord(
 # TODO: use anonymous function to avoid passing the dict around
 # and move this inside of the OperatorGraphWithStats class
 def create_debug_handle_to_op_node_mapping(
-    op_graph: OperatorGraphWithStats,
+    op_graph: OperatorGraph,
     debug_handle_to_op_node_map: Dict[int, OperatorNode],
 ) -> None:
     """
@@ -48,7 +46,7 @@ def create_debug_handle_to_op_node_mapping(
     """
     # Recursively searches through the metadata of nodes
     for element in op_graph.elements:
-        if isinstance(element, OperatorGraphWithStats):
+        if isinstance(element, OperatorGraph):
             create_debug_handle_to_op_node_mapping(element, debug_handle_to_op_node_map)
         if isinstance(element, OperatorNode) and element.metadata is not None:
             metadata = element.metadata
