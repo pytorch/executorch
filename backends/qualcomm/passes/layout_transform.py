@@ -182,11 +182,10 @@ class LayoutTransform(ExportPass):
     def traverse(self, node: torch.fx.Node, graph_module: torch.fx.GraphModule) -> None:
         for arg in node.args:
             self.annotate_layout(arg, graph_module, revert_layout=False)
-        for user in node.users:
+
+        node_users = set(node.users.keys())
+        for user in node_users:
             self.annotate_layout(user, graph_module, revert_layout=True)
-            new_user = next(iter(node.users))
-            if new_user.target == exir_ops.edge.aten.permute_copy.default:
-                break
 
     def annotate_layout(
         self, node: torch.fx.Node, graph_module: torch.fx.GraphModule, revert_layout

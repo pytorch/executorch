@@ -1198,7 +1198,7 @@ class TestQNNINT8(TestQNN):
             instance,
             example_inputs,
             is_conv_per_channel=False,
-            custom_quant_annotations=(annotate_forward),
+            custom_quant_annotations=(annotate_forward,),
         )
         buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
         model_name = "ptq_qnn_edsr_model"

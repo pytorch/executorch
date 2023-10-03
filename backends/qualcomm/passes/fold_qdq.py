@@ -47,8 +47,8 @@ class FoldQDQ(ExportPass):
 
             # To make constant value/tensor be tagged as delegatable during partition
             if source_n.op == "get_attr":
-                source_n.meta["source_fn"] = list(n.users.keys())[0].meta.get(
-                    "source_fn"
+                source_n.meta["source_fn_stack"] = list(n.users.keys())[0].meta.get(
+                    "source_fn_stack"
                 )
 
             # add quantization attributes to the meta of source node

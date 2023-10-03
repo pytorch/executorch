@@ -20,8 +20,8 @@ from executorch.backends.qualcomm.passes import (
 from torch import Tensor
 
 from torch.ao.quantization.observer import (
+    HistogramObserver,
     MinMaxObserver,
-    MovingAverageMinMaxObserver,
     PerChannelMinMaxObserver,
 )
 from torch.ao.quantization.quantize_pt2e import (
@@ -128,7 +128,7 @@ def get_default_qnn_ptq_config(
         quant_min=0,
         quant_max=255,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(),
+        observer_or_fake_quant_ctr=HistogramObserver.with_args(),
     )
 
     weight_quantization_spec = QuantizationSpec(
@@ -168,7 +168,7 @@ def get_ptq_per_channel_weight_config() -> QuantizationConfig:
         quant_min=0,
         quant_max=255,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(),
+        observer_or_fake_quant_ctr=HistogramObserver.with_args(),
     )
 
     weight_quantization_spec = QuantizationSpec(
@@ -199,7 +199,7 @@ class QnnQuantizer(Quantizer):
         self.custom_quant_configs: Dict[
             Union[Type[torch.nn.Module], Callable], Optional[QuantizationConfig]
         ] = {}
-        self.custom_quant_annotations: Tuple[Callable] = []
+        self.custom_quant_annotations: Tuple[Callable] = ()
 
     def set_global_op_quant_config(
         self, quantization_config: Tuple[QuantizationConfig, QnnQuantizerConfig]
@@ -213,18 +213,14 @@ class QnnQuantizer(Quantizer):
     ) -> None:
         self.custom_quant_annotations = custom_quant_annotations
 
-    def _get_qaunt_config(
+    def _get_quant_config(
         self, ops: List[Union[Type[torch.nn.Module], Callable]]
     ) -> Optional[QuantizationConfig]:
         """
         Priority:
-            1. custom config
-            2. per channel config when enable_per_channel_conv_quant is True
-            3. global config
+            1. per channel config when enable_per_channel_conv_quant is True
+            2. global config
         """
-        for op in ops:
-            if op in self.custom_quant_configs:
-                return self.custom_quant_configs[op]
 
         conv_ops = {torch.nn.Conv2d, torch.nn.functional.conv2d}
         if self.configs.enable_per_channel_conv_quant and set(ops).intersection(
@@ -283,7 +279,7 @@ class QnnQuantizer(Quantizer):
             "div",
         ]
 
-        quantization_config = self._get_qaunt_config(op_sources)
+        quantization_config = self._get_quant_config(op_sources)
         binary_partitions = get_source_partitions(gm.graph, op_sources)
         binary_partitions = list(itertools.chain(*binary_partitions.values()))
         for binary_partition in binary_partitions:
@@ -311,7 +307,7 @@ class QnnQuantizer(Quantizer):
 
     def _annotate_relu(self, gm: torch.fx.GraphModule) -> None:
         op_sources = [torch.nn.ReLU, F.relu]
-        quantization_config = self._get_qaunt_config(op_sources)
+        quantization_config = self._get_quant_config(op_sources)
         relu_partitions = get_source_partitions(gm.graph, op_sources)
 
         relu_partitions = list(itertools.chain(*relu_partitions.values()))
@@ -344,7 +340,7 @@ class QnnQuantizer(Quantizer):
 
     def _annotate_hardswish(self, gm: torch.fx.GraphModule) -> None:
         op_sources = [torch.nn.Hardswish]
-        quantization_config = self._get_qaunt_config(op_sources)
+        quantization_config = self._get_quant_config(op_sources)
         hardswish_partitions = get_source_partitions(gm.graph, op_sources)
 
         hardswish_partitions = list(itertools.chain(*hardswish_partitions.values()))
@@ -377,7 +373,7 @@ class QnnQuantizer(Quantizer):
 
     def _annotate_hardsigmoid(self, gm: torch.fx.GraphModule) -> None:
         op_sources = [torch.nn.Hardsigmoid]
-        quantization_config = self._get_qaunt_config(op_sources)
+        quantization_config = self._get_quant_config(op_sources)
         hardsigmoid_partitions = get_source_partitions(gm.graph, op_sources)
 
         hardsigmoid_partitions = list(itertools.chain(*hardsigmoid_partitions.values()))
@@ -420,7 +416,7 @@ class QnnQuantizer(Quantizer):
 
     def _annotate_conv2d(self, gm: torch.fx.GraphModule) -> None:
         op_sources = [torch.nn.Conv2d, torch.nn.functional.conv2d]
-        quantization_config = self._get_qaunt_config(op_sources)
+        quantization_config = self._get_quant_config(op_sources)
         conv_partitions = get_source_partitions(gm.graph, op_sources)
         conv_partitions = list(itertools.chain(*conv_partitions.values()))
         for conv_partition in conv_partitions:
@@ -463,7 +459,7 @@ class QnnQuantizer(Quantizer):
     def _annotate_linear(self, gm: torch.fx.GraphModule) -> None:  # noqa: C901
         op_sources = [torch.nn.Linear, torch.nn.functional.linear]
         linear_partitions = get_source_partitions(gm.graph, op_sources)
-        quantization_config = self._get_qaunt_config(op_sources)
+        quantization_config = self._get_quant_config(op_sources)
 
         input_act_qspec = quantization_config.input_activation
         output_act_qspec = quantization_config.output_activation
@@ -532,7 +528,7 @@ class QnnQuantizer(Quantizer):
 
     def _annotate_hardtanh(self, gm: torch.fx.GraphModule) -> None:
         op_sources = [torch.nn.modules.Hardtanh, torch.nn.modules.ReLU6]
-        qconfig = self._get_qaunt_config(op_sources)
+        qconfig = self._get_quant_config(op_sources)
         hardtanh_partitions = get_source_partitions(gm.graph, op_sources)
 
         hardtanh_partitions = list(itertools.chain(*hardtanh_partitions.values()))
@@ -565,7 +561,7 @@ class QnnQuantizer(Quantizer):
 
     def _annotate_mean(self, gm: torch.fx.GraphModule) -> None:
         op_sources = [torch.mean]
-        qconfig = self._get_qaunt_config(op_sources)
+        qconfig = self._get_quant_config(op_sources)
         mean_partitions = get_source_partitions(gm.graph, op_sources)
 
         mean_partitions = list(itertools.chain(*mean_partitions.values()))
@@ -589,7 +585,7 @@ class QnnQuantizer(Quantizer):
 
     def _annotate_unsqueeze(self, gm: torch.fx.GraphModule) -> None:
         op_sources = [torch.ops.aten.unsqueeze_copy.default, torch.unsqueeze]
-        qconfig = self._get_qaunt_config(op_sources)
+        qconfig = self._get_quant_config(op_sources)
         if qconfig and qconfig != self.global_quant_config:
             raise NotImplementedError(
                 "Havn't done custom annotation for input_out_obs_sharing_op yet"
@@ -598,7 +594,7 @@ class QnnQuantizer(Quantizer):
 
     def _annotate_flatten(self, gm: torch.fx.GraphModule) -> None:
         op_sources = [torch.ops.aten.flatten.using_ints, torch.flatten]
-        qconfig = self._get_qaunt_config(op_sources)
+        qconfig = self._get_quant_config(op_sources)
         if qconfig and qconfig != self.global_quant_config:
             raise NotImplementedError(
                 "Havn't done custom annotation for input_out_obs_sharing_op yet"
@@ -610,7 +606,7 @@ class QnnQuantizer(Quantizer):
             torch.ops.aten.max_pool2d_with_indices.default,
             torch.nn.MaxPool2d,
         ]
-        qconfig = self._get_qaunt_config(op_sources)
+        qconfig = self._get_quant_config(op_sources)
         maxpool_partitions = get_source_partitions(gm.graph, op_sources)
 
         maxpool_partitions = list(itertools.chain(*maxpool_partitions.values()))
@@ -638,7 +634,7 @@ class QnnQuantizer(Quantizer):
             torch.nn.functional.adaptive_avg_pool2d,
             torch.nn.AdaptiveAvgPool2d,
         ]
-        qconfig = self._get_qaunt_config(op_sources)
+        qconfig = self._get_quant_config(op_sources)
         adaptive_avgpool_partitions = get_source_partitions(gm.graph, op_sources)
 
         adaptive_avgpool_partitions = list(
@@ -662,7 +658,7 @@ class QnnQuantizer(Quantizer):
 
     def _annotate_avgpool2d(self, gm: torch.fx.GraphModule) -> None:
         op_sources = [torch.ops.aten.avg_pool2d.default, torch.nn.AvgPool2d]
-        qconfig = self._get_qaunt_config(op_sources)
+        qconfig = self._get_quant_config(op_sources)
         avgpool_partitions = get_source_partitions(gm.graph, op_sources)
 
         avgpool_partitions = list(itertools.chain(*avgpool_partitions.values()))
@@ -684,7 +680,7 @@ class QnnQuantizer(Quantizer):
 
     def _annotate_cat(self, gm: torch.fx.GraphModule) -> None:
         op_sources = [torch.ops.aten.cat.default, torch.cat]
-        qconfig = self._get_qaunt_config(op_sources)
+        qconfig = self._get_quant_config(op_sources)
         cat_partitions = get_source_partitions(gm.graph, op_sources)
 
         cat_partitions = list(itertools.chain(*cat_partitions.values()))
@@ -718,7 +714,7 @@ class QnnQuantizer(Quantizer):
 
     def _annotate_upsample2d(self, gm: torch.fx.GraphModule) -> None:
         op_sources = [torch.nn.functional.interpolate, torch.nn.UpsamplingBilinear2d]
-        qconfig = self._get_qaunt_config(op_sources)
+        qconfig = self._get_quant_config(op_sources)
         upsample_partitions = get_source_partitions(gm.graph, op_sources)
 
         upsample_partitions = list(itertools.chain(*upsample_partitions.values()))

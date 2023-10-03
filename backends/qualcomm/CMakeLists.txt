@@ -244,7 +244,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
     ${CMAKE_CURRENT_LIST_DIR}/executor_runner/qnn_executor_runner.cpp
   )
   add_executable(qnn_executor_runner ${_qnn_executor_runner__srcs})
-  target_link_libraries(qnn_executor_runner ${_libs} qnn_executorch_backend)
+  target_link_libraries(qnn_executor_runner ${_executor_runner_libs} qnn_executorch_backend gflags)
   target_compile_options(qnn_executor_runner PUBLIC ${_common_compile_options})
 endif()
 

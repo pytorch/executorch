@@ -236,7 +236,7 @@ if __name__ == "__main__":
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,
-        custom_annotations=[annotate_forward],
+        custom_annotations=(annotate_forward,),
     )
     # setup required paths accordingly
     # qnn_sdk       : QNN SDK path setup in environment variable
