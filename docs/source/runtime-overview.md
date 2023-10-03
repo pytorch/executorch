@@ -103,7 +103,7 @@ can build it for a wide variety of target systems.
 #### Operating System Considerations
 
 The runtime makes no direct system calls. All access to memory, files, logging,
-and clock	s are abstracted through the [_Runtime Platform Abstraction Layer
+and clocks are abstracted through the [_Runtime Platform Abstraction Layer
 (PAL)_](runtime-platform-abstraction-layer.md) and injected interfaces like
 `DataLoader` and `MemoryAllocator`. [TODO: link these types to their generated
 docs]
