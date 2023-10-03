@@ -1,0 +1,50 @@
+From e658256bf882eb7160562823a995b38aa680130d Mon Sep 17 00:00:00 2001
+From: Digant Desai <digantdesai@meta.com>
+Date: Tue, 3 Oct 2023 07:34:23 -0700
+Subject: [PATCH 5/5] [HACK] Add example changes for ArmBackend delegate
+
+---
+ applications/executorch_tests/CMakeLists.txt | 7 ++++++-
+ applications/executorch_tests/add.cpp        | 4 +++-
+ 2 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/applications/executorch_tests/CMakeLists.txt b/applications/executorch_tests/CMakeLists.txt
+index 456bb31..12bf453 100644
+--- a/applications/executorch_tests/CMakeLists.txt
++++ b/applications/executorch_tests/CMakeLists.txt
+@@ -41,11 +41,16 @@ message("**********************")
+ set(LIB_ET_RUNTIME "${ET_BUILD_DIR_PATH}/libexecutorch.a")
+ set(LIB_ET_OP_REGISTRATION "${ET_BUILD_DIR_PATH}/kernels/portable/libportable_ops_lib.a")
+ set(LIB_ET_OP_KERNELS "${ET_BUILD_DIR_PATH}/kernels/portable/libportable_kernels.a")
++set(LIB_ET_ETHOS_U_DELEGATE "${ET_BUILD_DIR_PATH}/backends/arm/libethos_u.a")
+ 
+ ethosu_add_executable_test(executorch_add PRIVATE
+     WHOLE_ARCHIVE TRUE
+     SOURCES add.cpp
+-    LIBRARIES ${LIB_ET_RUNTIME} ${LIB_ET_OP_REGISTRATION} ${LIB_ET_OP_KERNELS})
++    LIBRARIES
++    ${LIB_ET_RUNTIME}
++    ${LIB_ET_OP_REGISTRATION}
++    ${LIB_ET_OP_KERNELS}
++    ${LIB_ET_ETHOS_U_DELEGATE})
+ 
+ target_include_directories(executorch_add PRIVATE
+ ${ET_INCLUDE_PATH})
+diff --git a/applications/executorch_tests/add.cpp b/applications/executorch_tests/add.cpp
+index acbdb3d..901c0c5 100644
+--- a/applications/executorch_tests/add.cpp
++++ b/applications/executorch_tests/add.cpp
+@@ -28,7 +28,9 @@
+ #include <executorch/runtime/platform/log.h>
+ #include <executorch/util/util.h>
+ 
+-#include <executorch/add.pte.h>
++// #include <executorch/add.pte.h>
++#include <executorch/add_u55_fp32.pte.h>
++
+ 
+ #include <vector>
+ #include <memory>
+-- 
+2.39.3
+
