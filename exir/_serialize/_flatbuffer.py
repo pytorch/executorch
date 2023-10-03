@@ -186,8 +186,9 @@ def _run_flatc(args: Sequence[str]) -> None:
         with importlib.resources.path(__package__, _FLATC_RESOURCE_NAME) as flatc_path:
             subprocess.run([flatc_path] + list(args), check=True)
     else:
-        # Expect the `flatc` tool to be on the system path.
-        subprocess.run(["flatc"] + list(args), check=True)
+        # Expect the `flatc` tool to be on the system path or set as an env var.
+        flatc_path = os.getenv("FLATC_EXECUTABLE", "flatc")
+        subprocess.run([flatc_path] + list(args), check=True)
 
 
 def _flatc_compile(output_dir: str, schema_path: str, json_path: str) -> None:
