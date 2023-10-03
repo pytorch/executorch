@@ -32,7 +32,7 @@ class XNNPACKPassManager:
         self, exported_program: ExportedProgram, passes: Optional[List[PassType]] = None
     ) -> None:
         """
-        A helper class to run multiple XNNPack passes on a program
+        A helper class to run multiple XNNPACK passes on a program
         If passes list is empty, all passes in XNNPACK will be run.
         Else only run passes in the list will be run.
         """
