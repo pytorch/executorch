@@ -16,7 +16,8 @@
 #include <memory>
 #include <string>
 
-#include <executorch/runtime/core/function_ref.h>
+// NB: This is a local, pytree FunctionRef and not from the ExecuTorch runtime.
+#include <executorch/extension/pytree/function_ref.h>
 
 namespace torch {
 namespace executor {
