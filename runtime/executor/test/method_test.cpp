@@ -116,6 +116,17 @@ TEST_F(MethodTest, SetPrimInputTest) {
   torch::executor::util::FreeInputs(inputs);
 }
 
+TEST_F(MethodTest, MethodMetaTest) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  auto method_meta = method->method_meta();
+
+  EXPECT_EQ(method_meta.num_inputs(), method->inputs_size());
+  EXPECT_EQ(method_meta.num_outputs(), method->outputs_size());
+}
+
 TEST_F(MethodTest, AliasedIOTest) {
   // TODO(T163238401)
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);

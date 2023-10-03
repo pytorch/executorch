@@ -12,6 +12,7 @@
 #include <executorch/runtime/core/event_tracer.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/memory_manager.h>
+#include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/platform/compiler.h>
 
 // Forward declare flatbuffer types. This is a public header and must not
@@ -196,17 +197,43 @@ class Method final {
    */
   __ET_NODISCARD Error experimental_reset_execution();
 
-  size_t values_size() const;
-  const EValue& get_value(size_t i) const;
-  EValue& mutable_value(size_t i);
+  /**
+   * Returns the MethodMeta that corresponds to the calling Method.
+   */
+  MethodMeta method_meta() const;
+
+  /**
+   * Returns the number of inputs the Method expects.
+   */
   size_t inputs_size() const;
-  size_t get_input_index(size_t i) const;
-  const EValue& get_input(size_t i) const;
-  EValue& mutable_input(size_t i);
+
+  /**
+   * Returns the number of outputs the Method returns.
+   */
   size_t outputs_size() const;
-  size_t get_output_index(size_t i) const;
+
+  /**
+   * Retrieves the output at the specified index.
+   */
   const EValue& get_output(size_t i) const;
-  EValue& mutable_output(size_t i);
+
+  __ET_DEPRECATED size_t values_size() const;
+  __ET_DEPRECATED const EValue& get_value(size_t i) const;
+  __ET_DEPRECATED EValue& mutable_value(size_t i);
+  /// DEPRECATED: Use MethodMeta instead to access metadata, and set_input to
+  /// update Method inputs.
+  __ET_DEPRECATED size_t get_input_index(size_t i) const;
+  /// DEPRECATED: Use MethodMeta instead to access metadata, and set_input to
+  /// update Method inputs.
+  __ET_DEPRECATED const EValue& get_input(size_t i) const;
+  /// DEPRECATED: Use MethodMeta instead to access metadata, and set_input to
+  /// update Method inputs.
+  __ET_DEPRECATED EValue& mutable_input(size_t i);
+  __ET_DEPRECATED size_t get_output_index(size_t i) const;
+  /// DEPRECATED: Use MethodMeta instead to access metadata, and get_output to
+  /// retrieve Method outputs.
+  __ET_DEPRECATED EValue& mutable_output(size_t i);
+
   ~Method();
 
  private:
