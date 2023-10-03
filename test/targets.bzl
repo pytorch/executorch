@@ -24,6 +24,7 @@ def define_common_targets():
     #
     # It's also best to build this with `-c executorch.enable_program_verification=false`
     # to remove ~30kB of optional flatbuffer verification code from the binary.
+    # Building with `-c executorch.enable_et_log=0` removes ~15kB from the binary.
     runtime.cxx_binary(
         name = "size_test",
         srcs = SIZE_TEST_SOURCES,
