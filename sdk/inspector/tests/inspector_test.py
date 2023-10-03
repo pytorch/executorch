@@ -54,8 +54,8 @@ class TestInspector(unittest.TestCase):
     def test_inspector_constructor(self):
         # Create a context manager to patch functions called by Inspector.__init__
         with patch.object(
-            inspector, "gen_etrecord_object", return_value=None
-        ) as mock_gen_etrecord, patch.object(
+            inspector, "parse_etrecord", return_value=None
+        ) as mock_parse_etrecord, patch.object(
             inspector, "gen_etdump_object", return_value=None
         ) as mock_gen_etdump, patch.object(
             EventBlock, "_gen_from_etdump"
@@ -69,20 +69,17 @@ class TestInspector(unittest.TestCase):
             )
 
             # Assert that expected functions are called
-            mock_gen_etrecord.assert_called_once_with(etrecord_path=ETRECORD_PATH)
+            mock_parse_etrecord.assert_called_once_with(etrecord_path=ETRECORD_PATH)
             mock_gen_etdump.assert_called_once_with(etdump_path=ETDUMP_PATH)
             mock_gen_from_etdump.assert_called_once()
-            mock_gen_graphs_from_etrecord.assert_called_once()
+            # Because we mocked parse_etrecord() to return None, this method shouldn't be called
+            mock_gen_graphs_from_etrecord.assert_not_called()
 
     def test_inspector_get_event_blocks_and_print_data_tabular(self):
         # Create a context manager to patch functions called by Inspector.__init__
-        with patch.object(
-            inspector, "gen_etrecord_object", return_value=None
-        ), patch.object(
+        with patch.object(inspector, "parse_etrecord", return_value=None), patch.object(
             inspector, "gen_etdump_object", return_value=None
-        ), patch.object(
-            EventBlock, "_gen_from_etdump"
-        ), patch.object(
+        ), patch.object(EventBlock, "_gen_from_etdump"), patch.object(
             inspector, "gen_graphs_from_etrecord"
         ):
             # Call the constructor of Inspector
@@ -189,13 +186,9 @@ class TestInspector(unittest.TestCase):
 
     def test_inspector_get_exported_program(self):
         # Create a context manager to patch functions called by Inspector.__init__
-        with patch.object(
-            inspector, "gen_etrecord_object", return_value=None
-        ), patch.object(
+        with patch.object(inspector, "parse_etrecord", return_value=None), patch.object(
             inspector, "gen_etdump_object", return_value=None
-        ), patch.object(
-            EventBlock, "_gen_from_etdump"
-        ), patch.object(
+        ), patch.object(EventBlock, "_gen_from_etdump"), patch.object(
             inspector, "gen_graphs_from_etrecord"
         ), patch.object(
             inspector, "create_debug_handle_to_op_node_mapping"
