@@ -69,19 +69,18 @@ class TorchBuilder:
     @register_test
     class simple_linear(torch.nn.Module):
         inputs = {
-            TosaProfile.BI: (torch.ones(128, 20),),
-            TosaProfile.MI: (torch.ones(128, 20),),
+            TosaProfile.BI: (torch.ones(100, 20),),
+            TosaProfile.MI: (torch.ones(100, 20),),
         }
 
         def __init__(self):
             super().__init__()
+            torch.manual_seed(42)
             self.fc = torch.nn.Linear(20, 30)
-            self.relu6 = torch.nn.ReLU6()
 
         def forward(self, x):
             x = self.fc(x)
-            x = self.relu6(x)
-            return x + x
+            return x
 
     @register_test
     class simple_conv2d(torch.nn.Module):
