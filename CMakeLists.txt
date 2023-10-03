@@ -285,7 +285,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   endif()
 
   add_executable(executor_runner ${_executor_runner__srcs})
-  if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
+  if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT APPLE)
     target_link_options(executor_runner PRIVATE "LINKER:--gc-sections")
   endif()
   target_link_libraries(executor_runner ${_executor_runner_libs})
