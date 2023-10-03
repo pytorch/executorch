@@ -37,3 +37,9 @@
 [submodule "examples/third-party/llama"]
 	path = examples/third-party/llama
 	url = https://github.com/facebookresearch/llama.git
+[submodule "backends/arm/third-party/ethos-u-core-driver"]
+	path = backends/arm/third-party/ethos-u-core-driver
+	url = https://git.mlplatform.org/ml/ethos-u/ethos-u-core-driver.git
+[submodule "backends/arm/third-party/cmsis"]
+	path = backends/arm/third-party/cmsis
+	url = https://github.com/ARM-software/CMSIS_5.git
