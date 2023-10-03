@@ -16,6 +16,7 @@ import warnings
 from collections import defaultdict
 
 from enum import Enum
+from types import NoneType
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import torch
@@ -147,6 +148,8 @@ class FXOperatorGraph(OperatorGraph):
                         raise Exception(
                             f"Unsupported argument encountered in list {arg}, {type(arg[0])}"
                         )
+            elif isinstance(arg, NoneType):
+                continue
             else:
                 raise Exception(f"Unsupported argument encountered {op}, {name}, {arg}")
 
