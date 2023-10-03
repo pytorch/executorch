@@ -567,19 +567,18 @@ def to_edge(
     compile_config: Optional[EdgeCompileConfig] = None,
 ) -> "EdgeProgramManager":
     """
-    Constructs an EdgeProgramManger from a set of exported programs in
-    aten dialect. Upon construction those programs are transformed into edge dialect.
+    :func:`to_edge` constructs an EdgeProgramManger from a set of exported programs in
+    ATen dialect. Upon construction those programs are transformed into edge dialect.
 
     Args:
-        Can be a single ExportedProgram or a dictionary mapping function names
-        to their corresponding ExportedPrograms. If only a single ExportedProgram is provided
-        it will be assigned the name "forward".
+        programs: Can be a single ExportedProgram or a dictionary mapping function names to their corresponding ExportedPrograms. If only a single ExportedProgram is provided it will be assigned the name "forward".
 
-        constant_methods: An optional dictionary of method name to the constant value returned
-        by that method in eager mode. Often used to store config information on Edge models.
+        constant_methods: An optional dictionary of method name to the constant value returned by that method in eager mode. Often used to store config information on Edge models.
 
-        compile_config: An optional argument used to provide greater control over
-        the transformation to edge dialect process.
+        compile_config: An optional argument used to provide greater control over the transformation to edge dialect process.
+
+    Returns:
+        EdgeProgramManager
     """
     config = compile_config or EdgeCompileConfig()
     if not isinstance(programs, dict):
@@ -593,7 +592,7 @@ def to_edge(
             try:
                 EXIRATenDialectVerifier()(program.graph_module)
             except ExportError as e:
-                logging.info(f"Input program {name} is not in aten dialect.")
+                logging.info(f"Input program {name} is not in ATen dialect.")
                 raise e
 
         op_replace_pass = [OpReplacePass()] if config._use_edge_ops else []
