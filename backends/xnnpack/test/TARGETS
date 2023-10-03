@@ -125,11 +125,10 @@ python_unittest(
     srcs = glob([
         "models/*.py",
     ]),
+    tags = ["long_running"],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/test/tester:tester",
-        "//executorch/exir:lib",
         "//pytorch/vision:torchvision",
     ],
 )
