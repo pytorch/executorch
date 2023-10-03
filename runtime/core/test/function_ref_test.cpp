@@ -37,17 +37,7 @@ void one(int32_t& i) {
 
 } // namespace
 
-TEST(FunctionRefTest, CapturingLambda) {
-  auto one = 1;
-  auto f = [&](int32_t& i) { i = one; };
-  Item item(0, FunctionRef<void(int32_t&)>{f});
-  EXPECT_EQ(item.get(), 1);
-  // ERROR:
-  // Item item1(0, f);
-  // Item item2(0, [&](int32_t& i) { i = 2; });
-  // FunctionRef<void(int32_t&)> ref([&](int32_t&){});
-}
-
+// Only non-capturing lambdas can be used to initialize a function reference.
 TEST(FunctionRefTest, NonCapturingLambda) {
   int32_t val = 0;
   FunctionRef<void(int32_t&)> ref([](int32_t& i) { i = 1; });
