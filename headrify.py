@@ -9,6 +9,7 @@ magic_attr = '__attribute__((section(".sram.data"), aligned(16))) char'
 # magic_attr = '__attribute__((section("network_model_sec"), aligned(16))) char'
 # magic_attr = '__attribute__((section("input_data_sec"), aligned(16))) char'
 filename="./add.pte"
+filename="add_u55_fp32.pte"
 with open(filename, "rb") as fr, open(f"{filename}.h", "w") as fw:
     data = fr.read()
     hexstream = binascii.hexlify(data).decode('utf-8')

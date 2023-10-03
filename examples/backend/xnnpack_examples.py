@@ -11,7 +11,10 @@ import logging
 
 import torch._export as export
 
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+# from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.arm.arm_backend import ArmPartitioner
+
+from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.backend_api import to_backend
 
@@ -88,11 +91,12 @@ if __name__ == "__main__":
     )
     logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
-    edge.exported_program = to_backend(edge.exported_program, XnnpackPartitioner)
+    edge.exported_program = to_backend(edge.exported_program, ArmPartitioner)
     logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
 
     exec_prog = edge.to_executorch()
 
     quant_tag = "q8" if args.quantize else "fp32"
-    model_name = f"{args.model_name}_xnnpack_{quant_tag}"
+    model_name = f"{args.model_name}_u55_{quant_tag}"
+    pretty_print(exec_prog.program.execution_plan)
     save_pte_program(exec_prog.buffer, model_name)

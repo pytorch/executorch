@@ -51,7 +51,7 @@ class AddModule(torch.nn.Module, EagerModelBase):
         return self
 
     def get_example_inputs(self):
-        return (torch.ones(1), torch.ones(1))
+        return (torch.ones(1, dtype=torch.int8), torch.ones(1, dtype=torch.int8))
 
 
 class AddMulModule(torch.nn.Module, EagerModelBase):
