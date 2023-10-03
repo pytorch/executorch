@@ -3,7 +3,7 @@
 This document discusses the design of the ExecuTorch runtime, which executes
 ExecuTorch program files on edge devices like smartphones, wearables, and
 embedded devices. The code for the main execution API is under
-`[executorch/runtime/executor/](https://github.com/pytorch/executorch/tree/main/runtime/executor)`.
+[`executorch/runtime/executor/`](https://github.com/pytorch/executorch/tree/main/runtime/executor).
 
 Before reading this document we recommend that you read [How Does ExecuTorch
 Work](intro-how-it-works.md).
@@ -164,4 +164,4 @@ For more details about the ExecuTorch runtime, please see:
 * [Runtime Profiling](sdk-profiling.md)
 * [Backends and Delegates](compiler-delegate-and-partitioner.md)
 * [Backend Delegate Implementation](runtime-backend-delegate-implementation-and-linking.md)
-* [Kernel Library Overview(kernel-library-overview.md)
+* [Kernel Library Overview](kernel-library-overview.md)
