@@ -1,19 +1,20 @@
-From 12e841a383069f0b3d0e9c51c793c2922a590ae0 Mon Sep 17 00:00:00 2001
+From 6bd0ad55504da811159c58abeb5305a7a1ab884a Mon Sep 17 00:00:00 2001
 From: Rob Elliott <robert.elliott@arm.com>
 Date: Wed, 4 Oct 2023 13:31:33 +0000
 Subject: [PATCH] Add delegate runner test
 
 Signed-off-by: Rob Elliott <robert.elliott@arm.com>
 ---
- applications/executorch_tests/CMakeLists.txt  |  21 ++-
- applications/executorch_tests/add.pte.h       |  70 ++++++++++
- .../executorch_tests/runner_delegate.cpp      | 132 ++++++++++++++++++
- 3 files changed, 221 insertions(+), 2 deletions(-)
+ applications/executorch_tests/CMakeLists.txt  |  19 +-
+ applications/executorch_tests/add.pte.h       |  70 ++++++++
+ .../executorch_tests/runner_delegate.cpp      | 162 ++++++++++++++++++
+ cmake/toolchain/arm-none-eabi-gcc.cmake       |   6 +-
+ 4 files changed, 251 insertions(+), 6 deletions(-)
  create mode 100644 applications/executorch_tests/add.pte.h
  create mode 100644 applications/executorch_tests/runner_delegate.cpp
 
 diff --git a/applications/executorch_tests/CMakeLists.txt b/applications/executorch_tests/CMakeLists.txt
-index c95d53e..195c8a3 100644
+index c95d53e..943ade5 100644
 --- a/applications/executorch_tests/CMakeLists.txt
 +++ b/applications/executorch_tests/CMakeLists.txt
 @@ -44,6 +44,7 @@ message("**********************")
@@ -24,7 +25,7 @@ index c95d53e..195c8a3 100644
  
  add_custom_target(
      gen_model_header ALL
-@@ -67,10 +68,26 @@ ethosu_add_executable_test(executor_runner PRIVATE
+@@ -67,10 +68,24 @@ ethosu_add_executable_test(executor_runner PRIVATE
      ${LIB_ET_OP_REGISTRATION}
      ${LIB_ET_OP_KERNELS})
  
@@ -39,8 +40,6 @@ index c95d53e..195c8a3 100644
 +    SOURCES runner_delegate.cpp
 +    LIBRARIES
 +    ${LIB_ET_RUNTIME}
-+    ${LIB_ET_OP_REGISTRATION}
-+    ${LIB_ET_OP_KERNELS}
 +	${LIB_ET_ETHOS}
 +  )
 +
@@ -131,10 +130,10 @@ index 0000000..05bc0ec
 +0x7d, 0x5d, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x66, 0x6f, 0x72, 0x77, 0x61, 0x72, 0x64, 0x00, };
 diff --git a/applications/executorch_tests/runner_delegate.cpp b/applications/executorch_tests/runner_delegate.cpp
 new file mode 100644
-index 0000000..fe77d83
+index 0000000..a4024bb
 --- /dev/null
 +++ b/applications/executorch_tests/runner_delegate.cpp
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,162 @@
 +/*
 + * SPDX-FileCopyrightText: Copyright 2021-2023 Arm Limited and/or its affiliates <open-source-office@arm.com>
 + *
@@ -179,6 +178,36 @@ index 0000000..fe77d83
 +// Storage for intermediate data in SRAM
 +__attribute__((section(".sram.data"), aligned(16))) uint8_t method_allocator_pool[4 * 1024U];
 +
++void et_pal_init(void) {}
++
++__ET_NORETURN void et_pal_abort(void) {
++	__builtin_trap();
++}
++
++et_timestamp_t et_pal_current_ticks(void) {
++	// libc.a - warning: _gettimeofday is not implemented and will always fail
++	return 11223344;
++}
++
++/**
++ * Emit a log message via platform output (serial port, console, etc).
++ */
++void et_pal_emit_log_message(
++    __ET_UNUSED et_timestamp_t timestamp,
++    et_pal_log_level_t level,
++    const char* filename,
++    __ET_UNUSED const char* function,
++    size_t line,
++    const char* message,
++    __ET_UNUSED size_t length) {
++	fprintf(
++		stderr,
++		"%c executorch:%s:%zu] %s\n",
++		level,
++		filename,
++		line,
++		message);
++}
 +
 +int main()
 +{
@@ -267,6 +296,21 @@ index 0000000..fe77d83
 +}
 +
 +
+diff --git a/cmake/toolchain/arm-none-eabi-gcc.cmake b/cmake/toolchain/arm-none-eabi-gcc.cmake
+index 0e6a2ed..fdb0d7c 100644
+--- a/cmake/toolchain/arm-none-eabi-gcc.cmake
++++ b/cmake/toolchain/arm-none-eabi-gcc.cmake
+@@ -98,8 +98,6 @@ add_compile_options(
+     # -Wswitch
+     # -Wswitch-default
+     # -Wunused
+-
+-    # -Wno-redundant-decls
+-
+-    # -Wno-psabi
++    -Wno-redundant-decls
++    -Wno-psabi
+ )
 -- 
 2.41.0
 

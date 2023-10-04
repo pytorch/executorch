@@ -29,9 +29,8 @@ namespace executor {
 
 class ArmBackend final : public PyTorchBackendInterface {
  public:
-  ArmBackend() {
-    printf("Constructing ARM Backend\n");
-  }
+
+  ArmBackend() {}
 
   ~ArmBackend() = default;
 
