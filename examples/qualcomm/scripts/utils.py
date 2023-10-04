@@ -83,7 +83,7 @@ class SimpleADB:
                 f"libQnnHtpV{self.soc_model}Stub.so"
             ),
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
-            f"{self.artifact_path}/examples/backend/qualcomm/qnn_executor_runner",
+            f"{self.artifact_path}/examples/qualcomm/qnn_executor_runner",
             input_list_file,
         ]:
             self._adb(["push", artifact, self.workspace])

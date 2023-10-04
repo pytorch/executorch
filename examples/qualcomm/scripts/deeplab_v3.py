@@ -11,14 +11,14 @@ import random
 import re
 
 import numpy as np
-from executorch.examples.backend.qualcomm.utils import (
+
+from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
+from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
     make_output_dir,
     segmentation_metrics,
     SimpleADB,
 )
-
-from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 
 
 def get_dataset(data_size, dataset_dir, download):

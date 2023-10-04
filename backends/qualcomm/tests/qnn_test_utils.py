@@ -1,4 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
 # Copyright (c) Qualcomm Innovation Center, Inc.
 # All rights reserved
 #

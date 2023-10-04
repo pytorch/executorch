@@ -10,13 +10,13 @@ import os
 import numpy as np
 
 import torch
-from executorch.examples.backend.qualcomm.utils import (
+from executorch.examples.models.inception_v4 import InceptionV4Model
+from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
     make_output_dir,
     SimpleADB,
     topk_accuracy,
 )
-from executorch.examples.models.inception_v4 import InceptionV4Model
 
 
 def get_dataset(dataset_path, data_size):

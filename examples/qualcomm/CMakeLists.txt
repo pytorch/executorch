@@ -7,7 +7,7 @@
 # qnn_executor_runner: Like executor_runner but with QNN
 if(${ANDROID})
     get_filename_component(EXECUTORCH_SOURCE_DIR
-        "${CMAKE_CURRENT_LIST_DIR}/../../.."
+        "${CMAKE_CURRENT_LIST_DIR}/../.."
         ABSOLUTE
     )
     set(_qnn_executor_runner__srcs ${_executor_runner__srcs})

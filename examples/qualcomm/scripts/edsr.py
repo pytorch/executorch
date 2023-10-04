@@ -11,12 +11,12 @@ import re
 import numpy as np
 import piq
 import torch
-from executorch.examples.backend.qualcomm.utils import (
+from executorch.examples.models.edsr import EdsrModel
+from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
     make_output_dir,
     SimpleADB,
 )
-from executorch.examples.models.edsr import EdsrModel
 
 from PIL import Image
 from torch.utils.data import Dataset
