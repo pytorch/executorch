@@ -1,4 +1,7 @@
 # Platform Abstraction Layer
+
+DEPRECATED: This document is moving to //executorch/docs/source/runtime-platform-abstraction-layer.md
+
 The ExecuTorch Platform Abstraction Layer (PAL) provides a way for execution
 environments to override operations like:
 - Getting the current time
