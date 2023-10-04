@@ -5,54 +5,81 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# This file is meant to build flatc from the `third-party/flatbuffers` folder and help
-# users to ensure it's installed correctly
+# This file builds the `flatc` commandline tool from the
+# `third-party/flatbuffers` directory and help users install it correctly.
 
-ROOT=$(cd -- "$(dirname "$(dirname -- "${BASH_SOURCE[0]}")")" &> /dev/null && pwd)
-FLATBUFFERS_PATH="$ROOT/third-party/flatbuffers"
+set -o errexit
+set -o nounset
+set -o pipefail
 
-# Get the flatbuffers version from the git submodule
-get_flatbuffers_version(){
-    pushd "$FLATBUFFERS_PATH" || exit
-    FLATBUFFERS_VERSION=$(git describe --tags "$(git rev-list --tags --max-count=1)" | sed 's/^v//')
-    popd || exit
+EXECUTORCH_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly EXECUTORCH_ROOT
+
+readonly FLATBUFFERS_PATH="${EXECUTORCH_ROOT}/third-party/flatbuffers"
+readonly BUILD_DIR="${FLATBUFFERS_PATH}/cmake-out"
+readonly BUILT_FLATC="${BUILD_DIR}/flatc"
+
+# Must use "echo -e" to expand these escape sequences.
+readonly GREEN="\033[0;32m" # GREEN Color
+readonly RED="\033[0;31m" # Red Color
+readonly NC="\033[0m" # No Color
+
+# Prints the flatbuffers version of the git submodule.
+print_flatbuffers_version(){
+    pushd "${FLATBUFFERS_PATH}" > /dev/null
+    git describe --tags "$(git rev-list --tags --max-count=1)" | sed 's/^v//'
+    popd > /dev/null
 }
 
-FLATC_PATH="$(which flatc 2>&1)"
+main() {
+    local flatbuffers_version
+    flatbuffers_version="$(print_flatbuffers_version)"
+    echo "Version of ${FLATBUFFERS_PATH} is ${flatbuffers_version}"
 
-GREEN='\033[0;32m' # GREEN Color
-RED='\033[0;31m' # Red Color
-NC='\033[0m' # No Color
+    local flatc_path
+    flatc_path="$(which flatc 2>/dev/null || echo '')"
+    if [[ -f "${flatc_path}" ]]; then
+        # A flatc is already on the PATH.
+        if { "${flatc_path}" --version | grep -q "${flatbuffers_version}"; }; then
+            echo -e "${GREEN}A compatible version of flatc is on the PATH" \
+                "and ready to use.${NC}"
+            return 0
+        else
+            echo -e "${RED}WARNING: An incompatible version of flatc" \
+                "is on the PATH at ${flatc_path}."
+            echo -e "  Required version: flatc version ${flatbuffers_version}"
+            echo -e "  Actual version: $("${flatc_path}" --version)${NC}"
 
-get_flatbuffers_version
-echo "flatbuffers version in $FLATBUFFERS_PATH is: $FLATBUFFERS_VERSION"
+            if [[ "${flatc_path}" == *miniconda* ]]; then
+                echo -e "${RED}ERROR: ${flatc_path} appears to be installed" \
+                    "with conda, which can cause consistency problems."
+                echo -e "Please run the following command to remove it: "
+                echo -e "  conda uninstall flatbuffers${NC}"
+                return 1
+            fi
 
-# Warn the users to uninstall flatc from conda
-if [[ "$FLATC_PATH" == *miniconda3* ]]; then
-    echo "${RED}From the flatc path: $FLATC_PATH, it seems it's installed with conda. The flatc from conda is problematic and please avoid using it."
-    echo "Please run the following lines to remove it: "
-    echo "    conda uninstall flatbuffers"
-    exit
-fi
-
-# Check the following:
-# 1. the path to the flatc command if it exists in the system's PATH
-# 2. execute the flatc command and check the version
-if { command -v flatc; } && { flatc --version | grep "$FLATBUFFERS_VERSION" &> /dev/null; }; then
-    echo "${GREEN}flatc is installed successfully and ready to use. ${NC}"
-else
-    # Check the existence of flatc in flatbuffers path, if it exists, instruct users to export it to path
-    if [[ -f "$FLATBUFFERS_PATH/flatc" ]]; then
-        echo "${RED}flatc is built in $FLATBUFFERS_PATH/flatc but hasn't added to path, run following lines: "
-        echo " export PATH=$FLATBUFFERS_PATH:\$PATH ${NC}"
-    else
-        # flatc is not in flatbuffers path, build it and instruct users to export it to path
-        pushd "$FLATBUFFERS_PATH" || exit
-        cmake --build . --target flatc
-        echo "flatc path: $FLATBUFFERS_PATH/flatc"
-        popd || exit
-        echo "${RED}Finished building flatc. Run the following lines to add it to PATH, then re-run this script:"
-        echo " export PATH=\"$FLATBUFFERS_PATH:\$PATH\" "
-        echo " bash build/install_flatc.sh${NC}"
+            # Continue to build a compatible version.
+        fi
     fi
-fi
+
+    if [[ -f "${BUILT_FLATC}" ]]; then
+        echo -e "${BUILT_FLATC} is already built."
+    else
+        # Build the tool if not already built.
+        echo "Building flatc under ${FLATBUFFERS_PATH}..."
+        # Generate cache.
+        (rm -rf "${BUILD_DIR}" && mkdir "${BUILD_DIR}" && cd "${BUILD_DIR}" && cmake ..)
+        # Build.
+        (cd "${FLATBUFFERS_PATH}" && cmake --build "${BUILD_DIR}" --target flatc -j9)
+
+        echo -e "Finished building ${BUILT_FLATC}."
+    fi
+
+    echo -e ""
+    echo -e "***** Run the following commands to add a compatible flatc"\
+        "to the PATH and re-run this script:"
+    echo -e "  ${RED}export PATH=\"${BUILD_DIR}:\${PATH}\""
+    echo -e "  bash ${EXECUTORCH_ROOT}/build/install_flatc.sh${NC}"
+}
+
+main "$@"
