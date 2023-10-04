@@ -95,17 +95,17 @@ void et_copy_index(RuntimeContext& context, EValue** stack) {
   }
 
   if (copy_to.sizes()[0] != expected_output_size[0]) {
-    void* data_ptr = copy_to.data_ptr();
+    const void* data_ptr = copy_to.const_data_ptr();
     Error err =
         resize_tensor(copy_to, {expected_output_size, copy_to.sizes().size()});
     ET_CHECK(err == Error::Ok);
     ET_CHECK_MSG(
-        data_ptr == copy_to.data_ptr(),
+        data_ptr == copy_to.const_data_ptr(),
         "Data ptr of copy_to tensor changed after resize which isn't allowed for static/upper-bounded tensors");
   }
 
-  auto copy_to_ptr = copy_to.data_ptr();
-  auto copy_from_ptr = copy_from.data_ptr();
+  auto copy_to_ptr = copy_to.const_data_ptr();
+  auto copy_from_ptr = copy_from.const_data_ptr();
 
   // If we've reached here, it means the copy_to tensor has been
   // successfully resized so we can now copy over the data from
