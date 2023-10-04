@@ -10,7 +10,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>How does ExecuTorch work &mdash; ExecuTorch  documentation</title>
+  <title>Export to ExecuTorch API Reference &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -40,8 +40,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="High-level Architecture and Components of ExecuTorch" href="getting-started-architecture.html" />
-    <link rel="prev" title="ExecuTorch Overview" href="intro-overview.html" />
+    <link rel="next" title="Export IR Specification" href="ir-exir.html" />
+    <link rel="prev" title="Exporting to Executorch" href="export-overview.html" />
     
     
   <!-- Google Tag Manager -->
@@ -247,9 +247,9 @@
             
             
               <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
-<ul class="current">
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">How does ExecuTorch work</a></li>
+<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How does ExecuTorch work</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul>
@@ -261,8 +261,8 @@
 <li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to Executorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Export to ExecuTorch API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -347,13 +347,13 @@
       </li>
 
         
-      <li>How does ExecuTorch work</li>
+      <li>Export to ExecuTorch API Reference</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/intro-how-it-works.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/export-to-executorch-api-reference.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -385,31 +385,253 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <p>This page describes how ExecuTorch works and its key benefits.</p>
-<section id="how-does-executorch-work">
-<h1>How does ExecuTorch work<a class="headerlink" href="#how-does-executorch-work" title="Permalink to this heading">¶</a></h1>
-<p>At a high-level, there are three steps for running a PyTorch model with ExecuTorch across edge devices, such as laptops, mobile phones, wearables, and IoT devices.</p>
-<ol class="arabic simple">
-<li><p><strong>Export the model.</strong> The first step is to capture the PyTorch program as a graph, which is a new representation of the model that can be expressed in terms of a series of operators such as addition, multiplication, or convolution. This process safely preserves the semantics of the original PyTorch program. This representation makes it possible to run the model on edge use cases that have low memory and/or low compute.</p></li>
-<li><p><strong>Compile the exported model to an ExecuTorch program.</strong> Given an exported model from step 1, convert it to an executable format called an ExecuTorch program that the runtime can use for inference. This step performs optimizations such as compressing the model (e.g., quantization) to reduce size and further compiling subgraphs down to on-device specialized hardware accelerators to improve latency. It can also efficiently plan the location of intermediate tensors to reduce the runtime memory footprint.</p></li>
-<li><p><strong>Run the ExecuTorch program on a target device.</strong> Given an input–such as an image represented as an input activation tensor–the ExecuTorch runtime loads the ExecuTorch program, executes the instructions represented by the program, and computes an output. This step is efficient because (1) the runtime is lightweight and compatible with embedded devices and (2) an efficient execution plan has already been calculated in steps 1 and 2, making it possible to do performant inference on highly-constrained devices.</p></li>
-</ol>
-<p>This figure illustrates the three-step process of exporting a PyTorch program, compiling it into an ExecuTorch program that targets a specific hardware device, and finally executing the program on the device using the ExecuTorch runtime.
-<img alt="name" src="_images/how-executorch-works-high-level.png" /></p>
-<section id="key-benefits">
-<h2>Key Benefits<a class="headerlink" href="#key-benefits" title="Permalink to this heading">¶</a></h2>
-<p>ExecuTorch provides the following benefits to engineers who need to deploy machine learning models to an edge device:</p>
-<ul class="simple">
-<li><p><strong>Export that is robust and powerful.</strong> Export uses <a class="reference external" href="https://pytorch.org/docs/2.1/torch.compiler.html#torch-compiler-overview">TorchDynamo</a>, the same technology used in PyTorch 2.0 to capture PyTorch programs for fast execution. While eager mode is flexible and allows experimentation in Python, it may not work well if Python isn’t available or cannot deliver efficient execution. The <em>Export Intermediate Representation (EXIR)</em> that export flow generates can describe a wide range of dynamism in PyTorch models, including control flow and dynamic shapes, which makes it a powerful tool for fully capturing existing PyTorch models with little effort.</p></li>
-<li><p><strong>Operator standardization.</strong> During the graph export process, the nodes in the graph represent operators such as addition, multiplication, or convolution. These operators are part of a small standardized list called the <a class="reference external" href="https://pytorch.org/docs/stable/ir.html#core-aten-ir">Core ATen Op set</a>. Most PyTorch programs can be decomposed into a graph using this set of operators during export. There are two benefits to having a small list of standardized operators: (1) There is a library of operator implementations that are compliant with the Core Aten Op set, and that library can be linked to the runtime, which enables models to run on ExecuTorch without any additional setup, and (2) it is possible to swap out these implementations with optimized third-party implementations or to go through standard compiler passes (e.g., operator fusion) to accelerate performance on specialized hardwares.</p></li>
-<li><p><strong>Standardization for compiler interfaces (aka delegates) and the OSS ecosystem.</strong> In addition to the <em>Operator standardization</em> above, ExecuTorch has a standardized interface for delegation to compilers. This allows third-party vendors and compilers to implement interfaces and API entry points for compilation and execution of (either partial or full) graphs targeting their specialized hardware. This provides greater flexibility in terms of hardware support and performance optimization, as well as easier integration with the PyTorch open source ecosystem for on-device AI.</p></li>
-<li><p><strong>First-party SDK and toolchain.</strong> Due to the above standardization efforts, it was possible to build a unified first-party SDK for ExecuTorch, where developers can export, compile, and deploy to a wide range of target devices–such as iOS, Android, and microcontrollers–using the same SDK, streamlining the process and gaining productivity. Additionally, the SDK provides profiling and debugging functionality to easily inspect intermediate states, which are core parts of most developer workflows.</p></li>
-<li><p><strong>No intermediate conversions necessary.</strong> ExecuTorch’s main design principle is to allow developers to run their models on target devices without the need for converting to third-party intermediate representations. This eliminates a number of problems that on-device developers typically face when working with these conversion steps, such as lack of debuggability and profiling, the need to familiarize themselves with hardware-specific tools, and models not being able to run due to conversion steps failing.</p></li>
-<li><p><strong>Ease of customization.</strong> Developers can optimize their deployment for even better performance gains on the target architecture by applying custom techniques, such as linking with high-performance operator implementations or customizing memory planning based on storage and latency trade-offs. This level of customization is made possible through the standardization of the compiler pass interface and registration APIs on exported graphs.</p></li>
-<li><p><strong>Low overhead runtime and execution.</strong> The ExecuTorch runtime, written in C++, is highly efficient and can run on a wide range of architectures, including Linux, iOS, Android, embedded systems, and bare metal hardware, with little additional setup or configuration. It is capable of linking in only those operators needed for the model, resulting in a minimal runtime binary size. It is also able to run at low latency because of ahead-of-time compilation and memory planning stages, with the runtime responsible only for execution (e.g., call operator <code class="docutils literal notranslate"><span class="pre">conv</span></code> and save the result in memory location X).</p></li>
+  <section id="module-exir">
+<span id="export-to-executorch-api-reference"></span><h1>Export to ExecuTorch API Reference<a class="headerlink" href="#module-exir" title="Permalink to this heading">¶</a></h1>
+<dl class="py function">
+<dt class="sig sig-object py" id="exir.to_edge">
+<span class="sig-prename descclassname"><span class="pre">exir.</span></span><span class="sig-name descname"><span class="pre">to_edge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constant_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#to_edge"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.to_edge" title="Permalink to this definition">¶</a></dt>
+<dd><p><a class="reference internal" href="#exir.to_edge" title="exir.to_edge"><code class="xref py py-func docutils literal notranslate"><span class="pre">to_edge()</span></code></a> constructs an EdgeProgramManger from a set of exported programs in
+ATen dialect. Upon construction those programs are transformed into edge dialect.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>programs</strong> – Can be a single ExportedProgram or a dictionary mapping function names to their corresponding ExportedPrograms. If only a single ExportedProgram is provided it will be assigned the name “forward”.</p></li>
+<li><p><strong>constant_methods</strong> – An optional dictionary of method name to the constant value returned by that method in eager mode. Often used to store config information on Edge models.</p></li>
+<li><p><strong>compile_config</strong> – An optional argument used to provide greater control over the transformation to edge dialect process.</p></li>
 </ul>
-<p>The above highlights the key advantages of ExecuTorch across three main categories: portability, productivity, and performance. We consider it to be an ideal choice for enabling on-device AI across mobile and edge computing platforms.</p>
-</section>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>EdgeProgramManager</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="exir.EdgeProgramManager">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">exir.</span></span><span class="sig-name descname"><span class="pre">EdgeProgramManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">edge_programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constant_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager" title="Permalink to this definition">¶</a></dt>
+<dd><p>Package of one or more :class:’ExportedPrograms’ in Edge dialect. Designed to simplify
+lowering to ExecuTorch.</p>
+<p>Allows easy applications of transforms across a collection of exported programs
+including the delegation of subgraphs.</p>
+<p>Manages the second link in the lowering chain of ATen -&gt; Edge -&gt; ExecuTorch.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="exir.EdgeProgramManager.config_methods">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">config_methods</span></span><a class="headerlink" href="#exir.EdgeProgramManager.config_methods" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the set of config methods in this EdgeProgramManager.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="exir.EdgeProgramManager.exported_program">
+<span class="sig-name descname"><span class="pre">exported_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'forward'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager.exported_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager.exported_program" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the ExportedProgram specified by ‘method_name’.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="exir.EdgeProgramManager.methods">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">methods</span></span><a class="headerlink" href="#exir.EdgeProgramManager.methods" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the set of methods in this EdgeProgramManager.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="exir.EdgeProgramManager.to_backend">
+<span class="sig-name descname"><span class="pre">to_backend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">partitioner</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager.to_backend"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager.to_backend" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns a semantically-equivalent program to the one given as input,
+but with portions of each program in the EdgeProgramManager targeted
+for delegation as determined by the partitioner.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>partitioner</strong> – <p>The partitioner can either be a Partitioner subclass, or a
+dictionary mapping method names to Partitioner subclass. If it is a
+Partitioner subclass, all programs in the given EdgeProgramManager
+will be lowered using the given partitioner. If it is a
+dictionary, only method names specified in the dictionary will be
+lowered with the given partitioner.</p>
+<p>The Partitioner subclass is in charge with tagging portions of the
+input program for delegation. A valid partitioner must have
+partition_tags: Dict[str, DelegationSpec], where each key is a tag
+name and the nodes with same tag will be fused a one subgraph and
+delegated to backend specififed in delegation spec.</p>
+</p>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A copy of the calling EdgeProgramManager with the
+specified subgraphs lowered.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#exir.EdgeProgramManager" title="exir.EdgeProgramManager">EdgeProgramManager</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="exir.EdgeProgramManager.to_executorch">
+<span class="sig-name descname"><span class="pre">to_executorch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager.to_executorch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager.to_executorch" title="Permalink to this definition">¶</a></dt>
+<dd><p>Transforms the program to the ExecuTorch backend.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>config</strong> – An optional argument used to provide greater control over</p></li>
+<li><p><strong>backend.</strong> (<em>the transformation to the ExecuTorch</em>) – </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A manager representing the state of the EdgeProgramManager
+after it has been transformed to the ExecuTorch backend.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#exir.ExecutorchProgramManager" title="exir.ExecutorchProgramManager">ExecutorchProgramManager</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="exir.EdgeProgramManager.transform">
+<span class="sig-name descname"><span class="pre">transform</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">passes</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager.transform"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager.transform" title="Permalink to this definition">¶</a></dt>
+<dd><p>Transforms the program according to the provided passes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>passes</strong> (<em>just a list of</em>) – The passes can either be a list of passes, or a</p></li>
+<li><p><strong>is</strong> (<em>dictionary mapping method names to lists of passes. If it</em>) – </p></li>
+<li><p><strong>passes</strong> – </p></li>
+<li><p><strong>EdgeProgramManager</strong> (<em>all methods in the given</em>) – </p></li>
+<li><p><strong>a</strong> (<em>will be transformed with the provided passes. If it is</em>) – </p></li>
+<li><p><strong>dictionary</strong> – </p></li>
+<li><p><strong>be</strong> (<em>only method names specified in the dictionary will</em>) – </p></li>
+<li><p><strong>passes.</strong> (<em>transformed with their corresponding</em>) – </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A copy of the calling EdgeProgramManager with the
+transformations applied.</p>
+</dd>
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><a class="reference internal" href="#exir.EdgeProgramManager" title="exir.EdgeProgramManager">EdgeProgramManager</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="exir.ExecutorchProgramManager">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">exir.</span></span><span class="sig-name descname"><span class="pre">ExecutorchProgramManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">execution_programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">backend_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#ExecutorchProgramManager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.ExecutorchProgramManager" title="Permalink to this definition">¶</a></dt>
+<dd><p>Package of one or more :class:’ExportedPrograms’ in Execution dialect. Designed to simplify
+lowering to ExecuTorch.</p>
+<p>When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect
+are used to form the executorch binary (in a process called emission) and then serialized
+to a buffer.</p>
+<p>Manages the final link in the lowering chain of ATen -&gt; Edge -&gt; ExecuTorch.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="exir.ExecutorchProgramManager.buffer">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">buffer</span></span><a class="headerlink" href="#exir.ExecutorchProgramManager.buffer" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns a buffer containing the serialized ExecuTorch binary.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="exir.ExecutorchProgramManager.config_methods">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">config_methods</span></span><a class="headerlink" href="#exir.ExecutorchProgramManager.config_methods" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the set of config methods in this ExecutorchProgramManager.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="exir.ExecutorchProgramManager.dump_executorch_program">
+<span class="sig-name descname"><span class="pre">dump_executorch_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#ExecutorchProgramManager.dump_executorch_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.ExecutorchProgramManager.dump_executorch_program" title="Permalink to this definition">¶</a></dt>
+<dd><p>Prints the ExecuTorch binary in a human readable format.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>verbose</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.11)"><em>bool</em></a>) – If False prints the binary in a condensed format.
+If True prints the binary 1-1 with the specification in the schema.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="exir.ExecutorchProgramManager.exported_program">
+<span class="sig-name descname"><span class="pre">exported_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'forward'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#ExecutorchProgramManager.exported_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.ExecutorchProgramManager.exported_program" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the ExportedProgram specified by ‘method_name’.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="exir.ExecutorchProgramManager.methods">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">methods</span></span><a class="headerlink" href="#exir.ExecutorchProgramManager.methods" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the set of methods in this ExecutorchProgramManager.</p>
+</dd></dl>
+
+</dd></dl>
+
+<span class="target" id="module-exir.backend.backend_api"></span><dl class="py function">
+<dt class="sig sig-object py" id="exir.backend.backend_api.to_backend">
+<span class="sig-prename descclassname"><span class="pre">exir.backend.backend_api.</span></span><span class="sig-name descname"><span class="pre">to_backend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">args</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/exir/backend/backend_api.html#to_backend"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.backend.backend_api.to_backend" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">exir.backend.backend_api.</span></span><span class="sig-name descname"><span class="pre">to_backend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">backend_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">edge_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_specs</span></span></em><span class="sig-paren">)</span></dt>
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">exir.backend.backend_api.</span></span><span class="sig-name descname"><span class="pre">to_backend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">edge_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">partitioner</span></span></em><span class="sig-paren">)</span></dt>
+<dd><p>A generic function the dispatch happens on the type of the first argument. There are currently to overloaded to_backend function:</p>
+<p>Note: Python is dynamically-typed language and therefore cannot have proper method overloading as that requires the language to
+be able to discriminate between types at compile-time. &#64;to_backend.register will attach the function to to_backend() base on the type of the first
+argument (type annotation is required). However, it can’t take multiple types as arguments.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+    <span class="n">backend_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">edge_graph_module</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LoweredBackendModule</span><span class="p">:</span>
+
+<span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+    <span class="n">graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
+    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">TPartitioner</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="exir.backend.backend_api.LoweredBackendModule">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">exir.backend.backend_api.</span></span><span class="sig-name descname"><span class="pre">LoweredBackendModule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">edge_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">backend_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">processed_bytes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_specs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/lowered_backend_module.html#LoweredBackendModule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.backend.backend_api.LoweredBackendModule" title="Permalink to this definition">¶</a></dt>
+<dd><p>A subclass of nn.Module that is generated for modules containing
+delegated functions. This is can be created by calling <cite>to_backend</cite>.</p>
+<dl class="simple">
+<dt>Private Attributes:</dt><dd><ul class="simple">
+<li><p><strong>backend_id</strong>: The backend’s name</p></li>
+<li><p><strong>processed_bytes</strong>: The delegate blobs created from backend.preprocess</p></li>
+<li><dl class="simple">
+<dt><strong>compile_specs</strong>: A list of backend-specific objects with static</dt><dd><p>metadata to configure the “compilation” process.</p>
+</dd>
+</dl>
+</li>
+<li><p><strong>original_module</strong>: The original EXIR module</p></li>
+</ul>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="exir.backend.backend_api.LoweredBackendModule.program">
+<span class="sig-name descname"><span class="pre">program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">emit_stacktrace</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/lowered_backend_module.html#LoweredBackendModule.program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.backend.backend_api.LoweredBackendModule.program" title="Permalink to this definition">¶</a></dt>
+<dd><p>The idea in this function is to create a module based on the original module. The original module will
+look something like following:</p>
+<p>opcode         name                 target            args                                        kwargs
+————-  ——————-  —————-  ——————————————  ——–
+placeholder    arg0_1               arg0_1            ()                                          {}
+placeholder    arg1_1               arg1_1            ()                                          {}
+call_function  aten_repeat_default  *                 (arg1_1, [4, 1])                            {}
+call_function  aten_mul_tensor      *                 (aten_repeat_default, aten_repeat_default)  {}
+call_function  aten_add_tensor      *                 (arg1_1, arg1_1)                            {}
+output         output               output            ([aten_mul_tensor, aten_add_tensor],)       {}</p>
+<p>if the whole module is lowered, the resulting lowered module look like</p>
+<p>opcode         name                      target                       args                                kwargs
+————-  ————————  —————————  ———————————-  ——–
+placeholder    arg0_1                    arg0_1                       ()                                  {}
+placeholder    arg1_1                    arg1_1                       ()                                  {}
+get_attr       lowered_module_0          lowered_module_0             ()                                  {}
+call_function  executorch_call_delegate  executorch_call_delegate     (lowered_module_0, arg0_1, arg1_1)  {}
+call_function  getitem                   &lt;built-in function getitem&gt;  (executorch_call_delegate, 0)       {}
+call_function  getitem_1                 &lt;built-in function getitem&gt;  (executorch_call_delegate, 1)       {}
+output         output_1                  output                       ([getitem, getitem_1],)             {}</p>
+<p>We’ll remove all call_function nodes, insert an call_delegate node, inserting getitems nodes to get the result for call_delegate node
+and return the list of getitems as the output</p>
+</dd></dl>
+
+</dd></dl>
+
 </section>
 
 
@@ -420,10 +642,10 @@
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="getting-started-architecture.html" class="btn btn-neutral float-right" title="High-level Architecture and Components of ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="ir-exir.html" class="btn btn-neutral float-right" title="Export IR Specification" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="intro-overview.html" class="btn btn-neutral" title="ExecuTorch Overview" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="export-overview.html" class="btn btn-neutral" title="Exporting to Executorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -457,10 +679,7 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">How does ExecuTorch work</a><ul>
-<li><a class="reference internal" href="#key-benefits">Key Benefits</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#">Export to ExecuTorch API Reference</a></li>
 </ul>
 
             </div>

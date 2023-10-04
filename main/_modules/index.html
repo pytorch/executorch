@@ -6,11 +6,10 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
-
+  
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>How does ExecuTorch work &mdash; ExecuTorch  documentation</title>
+  <title>Overview: module code &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -26,22 +25,20 @@
 
   
 
-  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
-  <!-- <link rel="stylesheet" href="_static/pygments.css" type="text/css" /> -->
-  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
-  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
-  <link rel="stylesheet" href="_static/copybutton.css" type="text/css" />
-  <link rel="stylesheet" href="_static/sg_gallery.css" type="text/css" />
-  <link rel="stylesheet" href="_static/sg_gallery-binder.css" type="text/css" />
-  <link rel="stylesheet" href="_static/sg_gallery-dataframe.css" type="text/css" />
-  <link rel="stylesheet" href="_static/sg_gallery-rendered-html.css" type="text/css" />
-  <link rel="stylesheet" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
-  <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
-  <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
-    <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="High-level Architecture and Components of ExecuTorch" href="getting-started-architecture.html" />
-    <link rel="prev" title="ExecuTorch Overview" href="intro-overview.html" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="../_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/sg_gallery.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/sg_gallery-binder.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/sg_gallery-dataframe.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/sg_gallery-rendered-html.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/progress-bar.css" type="text/css" />
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
     
     
   <!-- Google Tag Manager -->
@@ -55,16 +52,16 @@
 
 
   
-  <script src="_static/js/modernizr.min.js"></script>
+  <script src="../_static/js/modernizr.min.js"></script>
 
   <!-- Preload the theme fonts -->
 
-<link rel="preload" href="_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
 
 <!-- Preload the katex fonts -->
 
@@ -231,7 +228,7 @@
 
 
 <div role="search">
-  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search Docs" />
     <input type="hidden" name="check_keywords" value="yes" />
     <input type="hidden" name="area" value="default" />
@@ -247,66 +244,66 @@
             
             
               <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
-<ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">How does ExecuTorch work</a></li>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../intro-overview.html">ExecuTorch Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../intro-how-it-works.html">How does ExecuTorch work</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting-started-setup.html">Setting Up ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Exporting to ExecuTorch</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to Executorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../export-overview.html">Exporting to Executorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">OpSet definition</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ir-high-order-operators.html">High-order Operators</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ir-ops-set-definition.html">OpSet definition</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ir-high-order-operators.html">High-order Operators</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">An end-to-end example to lower a model as a delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-kernel-fusion-pass.html">Kernel Fusion Pass</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples-end-to-end-to-lower-model-to-delegate.html">An end-to-end example to lower a model as a delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../compiler-kernel-fusion-pass.html">Kernel Fusion Pass</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-api.html">Runtime API</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-custom-memory-allocator.html">Custom Memory Allocator</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-error-handling.html">Runtime Error Handling</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Platform Abstraction Layer</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-build-and-cross-compilation.html">Building with CMake</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-api.html">Runtime API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-custom-memory-allocator.html">Custom Memory Allocator</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-error-handling.html">Runtime Error Handling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-platform-abstraction-layer.html">Platform Abstraction Layer</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="quantization-custom-quantization.html">Custom Quantization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quantization-custom-quantization.html">Custom Quantization</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Kernel Library Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Custom ATen Compliant Kernel Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../kernel-library-overview.html">Kernel Library Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../kernel-library-custom-aten-kernel.html">Custom ATen Compliant Kernel Implementation and Linking</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-profiling.html">Profiling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-debugging.html">Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">Delegate Integration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 </ul>
 
             
@@ -339,7 +336,7 @@
   <ul class="pytorch-breadcrumbs">
     
       <li>
-        <a href="index.html">
+        <a href="../index.html">
           
             Docs
           
@@ -347,14 +344,10 @@
       </li>
 
         
-      <li>How does ExecuTorch work</li>
+      <li>Overview: module code</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
-        
-            
-            <a href="_sources/intro-how-it-works.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
-          
         
       </li>
     
@@ -385,47 +378,16 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <p>This page describes how ExecuTorch works and its key benefits.</p>
-<section id="how-does-executorch-work">
-<h1>How does ExecuTorch work<a class="headerlink" href="#how-does-executorch-work" title="Permalink to this heading">¶</a></h1>
-<p>At a high-level, there are three steps for running a PyTorch model with ExecuTorch across edge devices, such as laptops, mobile phones, wearables, and IoT devices.</p>
-<ol class="arabic simple">
-<li><p><strong>Export the model.</strong> The first step is to capture the PyTorch program as a graph, which is a new representation of the model that can be expressed in terms of a series of operators such as addition, multiplication, or convolution. This process safely preserves the semantics of the original PyTorch program. This representation makes it possible to run the model on edge use cases that have low memory and/or low compute.</p></li>
-<li><p><strong>Compile the exported model to an ExecuTorch program.</strong> Given an exported model from step 1, convert it to an executable format called an ExecuTorch program that the runtime can use for inference. This step performs optimizations such as compressing the model (e.g., quantization) to reduce size and further compiling subgraphs down to on-device specialized hardware accelerators to improve latency. It can also efficiently plan the location of intermediate tensors to reduce the runtime memory footprint.</p></li>
-<li><p><strong>Run the ExecuTorch program on a target device.</strong> Given an input–such as an image represented as an input activation tensor–the ExecuTorch runtime loads the ExecuTorch program, executes the instructions represented by the program, and computes an output. This step is efficient because (1) the runtime is lightweight and compatible with embedded devices and (2) an efficient execution plan has already been calculated in steps 1 and 2, making it possible to do performant inference on highly-constrained devices.</p></li>
-</ol>
-<p>This figure illustrates the three-step process of exporting a PyTorch program, compiling it into an ExecuTorch program that targets a specific hardware device, and finally executing the program on the device using the ExecuTorch runtime.
-<img alt="name" src="_images/how-executorch-works-high-level.png" /></p>
-<section id="key-benefits">
-<h2>Key Benefits<a class="headerlink" href="#key-benefits" title="Permalink to this heading">¶</a></h2>
-<p>ExecuTorch provides the following benefits to engineers who need to deploy machine learning models to an edge device:</p>
-<ul class="simple">
-<li><p><strong>Export that is robust and powerful.</strong> Export uses <a class="reference external" href="https://pytorch.org/docs/2.1/torch.compiler.html#torch-compiler-overview">TorchDynamo</a>, the same technology used in PyTorch 2.0 to capture PyTorch programs for fast execution. While eager mode is flexible and allows experimentation in Python, it may not work well if Python isn’t available or cannot deliver efficient execution. The <em>Export Intermediate Representation (EXIR)</em> that export flow generates can describe a wide range of dynamism in PyTorch models, including control flow and dynamic shapes, which makes it a powerful tool for fully capturing existing PyTorch models with little effort.</p></li>
-<li><p><strong>Operator standardization.</strong> During the graph export process, the nodes in the graph represent operators such as addition, multiplication, or convolution. These operators are part of a small standardized list called the <a class="reference external" href="https://pytorch.org/docs/stable/ir.html#core-aten-ir">Core ATen Op set</a>. Most PyTorch programs can be decomposed into a graph using this set of operators during export. There are two benefits to having a small list of standardized operators: (1) There is a library of operator implementations that are compliant with the Core Aten Op set, and that library can be linked to the runtime, which enables models to run on ExecuTorch without any additional setup, and (2) it is possible to swap out these implementations with optimized third-party implementations or to go through standard compiler passes (e.g., operator fusion) to accelerate performance on specialized hardwares.</p></li>
-<li><p><strong>Standardization for compiler interfaces (aka delegates) and the OSS ecosystem.</strong> In addition to the <em>Operator standardization</em> above, ExecuTorch has a standardized interface for delegation to compilers. This allows third-party vendors and compilers to implement interfaces and API entry points for compilation and execution of (either partial or full) graphs targeting their specialized hardware. This provides greater flexibility in terms of hardware support and performance optimization, as well as easier integration with the PyTorch open source ecosystem for on-device AI.</p></li>
-<li><p><strong>First-party SDK and toolchain.</strong> Due to the above standardization efforts, it was possible to build a unified first-party SDK for ExecuTorch, where developers can export, compile, and deploy to a wide range of target devices–such as iOS, Android, and microcontrollers–using the same SDK, streamlining the process and gaining productivity. Additionally, the SDK provides profiling and debugging functionality to easily inspect intermediate states, which are core parts of most developer workflows.</p></li>
-<li><p><strong>No intermediate conversions necessary.</strong> ExecuTorch’s main design principle is to allow developers to run their models on target devices without the need for converting to third-party intermediate representations. This eliminates a number of problems that on-device developers typically face when working with these conversion steps, such as lack of debuggability and profiling, the need to familiarize themselves with hardware-specific tools, and models not being able to run due to conversion steps failing.</p></li>
-<li><p><strong>Ease of customization.</strong> Developers can optimize their deployment for even better performance gains on the target architecture by applying custom techniques, such as linking with high-performance operator implementations or customizing memory planning based on storage and latency trade-offs. This level of customization is made possible through the standardization of the compiler pass interface and registration APIs on exported graphs.</p></li>
-<li><p><strong>Low overhead runtime and execution.</strong> The ExecuTorch runtime, written in C++, is highly efficient and can run on a wide range of architectures, including Linux, iOS, Android, embedded systems, and bare metal hardware, with little additional setup or configuration. It is capable of linking in only those operators needed for the model, resulting in a minimal runtime binary size. It is also able to run at low latency because of ahead-of-time compilation and memory planning stages, with the runtime responsible only for execution (e.g., call operator <code class="docutils literal notranslate"><span class="pre">conv</span></code> and save the result in memory location X).</p></li>
+  <h1>All modules for which code is available</h1>
+<ul><li><a href="executorch/exir/lowered_backend_module.html">executorch.exir.lowered_backend_module</a></li>
+<li><a href="executorch/exir/program/_program.html">executorch.exir.program._program</a></li>
+<li><a href="exir/backend/backend_api.html">exir.backend.backend_api</a></li>
 </ul>
-<p>The above highlights the key advantages of ExecuTorch across three main categories: portability, productivity, and performance. We consider it to be an ideal choice for enabling on-device AI across mobile and edge computing platforms.</p>
-</section>
-</section>
-
 
              </article>
              
             </div>
             <footer>
-  
-    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-      
-        <a href="getting-started-architecture.html" class="btn btn-neutral float-right" title="High-level Architecture and Components of ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
-      
-      
-        <a href="intro-overview.html" class="btn btn-neutral" title="ExecuTorch Overview" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
-      
-    </div>
   
 
   
@@ -456,13 +418,7 @@
         <div class="pytorch-content-right" id="pytorch-content-right">
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
-              <ul>
-<li><a class="reference internal" href="#">How does ExecuTorch work</a><ul>
-<li><a class="reference internal" href="#key-benefits">Key Benefits</a></li>
-</ul>
-</li>
-</ul>
-
+              
             </div>
           </div>
         </div>
@@ -475,24 +431,24 @@
   
 
      
-       <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
-         <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
-         <script src="_static/jquery.js"></script>
-         <script src="_static/underscore.js"></script>
-         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
-         <script src="_static/doctools.js"></script>
-         <script src="_static/clipboard.min.js"></script>
-         <script src="_static/copybutton.js"></script>
-         <script src="_static/design-tabs.js"></script>
-         <script src="_static/js/progress-bar.js"></script>
+       <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+         <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+         <script src="../_static/jquery.js"></script>
+         <script src="../_static/underscore.js"></script>
+         <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+         <script src="../_static/doctools.js"></script>
+         <script src="../_static/clipboard.min.js"></script>
+         <script src="../_static/copybutton.js"></script>
+         <script src="../_static/design-tabs.js"></script>
+         <script src="../_static/js/progress-bar.js"></script>
      
 
   
 
-  <script type="text/javascript" src="_static/js/vendor/popper.min.js"></script>
-  <script type="text/javascript" src="_static/js/vendor/bootstrap.min.js"></script>
+  <script type="text/javascript" src="../_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="../_static/js/vendor/bootstrap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
-  <script type="text/javascript" src="_static/js/theme.js"></script>
+  <script type="text/javascript" src="../_static/js/theme.js"></script>
 
   <script type="text/javascript">
       jQuery(function () {
@@ -602,7 +558,7 @@
   <div class="cookie-banner-wrapper">
   <div class="container">
     <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
-    <img class="close-button" src="_static/images/pytorch-x.svg">
+    <img class="close-button" src="../_static/images/pytorch-x.svg">
   </div>
 </div>
 
@@ -738,7 +694,7 @@
 
   <!-- End Mobile Menu -->
 
-  <script type="text/javascript" src="_static/js/vendor/anchor.min.js"></script>
+  <script type="text/javascript" src="../_static/js/vendor/anchor.min.js"></script>
 
   <script type="text/javascript">
     $(document).ready(function() {
