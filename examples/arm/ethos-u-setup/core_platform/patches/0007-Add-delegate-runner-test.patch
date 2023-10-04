@@ -1,19 +1,19 @@
-From b6348ace74c14dc5b46060b792836399205834a7 Mon Sep 17 00:00:00 2001
+From 12e841a383069f0b3d0e9c51c793c2922a590ae0 Mon Sep 17 00:00:00 2001
 From: Rob Elliott <robert.elliott@arm.com>
 Date: Wed, 4 Oct 2023 13:31:33 +0000
 Subject: [PATCH] Add delegate runner test
 
 Signed-off-by: Rob Elliott <robert.elliott@arm.com>
 ---
- applications/executorch_tests/CMakeLists.txt  |  11 ++
+ applications/executorch_tests/CMakeLists.txt  |  21 ++-
  applications/executorch_tests/add.pte.h       |  70 ++++++++++
  .../executorch_tests/runner_delegate.cpp      | 132 ++++++++++++++++++
- 3 files changed, 213 insertions(+)
+ 3 files changed, 221 insertions(+), 2 deletions(-)
  create mode 100644 applications/executorch_tests/add.pte.h
  create mode 100644 applications/executorch_tests/runner_delegate.cpp
 
 diff --git a/applications/executorch_tests/CMakeLists.txt b/applications/executorch_tests/CMakeLists.txt
-index c95d53e..d0233bf 100644
+index c95d53e..195c8a3 100644
 --- a/applications/executorch_tests/CMakeLists.txt
 +++ b/applications/executorch_tests/CMakeLists.txt
 @@ -44,6 +44,7 @@ message("**********************")
@@ -24,11 +24,17 @@ index c95d53e..d0233bf 100644
  
  add_custom_target(
      gen_model_header ALL
-@@ -67,6 +68,16 @@ ethosu_add_executable_test(executor_runner PRIVATE
+@@ -67,10 +68,26 @@ ethosu_add_executable_test(executor_runner PRIVATE
      ${LIB_ET_OP_REGISTRATION}
      ${LIB_ET_OP_KERNELS})
  
-+ethosu_add_executable_test(executor_runner PRIVATE
+-add_dependencies(executor_runner gen_model_header)
+-
+ target_include_directories(executor_runner PRIVATE
+ ${ET_INCLUDE_PATH}
+ ${CMAKE_CURRENT_BINARY_DIR})
+ 
++ethosu_add_executable_test(executor_runner_delegate PRIVATE
 +    WHOLE_ARCHIVE TRUE
 +    SOURCES runner_delegate.cpp
 +    LIBRARIES
@@ -38,9 +44,15 @@ index c95d53e..d0233bf 100644
 +	${LIB_ET_ETHOS}
 +  )
 +
- add_dependencies(executor_runner gen_model_header)
- 
- target_include_directories(executor_runner PRIVATE
++target_include_directories(executor_runner_delegate PRIVATE
++${ET_INCLUDE_PATH}
++${CMAKE_CURRENT_BINARY_DIR})
++  
++add_dependencies(executor_runner gen_model_header)
++
++
++
+ # TODO Memory setup
 diff --git a/applications/executorch_tests/add.pte.h b/applications/executorch_tests/add.pte.h
 new file mode 100644
 index 0000000..05bc0ec
