@@ -1,8 +1,6 @@
 name: trunk
 
 on:
-  # TODO: DEBUG
-  pull_request:
   push:
     branches:
       - main
