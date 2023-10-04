@@ -40,20 +40,22 @@ def to_backend(args):
     """
     A generic function the dispatch happens on the type of the first argument. There are currently to overloaded to_backend function:
 
-    def to_backend(
-        backend_id: str,
-        edge_graph_module: ExportedProgram,
-        compile_specs: List[CompileSpec],
-    ) -> LoweredBackendModule:
-
-    def to_backend(
-        graph_module: torch.fx.GraphModule,
-        partitioner: Type[TPartitioner],
-    ) -> torch.fx.GraphModule
-
     Note: Python is dynamically-typed language and therefore cannot have proper method overloading as that requires the language to
     be able to discriminate between types at compile-time. @to_backend.register will attach the function to to_backend() base on the type of the first
     argument (type annotation is required). However, it can't take multiple types as arguments.
+
+    ::
+
+     def to_backend(
+         backend_id: str,
+         edge_graph_module: ExportedProgram,
+         compile_specs: List[CompileSpec],
+     ) -> LoweredBackendModule:
+
+     def to_backend(
+         graph_module: torch.fx.GraphModule,
+         partitioner: Type[TPartitioner],
+     ) -> torch.fx.GraphModule
     """
     pass
 
@@ -66,11 +68,16 @@ def _(
 ) -> LoweredBackendModule:
     """
     Add overloaded implementations for to_backend:
-    def to_backend(
-        backend_id: str,
-        edge_program: ExportedProgram,
-        compile_specs: List[CompileSpec],
-    ) -> LoweredBackendModule:
+
+    ::
+
+     def to_backend(
+         backend_id: str,
+         edge_program: ExportedProgram,
+         compile_specs: List[CompileSpec],
+     ) -> LoweredBackendModule:
+
+
     Requires the passed in exported program in Edge dialect to be executed in
     the backend identified by backend_id. The forward method of the given
     edge_graph_module will be targeted for execution.
@@ -258,10 +265,13 @@ def _(
 ) -> ExportedProgram:
     """
     Add overloaded implementations for to_backend:
-    def to_backend(
-        edge_program: ExportedProgram,
-        partitioner: Type[TPartitioner],
-    ) -> ExportedProgram:
+
+    ::
+
+     def to_backend(
+         edge_program: ExportedProgram,
+         partitioner: Type[TPartitioner],
+     ) -> ExportedProgram:
 
     Returns a semantically-equivalent program to the one given as input (represented
     as a graph module in Edge dialect), but with portions of the program targeted for

@@ -96,6 +96,14 @@ Topics in this section will help you get started with ExecuTorch.
 .. toctree::
    :glob:
    :maxdepth: 1
+   :caption: API Reference
+   :hidden:
+
+   export-to-executorch-api-reference
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
    :caption: IR Specification
    :hidden:
 
