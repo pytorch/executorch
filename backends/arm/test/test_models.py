@@ -35,6 +35,34 @@ class TorchBuilder:
         pass
 
     @register_test
+    class simple_clone(torch.nn.Module):
+        inputs = {
+            TosaProfile.BI: (torch.ones(10),),
+            TosaProfile.MI: (torch.ones(10),),
+        }
+
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, x):
+            x = x.clone()
+            return x
+
+    @register_test
+    class simple_view(torch.nn.Module):
+        inputs = {
+            TosaProfile.BI: (torch.ones(10),),
+            TosaProfile.MI: (torch.ones(10),),
+        }
+
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, x):
+            x = x.view(2, 5)
+            return x
+
+    @register_test
     class simple_add(torch.nn.Module):
         inputs = {
             TosaProfile.BI: (torch.ones(5),),
