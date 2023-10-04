@@ -10,7 +10,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Platform Abstraction Layer &mdash; ExecuTorch  documentation</title>
+  <title>Runtime Platform Abstraction Layer (PAL) &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -286,7 +286,7 @@
 <li class="toctree-l1"><a class="reference internal" href="runtime-api.html">Runtime API</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-custom-memory-allocator.html">Custom Memory Allocator</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-error-handling.html">Runtime Error Handling</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Platform Abstraction Layer</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Runtime Platform Abstraction Layer (PAL)</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
@@ -347,7 +347,7 @@
       </li>
 
         
-      <li>Platform Abstraction Layer</li>
+      <li>Runtime Platform Abstraction Layer (PAL)</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -385,9 +385,43 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <section id="platform-abstraction-layer">
-<h1>Platform Abstraction Layer<a class="headerlink" href="#platform-abstraction-layer" title="Permalink to this heading">¶</a></h1>
-<p>TBA</p>
+  <section id="runtime-platform-abstraction-layer-pal">
+<h1>Runtime Platform Abstraction Layer (PAL)<a class="headerlink" href="#runtime-platform-abstraction-layer-pal" title="Permalink to this heading">¶</a></h1>
+<p>The ExecuTorch <em>Platform Abstraction Layer</em> (PAL) provides a way for execution
+environments to override operations like:</p>
+<ul class="simple">
+<li><p>Getting the current time.</p></li>
+<li><p>Printing a log statement.</p></li>
+<li><p>Panicking the process/system.</p></li>
+</ul>
+<p>The PAL function declarations are in
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/platform.h</span></code></a>.</p>
+<section id="overriding-the-default-pal">
+<h2>Overriding the default PAL<a class="headerlink" href="#overriding-the-default-pal" title="Permalink to this heading">¶</a></h2>
+<p>The default PAL implementation is in
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/target/Posix.cpp"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/target/Posix.cpp</span></code></a>.
+It uses <code class="docutils literal notranslate"><span class="pre">std::chrono::steady_clock</span></code> for the time, prints log messages to
+<code class="docutils literal notranslate"><span class="pre">stderr</span></code>, and makes other default assumptions.</p>
+<p>But, if they don’t work for your system, you can override the default PAL by:</p>
+<ul class="simple">
+<li><p>Including
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/platform.h</span></code></a>
+in one of your application’s <code class="docutils literal notranslate"><span class="pre">.c</span></code> or <code class="docutils literal notranslate"><span class="pre">.cpp</span></code> files.</p></li>
+<li><p>Defining an implementation of one or more of the <code class="docutils literal notranslate"><span class="pre">et_pal_*()</span></code> functions.</p></li>
+</ul>
+<p>No build system changes necessary. The default PAL functions are weak symbols,
+so providing your own strong-symbol definition will override them at link time.</p>
+</section>
+<section id="minimal-pal">
+<h2>Minimal PAL<a class="headerlink" href="#minimal-pal" title="Permalink to this heading">¶</a></h2>
+<p>If you run into build problems because your system doesn’t support the functions
+called by <code class="docutils literal notranslate"><span class="pre">Posix.cpp</span></code>, you can instead use the no-op minimal PAL at
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/target/Minimal.cpp"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/target/Minimal.cpp</span></code></a>
+by building with the <code class="docutils literal notranslate"><span class="pre">buck2</span></code> flag <code class="docutils literal notranslate"><span class="pre">-c</span> <span class="pre">executorch.pal_default=minimal</span></code>. This will
+avoid calling <code class="docutils literal notranslate"><span class="pre">fprintf()</span></code>, <code class="docutils literal notranslate"><span class="pre">std::chrono::steady_clock</span></code>, and anything else that
+<code class="docutils literal notranslate"><span class="pre">Posix.cpp</span></code> uses. But since the <code class="docutils literal notranslate"><span class="pre">Minimal.cpp</span></code> <code class="docutils literal notranslate"><span class="pre">et_pal_*()</span></code> functions are no-ops,
+you will need to override all of them.</p>
+</section>
 </section>
 
 
@@ -435,7 +469,11 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Platform Abstraction Layer</a></li>
+<li><a class="reference internal" href="#">Runtime Platform Abstraction Layer (PAL)</a><ul>
+<li><a class="reference internal" href="#overriding-the-default-pal">Overriding the default PAL</a></li>
+<li><a class="reference internal" href="#minimal-pal">Minimal PAL</a></li>
+</ul>
+</li>
 </ul>
 
             </div>
