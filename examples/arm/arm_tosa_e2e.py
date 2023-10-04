@@ -36,7 +36,18 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
 )
 
-SUPPORTED_BI_TEST_LIST = ["simple_add", "simple_add_broadcast", "simple_linear"]
+SUPPORTED_BI_TEST_LIST = [
+    "simple_add",
+    "simple_add_broadcast",
+    "simple_linear",
+    "simple_conv2d_3x3_1x3x256x256_stride1",
+    "simple_conv2d_1x1_1x2x128x128_stride1",
+    "simple_conv2d_2x2_1x1x14x14_stride2",
+    "simple_conv2d_5x5_3x2x128x128_stride1",
+    "simple_conv2d_2x2_3x1x40x40_non_bias",
+    "block_two_conv2d",
+    "block_two_conv2d_non_bias",
+]
 
 
 def get_input_quantization_params(captured_model):
@@ -242,7 +253,10 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
     ## TODO: Torch is doing [Q, DQ, Operation (FP32), Q, DQ] for quantization
     ## While TOSA is doing everything in INT8 which is causing a large diff
     ## Between two final results. Need to fix this to have a smaller error margin.
-    if np.allclose(tosa_output, torch_output, rtol=1e-1, atol=1e-1, equal_nan=True):
+    ## Set tolerance values to 1.5e-1 for conv2d testing as that operation can
+    ## generate larger difference with ground-truth floating point output on random
+    ## input data.
+    if np.allclose(tosa_output, torch_output, rtol=1.5e-1, atol=1.5e-1, equal_nan=True):
         print(
             "\033[92m"
             + "Torch and Tosa Reference results are matching for operator: "
