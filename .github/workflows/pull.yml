@@ -31,7 +31,7 @@ jobs:
 
           source .ci/scripts/utils.sh
           # This is a simple Python script but as it tries to import executorch.examples.models,
-          # it requires a whole bunch of Executorch dependencies on the Docker image
+          # it requires a whole bunch of ExecuTorch dependencies on the Docker image
           install_pip_dependencies
           install_executorch
 
@@ -62,7 +62,7 @@ jobs:
         DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
-        # Build and test Executorch
+        # Build and test ExecuTorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${XNNPACK_QUANTIZATION}" "${XNNPACK_DELEGATION}" "${DEMO_BACKEND_DELEGATION}"
 
   test-custom-ops-linux:

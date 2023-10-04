@@ -1,7 +1,7 @@
-# iOS Demo App: Executorch Setup
+# iOS Demo App: ExecuTorch Setup
 
-This guide explains how to setup Executorch for iOS using a demo app. The app
-employs a MobileNet v3 model (exported to Executorch) to process live camera
+This guide explains how to setup ExecuTorch for iOS using a demo app. The app
+employs a MobileNet v3 model (exported to ExecuTorch) to process live camera
 images.
 
 ## Pre-setup
@@ -27,7 +27,7 @@ images.
    ln -s /Applications/CMake.app/Contents/bin/cmake /usr/bin/cmake
    ```
 
-4. Clone Executorch repository and update submodules:
+4. Clone ExecuTorch repository and update submodules:
 
    ```bash
    git clone https://github.com/pytorch/executorch.git
@@ -60,7 +60,7 @@ cmake .. && cmake --build . --target flatc
 cd ../../..
 ```
 
-## Executorch Configuration
+## ExecuTorch Configuration
 
 Configure the libraries for iOS:
 
