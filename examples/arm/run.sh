@@ -56,6 +56,7 @@ function build_executorch() {
         -DEXECUTORCH_BUILD_GFLAGS=OFF                     \
         -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
         -DEXECUTORCH_BUILD_HOST_TARGETS=OFF               \
+        -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_ENABLE_LOGGING=ON                    \
         -DEXECUTORCH_SELECT_OPS_LIST="aten::_softmax.out" \
