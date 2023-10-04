@@ -61,8 +61,6 @@ class BaseArg:
         nonzero=False,
         nonneg=False,
         bounded=False,
-        deps=None,
-        constraints=None,
     ):
         self.type: ArgType = argtype
 
@@ -79,8 +77,6 @@ class BaseArg:
         self.nonzero = nonzero
         self.nonneg = nonneg
         self.bounded = bounded
-        self.deps = deps
-        self.constraints = constraints
 
         self._mode: ArgMode = ArgMode.DEFAULT
         self._kw: bool = False
@@ -244,59 +240,11 @@ class BaseArg:
         else:
             raise ValueError(f"Unsupported Type: {self.type}")
 
-    def get_val_with_shape(self, shape):
-        if shape is None:
-            return None
-
-        def helper(s):
-            return torch.full(tuple(s), self.fill, dtype=self.dtype)
-
-        if self.type.is_tensor():
-            return helper(shape)
-        elif self.type.is_tensor_list():
-            return [helper(s) for s in shape]
-        else:
-            raise ValueError(f"Unsupported value with shape for type: {self.type}")
-
     def get_val(self):
         if self.type.has_dtype():
             return self.get_val_with_dtype(self.dtype)
         else:
             return self.value
-
-    def get_shape(self):
-        if self.type.is_tensor():
-            return self.size
-        elif self.type.is_tensor_list():
-            if not self.value_given:
-                return []
-            return [s.size for s in self.value]
-        else:
-            raise ValueError(f"Unsupported get shape for type: {self.type}")
-
-    def get_constraints(self):
-        if self.type.is_dim():
-            constraints = {
-                "val_min": lambda deps: -deps[0].dim() if deps[0].dim() > 0 else -1,
-                "val_max": lambda deps: deps[0].dim() - 1 if deps[0].dim() > 0 else 0,
-            }
-        if self.type.is_dim_list():
-            constraints = {
-                "len_max": lambda deps: deps[0].dim(),
-                "val_min": lambda deps: -deps[0].dim() if deps[0].dim() > 0 else -1,
-                "val_max": lambda deps: deps[0].dim() - 1 if deps[0].dim() > 0 else 0,
-                "no_dups": True,
-            }
-        if self.type.is_index():
-            constraints = {
-                "val_min": lambda deps: -deps[0].size(deps[1]),
-                "val_max": lambda deps: deps[0].size(deps[1]) - 1,
-            }
-        if self.type.is_memory_format():
-            constraints = {"values": [None]}
-        if self.constraints is not None:
-            constraints.update(self.constraints)
-        return constraints
 
 
 class BaseKwarg(BaseArg):
@@ -360,5 +308,4 @@ class Return(BaseKwarg):
             size=self.size,
             dtype=self.dtype,
             value=self.value,
-            deps=self.deps,
         )
