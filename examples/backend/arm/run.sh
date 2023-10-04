@@ -57,7 +57,7 @@ function build_executorch() {
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
-    cmake --build . -j"$((n - 5))"
+    cmake --build . -j"$((n - 5))" -- VERBOSE=1
     echo "[${FUNCNAME[0]}] Generated static libraries for ExecuTorch:"
     find . -name "*.a" -exec ls -al {} \;
 }
@@ -68,7 +68,7 @@ function build_executorch_runner() {
     local pte=${1}
     cd "${ethos_u_root_dir}"/core_platform
     cmake                                         \
-        -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} \
+        -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake_executorch} \
         -B build targets/corstone-300             \
         -DET_DIR_PATH:PATH=${et_root_dir}         \
         -DET_BUILD_DIR_PATH:PATH=${et_build_dir}  \
@@ -131,7 +131,7 @@ hash arm-none-eabi-gcc \
 pte=$(generate_pte_file)
 
 # build et
-#build_executorch
+build_executorch
 
 # build the et baremetal app
 build_executorch_runner "${pte}"
