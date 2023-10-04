@@ -37,7 +37,7 @@ main() {
     echo "Version of ${FLATBUFFERS_PATH} is ${flatbuffers_version}"
 
     local flatc_path
-    flatc_path="$(which flatc 2>/dev/null || /bin/true)"
+    flatc_path="$(which flatc 2>/dev/null || echo '')"
     if [[ -f "${flatc_path}" ]]; then
         # A flatc is already on the PATH.
         if { "${flatc_path}" --version | grep -q "${flatbuffers_version}"; }; then

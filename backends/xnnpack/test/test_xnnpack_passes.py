@@ -42,7 +42,7 @@ from torch.ao.quantization.quantize_fx import (
 from torch.testing import FileCheck
 
 
-class TestXNNPackPasses(unittest.TestCase):
+class TestXNNPACKPasses(unittest.TestCase):
     class TwoOutputs(OpSequencesAddConv2d):
         def __init__(self):
             super().__init__(1, 2)

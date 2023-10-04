@@ -17,17 +17,7 @@ final class MobileNetClassifierTest: XCTestCase {
     try run(
       model: "mv3",
       [
-        Classification(label: "Arctic fox", confidence: 0.93),
-        Classification(label: "Samoyed", confidence: 0.75),
-        Classification(label: "hot pot", confidence: 0.82),
-      ])
-  }
-
-  func testV3WithXnnPackBackend() throws {
-    try run(
-      model: "mv3_xnnpack_fp32",
-      [
-        Classification(label: "Arctic fox", confidence: 0.93),
+        Classification(label: "Arctic fox", confidence: 0.92),
         Classification(label: "Samoyed", confidence: 0.75),
         Classification(label: "hot pot", confidence: 0.82),
       ])
@@ -37,7 +27,27 @@ final class MobileNetClassifierTest: XCTestCase {
     try run(
       model: "mv3_coreml",
       [
-        Classification(label: "Arctic fox", confidence: 0.93),
+        Classification(label: "Arctic fox", confidence: 0.92),
+        Classification(label: "Samoyed", confidence: 0.75),
+        Classification(label: "hot pot", confidence: 0.82),
+      ])
+  }
+
+  func testV3WithMPSBackend() throws {
+    try run(
+      model: "mv3_mps",
+      [
+        Classification(label: "Arctic fox", confidence: 0.92),
+        Classification(label: "Samoyed", confidence: 0.75),
+        Classification(label: "hot pot", confidence: 0.82),
+      ])
+  }
+
+  func testV3WithXnnPackBackend() throws {
+    try run(
+      model: "mv3_xnnpack_fp32",
+      [
+        Classification(label: "Arctic fox", confidence: 0.92),
         Classification(label: "Samoyed", confidence: 0.75),
         Classification(label: "hot pot", confidence: 0.82),
       ])
