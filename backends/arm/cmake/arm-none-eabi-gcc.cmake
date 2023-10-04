@@ -63,7 +63,7 @@ else()
     set(FLOAT soft)
 endif()
 
-if (FLOAT)
+if(FLOAT)
     add_compile_options(-mfloat-abi=${FLOAT})
     add_link_options(-mfloat-abi=${FLOAT})
 endif()
