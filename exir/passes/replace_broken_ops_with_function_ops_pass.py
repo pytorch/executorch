@@ -20,6 +20,8 @@ _NON_FUNCTIONAL_OPS_TO_FUNCTIONAL_OPS: Dict[OpOverload, OpOverload] = {
     torch.ops.aten.view.default: torch.ops.aten.view_copy.default,
     torch.ops.aten.expand.default: torch.ops.aten.expand_copy.default,
     torch.ops.aten.permute.default: torch.ops.aten.permute_copy.default,
+    torch.ops.aten.squeeze.default: torch.ops.aten.squeeze_copy.default,
+    torch.ops.aten.unsqueeze.default: torch.ops.aten.unsqueeze_copy.default,
     torch.ops.aten.slice.Tensor: torch.ops.aten.slice_copy.Tensor,
 }
 
