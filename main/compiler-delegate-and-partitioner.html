@@ -451,12 +451,15 @@ destroying is required for some backend, backends can implement a <code class="d
 function which will be called when the program is out of its lifespan.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">//</span> <span class="n">Runtime</span> <span class="n">initialization</span>
 <span class="n">__ET_NODISCARD</span> <span class="n">virtual</span> <span class="n">Result</span><span class="o">&lt;</span><span class="n">DelegateHandle</span><span class="o">*&gt;</span> <span class="n">init</span><span class="p">(</span>
+    <span class="n">BackendInitContext</span><span class="o">&amp;</span> <span class="n">context</span><span class="p">,</span>
     <span class="n">FreeableBuffer</span><span class="o">*</span> <span class="n">processed</span><span class="p">,</span>
-    <span class="n">ArrayRef</span><span class="o">&lt;</span><span class="n">CompileSpec</span><span class="o">&gt;</span> <span class="n">compile_specs</span><span class="p">,</span>
-    <span class="n">MemoryAllocator</span><span class="o">*</span> <span class="n">memory_allocator</span><span class="p">);</span>
+    <span class="n">ArrayRef</span><span class="o">&lt;</span><span class="n">CompileSpec</span><span class="o">&gt;</span> <span class="n">compile_specs</span><span class="p">);</span>
 
 <span class="o">//</span> <span class="n">Runtime</span> <span class="n">execution</span>
-<span class="n">__ET_NODISCARD</span> <span class="n">virtual</span> <span class="n">Error</span> <span class="n">execute</span><span class="p">(</span><span class="n">DelegateHandle</span><span class="o">*</span> <span class="n">handle</span><span class="p">,</span> <span class="n">EValue</span><span class="o">**</span> <span class="n">args</span><span class="p">);</span>
+<span class="n">__ET_NODISCARD</span> <span class="n">virtual</span> <span class="n">Error</span> <span class="n">execute</span><span class="p">(</span>
+    <span class="n">BackendExecutionContext</span><span class="o">&amp;</span> <span class="n">context</span><span class="p">,</span>
+    <span class="n">DelegateHandle</span><span class="o">*</span> <span class="n">handle</span><span class="p">,</span>
+    <span class="n">EValue</span><span class="o">**</span> <span class="n">args</span><span class="p">);</span>
 
 <span class="o">//</span> <span class="p">[</span><span class="n">optional</span><span class="p">]</span> <span class="n">Runtime</span> <span class="n">destroy</span><span class="o">.</span> <span class="n">Destroy</span> <span class="n">the</span> <span class="n">resource</span> <span class="n">held</span> <span class="n">by</span> <span class="n">the</span> <span class="n">backend</span>
 <span class="n">virtual</span> <span class="n">void</span> <span class="n">destroy</span><span class="p">(</span><span class="n">__ET_UNUSED</span> <span class="n">DelegateHandle</span><span class="o">*</span> <span class="n">handle</span><span class="p">);</span>
