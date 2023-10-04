@@ -7,10 +7,10 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
-#include <executorch/backends/qualcomm/runtime/wrappers/TensorWrapper.h>
 
 #include <vector>
 

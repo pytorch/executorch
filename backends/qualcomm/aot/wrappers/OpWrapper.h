@@ -7,11 +7,11 @@
  */
 #pragma once
 
-#include <executorch/backends/qualcomm/runtime/wrappers/ParamWrapper.h>
-#include <executorch/backends/qualcomm/runtime/wrappers/QuantizeParamsWrapper.h>
-#include <executorch/backends/qualcomm/runtime/wrappers/ScalarParamWrapper.h>
-#include <executorch/backends/qualcomm/runtime/wrappers/TensorParamWrapper.h>
-#include <executorch/backends/qualcomm/runtime/wrappers/TensorWrapper.h>
+#include <executorch/backends/qualcomm/aot/wrappers/ParamWrapper.h>
+#include <executorch/backends/qualcomm/aot/wrappers/QuantizeParamsWrapper.h>
+#include <executorch/backends/qualcomm/aot/wrappers/ScalarParamWrapper.h>
+#include <executorch/backends/qualcomm/aot/wrappers/TensorParamWrapper.h>
+#include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
 
 #include <cstdint>
 #include <memory>

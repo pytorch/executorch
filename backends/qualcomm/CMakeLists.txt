@@ -15,7 +15,7 @@ get_filename_component(EXECUTORCH_SOURCE_DIR
                        "${CMAKE_CURRENT_LIST_DIR}/../.."
                        ABSOLUTE)
 get_filename_component(QNN_EXECUTORCH_ROOT_DIR
-                       ${CMAKE_CURRENT_LIST_DIR}/runtime
+                       ${CMAKE_CURRENT_LIST_DIR}
                        ABSOLUTE)
 # Let files say "include <executorch/path/to/header.h>".
 get_filename_component(_common_include_directories
@@ -25,13 +25,16 @@ get_filename_component(_common_include_directories
 if(NOT DEFINED QNN_SDK_ROOT)
     message(FATAL_ERROR
             "Please define QNN_SDK_ROOT, e.g. cmake <..> -DQNN_SDK_ROOT=<...>")
+elseif(CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
+    message(FATAL_ERROR
+            "ios is not supported by Qualcomm AI Engine Direct")
 endif()
 
 message(STATUS "Using qnn sdk root ${QNN_SDK_ROOT}")
 message(STATUS "Using EXECUTORCH_SOURCE_DIR ${EXECUTORCH_SOURCE_DIR}")
 
 if(${ANDROID})
-  find_library(android_log log)
+    find_library(android_log log)
 endif()
 
 add_compile_options("-Wall" "-Werror" "-Wno-sign-compare")
@@ -56,12 +59,12 @@ endif()
 
 
 include_directories(
-  BEFORE
-  ${_common_include_directories}
+    BEFORE
+    ${_common_include_directories}
 )
 include_directories(
-  BEFORE
-  ${QNN_SDK_ROOT}/include/QNN
+    BEFORE
+    ${QNN_SDK_ROOT}/include/QNN
 )
 
 #
@@ -179,77 +182,52 @@ target_link_options_shared_lib(qnn_executorch_backend)
 # add sources
 #
 add_subdirectory(
-    ${QNN_EXECUTORCH_ROOT_DIR}
+    ${QNN_EXECUTORCH_ROOT_DIR}/runtime
     ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch
 )
 add_subdirectory(
-    ${QNN_EXECUTORCH_ROOT_DIR}/backends
+    ${QNN_EXECUTORCH_ROOT_DIR}/runtime/backends
     ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/backends
 )
 add_subdirectory(
-    ${QNN_EXECUTORCH_ROOT_DIR}/wrappers
+    ${QNN_EXECUTORCH_ROOT_DIR}/aot/wrappers
     ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/wrappers
 )
 
 # QNN pybind
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
-  add_subdirectory(${EXECUTORCH_SOURCE_DIR}/third-party/pybind11
-                   ${CMAKE_CURRENT_BINARY_DIR}/pybind11)
-  add_library(PyQnnManagerAdaptor MODULE)
-  add_library(PyQnnWrapperAdaptor MODULE)
+    add_subdirectory(${EXECUTORCH_SOURCE_DIR}/third-party/pybind11
+                    ${CMAKE_CURRENT_BINARY_DIR}/pybind11)
+    add_library(PyQnnManagerAdaptor MODULE)
+    add_library(PyQnnWrapperAdaptor MODULE)
 
-  target_link_libraries(PyQnnManagerAdaptor
-      PRIVATE
-      pybind11::module
-      pybind11::lto
-      qnn_manager
-      qnn_executorch_header
-      executorch
-  )
-  target_link_libraries(PyQnnWrapperAdaptor
-      PRIVATE
-      pybind11::module
-      pybind11::lto
-      wrappers
-      qnn_logging
-      qnn_executorch_header
-  )
+    target_link_libraries(PyQnnManagerAdaptor
+        PRIVATE
+        pybind11::module
+        pybind11::lto
+        qnn_manager
+        qnn_executorch_header
+        executorch
+    )
+    target_link_libraries(PyQnnWrapperAdaptor
+        PRIVATE
+        pybind11::module
+        pybind11::lto
+        wrappers
+        qnn_logging
+        qnn_executorch_header
+    )
 
-  pybind11_extension(PyQnnManagerAdaptor)
-  pybind11_extension(PyQnnWrapperAdaptor)
-  if(NOT MSVC AND NOT ${CMAKE_BUILD_TYPE} MATCHES Debug|RelWithDebInfo)
-      # Strip unnecessary sections of the binary
-      pybind11_strip(PyQnnManagerAdaptor)
-      pybind11_strip(PyQnnWrapperAdaptor)
-  endif()
+    pybind11_extension(PyQnnManagerAdaptor)
+    pybind11_extension(PyQnnWrapperAdaptor)
+    if(NOT MSVC AND NOT ${CMAKE_BUILD_TYPE} MATCHES Debug|RelWithDebInfo)
+        # Strip unnecessary sections of the binary
+        pybind11_strip(PyQnnManagerAdaptor)
+        pybind11_strip(PyQnnWrapperAdaptor)
+    endif()
 
-  add_subdirectory(
-  ${QNN_EXECUTORCH_ROOT_DIR}/python
-  ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/python
-  )
+    add_subdirectory(
+        ${QNN_EXECUTORCH_ROOT_DIR}/aot/python
+        ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/python
+    )
 endif()
-
-# ios can only build library but not binary
-# though Qualcomm doesn't support ios :)
-if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
-  #
-  # qnn_executor_runner: Like executor_runner but with QNN, the binary will
-  # be at ${CMAKE_BINARY_DIR}/backends/qualcomm
-  #
-  set(_qnn_executor_runner__srcs ${_executor_runner__srcs})
-  list(TRANSFORM _qnn_executor_runner__srcs PREPEND "${EXECUTORCH_SOURCE_DIR}/")
-  list(FILTER _qnn_executor_runner__srcs EXCLUDE REGEX ".*executor_runner.cpp$")
-  list(
-    PREPEND
-    _qnn_executor_runner__srcs
-    ${CMAKE_CURRENT_LIST_DIR}/executor_runner/qnn_executor_runner.cpp
-  )
-  add_executable(qnn_executor_runner ${_qnn_executor_runner__srcs})
-  target_link_libraries(qnn_executor_runner
-    ${_executor_runner_libs}
-    qnn_executorch_backend
-    gflags
-  )
-  target_compile_options(qnn_executor_runner PUBLIC ${_common_compile_options})
-endif()
-

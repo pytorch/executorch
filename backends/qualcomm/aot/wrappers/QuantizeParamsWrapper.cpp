@@ -5,8 +5,8 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <executorch/backends/qualcomm/aot/wrappers/QuantizeParamsWrapper.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
-#include <executorch/backends/qualcomm/runtime/wrappers/QuantizeParamsWrapper.h>
 namespace torch {
 namespace executor {
 namespace qnn {

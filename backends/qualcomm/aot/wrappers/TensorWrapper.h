@@ -7,8 +7,8 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/aot/wrappers/QuantizeParamsWrapper.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
-#include <executorch/backends/qualcomm/runtime/wrappers/QuantizeParamsWrapper.h>
 #include <executorch/runtime/core/error.h>
 
 #include <memory>

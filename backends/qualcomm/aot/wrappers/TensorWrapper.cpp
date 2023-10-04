@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/qualcomm/runtime/wrappers/TensorWrapper.h>
+#include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
 
 #include <atomic>
 #include <cstring>

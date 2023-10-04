@@ -7,11 +7,11 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/aot/wrappers/OpWrapper.h>
+#include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendFactory.h>
-#include <executorch/backends/qualcomm/runtime/wrappers/OpWrapper.h>
-#include <executorch/backends/qualcomm/runtime/wrappers/TensorWrapper.h>
 #include <executorch/runtime/core/error.h>
 
 #include <memory>

@@ -7,9 +7,9 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/aot/wrappers/OpWrapper.h>
+#include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
-#include <executorch/backends/qualcomm/runtime/wrappers/OpWrapper.h>
-#include <executorch/backends/qualcomm/runtime/wrappers/TensorWrapper.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>

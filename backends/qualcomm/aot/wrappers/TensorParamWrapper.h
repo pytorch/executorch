@@ -7,8 +7,8 @@
  */
 #pragma once
 
-#include <executorch/backends/qualcomm/runtime/wrappers/ParamWrapper.h>
-#include <executorch/backends/qualcomm/runtime/wrappers/TensorWrapper.h>
+#include <executorch/backends/qualcomm/aot/wrappers/ParamWrapper.h>
+#include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
 #include <executorch/runtime/core/error.h>
 
 #include <memory>
