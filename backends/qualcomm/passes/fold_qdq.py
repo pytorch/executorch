@@ -11,7 +11,7 @@ from executorch.exir.passes import dead_code_elimination_pass
 
 class FoldQDQ(ExportPass):
     """
-    Erase QDQ pattern and store encodings into corresponding graph nodes.
+    Erase QDQ pattern.
     """
 
     q_ops = {
@@ -45,6 +45,7 @@ class FoldQDQ(ExportPass):
             to_be_removed = [n]
             source_n = n.args[0]
 
+            # TODO: remove this hack as source_fn_stack is internal implementation detail of torch.export.
             # To make constant value/tensor be tagged as delegatable during partition
             if source_n.op == "get_attr":
                 source_n.meta["source_fn_stack"] = list(n.users.keys())[0].meta.get(

@@ -33,8 +33,6 @@ class AnnotateQuantAttrs(ExportPass):
     """
 
     q_ops = {
-        torch.ops.quantized_decomposed.quantize_per_channel.default,
-        torch.ops.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
