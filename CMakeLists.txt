@@ -59,10 +59,20 @@ endif()
 # directory, before and after this command is invoked - targets in
 # sub-directories added after this command is invoked
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  # To enable logging in Release mode
+  option(
+    EXECUTORCH_ENABLE_LOGGING_RELEASE_MODE
+    "Enable logging in release mode" OFF)
+
+  set(_ET_LOG_ENABLE 0)
+  if (${EXECUTORCH_ENABLE_LOGGING_RELEASE_MODE})
+    set(_ET_LOG_ENABLE 1)
+  endif()
+
   # Avoid pulling in the logging strings, which can be large.
-  add_definitions(-DET_LOG_ENABLED=0)
-  # Avoid pulling in the flatbuffer data verification logic, which can add about
-  # 20kB.
+  add_definitions(-DET_LOG_ENABLED=${_ET_LOG_ENABLE})
+  # Avoid pulling in the flatbuffer data verification
+  # logic, which can add about 20kB.
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
