@@ -6,7 +6,7 @@
 
 import itertools
 import random
-from typing import Dict, Iterator, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import torch
 import torch.testing._internal.common_dtype as common_dtype
@@ -28,7 +28,7 @@ class DtypeRunner:
 
     @staticmethod
     def _get_args_kwargs(
-        inputs: Dict[str, List[Union[BaseArg]]],
+        inputs: Dict[str, List[BaseArg]],
         dtypes: Tuple[Optional[torch.dtype]],
         mode: ArgMode,
     ) -> Tuple[List[BaseArg], Dict[str, BaseKwarg]]:
@@ -174,7 +174,7 @@ class DtypeRunner:
     def run(
         self,
         name: str,
-        inputs: Dict[str, List[BaseArg]],
+        inputs: Dict[str, Any],
         argmode: ArgMode = ArgMode.ONES,
     ) -> List[
         Tuple[

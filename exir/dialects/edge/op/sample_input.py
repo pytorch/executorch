@@ -4,20 +4,20 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
-"""Sample inputs for all core ATen ops
 """
-import executorch.exir.dialects.edge.arg.constraints as rel
+Sample inputs for Core ATen ops in Portable Kernel Library
+"""
 import torch
 from executorch.exir.dialects.edge.arg.model import InArg, InKwarg, Return
 from executorch.exir.dialects.edge.arg.type import ArgType
+
 
 SAMPLE_INPUT = {
     "_log_softmax.default": {  # (Tensor self, int dim, bool half_to_float) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Dim, value=0, deps=[0]),
-            InArg(ArgType.Bool, value=False),
+            InArg(ArgType.Param, value=0),
+            InArg(ArgType.Param, value=False),
         ],
         "returns": [
             Return(ArgType.Tensor),
@@ -30,21 +30,20 @@ SAMPLE_INPUT = {
             InArg(ArgType.TensorOpt, size=[3]),
             InArg(ArgType.Tensor, size=[3]),
             InArg(ArgType.Tensor, size=[3]),
-            InArg(ArgType.Float, value=0.1),
-            InArg(ArgType.Float, value=1e-8),
+            InArg(ArgType.Param, value=0.1),
+            InArg(ArgType.Param, value=1e-8),
         ],
         "returns": [
             Return(ArgType.Tensor, argname="__ret0", size=[2, 3, 4, 5]),
             Return(ArgType.Tensor, argname="__ret1", size=[0]),
             Return(ArgType.Tensor, argname="__ret2", size=[0]),
         ],
-        "broadcast": False,
     },
     "_softmax.default": {  # (Tensor self, int dim, bool half_to_float) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Dim, value=0, deps=[0]),
-            InArg(ArgType.Bool, value=False),
+            InArg(ArgType.Param, value=0),
+            InArg(ArgType.Param, value=False),
         ],
         "returns": [
             Return(ArgType.Tensor),
@@ -53,14 +52,9 @@ SAMPLE_INPUT = {
     "_to_copy.default": {  # (Tensor self, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None, bool non_blocking=False, MemoryFormat? memory_format=None) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InKwarg(
-                ArgType.Bool,
-                "non_blocking",
-                value=False,
-                constraints={"values": [False]},
-            ),
+            InKwarg(ArgType.Param, "non_blocking", value=False),
             InKwarg(ArgType.ScalarTypeOpt, "dtype"),
-            InKwarg(ArgType.MemoryFormat, "memory_format", value=None),
+            InKwarg(ArgType.Param, "memory_format", value=None),
         ],
         "returns": [
             Return(ArgType.Tensor),
@@ -115,17 +109,6 @@ SAMPLE_INPUT = {
         "returns": [
             Return(ArgType.Tensor),
         ],
-        "broadcast_shapes": [
-            [[], [6, 2], [2, 3], [6, 3]],
-            [[5], [8, 4], [4, 5], [8, 5]],
-            [[1, 1], [3, 4], [4, 5], [3, 5]],
-            [[6, 1], [6, 2], [2, 4], [6, 4]],
-            [[2, 3], [1, 5], [5, 1], [2, 3]],
-            [[7, 4], [7, 3], [3, 1], [7, 4]],
-            [[3, 1], [1, 7], [7, 2], [3, 2]],
-            [[3, 3], [6, 2], [2, 3], [6, 3]],
-            [[2, 3], [3, 4], [1, 1], [2, 4]],
-        ],
     },
     "alias_copy.default": {  # (Tensor self) -> Tensor
         "args": [
@@ -136,8 +119,8 @@ SAMPLE_INPUT = {
     "amax.default": {  # (Tensor self, int[1] dim=[], bool keepdim=False) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.DimList, value=[0], deps=[0]),
-            InArg(ArgType.Keepdim, value=True),
+            InArg(ArgType.Param, value=[0]),
+            InArg(ArgType.Param, value=True),
         ],
         "returns": [
             Return(ArgType.Tensor, size=(1, 2)),
@@ -146,8 +129,8 @@ SAMPLE_INPUT = {
     "amin.default": {  # (Tensor self, int[1] dim=[], bool keepdim=False) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.DimList, value=[0], deps=[0]),
-            InArg(ArgType.Keepdim, value=True),
+            InArg(ArgType.Param, value=[0]),
+            InArg(ArgType.Param, value=True),
         ],
         "returns": [
             Return(ArgType.Tensor, size=(1, 2)),
@@ -182,8 +165,8 @@ SAMPLE_INPUT = {
     "argmax.default": {  # (Tensor self, int? dim=None, bool keepdim=False) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.DimOpt, value=1, deps=[0]),
-            InArg(ArgType.Keepdim, value=False),
+            InArg(ArgType.Param, value=1),
+            InArg(ArgType.Param, value=False),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[2], dtype=torch.long),
@@ -192,8 +175,8 @@ SAMPLE_INPUT = {
     "argmin.default": {  # (Tensor self, int? dim=None, bool keepdim=False) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.DimOpt, value=1, deps=[0]),
-            InArg(ArgType.Keepdim, value=False),
+            InArg(ArgType.Param, value=1),
+            InArg(ArgType.Param, value=False),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[2], dtype=torch.long),
@@ -202,8 +185,8 @@ SAMPLE_INPUT = {
     "as_strided_copy.default": {  # (Tensor self, SymInt[] size, SymInt[] stride, SymInt? storage_offset=None) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Shape, value=[4]),
-            InArg(ArgType.Stride, value=[1]),
+            InArg(ArgType.Param, value=[4]),
+            InArg(ArgType.Param, value=[1]),
             InArg(ArgType.Param, value=None),
         ],
         "returns": [
@@ -237,17 +220,16 @@ SAMPLE_INPUT = {
     "avg_pool2d.default": {  # (Tensor self, int[2] kernel_size, int[2] stride=[], int[2] padding=0, bool ceil_mode=False, bool count_include_pad=True, int? divisor_override=None) -> Tensor
         "args": [
             InArg(ArgType.Tensor, size=[2, 3, 14, 12]),
-            InArg(ArgType.Shape, value=[4, 2]),
-            InArg(ArgType.Stride, value=[1, 2]),
-            InArg(ArgType.LengthList, value=[1, 1]),
-            InArg(ArgType.Bool, value=True),
-            InArg(ArgType.Bool, value=False),
+            InArg(ArgType.Param, value=[4, 2]),
+            InArg(ArgType.Param, value=[1, 2]),
+            InArg(ArgType.Param, value=[1, 1]),
+            InArg(ArgType.Param, value=True),
+            InArg(ArgType.Param, value=False),
             InArg(ArgType.Param, value=None),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[2, 3, 13, 7]),
         ],
-        "broadcast": False,
     },
     "bitwise_and.Scalar": {  # (Tensor self, Scalar other) -> Tensor
         "args": [
@@ -319,14 +301,13 @@ SAMPLE_INPUT = {
         "returns": [
             Return(ArgType.Tensor, size=[1, 2, 2]),
         ],
-        "broadcast": False,
     },
     "cat.default": {  # (Tensor[] tensors, int dim=0) -> Tensor
         "args": [
             InArg(
                 ArgType.TensorList, value=[InArg(ArgType.Tensor), InArg(ArgType.Tensor)]
             ),
-            InArg(ArgType.Dim, value=0, deps=[0]),
+            InArg(ArgType.Param, value=0),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[4, 2]),
@@ -351,7 +332,7 @@ SAMPLE_INPUT = {
     "clone.default": {  # (Tensor self, *, MemoryFormat? memory_format=None) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InKwarg(ArgType.MemoryFormat, "memory_format", value=None),
+            InKwarg(ArgType.Param, "memory_format", value=None),
         ],
         "returns": [
             Return(ArgType.Tensor),
@@ -360,7 +341,7 @@ SAMPLE_INPUT = {
     "constant_pad_nd.default": {  # (Tensor self, SymInt[] pad, Scalar value=0) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.LengthList, value=[1, 0, 0, 1]),
+            InArg(ArgType.Param, value=[1, 0, 0, 1]),
             InArg(ArgType.Scalar, bounded=True),
         ],
         "returns": [
@@ -372,23 +353,22 @@ SAMPLE_INPUT = {
             InArg(ArgType.Tensor, size=[1, 2, 5]),
             InArg(ArgType.Tensor, size=[4, 2, 3]),
             InArg(ArgType.TensorOpt, size=[4]),
-            InArg(ArgType.Stride, value=[2]),
-            InArg(ArgType.LengthList, value=[2]),
-            InArg(ArgType.LengthList, value=[1]),
-            InArg(ArgType.Bool, value=False),
-            InArg(ArgType.LengthList, value=[0]),
+            InArg(ArgType.Param, value=[2]),
+            InArg(ArgType.Param, value=[2]),
+            InArg(ArgType.Param, value=[1]),
+            InArg(ArgType.Param, value=False),
+            InArg(ArgType.Param, value=[0]),
             InArg(ArgType.Param, value=1),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[1, 4, 4]),
         ],
-        "broadcast": False,
     },
     "copy.default": {  # (Tensor self, Tensor src, bool non_blocking=False) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
             InArg(ArgType.Tensor),
-            InArg(ArgType.Bool, value=False),
+            InArg(ArgType.Param, value=False),
         ],
         "returns": [
             Return(ArgType.Tensor),
@@ -409,7 +389,7 @@ SAMPLE_INPUT = {
     "cumsum.default": {  # (Tensor self, int dim, *, ScalarType? dtype=None) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Dim, value=0, deps=[0]),
+            InArg(ArgType.Param, value=0),
             InKwarg(ArgType.ScalarTypeOpt, "dtype"),
         ],
         "returns": [
@@ -441,18 +421,17 @@ SAMPLE_INPUT = {
             InArg(ArgType.Tensor),
             InArg(ArgType.Tensor, value=[[0, 1], [1, 0]], dtype=torch.long),
             InArg(ArgType.Param, value=-1),
-            InArg(ArgType.Bool, value=False),
-            InArg(ArgType.Bool, value=False),
+            InArg(ArgType.Param, value=False),
+            InArg(ArgType.Param, value=False),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[2, 2, 2]),
         ],
-        "broadcast": False,
     },
     "empty.memory_format": {  # (SymInt[] size, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None, MemoryFormat? memory_format=None) -> Tensor
         "args": [
-            InArg(ArgType.Shape, value=[2, 2]),
-            InKwarg(ArgType.MemoryFormat, "memory_format", value=None),
+            InArg(ArgType.Param, value=[2, 2]),
+            InKwarg(ArgType.Param, "memory_format", value=None),
             InKwarg(ArgType.ScalarTypeOpt, "dtype"),
         ],
         "returns": [
@@ -481,8 +460,8 @@ SAMPLE_INPUT = {
     "expand_copy.default": {  # (Tensor self, SymInt[] size, *, bool implicit=False) -> Tensor
         "args": [
             InArg(ArgType.Tensor, size=[2, 1]),
-            InArg(ArgType.Shape, value=[-1, 3]),
-            InKwarg(ArgType.Bool, "implicit", value=False),
+            InArg(ArgType.Param, value=[-1, 3]),
+            InKwarg(ArgType.Param, "implicit", value=False),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[2, 3]),
@@ -504,15 +483,11 @@ SAMPLE_INPUT = {
                 ArgType.Tensor,
                 size=[],
                 bounded=True,
-                constraints={
-                    "rank": lambda deps: 0,
-                },
             ),
         ],
         "returns": [
             Return(ArgType.Tensor),
         ],
-        "broadcast": False,
     },
     "floor.default": {  # (Tensor self) -> Tensor
         "args": [
@@ -549,7 +524,7 @@ SAMPLE_INPUT = {
     },
     "full.default": {  # (SymInt[] size, Scalar fill_value, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor
         "args": [
-            InArg(ArgType.Shape, value=[2, 2]),
+            InArg(ArgType.Param, value=[2, 2]),
             InArg(ArgType.Scalar, bounded=True),
             InKwarg(ArgType.ScalarTypeOpt, "dtype"),
         ],
@@ -562,7 +537,7 @@ SAMPLE_INPUT = {
             InArg(ArgType.Tensor),
             InArg(ArgType.Scalar, bounded=True),
             InKwarg(ArgType.ScalarTypeOpt, "dtype"),
-            InKwarg(ArgType.MemoryFormat, "memory_format", value=None),
+            InKwarg(ArgType.Param, "memory_format", value=None),
         ],
         "returns": [
             Return(ArgType.Tensor),
@@ -589,7 +564,6 @@ SAMPLE_INPUT = {
                 ArgType.Param,
                 "approximate",
                 value="none",
-                constraints={"values": ["none", "tanh"]},
             ),
         ],
         "returns": [
@@ -599,7 +573,7 @@ SAMPLE_INPUT = {
     "glu.default": {  # (Tensor self, int dim=-1) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Dim, value=0, deps=[0]),
+            InArg(ArgType.Param, value=0),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[1, 2]),
@@ -657,23 +631,21 @@ SAMPLE_INPUT = {
                 dtype=torch.long,
             ),
             InArg(ArgType.Tensor, size=[2]),
-            InArg(ArgType.Bool, value=False),
+            InArg(ArgType.Param, value=False),
         ],
         "returns": [
             Return(ArgType.Tensor),
         ],
-        "broadcast": False,
     },
     "index_select.default": {  # (Tensor self, int dim, Tensor index) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Dim, value=0, deps=[0]),
+            InArg(ArgType.Param, value=0),
             InArg(ArgType.Tensor, value=[1], dtype=torch.long),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[1, 2]),
         ],
-        "broadcast": False,
     },
     "isinf.default": {  # (Tensor self) -> Tensor
         "args": [
@@ -750,7 +722,7 @@ SAMPLE_INPUT = {
     "logit.default": {  # (Tensor self, float? eps=None) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.FloatOpt, value=0.1),
+            InArg(ArgType.Param, value=0.1),
         ],
         "returns": [
             Return(ArgType.Tensor),
@@ -785,8 +757,8 @@ SAMPLE_INPUT = {
     "max.dim": {  # (Tensor self, int dim, bool keepdim=False) -> (Tensor values, Tensor indices)
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Dim, value=0, deps=[0]),
-            InArg(ArgType.Keepdim, value=False),
+            InArg(ArgType.Param, value=0),
+            InArg(ArgType.Param, value=False),
         ],
         "returns": [
             Return(ArgType.Tensor, argname="values", size=[2]),
@@ -796,23 +768,22 @@ SAMPLE_INPUT = {
     "max_pool2d_with_indices.default": {  # (Tensor self, int[2] kernel_size, int[2] stride=[], int[2] padding=0, int[2] dilation=1, bool ceil_mode=False) -> (Tensor, Tensor)
         "args": [
             InArg(ArgType.Tensor, size=[2, 12, 12]),
-            InArg(ArgType.Shape, value=[4, 3]),
-            InArg(ArgType.Stride, value=[3, 2]),
-            InArg(ArgType.LengthList, value=[2, 1]),
-            InArg(ArgType.LengthList, value=[1, 2]),
-            InArg(ArgType.Bool, value=False),
+            InArg(ArgType.Param, value=[4, 3]),
+            InArg(ArgType.Param, value=[3, 2]),
+            InArg(ArgType.Param, value=[2, 1]),
+            InArg(ArgType.Param, value=[1, 2]),
+            InArg(ArgType.Param, value=False),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[2, 5, 5]),
             Return(ArgType.Tensor, size=[2, 5, 5], dtype=torch.long),
         ],
-        "broadcast": False,
     },
     "mean.dim": {  # (Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.DimListOpt, value=[0], deps=[0]),
-            InArg(ArgType.Keepdim, value=False),
+            InArg(ArgType.Param, value=[0]),
+            InArg(ArgType.Param, value=False),
             InKwarg(ArgType.ScalarTypeOpt, "dtype"),
         ],
         "returns": [
@@ -822,8 +793,8 @@ SAMPLE_INPUT = {
     "min.dim": {  # (Tensor self, int dim, bool keepdim=False) -> (Tensor values, Tensor indices)
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Dim, value=0, deps=[0]),
-            InArg(ArgType.Keepdim, value=False),
+            InArg(ArgType.Param, value=0),
+            InArg(ArgType.Param, value=False),
         ],
         "returns": [
             Return(ArgType.Tensor, argname="values", size=[2]),
@@ -839,18 +810,10 @@ SAMPLE_INPUT = {
     },
     "mm.default": {  # (Tensor self, Tensor mat2) -> Tensor
         "args": [
-            InArg(ArgType.Tensor, constraints={"rank": 2}),
-            InArg(
-                ArgType.Tensor,
-                deps=[0],
-                constraints={
-                    "rank": 2,
-                    "size": lambda deps, d: deps[0].size(1) if d == 0 else None,
-                },
-            ),
+            InArg(ArgType.Tensor),
+            InArg(ArgType.Tensor),
         ],
         "returns": [Return(ArgType.Tensor)],
-        "broadcast": False,
     },
     "mul.Tensor": {  # (Tensor self, Tensor other) -> Tensor
         "args": [
@@ -869,17 +832,16 @@ SAMPLE_INPUT = {
     "native_layer_norm.default": {  # (Tensor input, SymInt[] normalized_shape, Tensor? weight, Tensor? bias, float eps) -> (Tensor, Tensor, Tensor)
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Shape, value=[2]),
+            InArg(ArgType.Param, value=[2]),
             InArg(ArgType.TensorOpt, size=[2]),
             InArg(ArgType.TensorOpt, size=[2]),
-            InArg(ArgType.Float, value=1e-5),
+            InArg(ArgType.Param, value=1e-5),
         ],
         "returns": [
             Return(ArgType.Tensor, argname="__ret0"),
             Return(ArgType.Tensor, argname="__ret1", size=[2, 1]),
             Return(ArgType.Tensor, argname="__ret2", size=[2, 1]),
         ],
-        "broadcast": False,
     },
     "ne.Scalar": {  # (Tensor self, Scalar other) -> Tensor
         "args": [
@@ -911,7 +873,7 @@ SAMPLE_INPUT = {
     },
     "ones.default": {  # (SymInt[] size, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor
         "args": [
-            InArg(ArgType.Shape, value=[2, 2]),
+            InArg(ArgType.Param, value=[2, 2]),
             InKwarg(ArgType.ScalarTypeOpt, "dtype"),
         ],
         "returns": [Return(ArgType.Tensor, fill=3)],
@@ -919,12 +881,7 @@ SAMPLE_INPUT = {
     "permute_copy.default": {  # (Tensor self, int[] dims) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(
-                ArgType.DimList,
-                value=[1, 0],
-                deps=[0],
-                constraints={"len_min": lambda deps: deps[0].dim()},
-            ),
+            InArg(ArgType.Param, value=[1, 0]),
         ],
         "returns": [
             Return(ArgType.Tensor),
@@ -988,15 +945,7 @@ SAMPLE_INPUT = {
     "repeat.default": {  # (Tensor self, SymInt[] repeats) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(
-                ArgType.LengthList,
-                value=[1, 2],
-                deps=[0],
-                constraints={
-                    "len_min": lambda deps: deps[0].dim(),
-                    "val_min": 0,
-                },
-            ),
+            InArg(ArgType.Param, value=[1, 2]),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[2, 4]),
@@ -1034,32 +983,19 @@ SAMPLE_INPUT = {
     "scatter_add.default": {  # (Tensor self, int dim, Tensor index, Tensor src) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Dim, value=0, deps=[0]),
-            InArg(
-                ArgType.Tensor,
-                value=[[0, 1]],
-                dtype=torch.long,
-                deps=[0, 1, 3],
-                constraints={
-                    "rank": lambda deps: deps[0].dim(),
-                    "size_min": lambda deps, d: 1,
-                    "size_max": lambda deps, d: rel.scatter_add_index_size_max(
-                        deps[0], deps[1], deps[2], d
-                    ),
-                },
-            ),
+            InArg(ArgType.Param, value=0),
+            InArg(ArgType.Tensor, value=[[0, 1]], dtype=torch.long),
             InArg(ArgType.Tensor),
         ],
         "returns": [
             Return(ArgType.Tensor),
         ],
-        "broadcast": False,
     },
     "select_copy.int": {  # (Tensor self, int dim, SymInt index) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Dim, value=0, deps=[0]),
-            InArg(ArgType.Index, value=1, deps=[0, 1]),
+            InArg(ArgType.Param, value=0),
+            InArg(ArgType.Param, value=1),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[2]),
@@ -1068,21 +1004,13 @@ SAMPLE_INPUT = {
     "select_scatter.default": {  # (Tensor self, Tensor src, int dim, SymInt index) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(
-                ArgType.Tensor,
-                size=[2],
-                deps=[0, 2, 3],
-                constraints={
-                    "shape": lambda deps: torch.select(deps[0], deps[1], deps[2]).shape,
-                },
-            ),
-            InArg(ArgType.Dim, value=0, deps=[0]),
-            InArg(ArgType.Index, value=1, deps=[0, 2]),
+            InArg(ArgType.Tensor, size=[2]),
+            InArg(ArgType.Param, value=0),
+            InArg(ArgType.Param, value=1),
         ],
         "returns": [
             Return(ArgType.Tensor),
         ],
-        "broadcast": False,
     },
     "sigmoid.default": {  # (Tensor self) -> Tensor
         "args": [
@@ -1111,10 +1039,10 @@ SAMPLE_INPUT = {
     "slice_copy.Tensor": {  # (Tensor self, int dim=0, SymInt? start=None, SymInt? end=None, SymInt step=1) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Dim, value=0, deps=[0]),
-            InArg(ArgType.IndexOpt, value=None),
-            InArg(ArgType.IndexOpt, value=None),
-            InArg(ArgType.Length, value=1),
+            InArg(ArgType.Param, value=0),
+            InArg(ArgType.Param, value=None),
+            InArg(ArgType.Param, value=None),
+            InArg(ArgType.Param, value=1),
         ],
         "returns": [
             Return(ArgType.Tensor),
@@ -1124,21 +1052,20 @@ SAMPLE_INPUT = {
         "args": [
             InArg(ArgType.Tensor),
             InArg(ArgType.Tensor),
-            InArg(ArgType.Dim, value=0, deps=[0]),
-            InArg(ArgType.IndexOpt, value=None),
-            InArg(ArgType.IndexOpt, value=None),
-            InArg(ArgType.Length, value=1),
+            InArg(ArgType.Param, value=0),
+            InArg(ArgType.Param, value=None),
+            InArg(ArgType.Param, value=None),
+            InArg(ArgType.Param, value=1),
         ],
         "returns": [
             Return(ArgType.Tensor),
         ],
-        "broadcast": False,
     },
     "split_copy.Tensor": {  # (Tensor self, SymInt split_size, int dim=0) -> Tensor[]
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Length, value=1),
-            InArg(ArgType.Dim, value=0, deps=[0]),
+            InArg(ArgType.Param, value=1),
+            InArg(ArgType.Param, value=0),
         ],
         "returns": [
             Return(
@@ -1153,8 +1080,8 @@ SAMPLE_INPUT = {
     "split_with_sizes_copy.default": {  # (Tensor self, SymInt[] split_sizes, int dim=0) -> Tensor[]
         "args": [
             InArg(ArgType.Tensor, size=[2, 6, 3]),
-            InArg(ArgType.LengthList, value=[3, 1, 2]),
-            InArg(ArgType.Dim, value=1),
+            InArg(ArgType.Param, value=[3, 1, 2]),
+            InArg(ArgType.Param, value=1),
         ],
         "returns": [
             Return(
@@ -1176,7 +1103,7 @@ SAMPLE_INPUT = {
     "squeeze_copy.dim": {  # (Tensor self, int dim) -> Tensor
         "args": [
             InArg(ArgType.Tensor, size=[1, 2]),
-            InArg(ArgType.Dim, value=0, deps=[0]),
+            InArg(ArgType.Param, value=0),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[2]),
@@ -1192,11 +1119,7 @@ SAMPLE_INPUT = {
                     InArg(ArgType.Tensor),
                 ],
             ),
-            InArg(
-                ArgType.Dim,
-                value=0,
-                deps=[0],
-            ),
+            InArg(ArgType.Param, value=0),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[3, 2, 2]),
@@ -1225,8 +1148,8 @@ SAMPLE_INPUT = {
     "sum.dim_IntList": {  # (Tensor self, int[1]? dim, bool keepdim=False, *, ScalarType? dtype=None) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.DimListOpt, value=[0], deps=[0]),
-            InArg(ArgType.Keepdim, value=False),
+            InArg(ArgType.Param, value=[0]),
+            InArg(ArgType.Param, value=False),
             InKwarg(ArgType.ScalarTypeOpt, "dtype"),
         ],
         "returns": [
@@ -1254,8 +1177,8 @@ SAMPLE_INPUT = {
     "transpose_copy.int": {  # (Tensor self, int dim0, int dim1) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Dim, value=0, deps=[0]),
-            InArg(ArgType.Dim, value=1, deps=[0]),
+            InArg(ArgType.Param, value=0),
+            InArg(ArgType.Param, value=1),
         ],
         "returns": [
             Return(ArgType.Tensor),
@@ -1263,8 +1186,8 @@ SAMPLE_INPUT = {
     },
     "tril.default": {  # (Tensor self, int diagonal=0) -> Tensor
         "args": [
-            InArg(ArgType.Tensor, constraints={"rank_min": lambda deps: 2}),
-            InArg(ArgType.Index, value=0),
+            InArg(ArgType.Tensor),
+            InArg(ArgType.Param, value=0),
         ],
         "returns": [
             Return(ArgType.Tensor),
@@ -1273,7 +1196,7 @@ SAMPLE_INPUT = {
     "unbind_copy.int": {  # (Tensor self, int dim=0) -> Tensor[]
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.Dim, value=0, deps=[0]),
+            InArg(ArgType.Param, value=0),
         ],
         "returns": [
             Return(
@@ -1288,15 +1211,7 @@ SAMPLE_INPUT = {
     "unsqueeze_copy.default": {  # (Tensor self, int dim) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(
-                ArgType.Dim,
-                value=1,
-                deps=[0],
-                constraints={
-                    "val_min": lambda deps: -deps[0].size(deps[1]) - 1,
-                    "val_max": lambda deps: deps[0].size(deps[1]),
-                },
-            ),
+            InArg(ArgType.Param, value=1),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[2, 1, 2]),
@@ -1305,9 +1220,9 @@ SAMPLE_INPUT = {
     "var.dim": {  # (Tensor self, int[1]? dim, bool unbiased=True, bool keepdim=False) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(ArgType.DimListOpt, value=[0], deps=[0]),
-            InArg(ArgType.Bool, value=True),
-            InArg(ArgType.Keepdim, value=False),
+            InArg(ArgType.Param, value=[0]),
+            InArg(ArgType.Param, value=True),
+            InArg(ArgType.Param, value=False),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[2]),
@@ -1316,16 +1231,7 @@ SAMPLE_INPUT = {
     "view_copy.default": {  # (Tensor self, SymInt[] size) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
-            InArg(
-                ArgType.Shape,
-                value=[4],
-                deps=[0],
-                constraints={
-                    "val_prod": lambda deps: torch.prod(
-                        torch.Tensor(list(deps[0].shape))
-                    )
-                },
-            ),
+            InArg(ArgType.Param, value=[4]),
         ],
         "returns": [
             Return(ArgType.Tensor, size=[4]),
@@ -1343,7 +1249,7 @@ SAMPLE_INPUT = {
     },
     "zeros.default": {  # (SymInt[] size, *, ScalarType? dtype=None, Layout? layout=None, Device? device=None, bool? pin_memory=None) -> Tensor
         "args": [
-            InArg(ArgType.Shape, value=[2, 2]),
+            InArg(ArgType.Param, value=[2, 2]),
             InKwarg(ArgType.ScalarTypeOpt, "dtype"),
         ],
         "returns": [Return(ArgType.Tensor, fill=3)],
