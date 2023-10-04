@@ -24,6 +24,9 @@ Result<Tag> get_tag(
         return_type serialization_value,
     size_t index) {
   switch (serialization_value->val_type()) {
+    case executorch_flatbuffer::KernelTypes::Null: {
+      return Tag::None;
+    } break;
     case executorch_flatbuffer::KernelTypes::Int: {
       return Tag::Int;
     } break;
@@ -42,7 +45,7 @@ Result<Tag> get_tag(
     default:
       ET_LOG(
           Error,
-          "Invalid tag: %zu input: %zu",
+          "Invalid tag: %zu input idx: %zu",
           (size_t)serialization_value->val_type(),
           index);
       return Error::Internal;
