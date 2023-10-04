@@ -22,9 +22,9 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 )
 
 
-def export_to_executorch_program(model, example_inputs, compute_units):
-    m = model.eval()
-    edge = exir.capture(m, example_inputs, _CAPTURE_CONFIG).to_edge(
+def lower_module_to_coreml(module, compute_units):
+    module = module.eval()
+    edge = exir.capture(module, example_inputs, _CAPTURE_CONFIG).to_edge(
         _EDGE_COMPILE_CONFIG
     )
 
@@ -34,6 +34,10 @@ def export_to_executorch_program(model, example_inputs, compute_units):
         [CompileSpec("compute_units", bytes(compute_units, "utf-8"))],
     )
 
+    return lowered_module
+
+
+def export_lowered_module_to_executorch_program(lowered_module, example_inputs):
     class CompositeModule(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -54,12 +58,20 @@ def export_to_executorch_program(model, example_inputs, compute_units):
     return exec_prog
 
 
-def serialize_executorch_program(exec_prog, model_name, compute_units):
+def save_executorch_program(exec_prog, model_name, compute_units):
     buffer = exec_prog.buffer
-    filename = f"{model_name}_{compute_units}.pte"
+    filename = f"{model_name}_coreml_{compute_units}.pte"
     print(f"Saving exported program to {filename}")
     with open(filename, "wb") as file:
         file.write(buffer)
+    return
+
+
+def save_processed_bytes(processed_bytes, model_name, compute_units):
+    filename = f"{model_name}_coreml_{compute_units}.bin"
+    print(f"Saving processed bytes to {filename}")
+    with open(filename, "wb") as file:
+        file.write(processed_bytes)
     return
 
 
@@ -82,6 +94,8 @@ if __name__ == "__main__":
         help=f"Provide compute units. Valid ones: {compute_units}",
     )
 
+    parser.add_argument("--save_processed_bytes", action=argparse.BooleanOptionalAction)
+
     args = parser.parse_args()
 
     if args.model_name not in MODEL_NAME_TO_MODEL:
@@ -100,7 +114,19 @@ if __name__ == "__main__":
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
-    exec_program = export_to_executorch_program(
-        model, example_inputs, args.compute_units
+    lowered_module = lower_module_to_coreml(
+        model,
+        args.compute_units,
     )
-    serialize_executorch_program(exec_program, args.model_name, args.compute_units)
+
+    exec_program = export_lowered_module_to_executorch_program(
+        lowered_module,
+        example_inputs,
+    )
+
+    save_executorch_program(exec_program, args.model_name, args.compute_units)
+
+    if args.save_processed_bytes:
+        save_processed_bytes(
+            lowered_module.processed_bytes, args.model_name, args.compute_units
+        )
