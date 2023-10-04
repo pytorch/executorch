@@ -55,27 +55,31 @@ public:
 		// wont walk off the end of the chunks and segfault
 		if( !((int)data == next_mul_16((int)data)) )
 		{
-			ET_LOG(Error, "ArmBackend::init header unaligned");
+			ET_LOG(Error, "ArmBackend::init: Binary needs to be 16 byte unaligned");
 			return Error::InvalidProgram;
 		}
 		if( !((int)foot == next_mul_16((int)foot)) )
 		{
-			ET_LOG(Error, "ArmBackend::init header unaligned");
+			ET_LOG(Error, "ArmBackend::init: Program unexpected size");
 			return Error::InvalidProgram;
 		}
 		if( !(0 == strncmp( data, "vela_bin_stream", 15 )) )
 		{
-			ET_LOG(Error, "ArmBackend::init header unaligned");
+			ET_LOG(Error, "ArmBackend::init: Binary passed not a vela_bin_stream");
 			return Error::InvalidProgram;
 		}
 		if( !(0 == strncmp( foot, "vela_end_stream", 15 )) )
 		{
-			ET_LOG(Error, "ArmBackend::init header unaligned");
+			ET_LOG(Error, "ArmBackend::init: Binary passed missing vela_end_stream");
 			return Error::InvalidProgram;
 		}
 		// Verify address range is accessible current expectation is the program
 		// is wholly stored in SRAM
-		if( !(data > CS300_SRAM_LOW || foot < CS300_SRAM_HIGH) );
+		if( !(data > CS300_SRAM_LOW || foot < CS300_SRAM_HIGH) )
+		{
+			ET_LOG(Error, "ArmBackend::init: Expected program binary to be in SRAM");
+			return Error::InvalidProgram;
+		}
 		
 		// Return the same buffer we were passed - this data will be
 		// executed directly
