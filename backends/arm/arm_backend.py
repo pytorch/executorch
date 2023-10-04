@@ -12,8 +12,8 @@
 import logging
 import operator
 import os
-import tempfile
 import subprocess
+import tempfile
 from typing import final, List
 
 import numpy as np
@@ -145,6 +145,7 @@ def dbg_tosa_dump(tosa_fb, path):
     f.write(js)
     f.close()
 
+
 # Output to Vela with current file-based compilation
 # WARNING: if this changes, the runtime reader also needs to change
 def vela_compile(tosa_fb):
@@ -153,17 +154,19 @@ def vela_compile(tosa_fb):
 
         tosaname = "out.tosa"
         flatbuffer = tosa_fb.serialize()
-        f = open(os.path.join(tmpdir,tosaname), "wb")
+        f = open(os.path.join(tmpdir, tosaname), "wb")
         f.write(flatbuffer)
         f.close()
 
         # invoke vela
         # TODO target ethos-u55-128
-        vela_command = f"cd {tmpdir}; vela --accelerator-config ethos-u55-128 {tosaname}"
+        vela_command = (
+            f"cd {tmpdir}; vela --accelerator-config ethos-u55-128 {tosaname}"
+        )
         subprocess.run([vela_command], shell=True, check=True)
 
-        np_path = os.path.join(tmpdir,"output","out_sg0_vela.npz")
-        blocks = b''
+        np_path = os.path.join(tmpdir, "output", "out_sg0_vela.npz")
+        blocks = b""
         with np.load(np_path, allow_pickle=False) as data:
             # Emit the NPZ regions as:
             #  - 16 byte block name null terminated string (padded to 16 if name shorter)
@@ -171,38 +174,39 @@ def vela_compile(tosa_fb):
             #  - block data (padded to 16 byte alignment at end)
             # Repeat for all blocks
             for key in data.keys():
-                block_name = bytes(key,"utf8")[:15]
-                block_name = block_name + b'\x00'*(16-len(block_name))
-                block_data = data[key].tobytes() 
+                block_name = bytes(key, "utf8")[:15]
+                block_name = block_name + b"\x00" * (16 - len(block_name))
+                block_data = data[key].tobytes()
                 # We need the acual unpadded block lengths for hw setup
-                block_length = len(block_data).to_bytes(16, 'little')
+                block_length = len(block_data).to_bytes(16, "little")
                 # pad block data to multiple of 16 bytes
-                block_data = block_data + b'\x00'*(15-(len(block_data)-1)%16)
+                block_data = block_data + b"\x00" * (15 - (len(block_data) - 1) % 16)
 
                 block = block_name + block_length + block_data
                 blocks = blocks + block
 
             # Add a block for scratch, inputs and outputs
             # scratch shape is a 1 element array giving us size in bytes
-            block_name = bytes("scratch_data","utf8")[:15]
-            block_name = block_name + b'\x00'*(16-len(block_name))
+            block_name = bytes("scratch_data", "utf8")[:15]
+            block_name = block_name + b"\x00" * (16 - len(block_name))
             block_length = data["scratch_shape"][0].item()
             print(f"scratch length = {block_length}")
-            block_length = block_length+(15-(block_length-1)%16)
-            block_data = b'\x00'*block_length
-            block_length = block_length.to_bytes(16, 'little')
+            block_length = block_length + (15 - (block_length - 1) % 16)
+            block_data = b"\x00" * block_length
+            block_length = block_length.to_bytes(16, "little")
             print(f"lengths {len(block_name)} {len(block_length)} {len(block_data)}")
             block = block_name + block_length + block_data
             blocks = blocks + block
             # TODO are these already in scratch shape? look to be
-            #input_shape * input_elem_size
-            #output_shape * output_elem_size
+            # input_shape * input_elem_size
+            # output_shape * output_elem_size
             # input_offset and output_offset specify the location these arrays are written from base of scratch
 
         # return 16 byte VELA bin header + blocks + footer
-        header = bytes("vela_bin_stream","utf-8") + b'\x00'
-        footer = bytes("vela_end_stream","utf-8") + b'\x00'
+        header = bytes("vela_bin_stream", "utf-8") + b"\x00"
+        footer = bytes("vela_end_stream", "utf-8") + b"\x00"
         return header + blocks + footer
+
 
 def dbg_fail(node, tosa_fb, path):
     dbg_tosa_dump(tosa_fb, path)
@@ -948,5 +952,5 @@ class ArmBackend(BackendDetails):
         # Serialize and return the tosa flatbuffer
         # fb = bytes(tosa_fb.serialize())
         binary = vela_compile(tosa_fb)
-        
+
         return PreprocessResult(processed_bytes=binary)
