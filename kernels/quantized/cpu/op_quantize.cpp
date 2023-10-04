@@ -93,7 +93,8 @@ T quantize_val(
   int64_t qvalue;
   float inv_scale = 1.0f / static_cast<float>(scale);
   qvalue = static_cast<int64_t>(
-      static_cast<int32_t>(zero_point) + std::nearbyint(inv_scale * value));
+      static_cast<int32_t>(zero_point) +
+      std::nearbyint(static_cast<float>(inv_scale * value)));
 
   qvalue = std::max<int64_t>(qvalue, quant_min);
   qvalue = std::min<int64_t>(qvalue, quant_max);

@@ -141,7 +141,7 @@ void choose_qparams(
   } else if (initial_zero_point > qmax) {
     nudged_zero_point = qmax;
   } else {
-    nudged_zero_point = nearbyint(initial_zero_point);
+    nudged_zero_point = nearbyint(static_cast<float>(initial_zero_point));
   }
 
   scale_out.data_ptr<double>()[0] = scale;
