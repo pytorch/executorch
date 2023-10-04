@@ -75,3 +75,19 @@ class AddMulModule(torch.nn.Module, EagerModelBase):
     def get_compile_spec(self):
         max_value = self.get_example_inputs()[0].shape[0]
         return [CompileSpec("max_value", bytes([max_value]))]
+
+class SoftmaxModule(torch.nn.Module, EagerModelBase):
+    def __init__(self):
+        super().__init__()
+        self.softmax = torch.nn.Softmax()
+
+    def forward(self, x):
+        z = self.softmax(x)
+        return z
+
+    def get_eager_model(self) -> torch.nn.Module:
+        return self
+
+    def get_example_inputs(self):
+        return (torch.ones(2, 2),)
+

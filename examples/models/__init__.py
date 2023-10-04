@@ -11,6 +11,7 @@ MODEL_NAME_TO_MODEL = {
     "linear": ("toy_model", "LinearModule"),
     "add": ("toy_model", "AddModule"),
     "add_mul": ("toy_model", "AddMulModule"),
+    "softmax" : ("toy_model", "SoftmaxModule"),
     "dl3": ("deeplab_v3", "DeepLabV3ResNet50Model"),
     "edsr": ("edsr", "EdsrModel"),
     "emformer_transcribe": ("emformer_rnnt", "EmformerRnntTranscriberModel"),
