@@ -77,9 +77,10 @@ def get_tensor_variable_names(
 
 
 def get_args_rets(op_name: str) -> List[BaseArg]:
-    return SAMPLE_INPUT[op_name].get("args", []) + SAMPLE_INPUT[op_name].get(
-        "returns", []
-    )
+    args_rets: List[BaseArg] = []
+    args_rets.extend(SAMPLE_INPUT[op_name].get("args", []))
+    args_rets.extend(SAMPLE_INPUT[op_name].get("returns", []))
+    return args_rets
 
 
 def get_names_for_args_with_dtype(
