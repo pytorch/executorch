@@ -54,15 +54,31 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
 
-# https://cmake.org/cmake/help/latest/command/add_definitions.html Adds
-# definitions to the compiler command line for - targets in the current
-# directory, before and after this command is invoked - targets in
-# sub-directories added after this command is invoked
+# _default_release_disabled_targets: default value for options that should be
+# disabled in Release mode by default. Users can still manually enable them,
+# though.
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-  # Avoid pulling in the logging strings, which can be large.
+  set(_default_release_disabled_targets OFF)
+else()
+  set(_default_release_disabled_targets ON)
+endif()
+
+option(EXECUTORCH_ENABLE_LOGGING "Build with ET_LOG_ENABLED"
+       ${_default_release_disabled_targets})
+if(NOT EXECUTORCH_ENABLE_LOGGING)
+  # Avoid pulling in the logging strings, which can be large. Note that this
+  # will set the compiler flag for all targets in this directory, and for all
+  # subdirectories included after this point.
   add_definitions(-DET_LOG_ENABLED=0)
+endif()
+
+option(EXECUTORCH_ENABLE_PROGRAM_VERIFICATION
+       "Build with ET_ENABLE_PROGRAM_VERIFICATION"
+       ${_default_release_disabled_targets})
+if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   # Avoid pulling in the flatbuffer data verification logic, which can add about
-  # 20kB.
+  # 20kB. Note that this will set the compiler flag for all targets in this
+  # directory, and for all subdirectories included after this point.
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
