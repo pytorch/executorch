@@ -330,10 +330,10 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL)
 endif()
 
 # Add COREML subdirectory
-if(EXECUTORCH_BUILD_COREML_DELGATE)
+if(EXECUTORCH_BUILD_COREML_DELEGATE)
   # CoreML delegate library can only be built with iOS toolchain
-  if(CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/coreml)
+  if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS\.)|(ios\.toolchain\.)cmake$")
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
   else()
     message(
       FATAL_ERROR "executorch: Building CoreML delegate requires iOS toolchain"

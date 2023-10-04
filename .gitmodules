@@ -46,3 +46,6 @@
 [submodule "backends/arm/third-party/ethos-u-core-driver"]
 	path = backends/arm/third-party/ethos-u-core-driver
 	url = https://git.mlplatform.org/ml/ethos-u/ethos-u-core-driver.git
+[submodule "backends/apple/coreml/third-party/ios-cmake"]
+	path = backends/apple/coreml/third-party/ios-cmake
+	url = https://github.com/leetal/ios-cmake.git
