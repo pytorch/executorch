@@ -90,7 +90,7 @@ Error share_tensor_data(
       InvalidArgument,
       "Source tensor should have data_ptr not being nullptr.");
   // Assign internal data_ptr as the one in forwarded tensor
-  t_dst.set_data(t_src.mutable_data_ptr());
+  t_dst.unsafeGetTensorImpl()->set_data(t_src.mutable_data_ptr());
 
   return Error::Ok;
 }
@@ -132,7 +132,7 @@ __ET_NODISCARD Error set_tensor_data(
 
 void reset_data_ptr(const torch::executor::Tensor& tensor) {
   // Lean mode doesn't deallocate the tensor data_ptr in the allocator
-  tensor.set_data(nullptr);
+  tensor.unsafeGetTensorImpl()->set_data(nullptr);
 }
 
 class TensorResizerFriend final {
