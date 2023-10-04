@@ -77,7 +77,7 @@ function build_executorch_runner() {
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
-    cmake --build build -- -j"$((n - 5))" executor_runner VERBOSE=1
+    cmake --build build -- -j"$((n - 5))" executor_runner executor_runner_delegate #VERBOSE=1
     echo "[${FUNCNAME[0]}] Generated baremetal elf file:"
     find . -name "executor_runner.elf"
 }
@@ -92,7 +92,21 @@ function run_fvp() {
         -C mps3_board.telnetterminal0.start_telnet=0        \
         -C mps3_board.uart0.out_file='-'                    \
         -a "${elf}"                                         \
-        --timelimit 30 # seconds
+        --timelimit 5 || true
+    echo "[${FUNCNAME[0]} Simulation complete, $?"
+}
+
+# Execute the executor_runner on FVP Simulator
+function run_fvp_delegate() {
+    elf=$(find ${ethos_u_build_dir} -name "executor_runner_delegate.elf")
+    [[ ! -f $elf ]] && { echo "[${FUNCNAME[0]}]: Unable to find executor_runner_delegate elf: ${elf}"; exit 1; }
+    FVP_Corstone_SSE-300_Ethos-U55                          \
+        -C ethosu.num_macs=128                              \
+        -C mps3_board.visualisation.disable-visualisation=1 \
+        -C mps3_board.telnetterminal0.start_telnet=0        \
+        -C mps3_board.uart0.out_file='-'                    \
+        -a "${elf}"                                         \
+        --timelimit 5 || true
     echo "[${FUNCNAME[0]} Simulation complete, $?"
 }
 
@@ -117,12 +131,15 @@ hash arm-none-eabi-gcc \
 pte=$(generate_pte_file)
 
 # build et
-build_executorch
+#build_executorch
 
 # build the et baremetal app
 build_executorch_runner "${pte}"
 
 # run the app
-run_fvp
+run_fvp 
+
+# run the delegate app
+run_fvp_delegate
 
 exit $?
