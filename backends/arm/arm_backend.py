@@ -74,6 +74,8 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten._native_batch_norm_legit_no_training.default,
             exir_ops.edge.aten.avg_pool2d.default,
             exir_ops.edge.aten._softmax.default,
+            exir_ops.edge.aten.view_copy.default,
+            exir_ops.edge.aten.clone.default,
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
@@ -762,10 +764,18 @@ class ArmBackend(BackendDetails):
                         [outp.name],
                         attr_mul,
                     )
+                elif exir_ops.edge.aten.view_copy.default == node.target:
+                    attr = ts.TosaSerializerAttribute()
+                    new_shape = inputs[1].special
+                    attr.ReshapeAttribute(new_shape)
+                    tosa_fb.addOperator(
+                        TosaOp.Op().RESHAPE, [inputs[0].name], [outp.name], attr
+                    )
                 elif node.target in [
                     operator.getitem,
                     tosa_quant_utils.q_op,
                     tosa_quant_utils.dq_op,
+                    exir_ops.edge.aten.clone.default,
                 ]:
                     item_name = inputs[0].name
                     ## Simply add an identityOp

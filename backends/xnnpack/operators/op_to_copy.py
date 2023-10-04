@@ -47,7 +47,7 @@ class ConvertMemoryFormat(NodeVisitor):
         to_contiguous = bool(memory_format_target == torch.contiguous_format)
         check_or_raise(
             to_channels_last or to_contiguous,
-            "Unsupported Memory Format for XNNPack",
+            "Unsupported Memory Format for XNNPACK",
         )
 
         input_node = get_input_node(node, 0)

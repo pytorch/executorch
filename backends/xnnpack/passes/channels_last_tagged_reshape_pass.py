@@ -15,13 +15,13 @@ from executorch.exir.pass_base import PassResult
 # TODO(T151254305) use subgraph_rewriter
 class ChannelsLastTaggedReshapePass(XNNPACKPass):
     """
-    This pass is Internal to XNNPack only! It is meant to give a new representation
-    of the edge graph to be consumed by XNNPack Preprocess. All added operators
+    This pass is Internal to XNNPACK only! It is meant to give a new representation
+    of the edge graph to be consumed by XNNPACK Preprocess. All added operators
     will be consumed by delegate and turned to delegate blobs.
 
     Edge IR graph pass to add operator stubs that signal a change in
     memory format from contiguous to channels last. This is to help with
-    XNNPack Delegate to add transpose nodes to change input memory format
+    XNNPACK Delegate to add transpose nodes to change input memory format
     at runtime and run operators in Channels Last Format.
 
     During this pass, nhwc nodes are not converted back to nchw immediately.
