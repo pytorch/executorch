@@ -104,12 +104,12 @@ option(BUILD_SELECTIVE_BUILD_TEST
 
 option(EXECUTORCH_BUILD_SIZE_TEST "Whether to build size test" OFF)
 
+# Option to register op list
+option(SELECT_OPS_LIST "Register the following list of ops" OFF)
+
 if(BUILD_SELECTIVE_BUILD_TEST)
   option(SELECT_ALL_OPS
          "Whether to register all ops defined in portable kernel library." OFF)
-
-  # Option to register op list
-  option(SELECT_OPS_LIST "Register the following list of ops" OFF)
 
   # Option to register ops from yaml file
   option(SELECT_OPS_YAML "Register all the ops from a given yaml file" OFF)

@@ -37,9 +37,19 @@ file(GLOB_RECURSE _portable_kernels__srcs
      "${CMAKE_CURRENT_SOURCE_DIR}/cpu/*.cpp")
 list(FILTER _portable_kernels__srcs EXCLUDE REGEX "test/*.cpp")
 list(FILTER _portable_kernels__srcs EXCLUDE REGEX "codegen")
-# Generate C++ bindings to register kernels into both PyTorch (for AOT) and
-# Executorch (for runtime). Here select all ops in functions.yaml
-gen_selected_ops("${CMAKE_CURRENT_LIST_DIR}/functions.yaml" "" "")
+
+# If a filterlist is provided only generate wrappers for those
+# Else for all - this is the default behavior.
+if(SELECT_OPS_LIST)
+  message("Selecting only ${SELECT_OPS_LIST} op(s)!")
+  gen_selected_ops("" "${SELECT_OPS_LIST}" "")
+else()
+  # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
+  # Executorch (for runtime). Here select all ops in functions.yaml
+  message("Selecting all ops")
+  gen_selected_ops("${CMAKE_CURRENT_LIST_DIR}/functions.yaml" "" "")
+endif()
+
 # Expect gen_selected_ops output file to be selected_operators.yaml
 generate_bindings_for_kernels(${CMAKE_CURRENT_SOURCE_DIR}/functions.yaml "")
 message("Generated files ${gen_command_sources}")
