@@ -70,7 +70,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - build-tool: buck2
+          - build-tool: cmake
       fail-fast: false
     with:
       runner: macos-m1-12
@@ -94,7 +94,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - build-tool: buck2
+          - build-tool: cmake
       fail-fast: false
     with:
       runner: macos-m1-12

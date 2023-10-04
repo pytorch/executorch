@@ -12,12 +12,12 @@ from typing import Any
 from examples.models import MODEL_NAME_TO_MODEL
 from examples.recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS
 
-# NB: Skip cmake on MacOS to cut down the number of combinations we
-# need to run there as the number of MacOS runner is limited. CMake
+# NB: Skip buck2 on MacOS to cut down the number of combinations we
+# need to run there as the number of MacOS runner is limited. Buck2
 # build and test has already been covered on Linux
 BUILD_TOOLS = {
-    "buck2": {"linux", "macos"},
-    "cmake": {"linux"},
+    "buck2": {"linux"},
+    "cmake": {"linux", "macos"},
 }
 DEFAULT_RUNNERS = {
     "linux": "linux.2xlarge",
