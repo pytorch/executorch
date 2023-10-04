@@ -180,7 +180,7 @@ size_t MethodMeta::num_memory_planned_buffers() const {
 }
 
 Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {
-  auto num_buffers = this->num_non_const_buffers();
+  auto num_buffers = this->num_memory_planned_buffers();
   ET_CHECK_OR_RETURN_ERROR(
       index >= 0 && index < num_buffers,
       InvalidArgument,
