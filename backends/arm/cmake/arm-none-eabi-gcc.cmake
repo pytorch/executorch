@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set(TARGET_CPU "cortex-m4" CACHE STRING "Target CPU")
+set(TARGET_CPU "cortex-m55" CACHE STRING "Target CPU")
 string(TOLOWER ${TARGET_CPU} CMAKE_SYSTEM_PROCESSOR)
 
 set(CMAKE_SYSTEM_NAME Generic)
