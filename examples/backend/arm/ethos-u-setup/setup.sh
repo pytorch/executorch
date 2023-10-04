@@ -7,30 +7,9 @@
 
 set -eu
 
-########
-### Hardcoded constants
-########
-script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
-
-# FVP
-fvp_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
-fvp_model_dir="Linux64_GCC-9.3"
-
-# toochain
-toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi.tar.xz"
-toolchain_dir="arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi"
-
-# ethos-u
-ethos_u_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u"
-ethos_u_base_rev="0995223100e3da8011700f58e491f1bf59511e3c"
 
 ########
-### Optional user args
-########
-root_dir=${1:-"$(readlink -f ${script_dir}/../ethos-u)"}
-
-########
-### Functions
+### Helper functions
 ########
 function get_os_name() {
     # Returns the name of the system i.e. Linux or Darwin
@@ -42,6 +21,43 @@ function get_cpu_arch() {
     uname -m
 }
 
+########
+### Hardcoded constants
+########
+script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
+
+if [[ $(get_cpu_arch) == "x86_64" ]]; then
+	# FVP
+	fvp_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
+	fvp_model_dir="Linux64_GCC-9.3"
+
+	# toochain
+	toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi.tar.xz"
+	toolchain_dir="arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi"
+elif [[ $(get_cpu_arch) == "aarch64" ]]; then
+    # FVP
+	fvp_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64_armv8l.tgz?rev=9cc6e9a32bb947ca9b21fa162144cb01&hash=7657A4CF27D42E892E3F08D452AAB073"
+    fvp_model_dir="Linux64_armv8l_GCC-9.3"
+
+    # toochain
+    toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi.tar.xz"
+    toolchain_dir="arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi"
+else
+	echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"; exit 1;
+fi
+
+# ethos-u
+ethos_u_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u"
+ethos_u_base_rev="0995223100e3da8011700f58e491f1bf59511e3c"
+	
+########
+### Optional user args
+########
+root_dir=${1:-"$(readlink -f ${script_dir}/../ethos-u)"}
+
+########
+### Functions
+########
 function setup_fvp() {
     # Download and install the Corstone 300 FVP simulator platform
     cd "${root_dir}"
@@ -119,8 +135,8 @@ cd "${script_dir}"
 # Make sure we are on a supported platform
 # Linux ARM64 is a supported platform - adding it here is a WIP
 # No OSx support for FVP
-[[ $(get_cpu_arch) != "x86_64" ]] \
-    && { echo "[main] Error: only x86-64 architecture is supported for now!"; exit 1; }
+[[ $(get_cpu_arch) != "x86_64" ]] && [[ $(get_cpu_arch) != "aarch64" ]] \
+    && { echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"; exit 1; }
 
 [[ $(get_os_name) != "Linux" ]] \
     && { echo "[main] Error: only Linux os is supported for now!"; exit 1; }

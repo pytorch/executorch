@@ -13,10 +13,11 @@ set -eu
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 et_root_dir=$(readlink -f ${script_dir}/../../../)
 et_build_dir=${et_root_dir}/cmake-out
-ethos_u_root_dir=${1:-"$(readlink -f ${script_dir}/../ethos-u)"}
+ethos_u_root_dir=$(readlink -f ${script_dir}/ethos-u/ethos-u)
 ethos_u_build_dir=${ethos_u_root_dir}/core_platform/build
 fvp_model=FVP_Corstone_SSE-300_Ethos-U55
 toolchain_cmake=${ethos_u_root_dir}/core_platform/cmake/toolchain/arm-none-eabi-gcc.cmake
+toolchain_cmake_executorch=${et_root_dir}/backends/arm/cmake/arm-none-eabi-gcc.cmake
 _setup_msg="please refer to ${script_dir}/ethos-u-setup/setup.sh to properly install necessary tools."
 
 
@@ -34,19 +35,23 @@ function generate_pte_file() {
 
 # build ExecuTorch Libraries
 function build_executorch() {
+    rm -rf "${et_build_dir}"
     mkdir "${et_build_dir}"
     cd "${et_build_dir}"
-    cmake                                           \
-        -DBUCK2=/tmp/buck2                          \
-        -DEXECUTORCH_BUILD_XNNPACK=OFF              \
-        -DFLATC_EXECUTABLE="$(which flatc)"         \
-        -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}" \
-        -DEXECUTORCH_BUILD_HOST_TARGETS=OFF         \
-        -DCMAKE_BUILD_TYPE=Release                  \
-        -DEXECUTORCH_ENABLE_LOGGING_RELEASE_MODE=ON \
-        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF      \
-        -DEXECUTORCH_BUILD_GFLAGS=OFF               \
-        -DSELECT_OPS_LIST="aten::_softmax.out"      \
+    cmake                                                      \
+        -DBUCK2=/tmp/buck2                                     \
+        -DFLATC_EXECUTABLE="$(which flatc)"                    \
+        -DEXECUTORCH_BUILD_HOST_TARGETS=OFF                    \
+        -DEXECUTORCH_BUILD_XNNPACK=OFF                         \
+        -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF                 \
+        -DEXECUTORCH_BUILD_GFLAGS=OFF                          \
+        -DCMAKE_SYSTEM_PROCESSOR=cortex-m55+nodsp+nofp         \
+        -DETHOSU_TARGET_NPU_CONFIG=ethos-u55-128               \
+        -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake_executorch}" \
+        -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON                    \
+        -DCMAKE_BUILD_TYPE=Release                             \
+        -DEXECUTORCH_ENABLE_LOGGING_RELEASE_MODE=ON            \
+        -DSELECT_OPS_LIST="aten::_softmax.out"                 \
         "${et_root_dir}"
 
     echo "[${FUNCNAME[0]}] Configured CMAKE"
