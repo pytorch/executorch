@@ -13,21 +13,6 @@ import torch.testing._internal.common_dtype as common_dtype
 from executorch.exir.dialects.edge.arg.type import ArgType
 
 
-class GenMode(Enum):
-    """Whether to generate all dtype combinations or, A partial combination.
-    The definition of partial combination is the following:
-    Each operator has a set of N arguments, we loop through the dtypes of one
-    of the arguments, then define a subset S of the remaining argument. For
-    arguments within S, let their dtypes be the same of the chose argument; for
-    arguments outside of S, randomly choose a dtype for it."""
-
-    All = "All"
-    Partial = "Partial"
-
-    def __str__(self):
-        return self.value
-
-
 class ArgMode(Enum):
     DEFAULT = 0
     ONES = 1
