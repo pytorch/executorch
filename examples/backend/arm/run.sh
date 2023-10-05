@@ -33,6 +33,16 @@ function generate_pte_file() {
     echo "${pte_file}"
 }
 
+# Generate the ethos delegate PTE file
+function generate_ethos_pte_file() {
+    cd $et_root_dir
+	python3 examples/backend/arm/arm_ethosu_minimal.py &> /dev/null
+	cd ./ethosout/simple_add/torch/
+    local pte_file=$(readlink -f ./delegated.pte)
+    [[ -f ${pte_file} ]] || { echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
+    echo "${pte_file}"
+}
+
 # build ExecuTorch Libraries
 function build_executorch() {
     rm -rf "${et_build_dir}"
@@ -64,8 +74,9 @@ function build_executorch() {
 
 # build Arm Baremetal executor_runner
 function build_executorch_runner() {
-    [[ $# -ne 1 ]] && { echo "[${FUNCNAME[0]}] Expecting pte file as an argument got, $@"; exit 1; }
+    [[ $# -ne 2 ]] && { echo "[${FUNCNAME[0]}] Expecting 2 pte files as arguments got, $@"; exit 1; }
     local pte=${1}
+    local pte_delegate=${2}
     cd "${ethos_u_root_dir}"/core_platform
     cmake                                         \
         -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake_executorch} \
@@ -73,6 +84,7 @@ function build_executorch_runner() {
         -DET_DIR_PATH:PATH=${et_root_dir}         \
         -DET_BUILD_DIR_PATH:PATH=${et_build_dir}  \
         -DET_PTE_FILE_PATH:PATH="${pte}"          \
+        -DET_PTE_DELEGATE_FILE_PATH:PATH="${pte_delegate}" \
         -DPYTHON_EXECUTABLE=$(which python3)
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
@@ -129,12 +141,13 @@ hash arm-none-eabi-gcc \
 
 # get the pte
 pte=$(generate_pte_file)
+pte_delegate=$(generate_ethos_pte_file)
 
 # build et
 build_executorch
 
 # build the et baremetal app
-build_executorch_runner "${pte}"
+build_executorch_runner "${pte}" "${pte_delegate}"
 
 # run the app
 run_fvp 
