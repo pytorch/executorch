@@ -190,6 +190,7 @@ Topics in this section will help you get started with ExecuTorch.
    tutorials/export-to-executorch-tutorial
    build-run-xtensa
    tutorials/sdk-integration-tutorial
+   executorch-arm-delegate-tutorial
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
