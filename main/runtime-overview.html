@@ -399,6 +399,8 @@ Work</span></a>.</p>
 <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code> step of the model-lowering process.</p></li>
 <li><p>Executing the series of instructions that implement a lowered model.</p></li>
 </ul>
+<p>Note that as of late 2023, the ExecuTorch runtime only supports model inference,
+and does not yet support training.</p>
 <p>This diagram shows the high-level flow of and components involved with exporting
 and executing an ExecuTorch program:</p>
 <p><img alt="High-level diagram of the ExecuTorchRuntime" src="_images/runtime-overview-high-level.png" /></p>
