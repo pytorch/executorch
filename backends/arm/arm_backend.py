@@ -22,6 +22,7 @@ import numpy as np
 import serializer.tosa_serializer as ts
 
 import torch
+from executorch.backends.arm.operators import op_conv2d, op_utils
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -243,33 +244,6 @@ def promote_shape(tosa_fb, arg, promoted_shape, out_dtype):
     return reshape_res
 
 
-# Helper transpose function to match TOSA's shape requirements
-# E.g., TOSA 0.80.0 specification - 2.3.3 CONV2D shapes:
-# https://www.mlplatform.org/tosa/tosa_spec.html#_conv2d
-def transpose_helper(tosa_fb, input, new_order, out_dtype):
-    # Check new_order's length is equal to input rank
-    assert len(input.shape) == len(new_order), "Wrong shape order length"
-
-    # Check no duplications
-    assert len(set(new_order)) == len(new_order), "Contain duplicated dim numbers"
-
-    # Check all dims are valid
-    for idx in new_order:
-        if idx < 0:
-            assert True, "Negative dim number"
-        elif idx >= len(input.shape):
-            assert True, "Dim is greater than input rank"
-
-    input_shape_transpoed = [input.shape[i] for i in new_order]
-    attr = ts.TosaSerializerAttribute()
-    attr.TransposeAttribute(new_order)
-    input_transposed = tosa_fb.addIntermediate(input_shape_transpoed, out_dtype)
-    tosa_fb.addOperator(
-        TosaOp.Op().TRANSPOSE, [input.name], [input_transposed.name], attr
-    )
-    return input_transposed
-
-
 def broadcastShapes(shape1, shape2):
     assert len(shape1) == len(shape2), "broadcastShape::shapes must have same ranks"
 
@@ -291,10 +265,6 @@ def broadcastShapes(shape1, shape2):
             ), "broadcastShape::broadcast shape mismatch"
 
     return broadcasted_shape
-
-
-def getNodeArgs(node):
-    return [tosa_mapping.TosaArg(arg) for arg in node.args]
 
 
 def getQuantNodeArgs(node):
@@ -362,12 +332,22 @@ class ArmBackend(BackendDetails):
                             input_node_A, input_node_B = node.all_input_nodes
 
                         # Get input scale_factor and zero_points for A, B
-                        input_A, input_A_scale, input_A_zp, _, _, _ = getNodeArgs(
-                            input_node_A
-                        )
-                        input_B, input_B_scale, input_B_zp, _, _, _ = getNodeArgs(
-                            input_node_B
-                        )
+                        (
+                            input_A,
+                            input_A_scale,
+                            input_A_zp,
+                            _,
+                            _,
+                            _,
+                        ) = op_utils.getNodeArgs(input_node_A)
+                        (
+                            input_B,
+                            input_B_scale,
+                            input_B_zp,
+                            _,
+                            _,
+                            _,
+                        ) = op_utils.getNodeArgs(input_node_B)
 
                         max_scale_2x = 2.0 * max(
                             input_A_scale.number, input_B_scale.number
@@ -412,7 +392,9 @@ class ArmBackend(BackendDetails):
 
                         # Output
                         output_node = list(node.users)[0]
-                        _, output_scale, output_zp, _, _, _ = getNodeArgs(output_node)
+                        _, output_scale, output_zp, _, _, _ = op_utils.getNodeArgs(
+                            output_node
+                        )
                         output_rescale_scale = max_scale_2x / (output_scale.number)
 
                         # Rescale Back to INT8
@@ -551,122 +533,10 @@ class ArmBackend(BackendDetails):
                         TosaOp.Op().CLAMP, [inputs[0].name], [outp.name], attr
                     )
                 elif exir_ops.edge.aten.convolution.default == node.target:
-                    input, weight, bias, stride, pad, dilation, _, _, group = inputs
-
-                    # Currently only int8 is supported in quantized types.
-                    actual_out_type = ts.DType.INT8 if is_quant_node else outp.dtype
-
-                    ## Transpose input tensor to NHWC_Order for TOSA
-                    NHWC_Order = [0, 2, 3, 1]
-                    input_transposed = transpose_helper(
-                        tosa_fb, input, NHWC_Order, actual_out_type
+                    op_conv2d.tosaLowerAtenConvolution(
+                        tosa_fb, node, inputs, is_quant_node, outp
                     )
 
-                    # Get the attributes of convolution.
-                    attr = ts.TosaSerializerAttribute()
-                    pad_attr = [val for val in pad.special for _ in (0, 1)]
-                    stride_attr = stride.special
-                    dilation_attr = dilation.special
-                    attr.ConvAttribute(pad_attr, stride_attr, dilation_attr, 0, 0)
-
-                    # Non-bias case.
-                    if len(node.all_input_nodes) == 2:
-                        # Create a zero bias tensor if not presented
-                        out_channels = weight.shape[0]
-                        bias_name = "bias" + node.name.split("default", 1)[1]
-                        bias = tosa_fb.addConst(
-                            [out_channels],
-                            ts.DType.INT32 if is_quant_node else outp.dtype,
-                            [0] * out_channels,
-                            name=bias_name,
-                        )
-
-                    if group.number > 1:
-                        assert (
-                            is_quant_node is False
-                        ), "quantized depthwise convolution is not supported yet in BI mode"
-
-                        # Transpose weight to [KH, KW, C, M]
-                        weight_HWCM_Order = [2, 3, 0, 1]
-                        weight_transposed = transpose_helper(
-                            tosa_fb, weight, weight_HWCM_Order, outp.dtype
-                        )
-
-                        ## TOSA output shape is [N, H, W, C*M]
-                        NHWO_Order = [0, 2, 3, 1]
-                        out_shape_TOSA_Depthwise_CONV2D = [
-                            outp.shape[i] for i in NHWO_Order
-                        ]
-
-                        conv2d_res = tosa_fb.addIntermediate(
-                            out_shape_TOSA_Depthwise_CONV2D, outp.dtype
-                        )
-                        tosa_fb.addOperator(
-                            TosaOp.Op().DEPTHWISE_CONV2D,
-                            [
-                                input_transposed.name,
-                                weight_transposed.name,
-                                bias.name,
-                            ],
-                            [conv2d_res.name],
-                            attr,
-                        )
-                    else:
-                        # TODO: Transpose the weight AoT
-                        # Transpose weight to [OC, H, W, IC]
-                        weight_CHWC_Order = [0, 2, 3, 1]
-                        weight_transposed = transpose_helper(
-                            tosa_fb, weight, weight_CHWC_Order, actual_out_type
-                        )
-
-                        ## TOSA output shape is [NHWO]
-                        NHWO_Order = [0, 2, 3, 1]
-                        out_shape_TOSA_CONV2D = [outp.shape[i] for i in NHWO_Order]
-
-                        # The output type is int32 when input type is int8.
-                        conv2d_res = tosa_fb.addIntermediate(
-                            out_shape_TOSA_CONV2D,
-                            ts.DType.INT32 if is_quant_node else outp.dtype,
-                        )
-                        tosa_fb.addOperator(
-                            TosaOp.Op().CONV2D,
-                            [
-                                input_transposed.name,
-                                weight_transposed.name,
-                                bias.name,
-                            ],
-                            [conv2d_res.name],
-                            attr,
-                        )
-
-                    ## Torch output shape is [NOHW]
-                    NOHW_Order = [0, 3, 1, 2]
-                    attr_output_transpose = ts.TosaSerializerAttribute()
-                    attr_output_transpose.TransposeAttribute(NOHW_Order)
-
-                    # For quantized convolution, rescale the output value back to the same
-                    # integer value domain of the next op. Otherwise return float32 output.
-                    if is_quant_node:
-                        # Get scale_factor from input, weight, and output.
-                        _, input_scale, _, _, _, _ = getNodeArgs(node.args[0])
-                        _, weight_scale, _, _, _, _ = getNodeArgs(node.args[1])
-                        _, output_scale, _, _, _, _ = getNodeArgs(list(node.users)[0])
-
-                        conv2d_res = tosa_quant_utils.buildRescaleOpConvOutput(
-                            tosa_fb,
-                            conv2d_res,
-                            actual_out_type,
-                            input_scale,
-                            weight_scale,
-                            output_scale,
-                        )
-
-                    tosa_fb.addOperator(
-                        TosaOp.Op().TRANSPOSE,
-                        [conv2d_res.name],
-                        [outp.name],
-                        attr_output_transpose,
-                    )
                 elif exir_ops.edge.aten.div.Tensor == node.target:
                     # Div is implemented as x/y = x*1/y
                     recip = tosa_fb.addIntermediate(inputs[1].shape, inputs[1].dtype)
@@ -786,8 +656,12 @@ class ArmBackend(BackendDetails):
                     # Torch's input is [N,C,H,W], TOSA is [N, H, W, C],
                     # Transpose to align with TOSA
                     NHWC_Order = [0, 2, 3, 1]
-                    input_transposed = transpose_helper(
-                        tosa_fb, input_tensor, NHWC_Order, outp.dtype
+                    input_transposed = op_utils.buildTranspose(
+                        tosa_fb,
+                        input_tensor.name,
+                        input_tensor.shape,
+                        NHWC_Order,
+                        outp.dtype,
                     )
 
                     avg_pool2d_res_shape = [outp.shape[i] for i in NHWC_Order]
@@ -918,24 +792,9 @@ class ArmBackend(BackendDetails):
                     assert isinstance(p_data, torch.Tensor), "Expect Attr to be tensor"
                     parameter_values = p_data.detach().numpy()
 
-                    # Check if they're for quantized nodes
                     consumer_node = list(node.users)[0]
-                    if consumer_node.target in tosa_quant_utils.dq_q_ops:
-                        _, weight_node_scale, weight_node_zp, _, _, _ = getNodeArgs(
-                            consumer_node
-                        )
 
-                        parameter_values_quantized = (
-                            (parameter_values / weight_node_scale.number)
-                            + weight_node_zp.number
-                        ).astype(np.int8)
-                        tosa_fb.addConst(
-                            inputs[0].shape,
-                            ts.DType.INT8,
-                            parameter_values_quantized,
-                            name=out,
-                        )
-                    elif (
+                    if (
                         consumer_node.target == exir_ops.edge.aten.addmm.default
                         and list(consumer_node.users)[0].target == tosa_quant_utils.q_op
                     ):
@@ -986,8 +845,30 @@ class ArmBackend(BackendDetails):
                             name=out,
                         )
                     else:
+                        """default case : construct tosa.const op, and quantize the values if
+                        the current node is quantized"""
+                        parameter_type = inputs[0].dtype
+
+                        # Check if they're for quantized nodes
+                        if consumer_node.target in tosa_quant_utils.dq_q_ops:
+                            (
+                                _,
+                                weight_node_scale,
+                                weight_node_zp,
+                                _,
+                                _,
+                                _,
+                            ) = op_utils.getNodeArgs(consumer_node)
+
+                            parameter_values = (
+                                (parameter_values / weight_node_scale.number)
+                                + weight_node_zp.number
+                            ).astype(np.int8)
+
+                            parameter_type = ts.DType.INT8
+
                         tosa_fb.addConst(
-                            inputs[0].shape, inputs[0].dtype, parameter_values, name=out
+                            inputs[0].shape, parameter_type, parameter_values, name=out
                         )
 
                 elif out in edge_program.graph_signature.inputs_to_buffers:

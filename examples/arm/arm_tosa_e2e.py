@@ -46,8 +46,13 @@ SUPPORTED_BI_TEST_LIST = [
     "simple_conv2d_2x2_1x1x14x14_stride2",
     "simple_conv2d_5x5_3x2x128x128_stride1",
     "simple_conv2d_2x2_3x1x40x40_non_bias",
+    "simple_depthwise_conv2d_3x3x3_1x3x256x256_group3_stride1",
+    "simple_depthwise_conv2d_8x4x3x3_1x4x256x256_group4_stride1",
+    "simple_depthwise_conv2d_3x3_1x4x256x256_group4_non_bias",
+    "simple_depthwise_conv2d_8x16x3_2x8x198x198_group8_stride3",
     "block_two_conv2d",
     "block_two_conv2d_non_bias",
+    "block_two_depthwise_conv2d",
 ]
 
 
