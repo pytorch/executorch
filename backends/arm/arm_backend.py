@@ -149,8 +149,6 @@ def dbg_tosa_dump(tosa_fb, path):
 # WARNING: if this changes, the runtime reader also needs to change
 def vela_compile(tosa_fb):
     with tempfile.TemporaryDirectory() as tmpdir:
-        print(f"compiling to Vela in {tmpdir}")
-
         tosaname = "out.tosa"
         flatbuffer = tosa_fb.serialize()
         f = open(os.path.join(tmpdir, tosaname), "wb")
@@ -186,6 +184,12 @@ def vela_compile(tosa_fb):
                         inp_pad = inp.tolist() + [0] * (4 - len(inp))
                         input_struct = input_struct + struct.pack("<iiii", *inp_pad)
                     block_data = input_struct
+                elif key in ( "input_offset", "output_offset" ):
+                    inputs = data[key]
+                    offset_struct = struct.pack("<i", len(inputs))
+                    for inp in inputs:
+                        offset_struct = offset_struct + struct.pack("<i", inp)
+                    block_data = offset_struct
                 else:
                     block_data = data[key].tobytes()
                 # We need the acual unpadded block lengths for hw setup
