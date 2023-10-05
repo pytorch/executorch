@@ -63,7 +63,7 @@ test_cmake_select_all_ops() {
         && retry cmake -DBUCK2="$BUCK" \
             -DBUILD_SELECTIVE_BUILD_TEST=ON \
             -DCMAKE_BUILD_TYPE=Release \
-            -DSELECT_ALL_OPS=ON \
+            -DEXECUTORCH_SELECT_ALL_OPS=ON \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
     echo "Build selective build test"
@@ -88,7 +88,7 @@ test_cmake_select_ops_in_list() {
             -DMAX_KERNEL_NUM=17 \
             -DBUILD_SELECTIVE_BUILD_TEST=ON \
             -DCMAKE_BUILD_TYPE=Release \
-            -DSELECT_OPS_LIST="aten::convolution.out,\
+            -DEXECUTORCH_SELECT_OPS_LIST="aten::convolution.out,\
 aten::_native_batch_norm_legit_no_training.out,aten::hardtanh.out,aten::add.out,\
 aten::mean.out,aten::view_copy.out,aten::permute_copy.out,aten::addmm.out,\
 aten,aten::clone.out" \
@@ -114,7 +114,7 @@ test_cmake_select_ops_in_yaml() {
         && retry cmake -DBUCK2="$BUCK" \
             -DBUILD_SELECTIVE_BUILD_TEST=ON \
             -DCMAKE_BUILD_TYPE=Release \
-            -DSELECT_OPS_YAML=ON \
+            -DEXECUTORCH_SELECT_OPS_YAML=ON \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
     echo "Build selective build test"
