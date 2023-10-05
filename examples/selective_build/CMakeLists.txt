@@ -27,13 +27,7 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 # library
 #
 set(_kernel_lib)
-if(SELECT_ALL_OPS)
-  gen_selected_ops("" "" "${SELECT_ALL_OPS}")
-  list(APPEND _kernel_lib portable_kernels)
-elseif(SELECT_OPS_LIST)
-  gen_selected_ops("" "${SELECT_OPS_LIST}" "")
-  list(APPEND _kernel_lib portable_kernels)
-elseif(SELECT_OPS_YAML)
+if(EXECUTORCH_SELECT_OPS_YAML)
   set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/custom_ops/custom_ops.yaml)
   gen_selected_ops("${_custom_ops_yaml}" "" "")
   set(kernel_sources
@@ -47,7 +41,15 @@ elseif(SELECT_OPS_YAML)
   target_compile_options(custom_kernels PUBLIC ${_common_compile_options})
 
   list(APPEND _kernel_lib custom_kernels)
+else()
+  list(APPEND _kernel_lib portable_kernels)
 endif()
+
+gen_selected_ops(
+  "${_custom_ops_yaml}"
+  "${EXECUTORCH_SELECT_OPS_LIST}"
+  "${EXECUTORCH_SELECT_ALL_OPS}")
+
 generate_bindings_for_kernels(${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
                               "${_custom_ops_yaml}")
 gen_operators_lib("select_build_lib" ${_kernel_lib} executorch)
