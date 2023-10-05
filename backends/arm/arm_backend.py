@@ -14,6 +14,7 @@ import operator
 import os
 import subprocess
 import tempfile
+import struct
 from typing import final, List
 
 import numpy as np
@@ -174,7 +175,19 @@ def vela_compile(tosa_fb):
             for key in data.keys():
                 block_name = bytes(key, "utf8")[:15]
                 block_name = block_name + b"\x00" * (16 - len(block_name))
-                block_data = data[key].tobytes()
+
+                block_data = b''
+                if key in ( "input_shape", "output_shape" ):
+                    inputs = data[key]
+                    # Encode a struct of int len; and one or more int x,y,z,w shape;
+                    input_struct = struct.pack("<i", len(inputs))
+                    for inp in inputs:
+                        assert len(inp) <= 4
+                        inp_pad = inp.tolist() + [0] * (4 - len(inp))
+                        input_struct = input_struct + struct.pack("<iiii", *inp_pad)
+                    block_data = input_struct
+                else:
+                    block_data = data[key].tobytes()
                 # We need the acual unpadded block lengths for hw setup
                 block_length = len(block_data).to_bytes(16, "little")
                 # pad block data to multiple of 16 bytes
@@ -188,11 +201,9 @@ def vela_compile(tosa_fb):
             block_name = bytes("scratch_data", "utf8")[:15]
             block_name = block_name + b"\x00" * (16 - len(block_name))
             block_length = data["scratch_shape"][0].item()
-            print(f"scratch length = {block_length}")
             block_length = block_length + (15 - (block_length - 1) % 16)
             block_data = b"\x00" * block_length
             block_length = block_length.to_bytes(16, "little")
-            print(f"lengths {len(block_name)} {len(block_length)} {len(block_data)}")
             block = block_name + block_length + block_data
             blocks = blocks + block
             # TODO are these already in scratch shape? look to be

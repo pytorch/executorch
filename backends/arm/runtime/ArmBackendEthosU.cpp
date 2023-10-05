@@ -11,6 +11,7 @@
  */
 
 #include <memory>
+#include <vector>
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
@@ -18,6 +19,8 @@
 
 #include <ethosu_driver.h>
 #include <pmu_ethosu.h>
+
+using namespace std;
 
 namespace torch {
 namespace executor {
@@ -29,7 +32,6 @@ namespace executor {
 
 class ArmBackend final : public PyTorchBackendInterface {
  public:
-
   ArmBackend() {}
 
   ~ArmBackend() = default;
@@ -86,7 +88,7 @@ class ArmBackend final : public PyTorchBackendInterface {
 
     ET_LOG(Info, "ArmBackend::execute %p", processed->data());
 
-    vela_handles handles = {0, 0, 0, 0, 0, 0};
+    vela_handles handles;
 
     // Command stream - we know at this point it's aligned
     char* data = (char*)processed->data();
@@ -107,16 +109,45 @@ class ArmBackend final : public PyTorchBackendInterface {
         handles.scratch_data,
         handles.scratch_data_size);
 
+    printf("Processed inputs %d\n", handles.input_shape.size());
+    for (int i = 0; i < handles.input_shape.size(); i++)
+      printf(
+          "  %d %d %d %d\n",
+          handles.input_shape[i][0],
+          handles.input_shape[i][1],
+          handles.input_shape[i][2],
+          handles.input_shape[i][3]);
+
+    // Input data from EValue
+    const char* input_addr = handles.scratch_data + handles.input_offset;
+    printf(
+        "accessing ethos input data at %p, offset %d\n",
+        handles.scratch_data,
+        handles.input_offset);
+    // Inputs are in the index first
+    int input_index =
+        0; // handles.input_shape.size(); TODO: loop this for multiple inputs
+    printf("writing input to EValue input index %d\n", input_index);
+
+    // Process input EValue into scratch
+    // TODO: optimise into direct write for compatible layouts
+    //       is this contiguous for a memcpy of e_size*numel?
+    int* input_address = (int*)input_addr;
+    auto tensor_in = args[input_index]->toTensor();
+    for (int j = 0; j < tensor_in.numel(); j++) {
+      // TODO: extend beyond 4 byte tensors
+      input_address[j] = tensor_in.mutable_data_ptr<int>()[j];
+    }
+
     // TMP emit scratch
-    printf("Scratch before:\n");
+    printf("Scratch after setup:\n");
     for (int i = 0; i < handles.scratch_data_size; i++) {
-      if (i % 4 == 0)
-        ((char*)handles.scratch_data)[i] = 1;
       printf("%02x ", ((char*)handles.scratch_data)[i]);
       if (!((i + 1) % 4))
         printf("\n");
     }
     printf("\n");
+    // END TMP emit scratch
 
     // Allocate driver handle and synchronously invoke driver
     ethosu_driver* drv = ethosu_reserve_driver();
@@ -151,13 +182,33 @@ class ArmBackend final : public PyTorchBackendInterface {
     }
     printf("\n");
 
+    printf("Processed outputs %d\n", handles.output_shape.size());
+    for (int i = 0; i < handles.output_shape.size(); i++)
+      printf(
+          "  %d %d %d %d\n",
+          handles.output_shape[i][0],
+          handles.output_shape[i][1],
+          handles.output_shape[i][2],
+          handles.output_shape[i][3]);
+
+    // output data from Ethos U
+    const char* output_addr = handles.scratch_data + handles.output_offset;
+    printf(
+        "accessing ethos output data at %p, offset %d\n",
+        handles.scratch_data,
+        handles.output_offset);
+    // Outputs are in the index immediately after inputs
+    int output_index = handles.input_shape.size();
+    printf("writing output to EValue output index %d\n", output_index);
+
     // Process results into EValue storage
     // TODO: optimise into direct write for compatible layouts
-    // TODO: get num in/out and layout?
-    int* output_address = (int*)(handles.scratch_data + handles.output_offset);
-    auto tensor = args[1]->toTensor();
-    for (int j = 0; j < tensor.numel(); j++) {
-      tensor.mutable_data_ptr<int>()[j] = output_address[j];
+    //       is this contiguous for a memcpy of e_size*numel?
+    int* output_address = (int*)output_addr;
+    auto tensor_out = args[output_index]->toTensor();
+    for (int j = 0; j < tensor_out.numel(); j++) {
+      // TODO: extend beyond 4 byte tensors
+      tensor_out.mutable_data_ptr<int>()[j] = output_address[j];
     }
 
     return Error::Ok;
@@ -176,9 +227,9 @@ class ArmBackend final : public PyTorchBackendInterface {
     const char* scratch_data;
     size_t scratch_data_size;
     size_t input_offset;
-    size_t input_data_shape[3];
+    vector<vector<int>> input_shape;
     size_t output_offset;
-    size_t output_data_shape[3];
+    vector<vector<int>> output_shape;
   } vela_handles;
 
   typedef struct {
@@ -187,6 +238,11 @@ class ArmBackend final : public PyTorchBackendInterface {
     char _pad[12];
     char data[];
   } vela_bin_block;
+
+  typedef struct {
+    int count;
+    int shape[][4];
+  } vela_shapes;
 
   static int next_mul_16(int n) {
     return ((n - 1) | 15) + 1;
@@ -217,7 +273,6 @@ class ArmBackend final : public PyTorchBackendInterface {
       }
       if (!strncmp(b->name, "weight_data", strlen("weight_data"))) {
         h->weight_data = b->data;
-        ;
         h->weight_data_size = b->size;
       }
       if (!strncmp(b->name, "scratch_data", strlen("scratch_data"))) {
@@ -237,14 +292,26 @@ class ArmBackend final : public PyTorchBackendInterface {
         h->output_offset = ((int*)b->data)[0];
       }
       if (!strncmp(b->name, "input_shape", strlen("input_shape"))) {
-        h->input_data_shape[0] = ((int*)b->data)[0];
-        h->input_data_shape[0] = ((int*)b->data)[1];
-        h->input_data_shape[0] = ((int*)b->data)[2];
+        vela_shapes* shapes = (vela_shapes*)b->data;
+        for (int i = 0; i < shapes->count; i++) {
+          vector<int> s = {
+              shapes->shape[i][0],
+              shapes->shape[i][1],
+              shapes->shape[i][2],
+              shapes->shape[i][3]};
+          h->input_shape.push_back(s);
+        }
       }
       if (!strncmp(b->name, "output_shape", strlen("output_shape"))) {
-        h->output_data_shape[0] = ((int*)b->data)[0];
-        h->output_data_shape[0] = ((int*)b->data)[1];
-        h->output_data_shape[0] = ((int*)b->data)[2];
+        vela_shapes* shapes = (vela_shapes*)b->data;
+        for (int i = 0; i < shapes->count; i++) {
+          vector<int> s = {
+              shapes->shape[i][0],
+              shapes->shape[i][1],
+              shapes->shape[i][2],
+              shapes->shape[i][3]};
+          h->output_shape.push_back(s);
+        }
       }
     }
   }
