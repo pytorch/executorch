@@ -432,7 +432,7 @@ expected to return a compiled blob, or binary contains the desired program to be
 run in the backend, and profiling information. During serialization, the
 compiled blob will be serialized file, and directly loaded to the device. The
 API looks something like:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">preprocess</span><span class="p">(</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">preprocess</span><span class="p">(</span>
     <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PreprocessResult</span><span class="p">:</span>
@@ -453,7 +453,7 @@ perform any backend initialization. The backend’s custom <code class="docutils
 then be called to execute the handle produced by <code class="docutils literal notranslate"><span class="pre">init</span></code>. And finally, if
 destroying is required for some backend, backends can implement a <code class="docutils literal notranslate"><span class="pre">destroy</span></code>
 function which will be called when the program is out of its lifespan.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">//</span> <span class="n">Runtime</span> <span class="n">initialization</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">//</span> <span class="n">Runtime</span> <span class="n">initialization</span>
 <span class="n">__ET_NODISCARD</span> <span class="n">virtual</span> <span class="n">Result</span><span class="o">&lt;</span><span class="n">DelegateHandle</span><span class="o">*&gt;</span> <span class="n">init</span><span class="p">(</span>
     <span class="n">BackendInitContext</span><span class="o">&amp;</span> <span class="n">context</span><span class="p">,</span>
     <span class="n">FreeableBuffer</span><span class="o">*</span> <span class="n">processed</span><span class="p">,</span>
@@ -471,11 +471,11 @@ function which will be called when the program is out of its lifespan.</p>
 </div>
 <p>Once the backend is ready, they can then be registered:</p>
 <p>To register the backend for runtime, register via the <code class="docutils literal notranslate"><span class="pre">register_backend</span></code> API:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">__ET_NODISCARD</span> <span class="n">Error</span> <span class="n">register_backend</span><span class="p">(</span><span class="n">const</span> <span class="n">Backend</span><span class="o">&amp;</span> <span class="n">backend</span><span class="p">);</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">__ET_NODISCARD</span> <span class="n">Error</span> <span class="n">register_backend</span><span class="p">(</span><span class="n">const</span> <span class="n">Backend</span><span class="o">&amp;</span> <span class="n">backend</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>The way to invoke <code class="docutils literal notranslate"><span class="pre">register_backend</span></code> It can either be static registered like</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">namespace</span> <span class="p">{</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">namespace</span> <span class="p">{</span>
 <span class="n">auto</span> <span class="bp">cls</span> <span class="o">=</span> <span class="n">BackendWithCompiler</span><span class="p">();</span>
 <span class="n">Backend</span> <span class="n">backend</span><span class="p">{</span><span class="s2">&quot;BackendWithCompilerDemo&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="bp">cls</span><span class="p">};</span>
 <span class="n">static</span> <span class="n">auto</span> <span class="n">success_with_compiler</span> <span class="o">=</span> <span class="n">register_backend</span><span class="p">(</span><span class="n">backend</span><span class="p">);</span>
@@ -492,7 +492,7 @@ back to the Python frontend with the source code information. Below is an
 example where the <code class="docutils literal notranslate"><span class="pre">tan</span></code> operator is not supported in <code class="docutils literal notranslate"><span class="pre">BackendWithCompilerDemo</span></code>
 backend.</p>
 <p>A problematic program:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">TanModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">TanModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
@@ -560,7 +560,7 @@ delegation. It won’t hold any data.</p>
 <p>If we have two backends, backend_1 and backend_2, and they have their own
 parititioners: backend_1_parititioner and backend_2_partitioner, we can run it
 like:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Will first lower nodes to backend_1 depending on the backend_1_parititioner depending on partitioner algorithm</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Will first lower nodes to backend_1 depending on the backend_1_parititioner depending on partitioner algorithm</span>
 <span class="n">exported_program_backend_1</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">exported_program</span><span class="p">,</span> <span class="n">backend_1_parititioner</span><span class="p">)</span>
 <span class="c1"># For the rest of nodes, they will be lowered to backend_2 depending on backend_2_parititioner</span>
 <span class="n">exported_program_backend_1_and_2</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">exported_program_backend_1</span><span class="p">,</span> <span class="n">backend_2_parititioner</span><span class="p">)</span>
@@ -579,7 +579,7 @@ which backend they should go, option 2 is better.</p>
 <p><em>Option 2: Have a partitioner which partitions for different backends</em></p>
 <p>Another option is to create a customized partitioner, say partitioner
 <code class="docutils literal notranslate"><span class="pre">backend_1_2_partitioner</span></code>, and inside the partitioner logic,</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Backend_1_2_Partitioner</span><span class="p">(</span><span class="n">Partitioner</span><span class="p">):</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">Backend_1_2_Partitioner</span><span class="p">(</span><span class="n">Partitioner</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Partitions all add/mul nodes regardless of order for Backend2</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -708,7 +708,7 @@ nodes from decomposed operators.</p>
   </script>
  
 <script script type="text/javascript">
-    var collapsedSections = ['Introduction', 'Getting Started', 'Exporting to ExecuTorch', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'SDK', 'Tutorials']
+    var collapsedSections = ['Introduction', 'Getting Started', 'Exporting to ExecuTorch', 'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'SDK', 'Tutorials']
 </script>
 
 
