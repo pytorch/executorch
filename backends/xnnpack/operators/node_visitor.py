@@ -423,7 +423,7 @@ class NodeVisitor:
                     inp,
                     xnn_graph,
                     vals_to_ids,
-                    quant_params=QuantParams.from_inputs(inp),
+                    quant_params=QuantParams.from_inputs(inp, self._exported_program),
                     convert_to_nhwc=convert_to_nhwc,
                 )
         else:
@@ -434,7 +434,9 @@ class NodeVisitor:
             )
             # Define Input Node
             input_node = get_input_node(node, input_type_map.node_input)
-            input_quant_params = QuantParams.from_inputs(input_node)
+            input_quant_params = QuantParams.from_inputs(
+                input_node, self._exported_program
+            )
             self.define_tensor(
                 input_node,
                 xnn_graph,
