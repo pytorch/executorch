@@ -187,13 +187,6 @@ ExecuTorch tutorials.
 .. customcardstart::
 
 .. customcarditem::
-   :header: Template Tutorial
-   :card_description: A template tutorial. To be deleted.
-   :image: _static/img/generic-pytorch-logo.png
-   :link: tutorials/template_tutorial.html
-   :tags: Template
-
-.. customcarditem::
    :header: Exporting to ExecuTorch Tutorial
    :card_description: A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.
    :image: _static/img/generic-pytorch-logo.png
