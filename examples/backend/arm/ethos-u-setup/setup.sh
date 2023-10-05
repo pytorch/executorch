@@ -126,6 +126,45 @@ function patch_repo() {
     echo -e "[${FUNCNAME[0]}] Patched ${name} @ $(git describe --all --long 2> /dev/null) in ${repo_dir} dir.\n"
 }
 
+function setup_tosa_reference_model() {
+	# The debug flow on the host includes running on a reference implementation of TOSA
+	# This is useful primarily for debug of quantization accuracy, but also for internal
+	# errors for the early codebase
+	cd "${root_dir}"
+	if [[ ! -e reference_model ]]; then
+		git clone https://git.mlplatform.org/tosa/reference_model.git -b v0.80.0
+		cd reference_model
+		git submodule update --init --recursive
+		cd ..
+	fi
+	cd reference_model
+	mkdir -p build
+	cd build
+	cmake ..
+	make
+	cd reference_model
+	tosa_bin_path=`pwd`
+	echo adding ${tosa_bin_path} to path
+	echo "export PATH=\${PATH}:${tosa_bin_path}" >> ${update_path_script}
+	cd ../..
+	echo back at `pwd`
+}
+
+function setup_vela() {
+	#
+	# Prepare the Vela compiler for AoT to Ethos-U compilation
+	#
+	cd "${root_dir}/ethos-u/"
+	if [[ ! -e ethos-u-vela ]]; then
+		git clone https://git.mlplatform.org/ml/ethos-u/ethos-u-vela.git
+		name="ethos-u-vela"
+		base_rev=00a15db3e1a188b25065d095152d701f4394cdc5
+		patch_repo
+	fi
+	pip install .
+	cd ..
+}
+
 ########
 ### main
 ########
@@ -162,6 +201,12 @@ setup_ethos_u
 name="core_platform"
 base_rev=204210b1074071532627da9dc69950d058a809f4
 patch_repo
+
+# Setup the tosa_reference_model
+setup_tosa_reference_model
+
+# Setup vela and patch in codegen fixes
+setup_vela
 
 echo "[main] update path using script: ${update_path_script}"
 echo "[main] sucecss!"
