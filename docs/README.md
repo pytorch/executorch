@@ -4,6 +4,8 @@ Welcome to the ExecuTorch documentation! This README.md will provide an
 overview of the ExecuTorch docs and its features, as well as instructions on
 how to contribute and build locally.
 
+All current documentation is located in the `docs/source` directory.
+
 <!-- toc -->
 
 - [Toolchain Overview](#toolchain-overview)
@@ -31,27 +33,41 @@ We support both `.rst` and `.md` files but prefer the content to be authored in
 
 ## Building Locally
 
-Documentation dependancies are stored in
+Documentation dependencies are stored in
 [.ci/docker/requirements-ci.txt](https://github.com/pytorch/executorch/blob/main/.ci/docker/requirements-ci.txt).
 
 To build the documentation locally:
 
-1. Clone the executorch repo to your machine.
+1. Clone the ExecuTorch repo to your machine.
 
 1. Switch to the `docs/` directory.
 
-1. Start a virtual environment:
+1. If you don't have it already, start a conda environment:
 
-   ```bash
-   virtualenv venv
-   source venv/bin/activate
+   ```{note}
+   The below command generates a completely new environment and resets
+   any existing dependencies. If you have an environment already, skip
+   the `conda create` command.
    ```
 
-1. Install dependancies:
+   ```bash
+   conda create -yn executorch python=3.10.0
+   conda activate executorch
+   ```
+
+1. Install dependencies:
 
    ```bash
-   pip3 install -r ../.ci/docker/requirements-ci.txt
+   pip3 install -r ./.ci/docker/requirements-ci.txt
    ```
+
+1. Run:
+
+   ```bash
+   bash install_requirements.sh
+   ```
+
+1. Go to the `docs/` directory.
 
 1. Build the documentation set:
 
@@ -132,15 +148,15 @@ Python and C++ documentation in the form of HTML pages.
 
 ### Python APIs
 
-We generate Python API documentation through Sphinx, bootstrapping [Pytorch's
+We generate Python API documentation through Sphinx, bootstrapping [PyTorch's
 Sphinx theme](https://github.com/pytorch/pytorch_sphinx_theme) for
-a cohesive look with the existing Pytorch API documentation.
+a cohesive look with the existing PyTorch API documentation.
 
 The setup for Python documentation lies within `source_py/`. To set up Sphinx, a
 `conf.py` configuration file is required. We can specify ways to generate
 documentation here. Specifically, the most important/relevant parts are:
 
-* Make sure to add a path to the directory above the directory you're trying to generate documentation for. For example, since we want to generate documenation for the `executorch/` directory. This tells Sphinx where to find the code to generate docs for.
+* Make sure to add a path to the directory above the directory you're trying to generate documentation for. For example, since we want to generate documentation for the `executorch/` directory. This tells Sphinx where to find the code to generate docs for.
 
 * `extensions` contains extension modules. For auto-generating APIs, make sure to include `sphinx.ext.autodoc`.
 * `autodoc_mock_imports` is where you put imports that Sphinx is unable to access. Sphinx runs your code in order to autogenerate the docs, so for any libraries that it unable to access due to it being outside of the directory, or containing c++ bindings, we need to specify it in the `autodoc_mock_imports` list. You can see what modules Sphinx is confused by when you run into importing errors when generating docs.
@@ -170,7 +186,7 @@ landing page under `index.rst`. A sample of this structure can be found in
 A diagram of how the files work together:
 ![image](python_docs.png)
 
-To view your changes on the executorch website, you can follow the same steps
+To view your changes on the ExecuTorch website, you can follow the same steps
 listed in the "General Documentation" section.
 
 To view just the auto-generated pages:

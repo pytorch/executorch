@@ -72,6 +72,7 @@ myst_heading_anchors = 3
 
 sphinx_gallery_conf = {
     "examples_dirs": ["tutorials_source"],
+    "ignore_pattern": "template_tutorial.py",
     "gallery_dirs": ["tutorials"],
     "filename_pattern": "/tutorials_source/",
     "promote_jupyter_magic": True,
@@ -91,6 +92,8 @@ autodoc_typehints = "none"
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "tutorial-template.md"]
+exclude_patterns += sphinx_gallery_conf["examples_dirs"]
+exclude_patterns += ["*/index.rst"]
 
 # autosectionlabel throws warnings if section names are duplicated.
 # The following tells autosectionlabel to not throw a warning for
