@@ -34,7 +34,7 @@ jobs:
           install_pip_dependencies
           install_executorch
 
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py
+          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --target-os macos
 
   test-models-macos:
     name: test-models-macos
@@ -44,7 +44,7 @@ jobs:
       matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
       fail-fast: false
     with:
-      runner: macos-m1-12
+      runner: ${{ matrix.runner }}
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -70,7 +70,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - build-tool: buck2
           - build-tool: cmake
       fail-fast: false
     with:
@@ -95,7 +94,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - build-tool: buck2
           - build-tool: cmake
       fail-fast: false
     with:
