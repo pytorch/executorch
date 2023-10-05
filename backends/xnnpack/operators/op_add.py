@@ -43,7 +43,7 @@ class AddVisitor(NodeVisitor):
             input1,
             xnn_graph,
             vals_to_ids,
-            quant_params=QuantParams.from_inputs(input1),
+            quant_params=QuantParams.from_inputs(input1, self._exported_program),
         )
         input1_id = vals_to_ids[input1]
 
@@ -53,7 +53,7 @@ class AddVisitor(NodeVisitor):
             input2,
             xnn_graph,
             vals_to_ids,
-            quant_params=QuantParams.from_inputs(input2),
+            quant_params=QuantParams.from_inputs(input2, self._exported_program),
         )
         input2_id = vals_to_ids[input2]
 
