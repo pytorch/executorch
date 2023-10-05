@@ -24,7 +24,8 @@ import sys
 import pytorch_sphinx_theme
 
 sys.path.insert(0, os.path.abspath("."))
-
+sys.path.insert(0, os.path.abspath("../../.."))
+sys.path.insert(0, os.path.abspath("../.."))
 # -- Project information -----------------------------------------------------
 
 project = "ExecuTorch"
@@ -44,6 +45,7 @@ import sys
 sys.path.insert(0, os.path.abspath("../../"))
 
 extensions = [
+    "breathe",
     "sphinx.ext.autodoc",
     "sphinx.ext.autosectionlabel",
     "sphinx.ext.autosummary",
@@ -61,8 +63,19 @@ extensions = [
     "executorch_custom_versions",
 ]
 
-templates_path = ["_templates"]
+this_file_dir = os.path.abspath(os.path.dirname(__file__))
+doxygen_xml_dir = os.path.join(
+    os.path.dirname(this_file_dir),  # {repo_root}/docs/
+    "build",  # {repo_root}/docs/build
+    "xml",  # {repo_root}/docs/cpp/build/xml
+)
 
+
+breathe_projects = {"ExecuTorch": "../build/xml/"}
+breathe_default_project = "ExecuTorch"
+
+templates_path = ["_templates"]
+autodoc_typehints = "description"
 
 myst_enable_extensions = [
     "colon_fence",
