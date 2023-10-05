@@ -46,6 +46,7 @@ jobs:
 
         # Build docset:
         cd docs
+        doxygen source/Doxyfile
         make html
         cd ..
 
