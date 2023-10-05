@@ -17,8 +17,8 @@ At the highest level, the ExecuTorch runtime is responsible for:
 Note that as of late 2023, the ExecuTorch runtime only supports model inference,
 and does not yet support training.
 
-This diagram shows the high-level flow of and components involved with exporting
-and executing an ExecuTorch program:
+This diagram shows the high-level flow of, and components involved with,
+exporting and executing an ExecuTorch program:
 
 ![High-level diagram of the ExecuTorch
 Runtime](/_static/img/runtime-overview-high-level.png)
