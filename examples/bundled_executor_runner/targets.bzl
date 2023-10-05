@@ -19,6 +19,7 @@ def define_common_targets():
             "//executorch/runtime/executor:program",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/data_loader:buffer_data_loader",
+            "//executorch/schema:bundled_program_schema",
             "//executorch/util:util",
             "//executorch/util:bundled_program_verification",
         ],
