@@ -11,21 +11,21 @@ import MobileNetClassifier
 import SwiftUI
 
 enum Mode: String, CaseIterable {
-  case xnnpack = "XNNPACK"
-  case benchmark = "Benchmark"
-  case coreML = "Core ML"
+  case cpu = "CPU"
+  case coreML = "CoreML"
   case mps = "MPS"
+  case xnnpack = "XNNPACK"
 }
 
 class ClassificationController: ObservableObject {
-  @AppStorage("mode") var mode: Mode = .benchmark
+  @AppStorage("mode") var mode: Mode = .cpu
   @Published var classifications: [Classification] = []
   @Published var elapsedTime: TimeInterval = 0.0
   @Published var isRunning = false
 
   private let queue = DispatchQueue(label: "org.pytorch.executorch.demo", qos: .userInitiated)
   private var classifier: ImageClassification?
-  private var currentMode: Mode = .benchmark
+  private var currentMode: Mode = .cpu
 
   func classify(_ image: UIImage) {
     guard !isRunning else {
@@ -62,14 +62,14 @@ class ClassificationController: ObservableObject {
   private func createClassifier(for mode: Mode) throws -> ImageClassification? {
     let modelFileName: String
     switch mode {
-    case .xnnpack:
-      modelFileName = "mv3_xnnpack_fp32"
-    case .benchmark:
+    case .cpu:
       modelFileName = "mv3"
     case .coreML:
       modelFileName = "mv3_coreml"
     case .mps:
       modelFileName = "mv3_mps"
+    case .xnnpack:
+      modelFileName = "mv3_xnnpack_fp32"
     }
     guard let modelFilePath = Bundle.main.path(forResource: modelFileName, ofType: "pte"),
           let labelsFilePath = Bundle.main.path(forResource: "imagenet_classes", ofType: "txt")

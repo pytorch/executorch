@@ -13,61 +13,45 @@ import XCTest
 
 final class MobileNetClassifierTest: XCTestCase {
 
-  func testBenchmark() throws {
-    try run(
-      model: "mv3",
-      [
-        Classification(label: "Arctic fox", confidence: 0.92),
-        Classification(label: "Samoyed", confidence: 0.75),
-        Classification(label: "hot pot", confidence: 0.82),
-      ])
+  func testCPU() throws {
+    try run(model: "mv3")
   }
 
   func testV3WithCoreMLBackend() throws {
-    try run(
-      model: "mv3_coreml",
-      [
-        Classification(label: "Arctic fox", confidence: 0.92),
-        Classification(label: "Samoyed", confidence: 0.75),
-        Classification(label: "hot pot", confidence: 0.82),
-      ])
+    try run(model: "mv3_coreml")
   }
 
   func testV3WithMPSBackend() throws {
-    try run(
-      model: "mv3_mps",
-      [
-        Classification(label: "Arctic fox", confidence: 0.92),
-        Classification(label: "Samoyed", confidence: 0.75),
-        Classification(label: "hot pot", confidence: 0.82),
-      ])
+    try run(model: "mv3_mps")
   }
 
   func testV3WithXnnPackBackend() throws {
-    try run(
-      model: "mv3_xnnpack_fp32",
-      [
-        Classification(label: "Arctic fox", confidence: 0.92),
-        Classification(label: "Samoyed", confidence: 0.75),
-        Classification(label: "hot pot", confidence: 0.82),
-      ])
+    try run(model: "mv3_xnnpack_fp32")
   }
 
-  private func run(model modelName: String, _ expectedClassifications: [Classification]) throws {
+  private func run(model modelName: String) throws {
     guard
       let modelFilePath = Bundle(for: type(of: self))
-        .path(forResource: modelName, ofType: "pte"),
+        .path(forResource: modelName, ofType: "pte")
+    else {
+      XCTFail("Failed to get model path")
+      return
+    }
+    guard
       let labelsFilePath = Bundle(for: type(of: self))
         .path(forResource: "imagenet_classes", ofType: "txt")
     else {
-      XCTFail("Failed to get model or labels path")
+      XCTFail("Failed to get labels path")
       return
     }
     let classifier = try MobileNetClassifier(
       modelFilePath: modelFilePath,
       labelsFilePath: labelsFilePath)
-
-    for expectedClassification in expectedClassifications {
+    for expectedClassification in [
+      Classification(label: "Arctic fox", confidence: 0.92),
+      Classification(label: "Samoyed", confidence: 0.75),
+      Classification(label: "hot pot", confidence: 0.82),
+    ] {
       guard
         let imagePath = Bundle(for: type(of: self))
           .path(forResource: expectedClassification.label, ofType: "jpg"),

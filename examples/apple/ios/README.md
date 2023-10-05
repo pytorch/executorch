@@ -78,6 +78,8 @@ cmake .. -G Xcode \
 Append `-DIOS_PLATFORM=SIMULATOR` for Simulator configuration to build libraries
 for `x86` architecture instead of `arm64`, which is the default.
 
+Append `-DEXECUTORCH_BUILD_COREML_DELGATE=ON` to build CoreML backend libraries.
+
 Append `-DEXECUTORCH_BUILD_XNNPACK=ON` to build XNNPACK backend libraries.
 
 ## Building and Copying Libraries
@@ -94,34 +96,44 @@ Navigate to the build artifacts directory:
 
 ```bash
 cd Release
-mkdir -p ../../examples/apple/ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/executorch/
 ```
 
 Copy the core libraries:
 
 ```bash
+mkdir -p ../../examples/apple/ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/executorch/
 cp libexecutorch.a \
    libextension_data_loader.a \
    ../../examples/apple/ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/executorch/
 ```
 
-For Portable or Benchmark operators, copy additional libraries:
+For Portable CPU operators, copy additional libraries:
 
 ```bash
+mkdir -p ../../examples/apple/ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/portable/
 cp libportable_kernels.a \
    libportable_ops_lib.a \
-   ../../examples/apple/ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/executorch/
+   ../../examples/apple/ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/portable/
 ```
 
-For XNNPACK backend, copy additional libraries:
+For CoreML delegate backend, copy additional libraries:
 
 ```bash
+mkdir -p ../../examples/apple/ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/coreml/
+cp libcoremldelegate.a \
+   ../../examples/apple/ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/coreml/
+```
+
+For XNNPACK delegate backend, copy additional libraries:
+
+```bash
+mkdir -p ../../examples/apple/ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/xnnpack/
 cp libclog.a \
    libcpuinfo.a \
    libpthreadpool.a \
    libxnnpack_backend.a \
    libXNNPACK.a \
-   ../../examples/apple/ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/executorch/
+   ../../examples/apple/ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/xnnpack/
 ```
 
 Then return to the `executorch` directory:
@@ -146,7 +158,8 @@ curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt -
 export FLATC_EXECUTABLE=$(realpath third-party/flatbuffers/cmake-out/flatc)
 python3 -m examples.export.export_example --model_name="mv3"
 python3 -m examples.backend.xnnpack_examples --model_name="mv3" --delegate
-cp mv3.pte mv3_xnnpack_fp32.pte examples/apple/ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
+python3 -m examples.export.coreml_export_and_delegate -m "mv3"
+cp mv3.pte mv3_coreml.pte mv3_xnnpack_fp32.pte examples/apple/ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
 ```
 
 ## Final Steps
