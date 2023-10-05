@@ -6,8 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
-
+  
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
   <title>How does ExecuTorch work &mdash; ExecuTorch  documentation</title>
@@ -263,6 +262,7 @@
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -390,8 +390,8 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <p>This page describes how ExecuTorch works and its key benefits.</p>
-<section id="how-does-executorch-work">
-<h1>How does ExecuTorch work<a class="headerlink" href="#how-does-executorch-work" title="Permalink to this heading">¶</a></h1>
+<div class="section" id="how-does-executorch-work">
+<h1>How does ExecuTorch work<a class="headerlink" href="#how-does-executorch-work" title="Permalink to this headline">¶</a></h1>
 <p>At a high-level, there are three steps for running a PyTorch model with ExecuTorch across edge devices, such as laptops, mobile phones, wearables, and IoT devices.</p>
 <ol class="arabic simple">
 <li><p><strong>Export the model.</strong> The first step is to capture the PyTorch program as a graph, which is a new representation of the model that can be expressed in terms of a series of operators such as addition, multiplication, or convolution. This process safely preserves the semantics of the original PyTorch program. This representation makes it possible to run the model on edge use cases that have low memory and/or low compute.</p></li>
@@ -400,8 +400,8 @@
 </ol>
 <p>This figure illustrates the three-step process of exporting a PyTorch program, compiling it into an ExecuTorch program that targets a specific hardware device, and finally executing the program on the device using the ExecuTorch runtime.
 <img alt="name" src="_images/how-executorch-works-high-level.png" /></p>
-<section id="key-benefits">
-<h2>Key Benefits<a class="headerlink" href="#key-benefits" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="key-benefits">
+<h2>Key Benefits<a class="headerlink" href="#key-benefits" title="Permalink to this headline">¶</a></h2>
 <p>ExecuTorch provides the following benefits to engineers who need to deploy machine learning models to an edge device:</p>
 <ul class="simple">
 <li><p><strong>Export that is robust and powerful.</strong> Export uses <a class="reference external" href="https://pytorch.org/docs/2.1/torch.compiler.html#torch-compiler-overview">TorchDynamo</a>, the same technology used in PyTorch 2.0 to capture PyTorch programs for fast execution. While eager mode is flexible and allows experimentation in Python, it may not work well if Python isn’t available or cannot deliver efficient execution. The <em>Export Intermediate Representation (EXIR)</em> that export flow generates can describe a wide range of dynamism in PyTorch models, including control flow and dynamic shapes, which makes it a powerful tool for fully capturing existing PyTorch models with little effort.</p></li>
@@ -413,8 +413,8 @@
 <li><p><strong>Low overhead runtime and execution.</strong> The ExecuTorch runtime, written in C++, is highly efficient and can run on a wide range of architectures, including Linux, iOS, Android, embedded systems, and bare metal hardware, with little additional setup or configuration. It is capable of linking in only those operators needed for the model, resulting in a minimal runtime binary size. It is also able to run at low latency because of ahead-of-time compilation and memory planning stages, with the runtime responsible only for execution (e.g., call operator <code class="docutils literal notranslate"><span class="pre">conv</span></code> and save the result in memory location X).</p></li>
 </ul>
 <p>The above highlights the key advantages of ExecuTorch across three main categories: portability, productivity, and performance. We consider it to be an ideal choice for enabling on-device AI across mobile and edge computing platforms.</p>
-</section>
-</section>
+</div>
+</div>
 
 
              </article>
@@ -483,7 +483,6 @@
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
-         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>

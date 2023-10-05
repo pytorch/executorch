@@ -6,8 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
-
+  
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
   <title>Exporting to ExecuTorch Tutorial &mdash; ExecuTorch  documentation</title>
@@ -262,6 +261,7 @@
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -415,8 +415,8 @@
 <p><a class="reference internal" href="#sphx-glr-download-tutorials-export-to-executorch-tutorial-py"><span class="std std-ref">Go to the end</span></a>
 to download the full example code</p>
 </div>
-<section class="sphx-glr-example-title" id="exporting-to-executorch-tutorial">
-<span id="sphx-glr-tutorials-export-to-executorch-tutorial-py"></span><h1>Exporting to ExecuTorch Tutorial<a class="headerlink" href="#exporting-to-executorch-tutorial" title="Permalink to this heading">¶</a></h1>
+<div class="sphx-glr-example-title section" id="exporting-to-executorch-tutorial">
+<span id="sphx-glr-tutorials-export-to-executorch-tutorial-py"></span><h1>Exporting to ExecuTorch Tutorial<a class="headerlink" href="#exporting-to-executorch-tutorial" title="Permalink to this headline">¶</a></h1>
 <p><strong>Author:</strong> <a class="reference external" href="https://github.com/angelayi">Angela Yi</a></p>
 <p>ExecuTorch is a unified ML stack for lowering PyTorch models to edge devices.
 It introduces improved entry points to perform model, device, and/or use-case
@@ -427,8 +427,8 @@ transformations, default or user-defined memory planning, and more.</p>
 <p>In this tutorial, we will cover the APIs in the “Program preparation” steps to
 lower a PyTorch model to a format which can be loaded to device and run on the
 ExecuTorch runtime.</p>
-<section id="prerequisites">
-<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this headline">¶</a></h2>
 <p>To run this tutorial, you’ll need to install ExecuTorch.</p>
 <p>Set up a conda environment. To set up a conda environment in Google Colab:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>!pip install -q condacolab
@@ -445,9 +445,9 @@ sure Colab -&gt; Setting -&gt; Github -&gt; Access Private Repo is checked:</p>
 !cd executorch &amp;&amp; bash ./install_requirements.sh
 </pre></div>
 </div>
-</section>
-<section id="exporting-a-model">
-<h2>Exporting a Model<a class="headerlink" href="#exporting-a-model" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="exporting-a-model">
+<h2>Exporting a Model<a class="headerlink" href="#exporting-a-model" title="Permalink to this headline">¶</a></h2>
 <p>Note: The Export APIs are still undergoing changes to align better with the
 longer term state of export. Please refer to this
 <a class="reference external" href="https://github.com/pytorch/executorch/issues/290">issue</a> for more details.</p>
@@ -539,8 +539,8 @@ operators, we will call this the <code class="docutils literal notranslate"><spa
 <code class="docutils literal notranslate"><span class="pre">torch._export.capture_pre_autograd_graph</span></code> returns a graph containing the
 set of ATen operators which are Autograd safe, we will call it the
 <code class="docutils literal notranslate"><span class="pre">Pre-Autograd</span> <span class="pre">ATen</span> <span class="pre">Dialect</span></code>.</p>
-<section id="expressing-dynamism">
-<h3>Expressing Dynamism<a class="headerlink" href="#expressing-dynamism" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="expressing-dynamism">
+<h3>Expressing Dynamism<a class="headerlink" href="#expressing-dynamism" title="Permalink to this headline">¶</a></h3>
 <p>By default, the exporting flow will trace the program assuming that all input
 shapes are static, so if we run the program with inputs shapes that are
 different than the ones we used while tracing, we will run into an error:</p>
@@ -711,9 +711,9 @@ is equal to input 1’s dimension 1, which was also specified by our constraints
 <span class="ne">RuntimeError</span><span class="p">:</span> <span class="n">Input</span> <span class="n">arg1_1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">equal</span> <span class="n">to</span> <span class="nb">input</span> <span class="n">arg0_1</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
 </pre></div>
 </div>
-</section>
-<section id="addressing-untraceable-code">
-<h3>Addressing Untraceable Code<a class="headerlink" href="#addressing-untraceable-code" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="addressing-untraceable-code">
+<h3>Addressing Untraceable Code<a class="headerlink" href="#addressing-untraceable-code" title="Permalink to this headline">¶</a></h3>
 <p>As our goal is to capture the entire computational graph from a PyTorch
 program, we might ultimately run into untraceable parts of programs. To
 address these issues, the
@@ -721,10 +721,10 @@ address these issues, the
 or the
 <a class="reference external" href="https://pytorch.org/tutorials/intermediate/torch_export_tutorial.html">torch.export tutorial</a>
 would be the best place to look.</p>
-</section>
-</section>
-<section id="performing-quantization">
-<h2>Performing Quantization<a class="headerlink" href="#performing-quantization" title="Permalink to this heading">¶</a></h2>
+</div>
+</div>
+<div class="section" id="performing-quantization">
+<h2>Performing Quantization<a class="headerlink" href="#performing-quantization" title="Permalink to this headline">¶</a></h2>
 <p>To quantize a model, we can do so between the call to
 <code class="docutils literal notranslate"><span class="pre">torch._export.capture_pre_autograd_graph</span></code> and <code class="docutils literal notranslate"><span class="pre">torch.export</span></code>, in the
 <code class="docutils literal notranslate"><span class="pre">Pre-Autograd</span> <span class="pre">ATen</span> <span class="pre">Dialect</span></code>. This is because quantization must operate at a
@@ -805,9 +805,9 @@ model properly for a specific backend.</p>
 <p>More information on how to quantize a model, and how a backend can implement a
 <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> can be found
 <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq_static.html">here</a>.</p>
-</section>
-<section id="lowering-to-edge-dialect">
-<h2>Lowering to Edge Dialect<a class="headerlink" href="#lowering-to-edge-dialect" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="lowering-to-edge-dialect">
+<h2>Lowering to Edge Dialect<a class="headerlink" href="#lowering-to-edge-dialect" title="Permalink to this headline">¶</a></h2>
 <p>After exporting and lowering the graph to the <code class="docutils literal notranslate"><span class="pre">ATen</span> <span class="pre">Dialect</span></code>, the next step
 is to lower to the <code class="docutils literal notranslate"><span class="pre">Edge</span> <span class="pre">Dialect</span></code>, in which specializations that are useful
 for edge devices but not necessary for general (server) will be applied.
@@ -912,21 +912,7 @@ there is only one program, it will by default be saved to the name “forward”
     <span class="nb">print</span><span class="p">(</span><span class="n">edge_program</span><span class="o">.</span><a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">exported_program</span></a><span class="p">(</span><a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">method</span></a><span class="p">))</span>
 </pre></div>
 </div>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Edge</span> <span class="n">Dialect</span> <span class="n">graph</span> <span class="n">of</span> <span class="n">decode</span>
-<a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class"><span class="n">ExportedProgram</span></a><span class="p">:</span>
-    <span class="k">class</span> <span class="nc">GraphModule</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span></a><span class="p">):</span>
-        <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg0_1</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">]):</span>
-            <span class="c1"># File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:307, code: return torch.nn.functional.linear(x, torch.randn(10, 5))</span>
-            <span class="n">aten_randn_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_randn_default</span><span class="p">([</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span> <span class="n">device</span> <span class="o">=</span> <span class="n">device</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s1">&#39;cpu&#39;</span><span class="p">),</span> <span class="n">pin_memory</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
-            <span class="n">aten_permute_copy_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_permute_copy_default</span><span class="p">(</span><span class="n">aten_randn_default</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]);</span>  <span class="n">aten_randn_default</span> <span class="o">=</span> <span class="kc">None</span>
-            <span class="n">aten_mm_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_mm_default</span><span class="p">(</span><span class="n">arg0_1</span><span class="p">,</span> <span class="n">aten_permute_copy_default</span><span class="p">);</span>  <span class="n">arg0_1</span> <span class="o">=</span> <span class="n">aten_permute_copy_default</span> <span class="o">=</span> <span class="kc">None</span>
-            <span class="k">return</span> <span class="p">(</span><span class="n">aten_mm_default</span><span class="p">,)</span>
-
-<span class="n">Graph</span> <span class="n">signature</span><span class="p">:</span> <span class="n">ExportGraphSignature</span><span class="p">(</span><span class="n">parameters</span><span class="o">=</span><span class="p">[],</span> <span class="n">buffers</span><span class="o">=</span><span class="p">[],</span> <span class="n">user_inputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;arg0_1&#39;</span><span class="p">],</span> <span class="n">user_outputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;aten_mm_default&#39;</span><span class="p">],</span> <span class="n">inputs_to_parameters</span><span class="o">=</span><span class="p">{},</span> <span class="n">inputs_to_buffers</span><span class="o">=</span><span class="p">{},</span> <span class="n">buffers_to_mutate</span><span class="o">=</span><span class="p">{},</span> <span class="n">backward_signature</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">assertion_dep_token</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-<span class="n">Range</span> <a href="https://docs.python.org/3/library/stdtypes.html#list" title="builtins.list" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">constraints</span></a><span class="p">:</span> <span class="p">{}</span>
-<span class="n">Equality</span> <a href="https://docs.python.org/3/library/stdtypes.html#list" title="builtins.list" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">constraints</span></a><span class="p">:</span> <span class="p">[]</span>
-
-<span class="n">Edge</span> <span class="n">Dialect</span> <span class="n">graph</span> <span class="n">of</span> <span class="n">encode</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Edge</span> <span class="n">Dialect</span> <span class="n">graph</span> <span class="n">of</span> <span class="n">encode</span>
 <a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class"><span class="n">ExportedProgram</span></a><span class="p">:</span>
     <span class="k">class</span> <span class="nc">GraphModule</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span></a><span class="p">):</span>
         <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg0_1</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">]):</span>
@@ -934,6 +920,20 @@ there is only one program, it will by default be saved to the name “forward”
             <span class="n">aten_randn_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_randn_default</span><span class="p">([</span><span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span> <span class="n">device</span> <span class="o">=</span> <span class="n">device</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s1">&#39;cpu&#39;</span><span class="p">),</span> <span class="n">pin_memory</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
             <span class="n">aten_permute_copy_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_permute_copy_default</span><span class="p">(</span><span class="n">aten_randn_default</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]);</span>  <span class="n">aten_randn_default</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="n">aten_mm_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_mm_default</span><span class="p">(</span><span class="n">arg0_1</span><span class="p">,</span> <span class="n">aten_permute_copy_default</span><span class="p">);</span>  <span class="n">arg0_1</span> <span class="o">=</span> <span class="n">aten_permute_copy_default</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">aten_mm_default</span><span class="p">,)</span>
+
+<span class="n">Graph</span> <span class="n">signature</span><span class="p">:</span> <span class="n">ExportGraphSignature</span><span class="p">(</span><span class="n">parameters</span><span class="o">=</span><span class="p">[],</span> <span class="n">buffers</span><span class="o">=</span><span class="p">[],</span> <span class="n">user_inputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;arg0_1&#39;</span><span class="p">],</span> <span class="n">user_outputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;aten_mm_default&#39;</span><span class="p">],</span> <span class="n">inputs_to_parameters</span><span class="o">=</span><span class="p">{},</span> <span class="n">inputs_to_buffers</span><span class="o">=</span><span class="p">{},</span> <span class="n">buffers_to_mutate</span><span class="o">=</span><span class="p">{},</span> <span class="n">backward_signature</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">assertion_dep_token</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="n">Range</span> <a href="https://docs.python.org/3/library/stdtypes.html#list" title="builtins.list" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">constraints</span></a><span class="p">:</span> <span class="p">{}</span>
+<span class="n">Equality</span> <a href="https://docs.python.org/3/library/stdtypes.html#list" title="builtins.list" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">constraints</span></a><span class="p">:</span> <span class="p">[]</span>
+
+<span class="n">Edge</span> <span class="n">Dialect</span> <span class="n">graph</span> <span class="n">of</span> <span class="n">decode</span>
+<a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class"><span class="n">ExportedProgram</span></a><span class="p">:</span>
+    <span class="k">class</span> <span class="nc">GraphModule</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span></a><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg0_1</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">]):</span>
+            <span class="c1"># File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:307, code: return torch.nn.functional.linear(x, torch.randn(10, 5))</span>
+            <span class="n">aten_randn_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_randn_default</span><span class="p">([</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span> <span class="n">device</span> <span class="o">=</span> <span class="n">device</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s1">&#39;cpu&#39;</span><span class="p">),</span> <span class="n">pin_memory</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+            <span class="n">aten_permute_copy_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_permute_copy_default</span><span class="p">(</span><span class="n">aten_randn_default</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]);</span>  <span class="n">aten_randn_default</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">aten_mm_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_mm_default</span><span class="p">(</span><span class="n">arg0_1</span><span class="p">,</span> <span class="n">aten_permute_copy_default</span><span class="p">);</span>  <span class="n">arg0_1</span> <span class="o">=</span> <span class="n">aten_permute_copy_default</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="k">return</span> <span class="p">(</span><span class="n">aten_mm_default</span><span class="p">,)</span>
 
 <span class="n">Graph</span> <span class="n">signature</span><span class="p">:</span> <span class="n">ExportGraphSignature</span><span class="p">(</span><span class="n">parameters</span><span class="o">=</span><span class="p">[],</span> <span class="n">buffers</span><span class="o">=</span><span class="p">[],</span> <span class="n">user_inputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;arg0_1&#39;</span><span class="p">],</span> <span class="n">user_outputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;aten_mm_default&#39;</span><span class="p">],</span> <span class="n">inputs_to_parameters</span><span class="o">=</span><span class="p">{},</span> <span class="n">inputs_to_buffers</span><span class="o">=</span><span class="p">{},</span> <span class="n">buffers_to_mutate</span><span class="o">=</span><span class="p">{},</span> <span class="n">backward_signature</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">assertion_dep_token</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
@@ -1006,9 +1006,9 @@ rather than the <code class="docutils literal notranslate"><span class="pre">tor
 <span class="n">Equality</span> <a href="https://docs.python.org/3/library/stdtypes.html#list" title="builtins.list" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">constraints</span></a><span class="p">:</span> <span class="p">[]</span>
 </pre></div>
 </div>
-</section>
-<section id="delegating-to-a-backend">
-<h2>Delegating to a Backend<a class="headerlink" href="#delegating-to-a-backend" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="delegating-to-a-backend">
+<h2>Delegating to a Backend<a class="headerlink" href="#delegating-to-a-backend" title="Permalink to this headline">¶</a></h2>
 <p>We can now delegate parts of the graph or the whole graph to a third-party
 backend through the <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> API.  An in-depth documentation on the
 specifics of backend delegation, including how to delegate to a backend and
@@ -1020,8 +1020,8 @@ how to implement a backend, can be found
 <li><p>Lowering the whole module and composing it in another module</p></li>
 <li><p>Paritioning the module, and lowering parts of the module</p></li>
 </ol>
-<section id="lowering-the-whole-module">
-<h3>Lowering the Whole Module<a class="headerlink" href="#lowering-the-whole-module" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="lowering-the-whole-module">
+<h3>Lowering the Whole Module<a class="headerlink" href="#lowering-the-whole-module" title="Permalink to this headline">¶</a></h3>
 <p>To lower an entire module, we can pass <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> the backend name, the
 module to be lowered, and a list of compile specs to help the backend with the
 lowering process.</p>
@@ -1089,9 +1089,9 @@ the runtime</p></li>
 this program in the runtime</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">original_module</span></code>: the original exported module</p></li>
 </ul>
-</section>
-<section id="compose-the-lowered-module-into-another-module">
-<h3>Compose the Lowered Module into Another Module<a class="headerlink" href="#compose-the-lowered-module-into-another-module" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="compose-the-lowered-module-into-another-module">
+<h3>Compose the Lowered Module into Another Module<a class="headerlink" href="#compose-the-lowered-module-into-another-module" title="Permalink to this headline">¶</a></h3>
 <p>In cases where we want to reuse this lowered module in multiple programs, we
 can compose this lowered module with another module.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">NotLowerableModule</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span></a><span class="p">):</span>
@@ -1133,11 +1133,11 @@ can compose this lowered module with another module.</p>
 <a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class"><span class="n">ExportedProgram</span></a><span class="p">:</span>
     <span class="k">class</span> <span class="nc">GraphModule</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span></a><span class="p">):</span>
         <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg0_1</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">arg1_1</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
-            <span class="c1"># File: /opt/conda/envs/py_3.10/lib/python3.10/site-packages/executorch/exir/lowered_backend_module.py:261, code: return executorch_call_delegate(self, *args)</span>
+            <span class="c1"># File: /pytorch/executorch/exir/lowered_backend_module.py:261, code: return executorch_call_delegate(self, *args)</span>
             <span class="n">lowered_module_0</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowered_module_0</span>
             <span class="n">executorch_call_delegate</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">executorch_call_delegate</span><span class="p">(</span><span class="n">lowered_module_0</span><span class="p">,</span> <span class="n">arg1_1</span><span class="p">);</span>  <span class="n">lowered_module_0</span> <span class="o">=</span> <span class="n">arg1_1</span> <span class="o">=</span> <span class="kc">None</span>
 
-            <span class="c1"># File: /opt/conda/envs/py_3.10/lib/python3.10/site-packages/executorch/exir/lowered_backend_module.py:261, code: return executorch_call_delegate(self, *args)</span>
+            <span class="c1"># File: /pytorch/executorch/exir/lowered_backend_module.py:261, code: return executorch_call_delegate(self, *args)</span>
             <span class="n">lowered_module_1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowered_module_0</span>
             <span class="n">executorch_call_delegate_1</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">executorch_call_delegate</span><span class="p">(</span><span class="n">lowered_module_1</span><span class="p">,</span> <span class="n">executorch_call_delegate</span><span class="p">);</span>  <span class="n">lowered_module_1</span> <span class="o">=</span> <span class="kc">None</span>
 
@@ -1169,9 +1169,9 @@ can compose this lowered module with another module.</p>
 graph, which is calling <code class="docutils literal notranslate"><span class="pre">lowered_module_0</span></code>. Additionally, the contents of
 <code class="docutils literal notranslate"><span class="pre">lowered_module_0</span></code> are the same as the <code class="docutils literal notranslate"><span class="pre">lowered_module</span></code> we created
 previously.</p>
-</section>
-<section id="partition-and-lower-parts-of-a-module">
-<h3>Partition and Lower Parts of a Module<a class="headerlink" href="#partition-and-lower-parts-of-a-module" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="partition-and-lower-parts-of-a-module">
+<h3>Partition and Lower Parts of a Module<a class="headerlink" href="#partition-and-lower-parts-of-a-module" title="Permalink to this headline">¶</a></h3>
 <p>A separate lowering flow is to pass <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> the module that we want to
 lower, and a backend-specific partitioner. <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> will use the
 backend-specific partitioner to tag nodes in the module which are lowerable,
@@ -1326,10 +1326,10 @@ call <code class="docutils literal notranslate"><span class="pre">to_backend</sp
 <span class="n">Equality</span> <a href="https://docs.python.org/3/library/stdtypes.html#list" title="builtins.list" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">constraints</span></a><span class="p">:</span> <span class="p">[]</span>
 </pre></div>
 </div>
-</section>
-</section>
-<section id="running-user-defined-passes-and-memory-planning">
-<h2>Running User-Defined Passes and Memory Planning<a class="headerlink" href="#running-user-defined-passes-and-memory-planning" title="Permalink to this heading">¶</a></h2>
+</div>
+</div>
+<div class="section" id="running-user-defined-passes-and-memory-planning">
+<h2>Running User-Defined Passes and Memory Planning<a class="headerlink" href="#running-user-defined-passes-and-memory-planning" title="Permalink to this headline">¶</a></h2>
 <p>As a final step of lowering, we can use the <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code> API to pass in
 backend-specific passes, such as replacing sets of operators with a custom
 backend operator, and a memory planning pass, to tell the runtime how to
@@ -1411,9 +1411,9 @@ lifetime analysis.</p>
 <p>We also insert <code class="docutils literal notranslate"><span class="pre">alloc</span></code> nodes into the graph containing calls to a special
 <code class="docutils literal notranslate"><span class="pre">executorch.exir.memory.alloc</span></code> operator. This tells us how much memory is
 needed to allocate each tensor output by the out-variant operator.</p>
-</section>
-<section id="saving-to-a-file">
-<h2>Saving to a File<a class="headerlink" href="#saving-to-a-file" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="saving-to-a-file">
+<h2>Saving to a File<a class="headerlink" href="#saving-to-a-file" title="Permalink to this headline">¶</a></h2>
 <p>Finally, we can save the ExecuTorch Program to a file and load it to a device
 to be run.</p>
 <p>Here is an example for an entire end-to-end workflow:</p>
@@ -1454,13 +1454,13 @@ to be run.</p>
   <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;pytree_to_str is deprecated. Please use treespec_dumps&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
-</section>
-<section id="conclusion">
-<h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="conclusion">
+<h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this headline">¶</a></h2>
 <p>In this tutorial, we went over the APIs and steps required to lower a PyTorch
 program to a file that can be run on the ExecuTorch runtime.</p>
-<section id="links-mentioned">
-<h3>Links Mentioned<a class="headerlink" href="#links-mentioned" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="links-mentioned">
+<h3>Links Mentioned<a class="headerlink" href="#links-mentioned" title="Permalink to this headline">¶</a></h3>
 <ul class="simple">
 <li><p><a class="reference external" href="https://pytorch.org/docs/2.1/export.html">torch.export Documentation</a></p></li>
 <li><p><a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq_static.html">Quantization Tutorial</a></p></li>
@@ -1469,7 +1469,7 @@ program to a file that can be run on the ExecuTorch runtime.</p>
 <li><p><a class="reference external" href="../compiler-delegate-and-partitioner.html">Backend Delegation Documentation</a></p></li>
 <li><p><a class="reference external" href="../compiler-memory-planning.html">Memory Planning Documentation</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 4.341 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 4.264 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-export-to-executorch-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/e045b13b001260d8b012dd4630eb9054/export-to-executorch-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">export-to-executorch-tutorial.py</span></code></a></p>
@@ -1479,9 +1479,9 @@ program to a file that can be run on the ExecuTorch runtime.</p>
 </div>
 </div>
 <p class="sphx-glr-signature"><a class="reference external" href="https://sphinx-gallery.github.io">Gallery generated by Sphinx-Gallery</a></p>
-</section>
-</section>
-</section>
+</div>
+</div>
+</div>
 
 
              </article>
@@ -1567,7 +1567,6 @@ program to a file that can be run on the ExecuTorch runtime.</p>
          <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
          <script src="../_static/jquery.js"></script>
          <script src="../_static/underscore.js"></script>
-         <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="../_static/doctools.js"></script>
          <script src="../_static/clipboard.min.js"></script>
          <script src="../_static/copybutton.js"></script>

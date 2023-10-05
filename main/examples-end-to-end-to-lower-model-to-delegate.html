@@ -6,8 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
-
+  
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
   <title>An end-to-end example to lower a model as a delegate &mdash; ExecuTorch  documentation</title>
@@ -263,6 +262,7 @@
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -389,16 +389,16 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <section id="an-end-to-end-example-to-lower-a-model-as-a-delegate">
-<h1>An end-to-end example to lower a model as a delegate<a class="headerlink" href="#an-end-to-end-example-to-lower-a-model-as-a-delegate" title="Permalink to this heading">¶</a></h1>
+  <div class="section" id="an-end-to-end-example-to-lower-a-model-as-a-delegate">
+<h1>An end-to-end example to lower a model as a delegate<a class="headerlink" href="#an-end-to-end-example-to-lower-a-model-as-a-delegate" title="Permalink to this headline">¶</a></h1>
 <p>Audience: ML Engineers, who are interested in applying delegates to accelerate their program in runtime</p>
 <p>Backend delegation is an entry point for backends to process and execute PyTorch
 programs to leverage performance and efficiency benefits of specialized
 backends and hardware, while still providing PyTorch users with an experience
 close to that of the PyTorch runtime. The backend delegate is usually either provited by
 Exececutorch or vendors. The way to leverage delegate in your program is via a standard entry point <code class="docutils literal notranslate"><span class="pre">to_backend</span></code>.</p>
-<section id="frontend-interfaces">
-<h2>Frontend interfaces<a class="headerlink" href="#frontend-interfaces" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="frontend-interfaces">
+<h2>Frontend interfaces<a class="headerlink" href="#frontend-interfaces" title="Permalink to this headline">¶</a></h2>
 <p>There are three flows for delegating a program to a backend:</p>
 <ol class="arabic simple">
 <li><p>Lower the whole module to a backend. This is good for testing backends and
@@ -409,8 +409,8 @@ is good for reusing lowered modules exported from other flows.</p></li>
 lowering models that include both lowerable and non-lowerable nodes, and is
 the most streamlined procecss.</p></li>
 </ol>
-<section id="flow-1-lowering-the-whole-module">
-<h3>Flow 1: Lowering the whole module<a class="headerlink" href="#flow-1-lowering-the-whole-module" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="flow-1-lowering-the-whole-module">
+<h3>Flow 1: Lowering the whole module<a class="headerlink" href="#flow-1-lowering-the-whole-module" title="Permalink to this headline">¶</a></h3>
 <p>This flow starts from a traced graph module with Edge Dialect representation. To
 lower it, we call the following function which returns a <code class="docutils literal notranslate"><span class="pre">LoweredBackendModule</span></code>
 (more documentation on this function can be found in the Python API reference):</p>
@@ -459,9 +459,9 @@ that can be loaded by the runtime.</p>
     <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">lowered_module</span><span class="o">.</span><span class="n">buffer</span><span class="p">())</span>
 </pre></div>
 </div>
-</section>
-<section id="flow-2-lowering-the-whole-module-and-composite">
-<h3>Flow 2: Lowering the whole module and composite<a class="headerlink" href="#flow-2-lowering-the-whole-module-and-composite" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="flow-2-lowering-the-whole-module-and-composite">
+<h3>Flow 2: Lowering the whole module and composite<a class="headerlink" href="#flow-2-lowering-the-whole-module-and-composite" title="Permalink to this headline">¶</a></h3>
 <p>Alternatively, after flow 1, we can compose this lowered module with another
 module:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># This submodule runs in executor runtime</span>
@@ -497,9 +497,9 @@ module:</p>
     <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
 </pre></div>
 </div>
-</section>
-<section id="flow-3-partitioning">
-<h3>Flow 3: Partitioning<a class="headerlink" href="#flow-3-partitioning" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="flow-3-partitioning">
+<h3>Flow 3: Partitioning<a class="headerlink" href="#flow-3-partitioning" title="Permalink to this headline">¶</a></h3>
 <p>The third flow also starts from a traced graph module with Edge Dialect
 representation. To lower certain nodes in this graph module, we can use the
 overloaded <a class="reference external" href="https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/backend/backend_api.py#L39"><code class="docutils literal notranslate"><span class="pre">to_backend</span></code>
@@ -515,7 +515,7 @@ are meant to be lowered. It will return a <code class="docutils literal notransl
 backend names and module compile specs. The tagged nodes will then be
 partitioned and lowered to their mapped backends using Flow 1’s process.
 Available helper partitioner are documented
-<a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="std std-doc">here</span></a>. These lowered modules
+<a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="doc std std-doc">here</span></a>. These lowered modules
 will be inserted into the top-level module and serialized.</p>
 <p>The following is an example of the flow:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
@@ -550,10 +550,10 @@ will be inserted into the top-level module and serialized.</p>
     <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
 </pre></div>
 </div>
-</section>
-</section>
-<section id="runtime">
-<h2>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h2>
+</div>
+</div>
+<div class="section" id="runtime">
+<h2>Runtime<a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h2>
 <p>After having the program with delegates, to run the model with the backend, we’d need to register the backend.
 Depending on the delegate implementation, the backend can be registered either as part of global variables or
 explicitly register inside main function.</p>
@@ -563,8 +563,8 @@ The backend will be registered as long as it’s static linked. Users only need 
 <li><p>If vendor provide an APIs to register the backend
 Users need to include the library as part of the dependency, and call the API provided by vendors to explicitly register the backend as part of the main function</p></li>
 </ul>
-</section>
-</section>
+</div>
+</div>
 
 
              </article>
@@ -639,7 +639,6 @@ Users need to include the library as part of the dependency, and call the API pr
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
-         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>

@@ -260,6 +260,7 @@
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -506,11 +507,147 @@
         <li><a href="export-to-executorch-api-reference.html#exir.backend.backend_api.to_backend">(in module exir.backend.backend_api)</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="export-to-executorch-api-reference.html#exir.to_edge">to_edge() (in module exir)</a>
 </li>
       <li><a href="export-to-executorch-api-reference.html#exir.EdgeProgramManager.to_executorch">to_executorch() (exir.EdgeProgramManager method)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor10DataLoaderE">torch::executor::DataLoader (C++ class)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6EValueE">torch::executor::EValue (C++ struct)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6EValue6EValueEN9exec_aten6ScalarE">torch::executor::EValue::EValue (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6EValue7PayloadE">torch::executor::EValue::Payload (C++ union)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6EValue7Payload24TriviallyCopyablePayloadE">torch::executor::EValue::Payload::TriviallyCopyablePayload (C++ union)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0ENK5torch8executor6EValue10toOptionalEN9exec_aten8optionalI1TEEv">torch::executor::EValue::toOptional (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor21HierarchicalAllocatorE">torch::executor::HierarchicalAllocator (C++ class)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE4SpanI4SpanI7uint8_tEE">torch::executor::HierarchicalAllocator::HierarchicalAllocator (C++ function)</a>, <a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE8uint32_tP15MemoryAllocator">[1]</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor15MemoryAllocatorE">torch::executor::MemoryAllocator (C++ class)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor15MemoryAllocator8allocateE6size_t6size_t">torch::executor::MemoryAllocator::allocate (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0EN5torch8executor15MemoryAllocator16allocateInstanceEP1T6size_t">torch::executor::MemoryAllocator::allocateInstance (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0EN5torch8executor15MemoryAllocator12allocateListEP1T6size_t6size_t">torch::executor::MemoryAllocator::allocateList (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor15MemoryAllocator17kDefaultAlignmentE">torch::executor::MemoryAllocator::kDefaultAlignment (C++ member)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t">torch::executor::MemoryAllocator::MemoryAllocator (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor13MemoryManagerE">torch::executor::MemoryManager (C++ class)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocator">torch::executor::MemoryManager::MemoryManager (C++ function)</a>, <a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocatorP15MemoryAllocator">[1]</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor13MemoryManager16method_allocatorEv">torch::executor::MemoryManager::method_allocator (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor13MemoryManager14planned_memoryEv">torch::executor::MemoryManager::planned_memory (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor13MemoryManager14temp_allocatorEv">torch::executor::MemoryManager::temp_allocator (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6MethodE">torch::executor::Method (C++ class)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Method10get_outputE6size_t">torch::executor::Method::get_output (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Method11inputs_sizeEv">torch::executor::Method::inputs_size (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6Method6MethodERR6Method">torch::executor::Method::Method (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Method11method_metaEv">torch::executor::Method::method_meta (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Method12outputs_sizeEv">torch::executor::Method::outputs_size (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor10MethodMetaE">torch::executor::MethodMeta (C++ class)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta9input_tagE6size_t">torch::executor::MethodMeta::input_tag (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta17input_tensor_metaE6size_t">torch::executor::MethodMeta::input_tensor_meta (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta26memory_planned_buffer_sizeE6size_t">torch::executor::MethodMeta::memory_planned_buffer_size (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta4nameEv">torch::executor::MethodMeta::name (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta21non_const_buffer_sizeE6size_t">torch::executor::MethodMeta::non_const_buffer_size (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta10num_inputsEv">torch::executor::MethodMeta::num_inputs (C++ function)</a>
+</li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta26num_memory_planned_buffersEv">torch::executor::MethodMeta::num_memory_planned_buffers (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta11num_outputsEv">torch::executor::MethodMeta::num_outputs (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta10output_tagE6size_t">torch::executor::MethodMeta::output_tag (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta18output_tensor_metaE6size_t">torch::executor::MethodMeta::output_tensor_meta (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7ProgramE">torch::executor::Program (C++ class)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12check_headerEPKv6size_t">torch::executor::Program::check_header (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program24get_constant_buffer_dataE6size_t">torch::executor::Program::get_constant_buffer_data (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program15get_method_nameE6size_t">torch::executor::Program::get_method_name (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatusE">torch::executor::Program::HeaderStatus (C++ enum)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatus17CompatibleVersionE">torch::executor::Program::HeaderStatus::CompatibleVersion (C++ enumerator)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatus19IncompatibleVersionE">torch::executor::Program::HeaderStatus::IncompatibleVersion (C++ enumerator)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatus10NotPresentE">torch::executor::Program::HeaderStatus::NotPresent (C++ enumerator)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatus9ShortDataE">torch::executor::Program::HeaderStatus::ShortData (C++ enumerator)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program13kMinHeadBytesE">torch::executor::Program::kMinHeadBytes (C++ member)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program11load_methodEPKcP13MemoryManagerP11EventTracer">torch::executor::Program::load_method (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program11method_metaEPKc">torch::executor::Program::method_meta (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program11num_methodsEv">torch::executor::Program::num_methods (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12VerificationE">torch::executor::Program::Verification (C++ enum)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12Verification19InternalConsistencyE">torch::executor::Program::Verification::InternalConsistency (C++ enumerator)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12Verification7MinimalE">torch::executor::Program::Verification::Minimal (C++ enumerator)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6TensorE">torch::executor::Tensor (C++ class)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0ENK5torch8executor6Tensor14const_data_ptrEPK1Tv">torch::executor::Tensor::const_data_ptr (C++ function)</a>, <a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor14const_data_ptrEv">[1]</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor3dimEv">torch::executor::Tensor::dim (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor9dim_orderEv">torch::executor::Tensor::dim_order (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6Tensor12DimOrderTypeE">torch::executor::Tensor::DimOrderType (C++ type)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor12element_sizeEv">torch::executor::Tensor::element_size (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0ENK5torch8executor6Tensor16mutable_data_ptrEP1Tv">torch::executor::Tensor::mutable_data_ptr (C++ function)</a>, <a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor16mutable_data_ptrEv">[1]</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor6nbytesEv">torch::executor::Tensor::nbytes (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor5numelEv">torch::executor::Tensor::numel (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor11scalar_typeEv">torch::executor::Tensor::scalar_type (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor4sizeE7ssize_t">torch::executor::Tensor::size (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor5sizesEv">torch::executor::Tensor::sizes (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6Tensor9SizesTypeE">torch::executor::Tensor::SizesType (C++ type)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor7stridesEv">torch::executor::Tensor::strides (C++ function)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6Tensor11StridesTypeE">torch::executor::Tensor::StridesType (C++ type)</a>
+</li>
+      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor19unsafeGetTensorImplEv">torch::executor::Tensor::unsafeGetTensorImpl (C++ function)</a>
 </li>
       <li><a href="export-to-executorch-api-reference.html#exir.EdgeProgramManager.transform">transform() (exir.EdgeProgramManager method)</a>
 </li>
@@ -570,7 +707,6 @@
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
-         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>

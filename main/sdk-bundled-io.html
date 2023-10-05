@@ -6,8 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
-
+  
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
   <title>Bundled Program – a Tool for ExecuTorch Model Validation &mdash; ExecuTorch  documentation</title>
@@ -263,6 +262,7 @@
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -389,19 +389,19 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <section id="bundled-program-a-tool-for-executorch-model-validation">
-<h1>Bundled Program – a Tool for ExecuTorch Model Validation<a class="headerlink" href="#bundled-program-a-tool-for-executorch-model-validation" title="Permalink to this heading">¶</a></h1>
-<section id="introduction">
-<h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this heading">¶</a></h2>
+  <div class="section" id="bundled-program-a-tool-for-executorch-model-validation">
+<h1>Bundled Program – a Tool for ExecuTorch Model Validation<a class="headerlink" href="#bundled-program-a-tool-for-executorch-model-validation" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="introduction">
+<h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this headline">¶</a></h2>
 <p>BundledProgram is a wrapper around the core ExecuTorch program designed to help users wrapping test cases with the model they deploy. BundledProgram is not necessarily a core part of the program and not needed for its execution, but is particularly important for various other use-cases, such as model correctness evaluation, including e2e testing during the model bring-up process.</p>
 <p>Overall, the procedure can be broken into two stages, and in each stage we are supporting:</p>
 <ul class="simple">
 <li><p><strong>Emit stage</strong>: Bundling the test I/O cases along with the ExecuTorch program, serializing into flatbuffer.</p></li>
 <li><p><strong>Runtime stage</strong>: Accessing, executing, and verifying the bundled test cases during runtime.</p></li>
 </ul>
-</section>
-<section id="emit-stage">
-<h2>Emit stage<a class="headerlink" href="#emit-stage" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="emit-stage">
+<h2>Emit stage<a class="headerlink" href="#emit-stage" title="Permalink to this headline">¶</a></h2>
 <p>This stage mainly focuses on the creation of a <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and dumping it out to the disk as a flatbuffer file. The main procedure is as follow:</p>
 <ol class="arabic simple">
 <li><p>Create a model and emit its ExecuTorch program.</p></li>
@@ -409,12 +409,12 @@
 <li><p>Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> by using the emited model and <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code>.</p></li>
 <li><p>Serialize the <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and dump it out to the disk.</p></li>
 </ol>
-<section id="step-1-create-a-model-and-emit-its-executorch-program">
-<h3>Step 1: Create a Model and Emit its ExecuTorch Program.<a class="headerlink" href="#step-1-create-a-model-and-emit-its-executorch-program" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="step-1-create-a-model-and-emit-its-executorch-program">
+<h3>Step 1: Create a Model and Emit its ExecuTorch Program.<a class="headerlink" href="#step-1-create-a-model-and-emit-its-executorch-program" title="Permalink to this headline">¶</a></h3>
 <p>Executorch Program can be emitted from user’s model by using ExecuTorch APIs. <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/exporting_to_executorch.md">Here</a> is the tutorial for ExecuTorch Program exporting.</p>
-</section>
-<section id="step-2-construct-bundledconfig">
-<h3>Step 2: Construct <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code><a class="headerlink" href="#step-2-construct-bundledconfig" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="step-2-construct-bundledconfig">
+<h3>Step 2: Construct <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code><a class="headerlink" href="#step-2-construct-bundledconfig" title="Permalink to this headline">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code> is a class under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/config.py</span></code> that contains all information to be bundled for model verification. Here’s the constructor api to create <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code>:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">BundledConfig</span> <span class="p">(</span><span class="n">method_names</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">expected_outputs</span><span class="p">)</span>
 </pre></div>
@@ -436,9 +436,9 @@ expected_outputs should be the same as the size of inputs and provided method_na
 <ul class="simple">
 <li><p>BundledConfig</p></li>
 </ul>
-</section>
-<section id="step-3-generate-bundledprogram">
-<h3>Step 3: Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><a class="headerlink" href="#step-3-generate-bundledprogram" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="step-3-generate-bundledprogram">
+<h3>Step 3: Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><a class="headerlink" href="#step-3-generate-bundledprogram" title="Permalink to this headline">¶</a></h3>
 <p>We provide <code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> API under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/core.py</span></code> to generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> by bundling the emitted ExecuTorch program with the bundled_config:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
 </pre></div>
@@ -461,9 +461,9 @@ expected_outputs should be the same as the size of inputs and provided method_na
 <li><p>The name of methods we create BundledConfig for should be also in program. Please notice that it is no need to set testcases for every method in the Program.</p></li>
 <li><p>The metadata of each testcase should meet the requirement of the coresponding inference methods input.</p></li>
 </ol>
-</section>
-<section id="step-4-serialize-bundledprogram-to-flatbuffer">
-<h3>Step 4: Serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to Flatbuffer.<a class="headerlink" href="#step-4-serialize-bundledprogram-to-flatbuffer" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="step-4-serialize-bundledprogram-to-flatbuffer">
+<h3>Step 4: Serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to Flatbuffer.<a class="headerlink" href="#step-4-serialize-bundledprogram-to-flatbuffer" title="Permalink to this headline">¶</a></h3>
 <p>To serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to make runtime APIs use it, we provide two APIs, both under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/serialize/__init__.py</span></code>.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span><span class="n">bundled_program</span><span class="p">)</span>
 </pre></div>
@@ -497,9 +497,9 @@ expected_outputs should be the same as the size of inputs and provided method_na
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code></p></li>
 </ul>
-</section>
-<section id="emit-example">
-<h3>Emit Example<a class="headerlink" href="#emit-example" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="emit-example">
+<h3>Emit Example<a class="headerlink" href="#emit-example" title="Permalink to this headline">¶</a></h3>
 <p>Here is a flow highlighting how to generate a <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> given a PyTorch model and the representative inputs we want to test it along with.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>
 <span class="kn">import</span> <span class="nn">torch</span>
@@ -615,13 +615,13 @@ expected_outputs should be the same as the size of inputs and provided method_na
 <span class="n">regenerate_bundled_program</span> <span class="o">=</span> <span class="n">deserialize_from_flatbuffer_to_bundled_program</span><span class="p">(</span><span class="n">serialized_bundled_program</span><span class="p">)</span>
 </pre></div>
 </div>
-</section>
-</section>
-<section id="runtime-stage">
-<h2>Runtime Stage<a class="headerlink" href="#runtime-stage" title="Permalink to this heading">¶</a></h2>
+</div>
+</div>
+<div class="section" id="runtime-stage">
+<h2>Runtime Stage<a class="headerlink" href="#runtime-stage" title="Permalink to this headline">¶</a></h2>
 <p>This stage mainly focuses on executing the model with the bundled inputs and and comparing the model’s output with the bundled expected output. We provide multiple APIs to handle the key parts of it.</p>
-<section id="get-executorch-program-pointer-from-bundledprogram-buffer">
-<h3>Get ExecuTorch Program Pointer from <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> Buffer<a class="headerlink" href="#get-executorch-program-pointer-from-bundledprogram-buffer" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="get-executorch-program-pointer-from-bundledprogram-buffer">
+<h3>Get ExecuTorch Program Pointer from <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> Buffer<a class="headerlink" href="#get-executorch-program-pointer-from-bundledprogram-buffer" title="Permalink to this headline">¶</a></h3>
 <p>We need the pointer to ExecuTorch program to do the execution. To unify the process of loading and executing <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and Program flatbuffer, we create an API:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>
 <span class="n">Error</span> <span class="n">GetProgramData</span><span class="p">(</span>
@@ -645,8 +645,8 @@ file.</p></li>
 <li><p>&#64;param[out] out_program_data The serialized Program data, if found.</p></li>
 <li><p>&#64;param[out] out_program_data_len The length of out_program_data, in bytes.</p></li>
 </ul>
-<section id="returns">
-<h4>Returns<a class="headerlink" href="#returns" title="Permalink to this heading">¶</a></h4>
+<div class="section" id="returns">
+<h4>Returns<a class="headerlink" href="#returns" title="Permalink to this headline">¶</a></h4>
 <ul class="simple">
 <li><p>Error::Ok if the program was found, and
 out_program_data/out_program_data_len point to the data. Other values
@@ -674,10 +674,10 @@ on failure.</p></li>
     <span class="n">status</span><span class="p">);</span>
 </pre></div>
 </div>
-</section>
-</section>
-<section id="load-bundled-input-to-method">
-<h3>Load Bundled Input to Method<a class="headerlink" href="#load-bundled-input-to-method" title="Permalink to this heading">¶</a></h3>
+</div>
+</div>
+<div class="section" id="load-bundled-input-to-method">
+<h3>Load Bundled Input to Method<a class="headerlink" href="#load-bundled-input-to-method" title="Permalink to this headline">¶</a></h3>
 <p>To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called <code class="docutils literal notranslate"><span class="pre">torch::executor::util::LoadBundledInput</span></code>:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">__ET_NODISCARD</span> <span class="n">Error</span> <span class="n">LoadBundledInput</span><span class="p">(</span>
     <span class="n">Method</span><span class="o">&amp;</span> <span class="n">method</span><span class="p">,</span>
@@ -701,9 +701,9 @@ bundled_program_ptr to given Method.</p>
 <li><p>Return Error::Ok if load successfully, or the error happens during
 execution.</p></li>
 </ul>
-</section>
-<section id="verify-the-method-s-output">
-<h3>Verify the Method’s Output.<a class="headerlink" href="#verify-the-method-s-output" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="verify-the-method-s-output">
+<h3>Verify the Method’s Output.<a class="headerlink" href="#verify-the-method-s-output" title="Permalink to this headline">¶</a></h3>
 <p>We call <code class="docutils literal notranslate"><span class="pre">torch::executor::util::VerifyResultWithBundledExpectedOutput</span></code> to verify the method’s output with bundled expected outputs. Here’s the details of this API:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">__ET_NODISCARD</span> <span class="n">Error</span> <span class="n">VerifyResultWithBundledExpectedOutput</span><span class="p">(</span>
     <span class="n">Method</span><span class="o">&amp;</span> <span class="n">method</span><span class="p">,</span>
@@ -731,9 +731,9 @@ output in method_idx-th Method test.</p>
 <li><p>Return Error::Ok if two outputs match, or the error happens during
 execution.</p></li>
 </ul>
-</section>
-<section id="runtime-example">
-<h3>Runtime Example<a class="headerlink" href="#runtime-example" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="runtime-example">
+<h3>Runtime Example<a class="headerlink" href="#runtime-example" title="Permalink to this headline">¶</a></h3>
 <p>Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/sdk/runners/executor_runner.cpp">executor_runner</a>, and please review that file if you need more info and context:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">//</span> <span class="n">method_name</span> <span class="ow">is</span> <span class="n">the</span> <span class="n">name</span> <span class="k">for</span> <span class="n">the</span> <span class="n">method</span> <span class="n">we</span> <span class="n">want</span> <span class="n">to</span> <span class="n">test</span>
 <span class="o">//</span> <span class="n">memory_manager</span> <span class="ow">is</span> <span class="n">the</span> <span class="n">executor</span><span class="p">::</span><span class="n">MemoryManager</span> <span class="n">variable</span> <span class="k">for</span> <span class="n">executor</span> <span class="n">memory</span> <span class="n">allocation</span><span class="o">.</span>
@@ -780,13 +780,13 @@ execution.</p></li>
 
 </pre></div>
 </div>
-</section>
-</section>
-<section id="common-errors">
-<h2>Common Errors<a class="headerlink" href="#common-errors" title="Permalink to this heading">¶</a></h2>
+</div>
+</div>
+<div class="section" id="common-errors">
+<h2>Common Errors<a class="headerlink" href="#common-errors" title="Permalink to this headline">¶</a></h2>
 <p>Errors will be raised if <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code> doesn’t match the <code class="docutils literal notranslate"><span class="pre">Program</span></code>. Here’re two common situations:</p>
-<section id="test-input-doesn-t-match-model-s-requirement">
-<h3>Test input doesn’t match model’s requirement.<a class="headerlink" href="#test-input-doesn-t-match-model-s-requirement" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="test-input-doesn-t-match-model-s-requirement">
+<h3>Test input doesn’t match model’s requirement.<a class="headerlink" href="#test-input-doesn-t-match-model-s-requirement" title="Permalink to this headline">¶</a></h3>
 <p>Each inference method of PyTorch model has its own requirement for the inputs, like number of input, the dtype of each input, etc. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> will raise error if test input not meet the requirement.</p>
 <p>Here’s the example of the dtype of test input not meet model’s requirement:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
@@ -912,9 +912,9 @@ Raised Error<div class="sd-summary-down docutils">
 </pre></div>
 </div>
 </div>
-</details></section>
-<section id="method-name-in-bundleconfig-does-not-exist">
-<h3>Method name in <code class="docutils literal notranslate"><span class="pre">BundleConfig</span></code> does not exist.<a class="headerlink" href="#method-name-in-bundleconfig-does-not-exist" title="Permalink to this heading">¶</a></h3>
+</details></div>
+<div class="section" id="method-name-in-bundleconfig-does-not-exist">
+<h3>Method name in <code class="docutils literal notranslate"><span class="pre">BundleConfig</span></code> does not exist.<a class="headerlink" href="#method-name-in-bundleconfig-does-not-exist" title="Permalink to this headline">¶</a></h3>
 <p>Another common error would be the method name in <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code> does not exist in Model. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> will raise error and show the non-exist method name:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">from</span> <span class="nn">executorch</span> <span class="kn">import</span> <span class="n">exir</span>
@@ -1027,9 +1027,9 @@ Raised Error<div class="sd-summary-down docutils">
 </pre></div>
 </div>
 </div>
-</details></section>
-</section>
-</section>
+</details></div>
+</div>
+</div>
 
 
              </article>
@@ -1121,7 +1121,6 @@ Raised Error<div class="sd-summary-down docutils">
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
-         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>

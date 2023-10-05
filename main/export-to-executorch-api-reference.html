@@ -6,8 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
-
+  
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
   <title>Export to ExecuTorch API Reference &mdash; ExecuTorch  documentation</title>
@@ -40,7 +39,7 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Export IR Specification" href="ir-exir.html" />
+    <link rel="next" title="ExecuTorch Runtime API Reference" href="executorch-runtime-api-reference.html" />
     <link rel="prev" title="Exporting to Executorch" href="export-overview.html" />
     
     
@@ -263,6 +262,7 @@
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -389,22 +389,22 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <section id="module-exir">
-<span id="export-to-executorch-api-reference"></span><h1>Export to ExecuTorch API Reference<a class="headerlink" href="#module-exir" title="Permalink to this heading">¶</a></h1>
+  <div class="section" id="module-exir">
+<span id="export-to-executorch-api-reference"></span><h1>Export to ExecuTorch API Reference<a class="headerlink" href="#module-exir" title="Permalink to this headline">¶</a></h1>
 <dl class="py function">
 <dt class="sig sig-object py" id="exir.to_edge">
 <span class="sig-prename descclassname"><span class="pre">exir.</span></span><span class="sig-name descname"><span class="pre">to_edge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constant_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#to_edge"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.to_edge" title="Permalink to this definition">¶</a></dt>
 <dd><p><a class="reference internal" href="#exir.to_edge" title="exir.to_edge"><code class="xref py py-func docutils literal notranslate"><span class="pre">to_edge()</span></code></a> constructs an EdgeProgramManger from a set of exported programs in
 ATen dialect. Upon construction those programs are transformed into edge dialect.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>programs</strong> – Can be a single ExportedProgram or a dictionary mapping function names to their corresponding ExportedPrograms. If only a single ExportedProgram is provided it will be assigned the name “forward”.</p></li>
 <li><p><strong>constant_methods</strong> – An optional dictionary of method name to the constant value returned by that method in eager mode. Often used to store config information on Edge models.</p></li>
 <li><p><strong>compile_config</strong> – An optional argument used to provide greater control over the transformation to edge dialect process.</p></li>
 </ul>
 </dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dt class="field-even">Returns</dt>
 <dd class="field-even"><p>EdgeProgramManager</p>
 </dd>
 </dl>
@@ -443,7 +443,7 @@ including the delegation of subgraphs.</p>
 but with portions of each program in the EdgeProgramManager targeted
 for delegation as determined by the partitioner.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><p><strong>partitioner</strong> – <p>The partitioner can either be a Partitioner subclass, or a
 dictionary mapping method names to Partitioner subclass. If it is a
 Partitioner subclass, all programs in the given EdgeProgramManager
@@ -457,11 +457,11 @@ name and the nodes with same tag will be fused a one subgraph and
 delegated to backend specififed in delegation spec.</p>
 </p>
 </dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dt class="field-even">Returns</dt>
 <dd class="field-even"><p>A copy of the calling EdgeProgramManager with the
 specified subgraphs lowered.</p>
 </dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dt class="field-odd">Return type</dt>
 <dd class="field-odd"><p><a class="reference internal" href="#exir.EdgeProgramManager" title="exir.EdgeProgramManager">EdgeProgramManager</a></p>
 </dd>
 </dl>
@@ -472,17 +472,17 @@ specified subgraphs lowered.</p>
 <span class="sig-name descname"><span class="pre">to_executorch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager.to_executorch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager.to_executorch" title="Permalink to this definition">¶</a></dt>
 <dd><p>Transforms the program to the ExecuTorch backend.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>config</strong> – An optional argument used to provide greater control over</p></li>
 <li><p><strong>backend.</strong> (<em>the transformation to the ExecuTorch</em>) – </p></li>
 </ul>
 </dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dt class="field-even">Returns</dt>
 <dd class="field-even"><p>A manager representing the state of the EdgeProgramManager
 after it has been transformed to the ExecuTorch backend.</p>
 </dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dt class="field-odd">Return type</dt>
 <dd class="field-odd"><p><a class="reference internal" href="#exir.ExecutorchProgramManager" title="exir.ExecutorchProgramManager">ExecutorchProgramManager</a></p>
 </dd>
 </dl>
@@ -493,7 +493,7 @@ after it has been transformed to the ExecuTorch backend.</p>
 <span class="sig-name descname"><span class="pre">transform</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">passes</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager.transform"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager.transform" title="Permalink to this definition">¶</a></dt>
 <dd><p>Transforms the program according to the provided passes.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>passes</strong> (<em>just a list of</em>) – The passes can either be a list of passes, or a</p></li>
 <li><p><strong>is</strong> (<em>dictionary mapping method names to lists of passes. If it</em>) – </p></li>
@@ -505,11 +505,11 @@ after it has been transformed to the ExecuTorch backend.</p>
 <li><p><strong>passes.</strong> (<em>transformed with their corresponding</em>) – </p></li>
 </ul>
 </dd>
-<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dt class="field-even">Returns</dt>
 <dd class="field-even"><p>A copy of the calling EdgeProgramManager with the
 transformations applied.</p>
 </dd>
-<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dt class="field-odd">Return type</dt>
 <dd class="field-odd"><p><a class="reference internal" href="#exir.EdgeProgramManager" title="exir.EdgeProgramManager">EdgeProgramManager</a></p>
 </dd>
 </dl>
@@ -543,7 +543,7 @@ to a buffer.</p>
 <span class="sig-name descname"><span class="pre">dump_executorch_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#ExecutorchProgramManager.dump_executorch_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.ExecutorchProgramManager.dump_executorch_program" title="Permalink to this definition">¶</a></dt>
 <dd><p>Prints the ExecuTorch binary in a human readable format.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><p><strong>verbose</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.12)"><em>bool</em></a>) – If False prints the binary in a condensed format.
 If True prints the binary 1-1 with the specification in the schema.</p>
 </dd>
@@ -567,10 +567,6 @@ If True prints the binary 1-1 with the specification in the schema.</p>
 <span class="target" id="module-exir.backend.backend_api"></span><dl class="py function">
 <dt class="sig sig-object py" id="exir.backend.backend_api.to_backend">
 <span class="sig-prename descclassname"><span class="pre">exir.backend.backend_api.</span></span><span class="sig-name descname"><span class="pre">to_backend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">args</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/exir/backend/backend_api.html#to_backend"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.backend.backend_api.to_backend" title="Permalink to this definition">¶</a></dt>
-<dt class="sig sig-object py">
-<span class="sig-prename descclassname"><span class="pre">exir.backend.backend_api.</span></span><span class="sig-name descname"><span class="pre">to_backend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">backend_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">edge_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_specs</span></span></em><span class="sig-paren">)</span></dt>
-<dt class="sig sig-object py">
-<span class="sig-prename descclassname"><span class="pre">exir.backend.backend_api.</span></span><span class="sig-name descname"><span class="pre">to_backend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">edge_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">partitioner</span></span></em><span class="sig-paren">)</span></dt>
 <dd><p>A generic function the dispatch happens on the type of the first argument. There are currently to overloaded to_backend function:</p>
 <p>Note: Python is dynamically-typed language and therefore cannot have proper method overloading as that requires the language to
 be able to discriminate between types at compile-time. &#64;to_backend.register will attach the function to to_backend() base on the type of the first
@@ -636,7 +632,7 @@ and return the list of getitems as the output</p>
 
 </dd></dl>
 
-</section>
+</div>
 
 
              </article>
@@ -646,7 +642,7 @@ and return the list of getitems as the output</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="ir-exir.html" class="btn btn-neutral float-right" title="Export IR Specification" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="executorch-runtime-api-reference.html" class="btn btn-neutral float-right" title="ExecuTorch Runtime API Reference" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
         <a href="export-overview.html" class="btn btn-neutral" title="Exporting to Executorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
@@ -702,7 +698,6 @@ and return the list of getitems as the output</p>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
-         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>

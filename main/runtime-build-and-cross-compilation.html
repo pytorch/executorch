@@ -6,8 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
-
+  
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
   <title>Building with CMake &mdash; ExecuTorch  documentation</title>
@@ -263,6 +262,7 @@
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -389,15 +389,15 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <section id="building-with-cmake">
-<h1>Building with CMake<a class="headerlink" href="#building-with-cmake" title="Permalink to this heading">¶</a></h1>
+  <div class="section" id="building-with-cmake">
+<h1>Building with CMake<a class="headerlink" href="#building-with-cmake" title="Permalink to this headline">¶</a></h1>
 <p>Although buck2 is the main build system for the ExecuTorch project, it’s also
 possible to build core pieces of the runtime using <a class="reference external" href="https://cmake.org/">CMake</a>
 for easier integration with other build systems. Even if you don’t use CMake
 directly, CMake can emit scripts for other format like Make or Ninja. For information, see
 <a class="reference external" href="https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html">cmake-generators(7)</a>.</p>
-<section id="targets-built-by-the-cmake-build-system">
-<h2>Targets Built by the CMake Build System<a class="headerlink" href="#targets-built-by-the-cmake-build-system" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="targets-built-by-the-cmake-build-system">
+<h2>Targets Built by the CMake Build System<a class="headerlink" href="#targets-built-by-the-cmake-build-system" title="Permalink to this headline">¶</a></h2>
 <p>ExecuTorch’s CMake build system doesn’t cover everything that the buck2 build
 system covers. It can only build pieces of the runtime that are likely to be
 useful to embedded systems users.</p>
@@ -420,13 +420,13 @@ functions by default because there are no direct calls to them.</p></li>
 <code class="docutils literal notranslate"><span class="pre">libportable_kernels.a</span></code>, so the program may use any of the operators it
 implements.</p></li>
 </ul>
-</section>
-<section id="one-time-setup-to-prepare-for-cmake-build">
-<h2>One-time setup to prepare for CMake Build<a class="headerlink" href="#one-time-setup-to-prepare-for-cmake-build" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="one-time-setup-to-prepare-for-cmake-build">
+<h2>One-time setup to prepare for CMake Build<a class="headerlink" href="#one-time-setup-to-prepare-for-cmake-build" title="Permalink to this headline">¶</a></h2>
 <p>Follow the steps below to have the tools ready before using CMake to build on your machine.</p>
 <ol class="arabic simple">
 <li><p>Clone the repo and install buck2 as described in the “Runtime Setup” section
-of <a class="reference internal" href="getting-started-setup.html#building-a-runtime"><span class="std std-ref">Setting Up ExecuTorch</span></a></p>
+of <a class="reference internal" href="getting-started-setup.html#building-a-runtime"><span class="std std-doc">Setting Up ExecuTorch</span></a></p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">buck2</span></code> is necessary because the CMake build system runs <code class="docutils literal notranslate"><span class="pre">buck2</span></code> commands
 to extract source lists from the primary build system. It will be possible
@@ -437,7 +437,7 @@ to configure the CMake system to avoid calling <code class="docutils literal not
 <ul class="simple">
 <li><p>Run <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">tomli</span></code></p></li>
 <li><p>This provides an import required by a script that the CMake build system
-calls to extract source lists from <code class="docutils literal notranslate"><span class="pre">buck2</span></code>. Consider doing this <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> inside your conda environment if you created one during ExecuTorch setup. see <a class="reference internal" href="getting-started-setup.html"><span class="std std-doc">Setting up
+calls to extract source lists from <code class="docutils literal notranslate"><span class="pre">buck2</span></code>. Consider doing this <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> inside your conda environment if you created one during ExecuTorch setup. see <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up
 ExecuTorch</span></a>.</p></li>
 </ul>
 </li>
@@ -447,9 +447,9 @@ ExecuTorch</span></a>.</p></li>
 </ul>
 </li>
 </ol>
-</section>
-<section id="configure-the-cmake-build">
-<h2>Configure the CMake Build<a class="headerlink" href="#configure-the-cmake-build" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="configure-the-cmake-build">
+<h2>Configure the CMake Build<a class="headerlink" href="#configure-the-cmake-build" title="Permalink to this headline">¶</a></h2>
 <p>Follow these steps after cloning or pulling the upstream repo, since the build
 dependencies may have changed.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
@@ -464,9 +464,9 @@ dependencies may have changed.</p>
 </pre></div>
 </div>
 <p>Once this is done, you don’t need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.</p>
-</section>
-<section id="build-the-runtime-components">
-<h2>Build the runtime components<a class="headerlink" href="#build-the-runtime-components" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="build-the-runtime-components">
+<h2>Build the runtime components<a class="headerlink" href="#build-the-runtime-components" title="Permalink to this headline">¶</a></h2>
 <p>Build all targets with</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
 <span class="n">cd</span> <span class="n">executorch</span>
@@ -480,12 +480,12 @@ dependencies may have changed.</p>
 <span class="n">cmake</span> <span class="o">--</span><span class="n">build</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">-</span><span class="n">j9</span>
 </pre></div>
 </div>
-</section>
-<section id="use-an-example-app-executor-runner-to-execute-a-pte-file">
-<h2>Use an example app <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file<a class="headerlink" href="#use-an-example-app-executor-runner-to-execute-a-pte-file" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="use-an-example-app-executor-runner-to-execute-a-pte-file">
+<h2>Use an example app <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file<a class="headerlink" href="#use-an-example-app-executor-runner-to-execute-a-pte-file" title="Permalink to this headline">¶</a></h2>
 <p>First, generate an <code class="docutils literal notranslate"><span class="pre">add.pte</span></code> or other ExecuTorch program file using the
 instructions as described in
-<a class="reference internal" href="getting-started-setup.html#building-a-runtime"><span class="std std-ref">Setting up ExecuTorch</span></a>.</p>
+<a class="reference internal" href="getting-started-setup.html#building-a-runtime"><span class="std std-doc">Setting up ExecuTorch</span></a>.</p>
 <p>Then, pass it to the command line tool:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">./</span><span class="n">cmake</span><span class="o">-</span><span class="n">out</span><span class="o">/</span><span class="n">executor_runner</span> <span class="o">--</span><span class="n">model_path</span> <span class="n">path</span><span class="o">/</span><span class="n">to</span><span class="o">/</span><span class="n">add</span><span class="o">.</span><span class="n">pte</span>
 </pre></div>
@@ -503,12 +503,12 @@ by the output values.</p>
 <span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.011709</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">210</span><span class="p">]</span> <span class="mf">8.000000</span>
 </pre></div>
 </div>
-</section>
-<section id="cross-compilation">
-<h2>Cross compilation<a class="headerlink" href="#cross-compilation" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="cross-compilation">
+<h2>Cross compilation<a class="headerlink" href="#cross-compilation" title="Permalink to this headline">¶</a></h2>
 <p>Follwing are instruction on how to perform cross compilation for Android and iOS.</p>
-<section id="android">
-<h3>Android<a class="headerlink" href="#android" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="android">
+<h3>Android<a class="headerlink" href="#android" title="Permalink to this headline">¶</a></h3>
 <ul class="simple">
 <li><p>Prerequisite: <a class="reference external" href="https://developer.android.com/ndk">Android NDK</a>, choose one of the following:</p>
 <ul>
@@ -534,9 +534,9 @@ by the output values.</p>
 <span class="n">adb</span> <span class="n">shell</span>  <span class="s2">&quot;/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.ff&quot;</span>
 </pre></div>
 </div>
-</section>
-<section id="ios">
-<h3>IOS<a class="headerlink" href="#ios" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="ios">
+<h3>IOS<a class="headerlink" href="#ios" title="Permalink to this headline">¶</a></h3>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>While we’re working on making it a smoother experience, here is an early workflow to try out cross compilation for iOS.</p>
@@ -587,9 +587,9 @@ toolchain is located in <code class="docutils literal notranslate"><span class="
 <li><p>Set <strong>Library Search Paths</strong>  to  <code class="docutils literal notranslate"><span class="pre">cmake-ios-out/build</span></code>.</p></li>
 <li><p>In <strong>other linker flags</strong>, add a custom linker flag <code class="docutils literal notranslate"><span class="pre">-all_load.</span></code></p></li>
 </ul>
-</section>
-</section>
-</section>
+</div>
+</div>
+</div>
 
 
              </article>
@@ -667,7 +667,6 @@ toolchain is located in <code class="docutils literal notranslate"><span class="
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
-         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>

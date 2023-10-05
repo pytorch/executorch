@@ -6,8 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
-
+  
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
   <title>ExecuTorch Runtime Overview &mdash; ExecuTorch  documentation</title>
@@ -263,6 +262,7 @@
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -389,13 +389,13 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <section id="executorch-runtime-overview">
-<h1>ExecuTorch Runtime Overview<a class="headerlink" href="#executorch-runtime-overview" title="Permalink to this heading">¶</a></h1>
+  <div class="section" id="executorch-runtime-overview">
+<h1>ExecuTorch Runtime Overview<a class="headerlink" href="#executorch-runtime-overview" title="Permalink to this headline">¶</a></h1>
 <p>This document discusses the design of the ExecuTorch runtime, which executes
 ExecuTorch program files on edge devices like smartphones, wearables, and
 embedded devices. The code for the main execution API is under
 <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/runtime/executor"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/executor/</span></code></a>.</p>
-<p>Before reading this document we recommend that you read <a class="reference internal" href="intro-how-it-works.html"><span class="std std-doc">How Does ExecuTorch
+<p>Before reading this document we recommend that you read <a class="reference internal" href="intro-how-it-works.html"><span class="doc std std-doc">How Does ExecuTorch
 Work</span></a>.</p>
 <p>At the highest level, the ExecuTorch runtime is responsible for:</p>
 <ul class="simple">
@@ -413,27 +413,27 @@ exporting and executing an ExecuTorch program:</p>
 <li><p>Managing the memory used during load and execution, potentially across
 multiple memory banks like SRAM and DRAM.</p></li>
 <li><p>Mapping symbolic operator names like <code class="docutils literal notranslate"><span class="pre">&quot;aten::add.out&quot;</span></code> to concrete C++
-functions or <a class="reference internal" href="kernel-library-overview.html"><span class="std std-doc"><em>kernels</em></span></a> that implement the
+functions or <a class="reference internal" href="kernel-library-overview.html"><span class="doc std std-doc"><em>kernels</em></span></a> that implement the
 semantics of those operators.</p></li>
-<li><p>Dispatching predetermined sections of the model to <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="std std-doc">backend
+<li><p>Dispatching predetermined sections of the model to <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">backend
 delegates</span></a> for acceleration.</p></li>
-<li><p>Optionally gathering <a class="reference internal" href="sdk-profiling.html"><span class="std std-doc">profiling data</span></a> during load and
+<li><p>Optionally gathering <a class="reference internal" href="sdk-profiling.html"><span class="doc std std-doc">profiling data</span></a> during load and
 execution.</p></li>
 </ul>
-<section id="design-goals">
-<h2>Design Goals<a class="headerlink" href="#design-goals" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="design-goals">
+<h2>Design Goals<a class="headerlink" href="#design-goals" title="Permalink to this headline">¶</a></h2>
 <p>The ExecuTorch runtime was designed to run on a wide variety of edge devices,
 from modern smartphone CPUs to resource-constrained microcontrollers and DSPs.
 It has first-class support for
-<a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="std std-doc">delegating</span></a> execution to one or more
+<a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">delegating</span></a> execution to one or more
 backends to take advantage of architecture-specific optimizations and modern
 heterogeneous architectures. It is small and portable enough to run directly in
 bare-metal embedded environments with no operating systems, dynamic memory, or
 threads.</p>
-<section id="low-execution-overhead">
-<h3>Low Execution Overhead<a class="headerlink" href="#low-execution-overhead" title="Permalink to this heading">¶</a></h3>
-<section id="memory">
-<h4>Memory<a class="headerlink" href="#memory" title="Permalink to this heading">¶</a></h4>
+<div class="section" id="low-execution-overhead">
+<h3>Low Execution Overhead<a class="headerlink" href="#low-execution-overhead" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="memory">
+<h4>Memory<a class="headerlink" href="#memory" title="Permalink to this headline">¶</a></h4>
 <ul class="simple">
 <li><p>The core runtime library is less than 50kB when built without kernels or
 backends.</p></li>
@@ -448,9 +448,9 @@ location. This is especially useful on systems with heterogeneous memory
 hierarchies, allowing placement onto (e.g.) SRAM or DRAM close to the core
 that will operate on the data.</p></li>
 </ul>
-</section>
-<section id="cpu">
-<h4>CPU<a class="headerlink" href="#cpu" title="Permalink to this heading">¶</a></h4>
+</div>
+<div class="section" id="cpu">
+<h4>CPU<a class="headerlink" href="#cpu" title="Permalink to this headline">¶</a></h4>
 <ul class="simple">
 <li><p>Model execution is a simple loop over an array of instructions, most of which
 are function pointers to kernels and backend delegates. This keeps the
@@ -460,10 +460,10 @@ operation.</p></li>
 customized for a particular target system without needing to modify the
 original model or generated <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file.</p></li>
 </ul>
-</section>
-</section>
-<section id="familiar-pytorch-semantics">
-<h3>Familiar PyTorch Semantics<a class="headerlink" href="#familiar-pytorch-semantics" title="Permalink to this heading">¶</a></h3>
+</div>
+</div>
+<div class="section" id="familiar-pytorch-semantics">
+<h3>Familiar PyTorch Semantics<a class="headerlink" href="#familiar-pytorch-semantics" title="Permalink to this headline">¶</a></h3>
 <p>ExecuTorch is a first-class component of the PyTorch stack, and reuses APIs and
 semantics whenever possible.</p>
 <ul class="simple">
@@ -477,13 +477,13 @@ PyTorch C++ types.</p></li>
 between ExecuTorch and core PyTorch. ExecuTorch provides a testing framework
 to ensure this, and to help test future implementations of these operators.</p></li>
 </ul>
-</section>
-<section id="portable-code-and-architecture">
-<h3>Portable Code and Architecture<a class="headerlink" href="#portable-code-and-architecture" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="portable-code-and-architecture">
+<h3>Portable Code and Architecture<a class="headerlink" href="#portable-code-and-architecture" title="Permalink to this headline">¶</a></h3>
 <p>The ExecuTorch runtime is implemented with portability in mind, so that users
 can build it for a wide variety of target systems.</p>
-<section id="c-language-considerations">
-<h4>C++ Language Considerations<a class="headerlink" href="#c-language-considerations" title="Permalink to this heading">¶</a></h4>
+<div class="section" id="c-language-considerations">
+<h4>C++ Language Considerations<a class="headerlink" href="#c-language-considerations" title="Permalink to this headline">¶</a></h4>
 <ul class="simple">
 <li><p>The code is C++11-compatible to work with older toolchains.</p></li>
 <li><p>The runtime does not use exceptions or RTTI, although it is not antagonistic
@@ -493,11 +493,11 @@ several proprietary embedded toolchains.</p></li>
 <li><p>The repo provides both CMake and buck2 build systems to make integration
 easier.</p></li>
 </ul>
-</section>
-<section id="operating-system-considerations">
-<h4>Operating System Considerations<a class="headerlink" href="#operating-system-considerations" title="Permalink to this heading">¶</a></h4>
+</div>
+<div class="section" id="operating-system-considerations">
+<h4>Operating System Considerations<a class="headerlink" href="#operating-system-considerations" title="Permalink to this headline">¶</a></h4>
 <p>The runtime makes no direct system calls. All access to memory, files, logging,
-and clocks are abstracted through the <a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="std std-doc"><em>Runtime Platform Abstraction Layer
+and clocks are abstracted through the <a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="doc std std-doc"><em>Runtime Platform Abstraction Layer
 (PAL)</em></span></a> and injected interfaces like
 <code class="docutils literal notranslate"><span class="pre">DataLoader</span></code> and <code class="docutils literal notranslate"><span class="pre">MemoryAllocator</span></code>. [TODO: link these types to their generated
 docs]</p>
@@ -515,9 +515,9 @@ one set of mutable tensors could live in SRAM while another set lived in DRAM.</
 <p>However, please note that specific kernel or backend implementations may use
 arbitrary runtime or operating system features. Users should double-check the
 docs for the kernel and backend libraries that they use.</p>
-</section>
-<section id="threading-considerations">
-<h4>Threading Considerations<a class="headerlink" href="#threading-considerations" title="Permalink to this heading">¶</a></h4>
+</div>
+<div class="section" id="threading-considerations">
+<h4>Threading Considerations<a class="headerlink" href="#threading-considerations" title="Permalink to this headline">¶</a></h4>
 <p>The core runtime does no threading or locking, and does not use thread local
 variables. But, it plays well with higher-level synchronization.</p>
 <ul class="simple">
@@ -545,28 +545,28 @@ manually mutate them after process/system load time.</p></li>
 restrictions. Users should double-check the docs for the kernel and backend
 libraries that they use.</p></li>
 </ul>
-</section>
-</section>
-</section>
-<section id="further-reading">
-<h2>Further Reading<a class="headerlink" href="#further-reading" title="Permalink to this heading">¶</a></h2>
+</div>
+</div>
+</div>
+<div class="section" id="further-reading">
+<h2>Further Reading<a class="headerlink" href="#further-reading" title="Permalink to this headline">¶</a></h2>
 <p>For more details about the ExecuTorch runtime, please see:</p>
 <ul class="simple">
 <li><p>The
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/executor_runner/executor_runner.cpp"><code class="docutils literal notranslate"><span class="pre">executor_runner</span></code></a>
 example tool</p></li>
-<li><p><a class="reference internal" href="runtime-api.html"><span class="std std-doc">Runtime API</span></a></p></li>
-<li><p><a class="reference internal" href="runtime-build-and-cross-compilation.html"><span class="std std-doc">Runtime Build and Cross Compilation</span></a></p></li>
-<li><p><a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="std std-doc">Runtime Platform Abstraction Layer</span></a></p></li>
-<li><p><a class="reference internal" href="runtime-custom-memory-allocator.html"><span class="std std-doc">Custom Memory Allocation</span></a></p></li>
-<li><p><a class="reference internal" href="runtime-error-handling.html"><span class="std std-doc">Runtime Error Handling</span></a></p></li>
-<li><p><a class="reference internal" href="sdk-profiling.html"><span class="std std-doc">Runtime Profiling</span></a></p></li>
-<li><p><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="std std-doc">Backends and Delegates</span></a></p></li>
-<li><p><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html"><span class="std std-doc">Backend Delegate Implementation</span></a></p></li>
-<li><p><a class="reference internal" href="kernel-library-overview.html"><span class="std std-doc">Kernel Library Overview</span></a></p></li>
+<li><p><a class="reference internal" href="runtime-api.html"><span class="doc std std-doc">Runtime API</span></a></p></li>
+<li><p><a class="reference internal" href="runtime-build-and-cross-compilation.html"><span class="doc std std-doc">Runtime Build and Cross Compilation</span></a></p></li>
+<li><p><a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="doc std std-doc">Runtime Platform Abstraction Layer</span></a></p></li>
+<li><p><a class="reference internal" href="runtime-custom-memory-allocator.html"><span class="doc std std-doc">Custom Memory Allocation</span></a></p></li>
+<li><p><a class="reference internal" href="runtime-error-handling.html"><span class="doc std std-doc">Runtime Error Handling</span></a></p></li>
+<li><p><a class="reference internal" href="sdk-profiling.html"><span class="doc std std-doc">Runtime Profiling</span></a></p></li>
+<li><p><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">Backends and Delegates</span></a></p></li>
+<li><p><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html"><span class="doc std std-doc">Backend Delegate Implementation</span></a></p></li>
+<li><p><a class="reference internal" href="kernel-library-overview.html"><span class="doc std std-doc">Kernel Library Overview</span></a></p></li>
 </ul>
-</section>
-</section>
+</div>
+</div>
 
 
              </article>
@@ -650,7 +650,6 @@ example tool</p></li>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
-         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>

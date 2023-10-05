@@ -6,8 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
-
+  
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
   <title>Export IR Specification &mdash; ExecuTorch  documentation</title>
@@ -41,7 +40,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="OpSet definition" href="ir-ops-set-definition.html" />
-    <link rel="prev" title="Export to ExecuTorch API Reference" href="export-to-executorch-api-reference.html" />
+    <link rel="prev" title="ExecuTorch Runtime API Reference" href="executorch-runtime-api-reference.html" />
     
     
   <!-- Google Tag Manager -->
@@ -263,6 +262,7 @@
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul class="current">
@@ -389,8 +389,8 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <section id="export-ir-specification">
-<h1>Export IR Specification<a class="headerlink" href="#export-ir-specification" title="Permalink to this heading">¶</a></h1>
+  <div class="section" id="export-ir-specification">
+<h1>Export IR Specification<a class="headerlink" href="#export-ir-specification" title="Permalink to this headline">¶</a></h1>
 <p>Export IR is an intermediate representation (IR) for the result of
 <code class="docutils literal notranslate"><span class="pre">torch.export</span></code>. To read more on the details of Export IR, please read this
 <a class="reference external" href="https://pytorch.org/docs/main/export.ir_spec.html">document</a>.</p>
@@ -404,17 +404,17 @@ below, but with additional properties (such as restrictions on operator set or
 metadata) that are meant for a specific purpose.</p>
 <p>The EXIR dialects that currently exist are:</p>
 <ul class="simple">
-<li><p><a class="reference internal" href="#aten-dialect">ATen Dialect</a></p></li>
-<li><p><a class="reference internal" href="#edge-dialect">Edge Dialect</a></p></li>
-<li><p><a class="reference internal" href="#backend-dialect">Backend Dialect</a></p></li>
+<li><p><a class="reference internal" href="#aten-dialect"><span class="std std-doc">ATen Dialect</span></a></p></li>
+<li><p><a class="reference internal" href="#edge-dialect"><span class="std std-doc">Edge Dialect</span></a></p></li>
+<li><p><a class="reference internal" href="#backend-dialect"><span class="std std-doc">Backend Dialect</span></a></p></li>
 </ul>
 <p>These dialects represent stages that a captured program goes through from
 program capture to conversion into an executable format. For example, the
 Executorch compilation process starts from a Python program capture into ATen
 Dialect, then ATen Dialect is converted to Edge Dialect, Edge to Backend, and
 finally to a binary format for execution.</p>
-<section id="aten-dialect">
-<h2>ATen Dialect<a class="headerlink" href="#aten-dialect" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="aten-dialect">
+<h2>ATen Dialect<a class="headerlink" href="#aten-dialect" title="Permalink to this headline">¶</a></h2>
 <p>ATen dialect will be used as the entry point of the ExecuTorch compilation
 pipeline, it is the first time an eager mode Pytorch program becomes an Exported
 IR graph. At this stage, functionalization is performed, removing any tensor
@@ -427,8 +427,8 @@ from adding custom ops in the graph via passes.</p>
 <p>For now, the function of ATen dialect is to further lower to Edge dialect.
 However, in the future we can see this one as the common integration point for
 other export use cases.</p>
-<section id="aten-dialect-properties">
-<h3>ATen Dialect Properties<a class="headerlink" href="#aten-dialect-properties" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="aten-dialect-properties">
+<h3>ATen Dialect Properties<a class="headerlink" href="#aten-dialect-properties" title="Permalink to this headline">¶</a></h3>
 <p>An ATen dialect graph is a valid Export IR graph with the following additional
 properties:</p>
 <ol class="arabic simple">
@@ -449,21 +449,21 @@ types are also Pytree-able because all operators output are pytree-able.</p></li
 promotions and implicit broadcasting of tensors.</p></li>
 <li><p>All tensors memory formats are in <code class="docutils literal notranslate"><span class="pre">torch.contiguous_format</span></code>.</p></li>
 </ol>
-</section>
-<section id="aten-operator-definition">
-<h3>ATen Operator Definition<a class="headerlink" href="#aten-operator-definition" title="Permalink to this heading">¶</a></h3>
-<p>The operator set definition can be found <a class="reference internal" href="ir-ops-set-definition.html"><span class="std std-doc">here</span></a>.</p>
-</section>
-</section>
-<section id="edge-dialect">
-<h2>Edge Dialect<a class="headerlink" href="#edge-dialect" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="aten-operator-definition">
+<h3>ATen Operator Definition<a class="headerlink" href="#aten-operator-definition" title="Permalink to this headline">¶</a></h3>
+<p>The operator set definition can be found <a class="reference internal" href="ir-ops-set-definition.html"><span class="doc std std-doc">here</span></a>.</p>
+</div>
+</div>
+<div class="section" id="edge-dialect">
+<h2>Edge Dialect<a class="headerlink" href="#edge-dialect" title="Permalink to this headline">¶</a></h2>
 <p>This dialect is meant to introduce specializations that are useful for Edge
 devices but not necessarily for general (server) export. However, we still
 withhold specializing further to each different hardware. In other words, we
 don’t want to introduce any new hardware dependent concepts or data; besides
 those already present in users’ original python program.</p>
-<section id="edge-dialect-properties">
-<h3>Edge Dialect Properties<a class="headerlink" href="#edge-dialect-properties" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="edge-dialect-properties">
+<h3>Edge Dialect Properties<a class="headerlink" href="#edge-dialect-properties" title="Permalink to this headline">¶</a></h3>
 <p>An Edge dialect graph is a valid Export IR graph with the following additional
 properties:</p>
 <ol class="arabic simple">
@@ -474,9 +474,9 @@ kernels that only work for certain dtypes to reduce binary size.</p></li>
 <li><p>Input and output of the graph, and as well as to every node, cannot be Scalar. I.e.
 All scalar types (such as float, int) are converted to Tensor.</p></li>
 </ol>
-</section>
-<section id="using-the-edge-dialect">
-<h3>Using the Edge Dialect<a class="headerlink" href="#using-the-edge-dialect" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="using-the-edge-dialect">
+<h3>Using the Edge Dialect<a class="headerlink" href="#using-the-edge-dialect" title="Permalink to this headline">¶</a></h3>
 <p>The Edge dialect is represented with <code class="docutils literal notranslate"><span class="pre">exir.EdgeProgramManager</span></code> Python class in
 memory. This contains one or multiple <code class="docutils literal notranslate"><span class="pre">torch.export.ExportedProgram</span></code>s which
 contain the graph representation of a method.</p>
@@ -498,11 +498,11 @@ contain the graph representation of a method.</p>
 is touching <code class="docutils literal notranslate"><span class="pre">node.target</span></code>, be aware that all of the <code class="docutils literal notranslate"><span class="pre">node.target</span></code> at this stage
 are “Edge ops” (more details below) and not torch ops like in the ATen dialect.
 A tutorial on pass writing can be found
-<a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="std std-doc">here</span></a>. After all these passes are
+<a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="doc std std-doc">here</span></a>. After all these passes are
 executed, <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> will make sure the graph is still valid.</p>
-</section>
-<section id="edge-operators">
-<h3>Edge Operators<a class="headerlink" href="#edge-operators" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="edge-operators">
+<h3>Edge Operators<a class="headerlink" href="#edge-operators" title="Permalink to this headline">¶</a></h3>
 <p>As mentioned before, an edge operator is an ATen core operator with type
 specialization. This means an instance of the edge operator contains a set of
 dtype constraints, that describe all the tensor dtypes supported by both the
@@ -544,18 +544,18 @@ in the Edge op schema. For example we can do:</p>
 </pre></div>
 </div>
 <p>These constraints are helpful for someone who wants to write a custom kernel for this operator. Also inside EXIR, we offer a validator to check if the graph is still complying with these dtype constraints, after custom transformations.</p>
-</section>
-<section id="op-set-wip">
-<h3>Op Set (WIP)<a class="headerlink" href="#op-set-wip" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="op-set-wip">
+<h3>Op Set (WIP)<a class="headerlink" href="#op-set-wip" title="Permalink to this headline">¶</a></h3>
 <p>Check out
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/dialects/edge/edge.yaml">edge.yaml</a>
 for the complete list of operators having dtype constraints specified. We are
 gradually expanding this operator set and targeting to provide dtype constraints
 for all core ATen ops.</p>
-</section>
-</section>
-<section id="backend-dialect">
-<h2>Backend Dialect<a class="headerlink" href="#backend-dialect" title="Permalink to this heading">¶</a></h2>
+</div>
+</div>
+<div class="section" id="backend-dialect">
+<h2>Backend Dialect<a class="headerlink" href="#backend-dialect" title="Permalink to this headline">¶</a></h2>
 <p>Backend dialect is the name we gave to the <code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code> in Edge dialect,
 after optional <strong>target specific</strong> passes. The difference between backend
 dialect and edge dialect is that backend dialect is target-aware and may contain
@@ -581,8 +581,8 @@ kernel for a certain backend. Using backend operator can workaround this issue
 by using the original subgraph as default kernel and keep the graph module
 runnable.</p></li>
 </ol>
-<section id="running-backend-passes">
-<h3>Running Backend Passes<a class="headerlink" href="#running-backend-passes" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="running-backend-passes">
+<h3>Running Backend Passes<a class="headerlink" href="#running-backend-passes" title="Permalink to this headline">¶</a></h3>
 <p>To lower edge ops to backend ops, a pass will perform pattern matching to
 identify the edge ops of interest in the graph, and then replace them with
 equivalent backend operators. There are two APIs to register such passes:</p>
@@ -598,12 +598,12 @@ dialect to <code class="docutils literal notranslate"><span class="pre">Executor
 quantization pattern”, that is, “dequant - some_op - quant”, and fusees this
 pattern into a single operator that is backend specific, that is,
 <code class="docutils literal notranslate"><span class="pre">quantized_decomposed::some_op</span></code>. You can find more details
-<a class="reference internal" href="quantization-custom-quantization.html"><span class="std std-doc">here</span></a>. Another simpler example is
+<a class="reference internal" href="quantization-custom-quantization.html"><span class="doc std std-doc">here</span></a>. Another simpler example is
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/passes/replace_edge_with_backend_pass.py#L20">here</a>
 where we replace sym_size operators with ones that are understood by ExecuTorch.</p>
-</section>
-<section id="backend-dialect-operators">
-<h3>Backend Dialect Operators<a class="headerlink" href="#backend-dialect-operators" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="backend-dialect-operators">
+<h3>Backend Dialect Operators<a class="headerlink" href="#backend-dialect-operators" title="Permalink to this headline">¶</a></h3>
 <p>We provide a decorator <code class="docutils literal notranslate"><span class="pre">bind_pattern_to_op</span></code> to help users easily register their
 backend operators into Export IR. This decorator takes:
 their backend operators into Export IR. This decorator takes:</p>
@@ -710,9 +710,9 @@ quantization.</p>
 </ul>
 </li>
 </ul>
-</section>
-</section>
-</section>
+</div>
+</div>
+</div>
 
 
              </article>
@@ -725,7 +725,7 @@ quantization.</p>
         <a href="ir-ops-set-definition.html" class="btn btn-neutral float-right" title="OpSet definition" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="export-to-executorch-api-reference.html" class="btn btn-neutral" title="Export to ExecuTorch API Reference" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="executorch-runtime-api-reference.html" class="btn btn-neutral" title="ExecuTorch Runtime API Reference" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -797,7 +797,6 @@ quantization.</p>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
-         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>

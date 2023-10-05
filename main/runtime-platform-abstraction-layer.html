@@ -6,8 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
-
+  
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
   <title>Runtime Platform Abstraction Layer (PAL) &mdash; ExecuTorch  documentation</title>
@@ -263,6 +262,7 @@
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -389,8 +389,8 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <section id="runtime-platform-abstraction-layer-pal">
-<h1>Runtime Platform Abstraction Layer (PAL)<a class="headerlink" href="#runtime-platform-abstraction-layer-pal" title="Permalink to this heading">¶</a></h1>
+  <div class="section" id="runtime-platform-abstraction-layer-pal">
+<h1>Runtime Platform Abstraction Layer (PAL)<a class="headerlink" href="#runtime-platform-abstraction-layer-pal" title="Permalink to this headline">¶</a></h1>
 <p>The ExecuTorch <em>Platform Abstraction Layer</em> (PAL) provides a way for execution
 environments to override operations like:</p>
 <ul class="simple">
@@ -400,8 +400,8 @@ environments to override operations like:</p>
 </ul>
 <p>The PAL function declarations are in
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/platform.h</span></code></a>.</p>
-<section id="overriding-the-default-pal">
-<h2>Overriding the default PAL<a class="headerlink" href="#overriding-the-default-pal" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="overriding-the-default-pal">
+<h2>Overriding the default PAL<a class="headerlink" href="#overriding-the-default-pal" title="Permalink to this headline">¶</a></h2>
 <p>The default PAL implementation is in
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/target/Posix.cpp"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/target/Posix.cpp</span></code></a>.
 It uses <code class="docutils literal notranslate"><span class="pre">std::chrono::steady_clock</span></code> for the time, prints log messages to
@@ -415,9 +415,9 @@ in one of your application’s <code class="docutils literal notranslate"><span 
 </ul>
 <p>No build system changes necessary. The default PAL functions are weak symbols,
 so providing your own strong-symbol definition will override them at link time.</p>
-</section>
-<section id="minimal-pal">
-<h2>Minimal PAL<a class="headerlink" href="#minimal-pal" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="minimal-pal">
+<h2>Minimal PAL<a class="headerlink" href="#minimal-pal" title="Permalink to this headline">¶</a></h2>
 <p>If you run into build problems because your system doesn’t support the functions
 called by <code class="docutils literal notranslate"><span class="pre">Posix.cpp</span></code>, you can instead use the no-op minimal PAL at
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/target/Minimal.cpp"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/target/Minimal.cpp</span></code></a>
@@ -425,8 +425,8 @@ by building with the <code class="docutils literal notranslate"><span class="pre
 avoid calling <code class="docutils literal notranslate"><span class="pre">fprintf()</span></code>, <code class="docutils literal notranslate"><span class="pre">std::chrono::steady_clock</span></code>, and anything else that
 <code class="docutils literal notranslate"><span class="pre">Posix.cpp</span></code> uses. But since the <code class="docutils literal notranslate"><span class="pre">Minimal.cpp</span></code> <code class="docutils literal notranslate"><span class="pre">et_pal_*()</span></code> functions are no-ops,
 you will need to override all of them.</p>
-</section>
-</section>
+</div>
+</div>
 
 
              </article>
@@ -496,7 +496,6 @@ you will need to override all of them.</p>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
-         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>

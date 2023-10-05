@@ -6,8 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
-
+  
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
   <title>Backend and Delegate &mdash; ExecuTorch  documentation</title>
@@ -263,6 +262,7 @@
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -389,8 +389,8 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <section id="backend-and-delegate">
-<h1>Backend and Delegate<a class="headerlink" href="#backend-and-delegate" title="Permalink to this heading">¶</a></h1>
+  <div class="section" id="backend-and-delegate">
+<h1>Backend and Delegate<a class="headerlink" href="#backend-and-delegate" title="Permalink to this headline">¶</a></h1>
 <p>Audience: Vendors, Backend Delegate developers, who are interested in integrating their own compilers and hardware as part of ExecuTorch</p>
 <p>Backend delegation is an entry point for backends to process and execute PyTorch
 programs to leverage performance and efficiency benefits of specialized
@@ -417,15 +417,15 @@ the <code class="docutils literal notranslate"><span class="pre">to_edge</span><
 </ul>
 </li>
 </ul>
-<section id="backend-interfaces">
-<h2>Backend interfaces<a class="headerlink" href="#backend-interfaces" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="backend-interfaces">
+<h2>Backend interfaces<a class="headerlink" href="#backend-interfaces" title="Permalink to this headline">¶</a></h2>
 <p>A delegate backend implementation is composed of:</p>
 <ol class="arabic simple">
 <li><p>An ahead-of-time preprocessing interface</p></li>
 <li><p>A runtime initialization and execution interface</p></li>
 </ol>
-<section id="ahead-of-time-preprocessing">
-<h3>Ahead-of-Time Preprocessing<a class="headerlink" href="#ahead-of-time-preprocessing" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="ahead-of-time-preprocessing">
+<h3>Ahead-of-Time Preprocessing<a class="headerlink" href="#ahead-of-time-preprocessing" title="Permalink to this headline">¶</a></h3>
 <p>For the AOT preprocessing, backends are given an edge dialect program,
 a list of compile specs specifying the values needed for compilation, and are
 expected to return a compiled blob, or binary contains the desired program to be
@@ -443,9 +443,9 @@ API looks something like:</p>
 The demo loops through the nodes in the graph module of the <code class="docutils literal notranslate"><span class="pre">edge_program</span></code> and
 serializes the <code class="docutils literal notranslate"><span class="pre">add</span></code>, <code class="docutils literal notranslate"><span class="pre">mul</span></code>, and <code class="docutils literal notranslate"><span class="pre">sin</span></code> instructions into a string, which is later
 parsed and executed at runtime.</p>
-</section>
-<section id="runtime-initialization-and-execution">
-<h3>Runtime Initialization and Execution<a class="headerlink" href="#runtime-initialization-and-execution" title="Permalink to this heading">¶</a></h3>
+</div>
+<div class="section" id="runtime-initialization-and-execution">
+<h3>Runtime Initialization and Execution<a class="headerlink" href="#runtime-initialization-and-execution" title="Permalink to this headline">¶</a></h3>
 <p>During the runtime, the compiled blob from the <code class="docutils literal notranslate"><span class="pre">preprocess</span></code> function will be
 loaded and passed directly to the backend’s custom <code class="docutils literal notranslate"><span class="pre">init</span></code> function. This
 function is responsible for further processing the compiled unit, as well as
@@ -482,10 +482,10 @@ function which will be called when the program is out of its lifespan.</p>
 <span class="p">}</span> <span class="o">//</span> <span class="n">namespace</span>
 </pre></div>
 </div>
-</section>
-</section>
-<section id="error-messages">
-<h2>Error Messages<a class="headerlink" href="#error-messages" title="Permalink to this heading">¶</a></h2>
+</div>
+</div>
+<div class="section" id="error-messages">
+<h2>Error Messages<a class="headerlink" href="#error-messages" title="Permalink to this headline">¶</a></h2>
 <p>If there is an error in the backend, for example, if there is any operator that
 is not supported by the backend, a debug handler can be thrown. It can surface
 back to the Python frontend with the source code information. Below is an
@@ -535,9 +535,9 @@ backend.</p>
 </pre></div>
 </div>
 <p>It’s expected to capture debug handler like <code class="docutils literal notranslate"><span class="pre">instruction</span> <span class="pre">demo::tan_default&lt;debug_handle&gt;1</span> <span class="pre">is</span> <span class="pre">not</span> <span class="pre">supported,</span> <span class="pre">debug</span> <span class="pre">handler</span> <span class="pre">is:</span> <span class="pre">1</span></code></p>
-</section>
-<section id="common-questions">
-<h2>Common Questions<a class="headerlink" href="#common-questions" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="common-questions">
+<h2>Common Questions<a class="headerlink" href="#common-questions" title="Permalink to this headline">¶</a></h2>
 <p><strong>1. How can we get data in backend.preprocess?</strong></p>
 <p>The graph module being preprocessed is a lifted graph, this means that static
 data like weights and biases are supplied as inputs to the graph. However, we
@@ -609,10 +609,10 @@ which backend they should go, option 2 is better.</p>
 </div>
 <p><strong>6. Is there an easy way to write a partitioner?</strong></p>
 <p>We provide some helper partitioners
-<a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="std std-doc">here</span></a> to make it easy to find
+<a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="doc std std-doc">here</span></a> to make it easy to find
 nodes from decomposed operators.</p>
-</section>
-</section>
+</div>
+</div>
 
 
              </article>
@@ -687,7 +687,6 @@ nodes from decomposed operators.</p>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
-         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>

@@ -6,8 +6,7 @@
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
-
+  
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
   <title>Template Tutorial &mdash; ExecuTorch  documentation</title>
@@ -261,6 +260,7 @@
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
@@ -414,8 +414,8 @@
 <p><a class="reference internal" href="#sphx-glr-download-tutorials-template-tutorial-py"><span class="std std-ref">Go to the end</span></a>
 to download the full example code</p>
 </div>
-<section class="sphx-glr-example-title" id="template-tutorial">
-<span id="sphx-glr-tutorials-template-tutorial-py"></span><h1>Template Tutorial<a class="headerlink" href="#template-tutorial" title="Permalink to this heading">¶</a></h1>
+<div class="sphx-glr-example-title section" id="template-tutorial">
+<span id="sphx-glr-tutorials-template-tutorial-py"></span><h1>Template Tutorial<a class="headerlink" href="#template-tutorial" title="Permalink to this headline">¶</a></h1>
 <p><strong>Author:</strong> <a class="reference external" href="https://github.com/username">FirstName LastName</a></p>
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
 <div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
@@ -470,13 +470,13 @@ tutorial to the <cite>beginner_source</cite> directory removing all other tutori
 Then run <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">html</span></code>.</p></li>
 </ul>
 <p>Verify that all outputs were generated correctly in the created HTML.</p>
-<section id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h2>
 <p>Describe Why is this topic important? Add Links to relevant research papers.</p>
 <p>This tutorial walks you through the process of….</p>
-</section>
-<section id="steps">
-<h2>Steps<a class="headerlink" href="#steps" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="steps">
+<h2>Steps<a class="headerlink" href="#steps" title="Permalink to this headline">¶</a></h2>
 <p>Example code (the output below is generated automatically):</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 
@@ -484,21 +484,21 @@ Then run <code class="docutils literal notranslate"><span class="pre">make</span
 <span class="nb">print</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/tensors.html#torch.Tensor" title="torch.Tensor" class="sphx-glr-backref-module-torch sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">x</span></a><span class="p">)</span>
 </pre></div>
 </div>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">tensor</span><span class="p">([[</span><span class="mf">0.5107</span><span class="p">,</span> <span class="mf">0.3983</span><span class="p">,</span> <span class="mf">0.7254</span><span class="p">],</span>
-        <span class="p">[</span><span class="mf">0.3778</span><span class="p">,</span> <span class="mf">0.7832</span><span class="p">,</span> <span class="mf">0.2340</span><span class="p">],</span>
-        <span class="p">[</span><span class="mf">0.8368</span><span class="p">,</span> <span class="mf">0.3373</span><span class="p">,</span> <span class="mf">0.7083</span><span class="p">],</span>
-        <span class="p">[</span><span class="mf">0.7433</span><span class="p">,</span> <span class="mf">0.0686</span><span class="p">,</span> <span class="mf">0.1159</span><span class="p">],</span>
-        <span class="p">[</span><span class="mf">0.2319</span><span class="p">,</span> <span class="mf">0.5840</span><span class="p">,</span> <span class="mf">0.6175</span><span class="p">]])</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">tensor</span><span class="p">([[</span><span class="mf">0.1948</span><span class="p">,</span> <span class="mf">0.2306</span><span class="p">,</span> <span class="mf">0.6943</span><span class="p">],</span>
+        <span class="p">[</span><span class="mf">0.2423</span><span class="p">,</span> <span class="mf">0.4425</span><span class="p">,</span> <span class="mf">0.2831</span><span class="p">],</span>
+        <span class="p">[</span><span class="mf">0.8978</span><span class="p">,</span> <span class="mf">0.3452</span><span class="p">,</span> <span class="mf">0.9195</span><span class="p">],</span>
+        <span class="p">[</span><span class="mf">0.3788</span><span class="p">,</span> <span class="mf">0.3828</span><span class="p">,</span> <span class="mf">0.5424</span><span class="p">],</span>
+        <span class="p">[</span><span class="mf">0.1764</span><span class="p">,</span> <span class="mf">0.2124</span><span class="p">,</span> <span class="mf">0.5019</span><span class="p">]])</span>
 </pre></div>
 </div>
-</section>
-<section id="optional-additional-exercises">
-<h2>(Optional) Additional Exercises<a class="headerlink" href="#optional-additional-exercises" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="optional-additional-exercises">
+<h2>(Optional) Additional Exercises<a class="headerlink" href="#optional-additional-exercises" title="Permalink to this headline">¶</a></h2>
 <p>Add additional practice exercises for users to test their knowledge.
 Example: <a class="reference external" href="https://pytorch.org/tutorials/intermediate/char_rnn_generation_tutorial.html#exercises">NLP from Scratch</a>.</p>
-</section>
-<section id="conclusion">
-<h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this heading">¶</a></h2>
+</div>
+<div class="section" id="conclusion">
+<h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this headline">¶</a></h2>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1"># Summarize the steps and concepts covered. Highlight key takeaways.</span>
 <span class="c1">#</span>
 <span class="c1"># Further Reading</span>
@@ -508,7 +508,7 @@ Example: <a class="reference external" href="https://pytorch.org/tutorials/inter
 <span class="c1"># * Link2</span>
 </pre></div>
 </div>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.020 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.023 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-template-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/5e75fad65c3fb1034bc2a6332118737e/template_tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">template_tutorial.py</span></code></a></p>
@@ -518,8 +518,8 @@ Example: <a class="reference external" href="https://pytorch.org/tutorials/inter
 </div>
 </div>
 <p class="sphx-glr-signature"><a class="reference external" href="https://sphinx-gallery.github.io">Gallery generated by Sphinx-Gallery</a></p>
-</section>
-</section>
+</div>
+</div>
 
 
              </article>
@@ -582,7 +582,6 @@ Example: <a class="reference external" href="https://pytorch.org/tutorials/inter
          <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
          <script src="../_static/jquery.js"></script>
          <script src="../_static/underscore.js"></script>
-         <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="../_static/doctools.js"></script>
          <script src="../_static/clipboard.min.js"></script>
          <script src="../_static/copybutton.js"></script>
