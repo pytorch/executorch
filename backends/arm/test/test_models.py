@@ -25,7 +25,7 @@ class TosaProfile(Enum):
     BI = 0  # Base Inference
     MI = 1  # Main Inference
     MT = 2  # Main Training
-    BI_INT = 3 # integer only BI subset tests (for test graphs)
+    BI_INT = 3  # integer only BI subset tests (for test graphs)
 
 
 class TorchBuilder:
@@ -68,7 +68,7 @@ class TorchBuilder:
         inputs = {
             TosaProfile.BI: (torch.ones(5),),
             TosaProfile.MI: (torch.ones(5),),
-            TosaProfile.BI_INT: (torch.ones(5,dtype=torch.int32),),
+            TosaProfile.BI_INT: (torch.ones(5, dtype=torch.int32),),
         }
 
         def __init__(self):
@@ -80,7 +80,10 @@ class TorchBuilder:
     @register_test
     class simple_add_2(torch.nn.Module):
         inputs = {
-            TosaProfile.BI_INT: (torch.ones(5,dtype=torch.int32),torch.ones(5,dtype=torch.int32),),
+            TosaProfile.BI_INT: (
+                torch.ones(5, dtype=torch.int32),
+                torch.ones(5, dtype=torch.int32),
+            ),
         }
 
         def __init__(self):

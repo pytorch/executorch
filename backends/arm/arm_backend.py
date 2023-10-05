@@ -12,9 +12,9 @@
 import logging
 import operator
 import os
+import struct
 import subprocess
 import tempfile
-import struct
 from typing import final, List
 
 import numpy as np
@@ -176,8 +176,8 @@ def vela_compile(tosa_fb):
                 block_name = bytes(key, "utf8")[:15]
                 block_name = block_name + b"\x00" * (16 - len(block_name))
 
-                block_data = b''
-                if key in ( "input_shape", "output_shape" ):
+                block_data = b""
+                if key in ("input_shape", "output_shape"):
                     inputs = data[key]
                     # Encode a struct of int len; and one or more int x,y,z,w shape;
                     input_struct = struct.pack("<i", len(inputs))
@@ -186,7 +186,7 @@ def vela_compile(tosa_fb):
                         inp_pad = inp.tolist() + [0] * (4 - len(inp))
                         input_struct = input_struct + struct.pack("<iiii", *inp_pad)
                     block_data = input_struct
-                elif key in ( "input_offset", "output_offset" ):
+                elif key in ("input_offset", "output_offset"):
                     inputs = data[key]
                     offset_struct = struct.pack("<i", len(inputs))
                     for inp in inputs:
