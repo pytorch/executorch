@@ -189,6 +189,7 @@ Topics in this section will help you get started with ExecuTorch.
    running-a-model-cpp-tutorial
    build-run-xtensa
    tutorials/sdk-integration-tutorial
+   executorch-arm-delegate-tutorial
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
