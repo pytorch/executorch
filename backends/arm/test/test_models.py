@@ -78,6 +78,18 @@ class TorchBuilder:
             return x + x
 
     @register_test
+    class simple_add_2(torch.nn.Module):
+        inputs = {
+            TosaProfile.BI_INT: (torch.ones(5,dtype=torch.int32),torch.ones(5,dtype=torch.int32),),
+        }
+
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, x, y):
+            return x + y
+
+    @register_test
     class simple_add_broadcast(torch.nn.Module):
         inputs = {
             TosaProfile.BI: (

@@ -33,7 +33,7 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
 )
 
-EXAMPLE_TEST_LIST = ["simple_add"]
+EXAMPLE_TEST_LIST = ["simple_add", "simple_add_2"]
 
 #
 #
