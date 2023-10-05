@@ -14,27 +14,11 @@ from executorch.exir.dialects.edge.arg.type import ArgType
 
 
 class ArgMode(Enum):
-    DEFAULT = 0
-    ONES = 1
-    RANDOM = 2
+    ONES = 0
+    RANDOM = 1
 
 
 class BaseArg:
-    DEFAULT_BOOL_SCALAR = True
-    DEFAULT_UINT_SCALAR = 2
-    DEFAULT_INT_SCALAR = -2
-    DEFAULT_FLOAT_SCALAR = -0.5
-
-    DEFAULT_BOOL_TENSOR = [[True, False], [False, True]]
-    DEFAULT_UINT_TENSOR = [[0, 1], [2, 3]]
-    DEFAULT_INT_TENSOR = [[1, -2], [0, 4]]
-    DEFAULT_FLOAT_TENSOR = [[1.3125, -2.625], [0.0, 4.875]]
-
-    DEFAULT_NONZERO_BOOL_TENSOR = [[True, True], [True, True]]
-    DEFAULT_NONZERO_UINT_TENSOR = [[1, 2], [3, 4]]
-    DEFAULT_NONZERO_INT_TENSOR = [[1, -2], [3, -4]]
-    DEFAULT_NONZERO_FLOAT_TENSOR = [[1.3125, -2.625], [3.5, 4.875]]
-
     def __init__(
         self,
         argtype,
@@ -63,7 +47,7 @@ class BaseArg:
         self.nonneg = nonneg
         self.bounded = bounded
 
-        self._mode: ArgMode = ArgMode.DEFAULT
+        self._mode: ArgMode = ArgMode.ONES
         self._kw: bool = False
         self._out: bool = False
 
@@ -133,48 +117,6 @@ class BaseArg:
     def get_random_scalar(self, dtype):
         return self.get_random_tensor([], dtype).item()
 
-    def get_default_tensor(self, dtype):
-        if self.nonzero:
-            if dtype == torch.bool:
-                return torch.tensor(self.DEFAULT_NONZERO_BOOL_TENSOR, dtype=dtype)
-            elif dtype == torch.uint8:
-                return torch.tensor(self.DEFAULT_NONZERO_UINT_TENSOR, dtype=dtype)
-            elif dtype in common_dtype.integral_types():
-                t = torch.tensor(self.DEFAULT_NONZERO_INT_TENSOR, dtype=dtype)
-            elif dtype in common_dtype.floating_types():
-                t = torch.tensor(self.DEFAULT_NONZERO_FLOAT_TENSOR, dtype=dtype)
-            else:
-                raise ValueError(f"Unsupported Dtype: {dtype}")
-        else:
-            if dtype == torch.bool:
-                return torch.tensor(self.DEFAULT_BOOL_TENSOR, dtype=dtype)
-            elif dtype == torch.uint8:
-                return torch.tensor(self.DEFAULT_UINT_TENSOR, dtype=dtype)
-            elif dtype in common_dtype.integral_types():
-                t = torch.tensor(self.DEFAULT_INT_TENSOR, dtype=dtype)
-            elif dtype in common_dtype.floating_types():
-                t = torch.tensor(self.DEFAULT_FLOAT_TENSOR, dtype=dtype)
-            else:
-                raise ValueError(f"Unsupported Dtype: {dtype}")
-        if self.nonneg or self.bounded:
-            t = torch.abs(t)
-        return t
-
-    def get_default_scalar(self, dtype):
-        if dtype == torch.bool:
-            return self.DEFAULT_BOOL_SCALAR
-        elif dtype == torch.uint8:
-            return self.DEFAULT_UINT_SCALAR
-        elif dtype in common_dtype.integral_types():
-            t = self.DEFAULT_INT_SCALAR
-        elif dtype in common_dtype.floating_types():
-            t = self.DEFAULT_FLOAT_SCALAR
-        else:
-            raise ValueError(f"Unsupported Dtype: {dtype}")
-        if self.nonneg or self.bounded:
-            t = abs(t)
-        return t
-
     def get_converted_scalar(self, value, dtype):
         if dtype == torch.bool:
             return bool(value)
@@ -193,7 +135,7 @@ class BaseArg:
         elif self._mode == ArgMode.ONES:
             return self.get_converted_scalar(1, dtype)
         else:
-            return self.get_default_scalar(dtype)
+            raise ValueError(f"Unsupported Mode: {self._mode}")
 
     def get_tensor_val_with_dtype(self, dtype):
         if self.value_given:
@@ -207,7 +149,7 @@ class BaseArg:
         elif self.size_given:
             return torch.full(self.size, self.fill, dtype=dtype)
         else:
-            return self.get_default_tensor(dtype)
+            raise ValueError(f"Unsupported Mode: {self._mode}")
 
     def get_val_with_dtype(self, dtype):
         if dtype is None:
