@@ -6,13 +6,12 @@
 import json
 import os
 import subprocess
-import tempfile
 
 import executorch.exir as exir
 
 import numpy as np
 from executorch.backends.arm.arm_backend import ArmPartitioner
-from executorch.backends.arm.test.test_models import TestList, TosaProfile
+from executorch.backends.arm.test.test_models import TosaProfile
 from executorch.backends.arm.test.test_tosa import prepare_model_and_ref
 
 from executorch.exir.backend.backend_api import to_backend
@@ -20,8 +19,6 @@ from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass 
     DuplicateDequantNodePass,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-
-from executorch.exir.dialects._ops import ops as exir_ops
 
 # Assumes you have these two tools on your path
 TOSA_REF_MODEL_PATH = "tosa_reference_model"
@@ -79,6 +76,7 @@ def tosa_ref_capture_inputs(
         else:
             np.save(file_path, data, allow_pickle=False)
 
+
 #
 # Minimal sequence to take a model through the ArmPartitioner and produce
 # both TOSA intermediate output, and an Ethos-U55 command stream within
@@ -93,9 +91,9 @@ def run_test(op, profile=TosaProfile.MI, output_path="./ethosout/"):
     #
     print(f"\n\033[96mProcessing:::{op}\033[0m")
     print(f"\033[96mDebug output path for intermediates: {output_path}\033[0m")
-    
+
     os.makedirs(output_path, exist_ok=True)
-    
+
     # Debug output for TORCH
     TORCH_OUT_PATH = os.path.join(output_path, op, "torch", "")
     os.makedirs(TORCH_OUT_PATH, exist_ok=True)
@@ -111,13 +109,15 @@ def run_test(op, profile=TosaProfile.MI, output_path="./ethosout/"):
         return
 
     print(f"  Model: {op}\n  Inputs: {inputs}\n  Outputs: {torch_output}")
-    
+
     # Export model
     model_capture = exir.capture(model, inputs, _CAPTURE_CONFIG)
     model_edge = model_capture.to_edge(_EDGE_COMPILE_CONFIG)
 
     # Partition with ArmBackend
-    ArmPartitioner.compile_spec = [CompileSpec("debug_tosa_path", bytes(TOSA_OUT_PATH, "utf8"))]
+    ArmPartitioner.compile_spec = [
+        CompileSpec("debug_tosa_path", bytes(TOSA_OUT_PATH, "utf8"))
+    ]
     model_edge.exported_program = to_backend(
         model_edge.transform(DuplicateDequantNodePass()).exported_program,
         ArmPartitioner,
@@ -134,7 +134,7 @@ def run_test(op, profile=TosaProfile.MI, output_path="./ethosout/"):
     # the intermediate output on the tosa_reference_model.
     #   This can ensure the compilation flow is working correctly as part of
     # a development loop, ahead of running the example on hardware.
-        
+
     # Save inputs for TOSA reference run
     tosa_ref_capture_inputs(model_edge, inputs, TOSA_OUT_PATH, {}, {}, profile)
 
@@ -195,7 +195,7 @@ def run_test(op, profile=TosaProfile.MI, output_path="./ethosout/"):
         print(torch_output)
         print("\033[0m")
 
-    if profile in ( TosaProfile.BI,  TosaProfile.BI_INT ):
+    if profile in (TosaProfile.BI, TosaProfile.BI_INT):
         cmd_vela = "cd " + TOSA_OUT_PATH + "; " + VELA_COMPILER_PATH + " ./output.tosa"
         try:
             subprocess.run([cmd_vela], shell=True, check=True)
@@ -206,7 +206,7 @@ def run_test(op, profile=TosaProfile.MI, output_path="./ethosout/"):
         print("\033[96m" + "Skipping Vela test on non-BI profile." + "\033[0m")
 
 
-# Temp systest mode for running all models against both inference profiles
+# systest mode for running all models against both inference profiles
 if __name__ == "__main__":
     for op in EXAMPLE_TEST_LIST:
         run_test(op, profile=TosaProfile.BI_INT)
