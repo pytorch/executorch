@@ -100,4 +100,9 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
   target_link_libraries(xnn_executor_runner ${xnn_executor_runner_libs})
   target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
+
+  add_library(xnn_executor_runner_lib STATIC ${_xnn_executor_runner__srcs})
+  target_link_libraries(xnn_executor_runner_lib ${xnn_executor_runner_libs})
+  target_compile_options(xnn_executor_runner_lib
+                         PUBLIC ${_common_compile_options})
 endif()

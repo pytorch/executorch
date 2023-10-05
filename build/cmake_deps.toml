@@ -77,6 +77,17 @@ filters = [
   ".fbs$",
 ]
 
+[targets.print_evalue]
+buck_targets = [
+  "//extension/evalue_util:print_evalue",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+]
+
 [targets.size_test]
 buck_targets = [
   "//test:size_test",

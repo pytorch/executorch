@@ -312,6 +312,11 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 
+# Add Android demo app JNI subdirectory
+if(EXECUTORCH_BUILD_ANDROID_DEMO_APP_JNI)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/demo-apps/android/jni)
+endif()
+
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
        "Build the extension/data_loader directory" OFF)
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
