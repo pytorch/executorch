@@ -58,6 +58,10 @@ cd ../../..
 
 Configure the libraries for Android:
 
+1. Configure a library with XNNPACK backend only
+
+Note: This demo app and tutorial is only validated with arm64-v8a [ABI](https://developer.android.com/ndk/guides/abis).
+
 ```bash
 rm -rf cmake-out && mkdir cmake-out && cd cmake-out
 cmake .. \
@@ -68,6 +72,23 @@ cmake .. \
     -DEXECUTORCH_BUILD_ANDROID_DEMO_APP_JNI=ON \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_FLATC=OFF \
+    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+```
+
+2. Configure a library with XNNPACK and Qualcomm HTP backend
+
+```bash
+rm -rf cmake-out && mkdir cmake-out && cd cmake-out
+cmake .. \
+    -DCMAKE_TOOLCHAIN_FILE=/path/to/ndk/build/cmake/android.toolchain.cmake \
+    -DANDROID_ABI=arm64-v8a \
+    -DBUCK2=/tmp/buck2 \
+    -DFLATC_EXECUTABLE=$(realpath ../third-party/flatbuffers/cmake-out/flatc) \
+    -DEXECUTORCH_BUILD_ANDROID_DEMO_APP_JNI=ON \
+    -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DEXECUTORCH_BUILD_FLATC=OFF \
+    -DEXECUTORCH_BUILD_QNN=ON \
+    -DQNN_SDK_ROOT=/path/to/qnn/sdk \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
 ```
 
@@ -104,6 +125,8 @@ cd ..
 
 ## Model Download and Bundling
 
+Note: Please refer to [XNNPACK backend](../../../backend/README.md) and [Qualcomm backend](../../../../backends/qualcomm/README.md) for the full export tutorial on backends.
+
 1. Export a DeepLab v3 model and Inception v4 model backed with XNNPACK delegate and bundle it with
    the app:
 
@@ -118,4 +141,4 @@ cp dl3_xnnpack_fp32.pte ic4_xnnpack_fp32.pte examples/android_demo_apps/ExecuTor
 
 1. Open the project `examples/android_demo_apps/ExecuTorchDemo` with Android Studio.
 
-2. Run the app (^R)
+2. [Run](https://developer.android.com/studio/run) the app (^R)
