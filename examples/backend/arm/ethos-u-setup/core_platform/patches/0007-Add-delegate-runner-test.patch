@@ -1,4 +1,4 @@
-From d9d89c7a1d45df7c7aab3142c47f1ff797e531fe Mon Sep 17 00:00:00 2001
+From 8201e36f90fed6e80fea7021ec4bad325d329bae Mon Sep 17 00:00:00 2001
 From: Rob Elliott <robert.elliott@arm.com>
 Date: Wed, 4 Oct 2023 13:31:33 +0000
 Subject: [PATCH] Add delegate runner test
@@ -13,10 +13,10 @@ Signed-off-by: Rob Elliott <robert.elliott@arm.com>
  create mode 100644 applications/executorch_tests/runner_delegate.cpp
 
 diff --git a/applications/executorch_tests/CMakeLists.txt b/applications/executorch_tests/CMakeLists.txt
-index c95d53e..1118469 100644
+index c95d53e..835f824 100644
 --- a/applications/executorch_tests/CMakeLists.txt
 +++ b/applications/executorch_tests/CMakeLists.txt
-@@ -28,22 +28,26 @@ set(ET_DIR_PATH "<..>/executorch" CACHE PATH "Path to ExecuTorch dir")
+@@ -28,20 +28,24 @@ set(ET_DIR_PATH "<..>/executorch" CACHE PATH "Path to ExecuTorch dir")
  set(ET_BUILD_DIR_PATH "${ET_DIR_PATH}/cmake-out" CACHE PATH "Path to ExecuTorch build dir")
  set(ET_INCLUDE_PATH "${ET_DIR_PATH}/.." CACHE PATH "Path to ExecuTorch headers")
  set(ET_PTE_FILE_PATH "${ET_PTE_FILE_PATH}" CACHE PATH "Path to ExecuTorch model pte")
@@ -37,12 +37,10 @@ index c95d53e..1118469 100644
  message("**********************")
  
  set(LIB_ET_RUNTIME "${ET_BUILD_DIR_PATH}/libexecutorch.a")
++set(LIB_ET_ETHOS "${ET_BUILD_DIR_PATH}/backends/arm/libexecutorch_delegate_ethos_u.a")
  set(LIB_ET_OP_REGISTRATION "${ET_BUILD_DIR_PATH}/kernels/portable/libportable_ops_lib.a")
  set(LIB_ET_OP_KERNELS "${ET_BUILD_DIR_PATH}/kernels/portable/libportable_kernels.a")
-+set(LIB_ET_ETHOS "${ET_BUILD_DIR_PATH}/backends/arm/libethos_u.a")
  
- add_custom_target(
-     gen_model_header ALL
 @@ -54,8 +58,11 @@ add_custom_command(
      OUTPUT
          ${CMAKE_CURRENT_BINARY_DIR}/fake_dep
