@@ -109,36 +109,20 @@ class ArmBackend final : public PyTorchBackendInterface {
         handles.scratch_data,
         handles.scratch_data_size);
 
-    printf("Processed inputs %d\n", handles.input_shape.size());
-    for (int i = 0; i < handles.input_shape.size(); i++)
-      printf(
-          "  %d %d %d %d\n",
-          handles.input_shape[i][0],
-          handles.input_shape[i][1],
-          handles.input_shape[i][2],
-          handles.input_shape[i][3]);
-
-    // Input data from EValue
-    const char* input_addr = handles.scratch_data + handles.input_offset;
-    printf(
-        "accessing ethos input data at %p, offset %d\n",
-        handles.scratch_data,
-        handles.input_offset);
-    // Inputs are in the index first
-    int input_index =
-        0; // handles.input_shape.size(); TODO: loop this for multiple inputs
-    printf("writing input to EValue input index %d\n", input_index);
-
-    // Process input EValue into scratch
-    // TODO: optimise into direct write for compatible layouts
-    //       is this contiguous for a memcpy of e_size*numel?
-    int* input_address = (int*)input_addr;
-    auto tensor_in = args[input_index]->toTensor();
-    for (int j = 0; j < tensor_in.numel(); j++) {
-      // TODO: extend beyond 4 byte tensors
-      input_address[j] = tensor_in.mutable_data_ptr<int>()[j];
+    // Write inputs into SRAM scratch area defined by Vela
+    for (int i = 0; i < handles.input_shape.size(); i++) {
+      const char* input_addr = handles.scratch_data + handles.input_offset[i];
+      // Process input EValue into scratch
+      // TODO: optimise into direct write for compatible, contig layout
+      int* input_address = (int*)input_addr;
+      auto tensor_in = args[i]->toTensor();
+      for (int j = 0; j < tensor_in.numel(); j++) {
+        // TODO: extend beyond 4 byte tensors
+        input_address[j] = tensor_in.mutable_data_ptr<int>()[j];
+      }
     }
 
+#if 0
     // TMP emit scratch
     printf("Scratch after setup:\n");
     for (int i = 0; i < handles.scratch_data_size; i++) {
@@ -148,6 +132,7 @@ class ArmBackend final : public PyTorchBackendInterface {
     }
     printf("\n");
     // END TMP emit scratch
+#endif
 
     // Allocate driver handle and synchronously invoke driver
     ethosu_driver* drv = ethosu_reserve_driver();
@@ -173,6 +158,7 @@ class ArmBackend final : public PyTorchBackendInterface {
       return Error::InvalidProgram;
     }
 
+#if 0
     // TMP emit scratch
     printf("Scratch after:\n");
     for (int i = 0; i < handles.scratch_data_size; i++) {
@@ -181,29 +167,16 @@ class ArmBackend final : public PyTorchBackendInterface {
         printf("\n");
     }
     printf("\n");
-
-    printf("Processed outputs %d\n", handles.output_shape.size());
-    for (int i = 0; i < handles.output_shape.size(); i++)
-      printf(
-          "  %d %d %d %d\n",
-          handles.output_shape[i][0],
-          handles.output_shape[i][1],
-          handles.output_shape[i][2],
-          handles.output_shape[i][3]);
+#endif
 
     // output data from Ethos U
-    const char* output_addr = handles.scratch_data + handles.output_offset;
-    printf(
-        "accessing ethos output data at %p, offset %d\n",
-        handles.scratch_data,
-        handles.output_offset);
+    // We only handle one output at the moment
+    const char* output_addr = handles.scratch_data + handles.output_offset[0];
     // Outputs are in the index immediately after inputs
     int output_index = handles.input_shape.size();
-    printf("writing output to EValue output index %d\n", output_index);
 
     // Process results into EValue storage
-    // TODO: optimise into direct write for compatible layouts
-    //       is this contiguous for a memcpy of e_size*numel?
+    // TODO: optimise into direct write for compatible, contig layout
     int* output_address = (int*)output_addr;
     auto tensor_out = args[output_index]->toTensor();
     for (int j = 0; j < tensor_out.numel(); j++) {
@@ -226,9 +199,9 @@ class ArmBackend final : public PyTorchBackendInterface {
     size_t weight_data_size;
     const char* scratch_data;
     size_t scratch_data_size;
-    size_t input_offset;
+    vector<size_t> input_offset;
     vector<vector<int>> input_shape;
-    size_t output_offset;
+    vector<size_t> output_offset;
     vector<vector<int>> output_shape;
   } vela_handles;
 
@@ -243,6 +216,11 @@ class ArmBackend final : public PyTorchBackendInterface {
     int count;
     int shape[][4];
   } vela_shapes;
+
+  typedef struct {
+    int count;
+    int offsets[];
+  } vela_offsets;
 
   static int next_mul_16(int n) {
     return ((n - 1) | 15) + 1;
@@ -285,12 +263,20 @@ class ArmBackend final : public PyTorchBackendInterface {
         h->scratch_data = b->data;
         h->scratch_data_size = b->size;
       }
+
       if (!strncmp(b->name, "input_offset", strlen("input_offset"))) {
-        h->input_offset = ((int*)b->data)[0];
+        vela_offsets* offsets = (vela_offsets*)b->data;
+        for (int i = 0; i < offsets->count; i++) {
+          h->input_offset.push_back(offsets->offsets[i]);
+        }
       }
       if (!strncmp(b->name, "output_offset", strlen("output_offset"))) {
-        h->output_offset = ((int*)b->data)[0];
+        vela_offsets* offsets = (vela_offsets*)b->data;
+        for (int i = 0; i < offsets->count; i++) {
+          h->output_offset.push_back(offsets->offsets[i]);
+        }
       }
+
       if (!strncmp(b->name, "input_shape", strlen("input_shape"))) {
         vela_shapes* shapes = (vela_shapes*)b->data;
         for (int i = 0; i < shapes->count; i++) {
