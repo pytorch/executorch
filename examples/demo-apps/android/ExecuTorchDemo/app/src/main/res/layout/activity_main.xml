@@ -10,7 +10,7 @@
         android:id="@+id/imageView"
         android:layout_width="388dp"
         android:layout_height="405dp"
-        android:layout_marginTop="60dp"
+        android:layout_marginTop="30dp"
         android:contentDescription="@string/image_view"
         app:layout_constraintDimensionRatio="1:1"
         app:layout_constraintEnd_toEndOf="parent"
@@ -34,7 +34,7 @@
     <ProgressBar
         android:id="@+id/progressBar"
         android:visibility="invisible"
-        android:layout_marginTop="20dp"
+        android:layout_marginTop="10dp"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         app:layout_constraintEnd_toEndOf="parent"
@@ -46,7 +46,7 @@
         android:id="@+id/restartButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
+        android:layout_marginTop="10dp"
         android:text="@string/restart"
         android:textAllCaps="false"
         app:layout_constraintEnd_toEndOf="parent"
@@ -55,16 +55,28 @@
         app:layout_constraintTop_toBottomOf="@+id/segmentButton" />
 
     <Button
-        android:id="@+id/classificationDemoButton"
+        android:id="@+id/switchBackendButton"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
-        android:text="@string/classification_demo"
+        android:layout_marginTop="10dp"
+        android:text="@string/switch_backend"
         android:textAllCaps="false"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintHorizontal_bias="0.498"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/restartButton" />
+
+    <Button
+        android:id="@+id/classificationDemoButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="@string/classification_demo"
+        android:textAllCaps="false"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.498"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/switchBackendButton" />
 
 
 </androidx.constraintlayout.widget.ConstraintLayout>

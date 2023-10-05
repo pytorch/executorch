@@ -33,7 +33,7 @@ public class ClassificationActivity extends Activity implements Runnable {
     Bitmap bitmap = null;
     try {
       bitmap = BitmapFactory.decodeStream(getAssets().open(file));
-      bitmap = Bitmap.createScaledBitmap(bitmap, 224, 224, true);
+      bitmap = Bitmap.createScaledBitmap(bitmap, 299, 299, true);
     } catch (IOException e) {
       Log.e("Classification", "Error reading assets", e);
       finish();
@@ -50,8 +50,8 @@ public class ClassificationActivity extends Activity implements Runnable {
     Module module = null;
     try {
       bitmap = BitmapFactory.decodeStream(getAssets().open("corgi2.jpg"));
-      bitmap = Bitmap.createScaledBitmap(bitmap, 224, 224, true);
-      module = Module.load(MainActivity.assetFilePath(this, "ic3_xnnpack_fp32.pte"));
+      bitmap = Bitmap.createScaledBitmap(bitmap, 299, 299, true);
+      module = Module.load(MainActivity.assetFilePath(this, "ic4_qnn.pte"));
     } catch (IOException e) {
       Log.e("PytorchHelloWorld", "Error reading assets", e);
       finish();

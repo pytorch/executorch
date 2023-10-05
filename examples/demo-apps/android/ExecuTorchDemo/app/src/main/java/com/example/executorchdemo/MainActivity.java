@@ -22,6 +22,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
+import android.widget.Toast;
 import com.example.executorchdemo.executor.EValue;
 import com.example.executorchdemo.executor.Module;
 import com.example.executorchdemo.executor.Tensor;
@@ -39,6 +40,7 @@ public class MainActivity extends Activity implements Runnable {
   private ProgressBar mProgressBar;
   private Bitmap mBitmap = null;
   private Module mModule = null;
+  private String mBackend = "xnnpack";
   private String mImagename = "corgi.jpeg";
 
   // see http://host.robots.ox.ac.uk:8080/pascal/VOC/voc2007/segexamples/index.html for the list of
@@ -99,8 +101,13 @@ public class MainActivity extends Activity implements Runnable {
     buttonRestart.setOnClickListener(
         new View.OnClickListener() {
           public void onClick(View v) {
-            if (Objects.equals(mImagename, "corgi.jpeg")) mImagename = "dog.jpg";
-            else mImagename = "deeplab.jpg";
+            if (Objects.equals(mImagename, "corgi.jpeg")) {
+              mImagename = "dog.jpg";
+            } else if (Objects.equals(mImagename, "dog.jpg")) {
+              mImagename = "deeplab.jpg";
+            } else {
+              mImagename = "corgi.jpeg";
+            }
             try {
               mBitmap = BitmapFactory.decodeStream(getAssets().open(mImagename));
               mBitmap = Bitmap.createScaledBitmap(mBitmap, 224, 224, true);
@@ -109,6 +116,39 @@ public class MainActivity extends Activity implements Runnable {
               Log.e("ImageSegmentation", "Error reading assets", e);
               finish();
             }
+          }
+        });
+
+    final Button buttonSwitchBackend = findViewById(R.id.switchBackendButton);
+    buttonSwitchBackend.setText("Use Qualcomm backend");
+    buttonSwitchBackend.setOnClickListener(
+        new View.OnClickListener() {
+          public void onClick(View v) {
+            try {
+              if (Objects.equals(mBackend, "xnnpack")) {
+                mBackend = "qnn";
+                mModule.destroy();
+                mModule =
+                    Module.load(
+                        MainActivity.assetFilePath(getApplicationContext(), "dlv3_qnn.pte"));
+                buttonSwitchBackend.setText("Use XNNPACK backend");
+              } else {
+                mBackend = "xnnpack";
+                mModule.destroy();
+                mModule =
+                    Module.load(
+                        MainActivity.assetFilePath(
+                            getApplicationContext(), "dl3_xnnpack_fp32.pte"));
+                buttonSwitchBackend.setText("Use Qualcomm backend");
+              }
+            } catch (IOException e) {
+              Log.e("ImageSegmentation", "Error reading assets", e);
+              finish();
+            }
+            Toast toast =
+                Toast.makeText(getApplicationContext(), "Using: " + mBackend, Toast.LENGTH_SHORT);
+            toast.setMargin(50, 50);
+            toast.show();
           }
         });
 
@@ -203,6 +243,14 @@ public class MainActivity extends Activity implements Runnable {
             mButtonSegment.setEnabled(true);
             mButtonSegment.setText("segment");
             mProgressBar.setVisibility(ProgressBar.INVISIBLE);
+
+            Toast toast =
+                Toast.makeText(
+                    getApplicationContext(),
+                    "Inference time (ms): " + inferenceTime,
+                    Toast.LENGTH_SHORT);
+            toast.setMargin(50, 50);
+            toast.show();
           }
         });
   }

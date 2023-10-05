@@ -8,4 +8,5 @@
     <string name="live">Live</string>
     <string name="classification_demo">Classification demo</string>
     <string name="segmentation_demo">Segmentation Demo</string>
+    <string name="switch_backend">Switch backend</string>
 </resources>
