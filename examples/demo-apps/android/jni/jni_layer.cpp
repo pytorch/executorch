@@ -185,6 +185,9 @@ class JEValue : public facebook::jni::JavaClass<JEValue> {
       auto numel = 1;
       for (int i = 0; i < rank; i++) {
         shapeVec.push_back(shapeArr[i]);
+      }
+      for (int i = rank - 1; i >= 0; --i) {
+        strides[i] = numel;
         numel *= shapeArr[i];
       }
       JNIEnv* jni = facebook::jni::Environment::current();
@@ -318,15 +321,12 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
           jinputs) {
     size_t n = jinputs->size();
     auto kDimOrder = std::vector<uint8_t>({0, 1, 2, 3});
-    constexpr int32_t kChannels = 3;
-    constexpr int32_t kHeight = 224;
-    constexpr int32_t kWidth = 224;
-    auto kStrides = std::vector<int32_t>(
-        {kChannels * kHeight * kWidth, kHeight * kWidth, kWidth, 1});
+    // strides will be filled by JEValueToTensorImpl
+    auto strides = std::vector<int32_t>({1, 1, 1, 1});
     std::vector<exec_aten::SizesType> shapeVec;
     // TODO: Inline the function
     auto tensor_impl = JEValue::JEValueToTensorImpl(
-        jinputs->getElement(0), shapeVec, kDimOrder, kStrides);
+        jinputs->getElement(0), shapeVec, kDimOrder, strides);
     EValue atEValue = EValue(exec_aten::Tensor(&tensor_impl));
     Error set_input_status = method_->set_input(atEValue, 0);
     ET_CHECK(set_input_status == Error::Ok);
