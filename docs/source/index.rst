@@ -74,6 +74,7 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    intro-overview
+   concepts
    intro-how-it-works
 
 .. toctree::
