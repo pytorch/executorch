@@ -36,6 +36,8 @@ TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
 TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
 TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
 
+BUILD_DOCS=1
+
 # Copy requirements-lintrunner.txt from root to here
 cp ../../requirements-lintrunner.txt ./
 
@@ -51,6 +53,7 @@ docker build \
   --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}.${NIGHTLY}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   --build-arg "LINTRUNNER=${LINTRUNNER}" \
+  --build-arg "BUILD_DOCS=${BUILD_DOCS}" \
   -f "${OS}"/Dockerfile \
   "$@" \
   .

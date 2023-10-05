@@ -100,6 +100,7 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    export-to-executorch-api-reference
+   executorch-runtime-api-reference
 
 .. toctree::
    :glob:

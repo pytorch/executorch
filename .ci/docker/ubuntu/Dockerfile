@@ -24,6 +24,11 @@ RUN bash ./install_buck.sh && rm install_buck.sh
 COPY ./common/install_user.sh install_user.sh
 RUN bash ./install_user.sh && rm install_user.sh
 
+# Install docs
+ARG BUILD_DOCS
+COPY ./common/install_docs_reqs.sh install_docs_reqs.sh
+RUN bash ./install_docs_reqs.sh && rm install_docs_reqs.sh
+
 # Install conda and other dependencies
 ARG MINICONDA_VERSION
 ARG PYTHON_VERSION
