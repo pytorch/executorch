@@ -7,12 +7,12 @@ It also includes a list of modules, from a simple `Add` to a full model like `Mo
 ## Directory structure
 ```bash
 examples
+├── apple/ios                         # Contains iOS demo apps
 |── backend                           # Contains examples for exporting delegate models and running them using custom executor runners
 ├── custom_ops                        # Contains examples to register custom operators into PyTorch as well as register its kernels into ExecuTorch runtime
 ├── example_quantizer_and_delegate    # Contains examples to to fully lowered a MobileNetV2 model to the example backend with an example quantizer
 ├── executor_runner                   # This is an example C++ wrapper around the ET runtime
 ├── export                            # Python helper scripts to illustrate export workflow
-├── ios_demo_apps                     # Contains iOS demo apps
 ├── models                            # Contains a set of simple to PyTorch models
 ├── quantization                      # Contains examples of quantization workflow
 ├── arm                               # Contains examples of the Arm TOSA and Ethos-U NPU flows
