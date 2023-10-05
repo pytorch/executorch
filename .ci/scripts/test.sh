@@ -53,6 +53,12 @@ build_cmake_executor_runner() {
 }
 
 test_model() {
+  if [[ "${MODEL_NAME}" == "llama2" ]]; then
+    cd examples/third-party/llama
+    pip install -e .
+    cd ../../..
+  fi
+
   "${PYTHON_EXECUTABLE}" -m examples.export.export_example --model_name="${MODEL_NAME}"
 
   # Run test model
