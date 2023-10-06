@@ -1,0 +1,26 @@
+From 3359f94fc57ac76b3f5995d4453975251b56ae71 Mon Sep 17 00:00:00 2001
+From: Digant Desai <digantdesai@meta.com>
+Date: Thu, 28 Sep 2023 18:05:03 -0700
+Subject: [PATCH 2/6] [Executorch][local-patch] regress cmake version from 3.21
+ --> 3.20
+
+---
+ targets/corstone-300/CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/targets/corstone-300/CMakeLists.txt b/targets/corstone-300/CMakeLists.txt
+index 62205bb..7dda8a1 100644
+--- a/targets/corstone-300/CMakeLists.txt
++++ b/targets/corstone-300/CMakeLists.txt
+@@ -42,7 +42,7 @@ set(MEMORY_ARENA "dram" CACHE STRING "Memory config for arena")
+ # Project
+ #############################################################################
+ 
+-cmake_minimum_required(VERSION 3.21)
++cmake_minimum_required(VERSION 3.20)
+ 
+ project(ethos-u-corstone-300 VERSION 0.0.1)
+ 
+-- 
+2.39.3
+
