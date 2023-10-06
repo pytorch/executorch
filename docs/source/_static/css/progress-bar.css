@@ -16,7 +16,7 @@
   background: white;
   padding-top: 20px;
   padding-bottom: 20px;
-  z-index: 1000;
+  z-index: 2;
 }
 
 .progress-bar-item {
