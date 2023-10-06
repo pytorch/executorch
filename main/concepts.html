@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Welcome to the ExecuTorch Documentation &mdash; ExecuTorch  documentation</title>
+  <title>ExecuTorch Concepts &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -39,7 +39,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="ExecuTorch Overview" href="intro-overview.html" />
+    <link rel="next" title="How does ExecuTorch work" href="intro-how-it-works.html" />
+    <link rel="prev" title="ExecuTorch Overview" href="intro-overview.html" />
     
     
   <!-- Google Tag Manager -->
@@ -245,9 +246,9 @@
             
             
               <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="concepts.html">ExecuTorch Concepts</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How does ExecuTorch work</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
@@ -345,7 +346,7 @@
   <ul class="pytorch-breadcrumbs">
     
       <li>
-        <a href="#">
+        <a href="index.html">
           
             Docs
           
@@ -353,13 +354,13 @@
       </li>
 
         
-      <li>Welcome to the ExecuTorch Documentation</li>
+      <li>ExecuTorch Concepts</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/index.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/concepts.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -391,151 +392,146 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="welcome-to-the-executorch-documentation">
-<span id="home"></span><h1>Welcome to the ExecuTorch Documentation<a class="headerlink" href="#welcome-to-the-executorch-documentation" title="Permalink to this headline">¶</a></h1>
-<p><strong>ExecuTorch</strong> is a PyTorch platform that provides infrastructure to run
-PyTorch programs everywhere from AR/VR wearables to standard on-device
-iOS and Android mobile deployments. One of the main
-goals for ExecuTorch is to enable wider customization and deployment
-capabilities of the PyTorch programs.</p>
-<p>ExecuTorch heavily relies on such PyTorch technologies as TorchDynamo
-and torch.export. If you are not familiar with these APIs, you might want
-to read about them in the PyTorch documentation before diving into
-the ExecuTorch documentation.</p>
-<p>Features described in this documentation are classified by release status:</p>
-<blockquote>
-<div><p><em>Stable:</em>  These features will be maintained long-term and there should
-generally be no major performance limitations or gaps in documentation.
-We also expect to maintain backwards compatibility (although
-breaking changes can happen and notice will be given one release ahead
-of time).</p>
-<p><em>Beta:</em>  These features are tagged as Beta because the API may change based on
-user feedback, because the performance needs to improve, or because
-coverage across operators is not yet complete. For Beta features, we are
-committing to seeing the feature through to the Stable classification.
-We are not, however, committing to backwards compatibility.</p>
-<p><em>Prototype:</em>  These features are typically not available as part of
-binary distributions like PyPI or Conda, except sometimes behind run-time
-flags, and are at an early stage for feedback and testing.</p>
-</div></blockquote>
-<div class="section" id="getting-started">
-<h2>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this headline">¶</a></h2>
-<p>Topics in this section will help you get started with ExecuTorch.</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-3 sd-row-cols-xs-3 sd-row-cols-sm-3 sd-row-cols-md-3 sd-row-cols-lg-3 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-What is ExecuTorch?</div>
-<p class="sd-card-text">A gentle introduction to ExecuTorch. In this section,
-you will learn about main features of ExecuTorch
-and how you can use them in your projects.</p>
-</div>
-<a class="sd-stretched-link reference external" href="intro-overview.html"></a></div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-Getting started with ExecuTorch</div>
-<p class="sd-card-text">A step-by-step tutorial on how to get started with
-ExecuTorch.</p>
-</div>
-<a class="sd-stretched-link reference external" href="getting-started-setup.html"></a></div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-ExecuTorch Intermediate Representation API</div>
-<p class="sd-card-text">Learn about EXIR, a graph-based intermediate
-representation (IR) of PyTorch programs.</p>
-</div>
-<a class="sd-stretched-link reference external" href="ir-exir.html"></a></div>
-</div>
-</div>
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-</div>
-<div class="section" id="tutorials-and-examples">
-<h2>Tutorials and Examples<a class="headerlink" href="#tutorials-and-examples" title="Permalink to this headline">¶</a></h2>
-<p>Ready to experiment? Check out some of the interactive
-ExecuTorch tutorials.</p>
-<p><div id="tutorial-cards-container">
-  <nav class="navbar navbar-expand-lg navbar-light tutorials-nav col-12">
-    <div class="tutorial-tags-container">
-      <div id="dropdown-filter-tags">
-        <div class="tutorial-filter-menu">
-          <div class="tutorial-filter filter-btn all-tag-selected" data-tag="all">All</div>
-        </div>
-      </div>
-    </div>
-  </nav>
-
-  <hr class="tutorials-hr">
-
-  <div class="row">
-    <div id="tutorial-cards">
-      <div class="list"></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation,Quantization>
-  <div class="card tutorials-card">
-    <a href="tutorials/export-to-executorch.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Exporting to ExecuTorch Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation,Quantization</span></p>
-        <p class="card-summary">A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export>
-  <div class="card tutorials-card">
-    <a href="tutorials/sdk-integration.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Integrating with ExecuTorch SDK Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags">Export</span></p>
-        <p class="card-summary">A tutorial for integrating a model with runtime results and utilizing it on the ExecuTorch SDK.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p>      </div>
-      <div class="pagination d-flex justify-content-center"></div>
-    </div>
-  </div>
-</div></p>
-</div>
+  <div class="section" id="executorch-concepts">
+<h1>ExecuTorch Concepts<a class="headerlink" href="#executorch-concepts" title="Permalink to this headline">¶</a></h1>
+<p>This page provides an overview of key concepts and terms used throughout the ExecuTorch documentation. It is intended to help readers understand the terminology and concepts used in PyTorch Edge and ExecuTorch.</p>
+<p><a class="reference internal" href="getting-started-architecture.html#program-preparation"><span class="std std-doc"><strong>AOT (Ahead of Time)</strong></span></a></p>
+<p>AOT generally refers to the program preparation that occurs before execution. On a high level, ExecuTorch workflow is split into an AOT compilation and a runtime. The AOT steps involve compilation into an Intermediate Representation (IR), along with optional transformations and optimizations.</p>
+<p><span class="xref myst"><strong>ATen</strong></span></p>
+<p>Fundamentally, it is a tensor library on top of which almost all other Python and C++ interfaces in PyTorch are built. It provides a core Tensor class, on which many hundreds of operations are defined.</p>
+<p><a class="reference internal" href="ir-exir.html#aten-dialect"><span class="std std-doc"><strong>ATen Dialect</strong></span></a></p>
+<p>ATen dialect is the result of exporting an eager module to a graph representation. It is the entry point of the ExecuTorch compilation pipeline; after exporting to ATen dialect, subsequent passes can then lower to Edge dialect. ATen dialect is a valid EXIR (Export Intermediate Representation) with additional properties. The goal of ATen dialect is to capture users’ programs as faithfully as possible.</p>
+<p><strong>ATen mode</strong></p>
+<p>ATen mode uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, from the PyTorch core. This is in contrast to portable mode, which uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">torch::executor::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">torch::executor::ScalarType</span></code>.</p>
+<ul class="simple">
+<li><p>ATen kernels that rely on the full <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code> API are usable in this configuration.</p></li>
+<li><p>ATen kernels tend to do dynamic memory allocation and often have extra flexibility (and thus overhead) to handle cases not needed by mobile/embedded clients. e.g.,  CUDA support, sparse tensor support, and dtype promotion.</p></li>
+<li><p>Note: ATen mode is currently a WIP.</p></li>
+</ul>
+<p><strong>Backend</strong></p>
+<p>A specific hardware (like GPU, NPU) or a software stack (like XNNPACK) that consumes a graph or part of it, with performance and efficiency benefits.</p>
+<p><a class="reference internal" href="ir-exir.html#backend-dialect"><span class="std std-doc"><strong>Backend Dialect</strong></span></a></p>
+<p>Backend dialect is the result of exporting Edge dialect to specific backend. It’s target-aware, and may contain operators or submodules that are only meaningful to the target backend. This dialect allows the introduction of target-specific operators that do not conform to the schema defined in the Core ATen Operator Set and are not shown in ATen or Edge Dialect.</p>
+<p><a class="reference internal" href="compiler-kernel-fusion-pass.html"><span class="doc std std-doc"><strong>Backend Specific Operator</strong></span></a></p>
+<p>These are operators that are not part of ATen dialect or Edge dialect. Backend specific operators are only introduced by passes that happen after Edge dialect (see Backend dialect). These operators are specific to the target backend and will generally execute faster.</p>
+<p><a class="reference external" href="https://buck2.build/"><strong>Buck2</strong></a></p>
+<p>An open-source, large scale build system. Used to build ExecuTorch.</p>
+<p><a class="reference external" href="https://cmake.org/"><strong>CMake</strong></a></p>
+<p>An open-source, cross-platform family of tools designed to build, test and package software. Used to build ExecuTorch.</p>
+<p><a class="reference internal" href="ir-ops-set-definition.html"><span class="doc std std-doc"><strong>Core ATen operators / Canonical ATen operator set</strong></span></a></p>
+<p>A select subset of the PyTorch ATen operator library. Core ATen operators will not be decomposed when exported with the core ATen decomposition table. They serve as a reference for the baseline ATen ops that a backend or compiler should expect from upstream.</p>
+<p><strong>Core ATen Decomposition Table</strong></p>
+<p>Decomposing an operator involves expressing it as a combination of other operators. During the export process, a default list of decompositions are used; this is known as the Core ATen Decomposition Table.</p>
+<p><a class="reference external" href="https://pytorch.org/docs/stable/torch.compiler_ir.html#irs"><strong>Core ATen IR</strong></a></p>
+<p>Contains only the core ATen operators and registered custom operators. Registered custom operators are registered into the current PyTorch eager mode runtime, usually with a <code class="docutils literal notranslate"><span class="pre">TORCH_LIBRARY</span></code> call.</p>
+<p><a class="reference internal" href="compiler-kernel-fusion-pass.html"><span class="doc std std-doc"><strong>Custom operator</strong></span></a></p>
+<p>These are operators that aren’t part of the ATen library, but which appear in eager mode. They are most likely associated with a specific target model or hardware platform. For example, <a class="reference external" href="https://pytorch.org/vision/main/generated/torchvision.ops.roi_align.html">torchvision::roi_align</a> is a custom operator widely used by torchvision (doesn’t target a specific hardware).</p>
+<p><strong>DataLoader</strong></p>
+<p>An interface that enables the ExecuTorch runtime to read from a file or other data source without directly depending on operating system concepts like files or memory allocation.</p>
+<p><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc"><strong>Delegation</strong></span></a></p>
+<p>To run parts (or all) of a program on a specific backend (eg. XNNPACK) while the rest of the program (if any) runs on the basic ExecuTorch runtime. Delegation enables us to leverage the performance and efficiency benefits of specialized backends and hardware.</p>
+<p><strong>DSP (Digital Signal Processor)</strong></p>
+<p>Specialized microprocessor chip with architecture optimized for digital signal processing.</p>
+<p><strong>dtype</strong></p>
+<p>Data type, the type of data (eg. float, integer, etc.) in a tensor.</p>
+<p><a class="reference external" href="https://pytorch.org/docs/main/quantization.html#general-quantization-flow"><strong>Dynamic Quantization</strong></a></p>
+<p>A method of quantizing wherein tensors are quantized on the fly during inference. This is in contrast to static quantization, where tensors are quantized before inference.</p>
+<p><strong>Dynamic shapes</strong></p>
+<p>Refers to the ability of a model to accept inputs with varying shapes during inference. For example, the ATen op <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.unique_consecutive.html">unique_consecutive</a> and the custom op <a class="reference external" href="https://pytorch.org/vision/main/models/mask_rcnn.html">MaskRCNN</a> have data dependent output shapes. Such operators are difficult to do memory planning on, as each invocation may produce a different output shape even for the same input shape. To support dynamic shapes in ExecuTorch, kernels can allocate tensor data using the <code class="docutils literal notranslate"><span class="pre">MemoryAllocator</span></code> provided by the client.</p>
+<p><strong>Eager mode</strong></p>
+<p>Python execution environment where operators in a model are immediately executed as they are encountered. e.g. Jupyter / Colab notebooks are run in eager mode. This is in contrast to graph mode, where operators are first synthesized into a graph which is then compiled and executed.</p>
+<p><a class="reference internal" href="ir-exir.html#edge-dialect"><span class="std std-doc"><strong>Edge Dialect</strong></span></a></p>
+<p>A dialect of EXIR with the following properties:</p>
+<ul class="simple">
+<li><p>All operators are from a predefined operator set, called ‘Edge Operators’ or are registered custom operators.</p></li>
+<li><p>Input and output of the graph, and of each node, must be Tensor. All Scalar types are converted to Tensor.</p></li>
+</ul>
+<p>Edge dialect introduces specializations that are useful for Edge devices, but not necessarily for general (server) export. However, Edge dialect does not contain specializations for specific hardware besides those already present in the original Python program.</p>
+<p><strong>Edge operator</strong></p>
+<p>An ATen operator with a dtype specialization.</p>
+<p><a class="reference external" href="https://github.com/pytorch/executorch"><strong>ExecuTorch</strong></a></p>
+<p>A unified ML software stack within the PyTorch Edge platform designed for efficient on-device inference. ExecuTorch defines a workflow to prepare (export and transform) and execute a PyTorch program on Edge devices such as mobile, wearables, and embedded devices.</p>
+<p><strong>ExecuTorch Method</strong></p>
+<p>The executable equivalent of an <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code> Python method. For example, the <code class="docutils literal notranslate"><span class="pre">forward()</span></code> Python method would compile into an ExecuTorch <code class="docutils literal notranslate"><span class="pre">Method</span></code>.</p>
+<p><strong>ExecuTorch Program</strong></p>
+<p>An ExecuTorch <code class="docutils literal notranslate"><span class="pre">Program</span></code> maps string names like <code class="docutils literal notranslate"><span class="pre">forward</span></code> to specific ExecuTorch <code class="docutils literal notranslate"><span class="pre">Method</span></code> entries.</p>
+<p><strong>executor_runner</strong></p>
+<p>The ExecuTorch runtime that executes the exported PyTorch model on-device.</p>
+<p><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc"><strong>EXIR</strong></span></a></p>
+<p>The <strong>EX</strong>port <strong>I</strong>ntermediate <strong>R</strong>epresentation (IR) from <code class="docutils literal notranslate"><span class="pre">torch.export</span></code>. Contains the computational graph of the model. All EXIR graphs are valid <a class="reference external" href="https://pytorch.org/docs/stable/fx.html#torch.fx.Graph">FX graphs</a>.</p>
+<p><a class="reference external" href="https://github.com/google/flatbuffers"><strong>flatbuffer</strong></a></p>
+<p>Memory efficient, cross platform serialization library. In the context of ExecuTorch, eager mode Pytorch models are exported to flatbuffer, which is the format consumed by the ExecuTorch runtime.</p>
+<p><strong>Framework tax</strong></p>
+<p>The cost of various loading and initialization tasks (not inference). For example; loading a program, initializing executor, kernel and backend-delegate dispatch, and runtime memory utilization.</p>
+<p><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc"><strong>Graph</strong></span></a></p>
+<p>An EXIR Graph is a PyTorch program represented in the form of a DAG (directed acyclic graph). Each node in the graph represents a particular computation or operation, and edges of this graph consist of references between nodes. Note: all EXIR graphs are valid <a class="reference external" href="https://pytorch.org/docs/stable/fx.html#torch.fx.Graph">FX graphs</a>.</p>
+<p><strong>Graph mode</strong></p>
+<p>In graph mode, operators are first synthesized into a graph, which will then be compiled and executed as a whole. This is in contrast to eager mode, where operators are executed as they are encountered. Graph mode typically delivers higher performance as it allows optimizations such as operator fusion.</p>
+<p><strong>Hybrid Quantization</strong></p>
+<p>A quantization technique where different parts of the model are quantized with different techniques based on computational complexity and sensitivity to accuracy loss. Some parts of the model may not be quantized to retain accuracy.</p>
+<p><strong>Intermediate Representation (IR)</strong></p>
+<p>A representation of a program between the source and target languages. Generally, it is a data structure used internally by a compiler or virtual machine to represent source code.</p>
+<p><strong>Kernel</strong></p>
+<p>An implementation of an operator. There can be multiple implementations of an operator for different backends/inputs/etc.</p>
+<p><strong>Lowering</strong></p>
+<p>The process of transforming a model to run on various backends. It is called ‘lowering’ as it is moving code closer to the hardware. In ExecuTorch, lowering is performed as part of backend delegation.</p>
+<p><span class="xref myst"><strong>Memory planning</strong></span></p>
+<p>The process of allocating and managing memory for a model. In ExecuTorch, a memory planning pass is run before the graph is saved to flatbuffer. This assigns a memory ID to each tensor and an offset in the buffer, marking where storage for the tensor starts.</p>
+<p><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc"><strong>Node</strong></span></a></p>
+<p>A node in an EXIR graph represents a particular computation or operation, and is represented in Python using <a class="reference external" href="https://pytorch.org/docs/stable/fx.html#torch.fx.Node">torch.fx.Node</a> class.</p>
+<p><strong>Operator</strong></p>
+<p>Function on tensors. This is the abstraction; kernels are the implementation. There can be varying implementations for different backends/inputs/etc.</p>
+<p><strong>Operator fusion</strong></p>
+<p>Operator fusion is the process of combining multiple operators into a single compound operator, resulting in faster computation due to fewer kernel launches and fewer memory read/writes. This is a performance advantage of graph mode vs eager mode.</p>
+<p><strong>Operator registration</strong></p>
+<p>Operators need to be registered with the ExecuTorch runtime. This allows the compiler to resolve references to the operator in code.</p>
+<p><a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="doc std std-doc"><strong>PAL (Platform Abstraction Layer)</strong></span></a></p>
+<p>Provides a way for execution environments to override operations such as;</p>
+<ul class="simple">
+<li><p>Getting the current time.</p></li>
+<li><p>Printing a log statement.</p></li>
+<li><p>Panicking the process/system.
+The default PAL implementation can be overridden if it doesn’t work for a particular client system.</p></li>
+</ul>
+<p><strong>Partial kernels</strong></p>
+<p>Kernels that support a subset of tensor dtypes and/or dim orders.</p>
+<p><strong>Partitioner</strong></p>
+<p>Parts of a model may be delegated to run on an optimized backend. The partitioner splits the graph into the appropriate sub-networks and tags them for delegation.</p>
+<p><strong>Portable mode (lean mode)</strong></p>
+<p>Portable mode uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">torch::executor::Tensor</span></code>) along with related types (<code class="docutils literal notranslate"><span class="pre">torch::executor::ScalarType</span></code>, etc.). This is in contrast to ATen mode, which uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types (<code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, etc.)</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">torch::executor::Tensor</span></code>, also known as ETensor, is a source-compatible subset of <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>. Code written against ETensor can build against <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>.</p></li>
+<li><p>ETensor does not own or allocate memory on its own. To support dynamic shapes, kernels can allocate Tensor data using the MemoryAllocator provided by the client.</p></li>
+</ul>
+<p><strong>Portable kernels</strong></p>
+<p>Portable kernels are operator implementations that are written to be compatible with ETensor. As ETensor is compatible with <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>, portable kernels can be built against <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code> and used in the same model as ATen kernels. Portable kernels are:</p>
+<ul class="simple">
+<li><p>Compatible with ATen operator signatures</p></li>
+<li><p>Written in portable C++ so they can build for any target</p></li>
+<li><p>Written as reference implementations, prioritizing clarity and simplicity over optimization</p></li>
+<li><p>Generally smaller in size than ATen kernels</p></li>
+<li><p>Written to avoid dynamically allocating memory using new/malloc.</p></li>
+</ul>
+<p><strong>Program</strong></p>
+<p>The set of codes and data to describe an ML model.</p>
+<p><strong>Program source code</strong></p>
+<p>The Python source code to describe the program. It can be a Python function, or a method in PyTorch’s eager mode <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>.</p>
+<p><a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html"><strong>PTQ (Post Training Quantization)</strong></a></p>
+<p>A quantization technique where the model is quantized after it has been trained (usually for performance benefits). PTQ applies the quantization flow after training, in contrast to QAT which applies it during training.</p>
+<p><a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_qat.html"><strong>QAT (Quantization Aware Training)</strong></a></p>
+<p>Models may lose accuracy after quantization. QAT enables higher accuracy compared to eg. PTQ, by modeling the effects of quantization while training. During training, all weights and activations are ‘fake quantized’; float values are rounded to mimic int8 values, but all computations are still done with floating point numbers. Thus, all weight adjustments during training are made ‘aware’ that the model will ultimately be quantized. QAT applies the quantization flow during training, in contrast to PTQ which applies it afterwards.</p>
+<p><strong>Quantization</strong></p>
+<p>Techniques for performing computations and memory accesses on tensors with lower precision data, usually <code class="docutils literal notranslate"><span class="pre">int8</span></code>. Quantization improves model performance by lowering the memory usage and (usually) decreasing computational latency; depending on the hardware, computation done in lower precision will typically be faster, e.g. <code class="docutils literal notranslate"><span class="pre">int8</span></code> matmul vs <code class="docutils literal notranslate"><span class="pre">fp32</span></code> matmul. Often, quantization comes at the cost of model accuracy.</p>
+<p><strong>Runtime</strong></p>
+<p>The ExecuTorch runtime executes models on edge devices. It is responsible for program initialization, program execution and, optionally, destruction (releasing backend owned resources).</p>
+<p><strong>SDK</strong></p>
+<p>Software Development Kit. The tooling users need to profile, debug and visualize programs that are running with ExecuTorch.</p>
+<p><span class="xref myst"><strong>Selective build</strong></span></p>
+<p>An API used to build a leaner runtime by linking only to kernels used by the program. This provides significant binary size savings.</p>
+<p><a class="reference external" href="https://pytorch.org/docs/main/quantization.html#general-quantization-flow"><strong>Static Quantization</strong></a></p>
+<p>A method of quantizing wherein tensors are statically quantized. That is, floats are converted to a reduced-precision data type before inference.</p>
+<p><a class="reference external" href="https://github.com/google/XNNPACK"><strong>XNNPACK</strong></a></p>
+<p>An optimized library of neural network interface operators for ARM, x86, WebAssembly, and RISC-V platforms. It is an open-source project and used by PyTorch and ExecuTorch. It is a successor to the QNNPack library. The operators support both floating point and quantized values.</p>
 </div>
 
 
@@ -546,8 +542,10 @@ ExecuTorch tutorials.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="intro-overview.html" class="btn btn-neutral float-right" title="ExecuTorch Overview" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="intro-how-it-works.html" class="btn btn-neutral float-right" title="How does ExecuTorch work" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
+      
+        <a href="intro-overview.html" class="btn btn-neutral" title="ExecuTorch Overview" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -581,13 +579,7 @@ ExecuTorch tutorials.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Welcome to the ExecuTorch Documentation</a><ul>
-<li><a class="reference internal" href="#getting-started">Getting Started</a><ul>
-</ul>
-</li>
-<li><a class="reference internal" href="#tutorials-and-examples">Tutorials and Examples</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#">ExecuTorch Concepts</a></li>
 </ul>
 
             </div>
