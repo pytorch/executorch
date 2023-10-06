@@ -22,7 +22,7 @@ cd executorch
 
 # Saves add_all.pte in the current directory.
 
-python3 -m examples.export.coreml_export_and_delegate -m "add" 
+python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name add 
 
 ```
 

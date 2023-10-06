@@ -36,7 +36,7 @@ cd executorch
 python3 -m examples.export.export_example -h
 
 # Generates ./add_coreml_all.pte file if successful.
-python3 -m examples.export.coreml_export_and_delegate -m "add" 
+python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name add 
 
 ```
 
