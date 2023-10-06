@@ -204,6 +204,111 @@ void get_split_with_sizes_copy_out_target_size(
   out_sizes[dim] = split_size;
 }
 
+bool check_squeeze_copy_dim_args(
+    const Tensor in,
+    int64_t dim,
+    const Tensor out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
+
+  return true;
+}
+
+void get_squeeze_copy_dim_out_target_size(
+    const Tensor in,
+    int64_t dim,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim) {
+  // For 0 dim tensors, the output should also be 0 dim.
+  if (in.dim() == 0) {
+    *out_ndim = 0;
+    return;
+  }
+
+  // Specified dim is only removed if the size at the given dim is 1.
+  if (in.size(dim) == 1) {
+    *out_ndim = in.dim() - 1;
+  } else {
+    *out_ndim = in.dim();
+  }
+
+  size_t out_d = 0;
+  for (size_t in_d = 0; in_d < in.dim(); ++in_d) {
+    if (in_d != dim || in.size(in_d) > 1) {
+      out_sizes[out_d] = in.size(in_d);
+      ++out_d;
+    }
+  }
+}
+
+bool check_squeeze_copy_dims_args(
+    const Tensor in,
+    const exec_aten::ArrayRef<int64_t> dims,
+    const Tensor out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+
+  const int64_t dim_adjust = in.dim() == 0 ? 1 : in.dim();
+  for (size_t i = 0; i < dims.size(); ++i) {
+    // TODO(ssjia): use nonzero_dim() instead
+    const int64_t dim = dims[i] < 0 ? dims[i] + dim_adjust : dims[i];
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
+
+    // Check that a dim does not appear twice in dims
+    for (size_t j = 0; j < dims.size(); ++j) {
+      if (i != j) {
+        const int64_t dim_temp = dims[j] < 0 ? dims[j] + dim_adjust : dims[j];
+        ET_LOG_MSG_AND_RETURN_IF_FALSE(
+            dim != dim_temp,
+            "dim %" PRId64 " appears multiple times in dims!",
+            dim);
+      }
+    }
+  }
+
+  return true;
+}
+
+void get_squeeze_copy_dims_out_target_size(
+    const Tensor in,
+    const exec_aten::ArrayRef<int64_t> dims,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim) {
+  // For 0 dim tensors, the output should also be 0 dim.
+  if (in.dim() == 0) {
+    *out_ndim = 0;
+    return;
+  }
+
+  int64_t dim_adjust = in.dim() == 0 ? 1 : in.dim();
+  // A dim is only removed if the size at the given dim is 1.
+  Tensor::SizesType dims_to_remove = 0;
+  for (size_t i = 0; i < dims.size(); ++i) {
+    // TODO(ssjia): use nonzero_dim() instead
+    int64_t dim = dims[i] < 0 ? dims[i] + dim_adjust : dims[i];
+    if (in.size(dim) == 1) {
+      ++dims_to_remove;
+    }
+  }
+  *out_ndim = in.dim() - dims_to_remove;
+
+  size_t out_d = 0;
+  for (size_t in_d = 0; in_d < in.dim(); ++in_d) {
+    bool in_d_in_dims = false;
+    for (size_t i = 0; i < dims.size(); ++i) {
+      // TODO(ssjia): use nonzero_dim() instead
+      int64_t dim = dims[i] < 0 ? dims[i] + dim_adjust : dims[i];
+      if (in_d == dim) {
+        in_d_in_dims = true;
+        break;
+      }
+    }
+    if (!in_d_in_dims || in.size(in_d) > 1) {
+      out_sizes[out_d] = in.size(in_d);
+      ++out_d;
+    }
+  }
+}
+
 bool check_stack_args(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,

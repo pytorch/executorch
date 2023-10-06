@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 
+#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -18,113 +19,65 @@ namespace native {
 
 using Tensor = exec_aten::Tensor;
 
-namespace {
-
-void check_squeeze_copy_dim_out(
-    const Tensor input,
-    int64_t dim,
-    const Tensor out) {
-  if (input.dim() != 0 && input.size(dim) == 1) {
-    ET_CHECK(input.dim() == out.dim() + 1);
-
-    for (size_t d = 0; d < out.dim(); ++d) {
-      if (d < dim) {
-        // d < dim
-        ET_CHECK_MSG(
-            input.size(d) == out.size(d),
-            "input.size(%zu) %zd != out.size(%zu) %zd | dim = %" PRId64,
-            d,
-            input.size(d),
-            d,
-            out.size(d),
-            dim);
-      } else {
-        // d >= dim
-        ET_CHECK_MSG(
-            input.size(d + 1) == out.size(d),
-            "input.size(%zu) %zd != out.size(%zu) %zd | dim = %" PRId64,
-            d + 1,
-            input.size(d),
-            d,
-            out.size(d),
-            dim);
-      }
-    }
-  } else {
-    ET_CHECK(input.dim() == out.dim());
-
-    for (size_t d = 0; d < out.dim(); ++d) {
-      ET_CHECK_MSG(
-          input.size(d) == out.size(d),
-          "input.size(%zu) %zd != out.size(%zu) %zd | dim = %" PRId64,
-          d,
-          input.size(d),
-          d,
-          out.size(d),
-          dim);
-    }
-  }
-}
-} // namespace
-
-//
-// squeeze_copy.dim_out(Tensor self, int dim, Tensor(a!) out) -> Tensor(a!)
-//
 Tensor& squeeze_copy_dim_out(
     RuntimeContext& ctx,
-    const Tensor& self,
+    const Tensor& in,
     int64_t dim,
     Tensor& out) {
   (void)ctx;
-  Tensor::SizesType expected_output_size[kTensorDimensionLimit];
 
-  // The input and out shall share same dtype
-  ET_CHECK_SAME_DTYPE2(self, out);
-
-  // A valid dim must be in [-self.dim(), self.dim())
-  if (self.dim() == 0 && dim == -1) {
-    dim = 0;
-  }
-  ET_CHECK_MSG(
-      (self.dim() == 0 && dim == 0) || (dim >= -self.dim() && dim < self.dim()),
-      "dim %" PRId64 " out of range [-%zd,%zd)",
-      dim,
-      self.dim(),
-      self.dim());
-
+  // TODO(ssjia): use nonzero_dim() instead
   if (dim < 0) {
-    dim += self.dim();
+    dim += in.dim();
   }
 
-  size_t expected_out_dim = (self.dim() == 0 || self.size(dim) != 1)
-      ? self.dim()
-      : std::max<ssize_t>(self.dim() - 1, 0);
+  ET_KERNEL_CHECK(
+      ctx, check_squeeze_copy_dim_args(in, dim, out), InvalidArgument, out);
 
-  if (dim == self.dim() || self.size(dim) != 1) {
-    for (size_t i = 0; i < expected_out_dim; ++i) {
-      expected_output_size[i] = self.size(i);
-    }
-  } else {
-    // 0 <= dim < self.dim() AND self.size(dim) == 1
-    for (size_t i = 0; i < expected_out_dim; ++i) {
-      if (i < dim) {
-        expected_output_size[i] = self.size(i);
-      } else {
-        // Squeeze the given dimension 'dim'
-        expected_output_size[i] = self.size(i + 1);
-      }
-    }
-  }
-  ET_CHECK_MSG(
-      Error::Ok == resize_tensor(out, {expected_output_size, expected_out_dim}),
-      "Failed to resize output tensor.");
-  check_squeeze_copy_dim_out(self, dim, out);
+  Tensor::SizesType expected_out_size[kTensorDimensionLimit];
+  size_t expected_out_dim = 0;
+  get_squeeze_copy_dim_out_target_size(
+      in, dim, expected_out_size, &expected_out_dim);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok,
+      InvalidArgument,
+      out);
 
-  if (self.nbytes() > 0) {
+  if (in.nbytes() > 0) {
     // Note that this check is important. It's valid for a tensor with numel 0
     // to have a null data pointer, but in some environments it's invalid to
     // pass a null pointer to memcpy() even when the size is zero.
-    memcpy(out.mutable_data_ptr(), self.const_data_ptr(), self.nbytes());
+    memcpy(out.mutable_data_ptr(), in.const_data_ptr(), in.nbytes());
+  }
+  return out;
+}
+
+Tensor& squeeze_copy_dims_out(
+    RuntimeContext& ctx,
+    const Tensor& in,
+    exec_aten::ArrayRef<int64_t> dims,
+    Tensor& out) {
+  (void)ctx;
+
+  ET_KERNEL_CHECK(
+      ctx, check_squeeze_copy_dims_args(in, dims, out), InvalidArgument, out);
+
+  Tensor::SizesType expected_out_size[kTensorDimensionLimit];
+  size_t expected_out_dim = 0;
+  get_squeeze_copy_dims_out_target_size(
+      in, dims, expected_out_size, &expected_out_dim);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok,
+      InvalidArgument,
+      out);
+
+  if (in.nbytes() > 0) {
+    // Note that this check is important. It's valid for a tensor with numel 0
+    // to have a null data pointer, but in some environments it's invalid to
+    // pass a null pointer to memcpy() even when the size is zero.
+    memcpy(out.mutable_data_ptr(), in.const_data_ptr(), in.nbytes());
   }
   return out;
 }

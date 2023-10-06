@@ -56,6 +56,28 @@ void get_split_with_sizes_copy_out_target_size(
     Tensor::SizesType* out_sizes,
     size_t* out_ndim);
 
+bool check_squeeze_copy_dim_args(
+    const Tensor in,
+    int64_t dim,
+    const Tensor out);
+
+void get_squeeze_copy_dim_out_target_size(
+    const Tensor in,
+    int64_t dim,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim);
+
+bool check_squeeze_copy_dims_args(
+    const Tensor in,
+    const exec_aten::ArrayRef<int64_t> dims,
+    const Tensor out);
+
+void get_squeeze_copy_dims_out_target_size(
+    const Tensor in,
+    const exec_aten::ArrayRef<int64_t> dims,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim);
+
 bool check_stack_args(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
