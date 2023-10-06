@@ -418,7 +418,7 @@ the <code class="docutils literal notranslate"><span class="pre">to_edge</span><
 </li>
 </ul>
 <div class="section" id="backend-interfaces">
-<h2>Backend interfaces<a class="headerlink" href="#backend-interfaces" title="Permalink to this headline">¶</a></h2>
+<h2>Backend Interfaces<a class="headerlink" href="#backend-interfaces" title="Permalink to this headline">¶</a></h2>
 <p>A delegate backend implementation is composed of:</p>
 <ol class="arabic simple">
 <li><p>An ahead-of-time preprocessing interface</p></li>
@@ -430,7 +430,7 @@ the <code class="docutils literal notranslate"><span class="pre">to_edge</span><
 a list of compile specs specifying the values needed for compilation, and are
 expected to return a compiled blob, or binary contains the desired program to be
 run in the backend, and profiling information. During serialization, the
-compiled blob will be serialized file, and directly loaded to the device. The
+compiled blob will be serialized as part of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, and directly loaded to the device. The
 API looks something like:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">preprocess</span><span class="p">(</span>
     <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
@@ -469,12 +469,11 @@ function which will be called when the program is out of its lifespan.</p>
 <span class="n">virtual</span> <span class="n">void</span> <span class="n">destroy</span><span class="p">(</span><span class="n">__ET_UNUSED</span> <span class="n">DelegateHandle</span><span class="o">*</span> <span class="n">handle</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>Once the backend is ready, they can then be registered:</p>
-<p>To register the backend for runtime, register via the <code class="docutils literal notranslate"><span class="pre">register_backend</span></code> API:</p>
+<p>Once the backend is ready, they can then be registered via the <code class="docutils literal notranslate"><span class="pre">register_backend</span></code> API:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">__ET_NODISCARD</span> <span class="n">Error</span> <span class="n">register_backend</span><span class="p">(</span><span class="n">const</span> <span class="n">Backend</span><span class="o">&amp;</span> <span class="n">backend</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>The way to invoke <code class="docutils literal notranslate"><span class="pre">register_backend</span></code> It can either be static registered like</p>
+<p><code class="docutils literal notranslate"><span class="pre">register_backend</span></code> can be statically registered like the following</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">namespace</span> <span class="p">{</span>
 <span class="n">auto</span> <span class="bp">cls</span> <span class="o">=</span> <span class="n">BackendWithCompiler</span><span class="p">();</span>
 <span class="n">Backend</span> <span class="n">backend</span><span class="p">{</span><span class="s2">&quot;BackendWithCompilerDemo&quot;</span><span class="p">,</span> <span class="o">&amp;</span><span class="bp">cls</span><span class="p">};</span>
@@ -660,7 +659,7 @@ nodes from decomposed operators.</p>
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
 <li><a class="reference internal" href="#">Backend and Delegate</a><ul>
-<li><a class="reference internal" href="#backend-interfaces">Backend interfaces</a><ul>
+<li><a class="reference internal" href="#backend-interfaces">Backend Interfaces</a><ul>
 <li><a class="reference internal" href="#ahead-of-time-preprocessing">Ahead-of-Time Preprocessing</a></li>
 <li><a class="reference internal" href="#runtime-initialization-and-execution">Runtime Initialization and Execution</a></li>
 </ul>

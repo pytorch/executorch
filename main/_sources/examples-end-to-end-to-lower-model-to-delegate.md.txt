@@ -177,10 +177,8 @@ with open(save_path, "wb") as f:
 
 After having the program with delegates, to run the model with the backend, we'd need to register the backend.
 Depending on the delegate implementation, the backend can be registered either as part of global variables or
-explicitly register inside main function.
+explicitly registered inside main function.
 
-- If register during global variables initialization
-The backend will be registered as long as it's static linked. Users only need to include the library as part of the dependency.
+- If it's registered during global variables initialization, the backend will be registered as long as it's static linked. Users only need to include the library as part of the dependency.
 
-- If vendor provide an APIs to register the backend
-Users need to include the library as part of the dependency, and call the API provided by vendors to explicitly register the backend as part of the main function
+- If the vendor provides an API to register the backend, users need to include the library as part of the dependency, and call the API provided by vendors to explicitly register the backend as part of the main function

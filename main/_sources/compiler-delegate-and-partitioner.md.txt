@@ -19,7 +19,7 @@ At a high level, the entry point for backends is defined by 2 components:
         - Program execution.
         - (optional) Program destroy (e.g. release backend owned resource).
 
-## Backend interfaces
+## Backend Interfaces
 
 A delegate backend implementation is composed of:
 
@@ -33,7 +33,7 @@ For the AOT preprocessing, backends are given an edge dialect program,
 a list of compile specs specifying the values needed for compilation, and are
 expected to return a compiled blob, or binary contains the desired program to be
 run in the backend, and profiling information. During serialization, the
-compiled blob will be serialized file, and directly loaded to the device. The
+compiled blob will be serialized as part of the `.pte` file, and directly loaded to the device. The
 API looks something like:
 
 ```python
@@ -76,14 +76,12 @@ __ET_NODISCARD virtual Error execute(
 virtual void destroy(__ET_UNUSED DelegateHandle* handle);
 ```
 
-Once the backend is ready, they can then be registered:
-
-To register the backend for runtime, register via the `register_backend` API:
+Once the backend is ready, they can then be registered via the `register_backend` API:
 ```cpp
 __ET_NODISCARD Error register_backend(const Backend& backend);
 ```
 
-The way to invoke `register_backend` It can either be static registered like
+`register_backend` can be statically registered like the following
 ```cpp
 namespace {
 auto cls = BackendWithCompiler();
