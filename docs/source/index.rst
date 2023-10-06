@@ -188,6 +188,7 @@ Topics in this section will help you get started with ExecuTorch.
    tutorials/export-to-executorch-tutorial
    build-run-xtensa
    tutorials/sdk-integration-tutorial
+   tutorial-xnnpack-delegate-lowering
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
