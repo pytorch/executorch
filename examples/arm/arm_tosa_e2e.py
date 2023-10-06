@@ -144,8 +144,13 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
     TOSA_OUT_PATH = os.path.join(DEBUG_OUTPUT_PATH, op, "tosa", "")
     os.makedirs(TOSA_OUT_PATH, exist_ok=True)
 
-    # Debug flag for compilers
-    compile_spec = [CompileSpec("debug_tosa_path", bytes(TOSA_OUT_PATH, "utf8"))]
+    # Debug flags for compilers
+    # - Emit some debug files into /tmp
+    # - output_format TOSA for this test (and pure tosa flows)
+    compile_spec = [
+        CompileSpec("debug_tosa_path", bytes(TOSA_OUT_PATH, "utf8")),
+        CompileSpec("output_format", bytes("tosa", "utf8")),
+    ]
 
     model, inputs, torch_output = prepare_model_and_ref(op, profile)
 

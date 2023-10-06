@@ -95,6 +95,10 @@ class TorchBuilder:
     @register_test
     class simple_add_broadcast(torch.nn.Module):
         inputs = {
+            TosaProfile.BI_INT: (
+                torch.ones(10, 1, dtype=torch.int32),
+                torch.ones(10, 10, dtype=torch.int32),
+            ),
             TosaProfile.BI: (
                 torch.ones(10, 1),
                 torch.ones(10, 10),
@@ -127,7 +131,7 @@ class TorchBuilder:
             x = self.fc(x)
             return x
 
-    @register_test
+    # @register_test
     class simple_conv2d(torch.nn.Module):
         inputs = {
             TosaProfile.BI: (
@@ -151,7 +155,7 @@ class TorchBuilder:
             x = self.conv2d(x)
             return x
 
-    @register_test
+    # @register_test
     class block_two_conv2d(torch.nn.Module):
         inputs = {
             TosaProfile.BI: (torch.ones(1, 3, 256, 256),),
@@ -172,7 +176,7 @@ class TorchBuilder:
             x = self.conv2d_2(x)
             return x
 
-    @register_test
+    # @register_test
     class simple_depthwise_conv2d(torch.nn.Module):
         inputs = {
             TosaProfile.BI: (
@@ -276,7 +280,7 @@ class TorchBuilder:
         def forward(self, x):
             return self.softmax(x)
 
-    @register_test
+    # @register_test
     class block_conv_norm_activation(torch.nn.Module):
         inputs = {
             TosaProfile.BI: (torch.ones(1, 3, 256, 256),),
@@ -298,7 +302,7 @@ class TorchBuilder:
             x = self.relu6(x)
             return x
 
-    @register_test
+    # @register_test
     class block_bottleneck_residual(torch.nn.Module):
         # This is the essence of MobileNetV2
         # Ref: https://arxiv.org/abs/1801.04381

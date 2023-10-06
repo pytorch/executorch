@@ -315,10 +315,13 @@ class ArmBackend(BackendDetails):
         # if a debug/test build capture output files from TOSA stage
         path = None
         debug_output = False
+        output_format = "vela"
         for spec in compile_spec:
             if spec.key == "debug_tosa_path":
                 path = spec.value.decode()
                 debug_output = True
+            if spec.key == "output_format":
+                output_format = spec.value.decode()
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
@@ -964,8 +967,16 @@ class ArmBackend(BackendDetails):
         if debug_output is True:
             dbg_tosa_dump(tosa_fb, path)
 
-        # Serialize and return the tosa flatbuffer
-        # fb = bytes(tosa_fb.serialize())
-        binary = vela_compile(tosa_fb)
+        # Serialize and return the program. While we have always produced TOSA
+        # output as an intermediate, some flows compile to device binaries in
+        # preprocess and some consume TOSA fb directly.
+        if output_format == "vela":
+            # Emit vela_bin_stream format
+            binary = vela_compile(tosa_fb)
+        elif output_format == "tosa":
+            # Emit TOSA flatbuffer
+            binary = bytes(tosa_fb.serialize())
+        else:
+            raise RuntimeError(f"Unknown format {output_format}")
 
         return PreprocessResult(processed_bytes=binary)
