@@ -7,7 +7,7 @@ python_unittest(
     srcs = ["inspector_test.py"],
     deps = [
         "//executorch/exir:lib",
-        "//executorch/sdk/edir:et_schema",
+        "//executorch/sdk/debug_format:et_schema",
         "//executorch/sdk/etrecord:etrecord",
         "//executorch/sdk/etrecord/tests:etrecord_test_library",
         "//executorch/sdk/inspector:inspector",
@@ -27,8 +27,8 @@ python_unittest(
     name = "inspector_utils_test",
     srcs = ["inspector_utils_test.py"],
     deps = [
-        "//executorch/sdk/edir:base_schema",
-        "//executorch/sdk/edir:et_schema",
+        "//executorch/sdk/debug_format:base_schema",
+        "//executorch/sdk/debug_format:et_schema",
         "//executorch/sdk/etrecord:etrecord",
         "//executorch/sdk/etrecord/tests:etrecord_test_library",
         "//executorch/sdk/inspector:inspector_utils",

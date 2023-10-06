@@ -25,7 +25,7 @@ import pandas as pd
 import torch
 from executorch.exir import ExportedProgram
 
-from executorch.sdk.edir.et_schema import OperatorNode
+from executorch.sdk.debug_format.et_schema import OperatorNode
 from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
 from executorch.sdk.etrecord import parse_etrecord
 from executorch.sdk.inspector._inspector_utils import (
