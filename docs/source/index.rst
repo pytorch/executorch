@@ -178,6 +178,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    tutorials/export-to-executorch-tutorial
    build-run-xtensa
+   tutorials/sdk-integration-tutorial
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -193,5 +194,12 @@ ExecuTorch tutorials.
    :image: _static/img/generic-pytorch-logo.png
    :link: tutorials/export-to-executorch.html
    :tags: Export,Delegation,Quantization
+
+.. customcarditem::
+   :header: Integrating with ExecuTorch SDK Tutorial
+   :card_description: A tutorial for integrating a model with runtime results and utilizing it on the ExecuTorch SDK.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: tutorials/sdk-integration.html
+   :tags: Export
 
 .. customcardend::
