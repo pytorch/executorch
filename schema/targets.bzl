@@ -113,6 +113,7 @@ def define_common_targets():
         visibility = [
             "//executorch/bundled_program/...",
             "//executorch/extension/pybindings/...",
+            "//executorch/examples/bundled_executor_runner/...",
             "//executorch/util/...",  # bundled_program_verification
         ],
         exported_headers = {

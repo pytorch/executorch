@@ -28,6 +28,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/schema/bundled_program_schema_generated.h>
 #include <executorch/util/bundled_program_verification.h>
 #include <executorch/util/util.h>
 
@@ -36,18 +37,13 @@ static constexpr size_t kBundledAllocatorPoolSize = 16 * 1024U;
 static uint8_t bundled_allocator_pool[kBundledAllocatorPoolSize];
 
 DEFINE_string(
-    model_path,
-    "model.pte",
+    bundled_program_path,
+    "model_bundled.bp",
     "Model serialized in flatbuffer format.");
 DEFINE_string(
     prof_result_path,
     "prof_result.bin",
     "ExecuTorch profiler output path.");
-
-DEFINE_bool(
-    bundled_program,
-    false,
-    "True for running bundled program, false for executorch_flatbuffer::program");
 
 DEFINE_int32(
     testset_idx,
@@ -74,8 +70,8 @@ int main(int argc, char** argv) {
   // Create a loader to get the data of the program file. There are other
   // DataLoaders that use mmap() or point to data that's already in memory, and
   // users can create their own DataLoaders to load from arbitrary sources.
-  const char* model_path = FLAGS_model_path.c_str();
-  Result<FileDataLoader> loader = FileDataLoader::from(model_path);
+  const char* bundled_program_path = FLAGS_bundled_program_path.c_str();
+  Result<FileDataLoader> loader = FileDataLoader::from(bundled_program_path);
   ET_CHECK_MSG(
       loader.ok(), "FileDataLoader::from() failed: 0x%" PRIx32, loader.error());
 
@@ -84,8 +80,15 @@ int main(int argc, char** argv) {
   ET_CHECK_MSG(
       file_data.ok(),
       "Could not load contents of file '%s': 0x%x",
-      model_path,
+      bundled_program_path,
       (unsigned int)file_data.error());
+
+  // Check whether the file is a bundled program.
+  ET_CHECK_MSG(
+      executorch_flatbuffer::BundledProgramBufferHasIdentifier(
+          file_data->data()),
+      "The file '%s' is not a bundled program.",
+      bundled_program_path);
 
   // Find the offset to the embedded Program.
   const void* program_data;
@@ -98,7 +101,7 @@ int main(int argc, char** argv) {
   ET_CHECK_MSG(
       status == Error::Ok,
       "GetProgramData() failed on file '%s': 0x%x",
-      model_path,
+      bundled_program_path,
       (unsigned int)status);
 
   auto buffer_data_loader =
@@ -108,10 +111,10 @@ int main(int argc, char** argv) {
   // between multiple execution invocations across multiple threads.
   Result<Program> program = Program::load(&buffer_data_loader);
   if (!program.ok()) {
-    ET_LOG(Error, "Failed to parse model file %s", model_path);
+    ET_LOG(Error, "Failed to parse model file %s", bundled_program_path);
     return 1;
   }
-  ET_LOG(Info, "Model file %s is loaded.", model_path);
+  ET_LOG(Info, "Model file %s is loaded.", bundled_program_path);
 
   // Use the first method in the program.
   const char* method_name = nullptr;
@@ -198,22 +201,18 @@ int main(int argc, char** argv) {
   MemoryAllocator bundled_input_allocator{
       MemoryAllocator(kBundledAllocatorPoolSize, bundled_allocator_pool)};
   exec_aten::ArrayRef<void*> inputs;
-  if (FLAGS_bundled_program) {
-    // Use the inputs embedded in the bundled program.
-    status = torch::executor::util::LoadBundledInput(
-        *method,
-        file_data->data(),
-        &bundled_input_allocator,
-        0, // Using the 0th indexed program
-        FLAGS_testset_idx);
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "LoadBundledInput failed with status 0x%" PRIx32,
-        status);
-  } else {
-    // Use ones-initialized inputs.
-    inputs = torch::executor::util::PrepareInputTensors(*method);
-  }
+  // Use the inputs embedded in the bundled program.
+  status = torch::executor::util::LoadBundledInput(
+      *method,
+      file_data->data(),
+      &bundled_input_allocator,
+      method_name,
+      FLAGS_testset_idx);
+  ET_CHECK_MSG(
+      status == Error::Ok,
+      "LoadBundledInput failed with status 0x%" PRIx32,
+      status);
+
   ET_LOG(Info, "Inputs prepared.");
 
   // Run the model.
@@ -249,24 +248,21 @@ int main(int argc, char** argv) {
     fclose(ptr);
   }
 
-  // Handle the outputs.
-  if (FLAGS_bundled_program) {
-    status = torch::executor::util::VerifyResultWithBundledExpectedOutput(
-        *method,
-        file_data->data(),
-        &bundled_input_allocator,
-        0,
-        FLAGS_testset_idx,
-        1e-5, // rtol
-        1e-8 // atol
-    );
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "Bundle verification failed with status 0x%" PRIx32,
-        status);
-    ET_LOG(Info, "Model verified successfully.");
-  } else {
-    torch::executor::util::FreeInputs(inputs);
-  }
+  // Verify the outputs.
+  status = torch::executor::util::VerifyResultWithBundledExpectedOutput(
+      *method,
+      file_data->data(),
+      &bundled_input_allocator,
+      method_name,
+      FLAGS_testset_idx,
+      1e-5, // rtol
+      1e-8 // atol
+  );
+  ET_CHECK_MSG(
+      status == Error::Ok,
+      "Bundle verification failed with status 0x%" PRIx32,
+      status);
+  ET_LOG(Info, "Model verified successfully.");
+
   return 0;
 }
