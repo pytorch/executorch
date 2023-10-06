@@ -1109,6 +1109,15 @@ SAMPLE_INPUT = {
             Return(ArgType.Tensor, size=[2]),
         ],
     },
+    "squeeze_copy.dims": {  # (Tensor self, int[] dims) -> Tensor
+        "args": [
+            InArg(ArgType.Tensor, size=[1, 2, 1, 5]),
+            InArg(ArgType.Param, value=[0, 2]),
+        ],
+        "returns": [
+            Return(ArgType.Tensor, size=[2, 5]),
+        ],
+    },
     "stack.default": {  # (Tensor[] tensors, int dim=0) -> Tensor
         "args": [
             InArg(

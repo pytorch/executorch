@@ -26,6 +26,14 @@ Tensor& op_squeeze_copy_dim_out(const Tensor& self, int64_t dim, Tensor& out) {
   return torch::executor::aten::squeeze_copy_outf(context, self, dim, out);
 }
 
+Tensor& op_squeeze_copy_dims_out(
+    const Tensor& self,
+    exec_aten::ArrayRef<int64_t> dims,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::squeeze_copy_outf(context, self, dims, out);
+}
+
 namespace {
 
 TEST(OpSqueezeKernelTest, DTypesMismatchDies) {
@@ -306,3 +314,88 @@ TEST(OpSqueezeKernelTest, DynamicShapeUnbound) {
 }
 
 } // namespace
+
+TEST(OpSqueezeCopyDimsOutTest, SanityTest4D) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make(
+      {1, 2, 1, 5},
+      {-26.5,
+       5.75,
+       95.75,
+       92.625,
+       -97.25,
+       65.5,
+       -92.25,
+       -67.625,
+       54.75,
+       27.125});
+  ::std::vector<int64_t> dim_vec = {0, 2};
+  exec_aten::ArrayRef<int64_t> dim =
+      exec_aten::ArrayRef<int64_t>(dim_vec.data(), dim_vec.size());
+  exec_aten::Tensor out = tfFloat.zeros({2, 5});
+  exec_aten::Tensor out_expected = tfFloat.make(
+      {2, 5},
+      {-26.5,
+       5.75,
+       95.75,
+       92.625,
+       -97.25,
+       65.5,
+       -92.25,
+       -67.625,
+       54.75,
+       27.125});
+  op_squeeze_copy_dims_out(self, dim, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpSqueezeCopyDimsOutTest, SanityCheck5D) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make(
+      {1, 2, 1, 5, 4},
+      {-73.5,  -67.625, -54.375, 51.625,  -11.125, -28.625, -40.75,  45.625,
+       84.375, 65.625,  95.125,  -47.125, -21.25,  32.25,   -86.125, 55.875,
+       -62.25, 47.125,  -71.875, 43.0,    47.875,  -73.375, 97.75,   69.25,
+       64.125, -59.875, 59.75,   -52.25,  59.5,    44.875,  -51.25,  20.875,
+       -67.0,  32.5,    -26.625, 83.75,   45.5,    85.5,    -92.875, 60.0});
+  ::std::vector<int64_t> dim_vec = {0, 3, 2, 1};
+  exec_aten::ArrayRef<int64_t> dim =
+      exec_aten::ArrayRef<int64_t>(dim_vec.data(), dim_vec.size());
+  exec_aten::Tensor out = tfFloat.zeros({2, 5, 4});
+  exec_aten::Tensor out_expected = tfFloat.make(
+      {2, 5, 4},
+      {-73.5,  -67.625, -54.375, 51.625,  -11.125, -28.625, -40.75,  45.625,
+       84.375, 65.625,  95.125,  -47.125, -21.25,  32.25,   -86.125, 55.875,
+       -62.25, 47.125,  -71.875, 43.0,    47.875,  -73.375, 97.75,   69.25,
+       64.125, -59.875, 59.75,   -52.25,  59.5,    44.875,  -51.25,  20.875,
+       -67.0,  32.5,    -26.625, 83.75,   45.5,    85.5,    -92.875, 60.0});
+  op_squeeze_copy_dims_out(self, dim, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
+
+TEST(OpSqueezeCopyDimsOutTest, SanityCheck5DUnchanged) {
+  torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
+
+  exec_aten::Tensor self = tfFloat.make(
+      {1, 2, 1, 5, 4},
+      {-0.375,  -40.125, 5.75,   21.25,   -34.875, -19.375, 15.75,   -60.75,
+       -41.75,  53.125,  -76.0,  -64.25,  -84.5,   -37.25,  -39.125, 22.875,
+       -69.0,   30.25,   -21.25, 85.5,    8.875,   41.625,  12.375,  -1.125,
+       -14.875, 78.5,    43.0,   -78.625, -58.625, -58.375, 47.5,    -67.375,
+       -82.375, 35.0,    83.25,  49.625,  -9.875,  -46.75,  17.875,  -68.375});
+  ::std::vector<int64_t> dim_vec = {1, 4, 3};
+  exec_aten::ArrayRef<int64_t> dim =
+      exec_aten::ArrayRef<int64_t>(dim_vec.data(), dim_vec.size());
+  exec_aten::Tensor out = tfFloat.zeros({1, 2, 1, 5, 4});
+  exec_aten::Tensor out_expected = tfFloat.make(
+      {1, 2, 1, 5, 4},
+      {-0.375,  -40.125, 5.75,   21.25,   -34.875, -19.375, 15.75,   -60.75,
+       -41.75,  53.125,  -76.0,  -64.25,  -84.5,   -37.25,  -39.125, 22.875,
+       -69.0,   30.25,   -21.25, 85.5,    8.875,   41.625,  12.375,  -1.125,
+       -14.875, 78.5,    43.0,   -78.625, -58.625, -58.375, 47.5,    -67.375,
+       -82.375, 35.0,    83.25,  49.625,  -9.875,  -46.75,  17.875,  -68.375});
+  op_squeeze_copy_dims_out(self, dim, out);
+  EXPECT_TENSOR_CLOSE(out, out_expected);
+}
