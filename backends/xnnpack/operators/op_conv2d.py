@@ -46,7 +46,7 @@ class Conv2d(NodeVisitor):
         kwargs = {}
         # input
         input_node = get_input_node(node, 0)
-        input_quant_params = QuantParams.from_inputs(input_node)
+        input_quant_params = QuantParams.from_inputs(input_node, self._exported_program)
         self.define_tensor(
             input_node,
             xnn_graph,

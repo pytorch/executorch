@@ -11,8 +11,9 @@ from typing import cast, Optional, Union
 import torch
 from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
-from executorch.backends.xnnpack.utils.utils import check_or_raise
+from executorch.backends.xnnpack.utils.utils import check_or_raise, is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export import ExportedProgram
 
 
 class QuantParams:
@@ -178,11 +179,18 @@ class QuantParams:
         return cls.from_q_dq_node(q)
 
     @classmethod
-    def from_inputs(cls, tensor_node: torch.fx.Node) -> Optional[QuantParams]:
+    def from_inputs(
+        cls, tensor_node: torch.fx.Node, ep: ExportedProgram
+    ) -> Optional[QuantParams]:
         # tensor_node is quantized if it is produced by a dequant node
         if is_dequant(tensor_node) and TagImplicitQDqPass.is_tagged_as_implicit_q_dq(
             tensor_node
         ):
+            dq_input = cast(torch.fx.Node, tensor_node.args[0])
+            if is_quant(dq_input):
+                q_input = cast(torch.fx.Node, dq_input.args[0])
+                if is_param_node(ep, q_input):
+                    return cls.from_q_dq_node(dq_input)
             return cls.from_q_dq_node(tensor_node)
 
         return None
