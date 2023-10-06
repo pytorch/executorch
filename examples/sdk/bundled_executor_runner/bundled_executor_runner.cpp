@@ -28,7 +28,6 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/schema/bundled_program_schema_generated.h>
 #include <executorch/util/bundled_program_verification.h>
 #include <executorch/util/util.h>
 
@@ -82,13 +81,6 @@ int main(int argc, char** argv) {
       "Could not load contents of file '%s': 0x%x",
       bundled_program_path,
       (unsigned int)file_data.error());
-
-  // Check whether the file is a bundled program.
-  ET_CHECK_MSG(
-      executorch_flatbuffer::BundledProgramBufferHasIdentifier(
-          file_data->data()),
-      "The file '%s' is not a bundled program.",
-      bundled_program_path);
 
   // Find the offset to the embedded Program.
   const void* program_data;
