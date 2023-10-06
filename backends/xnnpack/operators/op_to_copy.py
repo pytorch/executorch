@@ -51,7 +51,7 @@ class ConvertMemoryFormat(NodeVisitor):
         )
 
         input_node = get_input_node(node, 0)
-        input_quant_params = QuantParams.from_inputs(input_node)
+        input_quant_params = QuantParams.from_inputs(input_node, self._exported_program)
         output_quant_params = QuantParams.from_outputs(node)
 
         permute_order = PERM_NCHW_TO_NHWC if to_channels_last else PERM_NHWC_TO_NCHW

@@ -46,7 +46,9 @@ class CeilingVisitor(NodeVisitor):
                 tensor_input,
                 xnn_graph,
                 vals_to_ids,
-                quant_params=QuantParams.from_inputs(tensor_input),
+                quant_params=QuantParams.from_inputs(
+                    tensor_input, self._exported_program
+                ),
             )
 
         self.define_tensor(
