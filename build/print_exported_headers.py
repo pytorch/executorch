@@ -12,13 +12,18 @@ provided targets, including their exported deps recursively.
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 from typing import List, Set
 
 
+cwd = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
+
 def run(command: List[str]) -> str:
     """Run subprocess and return its output."""
-    result = subprocess.run(command, capture_output=True, check=True)
+    result = subprocess.run(command, capture_output=True, check=True, cwd=cwd)
     return result.stdout.decode()
 
 
@@ -63,7 +68,17 @@ def main():
         required=True,
         help="Buck targets to find the headers of.",
     )
+    parser.add_argument(
+        "--output",
+        help="Directory to copy the headers to.",
+    )
     args = parser.parse_args()
+
+    if args.output:
+        if os.path.exists(args.output) and os.listdir(args.output):
+            raise ValueError(
+                f"Output path '{args.output}' already exists and is not empty."
+            )
 
     targets = [
         target
@@ -78,7 +93,14 @@ def main():
 
     for header in sorted(headers):
         # Strip off the leading workspace name and //.
-        print(header.split("//", 1)[-1])
+        header_path = header.split("//", 1)[-1]
+        if args.output:
+            src = os.path.join(cwd, header_path)
+            dst = os.path.join(args.output, header_path)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, dst)
+        else:
+            print(header_path)
 
 
 if __name__ == "__main__":
