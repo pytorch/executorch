@@ -169,10 +169,7 @@ function setup_tosa_reference_model() {
 	make
 	cd reference_model
 	tosa_bin_path=`pwd`
-	echo adding ${tosa_bin_path} to path
 	echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
-	cd ../..
-	echo back at `pwd`
 }
 
 function setup_vela() {
@@ -187,7 +184,6 @@ function setup_vela() {
 		patch_repo
 	fi
 	pip install .
-	cd ..
 }
 
 ########

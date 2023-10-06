@@ -49,7 +49,7 @@ function generate_ethos_pte_file() {
     cd $et_root_dir
 	python3 examples/backend/arm/arm_ethosu_minimal.py &> /dev/null
 	cd ./ethosout/simple_add/torch/
-    local pte_file=$(readlink -f ./delegated.pte)
+    local pte_file=$(realpath ./delegated.pte)
     [[ -f ${pte_file} ]] || { echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
     echo "${pte_file}"
 }
@@ -107,7 +107,9 @@ function build_executorch_runner() {
 
 # Execute the executor_runner on FVP Simulator
 function run_fvp() {
-    elf=$(find ${ethos_u_build_dir} -name "executor_runner.elf")
+    [[ $# -ne 1 ]] && { echo "[${FUNCNAME[0]}]" "Expexted elf binary name, got $*"; exit 1; }
+    local elf_name=${1}
+    elf=$(find ${ethos_u_build_dir} -name "${elf_name}")
     [[ ! -f $elf ]] && { echo "[${FUNCNAME[0]}]: Unable to find executor_runner elf: ${elf}"; exit 1; }
     FVP_Corstone_SSE-300_Ethos-U55                          \
         -C ethosu.num_macs=128                              \
@@ -116,20 +118,6 @@ function run_fvp() {
         -C mps3_board.uart0.out_file='-'                    \
         -a "${elf}"                                         \
         --timelimit 5 || true # seconds
-    echo "[${FUNCNAME[0]} Simulation complete, $?"
-}
-
-# Execute the executor_runner on FVP Simulator
-function run_fvp_delegate() {
-    elf=$(find ${ethos_u_build_dir} -name "executor_runner_delegate.elf")
-    [[ ! -f $elf ]] && { echo "[${FUNCNAME[0]}]: Unable to find executor_runner_delegate elf: ${elf}"; exit 1; }
-    FVP_Corstone_SSE-300_Ethos-U55                          \
-        -C ethosu.num_macs=128                              \
-        -C mps3_board.visualisation.disable-visualisation=1 \
-        -C mps3_board.telnetterminal0.start_telnet=0        \
-        -C mps3_board.uart0.out_file='-'                    \
-        -a "${elf}"                                         \
-        --timelimit 5 || true
     echo "[${FUNCNAME[0]} Simulation complete, $?"
 }
 
@@ -169,9 +157,9 @@ build_executorch
 build_executorch_runner "${pte}" "${pte_delegate}"
 
 # run the app
-run_fvp
+run_fvp executor_runner.elf
 
 # run the delegate app
-run_fvp_delegate
+run_fvp executor_runner_delegate.elf
 
 exit 0
