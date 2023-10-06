@@ -55,10 +55,11 @@ class AnnotateAndQuantScalar(ExportPass):
     ) -> Dict:
         scalar_name = node.name
         val = getattr(gm, scalar_name)
+        quant_range = quant_attrs["quant_max"] - quant_attrs["quant_min"]
         # Use 0 as the zero_point for scalar
-        quant_attrs["zero_point"] = 0
-        quant_attrs["scale"] = val.div(
-            quant_attrs["quant_max"] - quant_attrs["quant_min"]
+        quant_attrs["zero_point"] = 0 if val >= 0 else quant_attrs["quant_max"]
+        quant_attrs["scale"] = (
+            val.div(quant_range) if val >= 0 else -val.div(quant_range)
         )
         return quant_attrs
 

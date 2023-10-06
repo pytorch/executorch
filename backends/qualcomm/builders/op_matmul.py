@@ -20,8 +20,8 @@ from executorch.backends.qualcomm.utils.utils import get_input_node
 
 
 @register_node_visitor
-class Bmm(NodeVisitor):
-    target = "aten.bmm.default"
+class Matmul(NodeVisitor):
+    target = "aten.matmul.default"
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -38,9 +38,9 @@ class Bmm(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        bmm_output_tensors = [output_tensor_wrapper]
+        matmul_output_tensors = [output_tensor_wrapper]
 
-        bmm_input_tensors = []
+        matmul_input_tensors = []
         for index in range(2):
             input_node = get_input_node(node, index)
             input_tensor, use_memo = self.get_tensor_shape(input_node, node)
@@ -55,14 +55,12 @@ class Bmm(NodeVisitor):
                 PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                 nodes_to_wrappers if use_memo else {},
             )
-            bmm_input_tensors.append(input_tensor_wrapper)
+            matmul_input_tensors.append(input_tensor_wrapper)
 
-        bmm_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name,
-            QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpMatMul.op_name,
+        matmul_op = PyQnnWrapper.PyQnnOpWrapper(
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpMatMul.op_name
         )
-        bmm_op.AddInputTensors(bmm_input_tensors)
-        bmm_op.AddOutputTensors(bmm_output_tensors)
+        matmul_op.AddInputTensors(matmul_input_tensors)
+        matmul_op.AddOutputTensors(matmul_output_tensors)
 
-        return bmm_op
+        return matmul_op

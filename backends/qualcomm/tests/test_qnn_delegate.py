@@ -722,7 +722,7 @@ class TestQNNFloatingPoint(TestQNN):
     def test_qnn_backend_mobilebert(self):
         instance = MobileBertModelExample().get_eager_model().eval()
         example_inputs = MobileBertModelExample().get_example_inputs()
-        # TODO: Due to trigger maximum recursion depth exceeded, need to check it.
+        # TODO: Due to triggering maximum recursion depth exceeded, need to check it.
         disable_validation()
         buffer = self.lower_module_and_test_output(
             instance, example_inputs, is_fp16=True
@@ -1095,6 +1095,21 @@ class TestQNNINT8(TestQNN):
         model_name = "ptq_qnn_hardsigmoid_model"
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
+    def test_qnn_backend_ptq_bmm(self):
+        class Bmm(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.matmul(x, y)
+
+        instance = Bmm()
+        example_inputs = (
+            torch.randn([4, 8, 32]),
+            torch.randn([4, 32, 8]),
+        )
+        quant_instance = get_qdq_module(instance, example_inputs)
+        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
+        model_name = "ptq_qnn_bmm_model"
+        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+
     def test_qnn_backend_ptq_mean_dim(self):
         class MeanDim(torch.nn.Module):
             def __init__(self):
@@ -1201,6 +1216,19 @@ class TestQNNINT8(TestQNN):
         )
         buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
         model_name = "ptq_qnn_edsr_model"
+        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+
+    def test_qnn_backend_ptq_mobilebert(self):
+        instance = MobileBertModelExample().get_eager_model().eval()
+        example_inputs = MobileBertModelExample().get_example_inputs()
+        quant_instance = get_qdq_module(instance, example_inputs)
+        # TODO: Due to trigger maximum recursion depth exceeded, need to check it.
+        disable_validation()
+        buffer = self.lower_module_and_test_output(
+            quant_instance,
+            example_inputs,
+        )
+        model_name = "ptq_qnn_mobilebert_model"
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
 

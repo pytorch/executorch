@@ -47,6 +47,7 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.bmm.default,
         exir_ops.edge.aten.full.default,
         exir_ops.edge.aten.embedding.default,
+        exir_ops.edge.aten.matmul.default,
         _operator.getitem,
     }
 
@@ -182,7 +183,6 @@ class LayoutTransform(ExportPass):
     def traverse(self, node: torch.fx.Node, graph_module: torch.fx.GraphModule) -> None:
         for arg in node.args:
             self.annotate_layout(arg, graph_module, revert_layout=False)
-
         node_users = set(node.users.keys())
         for user in node_users:
             self.annotate_layout(user, graph_module, revert_layout=True)

@@ -15,7 +15,7 @@ supported_modules = [
     torch.nn.Hardtanh,
     torch.nn.Linear,
     torch.nn.ReLU,
-    torch.nn.Embedding,
+    # torch.nn.Embedding,
     "forward",
 ]
 
@@ -23,6 +23,7 @@ not_supported_operator = [
     exir_ops.edge.aten.arange.start_step,
     exir_ops.edge.aten.index.Tensor,
     exir_ops.edge.aten.full.default,
+    exir_ops.edge.aten.embedding.default,
 ]
 
 allow_list_operator = [
