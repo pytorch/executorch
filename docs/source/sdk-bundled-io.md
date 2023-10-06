@@ -17,7 +17,7 @@ This stage mainly focuses on the creation of a `BundledProgram` and dumping it o
 
 ### Step 1: Create a Model and Emit its ExecuTorch Program.
 
-Executorch Program can be emitted from user's model by using ExecuTorch APIs. [Here](https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/exporting_to_executorch.md) is the tutorial for ExecuTorch Program exporting.
+ExecuTorch Program can be emitted from user's model by using ExecuTorch APIs. [Here](https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/exporting_to_executorch.md) is the tutorial for ExecuTorch Program exporting.
 
 
 ### Step 2: Construct `BundledConfig`

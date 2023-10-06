@@ -1,4 +1,4 @@
-# Exporting to Executorch
+# Exporting to ExecuTorch
 
 One of the important steps in getting your PyTorch programs ready for execution
 on an edge device is exporting them. This is achieved through the use of a
