@@ -123,6 +123,15 @@ cp ./examples/demo-apps/android/jni/libexecutorchdemo.so \
    ../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 ```
 
+3. *Qualcomm HTP Only:* Copy Qualcomm HTP runtime library
+
+If Qualcomm HTP backend is used, then we need to copy additional libraries from Qualcomm SDK artifacts:
+
+```bash
+cp libQnnHtp.so libQnnHtpV69Skel.so libQnnHtpStub.so libQnnSystem.so \
+   ../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
+```
+
 Later, this shared library will be loaded by `NativePeer.java` in Java code.
 
 Then return to the `executorch` directory:
@@ -144,6 +153,12 @@ python3 -m examples.backend.xnnpack_examples --model_name="dl3" --delegate
 python3 -m examples.backend.xnnpack_examples --model_name="ic4" --delegate
 mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 cp dl3_xnnpack_fp32.pte ic4_xnnpack_fp32.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+```
+
+2. *Qualcomm HTP Only:* Copy HTP delegation models to the app:
+
+```bash
+cp dlv3_qnn.pte ic4_qnn.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 ```
 
 ## Final Steps
