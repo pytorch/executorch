@@ -127,11 +127,12 @@ class ArmBackend final : public PyTorchBackendInterface {
     for (int i = 0; i < handles.input_shapes.size(); i++) {
       const char* input_addr = handles.scratch_data + handles.input_offset[i];
       // Process input EValue into scratch
-      // TODO: optimise into direct write for compatible, contig layout
+      // TODO: Optimise into direct write from Vela into the SRAM or DRAM output
+      //       for compatible data layouts.
       int* input_address = (int*)input_addr;
       auto tensor_in = args[i]->toTensor();
       for (int j = 0; j < tensor_in.numel(); j++) {
-        // TODO: extend beyond 4 byte tensors
+        // TODO: extend beyond tensors with 4 byte elements
         input_address[j] = tensor_in.mutable_data_ptr<int>()[j];
       }
     }
@@ -173,12 +174,18 @@ class ArmBackend final : public PyTorchBackendInterface {
     // Outputs are in the index immediately after inputs
     int output_index = handles.input_shapes.size();
 
+    if (handles.output_shapes.size() != 1) {
+      ET_LOG(
+          Error,
+          "ArmBackend::execute: currently only support one return tensor");
+      return Error::InvalidProgram;
+    }
     // Process results into EValue storage
     // TODO: optimise into direct write for compatible, contig layout
     int* output_address = (int*)output_addr;
     auto tensor_out = args[output_index]->toTensor();
     for (int j = 0; j < tensor_out.numel(); j++) {
-      // TODO: extend beyond 4 byte tensors
+      // TODO: extend beyond tensors with 4 byte elements
       tensor_out.mutable_data_ptr<int>()[j] = output_address[j];
     }
 
