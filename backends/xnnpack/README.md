@@ -69,7 +69,7 @@ example can be found [here](). The function of these node_visitors is to
 serialize all the data we define to need in the schema above.
 
 #### AoT Partitioner:
-XnnpackPartitioner is used to select the pattern (like the linear module
+XNNPACKPartitioner is used to select the pattern (like the linear module
 graph) in a big graph such that the selected nodes will be delegated to
 XNNPACK. To support a new op (for example, sigmoid), add the corresponding op
 or module to the
@@ -79,9 +79,9 @@ which captures the sigmoid op.
 #### How does it work?
 - Tag the nodes: in the XNNPACK partitioner's config, which lists all ops that
   are supported by the current XNNPACK backend in executorch. When call
-  `XnnpackPartitioner.partition()`, it will tag all the nodes that matches the
+  `XNNPACKPartitioner.partition()`, it will tag all the nodes that matches the
   patterns listed in self.pattern
-- Lower the nodes; when we call `to_backend(graph_module, XnnpackPartitioner)`,
+- Lower the nodes; when we call `to_backend(graph_module, XNNPACKPartitioner)`,
   it will loop through all the tagged nodes, and lower the group with the same
   tag.
 

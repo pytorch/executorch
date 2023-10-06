@@ -8,7 +8,7 @@ import unittest
 
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackFloatingPointPartitioner,
+    XNNPACKFloatingPointPartitioner,
 )
 from executorch.backends.xnnpack.utils.configs import (
     get_xnnpack_executorch_backend_config,
@@ -53,7 +53,7 @@ class SizeAnalysisToolTest(unittest.TestCase):
         test_input = torch.ones(size=(4, 7, 5, 6), dtype=torch.float)
 
         edge_program = capture_graph_for_xnnpack(mm, (test_input,))
-        partitioner = XnnpackFloatingPointPartitioner
+        partitioner = XNNPACKFloatingPointPartitioner
 
         with validation_disabled():
             delegated_program = edge_program

@@ -26,7 +26,7 @@ import torchvision.models as models
 
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 from executorch.examples.portable.utils import export_to_edge
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XNNPACKPartitioner
 
 
 mobilenet_v2 = models.mobilenetv2.mobilenet_v2(weights=MobileNet_V2_Weights).eval()
@@ -35,10 +35,10 @@ sample_inputs = (torch.randn(1, 3, 224, 224), )
 edge = export_to_edge(mobilenet_v2, example_inputs)
 
 
-edge.exported_program = to_backend(edge.exported_program, XnnpackPartitioner)
+edge.exported_program = to_backend(edge.exported_program, XNNPACKPartitioner)
 ```
 
-We will go through this example with the MobileNetV2 model. The flow of lowering a model starts after exporting the model `to_edge`. We call the `to_backend` api with the `XnnpackPartitioner`. The partitioner identifies the subgraphs suitable for XNNPACK lowering. After which these subgraphs, will be serialized with the XNNPACK Delegate flatbuffer schema and will be replaced with calls to the XNNPACK Delegate.
+We will go through this example with the MobileNetV2 model. The flow of lowering a model starts after exporting the model `to_edge`. We call the `to_backend` api with the `XNNPACKPartitioner`. The partitioner identifies the subgraphs suitable for XNNPACK lowering. After which these subgraphs, will be serialized with the XNNPACK Delegate flatbuffer schema and will be replaced with calls to the XNNPACK Delegate.
 
 ```
 class GraphModule(torch.nn.Module):
@@ -91,7 +91,7 @@ edge = export_to_edge(
     example_inputs,
     edge_compile_config=EdgeCompileConfig(_check_ir_validity=False)
 )
-edge.exported_program = to_backend(edge.exported_program, XnnpackPartitioner)
+edge.exported_program = to_backend(edge.exported_program, XNNPACKPartitioner)
 
 exec_prog = edge.to_executorch()
 save_pte_program(exec_prog.buffer, "qs8_xnnpack_mobilenetv2.pte")

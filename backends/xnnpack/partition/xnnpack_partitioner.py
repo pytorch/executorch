@@ -20,7 +20,7 @@ from executorch.backends.xnnpack.partition.configs import (
     UNSUPPORTED_QUANT_MODULES,
 )
 from executorch.backends.xnnpack.utils.utils import get_input_node, is_param_node
-from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
+from executorch.backends.xnnpack.xnnpack_preprocess import XNNPACKBackend
 
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
@@ -66,12 +66,12 @@ For module based partitioner - if any node fails to qualify, we discard that
 instance of the module.
 
 Don't update this global dict directly. It is updated through decorator
-`XnnpackOperatorSupport._constraint`
+`XNNPACKOperatorSupport._constraint`
 """
 _OP_SUPPORT_CONSTRAINTS = {}
 
 
-class XnnpackOperatorSupport(OperatorSupportBase):
+class XNNPACKOperatorSupport(OperatorSupportBase):
     def __init__(
         self,
         ep: ExportedProgram,
@@ -184,10 +184,10 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         For node q, if op1 or op2 is good, q should be good
         TODO: q -> op -> dq, real q not handled right now
         """
-        first = XnnpackOperatorSupport.check_constraint(q.args[0], ep)
+        first = XNNPACKOperatorSupport.check_constraint(q.args[0], ep)
         dq = list(q.users.keys())[0]
         op2 = list(dq.users.keys())[0]
-        return first or XnnpackOperatorSupport.check_constraint(op2, ep)
+        return first or XNNPACKOperatorSupport.check_constraint(op2, ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default)
     def dequant_per_tensor_default(
@@ -196,29 +196,29 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         """
         Decide if we want to pull this dq node or not.
         """
-        return XnnpackOperatorSupport.check_constraint(dq.args[0], ep)
+        return XNNPACKOperatorSupport.check_constraint(dq.args[0], ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.quantize_per_channel.default)
     def quant_per_channel_default(
         q: torch.fx.Node, ep: ExportedProgram  # noqa
     ) -> bool:
-        return XnnpackOperatorSupport.quant_per_tensor_default(q, ep)
+        return XNNPACKOperatorSupport.quant_per_tensor_default(q, ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.dequantize_per_channel.default)
     def dequant_per_channel_default(
         dq: torch.fx.Node, ep: ExportedProgram  # noqa
     ) -> bool:
-        return XnnpackOperatorSupport.dequant_per_tensor_default(dq, ep)
+        return XNNPACKOperatorSupport.dequant_per_tensor_default(dq, ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor)
     def quant_per_tensor_tensor(q: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
-        return XnnpackOperatorSupport.quant_per_tensor_default(q, ep)
+        return XNNPACKOperatorSupport.quant_per_tensor_default(q, ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor)
     def dequant_per_tensor_tensor(
         dq: torch.fx.Node, ep: ExportedProgram  # noqa
     ) -> bool:
-        return XnnpackOperatorSupport.dequant_per_tensor_default(dq, ep)
+        return XNNPACKOperatorSupport.dequant_per_tensor_default(dq, ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.choose_qparams.tensor)
     def choose_qparams_tensor(cqp: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
@@ -228,7 +228,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         """
         getitem0 = list(cqp.users.keys())[0]
         q = list(getitem0.users.keys())[0]
-        return XnnpackOperatorSupport.check_constraint(q, ep)
+        return XNNPACKOperatorSupport.check_constraint(q, ep)
 
     @_constraint(exir_ops.edge.aten.pow.Tensor_Scalar)
     def pow_tensor_scalar(node: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
@@ -319,7 +319,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         return True
 
 
-class XnnpackFloatingPointPartitioner(Partitioner):
+class XNNPACKFloatingPointPartitioner(Partitioner):
     """
     Module and Opname based partitioner for FP32 modules/ops listed in
     SUPPORTED_MODULES and SUPPORTED_OPS.
@@ -336,7 +336,7 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         self.unsupported_modules = unsupported_modules
         self.supported_ops = set(supported_ops or [])
 
-        self.delegation_spec = DelegationSpec(XnnpackBackend.__name__, [])
+        self.delegation_spec = DelegationSpec(XNNPACKBackend.__name__, [])
 
     @staticmethod
     def check_partitions(partitions: Union[dict, list]) -> bool:
@@ -374,7 +374,7 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         Disqualify the whole module if one of the nodes fails to satisfy.
         """
         return all(
-            XnnpackOperatorSupport.check_constraint(node, ep) for node in input_nodes
+            XNNPACKOperatorSupport.check_constraint(node, ep) for node in input_nodes
         )
 
     def get_module_partitions(self, ep: ExportedProgram) -> List[List[torch.fx.Node]]:
@@ -407,7 +407,7 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         return generate_partitions_from_list_of_nodes(
             graph_module,
             matched_module_nodes,
-            XnnpackOperatorSupport(
+            XNNPACKOperatorSupport(
                 ep=ep,
                 supported_ops=self.supported_ops,
                 unsupported_modules=self.unsupported_modules,
@@ -442,8 +442,8 @@ class XnnpackFloatingPointPartitioner(Partitioner):
         )
 
 
-# TODO: Merge XnnpackQuantizedPartitioner and XnnpackFloatingPointPartitioner
-class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
+# TODO: Merge XNNPACKQuantizedPartitioner and XNNPACKFloatingPointPartitioner
+class XNNPACKQuantizedPartitioner(XNNPACKFloatingPointPartitioner):
     """
     Module and Opname based partitioner for statically quantized modules/ops listed in SUPPORTED_QUANT_MODULES and SUPPORTED_QUANT_OPS.
     """
@@ -565,7 +565,7 @@ class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
         )
 
 
-class XnnpackPartitioner(Partitioner):
+class XNNPACKPartitioner(Partitioner):
     """
     Module and Opname based partitioner for FP32 modules/ops listed in
     SUPPORTED_MODULES and SUPPORTED_OPS and statically quantized modules/ops listed in
@@ -608,7 +608,7 @@ class XnnpackPartitioner(Partitioner):
 
         self.quant = quant
 
-        self.delegation_spec = DelegationSpec(XnnpackBackend.__name__, [])
+        self.delegation_spec = DelegationSpec(XNNPACKBackend.__name__, [])
         self.partition_tags: Dict[str, DelegationSpec] = {}
 
     def get_supported_modules(self, quant: bool) -> Set[Callable]:
@@ -746,7 +746,7 @@ class XnnpackPartitioner(Partitioner):
         Disqualify the whole module if one of the nodes fails to satisfy.
         """
         return all(
-            XnnpackOperatorSupport.check_constraint(node, ep) for node in input_nodes
+            XNNPACKOperatorSupport.check_constraint(node, ep) for node in input_nodes
         )
 
     def get_module_partitions(
@@ -802,7 +802,7 @@ class XnnpackPartitioner(Partitioner):
         return generate_partitions_from_list_of_nodes(
             graph_module,
             matched_module_nodes,
-            XnnpackOperatorSupport(
+            XNNPACKOperatorSupport(
                 ep=ep, supported_ops=list(self.get_supported_ops(quant))
             ),
         )
@@ -847,7 +847,7 @@ class XnnpackPartitioner(Partitioner):
         return ret
 
 
-class XnnpackDynamicallyQuantizedPartitioner(XnnpackQuantizedPartitioner):
+class XNNPACKDynamicallyQuantizedPartitioner(XNNPACKQuantizedPartitioner):
     def __init__(
         self,
         supported_modules=SUPPORTED_DYN_QUANT_MODULES,

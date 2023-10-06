@@ -19,10 +19,10 @@ It is recommended that you get familiar with the content from the “Backend and
 
 ### Ahead-of-time
 ![](./xnnpack-et-flow-diagram.png)
-In the ExecuTorch export flow, lowering to the XNNPACK Delegate happens at the `to_backend()` stage. In this stage, the model is partitioned by the `XnnpackPartitioner` and the partitions are then serialized via flatbuffer. The serialized flatbuffer is then read to be deserialized and executed by the XNNPACK Backend at runtime.
+In the ExecuTorch export flow, lowering to the XNNPACK Delegate happens at the `to_backend()` stage. In this stage, the model is partitioned by the `XNNPACKPartitioner` and the partitions are then serialized via flatbuffer. The serialized flatbuffer is then read to be deserialized and executed by the XNNPACK Backend at runtime.
 
 #### Partitioner
-The partitioner is implemented by backend delegates to mark nodes suitable for lowering. The XnnpackPartitioner lowers using node targets and module metadata. Some more references for partitioners can be found [here](compiler-delegate-and-partitioner.md)
+The partitioner is implemented by backend delegates to mark nodes suitable for lowering. The XNNPACKPartitioner lowers using node targets and module metadata. Some more references for partitioners can be found [here](compiler-delegate-and-partitioner.md)
 
 ##### Module-based partitioning
 
@@ -36,7 +36,7 @@ For example after capturing `torch.nn.Linear` you would find the following key i
 
 ##### Op-based partitioning
 
-The XnnpackPartitioner also partitions using op targets. It traverses the graph and identifies individual nodes which are lowerable to XNNPACK. A drawback to module-based partitioning is that operators which come from decompositions may be skipped. For example, an operator like `torch.nn.Hardsigmoid` is decomposed into add, muls, divs, and clamps. While hardsigmoid is not lowerable, we can lower the decomposed ops. Relying on `source_fn` metadata would skip these lowerables because they belong to a non-lowerable module, so in order to improve model performance, we greedily lower operators based on the op targets as well as the `source_fn`.
+The XNNPACKPartitioner also partitions using op targets. It traverses the graph and identifies individual nodes which are lowerable to XNNPACK. A drawback to module-based partitioning is that operators which come from decompositions may be skipped. For example, an operator like `torch.nn.Hardsigmoid` is decomposed into add, muls, divs, and clamps. While hardsigmoid is not lowerable, we can lower the decomposed ops. Relying on `source_fn` metadata would skip these lowerables because they belong to a non-lowerable module, so in order to improve model performance, we greedily lower operators based on the op targets as well as the `source_fn`.
 
 #### Serialiazation
 After partitioning the lowerable subgraphs from the model, The XNNPACK Delegate pre-processes these subgraphs and serializes them via flatbuffer for the XNNPACK Backend.

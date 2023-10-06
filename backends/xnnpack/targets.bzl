@@ -76,7 +76,7 @@ def define_common_targets():
             "//executorch/backends/xnnpack/threadpool:threadpool",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
-        # XnnpackBackend.cpp needs to compile with executor as whole
+        # XNNPACKBackend.cpp needs to compile with executor as whole
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
     )

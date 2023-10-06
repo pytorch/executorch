@@ -182,7 +182,7 @@ def generate_node_to_external_map(
 
 
 @final
-class XnnpackBackend(BackendDetails):
+class XNNPACKBackend(BackendDetails):
     @staticmethod
     def preprocess(
         edge_program: ExportedProgram,

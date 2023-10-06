@@ -16,9 +16,9 @@
 namespace torch {
 namespace executor {
 
-class XnnpackBackend final : public PyTorchBackendInterface {
+class XNNPACKBackend final : public PyTorchBackendInterface {
  public:
-  ~XnnpackBackend() = default;
+  ~XNNPACKBackend() = default;
 
   bool is_available() const override {
     return xnn_status_success == xnn_initialize(/*allocator=*/nullptr);
@@ -130,8 +130,8 @@ class XnnpackBackend final : public PyTorchBackendInterface {
 };
 
 namespace {
-auto cls = XnnpackBackend();
-Backend backend{"XnnpackBackend", &cls};
+auto cls = XNNPACKBackend();
+Backend backend{"XNNPACKBackend", &cls};
 static auto success_with_compiler = register_backend(backend);
 } // namespace
 

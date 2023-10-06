@@ -11,7 +11,7 @@ import logging
 
 import torch._export as export
 
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XNNPACKPartitioner
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.backend_api import to_backend
 
@@ -88,7 +88,7 @@ if __name__ == "__main__":
     )
     logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
-    edge.exported_program = to_backend(edge.exported_program, XnnpackPartitioner)
+    edge.exported_program = to_backend(edge.exported_program, XNNPACKPartitioner)
     logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
 
     exec_prog = edge.to_executorch()

@@ -12,11 +12,11 @@ import torch
 from executorch.backends.qnnpack.partition.qnnpack_partitioner import QnnpackPartitioner
 from executorch.backends.qnnpack.qnnpack_preprocess import QnnpackBackend
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackFloatingPointPartitioner,
+    XNNPACKFloatingPointPartitioner,
 )
 
 # import the xnnpack backend implementation
-from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
+from executorch.backends.xnnpack.xnnpack_preprocess import XNNPACKBackend
 
 from executorch.exir import CaptureConfig
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
@@ -101,7 +101,7 @@ class TestXnnQnnBackends(unittest.TestCase):
             module_with_xnn_and_qnn = module_with_qnnpack_delegate
             module_with_xnn_and_qnn.exported_program = to_backend(
                 module_with_qnnpack_delegate.exported_program,
-                XnnpackFloatingPointPartitioner,
+                XNNPACKFloatingPointPartitioner,
             )
 
         program_with_delegates = module_with_xnn_and_qnn.to_executorch(
@@ -112,10 +112,10 @@ class TestXnnQnnBackends(unittest.TestCase):
             program_with_delegates.program.execution_plan[0].delegates[0].id,
             QnnpackBackend.__name__,
         )
-        # The second delegate backend is Xnnpack
+        # The second delegate backend is XNNPACK
         self.assertEqual(
             program_with_delegates.program.execution_plan[0].delegates[1].id,
-            XnnpackBackend.__name__,
+            XNNPACKBackend.__name__,
         )
 
         executorch_module = _load_for_executorch_from_buffer(

@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 import torch._export as export
 from executorch import exir
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XNNPACKPartitioner
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import (
@@ -183,7 +183,7 @@ class RunPasses(Stage):
 @register_stage
 class Partition(Stage):
     def __init__(self, partitioner: Optional[Partitioner] = None):
-        self.partitioner = partitioner or XnnpackPartitioner
+        self.partitioner = partitioner or XNNPACKPartitioner
         self.delegate_module = None
 
     def run(self, artifact: ExirExportedProgram, inputs=None):

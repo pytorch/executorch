@@ -13,8 +13,8 @@ import torch.nn.functional as F
 from executorch import exir
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackDynamicallyQuantizedPartitioner,
-    XnnpackPartitioner,
+    XNNPACKDynamicallyQuantizedPartitioner,
+    XNNPACKPartitioner,
 )
 from executorch.backends.xnnpack.utils.configs import (
     get_transform_passes,
@@ -24,7 +24,7 @@ from executorch.backends.xnnpack.utils.configs import (
 from executorch.backends.xnnpack.utils.utils import capture_graph_for_xnnpack
 
 # import the xnnpack backend implementation
-from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
+from executorch.backends.xnnpack.xnnpack_preprocess import XNNPACKBackend
 
 from executorch.bundled_program.config import BundledConfig
 from executorch.bundled_program.core import create_bundled_program
@@ -181,11 +181,11 @@ class TestXNNPACK(unittest.TestCase):
         partitioner = None
         if quantized:
             if quantized_dynamic:
-                partitioner = XnnpackDynamicallyQuantizedPartitioner
+                partitioner = XNNPACKDynamicallyQuantizedPartitioner
             else:
-                partitioner = XnnpackPartitioner
+                partitioner = XNNPACKPartitioner
         else:
-            partitioner = XnnpackPartitioner
+            partitioner = XNNPACKPartitioner
 
         if use_partitioner:
             with validation_disabled():
@@ -199,7 +199,7 @@ class TestXNNPACK(unittest.TestCase):
             )
         else:
             delegated_program = to_backend(
-                "XnnpackBackend", edge_program.exported_program, []
+                "XNNPACKBackend", edge_program.exported_program, []
             )
 
             exported_program: ExirExportedProgram = capture_graph_for_xnnpack(
@@ -215,7 +215,7 @@ class TestXNNPACK(unittest.TestCase):
         # Assert the backend name is xnnpack
         self.assertEqual(
             executorch_program.program.execution_plan[0].delegates[0].id,
-            XnnpackBackend.__name__,
+            XNNPACKBackend.__name__,
         )
 
         ref_output = delegated_program(*sample_inputs)
@@ -394,7 +394,7 @@ class TestXNNPACK(unittest.TestCase):
         captured_dqlinear.exported_program.graph_module.graph.print_tabular()
 
         lowered_module = to_backend(
-            "XnnpackBackend", captured_dqlinear.exported_program, []
+            "XNNPACKBackend", captured_dqlinear.exported_program, []
         )
 
         class CompositeModule(torch.nn.Module):
@@ -417,7 +417,7 @@ class TestXNNPACK(unittest.TestCase):
 
         self.assertEqual(
             executorch_program.program.execution_plan[0].delegates[0].id,
-            XnnpackBackend.__name__,
+            XNNPACKBackend.__name__,
         )
 
         ref_output = captured_dqlinear(*example_inputs)
