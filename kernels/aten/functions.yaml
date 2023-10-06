@@ -290,6 +290,8 @@
 
 - op: squeeze_copy.dim_out
 
+- op: squeeze_copy.dims_out
+
 - op: squeeze_copy.out
 
 - op: stack.out

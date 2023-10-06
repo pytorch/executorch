@@ -705,6 +705,9 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_squeeze_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
     ),
     op_target(
         name = "op_stack",
