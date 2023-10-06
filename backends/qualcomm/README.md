@@ -50,7 +50,6 @@ examples/backend
 
 ## Examples
 
-Please see this [README.md](../../examples/backend/qualcomm/README.md).
+Please see this [README.md](../../examples/qualcomm/README.md).
 
 Further, an example build script is provided as [build.sh](scripts/build.sh).
-
