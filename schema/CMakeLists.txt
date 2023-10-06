@@ -21,32 +21,35 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 endif()
 
-# Paths to headers generated from the .fbs files.
-set(_program_schema__srcs program.fbs scalar_type.fbs)
+function(generate_program_schema _schema_srcs _schema_name)
+  set(_schema_outputs)
+  foreach(fbs_file ${_schema_srcs})
+    string(REGEX REPLACE "[.]fbs$" "_generated.h" generated "${fbs_file}")
+    list(APPEND _schema_outputs
+         "${_program_schema__include_dir}/executorch/${generated}")
+  endforeach()
 
-set(_program_schema__outputs)
-foreach(fbs_file ${_program_schema__srcs})
-  string(REGEX REPLACE "[.]fbs$" "_generated.h" generated "${fbs_file}")
-  list(APPEND _program_schema__outputs
-       "${_program_schema__include_dir}/executorch/${generated}")
-endforeach()
+  # Generate the headers from the .fbs files.
+  add_custom_command(
+    OUTPUT ${_schema_outputs}
+    COMMAND
+      ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --gen-mutable --scoped-enums -o
+      "${_program_schema__include_dir}/executorch/schema" ${_schema_srcs}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS ${FLATC_EXECUTABLE} ${_schema_srcs}
+    COMMENT "Generating ${_schema_name} headers"
+    VERBATIM)
 
-# Generate the headers from the .fbs files.
-add_custom_command(
-  OUTPUT ${_program_schema__outputs}
-  COMMAND
-    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --gen-mutable --scoped-enums
-    # Add a subdirectory to the include dir so the files can be included as
-    # <executorch/schema/x_generated.h>
-    -o "${_program_schema__include_dir}/executorch/schema"
-    ${_program_schema__srcs}
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-  DEPENDS ${FLATC_EXECUTABLE} ${_program_schema__srcs}
-  COMMENT "Generating program_schema headers"
-  VERBATIM)
+  add_library(${_schema_name} INTERFACE ${_schema_outputs})
+  set_target_properties(${_schema_name} PROPERTIES LINKER_LANGUAGE CXX)
+  target_include_directories(
+    ${_schema_name}
+    INTERFACE ${_program_schema__include_dir}
+              ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
+endfunction()
 
-add_library(program_schema INTERFACE ${_program_schema__outputs})
-set_target_properties(program_schema PROPERTIES LINKER_LANGUAGE CXX)
-target_include_directories(
-  program_schema INTERFACE ${_program_schema__include_dir}
-                           ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
+set(program_schema_srcs program.fbs scalar_type.fbs)
+generate_program_schema("${program_schema_srcs}" "program_schema")
+
+set(bundled_schema_srcs bundled_program_schema.fbs scalar_type.fbs)
+generate_program_schema("${bundled_schema_srcs}" "bundled_schema")
