@@ -14,7 +14,6 @@ endif()
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
-set(_common_compile_options -Wno-deprecated-declarations)
 
 include(cmake/Dependencies.cmake)
 

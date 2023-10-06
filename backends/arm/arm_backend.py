@@ -138,13 +138,11 @@ def dbg_tosa_dump(tosa_fb, path):
     fb = tosa_fb.serialize()
     js = tosa_fb.writeJson(filename)
 
-    f = open(path + filename, "wb")
-    f.write(fb)
-    f.close()
+    with open(path + filename, "wb") as f:
+        f.write(fb)
 
-    f = open(path + "desc.json", "w")
-    f.write(js)
-    f.close()
+    with open(path + "desc.json", "w") as f:
+        f.write(js)
 
 
 # Output to Vela with current file-based compilation
@@ -153,12 +151,10 @@ def vela_compile(tosa_fb):
     with tempfile.TemporaryDirectory() as tmpdir:
         tosaname = "out.tosa"
         flatbuffer = tosa_fb.serialize()
-        f = open(os.path.join(tmpdir, tosaname), "wb")
-        f.write(flatbuffer)
-        f.close()
+        with open(os.path.join(tmpdir, tosaname), "wb") as f:
+            f.write(flatbuffer)
 
         # invoke vela
-        # TODO target ethos-u55-128
         vela_command = (
             f"cd {tmpdir}; vela --accelerator-config ethos-u55-128 {tosaname}"
         )
@@ -169,7 +165,7 @@ def vela_compile(tosa_fb):
         with np.load(np_path, allow_pickle=False) as data:
             # Emit the NPZ regions as:
             #  - 16 byte block name null terminated string (padded to 16 if name shorter)
-            #  - 4 byes of int32 block length and 12 bytes of 0's
+            #  - 4 bytes of int32 block length and 12 bytes of 0's
             #  - block data (padded to 16 byte alignment at end)
             # Repeat for all blocks
             for key in data.keys():
