@@ -184,8 +184,10 @@ def vela_compile(tosa_fb):
                     block_data = input_struct
                 elif key in ("input_offset", "output_offset"):
                     inputs = data[key]
-                    if key == "output_offset" && len(inputs) > 1:
-                        raise RuntimeError("Currently only support one output in Vela ArmBackend")
+                    if key == "output_offset" and len(inputs) > 1:
+                        raise RuntimeError(
+                            "Currently only support one output in Vela ArmBackend"
+                        )
                     offset_struct = struct.pack("<i", len(inputs))
                     for inp in inputs:
                         offset_struct = offset_struct + struct.pack("<i", inp)
