@@ -10,6 +10,7 @@
  * ethos-u-core-driver for hardware interaction.
  */
 
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -25,7 +26,9 @@ using namespace std;
 namespace torch {
 namespace executor {
 
-// TODO we should be in 0x31, not this lower 1MB sRAM
+// TODO: we should be in 0x31, to access a full 2MB SRAM
+// region and enable maximum program performance up to
+// 2MB, rather than 1.
 // SRAM (rwx) : ORIGIN = 0x31000000, LENGTH = 0x00200000
 #define CS300_SRAM_LOW ((void*)0x11000000)
 #define CS300_SRAM_HIGH ((void*)0x110FFFFF)
@@ -37,6 +40,7 @@ class ArmBackend final : public PyTorchBackendInterface {
   ~ArmBackend() = default;
 
   virtual bool is_available() const override {
+    // TODO: revise to use a register check/init function
     return 1;
   }
 
@@ -52,16 +56,19 @@ class ArmBackend final : public PyTorchBackendInterface {
 
     // Header and footer both 16 bit aligned suggest valid structure and we
     // wont walk off the end of the chunks and segfault
-    if (!((int)data == next_mul_16((int)data))) {
+    if (!((int)data == next_mul_16((uintptr_t)data))) {
       ET_LOG(Error, "ArmBackend::init: Binary needs to be 16 byte unaligned");
       return Error::InvalidProgram;
     }
-    if (!((int)foot == next_mul_16((int)foot))) {
-      ET_LOG(Error, "ArmBackend::init: Program unexpected size");
+    if (!((int)foot == next_mul_16((uintptr_t)foot))) {
+      ET_LOG(Error, "ArmBackend::init: Footer expected to be 16 byte aligned");
+      ET_LOG(
+          Error,
+          "ArmBackend::init: Program expected to be multiple of 16 bytes");
       return Error::InvalidProgram;
     }
     if (!(0 == strncmp(data, "vela_bin_stream", 15))) {
-      ET_LOG(Error, "ArmBackend::init: Binary passed not a vela_bin_stream");
+      ET_LOG(Error, "ArmBackend::init: Binary passed is not a vela_bin_stream");
       return Error::InvalidProgram;
     }
     if (!(0 == strncmp(foot, "vela_end_stream", 15))) {
@@ -70,8 +77,15 @@ class ArmBackend final : public PyTorchBackendInterface {
     }
     // Verify address range is accessible current expectation is the program
     // is wholly stored in SRAM
+    // TODO: expect to improve capabilities here by supporting DRAM storage
+    //       and only moving required data into SRAM.
     if (!(data > CS300_SRAM_LOW || foot < CS300_SRAM_HIGH)) {
       ET_LOG(Error, "ArmBackend::init: Expected program binary to be in SRAM");
+      ET_LOG(
+          Error,
+          "ArmBackend::init: program binary range %p:%p",
+          data,
+          foot + 16);
       return Error::InvalidProgram;
     }
 
@@ -88,7 +102,7 @@ class ArmBackend final : public PyTorchBackendInterface {
 
     ET_LOG(Info, "ArmBackend::execute %p", processed->data());
 
-    vela_handles handles;
+    VelaHandles handles;
 
     // Command stream - we know at this point it's aligned
     char* data = (char*)processed->data();
@@ -110,7 +124,7 @@ class ArmBackend final : public PyTorchBackendInterface {
         handles.scratch_data_size);
 
     // Write inputs into SRAM scratch area defined by Vela
-    for (int i = 0; i < handles.input_shape.size(); i++) {
+    for (int i = 0; i < handles.input_shapes.size(); i++) {
       const char* input_addr = handles.scratch_data + handles.input_offset[i];
       // Process input EValue into scratch
       // TODO: optimise into direct write for compatible, contig layout
@@ -122,21 +136,16 @@ class ArmBackend final : public PyTorchBackendInterface {
       }
     }
 
-#if 0
-    // TMP emit scratch
-    printf("Scratch after setup:\n");
-    for (int i = 0; i < handles.scratch_data_size; i++) {
-      printf("%02x ", ((char*)handles.scratch_data)[i]);
-      if (!((i + 1) % 4))
-        printf("\n");
-    }
-    printf("\n");
-    // END TMP emit scratch
-#endif
-
     // Allocate driver handle and synchronously invoke driver
     ethosu_driver* drv = ethosu_reserve_driver();
+    if (drv == NULL) {
+      ET_LOG(Error, "ArmBackend::execute: ethosu_reserve_driver failed");
+      return Error::InvalidState;
+    }
 
+    // Ethos-U low level driver expected order for Ethos U-55, we have
+    // constant weight data, then scratch (which contains input and output)
+    // scratch is written above in this function.
     uint64_t bases[2] = {
         (uint64_t)handles.weight_data, (uint64_t)handles.scratch_data};
     size_t bases_size[2] = {
@@ -147,7 +156,7 @@ class ArmBackend final : public PyTorchBackendInterface {
         handles.cmd_data_size,
         bases,
         bases_size,
-        2,
+        2, /* fixed array of pointers to binary interface*/
         nullptr);
 
     if (result != 0) {
@@ -158,22 +167,11 @@ class ArmBackend final : public PyTorchBackendInterface {
       return Error::InvalidProgram;
     }
 
-#if 0
-    // TMP emit scratch
-    printf("Scratch after:\n");
-    for (int i = 0; i < handles.scratch_data_size; i++) {
-      printf("%02x ", ((char*)handles.scratch_data)[i]);
-      if (!((i + 1) % 4))
-        printf("\n");
-    }
-    printf("\n");
-#endif
-
     // output data from Ethos U
     // We only handle one output at the moment
     const char* output_addr = handles.scratch_data + handles.output_offset[0];
     // Outputs are in the index immediately after inputs
-    int output_index = handles.input_shape.size();
+    int output_index = handles.input_shapes.size();
 
     // Process results into EValue storage
     // TODO: optimise into direct write for compatible, contig layout
@@ -200,103 +198,100 @@ class ArmBackend final : public PyTorchBackendInterface {
     const char* scratch_data;
     size_t scratch_data_size;
     vector<size_t> input_offset;
-    vector<vector<int>> input_shape;
+    vector<vector<int>> input_shapes;
     vector<size_t> output_offset;
-    vector<vector<int>> output_shape;
-  } vela_handles;
+    vector<vector<int>> output_shapes;
+  } VelaHandles;
 
   typedef struct {
     char name[16];
-    int size;
+    uint32_t size;
     char _pad[12];
     char data[];
-  } vela_bin_block;
+  } VelaBinBlock;
 
   typedef struct {
     int count;
     int shape[][4];
-  } vela_shapes;
+  } VelaShapes;
 
   typedef struct {
     int count;
     int offsets[];
-  } vela_offsets;
+  } VelaOffsets;
 
   static int next_mul_16(int n) {
     return ((n - 1) | 15) + 1;
   }
 
-  int vela_read(char* data, vela_handles* h, int size) const {
+  int vela_read(char* data, VelaHandles* handles, int size) const {
+    constexpr const size_t header_size = 16;
+
     // Read header string
     if (strncmp(data, "vela_bin_stream", 15)) {
       return 0;
     }
-    data += 16;
+    data += header_size;
 
-    // Expect one or more 'vela_bin_block's
+    // Expect one or more 'VelaBinBlock's
     while (1) {
-      vela_bin_block* b = (vela_bin_block*)data;
-      data += 16 + 16 + next_mul_16(b->size);
+      VelaBinBlock* b = (VelaBinBlock*)data;
+      data += sizeof(VelaBinBlock) + next_mul_16(b->size);
 
       // Exit with success on finding end of stream
-      if (!strncmp(b->name, "vela_end_stream", 15))
+      if (!strncmp(b->name, "vela_end_stream", strlen("vela_end_stream")))
         return 1;
 
       if (!strncmp(b->name, "cmd_data", strlen("cmd_data"))) {
         // This magic header confirms a valid command stream in binary
-        if (strncmp(b->data, "COP1", 4))
+        if (strncmp(b->data, "COP1", strlen("COP1")))
           return 0;
-        h->cmd_data = b->data;
-        h->cmd_data_size = b->size;
+        handles->cmd_data = b->data;
+        handles->cmd_data_size = b->size;
       }
       if (!strncmp(b->name, "weight_data", strlen("weight_data"))) {
-        h->weight_data = b->data;
-        h->weight_data_size = b->size;
+        handles->weight_data = b->data;
+        handles->weight_data_size = b->size;
       }
       if (!strncmp(b->name, "scratch_data", strlen("scratch_data"))) {
-        h->scratch_data = b->data;
-        h->scratch_data_size = b->size;
+        handles->scratch_data = b->data;
+        handles->scratch_data_size = b->size;
       }
 
       // capture inputs and outputs
-      if (!strncmp(b->name, "scratch_data", strlen("scratch_data"))) {
-        h->scratch_data = b->data;
-        h->scratch_data_size = b->size;
-      }
-
       if (!strncmp(b->name, "input_offset", strlen("input_offset"))) {
-        vela_offsets* offsets = (vela_offsets*)b->data;
+        VelaOffsets* offsets = (VelaOffsets*)b->data;
         for (int i = 0; i < offsets->count; i++) {
-          h->input_offset.push_back(offsets->offsets[i]);
+          handles->input_offset.push_back(offsets->offsets[i]);
         }
       }
       if (!strncmp(b->name, "output_offset", strlen("output_offset"))) {
-        vela_offsets* offsets = (vela_offsets*)b->data;
+        VelaOffsets* offsets = (VelaOffsets*)b->data;
         for (int i = 0; i < offsets->count; i++) {
-          h->output_offset.push_back(offsets->offsets[i]);
+          handles->output_offset.push_back(offsets->offsets[i]);
         }
       }
 
       if (!strncmp(b->name, "input_shape", strlen("input_shape"))) {
-        vela_shapes* shapes = (vela_shapes*)b->data;
+        VelaShapes* shapes = (VelaShapes*)b->data;
         for (int i = 0; i < shapes->count; i++) {
           vector<int> s = {
               shapes->shape[i][0],
               shapes->shape[i][1],
               shapes->shape[i][2],
               shapes->shape[i][3]};
-          h->input_shape.push_back(s);
+          handles->input_shapes.push_back(s);
         }
       }
       if (!strncmp(b->name, "output_shape", strlen("output_shape"))) {
-        vela_shapes* shapes = (vela_shapes*)b->data;
+        VelaShapes* shapes = (VelaShapes*)b->data;
         for (int i = 0; i < shapes->count; i++) {
           vector<int> s = {
               shapes->shape[i][0],
               shapes->shape[i][1],
               shapes->shape[i][2],
               shapes->shape[i][3]};
-          h->output_shape.push_back(s);
+          handles->output_shapes.push_back(s);
         }
       }
     }
