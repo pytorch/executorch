@@ -177,6 +177,7 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    tutorials/export-to-executorch-tutorial
+   build-run-xtensa
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
