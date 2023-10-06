@@ -53,7 +53,7 @@ public class ClassificationActivity extends Activity implements Runnable {
     try {
       bitmap = BitmapFactory.decodeStream(getAssets().open("corgi2.jpg"));
       bitmap = Bitmap.createScaledBitmap(bitmap, 299, 299, true);
-      module = Module.load(MainActivity.assetFilePath(this, "ic4_qnn.pte"));
+      module = Module.load(MainActivity.assetFilePath(this, "ic4_xnnpack_fp32.pte"));
     } catch (IOException e) {
       Log.e("PytorchHelloWorld", "Error reading assets", e);
       finish();
