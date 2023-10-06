@@ -75,9 +75,9 @@ cmake .. \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
 ```
 
-When we make `EXECUTORCH_BUILD_XNNPACK=ON`, we will build the target [`xnn_executor_runner_lib`](../../../../backends/xnnpack/CMakeLists.txt) and this is built into  in [CMake](../jni/CMakeLists.txt).
+When we set `EXECUTORCH_BUILD_XNNPACK=ON`, we will build the target [`xnn_executor_runner_lib`](../../../../backends/xnnpack/CMakeLists.txt) which in turn is built into  in [CMake](../jni/CMakeLists.txt).
 
-`libexecutorchdemo.so` wraps up the required XNNPACK Backend runtime library from `xnn_executor_runner_lib`, and add an additional JNI layer using fbjni. This is later exposed to Java app.
+`libexecutorchdemo.so` wraps up the required XNNPACK Backend runtime library from `xnn_executor_runner_lib`, and adds an additional JNI layer using fbjni. This is later exposed to Java app.
 
 2. *Optional:* Configure a library with XNNPACK and [Qualcomm HTP backend](../../../../backends/qualcomm/README.md)
 
