@@ -7,7 +7,7 @@
 
 set -eu
 
-if [[ "${1}" == "-h" ]]; then
+if [[ "${1:-"."}" == "-h" ]]; then
     echo "Usage: $(basename $0) [path-to-a-scratch-dir] [buck2 binary]"
     exit 0
 fi
@@ -18,7 +18,8 @@ fi
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 
 # Ethos-u
-root_dir=${1:-"$(realpath ${script_dir}/ethos-u-scratch)"}
+root_dir=${1:-"${script_dir}/ethos-u-scratch"}
+root_dir=$(realpath ${root_dir})
 buck2=${2:-"/tmp/buck2"}
 ethos_u_root_dir="$(cd ${root_dir}/ethos-u && pwd)"
 ethos_u_build_dir=${ethos_u_root_dir}/core_platform/build

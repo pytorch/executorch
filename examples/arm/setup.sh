@@ -7,7 +7,7 @@
 
 set -eu
 
-if [[ "${1}" == "-h" ]]; then
+if [[ "${1:-'.'}" == "-h" ]]; then
     echo "Usage: $(basename $0) [path-to-a-scratch-dir]"
     exit 0
 fi
@@ -47,18 +47,22 @@ if [[ $(get_cpu_arch) == "x86_64" ]]; then
 	# FVP
 	fvp_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
 	fvp_model_dir="Linux64_GCC-9.3"
+	fvp_md5_checksum="98e93b949d0fbac977292d8668d34523"
 
 	# toochain
 	toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi.tar.xz"
 	toolchain_dir="arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi"
+	toolchain_md5_checksum="00ebb1b70b1f88906c61206457eacb61"
 elif [[ $(get_cpu_arch) == "aarch64" ]]; then
     # FVP
 	fvp_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64_armv8l.tgz?rev=9cc6e9a32bb947ca9b21fa162144cb01&hash=7657A4CF27D42E892E3F08D452AAB073"
     fvp_model_dir="Linux64_armv8l_GCC-9.3"
+	fvp_md5_checksum="cbbabbe39b07939cff7a3738e1492ef1"
 
     # toochain
     toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi.tar.xz"
     toolchain_dir="arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi"
+	toolchain_md5_checksum="02c9b0d3bb1110575877d8eee1f223f2"
 else
 	echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"; exit 1;
 fi
@@ -70,7 +74,8 @@ ethos_u_base_rev="0995223100e3da8011700f58e491f1bf59511e3c"
 ########
 ### Optional user args
 ########
-root_dir=${1:-"$(realpath ${script_dir}/ethos-u-scratch)"}
+root_dir=${1:-"${script_dir}/ethos-u-scratch"}
+root_dir=$(realpath ${root_dir})
 
 ########
 ### Functions
@@ -165,7 +170,7 @@ function setup_tosa_reference_model() {
 	cd reference_model
 	tosa_bin_path=`pwd`
 	echo adding ${tosa_bin_path} to path
-	echo "export PATH=\${PATH}:${tosa_bin_path}" >> ${update_path_script}
+	echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
 	cd ../..
 	echo back at `pwd`
 }
