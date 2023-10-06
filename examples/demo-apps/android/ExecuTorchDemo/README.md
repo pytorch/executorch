@@ -75,7 +75,13 @@ cmake .. \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
 ```
 
-2. Configure a library with XNNPACK and Qualcomm HTP backend
+When we set `EXECUTORCH_BUILD_XNNPACK=ON`, we will build the target [`xnn_executor_runner_lib`](../../../../backends/xnnpack/CMakeLists.txt) which in turn is built into  in [CMake](../jni/CMakeLists.txt).
+
+`libexecutorchdemo.so` wraps up the required XNNPACK Backend runtime library from `xnn_executor_runner_lib`, and adds an additional JNI layer using fbjni. This is later exposed to Java app.
+
+2. *Optional:* Configure a library with XNNPACK and [Qualcomm HTP backend](../../../../backends/qualcomm/README.md)
+
+Qualcomm SDK is required for this step.
 
 ```bash
 rm -rf cmake-out && mkdir cmake-out && cd cmake-out
@@ -91,6 +97,8 @@ cmake .. \
     -DQNN_SDK_ROOT=/path/to/qnn/sdk \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
 ```
+
+Similar to the previous XNNPACK library, with this setup, `libexecutorchdemo.so` wraps up the XNNPACK Backend and Qualcomm HTP runtime library and fbjni. This is later exposed to Java app.
 
 ## Building and Copying Libraries
 
@@ -115,6 +123,15 @@ cp ./examples/demo-apps/android/jni/libexecutorchdemo.so \
    ../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 ```
 
+3. *Qualcomm HTP Only:* Copy Qualcomm HTP runtime library
+
+If Qualcomm HTP backend is used, then we need to copy additional libraries from Qualcomm SDK artifacts:
+
+```bash
+cp libQnnHtp.so libQnnHtpV69Skel.so libQnnHtpStub.so libQnnSystem.so \
+   ../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
+```
+
 Later, this shared library will be loaded by `NativePeer.java` in Java code.
 
 Then return to the `executorch` directory:
@@ -134,11 +151,18 @@ Note: Please refer to [XNNPACK backend](../../../backend/README.md) and [Qualcom
 export FLATC_EXECUTABLE=$(realpath third-party/flatbuffers/cmake-out/flatc)
 python3 -m examples.backend.xnnpack_examples --model_name="dl3" --delegate
 python3 -m examples.backend.xnnpack_examples --model_name="ic4" --delegate
-cp dl3_xnnpack_fp32.pte ic4_xnnpack_fp32.pte examples/android_demo_apps/ExecuTorchDemo/app/src/main/assets/
+mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+cp dl3_xnnpack_fp32.pte ic4_xnnpack_fp32.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+```
+
+2. *Qualcomm HTP Only:* Copy HTP delegation models to the app:
+
+```bash
+cp dlv3_qnn.pte ic4_qnn.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 ```
 
 ## Final Steps
 
-1. Open the project `examples/android_demo_apps/ExecuTorchDemo` with Android Studio.
+1. Open the project `examples/demo-apps/android/ExecuTorchDemo` with Android Studio.
 
 2. [Run](https://developer.android.com/studio/run) the app (^R)
