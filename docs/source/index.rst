@@ -3,6 +3,16 @@
 Welcome to the ExecuTorch Documentation
 =======================================
 
+.. important::
+   This is a preview version of ExecuTorch and should be used for testing and
+   evaluation purposes only. It is not recommended for use in production
+   settings. We welcome any feedback, suggestions, and bug reports from the
+   community to help us improve the technology. Please use the
+   `PyTorch Forums <https://discuss.pytorch.org/>`__ for discussion and feedback
+   about ExecuTorch using the tag **#executorch** and our
+   `GitHub repository <https://github.com/pytorch/executorch/issues>`__ for bug
+   reporting.
+
 **ExecuTorch** is a PyTorch platform that provides infrastructure to run
 PyTorch programs everywhere from AR/VR wearables to standard on-device
 iOS and Android mobile deployments. One of the main
