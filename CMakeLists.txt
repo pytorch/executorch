@@ -112,14 +112,14 @@ option(EXECUTORCH_BUILD_SIZE_TEST "Whether to build size test" OFF)
 
 # Selective build options.
 option(EXECUTORCH_SELECT_ALL_OPS
-      "Whether to register all ops defined in portable kernel library." ON)
+       "Whether to register all ops defined in portable kernel library." ON)
 
 # Option to register op list
 option(EXECUTORCH_SELECT_OPS_LIST "Register the following list of ops" OFF)
 
 # Option to register ops from yaml file
-option(EXECUTORCH_SELECT_OPS_YAML
-      "Register all the ops from a given yaml file" OFF)
+option(EXECUTORCH_SELECT_OPS_YAML "Register all the ops from a given yaml file"
+       OFF)
 # Do not enable select all ops if any of the other select options is on.
 if(EXECUTORCH_SELECT_OPS_LIST OR EXECUTORCH_SELECT_OPS_YAML)
   set(EXECUTORCH_SELECT_ALL_OPS OFF)
