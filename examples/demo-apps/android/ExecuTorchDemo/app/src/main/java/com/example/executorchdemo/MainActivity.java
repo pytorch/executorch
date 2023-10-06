@@ -10,7 +10,6 @@ package com.example.executorchdemo;
 
 import android.app.Activity;
 import android.content.Context;
-import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Bundle;
@@ -22,7 +21,6 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
-import android.widget.Toast;
 import com.example.executorchdemo.executor.EValue;
 import com.example.executorchdemo.executor.Module;
 import com.example.executorchdemo.executor.Tensor;
@@ -36,11 +34,11 @@ import java.util.Objects;
 
 public class MainActivity extends Activity implements Runnable {
   private ImageView mImageView;
-  private Button mButtonSegment;
+  private Button mButtonXnnpack;
+  private Button mButtonHtp;
   private ProgressBar mProgressBar;
   private Bitmap mBitmap = null;
   private Module mModule = null;
-  private String mBackend = "xnnpack";
   private String mImagename = "corgi.jpeg";
 
   // see http://host.robots.ox.ac.uk:8080/pascal/VOC/voc2007/segexamples/index.html for the list of
@@ -49,11 +47,6 @@ public class MainActivity extends Activity implements Runnable {
   private static final int DOG = 12;
   private static final int PERSON = 15;
   private static final int SHEEP = 17;
-
-  private void openClassificationActivity() {
-    Intent intent = new Intent(this, ClassificationActivity.class);
-    startActivity(intent);
-  }
 
   public static String assetFilePath(Context context, String assetName) throws IOException {
     File file = new File(context.getFilesDir(), assetName);
@@ -71,6 +64,17 @@ public class MainActivity extends Activity implements Runnable {
         os.flush();
       }
       return file.getAbsolutePath();
+    }
+  }
+
+  private void populateImage() {
+    try {
+      mBitmap = BitmapFactory.decodeStream(getAssets().open(mImagename));
+      mBitmap = Bitmap.createScaledBitmap(mBitmap, 224, 224, true);
+      mImageView.setImageBitmap(mBitmap);
+    } catch (IOException e) {
+      Log.e("ImageSegmentation", "Error reading assets", e);
+      finish();
     }
   }
 
@@ -94,11 +98,20 @@ public class MainActivity extends Activity implements Runnable {
       finish();
     }
 
+    try {
+      mModule =
+          Module.load(MainActivity.assetFilePath(getApplicationContext(), "dl3_xnnpack_fp32.pte"));
+
+    } catch (IOException e) {
+      Log.e("ImageSegmentation", "Error reading assets", e);
+      finish();
+    }
+
     mImageView = findViewById(R.id.imageView);
     mImageView.setImageBitmap(mBitmap);
 
-    final Button buttonRestart = findViewById(R.id.restartButton);
-    buttonRestart.setOnClickListener(
+    final Button buttonNext = findViewById(R.id.nextButton);
+    buttonNext.setOnClickListener(
         new View.OnClickListener() {
           public void onClick(View v) {
             if (Objects.equals(mImagename, "corgi.jpeg")) {
@@ -108,79 +121,62 @@ public class MainActivity extends Activity implements Runnable {
             } else {
               mImagename = "corgi.jpeg";
             }
-            try {
-              mBitmap = BitmapFactory.decodeStream(getAssets().open(mImagename));
-              mBitmap = Bitmap.createScaledBitmap(mBitmap, 224, 224, true);
-              mImageView.setImageBitmap(mBitmap);
-            } catch (IOException e) {
-              Log.e("ImageSegmentation", "Error reading assets", e);
-              finish();
-            }
+            populateImage();
           }
         });
 
-    final Button buttonSwitchBackend = findViewById(R.id.switchBackendButton);
-    buttonSwitchBackend.setText("Use Qualcomm backend");
-    buttonSwitchBackend.setOnClickListener(
-        new View.OnClickListener() {
-          public void onClick(View v) {
-            try {
-              if (Objects.equals(mBackend, "xnnpack")) {
-                mBackend = "qnn";
-                mModule.destroy();
-                mModule =
-                    Module.load(
-                        MainActivity.assetFilePath(getApplicationContext(), "dlv3_qnn.pte"));
-                buttonSwitchBackend.setText("Use XNNPACK backend");
-              } else {
-                mBackend = "xnnpack";
-                mModule.destroy();
-                mModule =
-                    Module.load(
-                        MainActivity.assetFilePath(
-                            getApplicationContext(), "dl3_xnnpack_fp32.pte"));
-                buttonSwitchBackend.setText("Use Qualcomm backend");
-              }
-            } catch (IOException e) {
-              Log.e("ImageSegmentation", "Error reading assets", e);
-              finish();
-            }
-            Toast toast =
-                Toast.makeText(getApplicationContext(), "Using: " + mBackend, Toast.LENGTH_SHORT);
-            toast.setMargin(50, 50);
-            toast.show();
-          }
-        });
-
-    final Button classificationDemoButton = findViewById(R.id.classificationDemoButton);
-    classificationDemoButton.setOnClickListener(
-        new View.OnClickListener() {
-          public void onClick(View v) {
-            openClassificationActivity();
-          }
-        });
-
-    mButtonSegment = findViewById(R.id.segmentButton);
+    mButtonXnnpack = findViewById(R.id.xnnpackButton);
+    mButtonHtp = findViewById(R.id.htpButton);
     mProgressBar = (ProgressBar) findViewById(R.id.progressBar);
-    mButtonSegment.setOnClickListener(
+    mButtonXnnpack.setOnClickListener(
         new View.OnClickListener() {
           public void onClick(View v) {
-            mButtonSegment.setEnabled(false);
+            try {
+              mModule.destroy();
+              mModule =
+                  Module.load(
+                      MainActivity.assetFilePath(getApplicationContext(), "dl3_xnnpack_fp32.pte"));
+            } catch (IOException e) {
+              Log.e("ImageSegmentation", "Error reading assets", e);
+              finish();
+            }
+
+            mButtonXnnpack.setEnabled(false);
             mProgressBar.setVisibility(ProgressBar.VISIBLE);
-            mButtonSegment.setText(getString(R.string.run_model));
+            mButtonXnnpack.setText(getString(R.string.run_model));
 
             Thread thread = new Thread(MainActivity.this);
             thread.start();
           }
         });
 
-    try {
-      mModule =
-          Module.load(MainActivity.assetFilePath(getApplicationContext(), "dl3_xnnpack_fp32.pte"));
-    } catch (IOException e) {
-      Log.e("ImageSegmentation", "Error reading assets", e);
-      finish();
-    }
+    mButtonHtp.setOnClickListener(
+        new View.OnClickListener() {
+          public void onClick(View v) {
+            try {
+              mModule.destroy();
+              mModule =
+                  Module.load(MainActivity.assetFilePath(getApplicationContext(), "dlv3_qnn.pte"));
+            } catch (IOException e) {
+              Log.e("ImageSegmentation", "Error reading assets", e);
+              finish();
+            }
+            mButtonHtp.setEnabled(false);
+            mProgressBar.setVisibility(ProgressBar.VISIBLE);
+            mButtonHtp.setText(getString(R.string.run_model));
+
+            Thread thread = new Thread(MainActivity.this);
+            thread.start();
+          }
+        });
+
+    final Button resetImage = findViewById(R.id.resetImage);
+    resetImage.setOnClickListener(
+        new View.OnClickListener() {
+          public void onClick(View v) {
+            populateImage();
+          }
+        });
   }
 
   @Override
@@ -240,17 +236,11 @@ public class MainActivity extends Activity implements Runnable {
           @Override
           public void run() {
             mImageView.setImageBitmap(transferredBitmap);
-            mButtonSegment.setEnabled(true);
-            mButtonSegment.setText("segment");
+            mButtonXnnpack.setEnabled(true);
+            mButtonXnnpack.setText(R.string.run_xnnpack);
+            mButtonHtp.setEnabled(true);
+            mButtonHtp.setText(R.string.run_htp);
             mProgressBar.setVisibility(ProgressBar.INVISIBLE);
-
-            Toast toast =
-                Toast.makeText(
-                    getApplicationContext(),
-                    "Inference time (ms): " + inferenceTime,
-                    Toast.LENGTH_SHORT);
-            toast.setMargin(50, 50);
-            toast.show();
           }
         });
   }
