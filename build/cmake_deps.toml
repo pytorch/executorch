@@ -13,7 +13,7 @@ excludes = [
 
 [targets.executor_runner]
 buck_targets = [
-  "//examples/executor_runner:executor_runner",
+  "//examples/portable/executor_runner:executor_runner",
 ]
 filters = [
   ".cpp$",
@@ -104,7 +104,7 @@ deps = [
 
 [targets.xnn_executor_runner]
 buck_targets = [
-  "//examples/backend:xnn_executor_runner",
+  "//examples/xnnpack:xnn_executor_runner",
 ]
 filters = [
   ".cpp$",

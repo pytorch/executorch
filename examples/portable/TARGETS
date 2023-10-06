@@ -1,0 +1,17 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+runtime.python_library(
+    name = "utils",
+    srcs = [
+        "utils.py",
+    ],
+    visibility = [
+        "//executorch/examples/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:tracer",
+        "//executorch/exir/program:lib",
+    ],
+)
