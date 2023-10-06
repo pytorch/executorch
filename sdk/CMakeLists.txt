@@ -89,5 +89,5 @@ target_link_libraries(
   PRIVATE executorch)
 
 target_include_directories(
-  etdump PRIVATE ${_program_schema__include_dir}
-                 ${CMAKE_SOURCE_DIR}/third-party/flatcc/include)
+  etdump PUBLIC ${_program_schema__include_dir}
+                ${CMAKE_SOURCE_DIR}/third-party/flatcc/include)

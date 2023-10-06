@@ -132,6 +132,8 @@ option(EXECUTORCH_BUILD_XNNPACK
 option(EXECUTORCH_BUILD_SDK
        "Build the ExecuTorch SDK library and the SDK example runner.")
 
+option(EXECUTORCH_BUILD_EXAMPLES "Build the ExecuTorch examples.")
+
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
@@ -346,6 +348,11 @@ endif()
 
 if(EXECUTORCH_BUILD_SDK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
+endif()
+
+if(EXECUTORCH_BUILD_EXAMPLES)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples)
 endif()
 
 # Print all summary
