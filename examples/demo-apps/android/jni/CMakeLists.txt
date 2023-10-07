@@ -7,7 +7,9 @@
 
 cmake_minimum_required(VERSION 3.19)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/fbjni ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni)
+add_subdirectory(
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/fbjni
+  ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni)
 
 
 if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
