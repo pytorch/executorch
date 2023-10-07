@@ -113,7 +113,7 @@ To generate a sample program, complete the following steps:
   ```
 
   :::{dropdown} Output
-  ```bash
+  ```
   Exported graph:
    graph():
      %arg0_1 : [num_users=3] = placeholder[target=arg0_1]
@@ -192,7 +192,7 @@ Complete the following steps:
 
    :::{dropdown} Output
 
-   ```bash
+   ```
    File changed: root//.git/config.lock
    File changed: root//.git/config
    File changed: root//.git/modules
@@ -226,7 +226,7 @@ the `buck run` command to run our program.
 
      :::{dropdown} Sample Output
 
-     ```bash
+     ```
      Build ID: 4a23602b-25ba-4b95-a212-3cd077136062
      Network: Up: 0 B  Down: 0 B
      Jobs completed: 3. Time elapsed: 0.0s.

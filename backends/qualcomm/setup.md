@@ -115,7 +115,7 @@ Then the generated `mv2.pte` can be run on the device by
 Direct backend.
 
 [**Note**] To get proper accuracy, please apply calibrations with representative
-dataset, which could be learnt more from examples under `examples/backend/qualcomm/`.
+dataset, which could be learnt more from examples under `examples/qualcomm/`.
 
 
 ### Step 4: Model Inference
@@ -152,7 +152,7 @@ adb shell "cd ${DEVICE_DIR} \
 
 You should see the following result.
 Note that no output file will be generated in this example.
-```bash
+```
 I 00:00:00.133366 executorch:qnn_executor_runner.cpp:156] Method loaded.
 I 00:00:00.133590 executorch:util.h:104] input already initialized, refilling.
 I 00:00:00.135162 executorch:qnn_executor_runner.cpp:161] Inputs prepared.

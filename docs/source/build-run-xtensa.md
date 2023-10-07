@@ -85,7 +85,7 @@ Step 2. Make sure you have completed the ExecuTorch setup tutorials linked to at
 
 ```bash
 cd executorch
-python3 -m examples.export.export_example --model_name="add"
+python3 -m examples.portable.scripts.export --model_name="add"
 ```
 
 ### Runtime

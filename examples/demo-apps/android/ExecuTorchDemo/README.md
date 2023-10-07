@@ -149,8 +149,8 @@ Note: Please refer to [XNNPACK backend](../../../backend/README.md) and [Qualcom
 
 ```bash
 export FLATC_EXECUTABLE=$(realpath third-party/flatbuffers/cmake-out/flatc)
-python3 -m examples.backend.xnnpack_examples --model_name="dl3" --delegate
-python3 -m examples.backend.xnnpack_examples --model_name="ic4" --delegate
+python3 -m examples.xnnpack.aot_compiler --model_name="dl3" --delegate
+python3 -m examples.xnnpack.aot_compiler --model_name="ic4" --delegate
 mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 cp dl3_xnnpack_fp32.pte ic4_xnnpack_fp32.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 ```

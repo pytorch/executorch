@@ -7,14 +7,14 @@ ExecuTorch's extensive support spans from simple modules like "Add" to comprehen
 
 
 ## Directory structure
-```bash
+```
 examples
 ├── models                            # Contains a set of popular and representative PyTorch models
 ├── portable                          # Contains end-to-end demos for ExecuTorch in portable mode
 ├── xnnpack                           # Contains end-to-end ExecuTorch demos with first-party optimization using XNNPack
 ├── selective_build                   # Contains demos of selective build for optimizing the binary size of the ExecuTorch runtime
-|── arm                               # Contains demos of the Arm TOSA and Ethos-U NPU flows
-|── qualcomm                          # Contains demos of Qualcomm QNN backend
+├── arm                               # Contains demos of the Arm TOSA and Ethos-U NPU flows
+├── qualcomm                          # Contains demos of Qualcomm QNN backend
 ├── demo-apps                         # Contains demo apps for Android and iOS
 ├── third-party                       # Third-party libraries required for working on the demos
 └── README.md                         # This file
@@ -41,14 +41,14 @@ To understand how to deploy the ExecuTorch runtime with optimization for binary 
 Explore mobile apps with ExecuTorch models integrated and deployable on Android and iOS in the [`demo-apps/android/`](./demo-apps/android) and [`demo-apps/apple_ios/`](./demo-apps/apple_ios) directories, respectively.
 
 
-## Demo of ARM
+## Demo of ExecuTorch on ARM Cortex-M55 + Ethos-U55
 
-TBD
+The [`arm/`](./arm) directory contains scripts to help you run a PyTorch model on a ARM Corstone-300 platform via ExecuTorch.
 
 
-## Demo of QNN Backend
+## Demo of ExecuTorch QNN Backend
 
-Demos of [ExecuTorch QNN Backend](./qualcomm) by Qualcomm
+You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`](./qualcomm) directory.
 
 
 ## Dependencies
