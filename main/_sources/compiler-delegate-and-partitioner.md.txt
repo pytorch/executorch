@@ -1,6 +1,35 @@
+<!---- DO NOT MODIFY Progress Bar Start --->
+
+<div class="progress-bar-wrapper">
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-1">1</div>
+     <span class="step-caption" id="caption-1"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-2">2</div>
+     <span class="step-caption" id="caption-2"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-3">3</div>
+     <span class="step-caption" id="caption-3"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-4">4</div>
+     <span class="step-caption" id="caption-4"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-4">5</div>
+     <span class="step-caption" id="caption-5"></span>
+   </div>
+</div>
+
+<!---- DO NOT MODIFY Progress Bar End--->
+
 # Backend and Delegate
 
 Audience: Vendors, Backend Delegate developers, who are interested in integrating their own compilers and hardware as part of ExecuTorch
+
+## Backend Interfaces: Overview
 
 Backend delegation is an entry point for backends to process and execute PyTorch
 programs to leverage performance and efficiency benefits of specialized
@@ -19,15 +48,12 @@ At a high level, the entry point for backends is defined by 2 components:
         - Program execution.
         - (optional) Program destroy (e.g. release backend owned resource).
 
-## Backend Interfaces
-
 A delegate backend implementation is composed of:
 
 1) An ahead-of-time preprocessing interface
 2) A runtime initialization and execution interface
 
-
-### Ahead-of-Time Preprocessing
+## Backend Interfaces: Ahead-of-Time Preprocessing
 
 For the AOT preprocessing, backends are given an edge dialect program,
 a list of compile specs specifying the values needed for compilation, and are
@@ -49,7 +75,7 @@ The demo loops through the nodes in the graph module of the `edge_program` and
 serializes the `add`, `mul`, and `sin` instructions into a string, which is later
 parsed and executed at runtime.
 
-### Runtime Initialization and Execution
+## Backend Interfaces: Runtime Initialization and Execution
 
 During the runtime, the compiled blob from the `preprocess` function will be
 loaded and passed directly to the backend's custom `init` function. This
@@ -91,13 +117,14 @@ static auto success_with_compiler = register_backend(backend);
 ```
 
 
-## Error Messages
+## SDK: Debug Handle
 
 If there is an error in the backend, for example, if there is any operator that
 is not supported by the backend, a debug handler can be thrown. It can surface
 back to the Python frontend with the source code information. Below is an
 example where the `tan` operator is not supported in `BackendWithCompilerDemo`
-backend.
+backend. Please refer to [SDK delegate integration](./sdk-delegate-integration)
+for more details.
 
 A problematic program:
 ```python
@@ -219,8 +246,8 @@ class Backend_1_2_Partitioner(Partitioner):
         self.partition_tags = {}
 
     def partition(
-        self, edge_graph_module: torch.fx.GraphModule
-    ) -> torch.fx.GraphModule:
+        self, exported_program: ExportedProgram
+    ) -> ExportedProgram:
 
         # Tag all nodes in the first partiton to backend 1
         node_to_backend_1 = ... # some logic to select the nodes from the graph
@@ -233,7 +260,7 @@ class Backend_1_2_Partitioner(Partitioner):
         delegation_tag = f"backend2_tag{partitioner_2.id}"
         node.meta["delegation_tag"] = delegation_tag
         self.partition_tags[delegation_tag] = self.delegation_spec_2
-        return edge_graph_module
+        return exported_program
 ```
 
 **6. Is there an easy way to write a partitioner?**
@@ -241,3 +268,38 @@ class Backend_1_2_Partitioner(Partitioner):
 We provide some helper partitioners
 [here](./compiler-custom-compiler-passes.md) to make it easy to find
 nodes from decomposed operators.
+
+**7. How do we link the node back to the source code?**
+We provide an helper function
+```python
+from executorch.exir.print_program import inspect_node
+
+print(inspect_node(graph, node))
+```
+And it will highlight the node in the graph as well as point to the source code, example output will be like following:
+```
+_param_constant1 error_msg:  Here is the node in the graph module:
+graph():
+    %arg0_1 : [num_users=1] = placeholder[target=arg0_1]
+    %_param_constant0 : [num_users=1] = get_attr[target=_param_constant0]
+--> %_param_constant1 : [num_users=1] = get_attr[target=_param_constant1]
+    %aten_convolution_default : [num_users=2] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%arg0_1, %_param_constant0, %_param_constant1, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+    %_param_constant2 : [num_users=1] = get_attr[target=_param_constant2]
+    %_param_constant3 : [num_users=1] = get_attr[target=_param_constant3]
+    %aten_convolution_default_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_convolution_default, %_param_constant2, %_param_constant3, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+    %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_convolution_default, %aten_convolution_default_1), kwargs = {})
+    %_param_constant4 : [num_users=1] = get_attr[target=_param_constant4]
+    %_param_constant5 : [num_users=1] = get_attr[target=_param_constant5]
+    %aten_convolution_default_2 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten_add_tensor, %_param_constant4, %_param_constant5, [1, 1], [0, 0], [1, 1], False, [0, 0], 1), kwargs = {})
+    %aten_gelu_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.gelu.default](args = (%aten_convolution_default_2,), kwargs = {})
+    return [aten_gelu_default]
+This node _param_constant1 has metadata of:
+The node stacktrace:
+Traceback (most recent call last):
+    File "/tmp/ipykernel_1204253/3382880687.py", line 7, in forward
+return self.test_model(x)
+    File "/mnt/xarfuse/uid-25337/7b86ad0c-seed-nspid4026532987_cgpid2707357-ns-4026532984/torch/nn/modules/module.py", line 1528, in _call_impl
+return forward_call(*args, **kwargs)
+    File "/tmp/ipykernel_1204253/712280972.py", line 10, in forward
+a = self.conv1(x)
+```
