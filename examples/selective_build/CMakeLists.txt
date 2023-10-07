@@ -28,11 +28,12 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 #
 set(_kernel_lib)
 if(EXECUTORCH_SELECT_OPS_YAML)
-  set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/custom_ops/custom_ops.yaml)
+  set(_custom_ops_yaml
+      ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml)
   gen_selected_ops("${_custom_ops_yaml}" "" "")
   set(kernel_sources
-      ${EXECUTORCH_ROOT}/examples/custom_ops/custom_ops_1_out.cpp
-      ${EXECUTORCH_ROOT}/examples/custom_ops/custom_ops_2_out.cpp)
+      ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops_1_out.cpp
+      ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops_2_out.cpp)
   #
   # custom_kernels: C++ kernel implementations of custom ops
   #
