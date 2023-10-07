@@ -15,7 +15,7 @@ from typing import List
 from unittest.mock import patch
 
 from executorch.exir import ExportedProgram
-from executorch.sdk.edir.et_schema import OperatorNode
+from executorch.sdk.debug_format.et_schema import OperatorNode
 from executorch.sdk.etrecord import generate_etrecord, parse_etrecord
 from executorch.sdk.etrecord.tests.etrecord_test import TestETRecord
 
