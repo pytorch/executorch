@@ -49,3 +49,6 @@
 [submodule "backends/apple/coreml/third-party/ios-cmake"]
 	path = backends/apple/coreml/third-party/ios-cmake
 	url = https://github.com/leetal/ios-cmake.git
+[submodule "backends/apple/coreml/third-party/nlohmann_json"]
+	path = backends/apple/coreml/third-party/nlohmann_json
+	url = https://github.com/nlohmann/json.git
