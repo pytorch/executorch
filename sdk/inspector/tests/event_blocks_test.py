@@ -192,11 +192,13 @@ class TestEventBlock(unittest.TestCase):
 
             is_delegated = delegate_debug_id is not None
             expected_event = Event(
-                str(delegate_debug_id) if is_delegated else name,
-                PerfData([float(duration) / scale_factor for duration in durations]),
-                instruction_id=signature.instruction_id,
+                name=str(delegate_debug_id) if is_delegated else name,
+                perf_data=PerfData(
+                    [float(duration) / scale_factor for duration in durations]
+                ),
                 delegate_debug_identifier=delegate_debug_id,
                 is_delegated_op=is_delegated,
+                _instruction_id=signature.instruction_id,
             )
             self.assertEqual(event, expected_event)
 
@@ -283,12 +285,12 @@ class TestEventBlock(unittest.TestCase):
         # Verify Results
         for event in event_block.events:
             # To satisfy type checker
-            assert event.instruction_id is not None
+            assert event._instruction_id is not None
             if (
                 delegate_debug_identifier := event.delegate_debug_identifier
             ) is not None:
                 # Delegated
-                metadata = delegate_map[str(event.instruction_id)]
+                metadata = delegate_map[str(event._instruction_id)]
                 self.assertEqual(event.delegate_backend_name, metadata["name"])
                 self.assertEqual(
                     event.debug_handles,
@@ -297,5 +299,5 @@ class TestEventBlock(unittest.TestCase):
             else:
                 # Non Delegated
                 self.assertEqual(
-                    event.debug_handles, handle_map[str(event.instruction_id)]
+                    event.debug_handles, handle_map[str(event._instruction_id)]
                 )

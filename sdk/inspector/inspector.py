@@ -129,27 +129,33 @@ class PerfData:
 @dataclass
 class Event:
     """
-    Corresponds to an op instance
+    An Event corresponds to an operator instance with perf data retrieved from the runtime and other metadata from `ETRecord`.
+
+    Args:
+        name: Name of the profiling/debugging `Event`.
+        perf_data: Performance data associated with the event retrived from the runtime (available attributes: p50, p90, avg, min, max and median).
+        op_type: List of op types corresponding to the event.
+        delegate_debug_identifier: Supplemental identifier used in combination with instruction id.
+        debug_handles: Debug handles in the model graph to which this event is correlated.
+        stack_trace: A dictionary mapping the name of each associated op to its stack trace.
+        module_hierarchy: A dictionary mapping the name of each associated op to its module hierarchy.
+        is_delegated_op: Whether or not the event was delegated.
+        delegate_backend_name: Name of the backend this event was delegated to.
+        debug_data: Intermediate data collected during runtime.
     """
 
     name: str
     perf_data: PerfData
     op_types: List[str] = dataclasses.field(default_factory=list)
-
-    # Instruction Id of the original profiling event
-    instruction_id: Optional[int] = None
-
-    # Supplemental Identifier used in combination with instruction_identifier
     delegate_debug_identifier: Optional[Union[int, str]] = None
-
-    # Debug Handles in the model graph to which this event is correlated
     debug_handles: Optional[Union[int, Sequence[int]]] = None
-
     stack_traces: Dict[str, str] = dataclasses.field(default_factory=dict)
     module_hierarchy: Dict[str, Dict] = dataclasses.field(default_factory=dict)
     is_delegated_op: Optional[bool] = None
     delegate_backend_name: Optional[str] = None
     debug_data: List[torch.Tensor] = dataclasses.field(default_factory=list)
+
+    _instruction_id: Optional[int] = None
 
     @staticmethod
     def _gen_from_profile_events(
@@ -183,9 +189,9 @@ class Event:
         return Event(
             name=name,
             perf_data=perf_data,
-            instruction_id=signature.instruction_id,
             delegate_debug_identifier=delegate_debug_identifier,
             is_delegated_op=is_delegated_op,
+            _instruction_id=signature.instruction_id,
         )
 
     def _associate_with_op_graph_nodes(
@@ -213,11 +219,14 @@ class Event:
 
 @dataclass
 class EventBlock:
-    """
-    EventBlock contains a collection of events associated with a particular profiling/debugging block retrieved from the runtime.
-    Attributes:
-        name (str): Name of the profiling/debugging block
-        events (List[Event]): List of events associated with the profiling/debugging block
+    r"""
+    An `EventBlock` contains a collection of events associated with a particular profiling/debugging block retrieved from the runtime.
+    Each `EventBlock` represents a pattern of execution. For example, model initiation and loading lives in a single `EventBlock`.
+    If there's a control flow, each branch will be represented by a separate `EventBlock`.
+
+    Args:
+        name: Name of the profiling/debugging block.
+        events: List of `Event`\ s associated with the profiling/debugging block.
     """
 
     name: str
@@ -226,7 +235,14 @@ class EventBlock:
     def to_dataframe(self) -> pd.DataFrame:
         """
         Converts the EventBlock into a DataFrame with each row being an event instance
+
+        Args:
+            None
+
+        Returns:
+            A Pandas DataFrame containing the data of each Event instance in this EventBlock.
         """
+
         # TODO: push row generation down to Event
         data = {
             "event_block_name": [self.name] * len(self.events),
@@ -320,11 +336,11 @@ class EventBlock:
         """
         for event in self.events:
             # Check if instruction_id is present in the event
-            if event.instruction_id is None:
+            if event._instruction_id is None:
                 continue
 
             # Check for the instruction_id in handle map
-            if (instruction_id := str(event.instruction_id)) not in handle_map:
+            if (instruction_id := str(event._instruction_id)) not in handle_map:
                 continue
 
             # For non-delegated event, handles are found in handle_map
@@ -339,7 +355,7 @@ class EventBlock:
             ):
                 event.debug_handles = handle_map[instruction_id]
                 log.warning(
-                    f" No delegate mapping found for delegate with instruction id {event.instruction_id}"
+                    f" No delegate mapping found for delegate with instruction id {event._instruction_id}"
                 )
                 continue
 
@@ -376,14 +392,18 @@ class Inspector:
         etrecord_path: Optional[str] = None,
         etdump_scale: int = 1000,
     ) -> None:
-        """
-        Create an inspector instance from the provided ETDump/ETRecord
+        r"""
+        Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path
+        and optional ETRecord path.
 
         Args:
             etdump_path: Path to the ETDump file.
-            etrecord_path: Path to the ETRecord file.
+            etrecord_path: Optional path to the ETRecord file.
             etdump_scale: Inverse Scale Factor used to cast the timestamps in ETDump
                 defaults to milli (1000ms = 1s).
+
+        Returns:
+            None
         """
 
         self._etrecord = (
@@ -422,7 +442,13 @@ class Inspector:
 
     def print_data_tabular(self) -> None:
         """
-        Prints the underlying EventBlocks (essentially all the performance data)
+        Displays the underlying EventBlocks in a structured tabular format, with each row representing an Event.
+
+        Args:
+            None
+
+        Returns:
+            None
         """
 
         def style_text_size(val, size=12):
@@ -447,7 +473,17 @@ class Inspector:
             print(tabulate(filtered_df, headers="keys", tablefmt="fancy_grid"))
 
     # TODO: write unit test
-    def find_total_for_module(self, module_name: str):
+    def find_total_for_module(self, module_name: str) -> float:
+        """
+        Returns the total average compute time of all operators within the specified module.
+
+        Args:
+            module_name: Name of the module to be aggregated against.
+
+        Returns:
+            Sum of the average compute time (in seconds) of all operators within the module with "module_name".
+        """
+
         total = 0.0
         for block in self.event_blocks:
             for event in block.events:
@@ -481,10 +517,13 @@ class Inspector:
         self, graph: Optional[str] = None
     ) -> Optional[ExportedProgram]:
         """
-        Access helper for ETRecord, defaults to returning Edge Dialect Program
+        Access helper for ETRecord, defaults to returning the Edge Dialect program.
 
         Args:
-            graph: Name of the graph to access. If None, returns the Edge Dialect Program.
+            graph: Optional name of the graph to access. If None, returns the Edge Dialect program.
+
+        Returns:
+            The ExportedProgram object of "graph".
         """
         if self._etrecord is None:
             log.warning(
