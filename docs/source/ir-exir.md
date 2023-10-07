@@ -21,7 +21,7 @@ The EXIR dialects that currently exist are:
 
 These dialects represent stages that a captured program goes through from
 program capture to conversion into an executable format. For example, the
-Executorch compilation process starts from a Python program capture into ATen
+ExecuTorch compilation process starts from a Python program capture into ATen
 Dialect, then ATen Dialect is converted to Edge Dialect, Edge to Backend, and
 finally to a binary format for execution.
 
