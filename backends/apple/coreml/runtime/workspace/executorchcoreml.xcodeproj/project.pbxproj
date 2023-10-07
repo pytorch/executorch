@@ -32,14 +32,12 @@
 		C94D510C2ABDF84F00AF47FD /* serde_json.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DFB02AA123E9001CC178 /* serde_json.mm */; };
 		C94D510E2ABDF86800AF47FD /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C96560942AABFDCE005F8126 /* libsqlite3.tbd */; };
 		C94D510F2ABDF87500AF47FD /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C96560902AABF982005F8126 /* Accelerate.framework */; };
-		C94D51382ACE240500AF47FD /* mv3_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = C94D51302ACE240400AF47FD /* mv3_coreml_all.bin */; };
-		C94D51392ACE240500AF47FD /* mul_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = C94D51312ACE240400AF47FD /* mul_coreml_all.bin */; };
-		C94D513A2ACE240500AF47FD /* add_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = C94D51322ACE240500AF47FD /* add_coreml_all.pte */; };
-		C94D513B2ACE240500AF47FD /* mv2_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = C94D51332ACE240500AF47FD /* mv2_coreml_all.bin */; };
-		C94D513C2ACE240500AF47FD /* mv2_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = C94D51342ACE240500AF47FD /* mv2_coreml_all.pte */; };
-		C94D513D2ACE240500AF47FD /* add_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = C94D51352ACE240500AF47FD /* add_coreml_all.bin */; };
-		C94D513E2ACE240500AF47FD /* mv3_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = C94D51362ACE240500AF47FD /* mv3_coreml_all.pte */; };
-		C94D513F2ACE240500AF47FD /* mul_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = C94D51372ACE240500AF47FD /* mul_coreml_all.pte */; };
+		C985519E2AD2542D009143F9 /* mv3_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = C98551982AD2542D009143F9 /* mv3_coreml_all.pte */; };
+		C985519F2AD2542D009143F9 /* mul_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = C98551992AD2542D009143F9 /* mul_coreml_all.bin */; };
+		C98551A02AD2542D009143F9 /* add_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = C985519A2AD2542D009143F9 /* add_coreml_all.bin */; };
+		C98551A12AD2542D009143F9 /* mv3_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = C985519B2AD2542D009143F9 /* mv3_coreml_all.bin */; };
+		C98551A22AD2542D009143F9 /* mul_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = C985519C2AD2542D009143F9 /* mul_coreml_all.pte */; };
+		C98551A32AD2542D009143F9 /* add_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = C985519D2AD2542D009143F9 /* add_coreml_all.pte */; };
 		C9E7D78F2AB3F9BF00CCAE5D /* ETCoreMLTestUtils.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D7862AB3F9BF00CCAE5D /* ETCoreMLTestUtils.mm */; };
 		C9E7D7902AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D7882AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm */; };
 		C9E7D7912AB3F9BF00CCAE5D /* ETCoreMLAssetTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D7892AB3F9BF00CCAE5D /* ETCoreMLAssetTests.mm */; };
@@ -64,14 +62,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		C94D51302ACE240400AF47FD /* mv3_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = mv3_coreml_all.bin; path = ../test/models/mv3_coreml_all.bin; sourceTree = "<group>"; };
-		C94D51312ACE240400AF47FD /* mul_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = mul_coreml_all.bin; path = ../test/models/mul_coreml_all.bin; sourceTree = "<group>"; };
-		C94D51322ACE240500AF47FD /* add_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = add_coreml_all.pte; path = ../test/models/add_coreml_all.pte; sourceTree = "<group>"; };
-		C94D51332ACE240500AF47FD /* mv2_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = mv2_coreml_all.bin; path = ../test/models/mv2_coreml_all.bin; sourceTree = "<group>"; };
-		C94D51342ACE240500AF47FD /* mv2_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = mv2_coreml_all.pte; path = ../test/models/mv2_coreml_all.pte; sourceTree = "<group>"; };
-		C94D51352ACE240500AF47FD /* add_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = add_coreml_all.bin; path = ../test/models/add_coreml_all.bin; sourceTree = "<group>"; };
-		C94D51362ACE240500AF47FD /* mv3_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = mv3_coreml_all.pte; path = ../test/models/mv3_coreml_all.pte; sourceTree = "<group>"; };
-		C94D51372ACE240500AF47FD /* mul_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = mul_coreml_all.pte; path = ../test/models/mul_coreml_all.pte; sourceTree = "<group>"; };
 		C94D515B2ACFBDFA00AF47FD /* coreml_backend_delegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = coreml_backend_delegate.h; path = ../include/coreml/coreml_backend_delegate.h; sourceTree = "<group>"; };
 		C95266352A7E06460016283E /* ETCoreMLModelManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelManager.h; path = ../delegate/ETCoreMLModelManager.h; sourceTree = "<group>"; };
 		C95266362A7E06460016283E /* ETCoreMLModel.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModel.mm; path = ../delegate/ETCoreMLModel.mm; sourceTree = "<group>"; };
@@ -105,6 +95,12 @@
 		C96560B22AAF9EA7005F8126 /* inmemory_filesystem_py.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = inmemory_filesystem_py.cpp; path = ../inmemoryfs/inmemory_filesystem_py.cpp; sourceTree = "<group>"; };
 		C9670FF92A82F0C800E7D441 /* MLMultiArray_Copy.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MLMultiArray_Copy.h; path = ../delegate/MLMultiArray_Copy.h; sourceTree = "<group>"; };
 		C9670FFA2A82F0C800E7D441 /* MLMultiArray_Copy.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = MLMultiArray_Copy.mm; path = ../delegate/MLMultiArray_Copy.mm; sourceTree = "<group>"; };
+		C98551982AD2542D009143F9 /* mv3_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = mv3_coreml_all.pte; path = ../test/models/mv3_coreml_all.pte; sourceTree = "<group>"; };
+		C98551992AD2542D009143F9 /* mul_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = mul_coreml_all.bin; path = ../test/models/mul_coreml_all.bin; sourceTree = "<group>"; };
+		C985519A2AD2542D009143F9 /* add_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = add_coreml_all.bin; path = ../test/models/add_coreml_all.bin; sourceTree = "<group>"; };
+		C985519B2AD2542D009143F9 /* mv3_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = mv3_coreml_all.bin; path = ../test/models/mv3_coreml_all.bin; sourceTree = "<group>"; };
+		C985519C2AD2542D009143F9 /* mul_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = mul_coreml_all.pte; path = ../test/models/mul_coreml_all.pte; sourceTree = "<group>"; };
+		C985519D2AD2542D009143F9 /* add_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = add_coreml_all.pte; path = ../test/models/add_coreml_all.pte; sourceTree = "<group>"; };
 		C9D3DED52A9FCFC4001CC178 /* ETCoreMLAssetManager.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLAssetManager.mm; path = ../delegate/ETCoreMLAssetManager.mm; sourceTree = "<group>"; };
 		C9D3DED62A9FCFC4001CC178 /* ETCoreMLAssetManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLAssetManager.h; path = ../delegate/ETCoreMLAssetManager.h; sourceTree = "<group>"; };
 		C9D3DF002A9FD16E001CC178 /* statement.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = statement.hpp; path = ../kvstore/statement.hpp; sourceTree = "<group>"; };
@@ -289,14 +285,12 @@
 		C9E7D7AE2AB6C0C000CCAE5D /* models */ = {
 			isa = PBXGroup;
 			children = (
-				C94D51352ACE240500AF47FD /* add_coreml_all.bin */,
-				C94D51322ACE240500AF47FD /* add_coreml_all.pte */,
-				C94D51312ACE240400AF47FD /* mul_coreml_all.bin */,
-				C94D51372ACE240500AF47FD /* mul_coreml_all.pte */,
-				C94D51332ACE240500AF47FD /* mv2_coreml_all.bin */,
-				C94D51342ACE240500AF47FD /* mv2_coreml_all.pte */,
-				C94D51302ACE240400AF47FD /* mv3_coreml_all.bin */,
-				C94D51362ACE240500AF47FD /* mv3_coreml_all.pte */,
+				C985519A2AD2542D009143F9 /* add_coreml_all.bin */,
+				C985519D2AD2542D009143F9 /* add_coreml_all.pte */,
+				C98551992AD2542D009143F9 /* mul_coreml_all.bin */,
+				C985519C2AD2542D009143F9 /* mul_coreml_all.pte */,
+				C985519B2AD2542D009143F9 /* mv3_coreml_all.bin */,
+				C98551982AD2542D009143F9 /* mv3_coreml_all.pte */,
 			);
 			name = models;
 			sourceTree = "<group>";
@@ -360,14 +354,12 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C94D513F2ACE240500AF47FD /* mul_coreml_all.pte in Resources */,
-				C94D51392ACE240500AF47FD /* mul_coreml_all.bin in Resources */,
-				C94D513C2ACE240500AF47FD /* mv2_coreml_all.pte in Resources */,
-				C94D51382ACE240500AF47FD /* mv3_coreml_all.bin in Resources */,
-				C94D513A2ACE240500AF47FD /* add_coreml_all.pte in Resources */,
-				C94D513B2ACE240500AF47FD /* mv2_coreml_all.bin in Resources */,
-				C94D513D2ACE240500AF47FD /* add_coreml_all.bin in Resources */,
-				C94D513E2ACE240500AF47FD /* mv3_coreml_all.pte in Resources */,
+				C98551A12AD2542D009143F9 /* mv3_coreml_all.bin in Resources */,
+				C985519F2AD2542D009143F9 /* mul_coreml_all.bin in Resources */,
+				C985519E2AD2542D009143F9 /* mv3_coreml_all.pte in Resources */,
+				C98551A02AD2542D009143F9 /* add_coreml_all.bin in Resources */,
+				C98551A22AD2542D009143F9 /* mul_coreml_all.pte in Resources */,
+				C98551A32AD2542D009143F9 /* add_coreml_all.pte in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

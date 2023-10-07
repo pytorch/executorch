@@ -4,22 +4,21 @@
 
 import argparse
 
-import executorch.exir as exir
-import torch
-
-from executorch.backends.apple.coreml.compiler import CoreMLBackend
-from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-
 import pathlib
 import sys
 
+import executorch.exir as exir
+import torch
+
+from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent.parent.parent
-EXAMPLES_DIR = REPO_ROOT/"examples"
+EXAMPLES_DIR = REPO_ROOT / "examples"
 sys.path.append(str(EXAMPLES_DIR.absolute()))
 
 from models import MODEL_NAME_TO_MODEL
-from models.model_factory import EagerModelFactory 
+from models.model_factory import EagerModelFactory
 
 # Script to export a model with coreml delegation.
 

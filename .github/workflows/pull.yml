@@ -112,32 +112,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
-
-  test-selective-build-macos:
-    name: test-selective-build-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    strategy:
-      matrix:
-        include:
-          - build-tool: buck2
-          - build-tool: cmake
-      fail-fast: false
-    with:
-      runner: macos-m1-12
-      submodules: 'true'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      script: |
-        WORKSPACE=$(pwd)
-        pushd "${WORKSPACE}/pytorch/executorch"
-
-        BUILD_TOOL=${{ matrix.build-tool }}
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
-
-        # Build and test selective build
-        PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
-        popd
-  
+        
   test-coreml-delegate-macos-x86:
     name: test-macos-x86
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -151,9 +126,9 @@ jobs:
         pushd "${WORKSPACE}/pytorch/executorch"
 
         # Build and test coreml delegate
-        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/install_requirements.sh
-        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/build_coreml_delegate_tests.sh
-        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/run_coreml_delegate_tests.sh
+        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/install_requirements_ci.sh
+        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/build_tests.sh
+        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/run_tests.sh
         popd
 
   unittest:

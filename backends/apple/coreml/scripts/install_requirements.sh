@@ -10,20 +10,77 @@ SCRIPT_DIR_PATH="$(
     pwd -P
 )"
 
+red=`tput setaf 1`
+green=`tput setaf 2`
+
 EXECUTORCH_ROOT_PATH="$SCRIPT_DIR_PATH/../../../../"
 COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/apple/coreml"
-
-pip install "$COREML_DIR_PATH/runtime/inmemoryfs"
 
 # clone and install coremltools
 if [ -d "/tmp/coremltools" ]; then
     rm -rf "/tmp/coremltools"
 fi
 
-git clone git@github.com:DawerG/coremltools.git  /tmp/coremltools
+echo "${green}ExecuTorch: Cloning coremltools."
+git clone git@github.com:apple/coremltools.git /tmp/coremltools
+cd /tmp/coremltools
+STATUS=$?
+if [ $STATUS -ne 0 ]; then
+    echo "${red}ExecuTorch: Failed to clone coremltools."
+    exit 1
+fi
+
+echo "${green}ExecuTorch: Installing coremltools dependencies."
+pip install -r /tmp/coremltools/reqs/build.pip
+STATUS=$?
+if [ $STATUS -ne 0 ]; then
+    echo "${red}ExecuTorch: Failed to install coremltools dependencies."
+    exit 1
+fi
+
+echo "${green}ExecuTorch: Checking out 'executorch_integration' branch in coremltools repo."
+git checkout executorch_integration
+STATUS=$?
+if [ $STATUS -ne 0 ]; then
+    echo "${red}ExecuTorch: Failed to checkout 'executorch_integration' branch in coremltools repo."
+    exit 1
+fi
 
 mkdir /tmp/coremltools/build
 cmake -S /tmp/coremltools/ -B /tmp/coremltools/build
 cmake --build /tmp/coremltools/build --parallel
 
+echo "${green}ExecuTorch: Installing coremltools."
 pip install /tmp/coremltools
+STATUS=$?
+if [ $STATUS -ne 0 ]; then
+    echo "${red}ExecuTorch: Failed to install coremltools."
+    exit 1
+fi
+
+rm -rf "$COREML_DIR_PATH/third-party"
+mkdir "$COREML_DIR_PATH/third-party"
+
+echo "${green}ExecuTorch: Cloning ios-cmake."
+git clone git@github.com:leetal/ios-cmake.git "$COREML_DIR_PATH/third-party/ios-cmake"
+STATUS=$?
+if [ $STATUS -ne 0 ]; then
+    echo "${red}ExecuTorch: Failed to clone ios-cmake."
+    exit 1
+fi
+
+echo "${green}ExecuTorch: Cloning nlohmann."
+git clone git@github.com:nlohmann/json.git "$COREML_DIR_PATH/third-party/nlohmann_json"
+STATUS=$?
+if [ $STATUS -ne 0 ]; then
+    echo "${red}ExecuTorch: Failed to clone nlohmann."
+    exit 1
+fi
+
+echo "${green}ExecuTorch: Installing inmemoryfs extension."
+pip install "$COREML_DIR_PATH/runtime/inmemoryfs"
+STATUS=$?
+if [ $STATUS -ne 0 ]; then
+    echo "${red}ExecuTorch: Failed to install inmemoryfs extension."
+    exit 1
+fi

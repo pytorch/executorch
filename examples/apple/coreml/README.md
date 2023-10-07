@@ -33,7 +33,7 @@ sh backends/apple/coreml/scripts/install_requirements.sh
 cd executorch
 
 # To get a list of example models
-python3 -m examples.export.export_example -h
+python3 -m examples.portable.scripts.export -h
 
 # Generates ./add_coreml_all.pte file if successful.
 python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name add 

@@ -11,7 +11,7 @@ cmake-out/
 *.perspectivev3
 *.xcuserstate
 project.xcworkspace/
-xcuserdata/
+xcuserdata
 
 executor_runner/include/
 executor_runner/libraries/

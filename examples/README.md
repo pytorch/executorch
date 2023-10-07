@@ -15,6 +15,7 @@ examples
 ├── selective_build                   # Contains demos of selective build for optimizing the binary size of the ExecuTorch runtime
 ├── arm                               # Contains demos of the Arm TOSA and Ethos-U NPU flows
 ├── qualcomm                          # Contains demos of Qualcomm QNN backend
+├── apple/coreml                      # Contains demos of Apple's CoreML backend
 ├── demo-apps                         # Contains demo apps for Android and iOS
 ├── third-party                       # Third-party libraries required for working on the demos
 └── README.md                         # This file
@@ -24,7 +25,6 @@ examples
 ## Using the examples
 
 A user's journey may commence by exploring the demos located in the [`portable/`](./portable) directory. Here, you will gain insights into the fundamental end-to-end workflow to generate a binary file from a ML model in [portable mode](/docs/website/docs/basics/terminology.md) and run it on the ExecuTorch runtime.
-
 
 ## Demo of XNNPACK delegation
 
@@ -50,6 +50,10 @@ The [`arm/`](./arm) directory contains scripts to help you run a PyTorch model o
 
 You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`](./qualcomm) directory.
 
+
+## Demo of ExecuTorch CoreML Backend
+
+You will find demos of [ExecuTorch CoreML Backend](./apple/coreml/) in the [`apple/coreml/`](./apple/coreml) directory. 
 
 ## Dependencies
 

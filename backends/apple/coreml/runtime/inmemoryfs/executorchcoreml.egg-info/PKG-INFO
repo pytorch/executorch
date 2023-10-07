@@ -1,7 +1,0 @@
-Metadata-Version: 2.1
-Name: executorchcoreml
-Version: 0.0.1
-Summary: CoreML extension for executorch
-Author: Apple Inc.
-Requires-Python: >=3.9
-Provides-Extra: test

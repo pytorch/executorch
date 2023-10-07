@@ -329,8 +329,10 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
 endif()
 
-# Add COREML subdirectory
-if(EXECUTORCH_BUILD_COREML_DELEGATE)
+
+# Build CoreML backend
+option(EXECUTORCH_BUILD_COREML "Build the backends/apple/coreml directory" OFF)
+if(EXECUTORCH_BUILD_COREML)
   # CoreML delegate library can only be built with iOS toolchain
   if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS\.)|(ios\.toolchain\.)cmake$")
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)

@@ -10,7 +10,7 @@
 #import <CoreML/CoreML.h>
 
 #import <backend_delegate.h>
-#import <coreml/coreml_backend_delegate.h>
+#import <coreml_backend/delegate.h>
 #import <multiarray.h>
 
 #import <ETCoreMLModel.h>

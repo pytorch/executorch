@@ -16,7 +16,7 @@ EXAMPLES_COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/examples/apple/coreml"
 IOS_TOOLCHAIN_PATH="$COREML_DIR_PATH/third-party/ios-cmake/ios.toolchain.cmake"
 CMAKE_BUILD_DIR_PATH="$EXAMPLES_COREML_DIR_PATH/cmake-out"
 LIBRARIES_DIR_PATH="$EXAMPLES_COREML_DIR_PATH/executor_runner/libraries"
-FLATC_EXECUTABLE_PATH="$EXECUTORCH_ROOT_PATH/third-party/flatbuffers/flatc"
+FLATC_EXECUTABLE_PATH="$EXECUTORCH_ROOT_PATH/third-party/flatbuffers/cmake-out/flatc"
 INCLUDE_DIR_PATH="$EXAMPLES_COREML_DIR_PATH/executor_runner/include"
 
 echo "ExecuTorch: Building executor_runner"
@@ -34,7 +34,7 @@ cmake "$EXECUTORCH_ROOT_PATH" -B"$CMAKE_BUILD_DIR_PATH" \
 -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
 -DEXECUTORCH_BUILD_XNNPACK=OFF \
 -DEXECUTORCH_BUILD_GFLAGS=ON \
--DEXECUTORCH_BUILD_COREML_DELEGATE=ON
+-DEXECUTORCH_BUILD_COREML=ON
 
 cmake --build "$CMAKE_BUILD_DIR_PATH" -j9 -t coremldelegate -t gflags_nothreads_static
 

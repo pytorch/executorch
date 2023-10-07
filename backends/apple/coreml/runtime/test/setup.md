@@ -21,23 +21,23 @@ sh backends/apple/coreml/scripts/install_requirements.sh
 
 5. Install Xcode Command Line Tools.
 
-6. Run `build_coreml_delegate_tests.sh` to build tests.
+6. Run `build_tests.sh` to build tests.
 
 ```bash
 cd executorch
 
 # Builds macOS universal test bundle. 
 
-sh backends/apple/coreml/srcipts/build_coreml_delegate_tests.sh
+sh backends/apple/coreml/srcipts/build_tests.sh
 
 ```
 
-7. Run `run_coreml_delegate_tests.sh` to execute the tests.
+7. Run `run_tests.sh` to execute the tests.
 
 ```
 cd executorch
 
-sh backends/apple/coreml/srcipts/run_coreml_delegate_tests.sh
+sh backends/apple/coreml/srcipts/run_tests.sh
 
 ```
  
@@ -60,6 +60,6 @@ open backends/apple/coreml/runtime/workspace/executorchcoreml.xcworkspace
 cd executorch
 
 # There is no need to build the tests.
-sh backends/apple/coreml/srcipts/run_coreml_delegate_tests.sh
+sh backends/apple/coreml/srcipts/run_tests.sh
 
 ```

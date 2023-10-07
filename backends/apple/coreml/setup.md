@@ -20,34 +20,15 @@ sh backends/apple/coreml/scripts/install_requirements.sh
 ```
 cd executorch
 
-# Saves add_all.pte in the current directory.
+# Saves add_coreml_all.pte in the current directory if successful.
 
 python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name add 
 
 ```
 
-4. You can now integrate the **CoreML** backend in code. The following is an example of this flow:
+4. You can now integrate the **CoreML** backend in code.
 
 ```python
-import executorch.exir as exir
-import torch
-
-from executorch.exir.backend.backend_api import to_backend
-
-from executorch.backends.coreml.compiler import CoreMLBackend
-
-class LowerableSubModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return torch.sin(x)
-
-# Convert the lowerable module to Edge IR Representation
-to_be_lowered = LowerableSubModel()
-example_input = (torch.ones(1), )
-to_be_lowered_exir_submodule = exir.capture(to_be_lowered, example_input).to_edge()
-
 # Lower to CoreML backend
 lowered_module = to_backend('CoreMLBackend', to_be_lowered_exir_submodule, [])
 ```
@@ -78,10 +59,12 @@ cmake . -B./cmake-out -G Xcode \
 -DCMAKE_TOOLCHAIN_FILE=third-party/pytorch/cmake/iOS.cmake \
 -DIOS_PLATFORM=OS \
 -DIOS_DEPLOYMENT_TARGET=16.0 \
--DEXECUTORCH_BUILD_COREML_DELEGATE=ON \
+-DEXECUTORCH_BUILD_COREML=ON \
 -DPYTHON_EXECUTABLE=$(which python3) \
 -DFLATC_EXECUTABLE=$(realpath)/third-party/flatbuffers/flatc
 
+# Open Xcode project
+open cmake-out/executorch.xcodeproj 
 ```
 
 3. Open the project in Xcode, and drag the `executorch.xcodeproj` generated from Step 2 to Frameworks.
@@ -103,6 +86,6 @@ libexecutorch.a
 6. Navigate to the project Build Settings:
 - Set the value Header Search Paths to the parent directory of `executorch` directory.
 - Set Library Search Paths to `cmake-out/build`.
-- In other linker flags, add a custom linker flag -all_load.
+- In other linker flags, add a custom linker flag `-all_load`.
 
 7. The target could now run a **CoreML** delegated **Program**. 
