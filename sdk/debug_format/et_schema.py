@@ -21,10 +21,15 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import torch
 from executorch import exir
-from executorch.sdk.edir.base_schema import Node, OperatorGraph, OperatorNode, ValueNode
+from executorch.sdk.debug_format.base_schema import (
+    Node,
+    OperatorGraph,
+    OperatorNode,
+    ValueNode,
+)
 
 
-# Keywords used in EDIR Metadata
+# Keywords used in debug_format Metadata
 class RESERVED_METADATA_ARG(Enum):
     DEBUG_HANDLE = "debug_handle"
     MODULE_STACK = "nn_module_stack"

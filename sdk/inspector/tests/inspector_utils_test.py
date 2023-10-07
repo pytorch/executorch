@@ -8,9 +8,13 @@ import tempfile
 import unittest
 from typing import Dict, Tuple
 
-from executorch.sdk.edir.base_schema import OperatorGraph, OperatorNode, ValueNode
+from executorch.sdk.debug_format.base_schema import (
+    OperatorGraph,
+    OperatorNode,
+    ValueNode,
+)
 
-from executorch.sdk.edir.et_schema import FXOperatorGraph
+from executorch.sdk.debug_format.et_schema import FXOperatorGraph
 from executorch.sdk.etrecord import generate_etrecord, parse_etrecord
 
 from executorch.sdk.etrecord.tests.etrecord_test import TestETRecord

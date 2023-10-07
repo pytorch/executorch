@@ -6,9 +6,9 @@
 
 from typing import Dict, Mapping, Optional
 
-from executorch.sdk.edir.base_schema import OperatorNode
+from executorch.sdk.debug_format.base_schema import OperatorNode
 
-from executorch.sdk.edir.et_schema import FXOperatorGraph, OperatorGraph
+from executorch.sdk.debug_format.et_schema import FXOperatorGraph, OperatorGraph
 from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC
 
 from executorch.sdk.etdump.serialize import deserialize_from_etdump_flatcc
