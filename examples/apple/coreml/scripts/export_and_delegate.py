@@ -7,7 +7,7 @@ import argparse
 import executorch.exir as exir
 import torch
 
-from executorch.backends.coreml.compiler import CoreMLBackend
+from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
@@ -15,9 +15,8 @@ import pathlib
 import sys
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent.parent.parent
-MODELS_DIR = REPO_ROOT/"examples"
-print(MODELS_DIR)
-sys.path.append(str(MODELS_DIR.absolute()))
+EXAMPLES_DIR = REPO_ROOT/"examples"
+sys.path.append(str(EXAMPLES_DIR.absolute()))
 
 from models import MODEL_NAME_TO_MODEL
 from models.model_factory import EagerModelFactory 

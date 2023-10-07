@@ -19,6 +19,7 @@ runtime/libraries/
 runtime/include/
 runtime/inmemoryfs/build/
 runtime/test/models/
+third-party/
 
 xcode-runner-build/
 xcode-test-build/

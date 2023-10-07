@@ -71,7 +71,7 @@ target_include_directories(
 )
 target_include_directories(
   coremldelegate PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/nlohmann
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/nlohmann_json/single_include/nlohmann
 )
 target_include_directories(
   coremldelegate PRIVATE

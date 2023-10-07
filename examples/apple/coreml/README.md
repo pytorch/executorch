@@ -50,7 +50,7 @@ cd executorch
 sh examples/apple/coreml/scripts/build_executor_runner.sh
 
 # Run the CoreML delegate model.
-./coreml_executor_runner -m add_coreml_all.pte
+./coreml_executor_runner --model_path add_coreml_all.pte
 
 
 ```

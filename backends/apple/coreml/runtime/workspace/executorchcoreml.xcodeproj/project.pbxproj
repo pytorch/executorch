@@ -543,7 +543,7 @@
 					"$(SRCROOT)/../delegate",
 					"$(SRCROOT)/../kvstore",
 					"$(SRCROOT)/../inmemoryfs",
-					"$(SRCROOT)/../../third-party/nlohmann/",
+					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
 					"$(SRCROOT)/../include",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
@@ -572,7 +572,7 @@
 					"$(SRCROOT)/../delegate",
 					"$(SRCROOT)/../kvstore",
 					"$(SRCROOT)/../inmemoryfs",
-					"$(SRCROOT)/../../third-party/nlohmann/",
+					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
 					"$(SRCROOT)/../include",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
