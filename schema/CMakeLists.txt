@@ -48,8 +48,15 @@ function(generate_program_schema _schema_srcs _schema_name)
               ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
 endfunction()
 
-set(program_schema_srcs program.fbs scalar_type.fbs)
-generate_program_schema("${program_schema_srcs}" "program_schema")
+# Generate common schema
+set(common_schema_srcs scalar_type.fbs)
+generate_program_schema("${common_schema_srcs}" "common_schema")
 
-set(bundled_schema_srcs bundled_program_schema.fbs scalar_type.fbs)
+# For the other schemas
+set(program_schema_srcs program.fbs)
+generate_program_schema("${program_schema_srcs}" "program_schema")
+add_dependencies(program_schema common_schema)
+
+set(bundled_schema_srcs bundled_program_schema.fbs)
 generate_program_schema("${bundled_schema_srcs}" "bundled_schema")
+add_dependencies(bundled_schema common_schema)
