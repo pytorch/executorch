@@ -24,7 +24,7 @@ The key motivation behind the core ATen opset is to reduce the number of operato
 
 ## Development of the Core ATen Operator Set
 
-Although Executorch uses the core ATen opset, it is not specific to ExecuTorch. One of the primary design goals of the core ATen opset is that it should be as generic as possible; the vast majority of use-cases will not want to decompose the operators contained within it. By extension, the decompositions implied by the core ATen opset should be useful to the vast majority of use-cases.
+Although ExecuTorch uses the core ATen opset, it is not specific to ExecuTorch. One of the primary design goals of the core ATen opset is that it should be as generic as possible; the vast majority of use-cases will not want to decompose the operators contained within it. By extension, the decompositions implied by the core ATen opset should be useful to the vast majority of use-cases.
 
 Another key consideration was to keep the opset as minimal as possible, but not at the expense of imposing decompositions that would have a profound negative impact on performance or developer experience.
 
