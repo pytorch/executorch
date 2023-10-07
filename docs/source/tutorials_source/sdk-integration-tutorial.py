@@ -97,7 +97,7 @@ SDK Integration Tutorial
 # from executing the model. To generate, simply pass the ExecuTorch model
 # to the ``executor_runner``::
 #
-#   buck2 run executorch/examples/export:export_example -- -m mv2
+#   buck2 run executorch/examples/portable/scripts:export -- -m mv2
 #   buck2 run @mode/opt -c executorch.event_tracer_enabled=true executorch/sdk/runners:executor_runner -- --model_path mv2.pte
 #
 # TODO: Add Instructions for CMake, when landed

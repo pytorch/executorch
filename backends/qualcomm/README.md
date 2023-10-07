@@ -44,7 +44,7 @@ backends/qualcomm
 ├── tests # Unit tests and model tests go here.
 └── utils # Miscellaneous utilities.
 
-examples/backend
+examples
 └── qualcomm # Examples to run QNN backends.
 ```
 

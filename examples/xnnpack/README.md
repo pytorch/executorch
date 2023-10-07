@@ -63,7 +63,7 @@ python3 -m examples.xnnpack.quantization.example --model_name "mv2" --so-library
 ```
 You can find more valid quantized example models by running:
 ```bash
-buck2 run executorch/examples/quantization:example -- -h
+buck2 run executorch/examples/xnnpack/quantization:example -- -h
 ```
 
 A quantized model can be run via `executor_runner`:

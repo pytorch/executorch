@@ -22,7 +22,7 @@ from executorch.backends.qualcomm.utils.utils import (
     generate_qnn_executorch_compiler_spec,
     SoCModel,
 )
-from executorch.examples.export.utils import _EDGE_COMPILE_CONFIG
+from executorch.examples.portable.utils import _EDGE_COMPILE_CONFIG
 from executorch.exir.backend.backend_api import to_backend
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
