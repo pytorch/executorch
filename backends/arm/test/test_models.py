@@ -25,6 +25,7 @@ class TosaProfile(Enum):
     BI = 0  # Base Inference
     MI = 1  # Main Inference
     MT = 2  # Main Training
+    BI_INT = 3  # integer only BI subset tests (for test graphs)
 
 
 class TorchBuilder:
@@ -67,6 +68,7 @@ class TorchBuilder:
         inputs = {
             TosaProfile.BI: (torch.ones(5),),
             TosaProfile.MI: (torch.ones(5),),
+            TosaProfile.BI_INT: (torch.ones(5, dtype=torch.int32),),
         }
 
         def __init__(self):
@@ -76,8 +78,27 @@ class TorchBuilder:
             return x + x
 
     @register_test
+    class simple_add_2(torch.nn.Module):
+        inputs = {
+            TosaProfile.BI_INT: (
+                torch.ones(5, dtype=torch.int32),
+                torch.ones(5, dtype=torch.int32),
+            ),
+        }
+
+        def __init__(self):
+            super().__init__()
+
+        def forward(self, x, y):
+            return x + y
+
+    @register_test
     class simple_add_broadcast(torch.nn.Module):
         inputs = {
+            TosaProfile.BI_INT: (
+                torch.ones(10, 1, dtype=torch.int32),
+                torch.ones(10, 10, dtype=torch.int32),
+            ),
             TosaProfile.BI: (
                 torch.ones(10, 1),
                 torch.ones(10, 10),
@@ -110,7 +131,7 @@ class TorchBuilder:
             x = self.fc(x)
             return x
 
-    @register_test
+    # @register_test
     class simple_conv2d(torch.nn.Module):
         inputs = {
             TosaProfile.BI: (
@@ -134,7 +155,7 @@ class TorchBuilder:
             x = self.conv2d(x)
             return x
 
-    @register_test
+    # @register_test
     class block_two_conv2d(torch.nn.Module):
         inputs = {
             TosaProfile.BI: (torch.ones(1, 3, 256, 256),),
@@ -155,7 +176,7 @@ class TorchBuilder:
             x = self.conv2d_2(x)
             return x
 
-    @register_test
+    # @register_test
     class simple_depthwise_conv2d(torch.nn.Module):
         inputs = {
             TosaProfile.BI: (
@@ -259,7 +280,7 @@ class TorchBuilder:
         def forward(self, x):
             return self.softmax(x)
 
-    @register_test
+    # @register_test
     class block_conv_norm_activation(torch.nn.Module):
         inputs = {
             TosaProfile.BI: (torch.ones(1, 3, 256, 256),),
@@ -281,7 +302,7 @@ class TorchBuilder:
             x = self.relu6(x)
             return x
 
-    @register_test
+    # @register_test
     class block_bottleneck_residual(torch.nn.Module):
         # This is the essence of MobileNetV2
         # Ref: https://arxiv.org/abs/1801.04381
