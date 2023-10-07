@@ -50,12 +50,12 @@ lowered_module = to_backend('CoreMLBackend', to_be_lowered_exir_submodule, [])
 
 Currently, the **CoreML** backend delegates the whole module to **CoreML**. If a specific op is not supported by the **CoreML** backend then the `to_backend` call would throw an exception. We will be adding a **CoreML Partitioner** to resolve the issue. 
 
-The `to_backend` implementation is a thin wrapper over `coremltools`, `coremltools` is responsible for converting an **ExportedProgram** to a **MLModel**. The converted **MLModel** data is flattened and returned as bytes to **ExecuTorch**. 
+The `to_backend` implementation is a thin wrapper over `coremltools`, `coremltools` is responsible for converting an **ExportedProgram** to a **MLModel**. The converted **MLModel** data is saved, flattened, and returned as bytes to **ExecuTorch**. 
 
 ## Runtime
 
 To execute a **CoreML** delegated **Program**, the client must link to the `coremldelegate` library. Once linked there are no additional steps required, **ExecuTorch** when running the **Program** would call the **CoreML** runtime to execute the **CoreML** delegated part of the **Program**. 
 
-Please follow the instructions described in the [CoreML setup](\backends\apple\coreml\setup.md) to link the `coremldelegate` library. 
+Please follow the instructions described in the [CoreML setup](/backends/apple/coreml/setup.md) to link the `coremldelegate` library. 
 
   

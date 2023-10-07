@@ -1,5 +1,12 @@
 import os
 
+import pathlib
+import sys
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent.parent.parent.parent
+PYBIND11_DIR_PATH = REPO_ROOT / "third-party" / "pybind11"
+sys.path.append(str(PYBIND11_DIR_PATH.absolute()))
+
 from pybind11.setup_helpers import build_ext, Pybind11Extension
 from setuptools import setup
 
@@ -21,7 +28,7 @@ ext_modules = [
         cxx_std=cxx_std,
         extra_compile_args=["-mmacosx-version-min=10.15"],
         include_dirs=[
-            "../../third-party/nlohmann",
+            "../../third-party/nlohmann_json/single_include/nlohmann",
             ".",
         ],
     ),

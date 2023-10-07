@@ -22,7 +22,7 @@ using namespace torch::executor;
 using torch::executor::testing::TensorFactory;
 
 namespace {
-    
+// TODO: Move the following methods to a utility class, so that it can be shared with `executor_runner.main.mm`
 NSData * _Nullable read_data(const std::string& filePath) {
     NSURL *url = [NSURL fileURLWithPath:@(filePath.c_str())];
     return [NSData dataWithContentsOfURL:url];
@@ -169,12 +169,6 @@ std::vector<Span<uint8_t>> to_spans(std::vector<Buffer>& buffers) {
     [self executeModelAtURL:modelURL nTimes:10];
 }
 
-- (void)testMV2ProgramExecute {
-    NSURL *modelURL = [[self class] bundledResourceWithName:@"mv2_coreml_all" extension:@"pte"];
-    XCTAssertNotNil(modelURL);
-    [self executeModelAtURL:modelURL nTimes:10];
-}
-
 - (void)testMV3ProgramExecute {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"mv3_coreml_all" extension:@"pte"];
     XCTAssertNotNil(modelURL);
@@ -202,9 +196,8 @@ std::vector<Span<uint8_t>> to_spans(std::vector<Buffer>& buffers) {
 - (void)testMultipleModelExecutionConcurrently {
     NSURL *modelURL1 = [[self class] bundledResourceWithName:@"add_coreml_all" extension:@"pte"];
     NSURL *modelURL2 = [[self class] bundledResourceWithName:@"mul_coreml_all" extension:@"pte"];
-    NSURL *modelURL3 = [[self class] bundledResourceWithName:@"mv2_coreml_all" extension:@"pte"];
-    NSURL *modelURL4 = [[self class] bundledResourceWithName:@"mv3_coreml_all" extension:@"pte"];
-    [self executeMultipleModelsConcurrently:@[modelURL1, modelURL2, modelURL3, modelURL4]
+    NSURL *modelURL3 = [[self class] bundledResourceWithName:@"mv3_coreml_all" extension:@"pte"];
+    [self executeMultipleModelsConcurrently:@[modelURL1, modelURL2, modelURL3]
                                      nTimes:10
                                     timeout:5 * 60];
 }

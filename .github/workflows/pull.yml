@@ -137,6 +137,7 @@ jobs:
         PYTHON_EXECUTABLE=python sh build/test_ios_ci.sh
         popd
   
+        
   test-coreml-delegate-macos-x86:
     name: test-macos-x86
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -153,9 +154,9 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
        
         # Build and test coreml delegate
-        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/install_requirements.sh
-        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/build_coreml_delegate_tests.sh
-        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/run_coreml_delegate_tests.sh
+        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/install_requirements_ci.sh
+        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/build_tests.sh
+        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/run_tests.sh
         popd
 
   unittest:
