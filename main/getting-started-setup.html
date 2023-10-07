@@ -500,15 +500,15 @@ a <code class="docutils literal notranslate"><span class="pre">.pte</span></code
 how to do it, we will generate an ExecuTorch program file from an <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>.</p>
 <p>You can generate an ExecuTorch program by using a sample script or by using
 the Python interpreter.</p>
-<p>We have created the <code class="docutils literal notranslate"><span class="pre">export_example.py</span></code> script that demonstrates a simple model
+<p>We have created the <code class="docutils literal notranslate"><span class="pre">export.py</span></code> script that demonstrates a simple model
 export to flatbuffer. This script is available
-in the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/export">pytorch/executorch</a>
+in the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/portable">pytorch/executorch</a>
 repository.</p>
 <p>To generate a sample program, complete the following steps:</p>
 <ol class="arabic simple">
-<li><p>Run the <code class="docutils literal notranslate"><span class="pre">export_example.py</span></code> script:</p></li>
+<li><p>Run the <code class="docutils literal notranslate"><span class="pre">export.py</span></code> script:</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">export</span><span class="o">.</span><span class="n">export_example</span> <span class="o">--</span><span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;add&quot;</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">portable</span><span class="o">.</span><span class="n">scripts</span><span class="o">.</span><span class="n">export</span> <span class="o">--</span><span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;add&quot;</span>
 </pre></div>
 </div>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
@@ -580,7 +580,7 @@ on your system):</p>
 as <code class="docutils literal notranslate"><span class="pre">buck2</span></code>.</p>
 </li>
 <li><p>Build a binary:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">/</span><span class="n">tmp</span><span class="o">/</span><span class="n">buck2</span> <span class="n">build</span> <span class="o">//</span><span class="n">examples</span><span class="o">/</span><span class="n">executor_runner</span><span class="p">:</span><span class="n">executor_runner</span> <span class="o">--</span><span class="n">show</span><span class="o">-</span><span class="n">output</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">/</span><span class="n">tmp</span><span class="o">/</span><span class="n">buck2</span> <span class="n">build</span> <span class="o">//</span><span class="n">examples</span><span class="o">/</span><span class="n">portable</span><span class="o">/</span><span class="n">executor_runner</span><span class="p">:</span><span class="n">executor_runner</span> <span class="o">--</span><span class="n">show</span><span class="o">-</span><span class="n">output</span>
 </pre></div>
 </div>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
@@ -617,7 +617,7 @@ the <code class="docutils literal notranslate"><span class="pre">buck</span> <sp
 <li><p>Run the binary:</p>
 <ul>
 <li><p>To run the <code class="docutils literal notranslate"><span class="pre">add.pte</span></code> program:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">/</span><span class="n">tmp</span><span class="o">/</span><span class="n">buck2</span> <span class="n">run</span> <span class="o">//</span><span class="n">examples</span><span class="o">/</span><span class="n">executor_runner</span><span class="p">:</span><span class="n">executor_runner</span> <span class="o">--</span> <span class="o">--</span><span class="n">model_path</span> <span class="n">add</span><span class="o">.</span><span class="n">pte</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">/</span><span class="n">tmp</span><span class="o">/</span><span class="n">buck2</span> <span class="n">run</span> <span class="o">//</span><span class="n">examples</span><span class="o">/</span><span class="n">portable</span><span class="o">/</span><span class="n">executor_runner</span><span class="p">:</span><span class="n">executor_runner</span> <span class="o">--</span> <span class="o">--</span><span class="n">model_path</span> <span class="n">add</span><span class="o">.</span><span class="n">pte</span>
 </pre></div>
 </div>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
