@@ -6,7 +6,7 @@ An ExecuTorch program encodes instructions that describe the computation that sh
 
 **In essence, a kernel library is simply a collection of ATen operator implementations that follow a common theme or design principle**. Note that due to ExecuTorch’s selective build process (discussed in the following section), operator implementations are linked individually. This means that users can easily mix different kernel libraries in their build without sacrificing build size.
 
-Executorch ships with two kernel libraries by default: the **Portable Kernel Library** and the **Optimized Kernel Library**, both of which provide CPU operator implementations.
+ExecuTorch ships with two kernel libraries by default: the **Portable Kernel Library** and the **Optimized Kernel Library**, both of which provide CPU operator implementations.
 
 ## Portable Kernel Library
 

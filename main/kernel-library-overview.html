@@ -258,7 +258,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Exporting to ExecuTorch</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to Executorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -397,7 +397,7 @@
 <h1>Overview of ExecuTorch’s Kernel Libraries<a class="headerlink" href="#overview-of-executorchs-kernel-libraries" title="Permalink to this headline">¶</a></h1>
 <p>An ExecuTorch program encodes instructions that describe the computation that should be performed by the program. Many of these instructions will correspond to calling a specific ATen operator, for example aten.convolution. However, one of the core design principles of ExecuTorch is that the signature of an operator should be separate from the implementation of the operator. This means that the ExecuTorch runtime does not ship with any standard implementation for ATen operators; users must make sure to link against kernel libraries that contain implementations of the operators required by their ExecuTorch program, and configure <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/aten_ops_and_aten_mode.md">operator registration</a> to map an operator signature to the desired implementation. This makes it easy to adjust the implementation of operators such as <code class="docutils literal notranslate"><span class="pre">aten.convolution</span></code> that will be called when executing an ExecuTorch program; it allows users to select the exact operator implementations that will meet the unique performance, memory usage, battery usage, etc. constraints of their use-case.</p>
 <p><strong>In essence, a kernel library is simply a collection of ATen operator implementations that follow a common theme or design principle</strong>. Note that due to ExecuTorch’s selective build process (discussed in the following section), operator implementations are linked individually. This means that users can easily mix different kernel libraries in their build without sacrificing build size.</p>
-<p>Executorch ships with two kernel libraries by default: the <strong>Portable Kernel Library</strong> and the <strong>Optimized Kernel Library</strong>, both of which provide CPU operator implementations.</p>
+<p>ExecuTorch ships with two kernel libraries by default: the <strong>Portable Kernel Library</strong> and the <strong>Optimized Kernel Library</strong>, both of which provide CPU operator implementations.</p>
 <div class="section" id="portable-kernel-library">
 <h2>Portable Kernel Library<a class="headerlink" href="#portable-kernel-library" title="Permalink to this headline">¶</a></h2>
 <p>The Portable Kernel Library is in a sense the “reference” kernel library that is used by ExecuTorch. The Portable Kernel Library was developed with the following goals in mind:</p>

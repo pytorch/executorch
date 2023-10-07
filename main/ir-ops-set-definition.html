@@ -258,7 +258,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Exporting to ExecuTorch</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to Executorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -413,7 +413,7 @@
 </div>
 <div class="section" id="development-of-the-core-aten-operator-set">
 <h2>Development of the Core ATen Operator Set<a class="headerlink" href="#development-of-the-core-aten-operator-set" title="Permalink to this headline">¶</a></h2>
-<p>Although Executorch uses the core ATen opset, it is not specific to ExecuTorch. One of the primary design goals of the core ATen opset is that it should be as generic as possible; the vast majority of use-cases will not want to decompose the operators contained within it. By extension, the decompositions implied by the core ATen opset should be useful to the vast majority of use-cases.</p>
+<p>Although ExecuTorch uses the core ATen opset, it is not specific to ExecuTorch. One of the primary design goals of the core ATen opset is that it should be as generic as possible; the vast majority of use-cases will not want to decompose the operators contained within it. By extension, the decompositions implied by the core ATen opset should be useful to the vast majority of use-cases.</p>
 <p>Another key consideration was to keep the opset as minimal as possible, but not at the expense of imposing decompositions that would have a profound negative impact on performance or developer experience.</p>
 <p>The core ATen opset was developed by reviewing a list of ATen operators created by surveying models in public GitHub repositories in addition to well-known open source models. The purpose of the surveying process was to obtain a reduced list of ATen operators that is a proxy of which ATen operators are used the most. This way the most commonly used operators may be reviewed first.</p>
 <p>The decision of whether each operator should be a core operator or be decomposed by the Core ATen Decomposition Table was determined by:</p>
