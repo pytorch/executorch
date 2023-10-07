@@ -23,13 +23,13 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 
 @final
-class TosaBackend(BackendDetails):
+class ExampleBackend(BackendDetails):
     @staticmethod
     def preprocess(
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
-        print("entering  the lowerable parts in TosaBackend.preprocess....")
+        print("entering  the lowerable parts in ExampleBackend.preprocess....")
 
         copy_edge_program = copy.deepcopy(edge_program)
         copy_edge_program._transform(
