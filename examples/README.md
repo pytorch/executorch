@@ -15,7 +15,7 @@ examples
 ├── selective_build                   # Contains demos of selective build for optimizing the binary size of the ExecuTorch runtime
 |── arm                               # Contains demos of the Arm TOSA and Ethos-U NPU flows
 |── qualcomm                          # Contains demos of Qualcomm QNN backend
-├── demo-apps                         # Contains demo apps for Android and iOS
+├── demo_apps                         # Contains demo apps for Android and iOS
 ├── third-party                       # Third-party libraries required for working on the demos
 └── README.md                         # This file
 ```
@@ -38,7 +38,7 @@ To understand how to deploy the ExecuTorch runtime with optimization for binary 
 
 ## Demo Apps
 
-Explore mobile apps with ExecuTorch models integrated and deployable on Android and iOS in the [`demo-apps/android/`](./demo-apps/android) and [`demo-apps/apple_ios/`](./demo-apps/apple_ios) directories, respectively.
+Explore mobile apps with ExecuTorch models integrated and deployable on Android and iOS in the [`demo_apps/android/`](./demo_apps/android) and [`demo_apps/apple_ios/`](./demo_apps/apple_ios) directories, respectively.
 
 
 ## Demo of ARM
