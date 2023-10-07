@@ -69,7 +69,7 @@ class PermuteMemoryFormatsPass(ExportPass):
                                     },
                                 )
                                 # Insert to_dim op and it'll be the return op
-                                _ = graph_module.graph.output(exit_to_dim_op)
+                                _ = graph_module.graph.output((exit_to_dim_op,))
                                 # Remove the old return op.
                                 graph_module.graph.erase_node(exit_node)
                             # Handle the case when the pattern output is intermediate output,
