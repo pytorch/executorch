@@ -113,14 +113,14 @@ cmake --build .
 Navigate to the build artifacts directory:
 
 ```bash
-mkdir -p ../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
+mkdir -p ../examples/demo_apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 ```
 
 Copy the core libraries:
 
 ```bash
-cp ./examples/demo-apps/android/jni/libexecutorchdemo.so \
-   ../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
+cp ./examples/demo_apps/android/jni/libexecutorchdemo.so \
+   ../examples/demo_apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 ```
 
 3. *Qualcomm HTP Only:* Copy Qualcomm HTP runtime library
@@ -129,7 +129,7 @@ If Qualcomm HTP backend is used, then we need to copy additional libraries from 
 
 ```bash
 cp libQnnHtp.so libQnnHtpV69Skel.so libQnnHtpStub.so libQnnSystem.so \
-   ../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
+   ../examples/demo_apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 ```
 
 Later, this shared library will be loaded by `NativePeer.java` in Java code.
@@ -151,18 +151,18 @@ Note: Please refer to [XNNPACK backend](../../../backend/README.md) and [Qualcom
 export FLATC_EXECUTABLE=$(realpath third-party/flatbuffers/cmake-out/flatc)
 python3 -m examples.backend.xnnpack_examples --model_name="dl3" --delegate
 python3 -m examples.backend.xnnpack_examples --model_name="ic4" --delegate
-mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
-cp dl3_xnnpack_fp32.pte ic4_xnnpack_fp32.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+mkdir -p examples/demo_apps/android/ExecuTorchDemo/app/src/main/assets/
+cp dl3_xnnpack_fp32.pte ic4_xnnpack_fp32.pte examples/demo_apps/android/ExecuTorchDemo/app/src/main/assets/
 ```
 
 2. *Qualcomm HTP Only:* Copy HTP delegation models to the app:
 
 ```bash
-cp dlv3_qnn.pte ic4_qnn.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+cp dlv3_qnn.pte ic4_qnn.pte examples/demo_apps/android/ExecuTorchDemo/app/src/main/assets/
 ```
 
 ## Final Steps
 
-1. Open the project `examples/demo-apps/android/ExecuTorchDemo` with Android Studio.
+1. Open the project `examples/demo_apps/android/ExecuTorchDemo` with Android Studio.
 
 2. [Run](https://developer.android.com/studio/run) the app (^R)

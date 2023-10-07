@@ -316,7 +316,7 @@ endif()
 
 # Add Android demo app JNI subdirectory
 if(EXECUTORCH_BUILD_ANDROID_DEMO_APP_JNI)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/demo-apps/android/jni)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/demo_apps/android/jni)
 endif()
 
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER

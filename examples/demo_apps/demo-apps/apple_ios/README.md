@@ -101,39 +101,39 @@ cd Release
 Copy the core libraries:
 
 ```bash
-mkdir -p ../../examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/executorch/
+mkdir -p ../../examples/demo_apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/executorch/
 cp libexecutorch.a \
    libextension_data_loader.a \
-   ../../examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/executorch/
+   ../../examples/demo_apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/executorch/
 ```
 
 For Portable CPU operators, copy additional libraries:
 
 ```bash
-mkdir -p ../../examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/portable/
+mkdir -p ../../examples/demo_apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/portable/
 cp libportable_kernels.a \
    libportable_ops_lib.a \
-   ../../examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/portable/
+   ../../examples/demo_apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/portable/
 ```
 
 For CoreML delegate backend, copy additional libraries:
 
 ```bash
-mkdir -p ../../examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/coreml/
+mkdir -p ../../examples/demo_apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/coreml/
 cp libcoremldelegate.a \
-   ../../examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/coreml/
+   ../../examples/demo_apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/coreml/
 ```
 
 For XNNPACK delegate backend, copy additional libraries:
 
 ```bash
-mkdir -p ../../examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/xnnpack/
+mkdir -p ../../examples/demo_apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/xnnpack/
 cp libclog.a \
    libcpuinfo.a \
    libpthreadpool.a \
    libxnnpack_backend.a \
    libXNNPACK.a \
-   ../../examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/xnnpack/
+   ../../examples/demo_apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks/xnnpack/
 ```
 
 Then return to the `executorch` directory:
@@ -147,8 +147,8 @@ cd ../..
 1. Download MobileNet model labels and bundle them with the app:
 
 ```bash
-mkdir -p examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
-curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt -o examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/imagenet_classes.txt
+mkdir -p examples/demo_apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
+curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt -o examples/demo_apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/imagenet_classes.txt
 ```
 
 2. Export a MobileNet v3 model backed with XNNPACK delegate and bundle it with
@@ -159,7 +159,7 @@ export FLATC_EXECUTABLE=$(realpath third-party/flatbuffers/cmake-out/flatc)
 python3 -m examples.portable.scripts.export --model_name="mv3"
 python3 -m examples.xnnpack.aot_compiler --model_name="mv3" --delegate
 python3 -m examples.export.coreml_export_and_delegate -m "mv3"
-cp mv3.pte mv3_coreml.pte mv3_xnnpack_fp32.pte examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
+cp mv3.pte mv3_coreml.pte mv3_xnnpack_fp32.pte examples/demo_apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
 ```
 
 ## Final Steps
@@ -167,7 +167,7 @@ cp mv3.pte mv3_coreml.pte mv3_xnnpack_fp32.pte examples/demo-apps/apple_ios/Exec
 1. Open the project with Xcode:
 
 ```bash
-open executorch/examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo.xcodeproj
+open executorch/examples/demo_apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo.xcodeproj
 ```
 
 2. Set the Header Search Paths for `MobileNetClassifier` target to the directory
