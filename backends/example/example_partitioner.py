@@ -7,7 +7,7 @@
 from typing import Dict, final
 
 import torch
-from executorch.backends.example.example_backend import TosaBackend
+from executorch.backends.example.example_backend import ExampleBackend
 from executorch.backends.example.example_operators.ops import module_to_annotator
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
@@ -32,7 +32,7 @@ class ExamplePartitioner(Partitioner):
 
     def __init__(self) -> None:
         self.patterns = module_to_annotator.keys()
-        self.delegation_spec = DelegationSpec(TosaBackend.__name__, [])
+        self.delegation_spec = DelegationSpec(ExampleBackend.__name__, [])
 
         class DequantQuantOperatorSupport(OperatorSupportBase):
             def is_node_supported(self, _submodules, node: torch.fx.Node) -> bool:

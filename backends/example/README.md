@@ -5,7 +5,7 @@ The folder structure incluces:
 - example_partitioner
 - example_backend
 - examples_operators. Assuming all of them can run in the example backend.
-    - The OpBase defined in op_base.py is just the draft idea, it can be defined more comprehensively depending tosa operator definitions
+    - The OpBase defined in op_base.py is just the draft idea, it can be defined more comprehensively depending example operator definitions
 - example_backend_delegate_passes. It includes passes that might be helpful in the backend. Right now there are two passes: merge_to_dim_pass.py and permute_memory_formats_pass.py. They are examples to show how to represent memory format permutation and how to represent operators with different memory format (like channel last)
     - merge_to_dim_pass.py only handles one merging cases. More cases need to be covered but should be straitforward.
 
