@@ -10,7 +10,7 @@ import os
 from typing import Any
 
 from examples.models import MODEL_NAME_TO_MODEL
-from examples.recipes.xnnpack_optimization import MODEL_NAME_TO_OPTIONS
+from examples.xnnpack import MODEL_NAME_TO_OPTIONS
 
 # NB: Skip buck2 on MacOS to cut down the number of combinations we
 # need to run there as the number of MacOS runner is limited. Buck2
@@ -80,8 +80,7 @@ def export_models_for_ci() -> None:
         }
         delegation_configs = {
             False,
-            name in MODEL_NAME_TO_OPTIONS
-            and MODEL_NAME_TO_OPTIONS[name].xnnpack_delegation,
+            name in MODEL_NAME_TO_OPTIONS and MODEL_NAME_TO_OPTIONS[name].delegation,
         }
         for build_tool in BUILD_TOOLS.keys():
             if target_os not in BUILD_TOOLS[build_tool]:

@@ -158,7 +158,7 @@ However, please note:
 For more details about the ExecuTorch runtime, please see:
 
 * The
-  [`executor_runner`](https://github.com/pytorch/executorch/blob/main/examples/executor_runner/executor_runner.cpp)
+  [`executor_runner`](https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp)
   example tool
 * [Runtime API](runtime-api.md)
 * [Runtime Build and Cross Compilation](runtime-build-and-cross-compilation.md)

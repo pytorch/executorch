@@ -44,15 +44,15 @@ def define_common_targets():
     # Select all ops from a yaml file
     et_operator_library(
         name = "select_ops_from_yaml",
-        ops_schema_yaml_target = "//executorch/examples/custom_ops:custom_ops.yaml",
+        ops_schema_yaml_target = "//executorch/examples/portable/custom_ops:custom_ops.yaml",
     )
 
     executorch_generated_lib(
         name = "select_ops_from_yaml_lib",
-        custom_ops_yaml_target = "//executorch/examples/custom_ops:custom_ops.yaml",
+        custom_ops_yaml_target = "//executorch/examples/portable/custom_ops:custom_ops.yaml",
         deps = [
-            "//executorch/examples/custom_ops:custom_ops_1",
-            "//executorch/examples/custom_ops:custom_ops_2",
+            "//executorch/examples/portable/custom_ops:custom_ops_1",
+            "//executorch/examples/portable/custom_ops:custom_ops_2",
             ":select_ops_from_yaml",
         ],
     )
@@ -73,7 +73,7 @@ def define_common_targets():
         name = "selective_build_test",
         srcs = [],
         deps = [
-            "//executorch/examples/executor_runner:executor_runner_lib",
+            "//executorch/examples/portable/executor_runner:executor_runner_lib",
         ] + lib,
         define_static_target = True,
         **get_oss_build_kwargs()

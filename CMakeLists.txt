@@ -93,8 +93,8 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
 # Option to register custom operator `my_ops::mul3` or `my_ops::mul4` or no
 # custom ops at all. Custom ops are defined in
-# `examples/custom_ops/custom_ops_1.py` and
-# `examples/custom_ops/custom_ops_2.cpp`.
+# `examples/portable/custom_ops/custom_ops_1.py` and
+# `examples/portable/custom_ops/custom_ops_2.cpp`.
 option(
   REGISTER_EXAMPLE_CUSTOM_OP
   "Register whether custom op 1 (my_ops::mul3) or custom op 2 (my_ops::mul4) \
@@ -296,7 +296,7 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
 
   # Generate custom_ops_lib based on REGISTER_EXAMPLE_CUSTOM_OP
   if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 1 OR REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/custom_ops)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/portable/custom_ops)
     list(APPEND _executor_runner_libs custom_ops_lib)
   endif()
 

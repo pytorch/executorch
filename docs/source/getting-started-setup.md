@@ -99,17 +99,17 @@ how to do it, we will generate an ExecuTorch program file from an `nn.Module`.
 You can generate an ExecuTorch program by using a sample script or by using
 the Python interpreter.
 
-We have created the `export_example.py` script that demonstrates a simple model
+We have created the `export.py` script that demonstrates a simple model
 export to flatbuffer. This script is available
-in the [pytorch/executorch](https://github.com/pytorch/executorch/tree/main/examples/export)
+in the [pytorch/executorch](https://github.com/pytorch/executorch/tree/main/examples/portable)
 repository.
 
 To generate a sample program, complete the following steps:
 
-1. Run the `export_example.py` script:
+1. Run the `export.py` script:
 
   ```bash
-  python3 -m examples.export.export_example --model_name="add"
+  python3 -m examples.portable.scripts.export --model_name="add"
   ```
 
   :::{dropdown} Output
@@ -187,7 +187,7 @@ Complete the following steps:
 
 3. Build a binary:
    ```bash
-   /tmp/buck2 build //examples/executor_runner:executor_runner --show-output
+   /tmp/buck2 build //examples/portable/executor_runner:executor_runner --show-output
    ```
 
    :::{dropdown} Output
@@ -221,7 +221,7 @@ the `buck run` command to run our program.
    * To run the `add.pte` program:
 
      ```bash
-     /tmp/buck2 run //examples/executor_runner:executor_runner -- --model_path add.pte
+     /tmp/buck2 run //examples/portable/executor_runner:executor_runner -- --model_path add.pte
      ```
 
      :::{dropdown} Sample Output

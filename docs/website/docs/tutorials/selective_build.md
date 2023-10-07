@@ -94,18 +94,18 @@ In addition to that, if we want to select all ops from a kernel library, we can 
 # Select all ops from a yaml file
 et_operator_library(
     name = "select_ops_from_yaml",
-    ops_schema_yaml_target = "//executorch/examples/custom_ops:custom_ops.yaml",
+    ops_schema_yaml_target = "//executorch/examples/portable/custom_ops:custom_ops.yaml",
 )
 ```
 Then in the kernel registration library we can do:
 ```starlark
 executorch_generated_lib(
     name = "select_ops_lib",
-    custom_ops_yaml_target = "//executorch/examples/custom_ops:custom_ops.yaml",
+    custom_ops_yaml_target = "//executorch/examples/portable/custom_ops:custom_ops.yaml",
 functions_yaml_target = "//executorch/kernels/portable:functions.yaml",
     deps = [
-        "//executorch/examples/custom_ops:custom_ops_1", # kernel library
-        "//executorch/examples/custom_ops:custom_ops_2", # kernel library
+        "//executorch/examples/portable/custom_ops:custom_ops_1", # kernel library
+        "//executorch/examples/portable/custom_ops:custom_ops_2", # kernel library
   "//executorch/kernels/portable:operators", # kernel library
         ":select_ops_from_yaml",
   ":select_ops_in_list",
@@ -125,7 +125,7 @@ if(SELECT_ALL_OPS)
 elseif(SELECT_OPS_LIST)
   gen_selected_ops("" "${SELECT_OPS_LIST}" "")
 elseif(SELECT_OPS_YAML)
- set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/custom_ops/custom_ops.yaml)
+ set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml)
   gen_selected_ops("${_custom_ops_yaml}" "" "")
 endif()
 ```

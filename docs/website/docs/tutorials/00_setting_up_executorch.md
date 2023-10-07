@@ -58,10 +58,10 @@ corresponsing version of the repo.
 Via python script:
 ```bash
 # Creates the file `add.pte`
-python3 -m examples.export.export_example --model_name="add"
+python3 -m examples.portable.scripts.export --model_name="add"
 
 # Creates the delegated program `composite_model.pte`, other options are "whole" and "partition"
-python3 -m examples.export.export_and_delegate --option "composite"
+python3 -m examples.portable.scripts.export_and_delegate --option "composite"
 ```
 
 Or via python interpreter:
@@ -98,7 +98,7 @@ You may want to copy the `buck2` binary into your `$PATH` so you can run it as `
 `executor_runner` is an example wrapper around executorch runtime which includes all the operators and backends
 
 ```bash
-/tmp/buck2 build //examples/executor_runner:executor_runner --show-output
+/tmp/buck2 build //examples/portable/executor_runner:executor_runner --show-output
 ```
 
 The `--show-output` flag will print the path to the executable if you want to run it directly.
@@ -111,11 +111,11 @@ conda install -c conda-forge lld
 ### Step 3: Run a binary
 
 ```bash
-# add.pte is the program generated from export_example.py during AOT Setup Step 3
-/tmp/buck2 run //examples/executor_runner:executor_runner -- --model_path add.pte
+# add.pte is the program generated from portable/scripts/export.py during AOT Setup Step 3
+/tmp/buck2 run //examples/portable/executor_runner:executor_runner -- --model_path add.pte
 
 # To run a delegated model
-/tmp/buck2 run //examples/executor_runner:executor_runner -- --model_path composite_model.pte
+/tmp/buck2 run //examples/portable/executor_runner:executor_runner -- --model_path composite_model.pte
 ```
 
 or execute the binary directly from the `--show-output` path shown when building.
