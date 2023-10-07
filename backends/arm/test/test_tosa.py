@@ -17,6 +17,8 @@ from executorch.backends.arm.test.test_models import TestList, TosaProfile
 
 from executorch.exir.backend.backend_api import to_backend
 
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+
 # Config for Capturing the weights, will be moved in the future
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
@@ -37,9 +39,12 @@ class TestBasicNN(unittest.TestCase):
         for test_model in TestList:
             print(f"Running test {test_model}")
             model, inputs, outputs = prepare_model_and_ref(test_model, TosaProfile.MI)
-
-            model_edge, exec_prog = export_model(model, inputs, [])
-            # TODO: check there is a tosa delegate blob in the output
+            if inputs is None:
+                print("  Skipping, no inputs for this profile")
+                continue
+            model_edge, exec_prog = export_model(
+                model, inputs, [CompileSpec("output_format", bytes("tosa", "utf8"))]
+            )
 
     def test_minimal_BI(self):
         for test_model in TestList:
@@ -48,13 +53,30 @@ class TestBasicNN(unittest.TestCase):
             if inputs is None:
                 print("  Skipping, no inputs for this profile")
                 continue
-            model_edge, exec_prog = export_model(model, inputs, [])
-            # TODO: check there is a tosa delegate blob in the output
+            model_edge, exec_prog = export_model(
+                model, inputs, [CompileSpec("output_format", bytes("tosa", "utf8"))]
+            )
+
+    def test_minimal_BI_INT(self):
+        for test_model in TestList:
+            print(f"Running test {test_model}")
+            model, inputs, outputs = prepare_model_and_ref(
+                test_model, TosaProfile.BI_INT
+            )
+            if inputs is None:
+                print("  Skipping, no inputs for this profile")
+                continue
+            model_edge, exec_prog = export_model(
+                model, inputs, [CompileSpec("output_format", bytes("tosa", "utf8"))]
+            )
 
 
 def prepare_model_and_ref(test_model, profile=TosaProfile.MI):
     model = TestList[test_model]
     model_inputs = model.inputs.get(profile)
+
+    if model_inputs is None:
+        return model, model_inputs, None
 
     model.eval()
     if profile == TosaProfile.BI:
@@ -72,10 +94,8 @@ def prepare_model_and_ref(test_model, profile=TosaProfile.MI):
         prepared_model(*model.inputs[profile])
         model = convert_pt2e(prepared_model)
 
-    if model_inputs is not None:
-        model_outputs = model.forward(*model_inputs)
-        return model, model_inputs, model_outputs
-    return model, model_inputs, None
+    model_outputs = model.forward(*model_inputs)
+    return model, model_inputs, model_outputs
 
 
 def export_model(model, inputs, compile_spec):

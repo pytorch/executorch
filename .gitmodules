@@ -43,3 +43,6 @@
 [submodule "examples/third-party/fbjni"]
 	path = examples/third-party/fbjni
 	url = https://github.com/facebookincubator/fbjni.git
+[submodule "backends/arm/third-party/ethos-u-core-driver"]
+	path = backends/arm/third-party/ethos-u-core-driver
+	url = https://git.mlplatform.org/ml/ethos-u/ethos-u-core-driver.git
