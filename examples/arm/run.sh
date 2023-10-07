@@ -36,7 +36,7 @@ _setup_msg="please refer to ${script_dir}/ethos-u-setup/setup.sh to properly ins
 # Generate the PTE file
 function generate_pte_file() {
     cd $et_root_dir
-    python3 -m examples.export.export_example --model_name="softmax"
+    python3 -m examples.portable.scripts.export --model_name="softmax"
     local pte_file
     pte_file="$(realpath ./softmax.pte)"
     [[ -f ${pte_file} ]] || { echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
@@ -48,7 +48,7 @@ function build_executorch() {
     [[ -d "${et_build_dir}" ]] \
         && echo "[${FUNCNAME[0]}] Warn: using already existing build-dir for executorch: ${et_build_dir}!!"
     mkdir -p "${et_build_dir}"
-    
+
     cd "${et_build_dir}"
     cmake                                                 \
         -DBUCK2=${buck2}                                  \

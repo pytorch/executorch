@@ -461,7 +461,7 @@ bundled_program = create_bundled_program(program, bundled_config)
 
 :::{dropdown} Raised Error
 
-```bash
+```
 The input tensor tensor([[ 0,  3],
         [-3, -3]], dtype=torch.int32) dtype shall be torch.float32, but now is torch.int32
 ---------------------------------------------------------------------------
@@ -589,7 +589,7 @@ bundled_program = create_bundled_program(program, bundled_config)
 
 :::{dropdown} Raised Error
 
-```bash
+```
 All method names in bundled config should be found in program.execution_plan,          but {'wrong_forward'} does not include.
 ---------------------------------------------------------------------------
 AssertionError                            Traceback (most recent call last)
