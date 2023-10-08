@@ -43,6 +43,7 @@
 cmake_minimum_required(VERSION 3.19)
 project(executorch)
 include(build/Utils.cmake)
+include(CMakeDependentOption)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -181,46 +182,25 @@ include(${EXECUTORCH_SRCS_FILE})
 # EXECUTORCH_BUILD_HOST_TARGETS, which can still be overridden if desired.
 #
 
-# _default_build_host_targets: The default value for the
-# EXECUTORCH_BUILD_HOST_TARGETS option.
-set(_default_build_host_targets ON)
-if(CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
-  # TODO(dbort): Refactor toolchain-specific matching. Ideally this file would
-  # not know about specific targets, and work with more abstract concepts like
-  # "is cross compiling".
-  set(_default_build_host_targets OFF)
-endif()
-
 # EXECUTORCH_BUILD_HOST_TARGETS: Option to control the building of host-only
 # tools like `flatc`, along with example executables like `executor_runner` and
 # libraries that it uses, like `gflags`. Disabling this can be helpful when
 # cross-compiling, but some required tools that would have been built need to be
 # provided directly (via, for example, FLATC_EXECUTABLE).
-option(EXECUTORCH_BUILD_HOST_TARGETS "Build host-only targets."
-       "${_default_build_host_targets}")
-# Unset this since it's easy to confuse with _default_host_target_option.
-unset(_default_build_host_targets)
+cmake_policy(SET CMP0127 NEW)
 
-# _default_host_target_option: EXECUTORCH_BUILD_* options that guard host tools
-# and libraries should use this as their default value.
-if(EXECUTORCH_BUILD_HOST_TARGETS)
-  set(_default_host_target_option ON)
-else()
-  set(_default_host_target_option OFF)
-endif()
+cmake_dependent_option(
+  EXECUTORCH_BUILD_HOST_TARGETS "Build host-only targets." ON
+  "NOT CMAKE_TOOLCHAIN_FILE MATCHES \".*iOS\.cmake$\"" OFF)
+
 
 #
 # flatc: Flatbuffer commandline tool to generate .h files from .fbs files
 #
+cmake_dependent_option(
+  EXECUTORCH_BUILD_FLATC "Build the flatc executable." ON
+  "NOT FLATC_EXECUTABLE AND EXECUTORCH_BUILD_HOST_TARGETS" OFF)
 
-if(FLATC_EXECUTABLE)
-  # A `flatc` is provided, so no need to build another one.
-  set(_default_build_flatc OFF)
-else()
-  set(_default_build_flatc "${_default_host_target_option}")
-endif()
-option(EXECUTORCH_BUILD_FLATC "Build the flatc executable."
-       "${_default_build_flatc}")
 if(EXECUTORCH_BUILD_FLATC)
   if(FLATC_EXECUTABLE)
     # We could ignore this, but it could lead to confusion about which `flatc`
@@ -279,8 +259,8 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 #
 # gflags: Commandline flag host library.
 #
-option(EXECUTORCH_BUILD_GFLAGS "Build the gflags library."
-       "${_default_host_target_option}")
+cmake_dependent_option(EXECUTORCH_BUILD_GFLAGS "Build the gflags library." ON
+  EXECUTORCH_BUILD_HOST_TARGETS OFF)
 if(EXECUTORCH_BUILD_GFLAGS)
   add_subdirectory(third-party/gflags)
 endif()
@@ -288,8 +268,9 @@ endif()
 #
 # executor_runner: Host tool that demonstrates program execution.
 #
-option(EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable"
-       "${_default_host_target_option}")
+cmake_dependent_option(EXECUTORCH_BUILD_EXECUTOR_RUNNER
+  "Build the executor_runner executable" ON
+  EXECUTORCH_BUILD_HOST_TARGETS OFF)
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
   set(_executor_runner_libs executorch portable_ops_lib gflags)
