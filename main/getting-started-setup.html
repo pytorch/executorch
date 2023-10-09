@@ -464,14 +464,9 @@ In this section, you will set up your <code class="docutils literal notranslate"
 the required dependencies.</p>
 <p>Follow these steps:</p>
 <ol class="arabic">
-<li><p>If you do not have it already, install conda on your machine by following
-the steps in the <a class="reference external" href="https://conda.io/projects/conda/en/latest/user-guide/install/index.html">conda installation guide</a>.</p></li>
-<li><p>Create and activate your conda environment:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">conda</span> <span class="n">create</span> <span class="o">-</span><span class="n">yn</span> <span class="n">executorch</span> <span class="n">python</span><span class="o">=</span><span class="mf">3.10.0</span>
-<span class="n">conda</span> <span class="n">activate</span> <span class="n">executorch</span>
-</pre></div>
-</div>
-</li>
+<li><p>If you do not have it already, install conda on your machine by following the
+steps in the
+<a class="reference external" href="https://conda.io/projects/conda/en/latest/user-guide/install/index.html">conda installation guide</a>.</p></li>
 <li><p>Clone the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> repository:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">git</span> <span class="n">clone</span> <span class="n">git</span><span class="nd">@github</span><span class="o">.</span><span class="n">com</span><span class="p">:</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">.</span><span class="n">git</span>
 </pre></div>
@@ -484,10 +479,37 @@ the steps in the <a class="reference external" href="https://conda.io/projects/c
 </pre></div>
 </div>
 </li>
-<li><p>Install ExecuTorch and dependencies:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">bash</span> <span class="o">./</span><span class="n">install_requirements</span><span class="o">.</span><span class="n">sh</span>
+<li><p>Create and activate your conda environment:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">conda</span> <span class="n">create</span> <span class="o">-</span><span class="n">yn</span> <span class="n">executorch</span> <span class="n">python</span><span class="o">=</span><span class="mf">3.10.0</span>
+<span class="n">conda</span> <span class="n">activate</span> <span class="n">executorch</span>
 </pre></div>
 </div>
+<p>Or alternatively use a Python virtual environment:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">venv</span> <span class="o">.</span><span class="n">executorch</span>
+<span class="n">source</span> <span class="o">.</span><span class="n">executorch</span><span class="o">/</span><span class="nb">bin</span><span class="o">/</span><span class="n">activate</span>
+</pre></div>
+</div>
+</li>
+<li><p>Install <a class="reference external" href="https://cmake.org/download">Cmake</a></p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">conda</span> <span class="n">install</span> <span class="n">cmake</span>
+</pre></div>
+</div>
+<p>Alternatively:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">pip</span> <span class="n">install</span> <span class="n">cmake</span>
+</pre></div>
+</div>
+</li>
+<li><p>Install ExecuTorch and dependencies:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">./</span><span class="n">install_requirements</span><span class="o">.</span><span class="n">sh</span>
+</pre></div>
+</div>
+</li>
+<li><p>Expose FlatBuffers compiler:</p>
+<p>ExecuTorch uses <code class="docutils literal notranslate"><span class="pre">flatc</span></code> to export models and builds it from sources at
+<code class="docutils literal notranslate"><span class="pre">third-party/flatbuffers</span></code>. Make it’s available by referring in <code class="docutils literal notranslate"><span class="pre">$PATH</span></code>,
+as prompted by the previous step, or exporting as <code class="docutils literal notranslate"><span class="pre">$FLATC_EXECUTABLE</span></code>
+enironment variable.
+Run <code class="docutils literal notranslate"><span class="pre">./build/install_flatc.sh</span></code> to make sure <code class="docutils literal notranslate"><span class="pre">flatc</span></code> is installed correctly.</p>
 </li>
 </ol>
 <p>You have successfully set up your environment to work with ExecuTorch. The next
@@ -576,9 +598,14 @@ to periodically sync your submodules with upstream:</p>
 </pre></div>
 </div>
 </li>
+<li><p>Install ExecuTorch and dependencies:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">./</span><span class="n">install_requirements</span><span class="o">.</span><span class="n">sh</span>
+</pre></div>
+</div>
+</li>
 <li><p>Configure Buck2 by decompressing with the following command (filename depends
 on your system):</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># For example, buck2-x86_64-unknown-linux-musl.zst</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># For example, buck2-x86_64-unknown-linux-musl.zst or buck2-aarch64-apple-darwin.zst</span>
 <span class="n">zstd</span> <span class="o">-</span><span class="n">cdq</span> <span class="n">buck2</span><span class="o">-</span><span class="n">DOWNLOADED_FILENAME</span><span class="o">.</span><span class="n">zst</span> <span class="o">&gt;</span> <span class="o">/</span><span class="n">tmp</span><span class="o">/</span><span class="n">buck2</span> <span class="o">&amp;&amp;</span> <span class="n">chmod</span> <span class="o">+</span><span class="n">x</span> <span class="o">/</span><span class="n">tmp</span><span class="o">/</span><span class="n">buck2</span>
 </pre></div>
 </div>
