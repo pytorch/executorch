@@ -77,11 +77,9 @@ Tensor make_tensor(
 } // namespace
 
 bool tensor_is_broadcastable_to(
-    const Tensor& broadcast_from,
-    const Tensor& broadcast_to) {
+    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_to_shape) {
   bool feasible_bcast = true;
-  auto broadcast_to_shape = broadcast_to.sizes();
-  auto broadcast_from_shape = broadcast_from.sizes();
 
   if (broadcast_to_shape.size() < broadcast_from_shape.size()) {
     return false;
@@ -101,6 +99,13 @@ bool tensor_is_broadcastable_to(
   }
 
   return feasible_bcast;
+}
+
+bool tensor_is_broadcastable_to(
+    const Tensor& broadcast_from,
+    const Tensor& broadcast_to) {
+  return tensor_is_broadcastable_to(
+      broadcast_from.sizes(), broadcast_to.sizes());
 }
 
 bool tensors_are_broadcastable_between(
@@ -264,26 +269,38 @@ void delinearize_index(
 size_t linearize_access_indexes(
     ArrayRef<size_t> indexes_broadcast_to,
     ssize_t broadcast_to_ndim,
-    const Tensor& broadcast_from) {
-  size_t num_skip_dims = broadcast_to_ndim - broadcast_from.dim();
+    exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    exec_aten::ArrayRef<Tensor::StridesType> broadcast_from_strides) {
+  size_t num_skip_dims = broadcast_to_ndim - broadcast_from_shape.size();
   ArrayRef<size_t> indexes_broadcast_from = indexes_broadcast_to.slice(
       num_skip_dims, broadcast_to_ndim - num_skip_dims);
 
-  ET_CHECK(indexes_broadcast_from.size() == broadcast_from.dim());
+  ET_CHECK(indexes_broadcast_from.size() == broadcast_from_shape.size());
 
   size_t linear_index = 0;
   for (size_t i = 0; i < indexes_broadcast_from.size(); ++i) {
     // If this dimension is broadcasted, add zero to the linear address.
-    if (indexes_broadcast_from[i] >= broadcast_from.size(i)) {
+    if (indexes_broadcast_from[i] >= broadcast_from_shape[i]) {
       ET_CHECK_MSG(
-          broadcast_from.size(i) == 1,
-          "Expected dim size == 1 if broadcasted, but actual dim size is %zd",
-          broadcast_from.size(i));
+          broadcast_from_shape[i] == 1,
+          "Expected dim size == 1 if broadcasted, but actual dim size is %zu",
+          static_cast<size_t>(broadcast_from_shape[i]));
       continue;
     }
-    linear_index += indexes_broadcast_from[i] * broadcast_from.strides()[i];
+    linear_index += indexes_broadcast_from[i] * broadcast_from_strides[i];
   }
   return linear_index;
+}
+
+size_t linearize_access_indexes(
+    ArrayRef<size_t> indexes_broadcast_to,
+    ssize_t broadcast_to_ndim,
+    const Tensor& broadcast_from) {
+  return linearize_access_indexes(
+      indexes_broadcast_to,
+      broadcast_to_ndim,
+      broadcast_from.sizes(),
+      broadcast_from.strides());
 }
 
 } // namespace executor
