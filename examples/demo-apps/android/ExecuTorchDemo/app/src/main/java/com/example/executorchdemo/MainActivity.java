@@ -22,6 +22,7 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import com.example.executorchdemo.executor.EValue;
+import com.example.executorchdemo.executor.LoadQnnLibrary;
 import com.example.executorchdemo.executor.Module;
 import com.example.executorchdemo.executor.Tensor;
 import com.example.executorchdemo.executor.TensorImageUtils;
@@ -154,6 +155,8 @@ public class MainActivity extends Activity implements Runnable {
         new View.OnClickListener() {
           public void onClick(View v) {
             try {
+              new LoadQnnLibrary(); // force load lib
+
               mModule.destroy();
               mModule =
                   Module.load(MainActivity.assetFilePath(getApplicationContext(), "dlv3_qnn.pte"));
