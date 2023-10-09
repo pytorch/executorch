@@ -53,7 +53,7 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
 
   ET_KERNEL_CHECK(
       ctx,
-      output_size_is_valid({output_sizes, output_ndim}),
+      output_size_is_valid({output_sizes, output_ndim}, 2),
       InvalidArgument,
       ret_val);
 

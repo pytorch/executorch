@@ -27,7 +27,7 @@ int64_t val_at(IntArrayRef array, size_t i, int64_t default_value = 1);
  */
 bool int_array_all_ge(IntArrayRef array, int64_t val);
 
-bool stride_is_valid(IntArrayRef stride, size_t kernel_ndim);
+bool stride_is_valid(IntArrayRef stride, size_t kernel_ndim, bool allow_empty);
 
 bool padding_is_valid(
     IntArrayRef padding,
@@ -38,7 +38,8 @@ bool padding_is_valid(
 bool dilation_is_valid(IntArrayRef dilation, size_t kernel_ndim);
 
 bool output_size_is_valid(
-    exec_aten::ArrayRef<exec_aten::SizesType> output_size);
+    exec_aten::ArrayRef<exec_aten::SizesType> output_size,
+    size_t kernel_ndim);
 
 void get_unsqueezed_sizes(
     const Tensor& t,
@@ -57,6 +58,7 @@ void get_unsqueezed_dim_order(
  */
 void calculate_kernel_output_sizes(
     const Tensor& in,
+    size_t kernel_ndim,
     IntArrayRef kernel_sizes,
     IntArrayRef stride,
     IntArrayRef padding,
@@ -160,8 +162,14 @@ void kernel_reduction_then_map_2d(
   in_coord[in_dim - 3] = out_c;
   out_coord[in_dim - 3] = out_c;
 
-  size_t k_H = val_at(kernel_size, 0);
-  size_t k_W = val_at(kernel_size, 1);
+  int64_t k_H = val_at(kernel_size, 0);
+  int64_t k_W = val_at(kernel_size, 1);
+  int64_t s_H = val_at(stride, 0, /*default_value=*/k_H);
+  int64_t s_W = val_at(stride, 1, /*default_value=*/k_W);
+  int64_t p_H = val_at(padding, 0, /*default_value=*/0);
+  int64_t p_W = val_at(padding, 1, /*default_value=*/0);
+  int64_t d_H = val_at(dilation, 0, /*default_value=*/1);
+  int64_t d_W = val_at(dilation, 1, /*default_value=*/1);
 
   // Compute 2D output region
   for (size_t out_y = 0; out_y < out_H; ++out_y) {
@@ -174,18 +182,38 @@ void kernel_reduction_then_map_2d(
       int64_t accum_idx = 0;
       int64_t count = 0;
 
+      int64_t ih0 = out_y * s_H - p_H;
+      int64_t iw0 = out_x * s_W - p_W;
+      int64_t ih1 = std::min(ih0 + k_H, static_cast<int64_t>(in_H) + p_H);
+      int64_t iw1 = std::min(iw0 + k_W, static_cast<int64_t>(in_W) + p_W);
+      int64_t pool_size = (ih1 - ih0) * (iw1 - iw0);
+      ih0 = std::max(ih0, (int64_t)0);
+      iw0 = std::max(iw0, (int64_t)0);
+      ih1 = std::min(ih1, static_cast<int64_t>(in_H));
+      iw1 = std::min(iw1, static_cast<int64_t>(in_W));
+
+      if (ih0 >= ih1 || iw0 >= iw1) {
+        continue;
+      }
+
+      if (include_pad) {
+        count = pool_size;
+      } else {
+        count = (ih1 - ih0) * (iw1 - iw0);
+      }
+
       for (size_t w_y = 0; w_y < k_H; ++w_y) {
-        int64_t stride_y = val_at(stride, 0);
-        int64_t padding_y = val_at(padding, 0, /*default_value=*/0);
-        int64_t dilation_y = val_at(dilation, 0);
+        int64_t stride_y = s_H;
+        int64_t padding_y = p_H;
+        int64_t dilation_y = d_H;
 
         size_t in_y = stride_y * out_y + dilation_y * w_y - padding_y;
         in_coord[in_dim - 2] = in_y;
 
         for (size_t w_x = 0; w_x < k_W; ++w_x) {
-          int64_t stride_x = val_at(stride, 1);
-          int64_t padding_x = val_at(padding, 1, /*default_value=*/0);
-          int64_t dilation_x = val_at(dilation, 1);
+          int64_t stride_x = s_W;
+          int64_t padding_x = p_W;
+          int64_t dilation_x = d_W;
 
           size_t in_x = stride_x * out_x + dilation_x * w_x - padding_x;
           in_coord[in_dim - 1] = in_x;
@@ -201,13 +229,13 @@ void kernel_reduction_then_map_2d(
             in_val = in_ptr[in_idx];
           }
 
-          int64_t idx = idx = in_y * in_W + in_x;
+          int64_t idx = in_y * in_W + in_x;
           if (include_pad) {
             idx =
                 in_y + padding_y * (in_W + 2 * padding_x) + (in_x + padding_x);
           }
 
-          if (xy_in_bound || include_pad) {
+          if (xy_in_bound) {
             if (!accum_initialized) {
               accum = in_val;
               accum_idx = idx;
@@ -218,7 +246,6 @@ void kernel_reduction_then_map_2d(
               accum = std::get<0>(ret);
               accum_idx = std::get<1>(ret);
             }
-            count++;
           }
         }
       }
@@ -304,14 +331,6 @@ void apply_kernel_2d_reduce_then_map_fn(
   dim_order_to_stride_nocheck(
       out_sizes.data(), out_dim_order.data(), out_sizes.size(), out_strides);
 
-  // If stride does not contain any elements, it is assumed to be equal to
-  // kernel_size
-  IntArrayRef stride_ = stride;
-  int64_t stride_arr[2] = {kernel_size[0], kernel_size[1]};
-  if (stride.size() == 0) {
-    stride_ = {stride_arr, 2};
-  }
-
   CTYPE* const out_ptr = out.mutable_data_ptr<CTYPE>();
   const CTYPE* const in_ptr = in.const_data_ptr<CTYPE>();
 
@@ -334,7 +353,7 @@ void apply_kernel_2d_reduce_then_map_fn(
           in_sizes,
           {in_strides, 4},
           kernel_size,
-          stride_,
+          stride,
           padding,
           dilation,
           out_ptr,
