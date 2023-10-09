@@ -166,7 +166,8 @@ function setup_tosa_reference_model() {
     mkdir -p build
     cd build
     cmake ..
-    make
+    n=$(nproc)
+    make -j"$((n - 5))" 
     cd reference_model
     tosa_bin_path=`pwd`
     echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
@@ -183,6 +184,7 @@ function setup_vela() {
         base_rev=00a15db3e1a188b25065d095152d701f4394cdc5
         patch_repo
     fi
+    cd "${root_dir}/ethos-u/ethos-u-vela"
     pip install .
 }
 

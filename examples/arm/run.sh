@@ -67,6 +67,7 @@ function build_executorch() {
         -DEXECUTORCH_BUILD_GFLAGS=OFF                     \
         -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
         -DEXECUTORCH_BUILD_HOST_TARGETS=OFF               \
+        -DEXECUTORCH_BUILD_SDK=OFF                        \
         -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_ENABLE_LOGGING=ON                    \
@@ -78,13 +79,14 @@ function build_executorch() {
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
-    cmake --build . -j"$((n - 5))" -- VERBOSE=1
+    cmake --build . -- -j"$((n - 5))" VERBOSE=1
     echo "[${FUNCNAME[0]}] Generated static libraries for ExecuTorch:"
     find . -name "*.a" -exec ls -al {} \;
 }
 
 # build Arm Baremetal executor_runner
 function build_executorch_runner() {
+    echo "[${FUNCNAME[0]}] Generating ExecuTorch libraries"
     [[ $# -ne 2 ]] && { echo "[${FUNCNAME[0]}]" "Expecting 2 pte files as arguments got, $*"; exit 1; }
     local pte=${1}
     local pte_delegate=${2}
