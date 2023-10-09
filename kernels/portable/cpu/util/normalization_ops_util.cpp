@@ -45,6 +45,9 @@ bool check_batch_norm_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(running_mean, 1));
   ET_LOG_AND_RETURN_IF_FALSE(
       tensors_have_same_size_at_dims(running_mean, 0, in, C_dim));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(running_var, 1));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      tensors_have_same_size_at_dims(running_var, 0, in, C_dim));
   if (weight.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight.value(), 1));
     ET_LOG_AND_RETURN_IF_FALSE(

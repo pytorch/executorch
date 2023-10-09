@@ -42,6 +42,12 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
       ret_val);
 
   ET_KERNEL_CHECK(
+      ctx, resize_tensor(mean_out, {0}) == Error::Ok, InvalidArgument, ret_val);
+
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(var_out, {0}) == Error::Ok, InvalidArgument, ret_val);
+
+  ET_KERNEL_CHECK(
       ctx,
       check_batch_norm_args(
           in,
@@ -56,6 +62,7 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
           var_out),
       InvalidArgument,
       ret_val);
+
   // For now, only support the default dim order
   ET_KERNEL_CHECK(
       ctx,
