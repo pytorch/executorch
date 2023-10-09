@@ -1,4 +1,4 @@
-# ETDump - ExecuTorch Dump
+# Prerequisite | ETDump - ExecuTorch Dump
 
 ETDump (ExecuTorch Dump) is one of the core components of the ExecuTorch SDK experience. It is the mechanism through which all forms of profiling and debugging data is extracted from the runtime. Users can't parse ETDump directly; instead, they should pass it into the Inspector API, which deserializes the data, offering interfaces for flexible analysis and debugging.
 
