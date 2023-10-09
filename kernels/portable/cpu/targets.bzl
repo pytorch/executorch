@@ -92,7 +92,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_as_strided_copy",
         deps = [
-            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
     op_target(
