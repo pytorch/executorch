@@ -217,6 +217,34 @@ void get_pixel_shuffle_out_target_size(
   out_sizes[i] = in.size(i) * casted_upscale_factor;
 }
 
+bool check_select_copy_out_args(
+    const Tensor& in,
+    int64_t dim,
+    int64_t index,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(in, 1));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_dim_has_index(in, dim, index));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  return true;
+}
+
+void get_select_copy_out_target_size(
+    const Tensor& in,
+    int64_t dim,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim) {
+  *out_ndim = in.dim() - 1;
+
+  for (size_t d = 0; d < in.dim() - 1; ++d) {
+    if (d < dim) {
+      out_sizes[d] = in.size(d);
+    } else {
+      out_sizes[d] = in.size(d + 1);
+    }
+  }
+}
+
 bool check_slice_copy_args(
     const Tensor& in,
     int64_t dim,
