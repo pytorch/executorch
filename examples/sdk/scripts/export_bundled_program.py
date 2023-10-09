@@ -8,11 +8,14 @@
 
 import argparse
 
+import torch
+
 from executorch.bundled_program.config import BundledConfig
 from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
+from executorch.exir import ExecutorchProgramManager
 
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
@@ -22,10 +25,10 @@ from ...portable.utils import export_to_exec_prog
 def save_bundled_program(
     method_names,
     inputs,
-    exec_prog,
-    graph_module,
-    output_path,
-):
+    exec_prog: ExecutorchProgramManager,
+    graph_module: torch.nn.Module,
+    output_path: str,
+) -> None:
     # Here inputs is List[Tuple[Union[torch.tenor, int, bool]]]. Each tuple is one input test
     # set for the model. If we wish to test the model with multiple inputs then they can be
     # appended to this list. len(inputs) == number of test sets we want to run.
@@ -33,19 +36,20 @@ def save_bundled_program(
     # If we have multiple methods in this program then we add another list of tuples to test
     # that corresponding method. Index of list of tuples will match the index of the method's name
     # in the method_names list forwarded to BundledConfig against which it will be tested.
-    bundled_inputs = [inputs for _ in range(len(exec_prog.program.execution_plan))]
+    bundled_inputs = [inputs for _ in range(len(method_names))]
 
     # For each input tuple we run the graph module and put the resulting output in a list. This
     # is repeated over all the tuples present in the input list and then repeated for each method
     # name we want to test against.
     expected_outputs = [
-        [[graph_module(*x)] for x in inputs]
-        for i in range(len(exec_prog.program.execution_plan))
+        [[graph_module(*x)] for x in inputs] for i in range(len(method_names))
     ]
 
     bundled_config = BundledConfig(method_names, bundled_inputs, expected_outputs)
 
-    bundled_program = create_bundled_program(exec_prog.program, bundled_config)
+    bundled_program = create_bundled_program(
+        exec_prog.executorch_program, bundled_config
+    )
     bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
         bundled_program
     )
