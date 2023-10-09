@@ -135,6 +135,12 @@ void transpose_tensors(
   }
 }
 
+inline bool check_t_copy_args(const Tensor& in, Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_smaller_or_equal_to(in, 2));
+  return true;
+}
+
 inline bool check_transpose_copy_args(
     const Tensor& in,
     int64_t dim0,
