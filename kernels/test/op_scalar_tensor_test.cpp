@@ -55,12 +55,9 @@ void test_scalar_tensor_out_1d(CTYPE value) {
   TensorFactory<DTYPE> tf;
 
   std::vector<int32_t> sizes{1};
-  Tensor expected = tf.make(sizes, /*data=*/{value});
-
   Tensor out = tf.ones(sizes);
-  op_scalar_tensor_out(value, out);
 
-  EXPECT_TENSOR_EQ(out, expected);
+  ET_EXPECT_KERNEL_FAILURE(op_scalar_tensor_out(value, out));
 }
 
 template <typename CTYPE, ScalarType DTYPE>
@@ -68,12 +65,9 @@ void test_scalar_tensor_out_2d(CTYPE value) {
   TensorFactory<DTYPE> tf;
 
   std::vector<int32_t> sizes{1, 1};
-  Tensor expected = tf.make(sizes, /*data=*/{value});
-
   Tensor out = tf.ones(sizes);
-  op_scalar_tensor_out(value, out);
 
-  EXPECT_TENSOR_EQ(out, expected);
+  ET_EXPECT_KERNEL_FAILURE(op_scalar_tensor_out(value, out));
 }
 
 template <typename CTYPE, ScalarType DTYPE>
@@ -81,12 +75,9 @@ void test_scalar_tensor_out_3d(CTYPE value) {
   TensorFactory<DTYPE> tf;
 
   std::vector<int32_t> sizes{1, 1, 1};
-  Tensor expected = tf.make(sizes, /*data=*/{value});
-
   Tensor out = tf.ones(sizes);
-  op_scalar_tensor_out(value, out);
 
-  EXPECT_TENSOR_EQ(out, expected);
+  ET_EXPECT_KERNEL_FAILURE(op_scalar_tensor_out(value, out));
 }
 
 #define GENERATE_TEST(ctype, dtype)                                    \
