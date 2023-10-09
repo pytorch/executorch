@@ -412,6 +412,26 @@ using ScalarType = exec_aten::ScalarType;
 // Utility functions for checking tensor attributes
 //
 
+/*
+ * Returns the tensor's number of dimensions, except when the tensor is zero
+ * dimensional. In this case, it returns 1. This is used to properly handle
+ * the zero dimensional tensors in some kernels, that treat them as 1D tensors
+ * with a single element.
+ */
+inline ssize_t nonzero_dim(const Tensor& tensor) {
+  return tensor.dim() == 0 ? 1 : tensor.dim();
+}
+
+/*
+ * Returns the size along a dimension dim, except when the tensor is zero
+ * dimensional. In this case, it returns 1. This is used to properly handle
+ * the zero dimensional tensors in some kernels, that treat them as 1D tensors
+ * with a single element.
+ */
+inline ssize_t nonempty_size(const Tensor& tensor, ssize_t dim) {
+  return tensor.dim() == 0 ? 1 : tensor.size(dim);
+}
+
 inline bool tensor_can_cast_to(
     exec_aten::Tensor a,
     exec_aten::ScalarType dtype) {
@@ -516,12 +536,18 @@ inline bool tensor_has_rank_greater_or_equal_to(
 }
 
 inline bool tensor_has_dim(exec_aten::Tensor t, int64_t d) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      d > 0 ? d < t.dim() : t.dim() + d >= 0,
-      "%zu-dim tensor does not have dim at index %zu",
-      static_cast<size_t>(t.dim()),
-      static_cast<size_t>(d));
-
+  if (t.dim() == 0) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        d == 0 || d == -1,
+        "dim must be 0 or -1 for 0-dim tensor, got %" PRId64,
+        d);
+  } else {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        d > 0 ? d < t.dim() : t.dim() + d >= 0,
+        "%zu-dim tensor does not have dim at index %zu",
+        static_cast<size_t>(t.dim()),
+        static_cast<size_t>(d));
+  }
   return true;
 }
 
