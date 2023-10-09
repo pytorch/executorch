@@ -45,13 +45,13 @@ bool param_array_is_valid(
 
 } // namespace
 
-int64_t val_at(IntArrayRef array, size_t i, int64_t default_val) {
+int64_t val_at(IntArrayRef array, size_t i, int64_t default_value) {
   if (array.size() == 1) {
     return array[0];
   } else if (array.size() > 1) {
     return array[i];
   } else {
-    return default_val;
+    return default_value;
   }
 }
 
