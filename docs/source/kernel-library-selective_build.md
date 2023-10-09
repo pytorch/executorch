@@ -20,7 +20,7 @@ Preread: Overview of the ExecuTorch runtime, High-level architecture and compone
 
 
 
-![](./selective_build.png)
+![](./_static/img/kernel-library-selective_build.png)
 
 
 Note that all of the selective build tools are running at build-time (to be distinguished from compile-time or runtime). Therefore selective build tools only have access to static data from user input or models.
