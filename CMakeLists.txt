@@ -189,8 +189,6 @@ include(${EXECUTORCH_SRCS_FILE})
 # libraries that it uses, like `gflags`. Disabling this can be helpful when
 # cross-compiling, but some required tools that would have been built need to be
 # provided directly (via, for example, FLATC_EXECUTABLE).
-cmake_policy(SET CMP0127 NEW)
-
 cmake_dependent_option(
   EXECUTORCH_BUILD_HOST_TARGETS "Build host-only targets." ON
   "NOT CMAKE_TOOLCHAIN_FILE MATCHES \".*iOS\.cmake$\"" OFF)
@@ -201,7 +199,7 @@ cmake_dependent_option(
 #
 cmake_dependent_option(
   EXECUTORCH_BUILD_FLATC "Build the flatc executable." ON
-  "NOT FLATC_EXECUTABLE AND EXECUTORCH_BUILD_HOST_TARGETS" OFF)
+  "NOT FLATC_EXECUTABLE;EXECUTORCH_BUILD_HOST_TARGETS" OFF)
 
 if(EXECUTORCH_BUILD_FLATC)
   if(FLATC_EXECUTABLE)
