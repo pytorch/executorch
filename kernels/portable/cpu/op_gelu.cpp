@@ -9,9 +9,9 @@
 #include <cmath>
 
 #include <executorch/kernels/portable/cpu/math_constants.h>
+#include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <executorch/runtime/platform/assert.h>
 
 namespace torch {
 namespace executor {
@@ -28,10 +28,11 @@ Tensor& gelu_out(
     Tensor& out) {
   (void)ctx;
 
-  Error err = resize_tensor(out, in.sizes());
-  ET_CHECK_MSG(err == Error::Ok, "Could not resize output");
+  ET_KERNEL_CHECK(
+      ctx, check_gelu_args(in, approximate, out), InvalidArgument, out);
 
-  ET_CHECK_SAME_SHAPE_AND_DTYPE2(in, out);
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
   ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, "gelu", CTYPE, [&]() {
     if (approximate == "tanh") {
