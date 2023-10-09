@@ -111,7 +111,7 @@ print(aten_dialect)
 #   stacktrace from user's code.
 #
 # More specifications about the result of ``torch.export`` can be found
-# `here <https://pytorch.org/docs/2.1/export.html>`__.
+# `here <https://pytorch.org/docs/2.1/export.html>`__ .
 #
 # Since the result of ``torch.export`` is a graph containing the Core ATen
 # operators, we will call this the ``ATen Dialect``, and since
@@ -258,7 +258,7 @@ print(aten_dialect)
 ######################################################################
 # More information on how to quantize a model, and how a backend can implement a
 # ``Quantizer`` can be found
-# `here <https://pytorch.org/tutorials/prototype/pt2e_quant_ptq_static.html>`__.
+# `here <https://pytorch.org/tutorials/prototype/pt2e_quant_ptq_static.html>`__ .
 
 ######################################################################
 # Lowering to Edge Dialect
@@ -266,7 +266,8 @@ print(aten_dialect)
 #
 # After exporting and lowering the graph to the ``ATen Dialect``, the next step
 # is to lower to the ``Edge Dialect``, in which specializations that are useful
-# for edge devices but not necessary for general (server) will be applied.
+# for edge devices but not necessary for general (server) environments will be
+# applied.
 # Some of these specializations include:
 #
 # - DType specialization
@@ -374,9 +375,10 @@ print(transformed_edge_program.exported_program())
 #
 # There are three ways for using this API:
 #
-# 1. Lowering the whole module
-# 2. Lowering the whole module and composing it in another module
-# 3. Paritioning the module, and lowering parts of the module
+# 1. We can lower the whole module.
+# 2. We can take the lowered module, and insert it in another larger module.
+# 3. We can partition the module into subgraphs that are lowerable, and then
+#    lower those subgraphs to a backend.
 
 ######################################################################
 # Lowering the Whole Module

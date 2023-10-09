@@ -186,8 +186,8 @@ provided in  `torch/_export/utils.py`
 
 **2. How can we embed the data (like weight/bias) to the backend?**
 
-It's common that backend have some ways optimize the const data. In this case,
-we'd need to tag the placeholder node which are also the state in the
+It's common that backends have some ways to optimize the const data. In this case,
+we'd need to tag the placeholder nodes which are also the state in the
 partitioner, and during backend.preprocess, we can follow the description in the
 first question to get the weight.
 

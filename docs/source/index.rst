@@ -121,7 +121,6 @@ Topics in this section will help you get started with ExecuTorch.
 
    ir-exir
    ir-ops-set-definition
-   ir-high-order-operators
 
 .. toctree::
    :glob:
@@ -202,14 +201,14 @@ ExecuTorch tutorials.
    :header: Exporting to ExecuTorch Tutorial
    :card_description: A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.
    :image: _static/img/generic-pytorch-logo.png
-   :link: tutorials/export-to-executorch.html
+   :link: tutorials/export-to-executorch-tutorial.html
    :tags: Export,Delegation,Quantization
 
 .. customcarditem::
    :header: Integrating with ExecuTorch SDK Tutorial
    :card_description: A tutorial for integrating a model with runtime results and utilizing it on the ExecuTorch SDK.
    :image: _static/img/generic-pytorch-logo.png
-   :link: tutorials/sdk-integration.html
+   :link: tutorials/sdk-integration-tutorial.html
    :tags: Export
 
 .. customcardend::
