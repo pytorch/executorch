@@ -8,6 +8,19 @@ def define_common_targets():
     """
 
     runtime.cxx_library(
+        name = "activation_ops_util",
+        srcs = ["activation_ops_util.cpp"],
+        exported_headers = [
+            "activation_ops_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
+
+    runtime.cxx_library(
         name = "repeat_util",
         srcs = [
             "repeat_util.cpp",
