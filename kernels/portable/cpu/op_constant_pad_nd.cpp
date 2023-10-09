@@ -145,6 +145,11 @@ void constant_pad_nd_out_impl(
 
   size_t ndim = self.dim();
 
+  if (ndim == 0) {
+    out_data[0] = self_data[0];
+    return;
+  }
+
   int64_t self_sizes[kTensorDimensionLimit];
   int64_t self_strides[kTensorDimensionLimit];
   int64_t out_sizes[kTensorDimensionLimit];
