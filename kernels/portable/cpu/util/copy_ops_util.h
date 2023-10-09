@@ -89,5 +89,7 @@ void get_stack_out_target_size(
     Tensor::SizesType* out_sizes,
     size_t* out_ndim);
 
+bool check_tril_args(const Tensor& in, Tensor& out);
+
 } // namespace executor
 } // namespace torch
