@@ -301,7 +301,7 @@ Tensor& convolution_out(
 
   ET_KERNEL_CHECK(
       ctx,
-      output_size_is_valid({output_sizes, output_ndim}),
+      output_size_is_valid({output_sizes, output_ndim}, in.dim() - 2),
       InvalidArgument,
       out);
 
@@ -310,6 +310,10 @@ Tensor& convolution_out(
       resize_tensor(out, {output_sizes, output_ndim}) == Error::Ok,
       InvalidArgument,
       out);
+
+  if (out.numel() == 0) {
+    return out;
+  }
 
   ScalarType in_type = in.scalar_type();
   ScalarType bias_type = in_type;

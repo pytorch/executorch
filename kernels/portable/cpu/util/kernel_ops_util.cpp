@@ -15,6 +15,36 @@ namespace executor {
 
 using Tensor = exec_aten::Tensor;
 
+namespace {
+
+bool param_array_is_valid(
+    const char* name,
+    IntArrayRef array,
+    int64_t min_val,
+    size_t length,
+    bool allow_empty) {
+  auto size = array.size();
+  if (allow_empty) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        size == 0 || size == 1 || size == length,
+        "Expected %s to have size 0, 1 or %zu but got %zd",
+        name,
+        length,
+        size);
+  } else {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        size == 1 || size == length,
+        "Expected %s to have size 1 or %zu but got %zd",
+        name,
+        length,
+        size);
+  }
+  ET_LOG_AND_RETURN_IF_FALSE(int_array_all_ge(array, min_val));
+  return true;
+}
+
+} // namespace
+
 int64_t val_at(IntArrayRef array, size_t i, int64_t default_val) {
   if (array.size() == 1) {
     return array[0];
@@ -41,24 +71,17 @@ bool int_array_all_ge(IntArrayRef array, int64_t val) {
 }
 
 bool kernel_size_is_valid(IntArrayRef kernel_size, size_t kernel_ndim) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      kernel_size.size() == kernel_ndim,
-      "Expected kernel_size to have size %zu but got %zd",
+  return param_array_is_valid(
+      "kernel_size",
+      kernel_size,
+      /*min_val=*/1,
       kernel_ndim,
-      kernel_size.size());
-  ET_LOG_AND_RETURN_IF_FALSE(int_array_all_ge(kernel_size, 1));
-  return true;
+      /*allow_empty=*/false);
 }
 
-bool stride_is_valid(IntArrayRef stride, size_t kernel_ndim) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      stride.size() > 0 && stride.size() <= kernel_ndim,
-      "Expected stride to have size between 1 and %zu inclusive "
-      "but got %zd",
-      kernel_ndim,
-      stride.size());
-  ET_LOG_AND_RETURN_IF_FALSE(int_array_all_ge(stride, 1));
-  return true;
+bool stride_is_valid(IntArrayRef stride, size_t kernel_ndim, bool allow_empty) {
+  return param_array_is_valid(
+      "stride", stride, /*min_val=*/1, kernel_ndim, allow_empty);
 }
 
 bool padding_is_valid(
@@ -66,13 +89,11 @@ bool padding_is_valid(
     IntArrayRef kernel_size,
     size_t kernel_ndim,
     bool enforce_half_kernel) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      padding.size() > 0 && padding.size() <= kernel_ndim,
-      "Expected padding to have size between 1 and %zu inclusive "
-      "but got %zd",
-      kernel_ndim,
-      padding.size());
-  ET_LOG_AND_RETURN_IF_FALSE(int_array_all_ge(padding, 0));
+  bool valid = param_array_is_valid(
+      "padding", padding, /*min_val=*/0, kernel_ndim, /*allow_empty=*/false);
+  if (!valid) {
+    return false;
+  }
 
   if (enforce_half_kernel) {
     // Padding must be at most half of kernel size.
@@ -94,20 +115,21 @@ bool padding_is_valid(
 }
 
 bool dilation_is_valid(IntArrayRef dilation, size_t kernel_ndim) {
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      dilation.size() > 0 && dilation.size() <= kernel_ndim,
-      "Expected dilation to have size between 1 and %zu inclusive "
-      "but got %zd",
-      kernel_ndim,
-      dilation.size());
-  ET_LOG_AND_RETURN_IF_FALSE(int_array_all_ge(dilation, 1));
-  return true;
+  return param_array_is_valid(
+      "dilation", dilation, /*min_val=*/1, kernel_ndim, /*allow_empty=*/false);
 }
 
 bool output_size_is_valid(
-    exec_aten::ArrayRef<exec_aten::SizesType> output_size) {
+    exec_aten::ArrayRef<exec_aten::SizesType> output_size,
+    size_t kernel_ndim) {
   bool valid = true;
-  for (size_t i = 0; i < output_size.size(); i++) {
+  size_t out_dim = output_size.size();
+  for (size_t i = 0; i < out_dim - kernel_ndim; i++) {
+    if (output_size[i] < 0) {
+      valid = false;
+    }
+  }
+  for (size_t i = out_dim - kernel_ndim; i < out_dim; i++) {
     if (output_size[i] <= 0) {
       valid = false;
     }
@@ -158,37 +180,44 @@ void get_unsqueezed_dim_order(
   return;
 }
 
+int64_t _kernel_output_size_helper(
+    size_t inputSize,
+    int64_t kernelSize,
+    int64_t pad,
+    int64_t stride,
+    int64_t dilation,
+    bool ceil_mode) {
+  int64_t numerator = inputSize + 2 * pad - dilation * (kernelSize - 1) - 1 +
+      (ceil_mode ? stride - 1 : 0);
+  int64_t outputSize = numerator / stride + 1;
+  if (ceil_mode) {
+    // ensure that the last pooling starts inside the image
+    // needed to avoid problems in ceil mode
+    if ((outputSize - 1) * stride >= inputSize + pad) {
+      --outputSize;
+    }
+  }
+  return outputSize;
+}
+
 void calculate_kernel_output_sizes(
     const Tensor& in,
+    size_t kernel_ndim,
     IntArrayRef kernel_size,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef dilation,
     exec_aten::SizesType* out_sizes,
     bool ceil_mode) {
-  size_t dim_offset = in.dim() - kernel_size.size();
-  for (size_t d = 0; d < kernel_size.size(); ++d) {
-    int64_t dilation_val = 1;
-    if (dilation.size() > 1) {
-      dilation_val = val_at(dilation, d);
-    }
-    int64_t padding_val = val_at(padding, d, /*default=*/0);
-    int64_t stride_val = val_at(stride, d);
+  for (size_t i = 0; i < kernel_ndim; ++i) {
+    auto dim = in.dim() - (kernel_ndim - i);
+    int64_t k = val_at(kernel_size, i);
+    int64_t s = val_at(stride, i, /*default_value=*/k);
+    int64_t d = val_at(dilation, i, /*default_value=*/1);
+    int64_t p = val_at(padding, i, /*default_value=*/0);
 
-    int64_t kernel_len = dilation_val * (val_at(kernel_size, d) - 1) + 1;
-    if (ceil_mode) {
-      out_sizes[d + dim_offset] =
-          std::ceil(
-              static_cast<float>(
-                  in.size(d + dim_offset) + (2 * padding_val) - kernel_len) /
-              static_cast<float>(stride_val)) +
-          1;
-    } else {
-      out_sizes[d + dim_offset] =
-          (in.size(d + dim_offset) + (2 * padding_val) - kernel_len) /
-              stride_val +
-          1;
-    }
+    out_sizes[dim] =
+        _kernel_output_size_helper(in.size(dim), k, p, s, d, ceil_mode);
   }
 }
 
@@ -206,16 +235,22 @@ bool check_avg_pool2d_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
 
-  ET_LOG_AND_RETURN_IF_FALSE(kernel_size_is_valid(kernel_size, 2));
-  if (stride.size() > 0) {
-    ET_LOG_AND_RETURN_IF_FALSE(stride_is_valid(kernel_size, 2));
-  }
-  ET_LOG_AND_RETURN_IF_FALSE(padding_is_valid(padding, kernel_size, 2, true));
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      (in.dim() == 3 && in.size(0) > 0 && in.size(1) > 0 && in.size(2) > 0) ||
+          (in.dim() == 4 && in.size(1) > 0 && in.size(2) > 0 && in.size(3) > 0),
+      "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input");
+
+  ET_LOG_AND_RETURN_IF_FALSE(
+      kernel_size_is_valid(kernel_size, /*kernel_ndim=*/2));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      stride_is_valid(kernel_size, /*kernel_ndim=*/2, /*allow_empty=*/true));
+  ET_LOG_AND_RETURN_IF_FALSE(padding_is_valid(
+      padding, kernel_size, /*kernel_ndim=*/2, /*enforce_half_kernel=*/true));
 
   if (divisor_override.has_value()) {
     ET_LOG_MSG_AND_RETURN_IF_FALSE(
-        divisor_override.value() > 0,
-        "divisor_override must be > 0, but found %" PRId64,
+        divisor_override.value() != 0,
+        "divisor_override must be non-zero, but found %" PRId64,
         divisor_override.value());
   }
 
@@ -241,7 +276,7 @@ void get_avg_pool2d_out_target_size(
   }
 
   calculate_kernel_output_sizes(
-      in, kernel_size, stride, padding, {}, out_sizes, ceil_mode);
+      in, 2, kernel_size, stride, padding, {}, out_sizes, ceil_mode);
 }
 
 bool check_convolution_args(
@@ -284,12 +319,11 @@ bool check_convolution_args(
     kernel_size[0] = weight.size(2);
     kernel_size[1] = weight.size(3);
   }
-  ET_LOG_AND_RETURN_IF_FALSE(stride_is_valid(stride, kernel_ndim));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      stride_is_valid(stride, kernel_ndim, /*allow_empty=*/false));
   ET_LOG_AND_RETURN_IF_FALSE(
       padding_is_valid(padding, {kernel_size, kernel_ndim}, kernel_ndim));
-  if (dilation.size() > 0) {
-    ET_LOG_AND_RETURN_IF_FALSE(dilation_is_valid(dilation, kernel_ndim));
-  }
+  ET_LOG_AND_RETURN_IF_FALSE(dilation_is_valid(dilation, kernel_ndim));
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       in.size(1) % groups == 0,
@@ -314,7 +348,7 @@ void get_convolution_out_target_size(
   *out_ndim = in.dim();
 
   out_sizes[0] = in.size(0);
-  out_sizes[1] = weight.size(0);
+  out_sizes[1] = in.size(1) == 0 ? 0 : weight.size(0);
 
   int64_t kernel_size[2];
   size_t kernel_ndim = 2;
@@ -326,7 +360,14 @@ void get_convolution_out_target_size(
     kernel_size[1] = weight.size(3);
   }
   calculate_kernel_output_sizes(
-      in, {kernel_size, kernel_ndim}, stride, padding, dilation, out_sizes);
+      in,
+      kernel_ndim,
+      {kernel_size, kernel_ndim},
+      stride,
+      padding,
+      dilation,
+      out_sizes,
+      false);
 }
 
 bool check_max_pool2d_with_indices_args(
@@ -347,14 +388,18 @@ bool check_max_pool2d_with_indices_args(
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
 
-  ET_LOG_AND_RETURN_IF_FALSE(kernel_size_is_valid(kernel_size, 2));
-  if (stride.size() > 0) {
-    ET_LOG_AND_RETURN_IF_FALSE(stride_is_valid(kernel_size, 2));
-  }
-  ET_LOG_AND_RETURN_IF_FALSE(padding_is_valid(padding, kernel_size, 2, true));
-  if (dilation.size() > 0) {
-    ET_LOG_AND_RETURN_IF_FALSE(dilation_is_valid(dilation, 2));
-  }
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      (in.dim() == 3 && in.size(0) > 0 && in.size(1) > 0 && in.size(2) > 0) ||
+          (in.dim() == 4 && in.size(1) > 0 && in.size(2) > 0 && in.size(3) > 0),
+      "Expected 3D or 4D (batch mode) tensor with optional 0 dim batch size for input");
+
+  ET_LOG_AND_RETURN_IF_FALSE(
+      kernel_size_is_valid(kernel_size, /*kernel_ndim=*/2));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      stride_is_valid(kernel_size, /*kernel_ndim=*/2, /*allow_empty=*/true));
+  ET_LOG_AND_RETURN_IF_FALSE(padding_is_valid(
+      padding, kernel_size, /*kernel_ndim=*/2, /*enforce_half_kernel=*/true));
+  ET_LOG_AND_RETURN_IF_FALSE(dilation_is_valid(kernel_size, /*kernel_ndim=*/2));
 
   return true;
 }
@@ -379,7 +424,7 @@ void get_max_pool2d_with_indices_out_target_size(
   }
 
   calculate_kernel_output_sizes(
-      in, kernel_size, stride, padding, dilation, out_sizes, ceil_mode);
+      in, 2, kernel_size, stride, padding, dilation, out_sizes, ceil_mode);
 }
 
 } // namespace executor
