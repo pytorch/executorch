@@ -88,9 +88,8 @@ function build_executorch() {
 # build Arm Baremetal executor_runner
 function build_executorch_runner() {
     echo "[${FUNCNAME[0]}] Generating ExecuTorch libraries"
-    [[ $# -ne 2 ]] && { echo "[${FUNCNAME[0]}]" "Expecting 2 pte files as arguments got, $*"; exit 1; }
+    [[ $# -ne 1 ]] && { echo "[${FUNCNAME[0]}]" "Expecting a single pte file as argument got, $*"; exit 1; }
     local pte=${1}
-    local pte_delegate=${2}
     cd "${ethos_u_root_dir}"/core_platform
     cmake                                         \
         -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} \
@@ -98,12 +97,11 @@ function build_executorch_runner() {
         -DET_DIR_PATH:PATH=${et_root_dir}         \
         -DET_BUILD_DIR_PATH:PATH=${et_build_dir}  \
         -DET_PTE_FILE_PATH:PATH="${pte}"          \
-        -DET_PTE_DELEGATE_FILE_PATH:PATH="${pte_delegate}" \
         -DPYTHON_EXECUTABLE=$(which python3)
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
-    cmake --build build -- -j"$((n - 5))" executor_runner executor_runner_delegate
+    cmake --build build -- -j"$((n - 5))" executor_runner
     echo "[${FUNCNAME[0]}] Generated baremetal elf file:"
     find . -name "executor_runner.elf"
 }
@@ -149,20 +147,19 @@ hash arm-none-eabi-gcc \
 type ${buck2} 2>&1 > /dev/null \
     || { echo "Need a functioning buck2. Got ${buck2}."; exit 1; }
 
-# get the pte
-pte=$(generate_pte_file)
-pte_delegate=$(generate_ethos_pte_file)
-
-# build et
+# build executorch libraries
 build_executorch
 
-# build the et baremetal app
-build_executorch_runner "${pte}" "${pte_delegate}"
-
-# run the app
+# generate a .pte file - in this case a non-delegated one
+pte=$(generate_pte_file)
+# build and run the runner with a non-delegated .pte
+build_executorch_runner "${pte}"
 run_fvp executor_runner.elf
 
-# run the delegate app
-run_fvp executor_runner_delegate.elf
+# generate a pte with an ArmBackend delegate
+pte_delegate=$(generate_ethos_pte_file)
+# build and run the same app with a delegated .pte
+build_executorch_runner "${pte_delegate}"
+run_fvp executor_runner.elf
 
 exit 0
