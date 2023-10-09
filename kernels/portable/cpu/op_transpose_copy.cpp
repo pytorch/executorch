@@ -6,11 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <cstring>
-
 #include <executorch/kernels/portable/cpu/util/transpose_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
-#include <executorch/runtime/platform/assert.h>
 
 namespace torch {
 namespace executor {
@@ -19,43 +16,6 @@ namespace native {
 using SizesType = exec_aten::SizesType;
 using StridesType = exec_aten::StridesType;
 using Tensor = exec_aten::Tensor;
-
-namespace {
-
-/**
- * Verifies preconditions of transpose_copy_int_out
- */
-void check_preconditions(
-    const Tensor& a,
-    int64_t dim0,
-    int64_t dim1,
-    Tensor& out) {
-  auto a_dim = a.dim();
-  ET_CHECK_MSG(
-      a_dim >= 0 && a_dim == out.dim(), "invalid rank of tensor a: %zd", a_dim);
-  if (a_dim == 0) {
-    ET_CHECK(dim0 == 0 || dim0 == -1);
-    ET_CHECK(dim1 == 0 || dim1 == -1);
-    return;
-  }
-  ET_CHECK_MSG(
-      dim0 >= 0 && dim0 < a_dim,
-      "dim0: %" PRId64 " out of bounds [0,%zd)",
-      dim0,
-      a_dim);
-  ET_CHECK_MSG(
-      dim1 >= 0 && dim1 < a_dim,
-      "dim1: %" PRId64 " out of bounds [0,%zd)",
-      dim1,
-      a_dim);
-  ET_CHECK_MSG(
-      a_dim <= kTensorDimensionLimit,
-      "input tensor rank %zd greater than %zu",
-      a_dim,
-      kTensorDimensionLimit);
-}
-
-} // namespace
 
 /**
  * Swaps dimension 'dim0' of 'a' with 'dim1', and copying
@@ -66,37 +26,40 @@ void check_preconditions(
  */
 Tensor& transpose_copy_int_out(
     RuntimeContext& ctx,
-    const Tensor& a,
+    const Tensor& in,
     int64_t dim0,
     int64_t dim1,
     Tensor& out) {
   (void)ctx;
 
-  ET_CHECK_SAME_DTYPE2(a, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      check_transpose_copy_args(in, dim0, dim1, out),
+      InvalidArgument,
+      out);
 
-  // fix python negative indexing
   if (dim0 < 0) {
-    dim0 += out.dim();
+    dim0 += nonzero_dim(out);
   }
   if (dim1 < 0) {
-    dim1 += out.dim();
-  }
-  check_preconditions(a, dim0, dim1, out);
-#define TRANSPOSE_TENSORS(ctype, dtype)           \
-  case ScalarType::dtype:                         \
-    transpose_tensors<ctype>(a, dim0, dim1, out); \
-    break;
-
-  switch (a.scalar_type()) {
-    ET_FORALL_SCALAR_TYPES(TRANSPOSE_TENSORS)
-    default:
-      ET_CHECK_MSG(
-          false,
-          "Unhandled dtype %" PRId8,
-          static_cast<int8_t>(a.scalar_type()));
+    dim1 += nonzero_dim(out);
   }
 
-#undef TRANSPOSE_TENSORS
+  Tensor::SizesType expected_out_size[kTensorDimensionLimit];
+  size_t expected_out_dim = 0;
+  get_transpose_out_target_size(
+      in, dim0, dim1, expected_out_size, &expected_out_dim);
+
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok,
+      InvalidArgument,
+      out);
+
+  ET_SWITCH_ALL_TYPES(in.scalar_type(), ctx, __func__, CTYPE, [&] {
+    transpose_tensors<CTYPE>(in, dim0, dim1, out);
+  });
 
   return out;
 }
