@@ -196,6 +196,21 @@ __ET_DEPRECATED void free_broadcast_tensor(
  * Delinearize a flattened index to per-dimension indexes.
  *
  * @param[in] linear_index The flattened index
+ * @param[in] shape The tensor shape
+ * @param[out] out_indexes The per-dimension indexes
+ * @param[in] out_indexes_len The maximum size of the out_indexes array
+ * @returns void
+ */
+void delinearize_index(
+    size_t linear_index,
+    exec_aten::ArrayRef<Tensor::SizesType> shape,
+    size_t* out_indexes,
+    const size_t out_indexes_len);
+
+/**
+ * Delinearize a flattened index to per-dimension indexes.
+ *
+ * @param[in] linear_index The flattened index
  * @param[in] t The tensor object
  * @param[out] out_indexes The per-dimension indexes
  * @param[in] out_indexes_len The maximum size of the out_indexes array
