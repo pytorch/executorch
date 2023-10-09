@@ -80,7 +80,7 @@ function build_executorch() {
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
-    cmake --build . -- -j"$((n - 5))" VERBOSE=1
+    cmake --build . -- -j"$((n - 5))"
     echo "[${FUNCNAME[0]}] Generated static libraries for ExecuTorch:"
     find . -name "*.a" -exec ls -al {} \;
 }
@@ -103,7 +103,7 @@ function build_executorch_runner() {
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
-    cmake --build build -- -j"$((n - 5))" executor_runner executor_runner_delegate VERBOSE=1
+    cmake --build build -- -j"$((n - 5))" executor_runner executor_runner_delegate
     echo "[${FUNCNAME[0]}] Generated baremetal elf file:"
     find . -name "executor_runner.elf"
 }
