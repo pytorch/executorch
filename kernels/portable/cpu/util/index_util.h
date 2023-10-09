@@ -142,11 +142,6 @@ size_t get_index_query_pos_offset(
 // Operator specific utility functions
 //
 
-bool check_index_args(
-    const Tensor& in,
-    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
-    Tensor& out);
-
 void get_index_out_target_size(
     const Tensor& in,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
