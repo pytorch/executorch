@@ -63,14 +63,11 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
     double atol = 1e-8);
 
 /**
- * Finds the serialized ExecuTorch program data in the provided file data.
+ * Finds the serialized ExecuTorch program data in the provided bundled program
+ * file data.
  *
  * The returned buffer is appropriate for constructing a
  * torch::executor::Program.
- *
- * Calling this is only necessary if the file could be a bundled program. If the
- * file will only contain an unwrapped ExecuTorch program, callers can construct
- * torch::executor::Program with file_data directly.
  *
  * @param[in] file_data The contents of an ExecuTorch program or bundled program
  *                      file.
@@ -78,9 +75,9 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
  * @param[out] out_program_data The serialized Program data, if found.
  * @param[out] out_program_data_len The length of out_program_data, in bytes.
  *
- * @returns Error::Ok if the program was found, and
- *     out_program_data/out_program_data_len point to the data. Other values
- *     on failure.
+ * @returns Error::Ok if the given file is bundled program, a program was found
+ * in it, and out_program_data/out_program_data_len point to the data. Other
+ * values on failure.
  */
 __ET_NODISCARD Error GetProgramData(
     void* file_data,
