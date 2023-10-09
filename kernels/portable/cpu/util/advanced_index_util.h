@@ -118,7 +118,6 @@ bool get_in_coord(
  * Computes input flat index corresponding to a given output flat index
  */
 std::pair<size_t, bool> get_in_ix(
-    RuntimeContext ctx,
     const Tensor& in,
     TensorOptList indices,
     Tensor& out,
