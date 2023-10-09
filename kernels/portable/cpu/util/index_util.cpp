@@ -192,18 +192,6 @@ size_t get_index_query_pos_offset(
   return offset;
 }
 
-bool check_index_args(
-    const Tensor& in,
-    exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
-    Tensor& out) {
-  // size of indices must not exceed the number of dimensions
-  if (indices.size() > 0) {
-    ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, indices.size() - 1));
-  }
-  ET_LOG_AND_RETURN_IF_FALSE(indices_are_valid(in, indices));
-  return true;
-}
-
 void get_index_out_target_size(
     const Tensor& in,
     exec_aten::ArrayRef<exec_aten::optional<Tensor>> indices,
