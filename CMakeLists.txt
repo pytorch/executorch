@@ -239,7 +239,12 @@ add_subdirectory(schema)
 
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE program_schema)
-target_link_libraries(executorch PRIVATE dl) # For dladdr()
+# Check if dl exists for this toolchain and only then link it.
+find_library(DL_LIBRARY_EXISTS NAMES dl)
+# Check if the library was found
+if(DL_LIBRARY_EXISTS)
+  target_link_libraries(executorch PRIVATE dl) # For dladdr()
+endif()
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_options(executorch PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
