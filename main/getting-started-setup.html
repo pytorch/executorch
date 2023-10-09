@@ -558,8 +558,12 @@ project dependencies easily and efficiently. We will use Buck2 to build the
 all the operators and backends.</p>
 <p>You will need the following prerequisits for this section:</p>
 <ul class="simple">
-<li><p><strong>Zstandard</strong>, or <code class="docutils literal notranslate"><span class="pre">zstd</span></code>, command line tool — install by running <code class="docutils literal notranslate"><span class="pre">pip3</span> <span class="pre">install</span> <span class="pre">zstd</span></code>.</p></li>
-<li><p>A prebuilt Buck2 archive for your system from <a class="reference external" href="https://github.com/facebook/buck2/releases/tag/2023-07-18">the Buck2 repo</a>.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">zstd</span></code> command line tool — install by running <code class="docutils literal notranslate"><span class="pre">pip3</span> <span class="pre">install</span> <span class="pre">zstd</span></code>.</p></li>
+<li><p>Version <code class="docutils literal notranslate"><span class="pre">2023-07-18</span></code> of the <code class="docutils literal notranslate"><span class="pre">buck2</span></code> commandline tool — you can download a
+prebuilt archive for your system from <a class="reference external" href="https://github.com/facebook/buck2/releases/tag/2023-07-18">the Buck2
+repo</a>. Note that
+the version is important, and newer or older versions may not work with the
+version of the buck2 prelude used by the ExecuTorch repo.</p></li>
 </ul>
 <p>Complete the following steps:</p>
 <ol class="arabic">
