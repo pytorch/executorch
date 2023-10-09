@@ -345,6 +345,7 @@ _ATEN_OPS = (
         name = "op_gelu",
         deps = [
             ":math_constants",
+            "//executorch/kernels/portable/cpu/util:activation_ops_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
         ],
     ),
