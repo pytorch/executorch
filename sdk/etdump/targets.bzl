@@ -1,4 +1,3 @@
-load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 ETDUMP_STEM = "etdump_schema"
@@ -42,7 +41,7 @@ def generate_schema_header(rule_name, srcs, headers, default_header):
         outs = {header: [header] for header in headers},
         default_outs = [default_header],
         cmd = " ".join([
-            "$(exe fbsource//third-party/flatbuffers:flatc)",
+            "$(exe {})".format(runtime.external_dep_location("flatc")),
             "--cpp",
             "--cpp-std c++11",
             "--gen-mutable",
@@ -64,7 +63,7 @@ def generate_schema_header_flatcc(rule_name, srcs, headers, default_headers):
         outs = {header: [header] for header in headers},
         default_outs = default_headers,
         cmd = " ".join([
-            "$(exe fbsource//arvr/third-party/flatcc:flatcc-cli)",
+            "$(exe {})".format(runtime.external_dep_location("flatcc-cli")),
             "-cwr",
             "-o ${OUT}",
             "${SRCS}",
@@ -79,7 +78,7 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
-    export_file(
+    runtime.export_file(
         name = ETDUMP_SCHEMA,
         visibility = ["//executorch/..."],
     )
@@ -131,7 +130,7 @@ def define_common_targets():
         ],
     )
 
-    export_file(
+    runtime.export_file(
         name = ETDUMP_SCHEMA_FLATCC,
         visibility = ["//executorch/..."],
     )
@@ -170,9 +169,7 @@ def define_common_targets():
             FLATBUFFERS_COMMON_BUILDER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME_FLATCC, FLATBUFFERS_COMMON_BUILDER),
             FLATBUFFERS_COMMON_READER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME_FLATCC, FLATBUFFERS_COMMON_READER),
         },
-        exported_deps = [
-            "fbsource//arvr/third-party/flatcc:flatcc",
-        ],
+        exported_external_deps = ["flatcc"],
     )
 
     runtime.cxx_library(
