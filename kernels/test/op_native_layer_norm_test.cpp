@@ -91,8 +91,10 @@ void run_test_cases(std::vector<NativeLayerNormTestCase<DTYPE>> test_cases) {
     Tensor weight = tf.make(test_case.normalized_shape, test_case.weight_data);
     Tensor bias = tf.make(test_case.normalized_shape, test_case.bias_data);
     Tensor out0 = tf.zeros(test_case.sizes);
-    Tensor out1 = tf.zeros(test_case.sizes);
-    Tensor out2 = tf.zeros(test_case.sizes);
+    Tensor out1 = tf.zeros(
+        test_case.sizes, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
+    Tensor out2 = tf.zeros(
+        test_case.sizes, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
     auto normalized_shape_vec = std::vector<int64_t>(
         test_case.normalized_shape.begin(), test_case.normalized_shape.end());
     auto normalized_shape = exec_aten::ArrayRef<int64_t>(
