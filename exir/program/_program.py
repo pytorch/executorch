@@ -580,6 +580,7 @@ def to_edge(
     Returns:
         EdgeProgramManager
     """
+    assert not isinstance(constant_methods, EdgeCompileConfig)
     config = compile_config or EdgeCompileConfig()
     if not isinstance(programs, dict):
         aten_programs = {"forward": programs}
@@ -879,6 +880,13 @@ class ExecutorchProgramManager:
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
         # TODO ask Tarun what the docstring here should be.
         return self._emitter_output.debug_handle_map
+
+    @property
+    def executorch_program(self) -> Program:
+        """
+        Returns the object that represents the ExecuTorch binary before serialization.
+        """
+        return self._emitter_output.program
 
     @property
     def buffer(self) -> bytes:

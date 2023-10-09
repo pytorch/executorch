@@ -50,7 +50,7 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
     This is a legacy API that should be avoided. Prefer to use capture() instead.
     """
     warnings.warn(
-        "This function is now deprecated, please use `capture` instead. "
+        "This function is now deprecated, please use `torch.export and exir.to_edge` instead. "
         "See https://github.com/pytorch/functorch for more details.",
         DeprecationWarning,
         stacklevel=1,
@@ -91,6 +91,11 @@ def capture(  # noqa: C901
     config: Optional[CaptureConfig] = None,
     constraints: Optional[List[Constraint]] = None,
 ) -> ExirExportedProgram:
+    warnings.warn(
+        "This function is now deprecated, please use `torch.export and exir.to_edge` instead. ",
+        DeprecationWarning,
+        stacklevel=1,
+    )
     if not isinstance(args, tuple):
         raise ExportError(
             ExportErrorType.INVALID_INPUT_TYPE,
@@ -304,6 +309,11 @@ def capture_multiple(
         AssertionError if given method name do not reference a valid method
         on the given nn.Module.
     """
+    warnings.warn(
+        "This function is now deprecated, please use `torch.export and exir.to_edge` instead. ",
+        DeprecationWarning,
+        stacklevel=1,
+    )
     # Normalize m and args.
     compile_specs = []
     prim_getter_cache: Optional[Dict[str, Any]] = None
