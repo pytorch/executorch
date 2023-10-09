@@ -157,10 +157,7 @@ However, please note:
 
 For more details about the ExecuTorch runtime, please see:
 
-* The
-  [`executor_runner`](https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp)
-  example tool
-* [Runtime API](runtime-api.md)
+* [Runtime API Tutorial](./running-a-model-cpp-tutorial)
 * [Runtime Build and Cross Compilation](runtime-build-and-cross-compilation.md)
 * [Runtime Platform Abstraction Layer](runtime-platform-abstraction-layer.md)
 * [Custom Memory Allocation](runtime-custom-memory-allocator.md)
