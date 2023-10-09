@@ -23,37 +23,65 @@ namespace {
 template <typename CTYPE>
 void layer_norm(
     const Tensor& input,
-    const Tensor& weight,
-    const Tensor& bias,
+    IntArrayRef normalized_shape,
+    const optional<Tensor>& weight,
+    const optional<Tensor>& bias,
     CTYPE eps,
     Tensor& out,
     Tensor& mean,
     Tensor& rstd) {
-  const CTYPE* input_data = input.const_data_ptr<CTYPE>();
-  const CTYPE* weight_data = weight.const_data_ptr<CTYPE>();
-  const CTYPE* bias_data = bias.const_data_ptr<CTYPE>();
+  size_t dim = input.dim() - normalized_shape.size();
+  size_t dim_size = input.size(dim);
+
+  size_t leading = getLeadingDims(input, dim);
+  size_t normalized = getTrailingDims(input, dim) * dim_size;
+
+  if (leading == 0) {
+    return;
+  }
+
   CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
   CTYPE* mean_data = mean.mutable_data_ptr<CTYPE>();
   CTYPE* rstd_data = rstd.mutable_data_ptr<CTYPE>();
 
-  size_t dim = input.size(input.dim() - 1);
+  if (normalized == 0) {
+    for (int i = 0; i < leading; ++i) {
+      mean_data[i] = static_cast<CTYPE>(0);
+      rstd_data[i] = static_cast<CTYPE>(NAN);
+    }
+    return;
+  }
 
-  size_t leading_dim = getLeadingDims(input, input.dim() - 1);
+  const CTYPE* input_data = input.const_data_ptr<CTYPE>();
+  const CTYPE* weight_data;
+  if (weight.has_value()) {
+    weight_data = weight.value().const_data_ptr<CTYPE>();
+  } else {
+    weight_data = nullptr;
+  }
+  const CTYPE* bias_data;
+  if (bias.has_value()) {
+    bias_data = bias.value().const_data_ptr<CTYPE>();
+  } else {
+    bias_data = nullptr;
+  }
 
-  for (int i = 0; i < leading_dim; ++i) {
-    const CTYPE* x = input_data + i * dim;
-    CTYPE* y = out_data + i * dim;
+  for (int i = 0; i < leading; ++i) {
+    const CTYPE* x = input_data + i * normalized;
+    CTYPE* y = out_data + i * normalized;
 
     // compute E[X] and Var[x] = E[x^2] - E[x]^2
-    CTYPE sum = reduce_add(x, dim);
-    CTYPE sq_sum = vec_powerf(x, dim);
-    CTYPE mean_value = sum / dim;
-    CTYPE variance = sq_sum / dim - mean_value * mean_value;
+    CTYPE sum = reduce_add(x, normalized);
+    CTYPE sq_sum = vec_powerf(x, normalized);
+    CTYPE mean_value = sum / normalized;
+    CTYPE variance = sq_sum / normalized - mean_value * mean_value;
     CTYPE std = std::sqrt(variance + eps);
 
     // Calculate the elements of output
-    for (int j = 0; j < dim; ++j) {
-      y[j] = (x[j] - mean_value) / std * weight_data[j] + bias_data[j];
+    for (int j = 0; j < normalized; ++j) {
+      CTYPE w = weight_data ? weight_data[j] : static_cast<CTYPE>(1);
+      CTYPE b = bias_data ? bias_data[j] : static_cast<CTYPE>(0);
+      y[j] = (x[j] - mean_value) / std * w + b;
     }
 
     mean_data[i] = mean_value;
@@ -87,27 +115,32 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
       InvalidArgument,
       ret_val);
 
-  if (input.sizes() == out.sizes()) {
-    ET_KERNEL_CHECK(
-        ctx,
-        normalized_shape[0] == input.sizes()[input.dim() - 1],
-        InvalidArgument,
-        ret_val);
-  } else {
-    // If we need to resize out to support dynamic input shapes, we can't count
-    // on normalized_shape matching the shape of the input or output. But we
-    // don't need to modify normalized_shape because it's not used in this
-    // function besides some checks
-    ET_KERNEL_CHECK(
-        ctx,
-        resize_tensor(out, input.sizes()) == Error::Ok,
-        InvalidArgument,
-        ret_val);
-  }
+  Tensor::SizesType mean_rstd_sizes[kTensorDimensionLimit];
+  size_t mean_rstd_ndim = 0;
+  get_layer_norm_out_target_size(
+      input, normalized_shape, mean_rstd_sizes, &mean_rstd_ndim);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, input.sizes()) == Error::Ok,
+      InvalidArgument,
+      ret_val);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(mean_out, {mean_rstd_sizes, mean_rstd_ndim}) == Error::Ok,
+      InvalidArgument,
+      ret_val);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(rstd_out, {mean_rstd_sizes, mean_rstd_ndim}) == Error::Ok,
+      InvalidArgument,
+      ret_val);
 
   ET_SWITCH_FLOAT_TYPES(input.scalar_type(), ctx, __func__, CTYPE, [&]() {
     layer_norm<CTYPE>(
-        input, weight.value(), bias.value(), eps, out, mean_out, rstd_out);
+        input, normalized_shape, weight, bias, eps, out, mean_out, rstd_out);
   });
 
   return ret_val;

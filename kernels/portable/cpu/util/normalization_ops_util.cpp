@@ -60,26 +60,61 @@ bool check_batch_norm_args(
 }
 
 bool check_layer_norm_args(
-    const Tensor& input,
+    const Tensor& in,
     IntArrayRef normalized_shape,
     const exec_aten::optional<Tensor>& weight,
     const exec_aten::optional<Tensor>& bias,
     Tensor& out,
     Tensor& mean_out,
     Tensor& rstd_out) {
-  ET_LOG_AND_RETURN_IF_FALSE(normalized_shape.size() == 1);
-  ET_LOG_AND_RETURN_IF_FALSE(weight.has_value());
+  size_t ndim = normalized_shape.size();
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ndim >= 1,
+      "Expected normalized_shape to be at least 1-dimensional, i.e., containing at least one element.");
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      in.dim() >= ndim,
+      "Expected input tensor to have rank >= the length of normalized_shape.");
+  size_t shift = in.dim() - ndim;
+  for (size_t d = 0; d < ndim; ++d) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        in.size(d + shift) == normalized_shape[d],
+        "Expected normalized_shape to match the sizes of input's rightmost dimensions.");
+  }
+  exec_aten::SizesType shape[ndim];
+  for (size_t i = 0; i < ndim; ++i) {
+    shape[i] = static_cast<exec_aten::SizesType>(normalized_shape[i]);
+  }
+
   if (weight.has_value()) {
-    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, weight.value()));
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight.value()));
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensor_has_expected_size(weight.value(), {shape, ndim}));
   }
   if (bias.has_value()) {
-    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, bias.value()));
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, bias.value()));
+    ET_LOG_AND_RETURN_IF_FALSE(
+        tensor_has_expected_size(bias.value(), {shape, ndim}));
   }
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, mean_out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, rstd_out));
-  ET_LOG_AND_RETURN_IF_FALSE(input.dim() == out.dim());
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, mean_out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, rstd_out));
   return true;
+}
+
+void get_layer_norm_out_target_size(
+    const Tensor& in,
+    IntArrayRef normalized_shape,
+    Tensor::SizesType* mean_rstd_sizes,
+    size_t* mean_rstd_ndim) {
+  *mean_rstd_ndim = in.dim();
+
+  for (size_t d = 0; d < in.dim(); ++d) {
+    if (d < in.dim() - normalized_shape.size()) {
+      mean_rstd_sizes[d] = in.size(d);
+    } else {
+      mean_rstd_sizes[d] = 1;
+    }
+  }
 }
 
 } // namespace executor
