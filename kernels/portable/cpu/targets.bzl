@@ -757,7 +757,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_tril",
         deps = [
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
     op_target(
