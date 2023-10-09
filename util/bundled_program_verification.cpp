@@ -21,7 +21,6 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/schema/bundled_program_schema_generated.h>
-#include <executorch/schema/program_generated.h>
 
 namespace torch {
 namespace executor {
@@ -345,18 +344,14 @@ __ET_NODISCARD Error GetProgramData(
     size_t file_data_len,
     const void** out_program_data,
     size_t* out_program_data_len) {
-  if (executorch_flatbuffer::ProgramBufferHasIdentifier(file_data)) {
-    *out_program_data = file_data;
-    *out_program_data_len = file_data_len;
-  } else if (executorch_flatbuffer::BundledProgramBufferHasIdentifier(
-                 file_data)) {
+  if (executorch_flatbuffer::BundledProgramBufferHasIdentifier(file_data)) {
     auto program_bundled = executorch_flatbuffer::GetBundledProgram(file_data);
     *out_program_data = program_bundled->program()->data();
     *out_program_data_len = program_bundled->program()->size();
   } else {
     ET_LOG(
         Error,
-        "Unrecognized flatbuffer identifier '%.4s'",
+        "Unrecognized bundled program flatbuffer identifier '%.4s'",
         flatbuffers::GetBufferIdentifier(file_data));
     return Error::NotSupported;
   }
