@@ -83,7 +83,7 @@ Follow [AOT Setup: Step 2](./00_setting_up_executorch.md#step-2-clone-the-execut
 ### Step 1: Install buck2
 
 - If you don't have the `zstd` commandline tool, install it with `pip install zstd`
-- Download a prebuilt buck2 archive for your system from https://github.com/facebook/buck2/releases/tag/2023-07-18
+- Download a prebuilt buck2 archive for your system from the https://github.com/facebook/buck2/releases/tag/2023-07-18 release page. Note that the version is important, and newer or older versions may not work with the version of the buck2 prelude used by the ExecuTorch repo.
 - Decompress with the following command (filename depends on your system)
 
 ```bash

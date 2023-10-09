@@ -158,9 +158,13 @@ all the operators and backends.
 
 You will need the following prerequisits for this section:
 
-* **Zstandard**, or `zstd`, command line tool — install by running `pip3 install zstd`.
+* The `zstd` command line tool — install by running `pip3 install zstd`.
 
-* A prebuilt Buck2 archive for your system from [the Buck2 repo](https://github.com/facebook/buck2/releases/tag/2023-07-18).
+* Version `2023-07-18` of the `buck2` commandline tool — you can download a
+  prebuilt archive for your system from [the Buck2
+  repo](https://github.com/facebook/buck2/releases/tag/2023-07-18). Note that
+  the version is important, and newer or older versions may not work with the
+  version of the buck2 prelude used by the ExecuTorch repo.
 
 Complete the following steps:
 
