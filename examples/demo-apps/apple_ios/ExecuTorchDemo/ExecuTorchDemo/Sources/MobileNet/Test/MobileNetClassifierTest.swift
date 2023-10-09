@@ -18,7 +18,7 @@ final class MobileNetClassifierTest: XCTestCase {
   }
 
   func testV3WithCoreMLBackend() throws {
-    try run(model: "mv3_coreml")
+    try run(model: "mv3_coreml_all")
   }
 
   func testV3WithMPSBackend() throws {
@@ -49,7 +49,7 @@ final class MobileNetClassifierTest: XCTestCase {
       labelsFilePath: labelsFilePath)
     for expectedClassification in [
       Classification(label: "Arctic fox", confidence: 0.92),
-      Classification(label: "Samoyed", confidence: 0.75),
+      Classification(label: "Samoyed", confidence: 0.74),
       Classification(label: "hot pot", confidence: 0.82),
     ] {
       guard
