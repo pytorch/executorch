@@ -432,7 +432,7 @@
 
 
 <span class="n">FORWARD</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span>
-<span class="n">RESERVED_SPECIAL_EVENT_NAMES</span> <span class="o">=</span> <span class="p">[</span>
+<span class="n">RESERVED_FRAMEWORK_EVENT_NAMES</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">&quot;Method::init&quot;</span><span class="p">,</span>
     <span class="s2">&quot;Program::load_method&quot;</span><span class="p">,</span>
     <span class="s2">&quot;Method::execute&quot;</span><span class="p">,</span>
@@ -444,6 +444,7 @@
     <span class="s2">&quot;module_hierarchy&quot;</span><span class="p">,</span>
     <span class="s2">&quot;debug_data&quot;</span><span class="p">,</span>
 <span class="p">]</span>
+<span class="n">EXCLUDED_EVENTS_WHEN_PRINTING</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;OPERATOR_CALL&quot;</span><span class="p">}</span>
 
 
 <span class="n">log</span><span class="p">:</span> <span class="n">logging</span><span class="o">.</span><span class="n">Logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
@@ -594,6 +595,11 @@
 <span class="sd">        Helper function to populate the stack_traces, module_hierarchy and op_types attributes</span>
 <span class="sd">        based on the debug handles of this event</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># Framework events aren&#39;t logically associated with any nodes</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">RESERVED_FRAMEWORK_EVENT_NAMES</span><span class="p">:</span>
+            <span class="k">return</span>
+
         <span class="k">if</span> <span class="p">(</span><span class="n">debug_handles</span> <span class="o">:=</span> <span class="bp">self</span><span class="o">.</span><span class="n">debug_handles</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="k">return</span>
 
@@ -628,6 +634,9 @@
     <span class="k">def</span> <span class="nf">to_dataframe</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Converts the EventBlock into a DataFrame with each row being an event instance</span>
+
+<span class="sd">        Note: Rows that have an event_name = OPERATOR_CALL correspond to the perf of the</span>
+<span class="sd">            previous operator + framework tax of making said operator call.</span>
 
 <span class="sd">        Args:</span>
 <span class="sd">            None</span>
@@ -850,7 +859,10 @@
         <span class="n">df_list</span> <span class="o">=</span> <span class="p">[</span><span class="n">event_block</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">()</span> <span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">]</span>
         <span class="n">combined_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">(</span><span class="n">df_list</span><span class="p">,</span> <span class="n">ignore_index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
         <span class="c1"># Filter out some columns for better readability when printing</span>
-        <span class="n">filtered_df</span> <span class="o">=</span> <span class="n">combined_df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">EXCLUDED_COLUMNS_WHEN_PRINTING</span><span class="p">)</span>
+        <span class="n">filtered_column_df</span> <span class="o">=</span> <span class="n">combined_df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="n">EXCLUDED_COLUMNS_WHEN_PRINTING</span><span class="p">)</span>
+        <span class="n">filtered_df</span> <span class="o">=</span> <span class="n">filtered_column_df</span><span class="p">[</span>
+            <span class="o">~</span><span class="n">filtered_column_df</span><span class="p">[</span><span class="s2">&quot;event_name&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">EXCLUDED_EVENTS_WHEN_PRINTING</span><span class="p">)</span>
+        <span class="p">]</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="kn">from</span> <span class="nn">IPython</span> <span class="kn">import</span> <span class="n">get_ipython</span>
             <span class="kn">from</span> <span class="nn">IPython.display</span> <span class="kn">import</span> <span class="n">display</span>
