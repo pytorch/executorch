@@ -7,9 +7,10 @@
 
 set -eu
 
-if [[ "${1:-'.'}" == "-h" ]]; then
-    echo "Usage: $(basename $0) [path-to-a-scratch-dir]"
-    exit 0
+if [[ "${1:-'.'}" == "-h" || "${#}" -eq 0 || "${#}" -gt 2 ]]; then
+    echo "Usage: $(basename $0) <--i-agree-to-the-contained-eula> [path-to-a-scratch-dir]"
+    echo "Supplied args: $*"
+    exit 1
 fi
 
 ########
@@ -70,6 +71,15 @@ fi
 # ethos-u
 ethos_u_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u"
 ethos_u_base_rev="0995223100e3da8011700f58e491f1bf59511e3c"
+
+########
+### Mandatory user args
+########
+eula_acceptance="${1:-'.'}"; shift
+if [[ "${eula_acceptance}" != "--i-agree-to-the-contained-eula" ]]; then
+    echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP. Exiting!"
+    exit 1
+fi
 
 ########
 ### Optional user args

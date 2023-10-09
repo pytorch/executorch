@@ -7,9 +7,10 @@
 
 set -eu
 
-if [[ "${1:-"."}" == "-h" ]]; then
+if [[ "${1:-'.'}" == "-h" || "${#}" -gt 2 ]]; then
     echo "Usage: $(basename $0) [path-to-a-scratch-dir] [buck2 binary]"
-    exit 0
+    echo "Supplied args: $*"
+    exit 1
 fi
 
 ########
