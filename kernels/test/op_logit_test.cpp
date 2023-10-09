@@ -37,8 +37,10 @@ void test_integer_logit_out() {
   // Destination for the logit operator.
   Tensor out = tf_out.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(
-      op_logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0, out));
+  op_logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0, out);
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf_out.make(sizes, /*data=*/{INFINITY, INFINITY, INFINITY, INFINITY}));
 }
 
 template <>
@@ -79,9 +81,6 @@ void test_integer_logit_out_eps_set() {
 }
 
 TEST(OpLogitOutKernelTest, AllRealInputFloatOutputSupport) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle this";
-  }
 #define TEST_ENTRY(ctype, dtype) \
   test_integer_logit_out<ScalarType::dtype, ScalarType::Float>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
@@ -89,9 +88,6 @@ TEST(OpLogitOutKernelTest, AllRealInputFloatOutputSupport) {
 }
 
 TEST(OpLogitOutKernelTest, AllRealInputDoubleOutputSupport) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel can handle this";
-  }
 #define TEST_ENTRY(ctype, dtype) \
   test_integer_logit_out<ScalarType::dtype, ScalarType::Double>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);

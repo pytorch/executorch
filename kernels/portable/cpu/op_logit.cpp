@@ -25,12 +25,13 @@ Tensor& logit_out(
   (void)ctx;
 
   // Resize for dynamic shape
-  auto error = resize_tensor(out, in.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
-  ET_CHECK_SAME_SHAPE2(in, out);
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in.scalar_type(), ctx, "logit", CTYPE_IN, [&] {
-    ET_SWITCH_FLOAT_TYPES(out.scalar_type(), ctx, "logit", CTYPE_OUT, [&] {
+  ScalarType in_type = in.scalar_type();
+  ScalarType out_type = out.scalar_type();
+  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE_IN, [&] {
+    ET_SWITCH_FLOAT_TYPES(out_type, ctx, __func__, CTYPE_OUT, [&] {
       apply_unary_map_fn(
           [eps](const CTYPE_IN val_in) {
             CTYPE_OUT xi = static_cast<CTYPE_OUT>(val_in);
@@ -41,7 +42,6 @@ Tensor& logit_out(
                 xi = 1 - eps.value();
               }
             }
-            ET_CHECK_MSG(xi > 0.0 && xi < 1.0, "input must be in (0, 1).");
             return static_cast<CTYPE_OUT>(
                 log(xi / (static_cast<CTYPE_OUT>(1.0) - xi)));
           },
