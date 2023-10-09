@@ -13,6 +13,13 @@
 namespace torch {
 namespace executor {
 
+bool check_as_strided_copy_args(
+    const Tensor& in,
+    ArrayRef<int64_t> size,
+    ArrayRef<int64_t> stride,
+    optional<int64_t> storage_offset,
+    Tensor& out);
+
 bool check_cat_args(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
