@@ -39,7 +39,7 @@ from tabulate import tabulate
 
 
 FORWARD = "forward"
-RESERVED_SPECIAL_EVENT_NAMES = [
+RESERVED_FRAMEWORK_EVENT_NAMES = [
     "Method::init",
     "Program::load_method",
     "Method::execute",
@@ -202,6 +202,11 @@ class Event:
         Helper function to populate the stack_traces, module_hierarchy and op_types attributes
         based on the debug handles of this event
         """
+
+        # Framework events aren't logically associated with any nodes
+        if self.name in RESERVED_FRAMEWORK_EVENT_NAMES:
+            return
+
         if (debug_handles := self.debug_handles) is None:
             return
 
