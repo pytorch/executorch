@@ -144,7 +144,6 @@ Topics in this section will help you get started with ExecuTorch.
    runtime-overview
    runtime-build-and-cross-compilation
    runtime-backend-delegate-implementation-and-linking
-   runtime-api
    runtime-custom-memory-allocator
    runtime-error-handling
    runtime-platform-abstraction-layer
@@ -187,13 +186,14 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    tutorials/export-to-executorch-tutorial
+   running-a-model-cpp-tutorial
    build-run-xtensa
    tutorials/sdk-integration-tutorial
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
 
-Ready to experiment? Check out some of the interactive
+Ready to experiment? Check out some of the
 ExecuTorch tutorials.
 
 .. customcardstart::
@@ -211,5 +211,12 @@ ExecuTorch tutorials.
    :image: _static/img/generic-pytorch-logo.png
    :link: tutorials/sdk-integration.html
    :tags: Export
+
+.. customcarditem::
+   :header: Running an ExecuTorch Model C++ Tutorial
+   :card_description: A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: running-a-model-cpp.html
+   :tags:
 
 .. customcardend::
