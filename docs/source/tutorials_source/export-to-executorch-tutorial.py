@@ -70,7 +70,7 @@ from torch._export import capture_pre_autograd_graph
 from torch.export import export, ExportedProgram
 
 
-class M(torch.nn.Module):
+class SimpleConv(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.conv = torch.nn.Conv2d(
@@ -84,7 +84,7 @@ class M(torch.nn.Module):
 
 
 example_args = (torch.randn(1, 3, 256, 256),)
-pre_autograd_aten_dialect = capture_pre_autograd_graph(M(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
 print("Pre-Autograd ATen Dialect Graph")
 print(pre_autograd_aten_dialect)
 
@@ -236,7 +236,7 @@ except Exception:
 # model properly for a specific backend.
 
 example_args = (torch.randn(1, 3, 256, 256),)
-pre_autograd_aten_dialect = capture_pre_autograd_graph(M(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
 print("Pre-Autograd ATen Dialect Graph")
 print(pre_autograd_aten_dialect)
 
@@ -280,7 +280,7 @@ print(aten_dialect)
 from executorch.exir import EdgeProgramManager, to_edge
 
 example_args = (torch.randn(1, 3, 256, 256),)
-pre_autograd_aten_dialect = capture_pre_autograd_graph(M(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
 print("Pre-Autograd ATen Dialect Graph")
 print(pre_autograd_aten_dialect)
 
@@ -338,7 +338,7 @@ for method in edge_program.methods:
 # rather than the ``torch.ops.aten`` namespace.
 
 example_args = (torch.randn(1, 3, 256, 256),)
-pre_autograd_aten_dialect = capture_pre_autograd_graph(M(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
 aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)
 edge_program: EdgeProgramManager = to_edge(aten_dialect)
 print("Edge Dialect Graph")
