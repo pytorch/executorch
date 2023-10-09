@@ -187,14 +187,14 @@ function setup_vela() {
     #
     # Prepare the Vela compiler for AoT to Ethos-U compilation
     #
-    cd "${root_dir}/ethos-u/"
+    cd "${root_dir}"
     if [[ ! -e ethos-u-vela ]]; then
         git clone https://git.mlplatform.org/ml/ethos-u/ethos-u-vela.git
         name="ethos-u-vela"
         base_rev=00a15db3e1a188b25065d095152d701f4394cdc5
         patch_repo
     fi
-    cd "${root_dir}/ethos-u/ethos-u-vela"
+    cd "${root_dir}/ethos-u-vela"
     pip install .
 }
 

@@ -1,7 +1,7 @@
-From 0c91f25a52d32d7f4b6ec787a40633a92af7f885 Mon Sep 17 00:00:00 2001
+From 25f530f4ef8d994f61fe979e94b4c929ff2481e6 Mon Sep 17 00:00:00 2001
 From: Digant Desai <digantdesai@meta.com>
 Date: Thu, 28 Sep 2023 19:07:51 -0700
-Subject: [PATCH 6/6] [Executorch] Add executorch_runner test
+Subject: [Executorch 6/7] Add executorch_runner test
 
 ---
  applications/CMakeLists.txt                  |   2 +
@@ -279,5 +279,5 @@ index a21d9f0..036f189 100644
      ethosu_eval_link_options(${target})
  
 -- 
-2.39.3
+2.42.0
 
