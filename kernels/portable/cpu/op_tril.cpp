@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <cstring>
-#include <type_traits>
 
 namespace torch {
 namespace executor {
@@ -130,30 +130,25 @@ Tensor& tril_out(
     Tensor& out) {
   (void)ctx;
 
-  // Assert `self` has at least 2 dims.
-  ET_CHECK_MSG(self.dim() >= 2, "self.dim() %zd < 2", self.dim());
+  ET_KERNEL_CHECK(ctx, check_tril_args(self, out), InvalidArgument, out);
 
-  // Assert `self` and `out` have the same tensor shape.
-  ET_CHECK_SAME_SHAPE_AND_DTYPE2(self, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, self.sizes()) == torch::executor::Error::Ok,
+      InvalidArgument,
+      out);
+
+  if (self.numel() == 0) {
+    return out;
+  }
 
   // Fill `out` with 0s prior to executing tril.
   clear_out(out);
 
-  // Create switches for all dtypes (real + bool).
-#define TRIL_OUT(ctype, dtype)               \
-  case ScalarType::dtype:                    \
-    tril_kernel<ctype>(self, diagonal, out); \
-    break;
-
-  switch (out.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND(Bool, TRIL_OUT)
-    default:
-      ET_CHECK_MSG(
-          false,
-          "out tensor should be a real or bool dtype, but got %" PRId8,
-          static_cast<int8_t>(out.scalar_type()));
-  }
-#undef TRIL_OUT
+  ScalarType out_type = out.scalar_type();
+  ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, __func__, CTYPE, [&]() {
+    tril_kernel<CTYPE>(self, diagonal, out);
+  });
 
   return out;
 }

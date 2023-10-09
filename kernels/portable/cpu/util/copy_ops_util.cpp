@@ -355,5 +355,11 @@ void get_stack_out_target_size(
   }
 }
 
+bool check_tril_args(const Tensor& in, Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(in, 2));
+  return true;
+}
+
 } // namespace executor
 } // namespace torch
