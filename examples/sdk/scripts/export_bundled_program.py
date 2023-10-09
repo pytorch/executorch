@@ -16,7 +16,7 @@ from executorch.bundled_program.serialize import (
 
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
-from ...portable.utils import export_to_exec_prog, save_pte_program
+from ...portable.utils import export_to_exec_prog
 
 
 def save_bundled_program(
@@ -54,9 +54,8 @@ def save_bundled_program(
         file.write(bundled_program_buffer)
 
 
-def export_to_pte(model_name, model, method_names, example_inputs):
+def export_to_bundled_program(model_name, model, method_names, example_inputs):
     exec_prog = export_to_exec_prog(model, example_inputs)
-    save_pte_program(exec_prog.buffer, model_name)
 
     # Just as an example to show how multiple input sets can be bundled along, here we
     # create a list with the example_inputs tuple used twice. Each instance of example_inputs
@@ -91,4 +90,4 @@ if __name__ == "__main__":
 
     method_names = ["forward"]
 
-    export_to_pte(args.model_name, model, method_names, example_inputs)
+    export_to_bundled_program(args.model_name, model, method_names, example_inputs)
