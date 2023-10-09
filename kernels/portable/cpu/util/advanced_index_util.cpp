@@ -441,7 +441,6 @@ bool get_in_coord(
 }
 
 std::pair<size_t, bool> get_in_ix(
-    RuntimeContext ctx,
     const Tensor& in,
     TensorOptList indices,
     Tensor& out,

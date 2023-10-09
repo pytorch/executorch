@@ -90,8 +90,8 @@ Tensor& index_Tensor_out(
     for (auto out_ix = 0; out_ix < out.numel(); out_ix++) {
       size_t in_ix = 0;
       bool success = true;
-      std::tie(in_ix, success) = get_in_ix(
-          ctx, in, indices, out, out_ix, start, xdim, dim_map, ix_map);
+      std::tie(in_ix, success) =
+          get_in_ix(in, indices, out, out_ix, start, xdim, dim_map, ix_map);
       ET_KERNEL_CHECK(ctx, success, InvalidArgument, out);
       out_data[out_ix] = in_data[in_ix];
     }
