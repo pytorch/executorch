@@ -34,5 +34,11 @@ bool check_layer_norm_args(
     Tensor& mean_out,
     Tensor& rstd_out);
 
+void get_layer_norm_out_target_size(
+    const Tensor& in,
+    IntArrayRef normalized_shape,
+    Tensor::SizesType* mean_rstd_sizes,
+    size_t* mean_rstd_ndim);
+
 } // namespace executor
 } // namespace torch
