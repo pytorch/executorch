@@ -47,8 +47,8 @@ function generate_pte_file() {
 # Generate the ethos delegate PTE file
 function generate_ethos_pte_file() {
     cd $et_root_dir
-	python3 examples/arm/arm_ethosu_minimal.py &> /dev/null
-	cd ./ethosout/simple_add/torch/
+    python3 examples/arm/arm_ethosu_minimal.py &> /dev/null
+    cd ./ethosout/simple_add/torch/
     local pte_file=$(realpath ./delegated.pte)
     [[ -f ${pte_file} ]] || { echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
     echo "${pte_file}"
