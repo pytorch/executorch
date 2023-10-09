@@ -172,12 +172,12 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    sdk-overview
+   sdk-etrecord
+   sdk-etdump
    sdk-profiling
+   sdk-inspector
    sdk-bundled-io
    sdk-delegate-integration
-   sdk-etdump
-   sdk-inspector
-   sdk-etrecord
 
 .. toctree::
    :glob:
