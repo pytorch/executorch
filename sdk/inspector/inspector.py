@@ -51,6 +51,7 @@ EXCLUDED_COLUMNS_WHEN_PRINTING = [
     "module_hierarchy",
     "debug_data",
 ]
+EXCLUDED_EVENTS_WHEN_PRINTING = {"OPERATOR_CALL"}
 
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -235,6 +236,9 @@ class EventBlock:
     def to_dataframe(self) -> pd.DataFrame:
         """
         Converts the EventBlock into a DataFrame with each row being an event instance
+
+        Note: Rows that have an event_name = OPERATOR_CALL correspond to the perf of the
+            previous operator + framework tax of making said operator call.
 
         Args:
             None
@@ -457,7 +461,10 @@ class Inspector:
         df_list = [event_block.to_dataframe() for event_block in self.event_blocks]
         combined_df = pd.concat(df_list, ignore_index=True)
         # Filter out some columns for better readability when printing
-        filtered_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
+        filtered_column_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
+        filtered_df = filtered_column_df[
+            ~filtered_column_df["event_name"].isin(EXCLUDED_EVENTS_WHEN_PRINTING)
+        ]
         try:
             from IPython import get_ipython
             from IPython.display import display
