@@ -269,11 +269,11 @@ bool check_index_select_args(
     int64_t dim,
     const Tensor& index,
     Tensor& out) {
-  if (in.dim() == 0) {
-    ET_LOG_AND_RETURN_IF_FALSE(dim == 0);
-  } else {
-    ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
-  }
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
+  dim = dim < 0 ? dim + nonzero_dim(in) : dim;
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      nonempty_size(in, dim) > 0,
+      "index_select: Indexing axis dim should be positive");
 
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
@@ -282,32 +282,32 @@ bool check_index_select_args(
       "Expected index to have type of Long or Int, but found %s",
       toString(index.scalar_type()));
 
-  if (index.dim() > 0) {
-    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(index, 1));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_smaller_or_equal_to(index, 1));
+  if (index.dim() > 0 && in.dim() == 0) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        index.numel() == 1,
+        "index_select: Index to scalar must have exactly 1 value");
   }
+
   if (index.scalar_type() == ScalarType::Long) {
     const int64_t* const index_ptr = index.const_data_ptr<int64_t>();
     for (size_t i = 1; i < index.numel(); ++i) {
       ET_LOG_MSG_AND_RETURN_IF_FALSE(
-          index_ptr[i] >= 0 && index_ptr[i] < in.size(dim),
-          "index[%zu] = %" PRId64 " is out of bounds for in.size(%" PRId64
-          ") = %zd",
+          index_ptr[i] >= 0 && index_ptr[i] < nonempty_size(in, dim),
+          "index[%zu] = %" PRId64 " is out of range [0, %zd)",
           i,
           index_ptr[i],
-          dim,
-          in.size(dim));
+          static_cast<size_t>(nonempty_size(in, dim)));
     }
   } else {
     const int32_t* const index_ptr = index.const_data_ptr<int32_t>();
     for (size_t i = 1; i < index.numel(); ++i) {
       ET_LOG_MSG_AND_RETURN_IF_FALSE(
-          index_ptr[i] >= 0 && index_ptr[i] < in.size(dim),
-          "index[%zu] = %" PRId32 " is out of bounds for in.size(%" PRId64
-          ") = %zd",
+          index_ptr[i] >= 0 && index_ptr[i] < nonempty_size(in, dim),
+          "index[%zu] = %" PRId32 " is out of range [0, %zd)",
           i,
           index_ptr[i],
-          dim,
-          static_cast<size_t>(in.size(dim)));
+          static_cast<size_t>(nonempty_size(in, dim)));
     }
   }
 

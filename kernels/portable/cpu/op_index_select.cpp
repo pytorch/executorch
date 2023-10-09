@@ -38,11 +38,20 @@ Tensor& index_select_out(
       InvalidArgument,
       out);
 
-  size_t out_dim_length = out.size(dim);
-  size_t in_dim_length = in.size(dim);
+  if (in.dim() == 0) {
+    memcpy(out.mutable_data_ptr(), in.const_data_ptr(), in.nbytes());
+    return out;
+  }
 
   size_t leading_dims = getLeadingDims(in, dim);
   size_t trailing_dims = getTrailingDims(in, dim);
+
+  if (leading_dims == 0 || trailing_dims == 0) {
+    return out;
+  }
+
+  size_t out_dim_length = out.size(dim);
+  size_t in_dim_length = in.size(dim);
 
   size_t length_per_step = trailing_dims * in.element_size();
 
