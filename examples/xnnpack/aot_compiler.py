@@ -13,7 +13,6 @@ import torch._export as export
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import EdgeCompileConfig
-from executorch.exir.backend.backend_api import to_backend
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
@@ -85,10 +84,10 @@ if __name__ == "__main__":
             _check_ir_validity=False if args.quantize else True,
         ),
     )
-    logging.info(f"Exported graph:\n{edge.exported_program.graph}")
+    logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 
-    edge.exported_program = to_backend(edge.exported_program, XnnpackPartitioner)
-    logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
+    edge = edge.to_backend(XnnpackPartitioner)
+    logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
     exec_prog = edge.to_executorch()
 

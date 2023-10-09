@@ -14,14 +14,16 @@ import numpy as np
 from executorch.backends.arm.arm_backend import ArmPartitioner
 from executorch.backends.arm.test.test_models import TestList, TosaProfile
 from executorch.backends.arm.test.test_tosa import prepare_model_and_ref
+from executorch.exir import to_edge
 
-from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
     DuplicateDequantNodePass,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.dialects._ops import ops as exir_ops
+
+from torch.export import export
 
 # Assumes you have these two tools on your path
 TOSA_REF_MODEL_PATH = "tosa_reference_model"
@@ -31,7 +33,6 @@ VELA_COMPILER_PATH = "vela"
 DEBUG_OUTPUT_PATH = tempfile.mkdtemp(prefix="arm_tosa_")
 
 # Config for Capturing the weights, will be moved in the future
-_CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
 )
@@ -106,8 +107,8 @@ def tosa_ref_dump_inputs(
     # - Skips placeholders which are encoded as constants (i.e. are already captured weights)
     # - Assumes argument order is fixed
     argument_names = []
-    for node in model_edge.exported_program.graph.nodes:
-        gs = model_edge.exported_program.graph_signature
+    for node in model_edge.exported_program().graph.nodes:
+        gs = model_edge.exported_program().graph_signature
         if node.op == "placeholder":
             if node.name in gs.inputs_to_parameters:
                 pass
@@ -170,8 +171,8 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
         return
 
     # Export model
-    model_capture = exir.capture(model, inputs, _CAPTURE_CONFIG)
-    model_edge = model_capture.to_edge(_EDGE_COMPILE_CONFIG)
+    model_capture = export(model, inputs)
+    model_edge = to_edge(model_capture, _EDGE_COMPILE_CONFIG)
     ArmPartitioner.compile_spec = compile_spec
 
     if profile == TosaProfile.BI:
@@ -184,9 +185,8 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
             output_quantization_zp,
         ) = get_output_quantization_param(model_edge)
 
-    model_edge.exported_program = to_backend(
-        model_edge.transform(DuplicateDequantNodePass()).exported_program,
-        ArmPartitioner,
+    model_edge = model_edge.transform(DuplicateDequantNodePass()).to_backend(
+        ArmPartitioner
     )
     exec_prog = model_edge.to_executorch()
 
