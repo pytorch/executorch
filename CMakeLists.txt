@@ -134,6 +134,8 @@ option(EXECUTORCH_BUILD_SDK
        "Build the ExecuTorch SDK library and the SDK example runner.")
 
 option(EXECUTORCH_BUILD_EXAMPLES "Build the ExecuTorch examples.")
+option(EXECUTORCH_BUILD_XTENSA_EXAMPLE
+       "Build the example targeted for the Xtensa Hifi4 DSP" OFF)
 
 if(NOT BUCK2)
   set(BUCK2 buck2)
@@ -346,6 +348,10 @@ endif()
 
 if(EXECUTORCH_BUILD_EXAMPLES)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples)
+endif()
+
+if(EXECUTORCH_BUILD_XTENSA_EXAMPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/xtensa)
 endif()
 
 # Print all summary
