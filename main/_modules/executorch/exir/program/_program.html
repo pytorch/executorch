@@ -973,6 +973,7 @@
 <span class="sd">    Returns:</span>
 <span class="sd">        EdgeProgramManager</span>
 <span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">constant_methods</span><span class="p">,</span> <span class="n">EdgeCompileConfig</span><span class="p">)</span>
     <span class="n">config</span> <span class="o">=</span> <span class="n">compile_config</span> <span class="ow">or</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">programs</span><span class="p">,</span> <span class="nb">dict</span><span class="p">):</span>
         <span class="n">aten_programs</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;forward&quot;</span><span class="p">:</span> <span class="n">programs</span><span class="p">}</span>
@@ -1272,6 +1273,13 @@
     <span class="k">def</span> <span class="nf">debug_handle_map</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]:</span>
         <span class="c1"># TODO ask Tarun what the docstring here should be.</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">debug_handle_map</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">executorch_program</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the object that represents the ExecuTorch binary before serialization.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">program</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
