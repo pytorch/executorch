@@ -535,6 +535,18 @@ inline bool tensor_has_rank_greater_or_equal_to(
   return true;
 }
 
+inline bool tensor_has_rank_smaller_or_equal_to(
+    exec_aten::Tensor t,
+    size_t rank) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      t.dim() <= rank,
+      "Expected tensor.dim() to be <= %zu, but got %zu",
+      static_cast<size_t>(rank),
+      static_cast<size_t>(t.dim()));
+
+  return true;
+}
+
 inline bool tensor_has_dim(exec_aten::Tensor t, int64_t d) {
   if (t.dim() == 0) {
     ET_LOG_MSG_AND_RETURN_IF_FALSE(
@@ -548,6 +560,25 @@ inline bool tensor_has_dim(exec_aten::Tensor t, int64_t d) {
         static_cast<size_t>(t.dim()),
         static_cast<size_t>(d));
   }
+  return true;
+}
+
+inline bool tensor_dim_has_index(exec_aten::Tensor t, int64_t d, int64_t ix) {
+  // Indexing ops don't support zero-dim tensors
+  ET_CHECK(t.dim() != 0);
+  if (d < 0) {
+    d += t.dim();
+  }
+  // Dimension must have been already checked by tensor_has_dim
+  ET_CHECK(d >= 0 && d < t.dim());
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      ix >= -t.size(d) && ix < t.size(d),
+      "index %" PRId64 " out of range [-%zu,%zu) at dimension %" PRId64 ")",
+      ix,
+      static_cast<size_t>(t.size(d)),
+      static_cast<size_t>(t.size(d)),
+      d);
   return true;
 }
 
