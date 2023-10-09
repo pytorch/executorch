@@ -41,8 +41,8 @@
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Definition of the Core ATen Operator Set" href="ir-ops-set-definition.html" />
     <link rel="prev" title="ExecuTorch Runtime API Reference" href="executorch-runtime-api-reference.html" />
-    
-    
+
+
   <!-- Google Tag Manager -->
     <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
     new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
@@ -223,7 +223,7 @@
         <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
           <div class="pytorch-left-menu-search">
             
-    
+
 
 
   
@@ -382,8 +382,8 @@
         <div class="pytorch-content-left">
 
         
-    
-    
+
+
           <!-- Google Tag Manager (noscript) -->
           <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
           height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
@@ -823,7 +823,40 @@ quantization.</p>
   </script>
  
 <script script type="text/javascript">
-    var collapsedSections = ['Introduction', 'Getting Started', 'Exporting to ExecuTorch', 'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'SDK', 'Tutorials']
+  var collapsedSections = ['Introduction', 'Getting Started', 'Exporting to ExecuTorch', 'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'SDK', 'Tutorials']
+</script>
+
+ 
+// Patch up links to point to ExecuTorch URLs instead of to
+// pytorch/pytorch URLs.
+<script type="text/javascript">
+  $(document).ready(function () {
+    // Patch links on interactive tutorial pages to point
+    // to the correct ExecuTorch URLs.
+    var downloadNote = $(".sphx-glr-download-link-note.admonition.note");
+    if (downloadNote.length >= 1) {
+      var tutorialUrl = $("#tutorial-type").text().substring($("#tutorial-type").text().indexOf("tutorials/") + 9); // 9 is the length of "tutorials/"
+      var githubLink = "https://github.com/pytorch/executorch/blob/main/docs/source/tutorials_source" + tutorialUrl + ".py",
+        notebookLink = $(".reference.download")[1].href,
+        notebookDownloadPath = notebookLink.split('_downloads')[1],
+        colabLink = "https://colab.research.google.com/github/pytorch/executorch/blob/gh-pages/main/_downloads" + notebookDownloadPath;
+
+      $(".pytorch-call-to-action-links a[data-response='Run in Google Colab']").attr("href", colabLink);
+      $(".pytorch-call-to-action-links a[data-response='View on Github']").attr("href", githubLink);
+    }
+
+    // Patch the "GitHub" link at the top of the page
+    // to point to the ExecuTorch repo.
+    var overwrite = function (_) {
+      if ($(this).length > 0) {
+        $(this)[0].href = "https://github.com/pytorch/executorch"
+      }
+    }
+    // PC
+    $(".main-menu a:contains('GitHub')").each(overwrite);
+    // Mobile
+    $(".mobile-menu a:contains('Github')").each(overwrite);
+  });
 </script>
 
 

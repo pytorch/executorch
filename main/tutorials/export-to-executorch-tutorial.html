@@ -41,8 +41,8 @@
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Building and Running ExecuTorch on Xtensa HiFi4 DSP" href="../build-run-xtensa.html" />
     <link rel="prev" title="TBD" href="../sdk-etrecord.html" />
-    
-    
+
+
   <!-- Google Tag Manager -->
     <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
     new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
@@ -223,7 +223,7 @@
         <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
           <div class="pytorch-left-menu-search">
             
-    
+
 
 
   
@@ -382,30 +382,30 @@
         <div class="pytorch-content-left">
 
         
-    
 
-    <div class="pytorch-call-to-action-links">
-      <div id="tutorial-type">tutorials/export-to-executorch-tutorial</div>
 
-      <div id="google-colab-link">
-        <img class="call-to-action-img" src="../_static/images/pytorch-colab.svg"/>
-        <div class="call-to-action-desktop-view">Run in Google Colab</div>
-        <div class="call-to-action-mobile-view">Colab</div>
-      </div>
-      <div id="download-notebook-link">
-        <img class="call-to-action-notebook-img" src="../_static/images/pytorch-download.svg"/>
-        <div class="call-to-action-desktop-view">Download Notebook</div>
-        <div class="call-to-action-mobile-view">Notebook</div>
-      </div>
-      <div id="github-view-link">
-        <img class="call-to-action-img" src="../_static/images/pytorch-github.svg"/>
-        <div class="call-to-action-desktop-view">View on GitHub</div>
-        <div class="call-to-action-mobile-view">GitHub</div>
-      </div>
-    </div>
+<div class="pytorch-call-to-action-links">
+  <div id="tutorial-type">tutorials/export-to-executorch-tutorial</div>
 
-    
-    
+  <div id="google-colab-link">
+    <img class="call-to-action-img" src="../_static/images/pytorch-colab.svg" />
+    <div class="call-to-action-desktop-view">Run in Google Colab</div>
+    <div class="call-to-action-mobile-view">Colab</div>
+  </div>
+  <div id="download-notebook-link">
+    <img class="call-to-action-notebook-img" src="../_static/images/pytorch-download.svg" />
+    <div class="call-to-action-desktop-view">Download Notebook</div>
+    <div class="call-to-action-mobile-view">Notebook</div>
+  </div>
+  <div id="github-view-link">
+    <img class="call-to-action-img" src="../_static/images/pytorch-github.svg" />
+    <div class="call-to-action-desktop-view">View on GitHub</div>
+    <div class="call-to-action-mobile-view">GitHub</div>
+  </div>
+</div>
+
+
+
           <!-- Google Tag Manager (noscript) -->
           <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
           height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
@@ -918,21 +918,7 @@ there is only one program, it will by default be saved to the name “forward”
     <span class="nb">print</span><span class="p">(</span><span class="n">edge_program</span><span class="o">.</span><a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">exported_program</span></a><span class="p">(</span><a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">method</span></a><span class="p">))</span>
 </pre></div>
 </div>
-<div class="sphx-glr-script-out highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Edge</span> <span class="n">Dialect</span> <span class="n">graph</span> <span class="n">of</span> <span class="n">encode</span>
-<a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class"><span class="n">ExportedProgram</span></a><span class="p">:</span>
-    <span class="k">class</span> <span class="nc">GraphModule</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span></a><span class="p">):</span>
-        <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg0_1</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">]):</span>
-            <span class="c1"># File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:303, code: return torch.nn.functional.linear(x, torch.randn(5, 10))</span>
-            <span class="n">aten_randn_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_randn_default</span><span class="p">([</span><span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span> <span class="n">device</span> <span class="o">=</span> <span class="n">device</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s1">&#39;cpu&#39;</span><span class="p">),</span> <span class="n">pin_memory</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
-            <span class="n">aten_permute_copy_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_permute_copy_default</span><span class="p">(</span><span class="n">aten_randn_default</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]);</span>  <span class="n">aten_randn_default</span> <span class="o">=</span> <span class="kc">None</span>
-            <span class="n">aten_mm_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_mm_default</span><span class="p">(</span><span class="n">arg0_1</span><span class="p">,</span> <span class="n">aten_permute_copy_default</span><span class="p">);</span>  <span class="n">arg0_1</span> <span class="o">=</span> <span class="n">aten_permute_copy_default</span> <span class="o">=</span> <span class="kc">None</span>
-            <span class="k">return</span> <span class="p">(</span><span class="n">aten_mm_default</span><span class="p">,)</span>
-
-<span class="n">Graph</span> <span class="n">signature</span><span class="p">:</span> <span class="n">ExportGraphSignature</span><span class="p">(</span><span class="n">parameters</span><span class="o">=</span><span class="p">[],</span> <span class="n">buffers</span><span class="o">=</span><span class="p">[],</span> <span class="n">user_inputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;arg0_1&#39;</span><span class="p">],</span> <span class="n">user_outputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;aten_mm_default&#39;</span><span class="p">],</span> <span class="n">inputs_to_parameters</span><span class="o">=</span><span class="p">{},</span> <span class="n">inputs_to_buffers</span><span class="o">=</span><span class="p">{},</span> <span class="n">buffers_to_mutate</span><span class="o">=</span><span class="p">{},</span> <span class="n">backward_signature</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">assertion_dep_token</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
-<span class="n">Range</span> <a href="https://docs.python.org/3/library/stdtypes.html#list" title="builtins.list" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">constraints</span></a><span class="p">:</span> <span class="p">{}</span>
-<span class="n">Equality</span> <a href="https://docs.python.org/3/library/stdtypes.html#list" title="builtins.list" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">constraints</span></a><span class="p">:</span> <span class="p">[]</span>
-
-<span class="n">Edge</span> <span class="n">Dialect</span> <span class="n">graph</span> <span class="n">of</span> <span class="n">decode</span>
+<div class="sphx-glr-script-out highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Edge</span> <span class="n">Dialect</span> <span class="n">graph</span> <span class="n">of</span> <span class="n">decode</span>
 <a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class"><span class="n">ExportedProgram</span></a><span class="p">:</span>
     <span class="k">class</span> <span class="nc">GraphModule</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span></a><span class="p">):</span>
         <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg0_1</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">]):</span>
@@ -940,6 +926,20 @@ there is only one program, it will by default be saved to the name “forward”
             <span class="n">aten_randn_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_randn_default</span><span class="p">([</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span> <span class="n">device</span> <span class="o">=</span> <span class="n">device</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s1">&#39;cpu&#39;</span><span class="p">),</span> <span class="n">pin_memory</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
             <span class="n">aten_permute_copy_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_permute_copy_default</span><span class="p">(</span><span class="n">aten_randn_default</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]);</span>  <span class="n">aten_randn_default</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="n">aten_mm_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_mm_default</span><span class="p">(</span><span class="n">arg0_1</span><span class="p">,</span> <span class="n">aten_permute_copy_default</span><span class="p">);</span>  <span class="n">arg0_1</span> <span class="o">=</span> <span class="n">aten_permute_copy_default</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="k">return</span> <span class="p">(</span><span class="n">aten_mm_default</span><span class="p">,)</span>
+
+<span class="n">Graph</span> <span class="n">signature</span><span class="p">:</span> <span class="n">ExportGraphSignature</span><span class="p">(</span><span class="n">parameters</span><span class="o">=</span><span class="p">[],</span> <span class="n">buffers</span><span class="o">=</span><span class="p">[],</span> <span class="n">user_inputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;arg0_1&#39;</span><span class="p">],</span> <span class="n">user_outputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;aten_mm_default&#39;</span><span class="p">],</span> <span class="n">inputs_to_parameters</span><span class="o">=</span><span class="p">{},</span> <span class="n">inputs_to_buffers</span><span class="o">=</span><span class="p">{},</span> <span class="n">buffers_to_mutate</span><span class="o">=</span><span class="p">{},</span> <span class="n">backward_signature</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">assertion_dep_token</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="n">Range</span> <a href="https://docs.python.org/3/library/stdtypes.html#list" title="builtins.list" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">constraints</span></a><span class="p">:</span> <span class="p">{}</span>
+<span class="n">Equality</span> <a href="https://docs.python.org/3/library/stdtypes.html#list" title="builtins.list" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">constraints</span></a><span class="p">:</span> <span class="p">[]</span>
+
+<span class="n">Edge</span> <span class="n">Dialect</span> <span class="n">graph</span> <span class="n">of</span> <span class="n">encode</span>
+<a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class"><span class="n">ExportedProgram</span></a><span class="p">:</span>
+    <span class="k">class</span> <span class="nc">GraphModule</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span></a><span class="p">):</span>
+        <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">arg0_1</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">10</span><span class="p">]):</span>
+            <span class="c1"># File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:303, code: return torch.nn.functional.linear(x, torch.randn(5, 10))</span>
+            <span class="n">aten_randn_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_randn_default</span><span class="p">([</span><span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">],</span> <span class="n">device</span> <span class="o">=</span> <span class="n">device</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s1">&#39;cpu&#39;</span><span class="p">),</span> <span class="n">pin_memory</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+            <span class="n">aten_permute_copy_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_permute_copy_default</span><span class="p">(</span><span class="n">aten_randn_default</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">]);</span>  <span class="n">aten_randn_default</span> <span class="o">=</span> <span class="kc">None</span>
+            <span class="n">aten_mm_default</span><span class="p">:</span> <span class="n">f32</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="n">executorch_exir_dialects_edge__ops_aten_mm_default</span><span class="p">(</span><span class="n">arg0_1</span><span class="p">,</span> <span class="n">aten_permute_copy_default</span><span class="p">);</span>  <span class="n">arg0_1</span> <span class="o">=</span> <span class="n">aten_permute_copy_default</span> <span class="o">=</span> <span class="kc">None</span>
             <span class="k">return</span> <span class="p">(</span><span class="n">aten_mm_default</span><span class="p">,)</span>
 
 <span class="n">Graph</span> <span class="n">signature</span><span class="p">:</span> <span class="n">ExportGraphSignature</span><span class="p">(</span><span class="n">parameters</span><span class="o">=</span><span class="p">[],</span> <span class="n">buffers</span><span class="o">=</span><span class="p">[],</span> <span class="n">user_inputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;arg0_1&#39;</span><span class="p">],</span> <span class="n">user_outputs</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;aten_mm_default&#39;</span><span class="p">],</span> <span class="n">inputs_to_parameters</span><span class="o">=</span><span class="p">{},</span> <span class="n">inputs_to_buffers</span><span class="o">=</span><span class="p">{},</span> <span class="n">buffers_to_mutate</span><span class="o">=</span><span class="p">{},</span> <span class="n">backward_signature</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">assertion_dep_token</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
@@ -1475,7 +1475,7 @@ program to a file that can be run on the ExecuTorch runtime.</p>
 <li><p><a class="reference external" href="../compiler-delegate-and-partitioner.html">Backend Delegation Documentation</a></p></li>
 <li><p><a class="reference external" href="../compiler-memory-planning.html">Memory Planning Documentation</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 4.370 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 4.276 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-export-to-executorch-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/e045b13b001260d8b012dd4630eb9054/export-to-executorch-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">export-to-executorch-tutorial.py</span></code></a></p>
@@ -1596,7 +1596,40 @@ program to a file that can be run on the ExecuTorch runtime.</p>
   </script>
  
 <script script type="text/javascript">
-    var collapsedSections = ['Introduction', 'Getting Started', 'Exporting to ExecuTorch', 'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'SDK', 'Tutorials']
+  var collapsedSections = ['Introduction', 'Getting Started', 'Exporting to ExecuTorch', 'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'SDK', 'Tutorials']
+</script>
+
+ 
+// Patch up links to point to ExecuTorch URLs instead of to
+// pytorch/pytorch URLs.
+<script type="text/javascript">
+  $(document).ready(function () {
+    // Patch links on interactive tutorial pages to point
+    // to the correct ExecuTorch URLs.
+    var downloadNote = $(".sphx-glr-download-link-note.admonition.note");
+    if (downloadNote.length >= 1) {
+      var tutorialUrl = $("#tutorial-type").text().substring($("#tutorial-type").text().indexOf("tutorials/") + 9); // 9 is the length of "tutorials/"
+      var githubLink = "https://github.com/pytorch/executorch/blob/main/docs/source/tutorials_source" + tutorialUrl + ".py",
+        notebookLink = $(".reference.download")[1].href,
+        notebookDownloadPath = notebookLink.split('_downloads')[1],
+        colabLink = "https://colab.research.google.com/github/pytorch/executorch/blob/gh-pages/main/_downloads" + notebookDownloadPath;
+
+      $(".pytorch-call-to-action-links a[data-response='Run in Google Colab']").attr("href", colabLink);
+      $(".pytorch-call-to-action-links a[data-response='View on Github']").attr("href", githubLink);
+    }
+
+    // Patch the "GitHub" link at the top of the page
+    // to point to the ExecuTorch repo.
+    var overwrite = function (_) {
+      if ($(this).length > 0) {
+        $(this)[0].href = "https://github.com/pytorch/executorch"
+      }
+    }
+    // PC
+    $(".main-menu a:contains('GitHub')").each(overwrite);
+    // Mobile
+    $(".mobile-menu a:contains('Github')").each(overwrite);
+  });
 </script>
 
 
