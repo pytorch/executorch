@@ -164,12 +164,12 @@ void kernel_reduction_then_map_2d(
 
   int64_t k_H = val_at(kernel_size, 0);
   int64_t k_W = val_at(kernel_size, 1);
-  int64_t s_H = val_at(stride, 0, k_H);
-  int64_t s_W = val_at(stride, 1, k_W);
-  int64_t p_H = val_at(padding, 0, 0);
-  int64_t p_W = val_at(padding, 1, 0);
-  int64_t d_H = val_at(dilation, 0, 1);
-  int64_t d_W = val_at(dilation, 1, 1);
+  int64_t s_H = val_at(stride, 0, /*default_value=*/k_H);
+  int64_t s_W = val_at(stride, 1, /*default_value=*/k_W);
+  int64_t p_H = val_at(padding, 0, /*default_value=*/0);
+  int64_t p_W = val_at(padding, 1, /*default_value=*/0);
+  int64_t d_H = val_at(dilation, 0, /*default_value=*/1);
+  int64_t d_W = val_at(dilation, 1, /*default_value=*/1);
 
   // Compute 2D output region
   for (size_t out_y = 0; out_y < out_H; ++out_y) {
