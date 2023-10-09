@@ -1,19 +1,15 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
 import logging
 from typing import Dict, List, Optional, Union
 
-from executorch.backends.qnnpack.partition.support_patterns import (
+from executorch.backends.fb.qnnpack.partition.support_patterns import (
     get_dynamic_quant_addmm_with_view_copy_graph,
     get_dynamic_quant_addmm_without_view_copy_graph,
     get_dynamic_quant_mm_with_view_copy_graph,
     get_dynamic_quant_mm_without_view_copy_graph,
 )
-from executorch.backends.qnnpack.qnnpack_preprocess import QnnpackBackend
+from executorch.backends.fb.qnnpack.qnnpack_preprocess import QnnpackBackend
 from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
 from executorch.exir.backend.partitioner import (
     DelegationSpec,

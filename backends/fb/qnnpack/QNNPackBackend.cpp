@@ -1,13 +1,7 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
-#include <executorch/backends/qnnpack/executor/QNNExecutor.h>
-#include <executorch/backends/qnnpack/qnnpack_schema_generated.h>
+#include <executorch/backends/fb/qnnpack/executor/QNNExecutor.h>
+#include <executorch/backends/fb/qnnpack/qnnpack_schema_generated.h>
 #include <executorch/backends/xnnpack/runtime/utils/utils.h>
 #include <executorch/backends/xnnpack/threadpool/threadpool.h>
 #include <executorch/runtime/backend/interface.h>
@@ -140,7 +134,7 @@ class QnnpackBackend final : public PyTorchBackendInterface {
         weights_zp->buffer()->data(),
         ScalarType::QUInt8,
         runtime_allocator,
-        pre_pad_bytes, // Not necessary to prepad but surpresses asan errors:
+        pre_pad_bytes, // Not necessary to prepad but suppresses asan errors:
                        // D42179009
         &zp_buf);
 
@@ -153,7 +147,7 @@ class QnnpackBackend final : public PyTorchBackendInterface {
         weights_scale->buffer()->data(),
         ScalarType::Float,
         runtime_allocator,
-        pre_pad_bytes, // Not necessary to prepad but surpresses asan errors:
+        pre_pad_bytes, // Not necessary to prepad but suppresses asan errors:
                        // D42179009
         &scale_buf);
 

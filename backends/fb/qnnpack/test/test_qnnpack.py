@@ -1,8 +1,4 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
 import unittest
 
@@ -11,10 +7,12 @@ import executorch.exir as exir
 import torch
 import torch.nn.functional as F
 
-from executorch.backends.qnnpack.partition.qnnpack_partitioner import QnnpackPartitioner
+from executorch.backends.fb.qnnpack.partition.qnnpack_partitioner import (
+    QnnpackPartitioner,
+)
 
 # import the xnnpack backend implementation
-from executorch.backends.qnnpack.qnnpack_preprocess import QnnpackBackend
+from executorch.backends.fb.qnnpack.qnnpack_preprocess import QnnpackBackend
 from executorch.exir import CaptureConfig, ExecutorchProgram
 
 from executorch.exir.backend.backend_api import to_backend, validation_disabled

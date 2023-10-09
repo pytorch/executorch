@@ -55,7 +55,7 @@ def define_common_targets():
         ],
         visibility = [
             "//executorch/exir/backend:backend_lib",
-            "//executorch/backends/qnnpack/test/...",
+            "//executorch/backends/fb/qnnpack/test/...",
             "//executorch/exir/backend/test/...",
             "//executorch/extension/pybindings/...",
             "@EXECUTORCH_CLIENTS",

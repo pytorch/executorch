@@ -27,7 +27,7 @@ runtime.python_library(
     ],
     deps = [
         ":support_patterns",
-        "//executorch/backends/qnnpack:qnnpack_preprocess",
+        "//executorch/backends/fb/qnnpack:qnnpack_preprocess",
         "//executorch/backends/transforms:lib",
         "//executorch/exir:delegate",
         "//executorch/exir:lib",

@@ -1,19 +1,15 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+# (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
 import ctypes
 from typing import final, List
 
 import torch
 
-from executorch.backends.qnnpack.serialization.qnnpack_graph_schema import (
+from executorch.backends.fb.qnnpack.serialization.qnnpack_graph_schema import (
     ConstTensor,
     QNNDynamicLinear,
 )
-from executorch.backends.qnnpack.serialization.qnnpack_graph_serialize import (
+from executorch.backends.fb.qnnpack.serialization.qnnpack_graph_serialize import (
     convert_to_flatbuffer,
 )
 
