@@ -15,6 +15,60 @@ namespace executor {
 
 using Tensor = exec_aten::Tensor;
 
+namespace {
+
+size_t as_strided_copy_compute_storage_nbytes(
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    size_t itemsize_bytes) {
+  // size of the underlying storage is 1 bigger than the offset
+  // of the last element according to stride
+  size_t size = 1;
+  for (size_t i = 0; i < sizes.size(); ++i) {
+    if (sizes[i] == 0) {
+      return 0;
+    }
+    size += strides[i] * (sizes[i] - 1);
+  }
+  return size * itemsize_bytes;
+}
+
+} // namespace
+
+bool check_as_strided_copy_args(
+    const Tensor& in,
+    ArrayRef<int64_t> size,
+    ArrayRef<int64_t> stride,
+    optional<int64_t> storage_offset,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      size.size() == stride.size(), "mismatch in length of strides and shape");
+  for (const auto& val : stride) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        val >= 0,
+        "as_strided: Negative strides are not supported at the moment");
+  }
+
+  int64_t offset = storage_offset.has_value() ? storage_offset.value() : 0;
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(offset >= 0, "Negative storage offset");
+
+  // Check that the requested storage is within bounds of input storage
+  size_t storage_size_bytes =
+      as_strided_copy_compute_storage_nbytes(size, stride, in.element_size());
+  size_t storage_offset_bytes = offset * in.element_size();
+  if (storage_size_bytes == 0) {
+    return true;
+  }
+  size_t new_storage_size_bytes = in.nbytes();
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      storage_size_bytes + storage_offset_bytes <= new_storage_size_bytes,
+      "Requiring a storage size of %zd are out of bounds for storage of size %zd",
+      storage_size_bytes + storage_offset_bytes,
+      new_storage_size_bytes);
+  return true;
+}
+
 bool check_cat_args(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
