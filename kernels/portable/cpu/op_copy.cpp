@@ -33,25 +33,11 @@ Tensor& copy_out(
 
   ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
 
-  Tensor::SizesType expected_output_size[kTensorDimensionLimit];
-  size_t expected_output_dim = 0;
-
   ET_KERNEL_CHECK(
       ctx, tensor_is_broadcastable_to(src, in), InvalidArgument, src);
 
-  get_broadcast_target_size(
-      in,
-      src,
-      expected_output_size,
-      kTensorDimensionLimit,
-      &expected_output_dim);
-
   ET_KERNEL_CHECK(
-      ctx,
-      resize_tensor(out, {expected_output_size, expected_output_dim}) ==
-          Error::Ok,
-      InvalidArgument,
-      out);
+      ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
   ScalarType src_type = src.scalar_type();
