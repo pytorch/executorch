@@ -17,16 +17,19 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 Tensor&
-lift_fresh_copy_out(RuntimeContext& ctx, const Tensor& self, Tensor& out) {
+lift_fresh_copy_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
-  // The input and out shall share same dtype and size
-  ET_CHECK_SAME_SHAPE_AND_DTYPE2(self, out);
 
-  if (self.nbytes() > 0) {
+  ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
+
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
+
+  if (in.nbytes() > 0) {
     // Note that this check is important. It's valid for a tensor with numel 0
     // to have a null data pointer, but in some environments it's invalid to
     // pass a null pointer to memcpy() even when the size is zero.
-    memcpy(out.mutable_data_ptr(), self.const_data_ptr(), self.nbytes());
+    memcpy(out.mutable_data_ptr(), in.const_data_ptr(), in.nbytes());
   }
   return out;
 }
