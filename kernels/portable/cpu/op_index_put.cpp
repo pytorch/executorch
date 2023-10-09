@@ -116,7 +116,6 @@ Tensor& index_put_out(
   }
 
   ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE, [&]() {
-    const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
     const CTYPE* const values_data = values.const_data_ptr<CTYPE>();
     CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 
