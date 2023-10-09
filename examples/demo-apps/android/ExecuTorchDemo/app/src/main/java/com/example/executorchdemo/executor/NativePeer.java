@@ -15,7 +15,7 @@ import java.util.Map;
 
 class NativePeer implements INativePeer {
   static {
-    // Loads libexecutorchdemo.so.qnn.qnn from jniLibs
+    // Loads libexecutorchdemo.so from jniLibs
     NativeLoader.loadLibrary("executorchdemo");
   }
 
