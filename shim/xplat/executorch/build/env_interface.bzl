@@ -24,6 +24,11 @@ _EXTERNAL_DEPS = {
     "flatbuffers-api": "//third-party:flatbuffers-api",
     # Flatc binary
     "flatc": "//third-party:flatc",
+    # FlatCC cli binary + lib
+    "flatcc": "//third-party:flatcc",
+    "flatcc-cli": "//third-party:flatcc-cli",
+    "flatcc-host": "//third-party:flatcc-host",
+    "flatccrt": "//third-party:flatccrt",
     # Codegen driver
     "gen-executorch": "//third-party:gen_executorch",
     "gen-oplist-lib": "//third-party:gen_oplist_lib",

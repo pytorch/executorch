@@ -28,6 +28,7 @@
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/sdk/etdump/etdump_flatcc.h>
 #include <executorch/util/bundled_program_verification.h>
 #include <executorch/util/util.h>
 
@@ -49,6 +50,11 @@ DEFINE_int32(
     0,
     "Index of bundled verification set to be run "
     "by bundled model for verification");
+
+DEFINE_string(
+    etdump_path,
+    "etdump.etdp",
+    "If etdump generation is enabled an etdump will be written out to this path");
 
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
@@ -179,8 +185,9 @@ int main(int argc, char** argv) {
   // the method can mutate the memory-planned buffers, so the method should only
   // be used by a single thread at at time, but it can be reused.
   //
-
-  Result<Method> method = program->load_method(method_name, &memory_manager);
+  torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
+  Result<Method> method =
+      program->load_method(method_name, &memory_manager, &etdump_gen);
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
@@ -238,6 +245,14 @@ int main(int argc, char** argv) {
     FILE* ptr = fopen(FLAGS_prof_result_path.c_str(), "w+");
     fwrite(prof_result.prof_data, 1, prof_result.num_bytes, ptr);
     fclose(ptr);
+  }
+
+  etdump_result result = etdump_gen.get_etdump_data();
+  if (result.buf != nullptr && result.size > 0) {
+    FILE* f = fopen(FLAGS_etdump_path.c_str(), "w+");
+    fwrite((uint8_t*)result.buf, 1, result.size, f);
+    fclose(f);
+    free(result.buf);
   }
 
   // Verify the outputs.

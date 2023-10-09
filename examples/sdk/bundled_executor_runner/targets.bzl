@@ -21,6 +21,7 @@ def define_common_targets():
             "//executorch/extension/data_loader:buffer_data_loader",
             "//executorch/util:util",
             "//executorch/util:bundled_program_verification",
+            "//executorch/sdk/etdump:etdump_flatcc",
         ],
         external_deps = [
             "gflags",
