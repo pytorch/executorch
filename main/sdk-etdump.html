@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>TBD &mdash; ExecuTorch  documentation</title>
+  <title>ETDump - ExecuTorch Dump &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -307,7 +307,7 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Delegate Integration</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">TBD</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">TBD</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">TBD</a></li>
 </ul>
@@ -356,7 +356,7 @@
       </li>
 
         
-      <li>TBD</li>
+      <li>ETDump - ExecuTorch Dump</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -394,8 +394,66 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="tbd">
-<h1>TBD<a class="headerlink" href="#tbd" title="Permalink to this headline">¶</a></h1>
+  <div class="section" id="etdump-executorch-dump">
+<h1>ETDump - ExecuTorch Dump<a class="headerlink" href="#etdump-executorch-dump" title="Permalink to this headline">¶</a></h1>
+<p>ETDump (ExecuTorch Dump) is one of the core components of the ExecuTorch SDK experience. It is the mechanism through which all forms of profiling and debugging data is extracted from the runtime. Users can’t parse ETDump directly; instead, they should pass it into the Inspector API, which deserializes the data, offering interfaces for flexible analysis and debugging.</p>
+<div class="section" id="generating-an-etdump">
+<h2>Generating an ETDump:<a class="headerlink" href="#generating-an-etdump" title="Permalink to this headline">¶</a></h2>
+<p>Generating an ETDump is a relatively straight forward process. Users can follow the steps detailed below to integrate it into their application that uses ExecuTorch.</p>
+<ol class="arabic simple">
+<li><p><em><strong>Include</strong></em> the ETDump header in your code.</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1">#include &lt;executorch/sdk/etdump/etdump_flatcc.h&gt;</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="2">
+<li><p><em><strong>Create</strong></em> an Instance of the ETDumpGen class and pass it into the <code class="docutils literal notranslate"><span class="pre">load_method</span></code> call that is invoked in the runtime.</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">torch</span><span class="p">::</span><span class="n">executor</span><span class="p">::</span><span class="n">ETDumpGen</span> <span class="n">etdump_gen</span> <span class="o">=</span> <span class="n">torch</span><span class="p">::</span><span class="n">executor</span><span class="p">::</span><span class="n">ETDumpGen</span><span class="p">();</span>
+<span class="n">Result</span><span class="o">&lt;</span><span class="n">Method</span><span class="o">&gt;</span> <span class="n">method</span> <span class="o">=</span>
+      <span class="n">program</span><span class="o">-&gt;</span><span class="n">load_method</span><span class="p">(</span><span class="n">method_name</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">memory_manager</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">etdump_gen</span><span class="p">);</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="3">
+<li><p><em><strong>Dump out the ETDump buffer</strong></em> - after the inference iterations have been completed, users can dump out the ETDump buffer. If users are on a device which has a file-system, they could just write it out to the fileystem. For more constrained embedded devices, users will have to extract the ETDump buffer from the device through a mechanism that best suits them (e.g. UART, JTAG etc.)</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">etdump_result</span> <span class="n">result</span> <span class="o">=</span> <span class="n">etdump_gen</span><span class="o">.</span><span class="n">get_etdump_data</span><span class="p">();</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">buf</span> <span class="o">!=</span> <span class="n">nullptr</span> <span class="o">&amp;&amp;</span> <span class="n">result</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+    <span class="o">//</span> <span class="n">On</span> <span class="n">a</span> <span class="n">device</span> <span class="k">with</span> <span class="n">a</span> <span class="n">file</span> <span class="n">system</span> <span class="n">users</span> <span class="n">can</span> <span class="n">just</span> <span class="n">write</span> <span class="n">it</span> <span class="n">out</span>
+    <span class="o">//</span> <span class="n">to</span> <span class="n">the</span> <span class="n">file</span><span class="o">-</span><span class="n">system</span><span class="o">.</span>
+    <span class="n">FILE</span><span class="o">*</span> <span class="n">f</span> <span class="o">=</span> <span class="n">fopen</span><span class="p">(</span><span class="n">FLAGS_etdump_path</span><span class="o">.</span><span class="n">c_str</span><span class="p">(),</span> <span class="s2">&quot;w+&quot;</span><span class="p">);</span>
+    <span class="n">fwrite</span><span class="p">((</span><span class="n">uint8_t</span><span class="o">*</span><span class="p">)</span><span class="n">result</span><span class="o">.</span><span class="n">buf</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">f</span><span class="p">);</span>
+    <span class="n">fclose</span><span class="p">(</span><span class="n">f</span><span class="p">);</span>
+    <span class="n">free</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">buf</span><span class="p">);</span>
+  <span class="p">}</span>
+</pre></div>
+</div>
+<ol class="arabic" start="4">
+<li><p><em><strong>Compile</strong></em> your binary with the flags that enable events to be traced and logged into ETDump inside the ExecuTorch runtime. The pre-processor flag that controls this is <code class="docutils literal notranslate"><span class="pre">ET_EVENT_TRACER_ENABLED</span></code>.</p>
+<p>i). <em><strong>CMake</strong></em></p>
+<p>In CMake users can add this to their compile flags:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span>
+</pre></div>
+</div>
+<p>ii). <em><strong>Buck</strong></em></p>
+<p>In Buck users can simply depend on the etdump target which is:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">//</span><span class="n">executorch</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">etdump</span><span class="p">:</span><span class="n">etdump_flatcc</span>
+</pre></div>
+</div>
+<p>When compiling their binary through Buck, users can pass in this buck config which will enable this pre-processor flag:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">buck</span> <span class="n">build</span> <span class="o">-</span><span class="n">c</span> <span class="n">executorch</span><span class="o">.</span><span class="n">event_tracer_enabled</span><span class="o">=</span><span class="n">true</span> <span class="n">your_binary_target</span>
+</pre></div>
+</div>
+<p>TODO : Point to sample runner in examples here.</p>
+</li>
+</ol>
+</div>
+<div class="section" id="using-an-etdump">
+<h2>Using an ETDump:<a class="headerlink" href="#using-an-etdump" title="Permalink to this headline">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Pass this ETDump into the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a> for access to this data and to do post-run analysis on this data.</p></li>
+</ol>
+</div>
 </div>
 
 
@@ -443,7 +501,11 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">TBD</a></li>
+<li><a class="reference internal" href="#">ETDump - ExecuTorch Dump</a><ul>
+<li><a class="reference internal" href="#generating-an-etdump">Generating an ETDump:</a></li>
+<li><a class="reference internal" href="#using-an-etdump">Using an ETDump:</a></li>
+</ul>
+</li>
 </ul>
 
             </div>

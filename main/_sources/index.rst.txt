@@ -174,7 +174,6 @@ Topics in this section will help you get started with ExecuTorch.
 
    sdk-overview
    sdk-profiling
-   sdk-debugging
    sdk-bundled-io
    sdk-delegate-integration
    sdk-etdump
