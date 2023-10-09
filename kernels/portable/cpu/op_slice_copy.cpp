@@ -6,10 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <cstdint>
-#include <cstring>
-
+#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <cstring>
 
 namespace torch {
 namespace executor {
@@ -18,62 +17,6 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 
 namespace {
-
-// TODO(gasoonjia): Move this to a common spot so all implementation of
-// this operator can share it. (e.g., DSP-specific)
-/// Asserts that the parameters are valid.
-void check_slice_copy_Tensor_out_args(
-    const Tensor input,
-    int64_t dim,
-    int64_t num_values,
-    int64_t step,
-    Tensor output) {
-  //
-  // Check dim. The dim planed to be selected on shall exist in input
-  ET_CHECK_MSG(
-      dim >= 0 && dim < input.dim(),
-      "dim %" PRId64 " out of range [0,%zd)",
-      dim,
-      input.dim());
-
-  // Input dtype shall match the output dtype.
-  ET_CHECK_SAME_DTYPE2(input, output);
-
-  // The output.dim() shall equal to input.dim(), based on the definition of
-  // slicing.
-  ET_CHECK_MSG(
-      input.dim() == output.dim(),
-      "input.dim() %zd != output.dim() %zd",
-      input.dim(),
-      output.dim());
-
-  // Check step. Step must be greater than zero
-  ET_CHECK_MSG(step > 0, "slice step must be greater than zero");
-
-  // The size of output tensor should follow these rules:
-  // - output.size(i) shall equal to input.size(i) if i != dim,
-  // - output.size(dim) shall equal to num_values
-  for (size_t d = 0; d < input.dim() - 1; d++) {
-    if (d != dim) {
-      ET_CHECK_MSG(
-          input.size(d) == output.size(d),
-          "input.size(%zu) %zd != output.size(%zu) %zd | dim = %" PRId64 ")",
-          d,
-          input.size(d),
-          d,
-          output.size(d),
-          dim);
-    } else {
-      ET_CHECK_MSG(
-          output.size(d) == num_values,
-          "input.size(%zu) %zd != num_values %" PRId64 " | dim = %" PRId64 ")",
-          d,
-          input.size(d),
-          num_values,
-          dim);
-    }
-  }
-}
 
 int64_t adjust_slice_indices(
     int64_t dim_length,
@@ -111,46 +54,54 @@ int64_t adjust_slice_indices(
 
 } // namespace
 
-/// slice_copy.Tensor_out(Tensor self, int dim=0, int? start=None, int?
-/// end=None, int step=1, *, Tensor(a!) out) -> Tensor(a!)
-/// -> Tensor(a!)
 Tensor& slice_copy_Tensor_out(
     RuntimeContext& ctx,
-    const Tensor& input,
+    const Tensor& in,
     int64_t dim,
     exec_aten::optional<int64_t> start_val,
     exec_aten::optional<int64_t> end_val,
     int64_t step,
     Tensor& out) {
   (void)ctx;
+
+  ET_KERNEL_CHECK(
+      ctx, check_slice_copy_args(in, dim, step, out), InvalidArgument, out);
+
   if (dim < 0) {
-    dim += input.dim();
+    dim += in.dim();
   }
 
-  // If user do not set value to end_val, set end to input.size(dim) (largest
+  // If user do not set value to end_val, set end to in.size(dim) (largest
   // value available)
-  int64_t end = end_val.has_value() ? end_val.value() : input.size(dim);
+  int64_t end = end_val.has_value() ? end_val.value() : in.size(dim);
   // If user do not set value to start_val, set start to 0 (smallest value
   // available)
   int64_t start = start_val.has_value() ? start_val.value() : 0;
 
-  int64_t num_values =
-      adjust_slice_indices(input.size(dim), &start, &end, step);
+  int64_t num_values = adjust_slice_indices(in.size(dim), &start, &end, step);
 
-  check_slice_copy_Tensor_out_args(input, dim, num_values, step, out);
+  Tensor::SizesType target_sizes[kTensorDimensionLimit];
+  size_t target_ndim = 0;
+  get_slice_copy_out_target_size(
+      in, dim, num_values, target_sizes, &target_ndim);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {target_sizes, target_ndim}) == Error::Ok,
+      InvalidArgument,
+      out);
 
-  size_t dim_length = input.size(dim);
+  size_t dim_length = in.size(dim);
 
-  size_t leading_dims = getLeadingDims(input, dim);
-  size_t trailing_dims = getTrailingDims(input, dim);
+  size_t leading_dims = getLeadingDims(in, dim);
+  size_t trailing_dims = getTrailingDims(in, dim);
 
   if (trailing_dims == 0) {
     return out;
   }
 
-  size_t length_per_step = trailing_dims * input.element_size();
+  size_t length_per_step = trailing_dims * in.element_size();
 
-  const char* input_data = input.const_data_ptr<char>();
+  const char* input_data = in.const_data_ptr<char>();
   char* dest = out.mutable_data_ptr<char>();
 
   for (int i = 0; i < leading_dims; i++) {

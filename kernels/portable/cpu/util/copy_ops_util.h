@@ -50,6 +50,19 @@ void get_pixel_shuffle_out_target_size(
     Tensor::SizesType* out_sizes,
     size_t* out_ndim);
 
+bool check_slice_copy_args(
+    const Tensor& in,
+    int64_t dim,
+    int64_t step,
+    Tensor& out);
+
+void get_slice_copy_out_target_size(
+    const Tensor& in,
+    int64_t dim,
+    int64_t num_values,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim);
+
 bool check_split_with_sizes_copy_args(
     const Tensor& in,
     exec_aten::ArrayRef<int64_t> split_sizes,
