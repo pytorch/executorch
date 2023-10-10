@@ -75,7 +75,7 @@ class MPSBackend(BackendDetails):
         return new_shape
 
     @staticmethod
-    def preprocess(
+    def preprocess(  # noqa: C901
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> bytes:

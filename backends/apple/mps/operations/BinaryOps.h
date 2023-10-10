@@ -2,7 +2,7 @@
 //  Copyright (c) 2023 Apple Inc. All rights reserved.
 //  Provided subject to the LICENSE file in the top level directory.
 //
-
+// clang-format off
 #pragma once
 
 #define REGISTER_PYBIND11_MPS_BINARY_OP(py11_export_name, graph_op)                                    \
@@ -67,3 +67,4 @@ return self.binaryOpWithScalar(                                                 
                                                       name:nil];                                       \
   });                                                                                                  \
 })                                                                                                     \
+// clang-format on

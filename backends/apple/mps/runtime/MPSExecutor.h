@@ -2,7 +2,7 @@
 //  Copyright (c) 2023 Apple Inc. All rights reserved.
 //  Provided subject to the LICENSE file in the top level directory.
 //
-
+// clang-format off
 #pragma once
 
 #import <Foundation/Foundation.h>
@@ -64,3 +64,4 @@ class MPSExecutor {
 } // namespace mps
 } // namespace executor
 } // namespace torch
+// clang-format on
