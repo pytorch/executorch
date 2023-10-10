@@ -52,12 +52,12 @@ In order to be able to successfully build and run the ExecuTorch's CoreML backen
 
 ### Hardware:
 - A [mac](https://www.apple.com/mac/]) system for building.
-- An [iPhone](https://www.apple.com/iphone/) or [iPad](https://www.apple.com/ipad/) or [Apple TV](https://www.apple.com/tv-home/) device for running the model.
+- A [mac](https://www.apple.com/mac/]),[iPhone](https://www.apple.com/iphone/) or [iPad](https://www.apple.com/ipad/) or [Apple TV](https://www.apple.com/tv-home/) device for running the model.
 
 ### Software:
 
 - [Xcode](https://developer.apple.com/documentation/xcode) >= 14.1, [macOS](https://developer.apple.com/macos) >= 13.0 for building.
-- [iOS](https://developer.apple.com/ios/) >= 16.0, [iPadOS](https://developer.apple.com/ipados/) >= 16.0, and [tvOS](https://developer.apple.com/tvos/) >= 16.0 for running the model. 
+- [macOS](https://developer.apple.com/macos) >= 13.0, [iOS](https://developer.apple.com/ios/) >= 16.0, [iPadOS](https://developer.apple.com/ipados/) >= 16.0, and [tvOS](https://developer.apple.com/tvos/) >= 16.0 for running the model. 
 
 ## Setting up your developer environment
 
@@ -68,18 +68,11 @@ In order to be able to successfully build and run the ExecuTorch's CoreML backen
 cd executorch
 sh backends/apple/coreml/scripts/install_requirements.sh   
 ```
-2. Install [Xcode](https://developer.apple.com/xcode/).
-3. Install Xcode Command Line Tools.
+3. Install [Xcode](https://developer.apple.com/xcode/).
+4. Install Xcode Command Line Tools.
 
 ```bash
 xcode-select --install
-```
-4. Run `install_requirements.sh` to install dependencies required by the **CoreML** backend.
-
-```bash
-cd executorch
-
-sh backends/apple/coreml/scripts/install_requirements.sh   
 ```
 
 ## Build
@@ -88,14 +81,16 @@ sh backends/apple/coreml/scripts/install_requirements.sh
 
 
 **Exporting a CoreML delegated Program**:
-- In this step, you will lower the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to the CoreML backend and export the ExecuTorch program. You'll then deploy and run the exported program on a supported Apple device using CoreML backend.
- 
+- In this step, you will lower the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to the CoreML backend and export the ExecuTorch program. You'll then deploy and run the exported program on a supported Apple device using CoreML backend. 
 ```bash
 cd executorch
 
 # Generates ./mv3_coreml_all.pte file.
 python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name mv3 
 ```
+
+- CoreML backend uses [coremltools](https://apple.github.io/coremltools/docs-guides/source/overview-coremltools.html) to lower [Edge dialect](ir-exir.md#edge-dialect) to CoreML format and then bundles it in the `.pte` file.
+
 
 ### Runtime:
 
@@ -125,21 +120,18 @@ cd executorch
 2. Open the project in Xcode, and drag the `executorch.xcframework` generated from Step 2 to Frameworks.
 
 3. Go to project Target’s Build Phases -  Link Binaries With Libraries, click the + sign, and add the following frameworks:
-```bash
-executorch.xcframework
-coreml_backend.xcframework
 ```
-4. Go to project Target’s Build Phases -  Link Binaries With Libraries, click the + sign, and add the following frameworks.
-```bash
+- executorch.xcframework
+- coreml_backend.xcframework
 - Accelerate.framework
 - CoreML.framework
 - libsqlite3.tbd
-``` 
-5. Add the exported program to the [Copy Bundle Phase](https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target#Copy-files-to-the-finished-product) of your Xcode target.
+```
+4. Add the exported program to the [Copy Bundle Phase](https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target#Copy-files-to-the-finished-product) of your Xcode target.
  
-6. Please follow the [running a model](running-a-model-cpp-tutorial.md) tutorial to integrate the code for loading a ExecuTorch program.
+5. Please follow the [running a model](running-a-model-cpp-tutorial.md) tutorial to integrate the code for loading a ExecuTorch program.
 
-7. Update the code to load the program from the Application's bundle.
+6. Update the code to load the program from the Application's bundle.
 ``` cpp
 using namespace torch::executor;
 
@@ -150,8 +142,12 @@ Result<util::FileDataLoader> loader =
 
 ```
 
-8. Use [Xcode](https://developer.apple.com/documentation/xcode/building-and-running-an-app#Build-run-and-debug-your-app) to deploy the application on the device. 
+7. Use [Xcode](https://developer.apple.com/documentation/xcode/building-and-running-an-app#Build-run-and-debug-your-app) to deploy the application on the device. 
 
-9. The application can now run the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model on the CoreML backend.  
+8. The application can now run the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model on the CoreML backend.  
 
 <br>In this tutorial, you have learned how to lower the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to the CoreML backend, deploy, and run it on an Apple device.
+
+## Frequently encountered errors and resolution.
+
+If you encountered any bugs or issues following this tutorial please file a bug/issue [here](https://github.com/pytorch/executorch/issues) with tag #coreml.

@@ -13,6 +13,8 @@ import torch
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
+from executorch.backends.apple.coreml.compiler import CoreMLBackend
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent.parent.parent
 EXAMPLES_DIR = REPO_ROOT / "examples"
 sys.path.append(str(EXAMPLES_DIR.absolute()))
@@ -35,7 +37,7 @@ def lower_module_to_coreml(module, compute_units):
     )
 
     lowered_module = to_backend(
-        "CoreMLBackend",
+        CoreMLBackend.__name__,
         edge.exported_program,
         [CompileSpec("compute_units", bytes(compute_units, "utf-8"))],
     )

@@ -19,7 +19,7 @@
 #import <executorch/runtime/platform/runtime.h>
 #import <executorch/util/util.h>
 
-#import <coreml/coreml_backend_delegate.h>
+#import <coreml_backend/delegate.h>
 
 #import <gflags/gflags.h>
 

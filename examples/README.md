@@ -55,16 +55,13 @@ The [`arm/`](./arm) directory contains scripts to help you run a PyTorch model o
 You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`](./qualcomm) directory.
 
 
-<<<<<<< HEAD
 ## Demo of ExecuTorch on Xtensa Hifi4 DSP
 
 The [`xtensa/`](./xtensa) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
 
-=======
 ## Demo of ExecuTorch CoreML Backend
 
 You will find demos of [ExecuTorch CoreML Backend](./apple/coreml/) in the [`apple/coreml/`](./apple/coreml) directory. 
->>>>>>> 68ba9539 (Addressed review comments and added script to do sanity check)
 
 ## Demo of ExecuTorch SDK
 

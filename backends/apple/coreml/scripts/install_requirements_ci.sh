@@ -58,6 +58,8 @@ if [ $STATUS -ne 0 ]; then
     exit 1
 fi
 
+cd "$EXECUTORCH_ROOT_PATH"
+
 rm -rf "$COREML_DIR_PATH/third-party"
 mkdir "$COREML_DIR_PATH/third-party"
 

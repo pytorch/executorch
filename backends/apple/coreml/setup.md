@@ -1,4 +1,4 @@
-## Setting up CoreML backend
+# Setting up CoreML backend
 
 This is a tutorial for setting up the CoreML backend.
 

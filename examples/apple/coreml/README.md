@@ -6,7 +6,7 @@ This directory contains scripts and other helper utilities to illustrate an end-
 ## Directory structure
 ```bash
 coreml
-|── scripts             # Scripts to build the runner.
+├── scripts             # Scripts to build the runner.
 ├── executor_runner     # The runner implementation.
 └── README.md           # This file.
 ```
@@ -29,7 +29,7 @@ sh backends/apple/coreml/scripts/install_requirements.sh
 
 3. Run the export script to generate a **CoreML** delegated binary file. 
 
-```
+```bash
 cd executorch
 
 # To get a list of example models
@@ -54,3 +54,23 @@ sh examples/apple/coreml/scripts/build_executor_runner.sh
 
 
 ```
+
+## Frequently encountered errors and resolution.
+- The `examples.apple.coreml.scripts.export_and_delegate` could fail if the model is not supported by the **CoreML** backend. The following models from the examples models list (` python3 -m examples.portable.scripts.export -h`)are currently supported by the **CoreML** backend. 
+
+```
+add
+add_mul
+ic4
+linear
+mul
+mv2
+mv3
+resnet18
+resnet50
+softmax
+vit
+w2l
+```
+
+- If you encountered any bugs or issues following this tutorial please file a bug/issue [here](https://github.com/pytorch/executorch/issues) with tag #coreml.

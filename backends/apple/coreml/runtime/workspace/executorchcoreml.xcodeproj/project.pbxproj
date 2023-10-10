@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C94BC6492AD5EB400067A63B /* coreml_backend_delegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = C94BC6482AD5EB400067A63B /* coreml_backend_delegate.mm */; };
 		C94D50D92ABD7B2400AF47FD /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C96560922AABF992005F8126 /* CoreML.framework */; };
 		C94D50DA2ABD7B6600AF47FD /* libexecutorch.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C965608D2AABF72A005F8126 /* libexecutorch.a */; };
 		C94D50E52ABDF80A00AF47FD /* database.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DF062A9FD16F001CC178 /* database.cpp */; };
@@ -19,7 +20,6 @@
 		C94D50F22ABDF82200AF47FD /* reversed_memory_stream.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C95266422A7E06760016283E /* reversed_memory_stream.cpp */; };
 		C94D50F42ABDF82500AF47FD /* asset.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DFBC2AA84FC6001CC178 /* asset.mm */; };
 		C94D50F62ABDF82900AF47FD /* backend_delegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = C952664F2A7F818A0016283E /* backend_delegate.mm */; };
-		C94D50F82ABDF82C00AF47FD /* coreml_backend_delegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = C952665A2A8001EB0016283E /* coreml_backend_delegate.mm */; };
 		C94D50FA2ABDF83200AF47FD /* multiarray.mm in Sources */ = {isa = PBXBuildFile; fileRef = C96560B12AAF7CC2005F8126 /* multiarray.mm */; };
 		C94D50FC2ABDF83500AF47FD /* ETCoreMLAsset.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DFB62AA183BC001CC178 /* ETCoreMLAsset.mm */; };
 		C94D50FE2ABDF83800AF47FD /* ETCoreMLModel.mm in Sources */ = {isa = PBXBuildFile; fileRef = C95266362A7E06460016283E /* ETCoreMLModel.mm */; };
@@ -62,7 +62,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		C94D515B2ACFBDFA00AF47FD /* coreml_backend_delegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = coreml_backend_delegate.h; path = ../include/coreml/coreml_backend_delegate.h; sourceTree = "<group>"; };
+		C94BC6482AD5EB400067A63B /* coreml_backend_delegate.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = coreml_backend_delegate.mm; path = ../delegate/coreml_backend_delegate.mm; sourceTree = "<group>"; };
 		C95266352A7E06460016283E /* ETCoreMLModelManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelManager.h; path = ../delegate/ETCoreMLModelManager.h; sourceTree = "<group>"; };
 		C95266362A7E06460016283E /* ETCoreMLModel.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModel.mm; path = ../delegate/ETCoreMLModel.mm; sourceTree = "<group>"; };
 		C95266372A7E06460016283E /* ETCoreMLModelManager.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelManager.mm; path = ../delegate/ETCoreMLModelManager.mm; sourceTree = "<group>"; };
@@ -79,7 +79,6 @@
 		C95266472A7E06760016283E /* memory_buffer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = memory_buffer.cpp; path = ../inmemoryfs/memory_buffer.cpp; sourceTree = "<group>"; };
 		C952664F2A7F818A0016283E /* backend_delegate.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = backend_delegate.mm; path = ../delegate/backend_delegate.mm; sourceTree = "<group>"; };
 		C95266502A7F818A0016283E /* backend_delegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = backend_delegate.h; path = ../delegate/backend_delegate.h; sourceTree = "<group>"; };
-		C952665A2A8001EB0016283E /* coreml_backend_delegate.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = coreml_backend_delegate.mm; path = ../delegate/coreml_backend_delegate.mm; sourceTree = "<group>"; };
 		C952665D2A8012400016283E /* ETCoreMLStrings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLStrings.h; path = ../delegate/ETCoreMLStrings.h; sourceTree = "<group>"; };
 		C952665E2A8012400016283E /* ETCoreMLStrings.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLStrings.mm; path = ../delegate/ETCoreMLStrings.mm; sourceTree = "<group>"; };
 		C96560792AABD1DF005F8126 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.0.sdk/System/Library/Frameworks/Accelerate.framework; sourceTree = DEVELOPER_DIR; };
@@ -180,10 +179,9 @@
 				C9E7D7AB2AB55AC100CCAE5D /* com.apple.executorchcoreml_config.plist */,
 				C9D3DFAF2AA12097001CC178 /* asset.h */,
 				C9D3DFBC2AA84FC6001CC178 /* asset.mm */,
+				C94BC6482AD5EB400067A63B /* coreml_backend_delegate.mm */,
 				C95266502A7F818A0016283E /* backend_delegate.h */,
 				C952664F2A7F818A0016283E /* backend_delegate.mm */,
-				C94D515B2ACFBDFA00AF47FD /* coreml_backend_delegate.h */,
-				C952665A2A8001EB0016283E /* coreml_backend_delegate.mm */,
 				C9D3DF812A9FF394001CC178 /* multiarray.h */,
 				C96560B12AAF7CC2005F8126 /* multiarray.mm */,
 				C9D3DFB22AA12683001CC178 /* metadata.h */,
@@ -379,13 +377,13 @@
 				C94D51042ABDF84100AF47FD /* ETCoreMLStrings.mm in Sources */,
 				C9E7D7932AB3F9BF00CCAE5D /* ETCoreMLAssetManagerTests.mm in Sources */,
 				C9E7D7922AB3F9BF00CCAE5D /* DatabaseTests.mm in Sources */,
-				C94D50F82ABDF82C00AF47FD /* coreml_backend_delegate.mm in Sources */,
 				C9E7D7902AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm in Sources */,
 				C9E7D7962AB3F9BF00CCAE5D /* KeyValueStoreTests.mm in Sources */,
 				C94D50E52ABDF80A00AF47FD /* database.cpp in Sources */,
 				C94D51082ABDF84800AF47FD /* MLModel_Prewarm.mm in Sources */,
 				C94D50F02ABDF81F00AF47FD /* memory_stream.cpp in Sources */,
 				C9E7D7A22AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm in Sources */,
+				C94BC6492AD5EB400067A63B /* coreml_backend_delegate.mm in Sources */,
 				C9E7D78F2AB3F9BF00CCAE5D /* ETCoreMLTestUtils.mm in Sources */,
 				C94D51002ABDF83C00AF47FD /* ETCoreMLAssetManager.mm in Sources */,
 				C94D50EE2ABDF81B00AF47FD /* memory_buffer.cpp in Sources */,
