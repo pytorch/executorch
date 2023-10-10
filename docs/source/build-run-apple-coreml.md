@@ -1,6 +1,3 @@
-<!---- To make this progress bar work users will need to modify source/_templates/layout.html >
-<!---- To make this page show up in the tutorials section users will need to add an entry in source/index.rst under the Tutorials section>
-
 <!---- DO NOT MODIFY Progress Bar Start --->
 
 <div class="progress-bar-wrapper">
@@ -25,6 +22,9 @@
 <!---- DO NOT MODIFY Progress Bar End--->
 
 # Building and Running ExecuTorch on Apple Devices using CoreML
+
+In this tutorial we will walk you through the process of getting setup to
+build ExecuTorch for an Apple Device using CoreML delegate and running a simple model on it.
 
 <!----This will show a grid card on the page----->
 ::::{grid} 2
