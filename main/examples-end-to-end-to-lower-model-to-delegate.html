@@ -40,7 +40,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Backend and Delegate" href="compiler-delegate-and-partitioner.html" />
-    <link rel="prev" title="High-order Operators" href="ir-high-order-operators.html" />
+    <link rel="prev" title="Definition of the Core ATen Operator Set" href="ir-ops-set-definition.html" />
 
 
   <!-- Google Tag Manager -->
@@ -269,7 +269,6 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
 <li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ir-high-order-operators.html">High-order Operators</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
 <ul class="current">
@@ -403,7 +402,7 @@ backends and hardware, while still providing PyTorch users with an experience
 close to that of the PyTorch runtime. The backend delegate is usually either provited by
 Exececutorch or vendors. The way to leverage delegate in your program is via a standard entry point <code class="docutils literal notranslate"><span class="pre">to_backend</span></code>.</p>
 <div class="section" id="frontend-interfaces">
-<h2>Frontend interfaces<a class="headerlink" href="#frontend-interfaces" title="Permalink to this headline">¶</a></h2>
+<h2>Frontend Interfaces<a class="headerlink" href="#frontend-interfaces" title="Permalink to this headline">¶</a></h2>
 <p>There are three flows for delegating a program to a backend:</p>
 <ol class="arabic simple">
 <li><p>Lower the whole module to a backend. This is good for testing backends and
@@ -580,7 +579,7 @@ explicitly registered inside main function.</p>
         <a href="compiler-delegate-and-partitioner.html" class="btn btn-neutral float-right" title="Backend and Delegate" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="ir-high-order-operators.html" class="btn btn-neutral" title="High-order Operators" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="ir-ops-set-definition.html" class="btn btn-neutral" title="Definition of the Core ATen Operator Set" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -615,7 +614,7 @@ explicitly registered inside main function.</p>
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
 <li><a class="reference internal" href="#">An end-to-end example to lower a model as a delegate</a><ul>
-<li><a class="reference internal" href="#frontend-interfaces">Frontend interfaces</a><ul>
+<li><a class="reference internal" href="#frontend-interfaces">Frontend Interfaces</a><ul>
 <li><a class="reference internal" href="#flow-1-lowering-the-whole-module">Flow 1: Lowering the whole module</a></li>
 <li><a class="reference internal" href="#flow-2-lowering-the-whole-module-and-composite">Flow 2: Lowering the whole module and composite</a></li>
 <li><a class="reference internal" href="#flow-3-partitioning">Flow 3: Partitioning</a></li>

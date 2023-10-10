@@ -272,7 +272,6 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
 <li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ir-high-order-operators.html">High-order Operators</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
 <ul class="current">
@@ -577,8 +576,8 @@ can access the weights and biases ahead-of-time through the exported program. To
 access these parameters from a given node, we can use the function <code class="docutils literal notranslate"><span class="pre">get_params</span></code>
 provided in  <code class="docutils literal notranslate"><span class="pre">torch/_export/utils.py</span></code></p>
 <p><strong>2. How can we embed the data (like weight/bias) to the backend?</strong></p>
-<p>It’s common that backend have some ways optimize the const data. In this case,
-we’d need to tag the placeholder node which are also the state in the
+<p>It’s common that backends have some ways to optimize the const data. In this case,
+we’d need to tag the placeholder nodes which are also the state in the
 partitioner, and during backend.preprocess, we can follow the description in the
 first question to get the weight.</p>
 <p><strong>3. How can we run the lowered module in Python with the specific backend?</strong></p>

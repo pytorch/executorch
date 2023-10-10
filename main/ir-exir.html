@@ -269,7 +269,6 @@
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Export IR Specification</a></li>
 <li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
-<li class="toctree-l1"><a class="reference internal" href="ir-high-order-operators.html">High-order Operators</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
 <ul>
@@ -421,7 +420,7 @@ finally to a binary format for execution.</p>
 <div class="section" id="aten-dialect">
 <h2>ATen Dialect<a class="headerlink" href="#aten-dialect" title="Permalink to this headline">¶</a></h2>
 <p>ATen dialect will be used as the entry point of the ExecuTorch compilation
-pipeline, it is the first time an eager mode Pytorch program becomes an Exported
+pipeline. It is the first time an eager mode PyTorch program becomes an Exported
 IR graph. At this stage, functionalization is performed, removing any tensor
 aliases and mutations, and allowing for more flexible graph transformations to
 be made. Additionally, all tensors are converted to continuous format.</p>
@@ -440,7 +439,7 @@ properties:</p>
 <li><p>All operators in <code class="docutils literal notranslate"><span class="pre">call_function</span></code> nodes are either ATen operators (in the
 <code class="docutils literal notranslate"><span class="pre">torch.ops.aten</span></code> namespace, higher order operators (like control flow
 operators), or a registered custom operator. A registered custom operator is
-an operator registered into the current Pytorch eager mode runtime, usually
+an operator registered into the current PyTorch eager mode runtime, usually
 with <code class="docutils literal notranslate"><span class="pre">TORCH_LIBRARY</span></code> call (implies schema). Details for how to register a
 custom operator can be found
 <a class="reference external" href="https://docs.google.com/document/d/1_W62p8WJOQQUzPsJYa7s701JXt0qf2OfLub2sbkHOaU/edit#heading=h.3rgxk3v387wl">here</a>.</p></li>
