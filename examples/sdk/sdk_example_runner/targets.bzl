@@ -9,9 +9,9 @@ def define_common_targets():
 
     # Test driver for models with bundled inputs.
     runtime.cxx_binary(
-        name = "bundled_executor_runner",
+        name = "sdk_example_runner",
         srcs = [
-            "bundled_executor_runner.cpp",
+            "sdk_example_runner.cpp",
         ],
         deps = [
             "//executorch/runtime/executor/test:test_backend_compiler_lib",

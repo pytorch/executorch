@@ -342,6 +342,7 @@ endif()
 if(EXECUTORCH_BUILD_SDK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/sdk)
 endif()
 
 if(EXECUTORCH_BUILD_EXAMPLES)
