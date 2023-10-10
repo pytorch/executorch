@@ -121,12 +121,26 @@ class TestDelegateMapBuilder(unittest.TestCase):
         debug_handle_map = lowered_module.meta.get("debug_handle_map")
         self.assertIsNotNone(debug_handle_map)
         # There should be 3 backend ops in this model.
-        self.assertEqual(len(debug_handle_map), 4)
+        self.assertEqual(len(debug_handle_map), 5)
         # Check to see that all the delegate debug indexes in the range [0,2] are present.
         self.assertTrue(
             all(element in debug_handle_map.keys() for element in [0, 1, 2, 3])
         )
-        lowered_module.program()
+
+        class CompositeModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.lowered_module = lowered_module
+
+            def forward(self, x):
+                return self.lowered_module(x)
+
+        composite_model = CompositeModule()
+        # TODO: Switch this to lowered_module.program() once lowered_module has support
+        # for storing debug delegate identifier maps.
+        exir.capture(
+            composite_model, inputs, exir.CaptureConfig()
+        ).to_edge().to_executorch()
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

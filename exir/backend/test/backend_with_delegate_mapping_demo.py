@@ -159,21 +159,51 @@ class BackendWithDelegateMappingDemo(BackendDetails):
     @staticmethod
     # The sample model that will work with BackendWithDelegateMapping show above.
     def get_test_model_and_inputs():
-        class ConvReLUAddModel(nn.Module):
+        class SimpleConvNet(nn.Module):
             def __init__(self):
-                super(ConvReLUAddModel, self).__init__()
-                # Define a convolutional layer
-                self.conv_layer = nn.Conv2d(
-                    in_channels=1, out_channels=64, kernel_size=3, padding=1
+                super(SimpleConvNet, self).__init__()
+
+                # First convolutional layer
+                self.conv1 = nn.Conv2d(
+                    in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1
                 )
+                self.relu1 = nn.ReLU()
+
+                # Second convolutional layer
+                self.conv2 = nn.Conv2d(
+                    in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1
+                )
+                self.relu2 = nn.ReLU()
+
+            def forward(self, x):
+                # Forward pass through the first convolutional layer
+                x = self.conv1(x)
+                x = self.relu1(x)
+
+                # Forward pass through the second convolutional layer
+                x = self.conv2(x)
+                x = self.relu2(x)
+
+                return x
+
+        class ConvReLUTanModel(nn.Module):
+            def __init__(self):
+                super(ConvReLUTanModel, self).__init__()
+
+                # Define a convolutional layer
+                self.conv_layer = SimpleConvNet()
 
             def forward(self, x):
                 # Forward pass through convolutional layer
                 conv_output = self.conv_layer(x)
-                # Apply ReLU activation
-                relu_output = nn.functional.relu(conv_output)
-                # Perform tan on relu output
-                added_output = torch.tan(relu_output)
-                return added_output
 
-        return (ConvReLUAddModel(), (torch.randn(1, 1, 32, 32),))
+                # Perform tan on conv_output
+                tan_output = torch.tan(conv_output)
+
+                return tan_output
+
+        batch_size = 4
+        channels = 3
+        height = 64
+        width = 64
+        return (ConvReLUTanModel(), (torch.randn(batch_size, channels, height, width),))
