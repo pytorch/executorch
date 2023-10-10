@@ -263,6 +263,10 @@ Keep the inputs and outputs to these modules in mind. When we will lower and run
 
 In the ExecuTorch AoT pipeline, one of the options is to select a backend. ExecuTorch offers a variety of different backends. Selecting backend is optional, it is typically done to target a particular mode of acceleration or hardware for a given model compute requirements. Without any backends, ExecuTorch runtime will fallback to using, available by default, a highly portable set of operators.
 
+It's expected that on platforms with dedicated acceleration like the Ethos-U55, that the non-delegated flow is used for two primary cases:
+1. When the network is designed to be very small and best suited to run on the Cortex-M alone
+1. When the network has a mix of operations that can target the NPU and those that can't, e.g. the Ethos-U55 supports integer operations and so floating point softmax will fall back to execute on the CPU
+
 In this flow, without any backend delegates, to illustrate the portability of the ExecuTorch runtime, as well as of the operator library we will skip specifying the backend during the `.pte` generation.
 
 Following script will serve as a helper utility to help us generate the `.pte` file. This is available in the `executorch/examples/arm` directory.
