@@ -184,6 +184,10 @@ include(${EXECUTORCH_SRCS_FILE})
 # EXECUTORCH_BUILD_HOST_TARGETS, which can still be overridden if desired.
 #
 
+# Detect if an iOS toolchain is set.
+set(CMAKE_TOOLCHAIN_IOS NOT CMAKE_TOOLCHAIN_FILE MATCHES
+                        ".*(iOS|ios\.toolchain)\.cmake$")
+
 # EXECUTORCH_BUILD_HOST_TARGETS: Option to control the building of host-only
 # tools like `flatc`, along with example executables like `executor_runner` and
 # libraries that it uses, like `gflags`. Disabling this can be helpful when
@@ -191,7 +195,7 @@ include(${EXECUTORCH_SRCS_FILE})
 # provided directly (via, for example, FLATC_EXECUTABLE).
 cmake_dependent_option(
   EXECUTORCH_BUILD_HOST_TARGETS "Build host-only targets." ON
-  "NOT CMAKE_TOOLCHAIN_FILE MATCHES \".*iOS\.cmake$\"" OFF)
+  "NOT CMAKE_TOOLCHAIN_IOS" OFF)
 
 
 #
