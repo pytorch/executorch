@@ -226,5 +226,12 @@ ExecuTorch tutorials.
    :image: _static/img/android_app.png
    :link: demo-apps-android.html
    :tags: Delegation,Android
+   
+.. customcarditem::
+   :header: Building and Running ExecuTorch on Xtensa HiFi4 DSP
+   :card_description: A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: build-run-xtensa.html
+   :tags: DSP
 
 .. customcardend::

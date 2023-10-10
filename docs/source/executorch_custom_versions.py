@@ -62,11 +62,17 @@ def replace_variables(app, doctree, docname):
         # CSS classes. Otherwise, the sphinx-gallery generated outputs are
         # formatted as regular code blocks with gray background instead of pink.
         is_sphinx_gallery = any("sphx-glr" in class_ for class_ in classes)
+
+        language = node.get("language")
+
         if is_sphinx_gallery:
             new_literal_block = nodes.literal_block(new_text, new_text, classes=classes)
         else:
             new_literal_block = nodes.literal_block(
-                new_text, new_text, classes=["highlight-none", "notranslate"]
+                new_text,
+                new_text,
+                classes=["highlight-none", "notranslate"],
+                language=language,
             )
 
         node.parent.replace(node, new_literal_block)
