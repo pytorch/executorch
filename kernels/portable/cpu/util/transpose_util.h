@@ -160,8 +160,11 @@ inline void get_transpose_out_target_size(
     size_t* out_ndim) {
   *out_ndim = in.dim();
 
-  size_t i = 0;
-  for (; i < in.dim() - 1; ++i) {
+  if (in.dim() == 0) {
+    return;
+  }
+
+  for (size_t i = 0; i < in.dim(); ++i) {
     out_sizes[i] = in.size(i);
   }
   out_sizes[dim0] = in.size(dim1);
