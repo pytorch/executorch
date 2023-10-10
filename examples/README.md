@@ -11,7 +11,7 @@ ExecuTorch's extensive support spans from simple modules like "Add" to comprehen
 examples
 ├── models                            # Contains a set of popular and representative PyTorch models
 ├── portable                          # Contains end-to-end demos for ExecuTorch in portable mode
-├── xnnpack                           # Contains end-to-end ExecuTorch demos with first-party optimization using XNNPack
+├── xnnpack                           # Contains end-to-end ExecuTorch demos with first-party optimization using XNNPACK
 ├── selective_build                   # Contains demos of selective build for optimizing the binary size of the ExecuTorch runtime
 ├── arm                               # Contains demos of the Arm TOSA and Ethos-U NPU flows
 ├── qualcomm                          # Contains demos of Qualcomm QNN backend
