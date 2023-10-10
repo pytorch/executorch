@@ -101,8 +101,7 @@ cd ..
 
 > **Note**: Please refer to [XNNPACK backend](../../../backend/README.md) and [Qualcomm backend](../../../../backends/qualcomm/README.md) for the full export tutorial on backends.
 
-1. Export a DeepLab v3 model and Inception v4 model backed with XNNPACK delegate and bundle it with
-   the app:
+1. Export a DeepLab v3 model backed with XNNPACK delegate and bundle it with the app:
 
 ```bash
 export FLATC_EXECUTABLE=$(realpath third-party/flatbuffers/cmake-out/flatc)
