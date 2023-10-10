@@ -46,34 +46,19 @@ lowered_module = to_backend('CoreMLBackend', to_be_lowered_exir_submodule, [])
 xcode-select --install
 ```
 
-2. Build **CoreML** delegate. The following will create a `executorch.xcodeproj` in `cmake-out` directory.
+2. Build **CoreML** delegate. The following will create a `executorch.xcframework` in `cmake-out` directory.
 
 ```bash
 cd executorch
-
-# Remove build artifacts.
-rm -rf cmake-out
-
-# CoreML delegate supports iOS >= 16.0 and macOS >= 13.0.
-cmake . -B./cmake-out -G Xcode \
--DCMAKE_TOOLCHAIN_FILE=third-party/pytorch/cmake/iOS.cmake \
--DIOS_PLATFORM=OS \
--DIOS_DEPLOYMENT_TARGET=16.0 \
--DEXECUTORCH_BUILD_COREML=ON \
--DPYTHON_EXECUTABLE=$(which python3) \
--DFLATC_EXECUTABLE=$(realpath)/third-party/flatbuffers/flatc
-
-# Open Xcode project
-open cmake-out/executorch.xcodeproj 
+./build/build_apple_frameworks.sh --Release --coreml
 ```
+3. Open the project in Xcode, and drag the `executorch.xcframework` generated from Step 2 to Frameworks.
 
-3. Open the project in Xcode, and drag the `executorch.xcodeproj` generated from Step 2 to Frameworks.
-
-4. Go to project Target’s Build Phases -  Link Binaries With Libraries, click the + sign, and add the following libraries.
+4. Go to project Target’s Build Phases -  Link Binaries With Libraries, click the + sign, and add the following frameworks:
 
 ```
-libcoremldelegate.a
-libexecutorch.a
+executorch.xcframework
+coreml_backend.xcframework
 ```
 
 5. Go to project Target’s Build Phases -  Link Binaries With Libraries, click the + sign, and add the following frameworks.
@@ -83,9 +68,4 @@ libexecutorch.a
 - libsqlite3.tbd
 ``` 
 
-6. Navigate to the project Build Settings:
-- Set the value Header Search Paths to the parent directory of `executorch` directory.
-- Set Library Search Paths to `cmake-out/build`.
-- In other linker flags, add a custom linker flag `-all_load`.
-
-7. The target could now run a **CoreML** delegated **Program**. 
+6. The target could now run a **CoreML** delegated **Program**. 
