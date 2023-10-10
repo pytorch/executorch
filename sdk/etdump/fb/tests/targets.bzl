@@ -8,13 +8,13 @@ def define_common_targets():
     """
 
     runtime.cxx_test(
-        name = "etdump_test",
+        name = "etdump_gen_test",
         srcs = [
-            "etdump_test.cpp",
+            "ETDumpGenTest.cpp",
         ],
         deps = [
-            "//executorch/sdk/etdump:etdump_flatcc",
-            "//executorch/sdk/etdump:etdump_schema_flatcc",
-            "//executorch/runtime/platform:platform",
+            "//executorch/runtime/core:memory_allocator",
+            "//executorch/sdk/etdump/fb:etdump_gen",
         ],
+        preprocessor_flags = ["-DPROFILING_ENABLED"],
     )

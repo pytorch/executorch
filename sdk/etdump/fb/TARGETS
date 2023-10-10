@@ -6,9 +6,9 @@ oncall("executorch")
 define_common_targets()
 
 runtime.python_library(
-    name = "schema_flatcc",
+    name = "schema",
     srcs = [
-        "schema_flatcc.py",
+        "schema.py",
     ],
     visibility = [
         "//executorch/sdk/...",
@@ -25,14 +25,14 @@ runtime.python_library(
     ],
     resources = {
         "//executorch/schema:scalar_type.fbs": "scalar_type.fbs",
-        "//executorch/sdk/etdump:etdump_schema_flatcc.fbs": "etdump_schema_flatcc.fbs",
+        "//executorch/sdk/etdump/fb:etdump_schema.fbs": "etdump_schema.fbs",
     },
     visibility = [
         "//executorch/sdk/...",
     ],
     deps = [
         "fbsource//third-party/pypi/setuptools:setuptools",
-        ":schema_flatcc",
+        ":schema",
         "//executorch/exir/_serialize:lib",
     ],
 )

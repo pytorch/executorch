@@ -1,18 +1,12 @@
-/*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree.
- */
+// (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
 
 #include <gtest/gtest.h>
 
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/sdk/etdump/etdump_gen.h>
-#include "executorch/sdk/etdump/etdump_schema_generated.h"
+#include <executorch/sdk/etdump/fb/etdump_gen.h>
+#include "executorch/sdk/etdump/fb/etdump_schema_generated.h"
 
 using namespace etdump;
 

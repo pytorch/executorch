@@ -10,7 +10,7 @@ python_unittest(
     ],
     deps = [
         "//executorch/exir/_serialize:lib",
-        "//executorch/sdk/etdump:schema_flatcc",
-        "//executorch/sdk/etdump:serialize",
+        "//executorch/sdk/etdump/fb:schema",
+        "//executorch/sdk/etdump/fb:serialize",
     ],
 )
