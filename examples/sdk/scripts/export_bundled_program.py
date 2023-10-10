@@ -25,11 +25,11 @@ from ...portable.utils import export_to_exec_prog
 def save_bundled_program(
     method_names,
     inputs,
-    exec_prog: ExecutorchProgramManager,
-    graph_module: torch.nn.Module,
-    output_path: str,
-) -> None:
-    # Here inputs is List[Tuple[Union[torch.tenor, int, bool]]]. Each tuple is one input test
+    exec_prog,
+    graph_module,
+    output_path,
+):
+    # Here inputs is List[Tuple[Union[torch.tenor, int, float, bool]]]. Each tuple is one input test
     # set for the model. If we wish to test the model with multiple inputs then they can be
     # appended to this list. len(inputs) == number of test sets we want to run.
     #
@@ -45,7 +45,11 @@ def save_bundled_program(
         [[graph_module(*x)] for x in inputs] for i in range(len(method_names))
     ]
 
-    bundled_config = BundledConfig(method_names, bundled_inputs, expected_outputs)
+    bundled_config = BundledConfig(
+        method_names=method_names,
+        inputs=bundled_inputs,
+        expected_outputs=expected_outputs,
+    )
 
     bundled_program = create_bundled_program(
         exec_prog.executorch_program, bundled_config
@@ -63,7 +67,7 @@ def export_to_bundled_program(model_name, model, method_names, example_inputs):
 
     # Just as an example to show how multiple input sets can be bundled along, here we
     # create a list with the example_inputs tuple used twice. Each instance of example_inputs
-    # is a Tuple[Union[torch.tenor, int, bool]] which represents one test set for the model.
+    # is a Tuple[Union[torch.tenor, int, float, bool]] which represents one test set for the model.
     bundled_inputs = [example_inputs, example_inputs]
     print(f"Saving exported program to {model_name}_bundled.bp")
     save_bundled_program(

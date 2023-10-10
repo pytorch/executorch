@@ -30,11 +30,15 @@ class BundledConfig (method_names, inputs, expected_outputs)
 
 __Parameters:__
 - method_names (_List[str]_): All names of Methods to be verified in the program.
-- inputs (_List[List[Any]]_): All sets of input to be tested on for all methods. Each list
+- inputs (_List[List[List[Union[torch.Tensor, int, float, bool]]]]_): All sets of input to be tested on for all methods. Each list
         of `inputs` is all sets which will be run on the method in the
         program with corresponding method name. Each set of any `inputs` element should contain all inputs required by Method with the same inference method name in ExecuTorch program for one-time execution.
 
-- expected_outputs (_List[List[Any]]_): Expected outputs for inputs sharing same index. The size of
+        It is worth mentioning that, although both bundled program and ET runtime apis support setting input
+        other than torch.tensor type, only the input in torch.tensor type will be actually updated in
+        the program, and the rest of the inputs will just do a sanity check if they match the default value in method.
+
+- expected_outputs (_List[List[List[torch.Tensor]]]_): Expected outputs for inputs sharing same index. The size of
         expected_outputs should be the same as the size of inputs and provided method_names.
 
 __Returns:__

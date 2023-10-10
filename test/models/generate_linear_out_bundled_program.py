@@ -71,7 +71,10 @@ def main() -> None:
     ]
 
     bundled_config = BundledConfig(
-        ["forward"], bundled_inputs, bundled_expected_outputs
+        method_names=["forward"],
+        # pyre-ignore
+        inputs=bundled_inputs,
+        expected_outputs=bundled_expected_outputs,
     )
 
     bundled_program = create_bundled_program(program, bundled_config)
