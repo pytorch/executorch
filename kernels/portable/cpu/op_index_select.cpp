@@ -28,10 +28,15 @@ Tensor& index_select_out(
   ET_KERNEL_CHECK(
       ctx, check_index_select_args(in, dim, index, out), InvalidArgument, out);
 
+  if (dim < 0) {
+    dim += nonzero_dim(in);
+  }
+
   size_t expected_ndim = 0;
   Tensor::SizesType expected_size[kTensorDimensionLimit];
   get_index_select_out_target_size(
       in, dim, index, expected_size, &expected_ndim);
+
   ET_KERNEL_CHECK(
       ctx,
       resize_tensor(out, {expected_size, expected_ndim}) == Error::Ok,
