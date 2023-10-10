@@ -115,15 +115,15 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
 
-  test-mps-delegate-macos-arm:
-    name: test-mps-delegate-macos-arm
+  test-mps-macos:
+    name: test-mps-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     needs: gather-models
     strategy:
       matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
       fail-fast: false
     with:
-      runner: macos-m1-12
+      runner: macos-m1-14
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
