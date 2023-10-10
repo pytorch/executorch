@@ -116,7 +116,8 @@ jobs:
   test-coreml-delegate-macos-x86:
     name: test-macos-x86
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    secrets: inherit
+    env:
+      TOKEN_COREML_PRIVATE_REPO: ${{ secrets.TOKEN_COREML_PRIVATE_REPO }}
     with:
       runner: macos-13-xlarge
       submodules: 'true'
@@ -126,7 +127,6 @@ jobs:
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
 
-        export TOKEN_COREML_PRIVATE_REPO=${{ secrets.TOKEN_COREML_PRIVATE_REPO }}
         # Build and test coreml delegate
         PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/install_requirements_ci.sh
         PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/build_tests.sh
