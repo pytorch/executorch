@@ -188,6 +188,7 @@ Topics in this section will help you get started with ExecuTorch.
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
    build-run-xtensa
+   build-run-apple-coreml
    tutorials/sdk-integration-tutorial
 
 Tutorials and Examples
