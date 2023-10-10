@@ -102,13 +102,23 @@ SDK Integration Tutorial
 # ---------------
 #
 # Next step is to generate an ``ETDump``. ``ETDump`` contains runtime results
-# from executing the model. To generate, simply pass the ExecuTorch model
-# to the ``executor_runner``::
+# from executing the model. To generate, users have two options:
 #
-#   buck2 run executorch/examples/portable/scripts:export -- -m mv2
-#   buck2 run @mode/opt -c executorch.event_tracer_enabled=true executorch/sdk/runners:executor_runner -- --model_path mv2.pte
+# **Option 1:**
 #
-# TODO: Add Instructions for CMake, when landed
+# Use Buck::
+#
+#  python3 -m examples.sdk.scripts.export_bundled_program -m mv2
+#  buck2_oss run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bp
+#
+# **Option 2:**
+#
+# Use CMake::
+#   cd executorch
+#   rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DBUCK2=buck2_oss -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
+#   cd ..
+#   cmake --build cmake-out -j8 -t sdk_example_runner
+#   ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path mv2_bundled.bp
 
 ######################################################################
 # Creating an Inspector
