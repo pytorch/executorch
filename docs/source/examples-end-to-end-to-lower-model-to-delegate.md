@@ -9,7 +9,7 @@ close to that of the PyTorch runtime. The backend delegate is usually either pro
 Exececutorch or vendors. The way to leverage delegate in your program is via a standard entry point `to_backend`.
 
 
-## Frontend interfaces
+## Frontend Interfaces
 
 There are three flows for delegating a program to a backend:
 
