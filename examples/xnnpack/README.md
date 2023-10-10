@@ -6,10 +6,10 @@
 ## Directory structure
 ```bash
 examples/xnnpack
-├── quantization                      # Scripts to illustrate PyTorch 2.0 quantization workflow with XNNPack quantizer
+├── quantization                      # Scripts to illustrate PyTorch 2.0 quantization workflow with XNNPACK quantizer
 │   └── example.py
 ├── aot_compiler.py                   # The main script to illustrate the full AOT (export, quantization, delegation) workflow with XNNPACK
-├── xnn_executor_runner               # ExecuTorch runtime with XNNPack
+├── xnn_executor_runner               # ExecuTorch runtime with XNNPACK
 └── README.md                         # This file
 ```
 
