@@ -347,7 +347,7 @@ void get_squeeze_copy_dim_out_target_size(
 
   size_t out_d = 0;
   for (size_t in_d = 0; in_d < in.dim(); ++in_d) {
-    if (in_d != dim || in.size(in_d) > 1) {
+    if (in_d != dim || in.size(in_d) != 1) {
       out_sizes[out_d] = in.size(in_d);
       ++out_d;
     }
@@ -360,16 +360,15 @@ bool check_squeeze_copy_dims_args(
     const Tensor out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
 
-  const int64_t dim_adjust = in.dim() == 0 ? 1 : in.dim();
   for (size_t i = 0; i < dims.size(); ++i) {
-    // TODO(ssjia): use nonzero_dim() instead
-    const int64_t dim = dims[i] < 0 ? dims[i] + dim_adjust : dims[i];
+    const int64_t dim = dims[i] < 0 ? dims[i] + nonzero_dim(in) : dims[i];
     ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
 
     // Check that a dim does not appear twice in dims
     for (size_t j = 0; j < dims.size(); ++j) {
       if (i != j) {
-        const int64_t dim_temp = dims[j] < 0 ? dims[j] + dim_adjust : dims[j];
+        const int64_t dim_temp =
+            dims[j] < 0 ? dims[j] + nonzero_dim(in) : dims[j];
         ET_LOG_MSG_AND_RETURN_IF_FALSE(
             dim != dim_temp,
             "dim %" PRId64 " appears multiple times in dims!",
@@ -392,12 +391,10 @@ void get_squeeze_copy_dims_out_target_size(
     return;
   }
 
-  int64_t dim_adjust = in.dim() == 0 ? 1 : in.dim();
   // A dim is only removed if the size at the given dim is 1.
   Tensor::SizesType dims_to_remove = 0;
   for (size_t i = 0; i < dims.size(); ++i) {
-    // TODO(ssjia): use nonzero_dim() instead
-    int64_t dim = dims[i] < 0 ? dims[i] + dim_adjust : dims[i];
+    int64_t dim = dims[i] < 0 ? dims[i] + nonzero_dim(in) : dims[i];
     if (in.size(dim) == 1) {
       ++dims_to_remove;
     }
@@ -408,14 +405,13 @@ void get_squeeze_copy_dims_out_target_size(
   for (size_t in_d = 0; in_d < in.dim(); ++in_d) {
     bool in_d_in_dims = false;
     for (size_t i = 0; i < dims.size(); ++i) {
-      // TODO(ssjia): use nonzero_dim() instead
-      int64_t dim = dims[i] < 0 ? dims[i] + dim_adjust : dims[i];
+      int64_t dim = dims[i] < 0 ? dims[i] + nonzero_dim(in) : dims[i];
       if (in_d == dim) {
         in_d_in_dims = true;
         break;
       }
     }
-    if (!in_d_in_dims || in.size(in_d) > 1) {
+    if (!in_d_in_dims || in.size(in_d) != 1) {
       out_sizes[out_d] = in.size(in_d);
       ++out_d;
     }
