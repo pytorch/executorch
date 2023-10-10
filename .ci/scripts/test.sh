@@ -37,6 +37,11 @@ if [[ -z "${DEMO_BACKEND_DELEGATION:-}" ]]; then
   DEMO_BACKEND_DELEGATION=false
 fi
 
+MPS_DELEGATION=$6
+if [[ -z "${MPS_DELEGATION:-}" ]]; then
+  MPS_DELEGATION=false
+fi
+
 which "${PYTHON_EXECUTABLE}"
 # Just set this variable here, it's cheap even if we use buck2
 CMAKE_OUTPUT_DIR=cmake-out
@@ -92,6 +97,22 @@ build_cmake_xnn_executor_runner() {
   cmake --build ${CMAKE_OUTPUT_DIR} -j4
 }
 
+build_cmake_mps_executor_runner() {
+  echo "Building mps_executor_runner"
+  SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
+  CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
+
+  (rm -rf ${CMAKE_OUTPUT_DIR} \
+    && mkdir ${CMAKE_OUTPUT_DIR} \
+    && cd ${CMAKE_OUTPUT_DIR} \
+    && retry cmake -DBUCK2=buck2 \
+      -DEXECUTORCH_BUILD_MPS=ON \
+      -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+
+  cmake --build ${CMAKE_OUTPUT_DIR} -j4
+}
+
 test_model_with_xnnpack() {
   WITH_QUANTIZATION=$1
   WITH_DELEGATION=$2
@@ -127,6 +148,25 @@ test_model_with_xnnpack() {
   fi
 }
 
+test_model_with_mps() {
+  "${PYTHON_EXECUTABLE}" -m examples.apple.mps.scripts.mps_example --model_name="${MODEL_NAME}" --bundled
+  OUTPUT_MODEL_PATH="${MODEL_NAME}_mps_bundled.pte"
+
+  # Run test model
+  if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+    echo "Invalid build tool ${BUILD_TOOL}. Only cmake is supported atm for MPS"
+    exit 1
+  elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
+    if [[ ! -f ${CMAKE_OUTPUT_DIR}/examples/apple/mps/mps_executor_runner ]]; then
+      build_cmake_mps_executor_runner
+    fi
+    ./${CMAKE_OUTPUT_DIR}/examples/apple/mps/mps_executor_runner --model_path "${OUTPUT_MODEL_PATH}" --bundled_program
+  else
+    echo "Invalid build tool ${BUILD_TOOL}. Only cmake is supported atm for MPS"
+    exit 1
+  fi
+}
+
 test_demo_backend_delegation() {
   echo "Testing demo backend delegation on AddMul"
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export_and_delegate  --option "composite"
@@ -151,9 +191,12 @@ test_demo_backend_delegation() {
   fi
 }
 
-if [[ "${XNNPACK_DELEGATION}" == false ]] && [[ "${XNNPACK_QUANTIZATION}" == false ]]; then
+if [[ "${XNNPACK_DELEGATION}" == false ]] && [[ "${XNNPACK_QUANTIZATION}" == false ]] && [[ "${MPS_DELEGATION}" == false ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
+elif [[ "${MPS_DELEGATION}" == true ]]; then
+  echo "Testing ${MODEL_NAME} with MPS delegation"
+  test_model_with_mps
 else
   echo "Testing ${MODEL_NAME} with XNNPACK quantization=${XNNPACK_QUANTIZATION} delegation=${XNNPACK_DELEGATION}..."
   test_model_with_xnnpack "${XNNPACK_QUANTIZATION}" "${XNNPACK_DELEGATION}"
