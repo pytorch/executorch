@@ -7,12 +7,16 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
+import os
 
 from typing import List
 
 import torch
-import os
-from executorch.bundled_program.config import BundledConfig, MethodInputType, MethodOutputType
+from executorch.bundled_program.config import (
+    BundledConfig,
+    MethodInputType,
+    MethodOutputType,
+)
 from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
@@ -35,7 +39,7 @@ def save_bundled_program(
     Generates a bundled program from the given ET program and saves it to the specified path.
 
     Args:
-        program: The Executorch program to bundle.
+        program: The ExecuTorch program to bundle.
         method_names: A list of method names in the program to bundle test cases.
         bundled_inputs: Representative inputs for each method.
         bundled_expected_outputs: Expected outputs of representative inputs for each method.
@@ -71,7 +75,6 @@ def export_to_bundled_program(
         example_inputs: An example input for model's all method for single execution.
                         To simplify, here we assume that all inference methods have the same inputs.
     """
-
 
     print("Exporting ET program...")
 
@@ -119,7 +122,7 @@ if __name__ == "__main__":
         "-d",
         "--dir",
         default=".",
-        help=f"the directory to store the exported bundled program. Default is current directory.",
+        help="the directory to store the exported bundled program. Default is current directory.",
     )
 
     args = parser.parse_args()
