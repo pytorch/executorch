@@ -189,7 +189,7 @@ At the end of the setup, if everything goes well, your top level devlopement dir
 
 ```bash
 .
-├── arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi
+├── arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi # for x86-64 hosts
 ├── ethos-u
 │   ├── core_platform
 │   ├── core_software
