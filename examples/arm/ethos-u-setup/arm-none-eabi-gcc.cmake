@@ -101,5 +101,5 @@ add_compile_options(
     # -Wswitch-default
     # -Wunused
     # -Wno-redundant-decls
-    # -Wno-psabi
+    -Wno-psabi
 )
