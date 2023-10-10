@@ -19,7 +19,7 @@ In this tutorial you will learn how to export a simple PyTorch model for ExecuTo
 ::::
 
 ```{warning}
-This ExecuTorch backend delegate is under active development. You may encouter some rough edges, and features which may be documented or planned but not implemented.
+This ExecuTorch backend delegate is under active development. You may encounter some rough edges and features which may be documented or planned but not implemented.
 ```
 
 ```{tip}
