@@ -18,6 +18,8 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
+import distutils.file_util
+import glob
 import os
 import sys
 
@@ -92,6 +94,22 @@ sphinx_gallery_conf = {
     "backreferences_dir": None,
     "first_notebook_cell": ("%matplotlib inline"),
 }
+
+assert len(sphinx_gallery_conf["examples_dirs"]) == len(
+    sphinx_gallery_conf["gallery_dirs"]
+), "Lengths of galery_dirs and examples_dir must be same."
+
+for i in range(len(sphinx_gallery_conf["examples_dirs"])):
+    gallery_dir = sphinx_gallery_conf["gallery_dirs"][i]
+    source_dir = sphinx_gallery_conf["examples_dirs"][i]
+
+    # Create gallery dirs if it doesn't exist
+    os.makedirs(gallery_dir, exist_ok=True)
+
+    # Copy .md files from source dir to gallery dir
+    for f in glob.glob(os.path.join(source_dir, "*.md")):
+
+        distutils.file_util.copy_file(f, gallery_dir, update=True)
 
 source_suffix = [".rst", ".md"]
 
