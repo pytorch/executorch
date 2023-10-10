@@ -39,10 +39,10 @@ Tensor& transpose_copy_int_out(
       out);
 
   if (dim0 < 0) {
-    dim0 += nonzero_dim(out);
+    dim0 += nonzero_dim(in);
   }
   if (dim1 < 0) {
-    dim1 += nonzero_dim(out);
+    dim1 += nonzero_dim(in);
   }
 
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
