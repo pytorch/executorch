@@ -57,7 +57,7 @@ Or if on cmake, follow the instructions in `test_quantize.sh` to build it, the d
 
 Then you can generate a XNNPACK quantized model with the following command by passing the path to the shared library into the script `quantization/example.py`:
 ```bash
-python3 -m examples.xnnpack.quantization.example --model_name "mv2" --so-library "<path/to/so/lib>" # for MobileNetv2
+python3 -m examples.xnnpack.quantization.example --model_name "mv2" --so_library "<path/to/so/lib>" # for MobileNetv2
 
 # This should generate ./mv2_quantized.pte file, if successful.
 ```
