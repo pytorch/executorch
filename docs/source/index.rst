@@ -187,6 +187,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
+   demo-apps-android
    build-run-xtensa
    tutorials/sdk-integration-tutorial
 
@@ -218,5 +219,12 @@ ExecuTorch tutorials.
    :image: _static/img/generic-pytorch-logo.png
    :link: running-a-model-cpp.html
    :tags:
+
+.. customcarditem::
+   :header: Building an ExecuTorch Android Demo App
+   :card_description: A demo tutorial that explains how to build ExecuTorch into a JNI library and build an Android app.
+   :image: _static/img/android_app.png
+   :link: demo-apps-android.html
+   :tags: Delegation,Android
 
 .. customcardend::
