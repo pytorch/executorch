@@ -206,7 +206,7 @@ At the end of the setup, if everything goes well, your top level devlopement dir
 
 ## Convert the PyTorch Model to the `.pte` File
 
-`.pte` is a binary file produced by ExecuTorch Ahead-of-Time (AoT) pipeline by taking in a PyTorch Model (a torch.nn.Module), exporting it, running a variety of passes, and finally serializing it to a `.pte` file format. This binary file is typically consumed by the ExecuTorch Runtime. This (TODO reference?) goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.
+`.pte` is a binary file produced by ExecuTorch Ahead-of-Time (AoT) pipeline by taking in a PyTorch Model (a torch.nn.Module), exporting it, running a variety of passes, and finally serializing it to a `.pte` file format. This binary file is typically consumed by the ExecuTorch Runtime. This [document](https://github.com/pytorch/executorch/blob/main/docs/source/getting-started-architecture.md) goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.
 
 In this section, we will primarily focus on the AoT flow with the end goal of producing a `.pte` file. There are a set of export configurations to target different backends at runtime. For each, the AoT flow will produce a unique `.pte` file. We will explore a couple of different configurations producing different `.pte` files, particularly interesting for our Corstone-300 system and available processing elements.
 
@@ -450,13 +450,21 @@ Info: Simulation is stopping. Reason: CPU time has been exceeded.
 ```
 
 ## Takeaways
-* TODO - what did you learn
+Through this tutorial we've learnt how to use the ExecuTorch software to both export a standard model from PyTorch and to run it on the compact and fully functioned ExecuTorch runtime, enabling a smooth path for offloading models from PyTorch to Arm based platforms.
+
+To recap, there are two major flows:
+ * A direct flow which offloads work onto the Cortex-M using libraries built into ExecuTorch
+ * A delegated flow which partitions the graph into sections for Cortex-M and sections which can be offloaded and accelerated on the Ethos-U hardware
+
+Both of these flows continue to evolve, enabling more use-cases and better performance.
 
 ## FAQs
+<!----
 Describe what common errors users may see and how to resolve them.
 
 * TODO - Binary size and operator Selection
 * TODO - Cross-compilation targeting baremetal
 * TODO - Debugging on FVP
+----->
 
 If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).
