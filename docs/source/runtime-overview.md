@@ -157,7 +157,7 @@ However, please note:
 
 For more details about the ExecuTorch runtime, please see:
 
-* [Runtime API Tutorial](./running-a-model-cpp-tutorial)
+* [Runtime API Tutorial](running-a-model-cpp-tutorial.md)
 * [Runtime Build and Cross Compilation](runtime-build-and-cross-compilation.md)
 * [Runtime Platform Abstraction Layer](runtime-platform-abstraction-layer.md)
 * [Custom Memory Allocation](runtime-custom-memory-allocator.md)

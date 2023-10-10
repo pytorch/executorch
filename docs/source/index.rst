@@ -217,7 +217,7 @@ ExecuTorch tutorials.
    :header: Running an ExecuTorch Model C++ Tutorial
    :card_description: A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.
    :image: _static/img/generic-pytorch-logo.png
-   :link: running-a-model-cpp.html
+   :link: running-a-model-cpp-tutorial.html
    :tags:
 
 .. customcarditem::
