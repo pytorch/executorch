@@ -287,7 +287,7 @@ By including a following step during the ExecuTorch AoT export pipeline to gener
 
 ```python
 graph_module_edge.exported_program = to_backend(model.exported_program, ArmPartitioner)
-<remove_this>```
+```
 
 Similar to the non-delegate flow, the same script will server as a helper utility to help us generate the `.pte` file. Notice the `--delegate` option to enable the `to_backend` call.
 
