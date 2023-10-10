@@ -101,7 +101,8 @@ class TestBundle(unittest.TestCase):
         program, bundled_config = get_common_program()
 
         bundled_config.execution_plan_tests[-1].test_sets[-1].expected_outputs = [
-            0, 0.0
+            0,
+            0.0,
         ]
         self.assertRaises(
             AssertionError, create_bundled_program, program, bundled_config

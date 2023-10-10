@@ -32,6 +32,6 @@ cpp_unittest(
         "//executorch/runtime/kernel:kernel_runtime_context",  # @manual
         "//executorch/runtime/kernel:operator_registry",
         "//executorch/runtime/platform:platform",
-        "//executorch/test/utils:utils",
+        "//executorch/test/utils:utils_aten",
     ],
 )
