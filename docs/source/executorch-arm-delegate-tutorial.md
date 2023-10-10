@@ -289,7 +289,7 @@ python3 -m examples.arm.examples --model_name="add" --delegate
 # should produce ./add_arm_delegate.pte
 ```
 
-At the end of this, we should have two different `.pte` files. First one with the SoftmaxModule, without any backend delegates. And the second one with the AddModule, and with Arm Ethos-U backend delegate enabled. Now let's try to run these `.pte` files on a Corstone-300 platform in a bare-metal environment.
+At the end of this, we should have two different `.pte` files. First one with the [SoftmaxModule](#softmaxmodule), without any backend delegates. And the second one with the [AddModule](#addmodule), and with Arm Ethos-U backend delegate enabled. Now let's try to run these `.pte` files on a Corstone-300 platform in a bare-metal environment.
 
 ## Getting a Bare-Metal Executable
 
