@@ -102,7 +102,9 @@ Now, extract the `FVP_cs300.tgz` file in a new dir, and run the provided script 
 Once successful, let's make sure the FVP simulator is available on the PATH for later use.
 
 ```bash
+# for x86-64 hosts
 export PATH=${PATH}:<install_dir>/FVP/models/Linux64_GCC-9.3
+# for aarch64 hosts
 export PATH=${PATH}:<install_dir>/FVP/models/Linux64_armv8l_GCC-9.3/
 
 hash FVP_Corstone_SSE-300_Ethos-U55 # To make sure we are ready to use
