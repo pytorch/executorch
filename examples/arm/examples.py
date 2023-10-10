@@ -12,11 +12,11 @@ import logging
 
 import torch
 import torch._export as export
-from ..portable.utils import export_to_edge, save_pte_program
-from executorch.exir import EdgeCompileConfig
 
 from executorch.backends.arm.arm_backend import ArmPartitioner
-from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir import EdgeCompileConfig
+
+from ..portable.utils import export_to_edge, save_pte_program
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -37,6 +37,7 @@ class AddModule(torch.nn.Module):
     example_input = (torch.ones(5, dtype=torch.int32),)
     can_delegate = True
 
+
 class SoftmaxModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -46,11 +47,14 @@ class SoftmaxModule(torch.nn.Module):
         z = self.softmax(x)
         return z
 
-    example_input = (torch.ones(2,2),)
+    example_input = (torch.ones(2, 2),)
     can_delegate = False
 
-models = { "add": AddModule,
-           "softmax": SoftmaxModule, }
+
+models = {
+    "add": AddModule,
+    "softmax": SoftmaxModule,
+}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -72,20 +76,20 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.model_name not in models.keys():
-        raise RuntimeError(
-            f"Model {args.model_name} is not a valid name."
-        )
+        raise RuntimeError(f"Model {args.model_name} is not a valid name.")
 
-    if args.model_name in models.keys() and  args.delegate == True and models[args.model_name].can_delegate == False:
-        raise RuntimeError(
-            f"Model {args.model_name} cannot be delegated."
-        )
+    if (
+        args.model_name in models.keys()
+        and args.delegate is True
+        and models[args.model_name].can_delegate is False
+    ):
+        raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
 
     model = models[args.model_name]()
     example_inputs = models[args.model_name].example_input
 
     model = model.eval()
-    
+
     # pre-autograd export. eventually this will become torch.export
     model = export.capture_pre_autograd_graph(model, example_inputs)
 
@@ -98,11 +102,13 @@ if __name__ == "__main__":
     )
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 
-    if args.delegate == True:
+    if args.delegate is True:
         edge = edge.to_backend(ArmPartitioner)
         logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
     exec_prog = edge.to_executorch()
 
-    model_name = f"{args.model_name}" + ( "_arm_delegate" if args.delegate == True else "")
+    model_name = f"{args.model_name}" + (
+        "_arm_delegate" if args.delegate is True else ""
+    )
     save_pte_program(exec_prog.buffer, model_name)

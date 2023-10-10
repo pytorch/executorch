@@ -13,7 +13,7 @@
 
 :::{grid-item-card}  What you will learn in this tutorial:
 :class-card: card-prerequisites
-In this tutorial you will learn how to export a simple PyTorch model for Executorch Arm Ethos-u backend delegate and run it on a Corstone-300 FVP Simulator.
+In this tutorial you will learn how to export a simple PyTorch model for ExecuTorch Arm Ethos-u backend delegate and run it on a Corstone-300 FVP Simulator.
 :::
 
 ::::
@@ -312,7 +312,7 @@ The block diagram below demonstrates, at the high level, how the various build a
 
 ![](./arm-delegate-runtime-build.svg)
 
-### Generating Executorch Libraries
+### Generating ExecuTorch Libraries
 
 ExecuTorch's CMake build system produces a set of build pieces which are critical for us to include and run the ExecuTorch runtime with-in the bare-metal environment we have for Corstone-300 from Ethos-U SDK.
 
