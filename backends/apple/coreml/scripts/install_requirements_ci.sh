@@ -22,7 +22,7 @@ if [ -d "/tmp/coremltools" ]; then
 fi
 
 echo "${green}ExecuTorch: Cloning coremltools."
-git clone git@github.com:DawerG/coremltools.git /tmp/coremltools
+git clone "https://${TOKEN_COREML_PRIVATE_REPO}@github.com:DawerG/coremltools.git" /tmp/coremltools
 cd /tmp/coremltools
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
