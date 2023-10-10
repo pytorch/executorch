@@ -62,7 +62,7 @@ rm -rf "$COREML_DIR_PATH/third-party"
 mkdir "$COREML_DIR_PATH/third-party"
 
 echo "${green}ExecuTorch: Cloning ios-cmake."
-git clone git@github.com:leetal/ios-cmake.git "$COREML_DIR_PATH/third-party/ios-cmake"
+git clone "https://${SECRET_TOKEN_COREML_PRIVATE_REPO}@github.com/leetal/ios-cmake.git" "$COREML_DIR_PATH/third-party/ios-cmake"
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to clone ios-cmake."
