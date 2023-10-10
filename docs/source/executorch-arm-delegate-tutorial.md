@@ -32,13 +32,11 @@ Let's make sure you have everything you need before we get started.
 
 ### Hardware
 
-To successfully complete this tutorial, you will need a Linux-based machine with x86_64 or arm64 processor architecture. Currently, not all tools needed to complete this tutorial are supported on other platforms like Microsoft Windows, or macOS.
+To successfully complete this tutorial, you will need a Linux-based host machine with Arm aarch64 or x86_64 processor architecture.
 
-We will be using a [Fixed Virtual Platform (FVP)](https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms), simulating a [Corstone-300](https://developer.arm.com/Processors/Corstone-300)(cs300) system, as shown in the block diagram below. This platform supports Arm Cortex-M55 CPU and Arm Ethos-U55 NPU. In this tutorial to run PyTorch models on both.
+The target device will be an embedded platform with an Arm Cortex-M55 CPU and Ethos-U55 NPU (ML processor). This tutorial will show you how to run PyTorch models on both.
 
-![](./arm-Corstone-300-block-diagram.avif)
-
-Since we will be using the FVP, think of it as virtual hardware, we won't be requiring any real embedded hardware for this tutorial.
+We will be using a [Fixed Virtual Platform (FVP)](https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms), simulating a [Corstone-300](https://developer.arm.com/Processors/Corstone-300)(cs300) system. Since we will be using the FVP (think of it as virtual hardware), we won't be requiring any real embedded hardware for this tutorial.
 
 ### Software
 
@@ -56,14 +54,14 @@ In this section, we will do a one-time setup, like downloading and installing ne
 In the executorch repository we have a functioning script which does the exact same steps. It is located at `executorch/examples/arm/setup.sh`. Feel free to use that instead if it is convenient, or use it as a reference if some of the steps in the manual instruction aren't very clear.
 ```
 
-As mentioned before, we currently support only Linux based platforms with x86_64 or arm64 processor architecture. Let’s make sure we are indeed on a supported platform.
+As mentioned before, we currently support only Linux based platforms with x86_64 or aarch64 processor architecture. Let’s make sure we are indeed on a supported platform.
 
 ```bash
 uname -s
 # Linux
 
 uname -m
-# x86_64 or Arm64
+# x86_64 or aarch64
 ```
 
 Let's create an empty directory, and use this as a top level development directory.
@@ -79,6 +77,12 @@ Fixed Virtual Platforms (FVPs) are pre-configured, functionally accurate simulat
 To download, we can either download `Corstone-300 Ecosystem FVP` from [here](https://developer.arm.com/downloads/-/arm-ecosystem-fvps). Alternatively, you can download the same version we tested with like this,
 
 ```bash
+# for aarch64
+curl \
+    --output FVP_cs300.tgz \
+    'https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_35_Linux64_armv8l.tgz?rev=b083dc5ac9c546899fbb7ccd67b74c17&hash=BFE589289ECF12B07192636382C15C01'
+
+# for x86_64
 curl \
     --output FVP_cs300.tgz \
     'https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9'
@@ -99,6 +103,7 @@ Once successful, let's make sure the FVP simulator is available on the PATH for 
 
 ```bash
 export PATH=${PATH}:<install_dir>/FVP/models/Linux64_GCC-9.3
+export PATH=${PATH}:<install_dir>/FVP/models/Linux64_armv8l_GCC-9.3/
 
 hash FVP_Corstone_SSE-300_Ethos-U55 # To make sure we are ready to use
 ```
@@ -110,6 +115,12 @@ Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch 
 These toolchains are available [here](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). We will be using GCC 12.3 targeting `arm-none-eabi` here for our tutorial. Just like MVP, to download the same version as we tested with in the top-level development dir,
 
 ```bash
+# for aarch64
+curl \
+    --output gcc.tar.xz \
+    'https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi.tar.xz'
+
+# for x86_64
 curl \
     --output gcc.tar.xz \
     'https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi.tar.xz'
@@ -119,6 +130,7 @@ Once downloaded, you can extract its contents in a new dir. Then, let's make sur
 
 ```bash
 export PATH=${PATH}:/<install_dir>/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi/bin
+export PATH=${PATH}:/<install_dir>/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi/bin
 
 hash arm-none-eabi-gcc # To make sure we are ready to use
 ```
@@ -233,8 +245,7 @@ class AddModule(torch.nn.Module):
         super().__init__()
 
     def forward(self, x):
-        z = x + x
-        return z
+        return x + x
 ```
 
 Running it using the Python environment (on the same development Linux machine), and as expected 1 + 1 indeed produces 2.
