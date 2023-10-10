@@ -180,25 +180,6 @@ class LinearPattern(QuantizationPattern):
         return torch.ops.xtensa.quantized_linear_pt2.default
 
 
-class LayerNormPattern(QuantizationPattern):
-    def partition_types(self):
-        return [torch.nn.LayerNorm]
-
-    def get_anchors(self, gm, fused_partition) -> PartitionAnchors:
-        layer_norm_node = fused_partition[0].nodes[-1]
-
-        return PartitionAnchors(
-            inputs=[(layer_norm_node, 0)],
-            weights=[(layer_norm_node, 2)],
-            biases=[(layer_norm_node, 3)],
-            others=[(layer_norm_node, 1)],
-            output=layer_norm_node,
-        )
-
-    def replacement_op(self):
-        return torch.ops.xtensa.quantized_layer_norm_pt2.default
-
-
 class GenericQuantizer(Quantizer):
     def __init__(self, pattern, quantization_config):
         super().__init__()
@@ -282,16 +263,9 @@ class XtensaQuantizer(ComposableQuantizer):
             wgt_qspec,
             None,
         )
-        static_qconfig_no_wgt = QuantizationConfig(
-            act_qspec,
-            act_qspec,
-            None,
-            None,
-        )
         super().__init__(
             [
                 GenericQuantizer(LinearPattern(), static_qconfig),
-                GenericQuantizer(LayerNormPattern(), static_qconfig_no_wgt),
             ]
         )
 
@@ -334,7 +308,6 @@ class QuantFusion(ExportPass):
 
                 inputs_inputs = [node.args[0] for node in dequants_inputs]
                 weights_inputs = [node.args[0] for node in dequants_weights]
-                weights_init_inputs = [node.args[idx] for node, idx in anchors.weights]
                 bias_inputs = [node.args[idx] for node, idx in anchors.biases]
                 other_inputs = [node.args[idx] for node, idx in anchors.others]
 
@@ -410,23 +383,6 @@ class QuantFusion(ExportPass):
                             "out_multiplier": out_multiplier_,
                             "out_shift": out_shift_,
                             "out_zero_point": quant_node.args[2],
-                        }
-                    elif (
-                        pattern.replacement_op()
-                        == torch.ops.xtensa.quantized_layer_norm_pt2.default
-                    ):
-                        args = tuple(
-                            inputs_inputs
-                            + [dequants_inputs[0].args[1]]
-                            + [dequants_inputs[0].args[2]]
-                        )
-                        kwargs = {
-                            "normalized_shape": other_inputs[0],
-                            "weight": weights_init_inputs[0],
-                            "bias": bias_inputs[0],
-                            "eps": 1e-05,
-                            "output_scale": quant_node.args[1],
-                            "output_zero_point": quant_node.args[2],
                         }
                     fused = graph_module.graph.call_function(
                         pattern.replacement_op(),
