@@ -19,7 +19,6 @@ from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 
-from executorch.exir import EdgeCompileConfig
 from executorch.exir.backend.backend_api import to_backend
 
 from ....models import MODEL_NAME_TO_MODEL

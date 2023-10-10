@@ -57,38 +57,12 @@ jobs:
         XNNPACK_QUANTIZATION=${{ matrix.xnnpack_quantization }}
         XNNPACK_DELEGATION=${{ matrix.delegation }}
         DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
+        MPS_DELEGATION=false
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test xecutorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${XNNPACK_QUANTIZATION}" "${XNNPACK_DELEGATION}" "${DEMO_BACKEND_DELEGATION}"
-        popd
-
-  test-mps-models-macos:
-    name: test-mps-models-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    needs: gather-models
-    strategy:
-      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
-      fail-fast: false
-    with:
-      runner: macos-m1-12
-      submodules: 'true'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        WORKSPACE=$(pwd)
-        pushd "${WORKSPACE}/pytorch/executorch"
-
-        MODEL_NAME=${{ matrix.model }}
-        BUILD_TOOL="cmake"
-
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "cmake"
-        PYTHON_EXECUTABLE=python bash backends/apple/mps/install_requirements.sh
-
-        # Build and test executorch through MPS delegation
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "" "" "" true
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${XNNPACK_QUANTIZATION}" "${XNNPACK_DELEGATION}" "${DEMO_BACKEND_DELEGATION}" "${MPS_DELEGATION}"
         popd
 
   test-custom-ops-macos:
