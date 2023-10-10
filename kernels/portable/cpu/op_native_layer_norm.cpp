@@ -106,6 +106,8 @@ std::tuple<Tensor&, Tensor&, Tensor&> native_layer_norm_out(
     Tensor& out,
     Tensor& mean_out,
     Tensor& rstd_out) {
+  (void)ctx;
+
   std::tuple<Tensor&, Tensor&, Tensor&> ret_val(out, mean_out, rstd_out);
 
   ET_KERNEL_CHECK(
