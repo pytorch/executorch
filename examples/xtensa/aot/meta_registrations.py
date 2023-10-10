@@ -31,13 +31,6 @@ lib.define(
     "quantized_linear_pt2.out(Tensor src, Tensor weight, Tensor bias, float src_scale, int src_zero_point, float weight_scale, int weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, *, Tensor(a!) out) ->  Tensor(a!)"
 )
 
-lib.define(
-    "quantized_layer_norm_pt2(Tensor X, float X_scale, int X_zero_point, int[] normalized_shape, Tensor weight, Tensor bias, float eps, float output_scale, int output_zero_point) -> (Tensor Y)"
-)
-lib.define(
-    "quantized_layer_norm_pt2.out(Tensor X, float X_scale, int X_zero_point, int[] normalized_shape, Tensor weight, Tensor bias, float eps, float output_scale, int output_zero_point, *, Tensor(a!) out) -> Tensor(a!)"
-)
-
 m = Library("xtensa", "IMPL", "Meta")
 
 
@@ -86,18 +79,3 @@ def quantized_linear_pt2_meta(
     assert len(weight_size) == 2
     out_size[-1] = weight_size[0]
     return src.new_empty(out_size, dtype=torch.uint8)
-
-
-@impl(m, "quantized_layer_norm_pt2")
-def quantized_layer_norm_pt2_meta(
-    input: torch.Tensor,
-    X_scale: float,
-    X_zero_point: int,
-    normalized_shape: int,
-    weight: torch.Tensor,
-    bias: torch.Tensor,
-    eps: float,
-    output_scale: float,
-    output_zero_point: int,
-):
-    return input.new_empty(input.size(), dtype=torch.uint8)
