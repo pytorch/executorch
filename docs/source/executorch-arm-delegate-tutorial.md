@@ -42,7 +42,7 @@ We will be using a [Fixed Virtual Platform (FVP)](https://www.arm.com/products/d
 
 First, you will need to install ExecuTorch. Please follow the recommended tutorials if you haven't already, to set up a working ExecuTorch development environment.
 
-To generate software which can be run on an embedded platform (real or virtual), we will need a tool chain for cross-compilation, and an Arm Ethos-U software development kit, including the Vela compiler for Ethos-U NPUs.
+To generate software which can be run on an embedded platform (real or virtual), we will need a tool chain for cross-compilation and an Arm Ethos-U software development kit, including the Vela compiler for Ethos-U NPUs.
 
 In the following sections we will walk through the steps to download each of the dependencies listed above.
 
