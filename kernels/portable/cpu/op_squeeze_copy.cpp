@@ -26,13 +26,12 @@ Tensor& squeeze_copy_dim_out(
     Tensor& out) {
   (void)ctx;
 
-  // TODO(ssjia): use nonzero_dim() instead
-  if (dim < 0) {
-    dim += in.dim();
-  }
-
   ET_KERNEL_CHECK(
       ctx, check_squeeze_copy_dim_args(in, dim, out), InvalidArgument, out);
+
+  if (dim < 0) {
+    dim += nonzero_dim(in);
+  }
 
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;
