@@ -17,7 +17,7 @@ them to debug and visualize their model.
 * Edge dialect graph with debug handles
 * Delegate debug handle maps
 
-The ``ETRecord`` object itself is intended to be transparent to users and they should not access any components inside it directly.
+The ``ETRecord`` object itself is intended to be opaque to users and they should not access any components inside it directly.
 It should be provided to the `Inspector API <sdk-inspector.html>`__ to link back performance and debug data sourced from the runtime back to the Python source code.
 
 APIs
