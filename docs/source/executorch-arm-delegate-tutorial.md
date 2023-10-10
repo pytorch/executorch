@@ -48,10 +48,13 @@ In the following sections we will walk through the steps to download each of the
 
 ## Set Up the Developer Environment
 
-In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial.
+In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial. There are two approaches available:
+
+1. Method 1: use the `examples/arm/setup.sh` script to pull each item in an automated fashion (recommended)
+2. Method 2: Follow the guide step by step to understand all the components and the logic of the script. You may want to use this method if you intend to change the behavior of the flow significantly.
 
 ```{tip}
-In the executorch repository we have a functioning script which does the exact same steps. It is located at `executorch/examples/arm/setup.sh`. Feel free to use that instead if it is convenient, or use it as a reference if some of the steps in the manual instruction aren't very clear.
+In the executorch repository we have a functioning script which followess the exact same steps to speed things up. It is located at `examples/arm/setup.sh`. Feel free to use that instead if it is convenient, or use it as a reference if some of the steps in the manual instruction aren't very clear.
 ```
 
 As mentioned before, we currently support only Linux based platforms with x86_64 or aarch64 processor architecture. Let’s make sure we are indeed on a supported platform.
@@ -269,7 +272,7 @@ It's expected that on platforms with dedicated acceleration like the Ethos-U55, 
 
 In this flow, without any backend delegates, to illustrate the portability of the ExecuTorch runtime, as well as of the operator library we will skip specifying the backend during the `.pte` generation.
 
-Following script will serve as a helper utility to help us generate the `.pte` file. This is available in the `executorch/examples/arm` directory.
+Following script will serve as a helper utility to help us generate the `.pte` file. This is available in the `examples/arm` directory.
 
 ```bash
 python3 -m examples.arm.examples --model_name="softmax"
