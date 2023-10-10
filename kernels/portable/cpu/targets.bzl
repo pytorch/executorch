@@ -374,6 +374,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_index",
         deps = [
+            "//executorch/kernels/portable/cpu/util:advanced_index_util",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
         ],
     ),

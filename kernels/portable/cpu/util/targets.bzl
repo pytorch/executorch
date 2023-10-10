@@ -51,6 +51,20 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "advanced_index_util",
+        srcs = ["advanced_index_util.cpp"],
+        exported_headers = [
+            "advanced_index_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            ":broadcast_util",
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
+
+    runtime.cxx_library(
         name = "copy_ops_util",
         srcs = ["copy_ops_util.cpp"],
         exported_headers = [
