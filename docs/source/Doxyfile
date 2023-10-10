@@ -963,7 +963,7 @@ INPUT                  = ../runtime/executor/memory_manager.h \
                          ../runtime/core/span.h \
                          ../runtime/core/tag.h \
                          ../runtime/core/tensor_shape_dynamism.h \
-                         ../runtime/platform/compiler.h
+                         ../runtime/platform/compiler.h \
                          ../runtime/executor/ \
                          ../runtime/platform/
 
