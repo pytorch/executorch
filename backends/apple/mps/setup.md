@@ -17,6 +17,10 @@
      <div class="step-number" id="step-4">4</div>
      <span class="step-caption" id="caption-4"></span>
    </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-5">5</div>
+     <span class="step-caption" id="caption-5"></span>
+   </div>
 </div>
 
 <!---- DO NOT MODIFY Progress Bar End--->
@@ -134,3 +138,8 @@ From the same page, include the needed libraries for the MPS delegate:
 - `Metal.framework`
 
 In this tutorial, you have learned how to lower a model to the MPS delegate, build the mps_executor_runner and run a lowered model through the MPS delegate, or directly on device using the MPS delegate static library.
+
+
+## Frequently encountered errors and resolution.
+
+If you encountered any bugs or issues following this tutorial please file a bug/issue on the ExecuTorch repository, with hashtag **#mps**.
