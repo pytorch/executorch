@@ -425,12 +425,18 @@
 </pre></div>
 </div>
 <p><strong>Parameters:</strong></p>
-<ul class="simple">
+<ul>
 <li><p>method_names (<em>List[str]</em>): All names of Methods to be verified in the program.</p></li>
-<li><p>inputs (<em>List[List[Any]]</em>): All sets of input to be tested on for all methods. Each list
+<li><p>inputs (<em>List[List[List[Union[torch.Tensor, int, float, bool]]]]</em>): All sets of input to be tested on for all methods. Each list
 of <code class="docutils literal notranslate"><span class="pre">inputs</span></code> is all sets which will be run on the method in the
-program with corresponding method name. Each set of any <code class="docutils literal notranslate"><span class="pre">inputs</span></code> element should contain all inputs required by Method with the same inference method name in ExecuTorch program for one-time execution.</p></li>
-<li><p>expected_outputs (<em>List[List[Any]]</em>): Expected outputs for inputs sharing same index. The size of
+program with corresponding method name. Each set of any <code class="docutils literal notranslate"><span class="pre">inputs</span></code> element should contain all inputs required by Method with the same inference method name in ExecuTorch program for one-time execution.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>  <span class="n">It</span> <span class="ow">is</span> <span class="n">worth</span> <span class="n">mentioning</span> <span class="n">that</span><span class="p">,</span> <span class="n">although</span> <span class="n">both</span> <span class="n">bundled</span> <span class="n">program</span> <span class="ow">and</span> <span class="n">ET</span> <span class="n">runtime</span> <span class="n">apis</span> <span class="n">support</span> <span class="n">setting</span> <span class="nb">input</span>
+  <span class="n">other</span> <span class="n">than</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span> <span class="nb">type</span><span class="p">,</span> <span class="n">only</span> <span class="n">the</span> <span class="nb">input</span> <span class="ow">in</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span> <span class="nb">type</span> <span class="n">will</span> <span class="n">be</span> <span class="n">actually</span> <span class="n">updated</span> <span class="ow">in</span>
+  <span class="n">the</span> <span class="n">program</span><span class="p">,</span> <span class="ow">and</span> <span class="n">the</span> <span class="n">rest</span> <span class="n">of</span> <span class="n">the</span> <span class="n">inputs</span> <span class="n">will</span> <span class="n">just</span> <span class="n">do</span> <span class="n">a</span> <span class="n">sanity</span> <span class="n">check</span> <span class="k">if</span> <span class="n">they</span> <span class="n">match</span> <span class="n">the</span> <span class="n">default</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">method</span><span class="o">.</span>
+</pre></div>
+</div>
+</li>
+<li><p>expected_outputs (<em>List[List[List[torch.Tensor]]]</em>): Expected outputs for inputs sharing same index. The size of
 expected_outputs should be the same as the size of inputs and provided method_names.</p></li>
 </ul>
 <p><strong>Returns:</strong></p>
