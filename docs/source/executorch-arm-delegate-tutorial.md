@@ -266,7 +266,6 @@ In this flow, without any backend delegates, to illustrate the portability of th
 Following script will server as a helper utility to help us generate the `.pte` file.
 
 ```bash
-# TODO: This doesn't exist today
 python3 -m examples.arm.examples --model_name="softmax"
 # This should produce ./softmax.pte
 ```
@@ -280,7 +279,6 @@ By including a `to_backend(model.exported_program, ArmPartitioner)` call during 
 Similar to the non-delegate flow, the same script will server as a helper utility to help us generate the `.pte` file. Notice the `--delegate` option to enable the `to_backend` call.
 
 ```bash
-# TODO: This doesn't exist today
 python3 -m examples.arm.examples --model_name="add" --delegate
 # should produce ./add_arm_delegate.pte
 ```
