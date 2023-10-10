@@ -33,7 +33,7 @@
 
 
 In this tutorial we will walk you through the process of getting setup to
-build ExecuTorch for an Xtensa Hifi4 DSP and running a simple model on it.
+build ExecuTorch for an Xtensa HiFi4 DSP and running a simple model on it.
 
 The [Xtensa HiFi4 DSP](https://www.cadence.com/en_US/home/tools/ip/tensilica-ip/hifi-dsps/hifi-4.html) is a DSP built by Cadence that is optimized for running audio based Neural networks such as wake word detection, Automatic speech recognition (ASR) etc. The HiFi NN library offers an optimized set of library functions commonly used in NN processing that we utilize in this example to demonstrate how these operations can be accelerated.
 
@@ -53,6 +53,10 @@ On top of being able to run on the Xtensa HiFi4 DSP another goal of this tutoria
 :::
 ::::
 
+```{note}
+The linux part of this tutorial has been designed and tested on Ubuntu 22.04 LTS, and requires glibc 2.34. Workarounds are available for other distributions, but will not be covered in this tutorial.
+```
+
 ## Prerequisites (Hardware and Software)
 
 In order to be able to succesfully build and run ExecuTorch on a Xtensa HiFi4 DSP you'll need the following hardware and software components.
@@ -65,11 +69,13 @@ In order to be able to succesfully build and run ExecuTorch on a Xtensa HiFi4 DS
  - [MCUXpresso IDE](https://www.nxp.com/design/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-integrated-development-environment-ide:MCUXpresso-IDE)
     - This IDE is supported on multiple platforms including MacOS. You can use it on any of the supported platforms as you'll only be using this to flash the board with the DSP images that you'll be building later on in this tutorial.
 - [J-Link](https://www.segger.com/downloads/jlink/)
-    - Needed to flash the board with the firmaware images. You can install this on the same platform that you installed the MCUXpresso IDE on.
+    - Needed to flash the board with the firmware images. You can install this on the same platform that you installed the MCUXpresso IDE on.
+    - Note: depending on the version of the NXP board, another probe thank JLink might be installed. In any case, flashing is done using the MCUXpresso IDE in a similar way.
  - [MCUXpresso SDK](https://mcuxpresso.nxp.com/en/select?device=EVK-MIMXRT685)
     - Download this SDK to your Linux machine, extract it and take a note of the path where you store it. You'll need this later.
 - [Xtensa compiler](https://tensilicatools.com/platform/i-mx-rt600/)
     - Download this to your Linux machine. This is needed to build ExecuTorch for the HiFi4 DSP.
+- For cases with optimized kernels, the [nnlib repo](https://github.com/foss-xtensa/nnlib-hifi4).
 
 ## Setting up Developer Environment
 
@@ -97,11 +103,11 @@ examples
 
 ***AoT (Ahead-of-Time) Components***:
 
-The AoT folder contains all of the python scripts and functions needed to export the model to an executorch `.pte` file. In our case, [export_example.py](https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/export_example.py) defines a model and some example inputs (set to a vector of ones), and runs it through the quantizer (from [quantizer.py](https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/quantizer.py)). Then a few compiler passes, also defined in [quantizer.py](https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/quantizer.py), will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in [meta_registrations.py](https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/meta_registrations.py) and have corresponding implemetations in the other folders.
+The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch `.pte` file. In our case, [export_example.py](https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/export_example.py) defines a model and some example inputs (set to a vector of ones), and runs it through the quantizer (from [quantizer.py](https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/quantizer.py)). Then a few compiler passes, also defined in [quantizer.py](https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/quantizer.py), will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in [meta_registrations.py](https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/meta_registrations.py) and have corresponding implemetations in the other folders.
 
 ***Operators***:
 
-The operators folder contains two kinds of operators: existing operators from the [executorch portable library](https://github.com/pytorch/executorch/tree/main/kernels/portable/cpu) and new operators that define custom computations. The former is simply dispatching the operator to the relevant executorch implementation, while the latter acts as an interface, setting up everything needed for the custom kernels to compute the outputs.
+The operators folder contains two kinds of operators: existing operators from the [ExecuTorch portable library](https://github.com/pytorch/executorch/tree/main/kernels/portable/cpu) and new operators that define custom computations. The former is simply dispatching the operator to the relevant ExecuTorch implementation, while the latter acts as an interface, setting up everything needed for the custom kernels to compute the outputs.
 
 ***Kernels***:
 
@@ -147,7 +153,7 @@ export TOOLCHAIN_VER=RI-2021.8-linux
 export XTENSA_CORE=nxp_rt600_RI2021_8_newlib
 ```
 
-***Step 2***. Clone the [nnlib repo](https://github.com/foss-xtensa/nnlib-hifi4)
+***Step 2***. Clone the [nnlib repo](https://github.com/foss-xtensa/nnlib-hifi4), which contains optimized kernels and primitives for HiFi4 DSPs, with `git clone git@github.com:foss-xtensa/nnlib-hifi4.git`.
 
 ***Step 3***. Run the CMake build.
 In order to run the CMake build, you need the path to the following:
@@ -174,6 +180,10 @@ cmake-xt/dsp_data_release.bin  cmake-xt/dsp_text_release.bin
 ***Step 1***. You now take the DSP binary images generated from the previous step and copy them over into your NXP workspace created in the [Setting up  Developer Environment](#setting-up-developer-environment) section. Copy the DSP images into the `dsp_binary` section highlighted in the image below.
 
 <img src="_static/img/dsp_binary.png" alt="MCUXpresso IDE" /><br>
+
+```{note}
+As long as binaries have been built using the Xtensa toolchain on Linux, flashing the board and running on the chip can be done only with the MCUXpresso IDE, which is available on all platforms (Linux, MacOS, Windows).
+```
 
 ***Step 2***. Clean your work space
 
