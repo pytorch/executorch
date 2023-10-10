@@ -40,7 +40,7 @@ class AddModule(torch.nn.Module):
 class SoftmaxModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.softmax = torch.nn.Softmax()
+        self.softmax = torch.nn.Softmax(dim=0)
 
     def forward(self, x):
         z = self.softmax(x)
