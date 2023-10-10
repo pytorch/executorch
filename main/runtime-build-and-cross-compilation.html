@@ -457,15 +457,15 @@ ExecuTorch</span></a>.</p></li>
 <h2>Configure the CMake Build<a class="headerlink" href="#configure-the-cmake-build" title="Permalink to this headline">¶</a></h2>
 <p>Follow these steps after cloning or pulling the upstream repo, since the build
 dependencies may have changed.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
-<span class="n">cd</span> <span class="n">executorch</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
+<span class="nb">cd</span><span class="w"> </span>executorch
 
 <span class="c1"># Clean and configure the CMake build system. It&#39;s good practice to do this</span>
 <span class="c1"># whenever cloning or pulling the upstream repo.</span>
 <span class="c1">#</span>
 <span class="c1"># NOTE: If your `buck2` binary is not on the PATH, you can change this line to</span>
 <span class="c1"># say something like `-DBUCK2=/tmp/buck2` to point directly to the tool.</span>
-<span class="p">(</span><span class="n">rm</span> <span class="o">-</span><span class="n">rf</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">mkdir</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cd</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cmake</span> <span class="o">-</span><span class="n">DBUCK2</span><span class="o">=</span><span class="n">buck2</span> <span class="o">..</span><span class="p">)</span>
+<span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>-DBUCK2<span class="o">=</span>buck2<span class="w"> </span>..<span class="o">)</span>
 </pre></div>
 </div>
 <p>Once this is done, you don’t need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.</p>
@@ -473,8 +473,8 @@ dependencies may have changed.</p>
 <div class="section" id="build-the-runtime-components">
 <h2>Build the runtime components<a class="headerlink" href="#build-the-runtime-components" title="Permalink to this headline">¶</a></h2>
 <p>Build all targets with</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
-<span class="n">cd</span> <span class="n">executorch</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
+<span class="nb">cd</span><span class="w"> </span>executorch
 
 <span class="c1"># Build using the configuration that you previously generated under the</span>
 <span class="c1"># `cmake-out` directory.</span>
@@ -482,7 +482,7 @@ dependencies may have changed.</p>
 <span class="c1"># NOTE: The `-j` argument specifies how many jobs/processes to use when</span>
 <span class="c1"># building, and tends to speed up the build significantly. It&#39;s typical to use</span>
 <span class="c1"># &quot;core count + 1&quot; as the `-j` value.</span>
-<span class="n">cmake</span> <span class="o">--</span><span class="n">build</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">-</span><span class="n">j9</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j9
 </pre></div>
 </div>
 </div>
@@ -492,7 +492,7 @@ dependencies may have changed.</p>
 instructions as described in
 <a class="reference internal" href="getting-started-setup.html#building-a-runtime"><span class="std std-doc">Setting up ExecuTorch</span></a>.</p>
 <p>Then, pass it to the command line tool:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">./</span><span class="n">cmake</span><span class="o">-</span><span class="n">out</span><span class="o">/</span><span class="n">executor_runner</span> <span class="o">--</span><span class="n">model_path</span> <span class="n">path</span><span class="o">/</span><span class="n">to</span><span class="o">/</span><span class="n">add</span><span class="o">.</span><span class="n">pte</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/executor_runner<span class="w"> </span>--model_path<span class="w"> </span>path/to/add.pte
 </pre></div>
 </div>
 <p>If it worked, you should see the message “Model executed successfully” followed
@@ -523,20 +523,20 @@ by the output values.</p>
 </li>
 </ul>
 <p>Assuming Android NDK is available, run:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Run the following lines from the `executorch/` folder</span>
-<span class="n">rm</span> <span class="o">-</span><span class="n">rf</span> <span class="n">cmake</span><span class="o">-</span><span class="n">android</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">mkdir</span> <span class="n">cmake</span><span class="o">-</span><span class="n">android</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cd</span> <span class="n">cmake</span><span class="o">-</span><span class="n">android</span><span class="o">-</span><span class="n">out</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Run the following lines from the `executorch/` folder</span>
+rm<span class="w"> </span>-rf<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-android-out
 
 <span class="c1"># point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed</span>
 <span class="c1"># Run `which buck2`, if it returns empty (meaning the system doesn&#39;t know where buck2 is installed), pass in pass in this flag `-DBUCK2=/path/to/buck2` pointing to buck2</span>
-<span class="n">cmake</span> <span class="o">-</span><span class="n">DCMAKE_TOOLCHAIN_FILE</span><span class="o">=/</span><span class="n">Users</span><span class="o">/</span><span class="p">{</span><span class="n">user_name</span><span class="p">}</span><span class="o">/</span><span class="n">Library</span><span class="o">/</span><span class="n">Android</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">ndk</span><span class="o">/</span><span class="mf">25.2.9519653</span><span class="o">/</span><span class="n">build</span><span class="o">/</span><span class="n">cmake</span><span class="o">/</span><span class="n">android</span><span class="o">.</span><span class="n">toolchain</span><span class="o">.</span><span class="n">cmake</span>  <span class="o">-</span><span class="n">DANDROID_ABI</span><span class="o">=</span><span class="n">arm64</span><span class="o">-</span><span class="n">v8a</span> <span class="o">..</span>
+cmake<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>/Users/<span class="o">{</span>user_name<span class="o">}</span>/Library/Android/sdk/ndk/25.2.9519653/build/cmake/android.toolchain.cmake<span class="w">  </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span>..
 
-<span class="n">cd</span>  <span class="o">..</span>
-<span class="n">cmake</span> <span class="o">--</span><span class="n">build</span>  <span class="n">cmake</span><span class="o">-</span><span class="n">android</span><span class="o">-</span><span class="n">out</span>  <span class="o">-</span><span class="n">j9</span>
+<span class="nb">cd</span><span class="w">  </span>..
+cmake<span class="w"> </span>--build<span class="w">  </span>cmake-android-out<span class="w">  </span>-j9
 
 <span class="c1"># push the binary to an Android device</span>
-<span class="n">adb</span> <span class="n">push</span>  <span class="n">cmake</span><span class="o">-</span><span class="n">android</span><span class="o">-</span><span class="n">out</span><span class="o">/</span><span class="n">executor_runner</span>  <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">local</span><span class="o">/</span><span class="n">tmp</span><span class="o">/</span><span class="n">executorch</span>
+adb<span class="w"> </span>push<span class="w">  </span>cmake-android-out/executor_runner<span class="w">  </span>/data/local/tmp/executorch
 
-<span class="n">adb</span> <span class="n">shell</span>  <span class="s2">&quot;/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.ff&quot;</span>
+adb<span class="w"> </span>shell<span class="w">  </span><span class="s2">&quot;/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.ff&quot;</span>
 </pre></div>
 </div>
 </div>
@@ -557,7 +557,7 @@ by the output values.</p>
 </ol>
 <ul>
 <li><p>Option 1 [recommended] : use the <code class="docutils literal notranslate"><span class="pre">ios.toolchain.cmake</span></code> from the following github repo:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">git</span> <span class="n">clone</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">github</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">leetal</span><span class="o">/</span><span class="n">ios</span><span class="o">-</span><span class="n">cmake</span><span class="o">.</span><span class="n">git</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/leetal/ios-cmake.git
 </pre></div>
 </div>
 </li>
@@ -566,16 +566,16 @@ toolchain is located in <code class="docutils literal notranslate"><span class="
 </ul>
 <ol class="arabic" start="2">
 <li><p>Use the tool chain provided in the repro to build the ExecuTorch library.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">rm</span> <span class="o">-</span><span class="n">rf</span> <span class="n">cmake</span><span class="o">-</span><span class="n">ios</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">mkdir</span> <span class="n">cmake</span><span class="o">-</span><span class="n">ios</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cd</span> <span class="n">cmake</span><span class="o">-</span><span class="n">ios</span><span class="o">-</span><span class="n">out</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-ios-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-ios-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-ios-out
 
 <span class="c1"># change the platform accordingly, please refer to the table listed in Readme</span>
-<span class="n">cmake</span> <span class="o">.</span> <span class="o">-</span><span class="n">G</span> <span class="n">Xcode</span> <span class="o">-</span><span class="n">DCMAKE_TOOLCHAIN_FILE</span><span class="o">=~/</span><span class="n">ios</span><span class="o">-</span><span class="n">cmake</span><span class="o">/</span><span class="n">ios</span><span class="o">.</span><span class="n">toolchain</span><span class="o">.</span><span class="n">cmake</span> <span class="o">-</span><span class="n">DPLATFORM</span><span class="o">=</span><span class="n">SIMULATOR</span>
+cmake<span class="w"> </span>.<span class="w"> </span>-G<span class="w"> </span>Xcode<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>~/ios-cmake/ios.toolchain.cmake<span class="w"> </span>-DPLATFORM<span class="o">=</span>SIMULATOR
 
 <span class="c1"># Create an include folder in cmake-ios-out to include all header files</span>
-<span class="n">mkdir</span> <span class="n">include</span>
-<span class="n">cp</span> <span class="o">-</span><span class="n">r</span> <span class="o">../</span><span class="n">runtime</span> <span class="n">include</span>
-<span class="n">cp</span> <span class="o">-</span><span class="n">r</span> <span class="o">../</span><span class="n">extension</span> <span class="n">include</span>
-<span class="n">cp</span> <span class="o">-</span><span class="n">r</span> <span class="o">../</span><span class="n">utils</span> <span class="n">include</span>
+mkdir<span class="w"> </span>include
+cp<span class="w"> </span>-r<span class="w"> </span>../runtime<span class="w"> </span>include
+cp<span class="w"> </span>-r<span class="w"> </span>../extension<span class="w"> </span>include
+cp<span class="w"> </span>-r<span class="w"> </span>../utils<span class="w"> </span>include
 </pre></div>
 </div>
 </li>
@@ -697,8 +697,6 @@ toolchain is located in <code class="docutils literal notranslate"><span class="
 </script>
 
  
-// Patch up links to point to ExecuTorch URLs instead of to
-// pytorch/pytorch URLs.
 <script type="text/javascript">
   $(document).ready(function () {
     // Patch links on interactive tutorial pages to point

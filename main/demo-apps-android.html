@@ -439,17 +439,17 @@ Prerequisites</div>
 <p class="admonition-title">Note</p>
 <p>This demo app and tutorial has only been validated with arm64-v8a <a class="reference external" href="https://developer.android.com/ndk/guides/abis">ABI</a>.</p>
 </div>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>export ANDROID_NDK=&lt;path-to-android-ndk&gt;
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path-to-android-ndk&gt;
 
-rm -rf cmake-out &amp;&amp; mkdir cmake-out &amp;&amp; cd cmake-out
-cmake .. \
-    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-    -DANDROID_ABI=arm64-v8a \
-    -DBUCK2=/tmp/buck2 \
-    -DEXECUTORCH_BUILD_ANDROID_DEMO_APP_JNI=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
-    -DEXECUTORCH_BUILD_FLATC=OFF \
-    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out
+cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DBUCK2<span class="o">=</span>/tmp/buck2<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_ANDROID_DEMO_APP_JNI<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON
 </pre></div>
 </div>
 <p>When we set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_XNNPACK=ON</span></code>, we will build the target <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt"><code class="docutils literal notranslate"><span class="pre">xnn_executor_runner_lib</span></code></a> which in turn is linked into libexecutorchdemo via <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/jni/CMakeLists.txt">CMake</a>.</p>
@@ -461,20 +461,20 @@ cmake .. \
 <p class="admonition-title">Note</p>
 <p>Qualcomm SDK is required for this step.</p>
 </div>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>export ANDROID_NDK=&lt;path-to-android-ndk&gt;
-export QNN_SDK=&lt;path-to-qnn-sdk&gt;
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path-to-android-ndk&gt;
+<span class="nb">export</span><span class="w"> </span><span class="nv">QNN_SDK</span><span class="o">=</span>&lt;path-to-qnn-sdk&gt;
 
-rm -rf cmake-out &amp;&amp; mkdir cmake-out &amp;&amp; cd cmake-out
-cmake .. \
-    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-    -DANDROID_ABI=arm64-v8a \
-    -DBUCK2=/tmp/buck2 \
-    -DEXECUTORCH_BUILD_ANDROID_DEMO_APP_JNI=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
-    -DEXECUTORCH_BUILD_FLATC=OFF \
-    -DEXECUTORCH_BUILD_QNN=ON \
-    -DQNN_SDK_ROOT=$QNN_SDK \
-    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out
+cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DBUCK2<span class="o">=</span>/tmp/buck2<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_ANDROID_DEMO_APP_JNI<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="nv">$QNN_SDK</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON
 </pre></div>
 </div>
 <p>Similar to the previous XNNPACK library, with this setup, we compile <code class="docutils literal notranslate"><span class="pre">libexecutorchdemo.so</span></code> but it adds an additional static library <code class="docutils literal notranslate"><span class="pre">qnn_executorch_backend</span></code> which wraps up Qualcomm HTP runtime library and registers the Qualcomm HTP backend. This is later exposed to Java app.</p>
@@ -485,33 +485,33 @@ cmake .. \
 <ol class="arabic simple">
 <li><p>Build the libraries:</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cmake</span> <span class="o">--</span><span class="n">build</span> <span class="o">.</span> <span class="o">-</span><span class="n">j16</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>-j16
 </pre></div>
 </div>
 <ol class="arabic simple" start="2">
 <li><p>Copy the libraries to the appropriate location to link against them:</p></li>
 </ol>
 <p>Navigate to the build artifacts directory:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">mkdir</span> <span class="o">-</span><span class="n">p</span> <span class="o">../</span><span class="n">examples</span><span class="o">/</span><span class="n">demo</span><span class="o">-</span><span class="n">apps</span><span class="o">/</span><span class="n">android</span><span class="o">/</span><span class="n">ExecuTorchDemo</span><span class="o">/</span><span class="n">app</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">jniLibs</span><span class="o">/</span><span class="n">arm64</span><span class="o">-</span><span class="n">v8a</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>-p<span class="w"> </span>../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 </pre></div>
 </div>
 <p>Copy the core libraries:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cp</span> <span class="o">./</span><span class="n">examples</span><span class="o">/</span><span class="n">demo</span><span class="o">-</span><span class="n">apps</span><span class="o">/</span><span class="n">android</span><span class="o">/</span><span class="n">jni</span><span class="o">/</span><span class="n">libexecutorchdemo</span><span class="o">.</span><span class="n">so</span> \
-   <span class="o">../</span><span class="n">examples</span><span class="o">/</span><span class="n">demo</span><span class="o">-</span><span class="n">apps</span><span class="o">/</span><span class="n">android</span><span class="o">/</span><span class="n">ExecuTorchDemo</span><span class="o">/</span><span class="n">app</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">jniLibs</span><span class="o">/</span><span class="n">arm64</span><span class="o">-</span><span class="n">v8a</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cp<span class="w"> </span>./examples/demo-apps/android/jni/libexecutorchdemo.so<span class="w"> </span><span class="se">\</span>
+<span class="w">   </span>../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 </pre></div>
 </div>
 <p>Later, this shared library will be loaded by <code class="docutils literal notranslate"><span class="pre">NativePeer.java</span></code> in Java code.</p>
 <ol class="arabic simple" start="3">
 <li><p><em>Qualcomm HTP Only:</em> Copy Qualcomm HTP runtime library:</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cp</span> <span class="n">libQnnHtp</span><span class="o">.</span><span class="n">so</span> <span class="n">libQnnHtpV69Skel</span><span class="o">.</span><span class="n">so</span> <span class="n">libQnnHtpStub</span><span class="o">.</span><span class="n">so</span> <span class="n">libQnnSystem</span><span class="o">.</span><span class="n">so</span> \
-   <span class="o">../</span><span class="n">examples</span><span class="o">/</span><span class="n">demo</span><span class="o">-</span><span class="n">apps</span><span class="o">/</span><span class="n">android</span><span class="o">/</span><span class="n">ExecuTorchDemo</span><span class="o">/</span><span class="n">app</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">jniLibs</span><span class="o">/</span><span class="n">arm64</span><span class="o">-</span><span class="n">v8a</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cp<span class="w"> </span>libQnnHtp.so<span class="w"> </span>libQnnHtpV69Skel.so<span class="w"> </span>libQnnHtpStub.so<span class="w"> </span>libQnnSystem.so<span class="w"> </span><span class="se">\</span>
+<span class="w">   </span>../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 </pre></div>
 </div>
 <ol class="arabic simple" start="4">
 <li><p>Return to the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> directory:</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="o">..</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>..
 </pre></div>
 </div>
 </div>
@@ -524,16 +524,16 @@ cmake .. \
 <ol class="arabic simple">
 <li><p>Export a DeepLab v3 model backed with XNNPACK delegate and bundle it with the app:</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>export FLATC_EXECUTABLE=$(realpath third-party/flatbuffers/cmake-out/flatc)
-python3 -m examples.xnnpack.aot_compiler --model_name=&quot;dl3&quot; --delegate
-mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
-cp dl3_xnnpack_fp32.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">FLATC_EXECUTABLE</span><span class="o">=</span><span class="k">$(</span>realpath<span class="w"> </span>third-party/flatbuffers/cmake-out/flatc<span class="k">)</span>
+python3<span class="w"> </span>-m<span class="w"> </span>examples.xnnpack.aot_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;dl3&quot;</span><span class="w"> </span>--delegate
+mkdir<span class="w"> </span>-p<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+cp<span class="w"> </span>dl3_xnnpack_fp32.pte<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 </pre></div>
 </div>
 <ol class="arabic simple" start="2">
 <li><p><em>Qualcomm HTP Only:</em> Copy HTP delegation models to the app:</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cp</span> <span class="n">dlv3_qnn</span><span class="o">.</span><span class="n">pte</span> <span class="n">examples</span><span class="o">/</span><span class="n">demo</span><span class="o">-</span><span class="n">apps</span><span class="o">/</span><span class="n">android</span><span class="o">/</span><span class="n">ExecuTorchDemo</span><span class="o">/</span><span class="n">app</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">assets</span><span class="o">/</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cp<span class="w"> </span>dlv3_qnn.pte<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 </pre></div>
 </div>
 </div>
@@ -642,8 +642,6 @@ cp dl3_xnnpack_fp32.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/a
 </script>
 
  
-// Patch up links to point to ExecuTorch URLs instead of to
-// pytorch/pytorch URLs.
 <script type="text/javascript">
   $(document).ready(function () {
     // Patch links on interactive tutorial pages to point

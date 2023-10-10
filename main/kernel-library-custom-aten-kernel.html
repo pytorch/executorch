@@ -443,36 +443,35 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">kernel_name</span></code>: the expected name of the C++ function that will implement this operator. You can put whatever you want to here, but you should follow the convention of replacing the <code class="docutils literal notranslate"><span class="pre">.</span></code> in the overload name with an underscore, and lowercasing all characters. In this example, <code class="docutils literal notranslate"><span class="pre">add.out</span></code> uses the C++ function named <code class="docutils literal notranslate"><span class="pre">add_out</span></code>. <code class="docutils literal notranslate"><span class="pre">add.Scalar_out</span></code> would become <code class="docutils literal notranslate"><span class="pre">add_scalar_out</span></code>, with a lowercase <code class="docutils literal notranslate"><span class="pre">S</span></code>. We support namespace for kernels, but note that we will be inserting a <code class="docutils literal notranslate"><span class="pre">native::</span></code> to the last level of namespace. So <code class="docutils literal notranslate"><span class="pre">custom::add_out</span></code> in the <code class="docutils literal notranslate"><span class="pre">kernel_name</span></code> will point to <code class="docutils literal notranslate"><span class="pre">custom::native::add_out</span></code>.</p></li>
 </ul>
 <p>Some examples of operator entry:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">-</span> <span class="n">op</span><span class="p">:</span> <span class="n">add</span><span class="o">.</span><span class="n">out</span>
-  <span class="n">kernels</span><span class="p">:</span>
-    <span class="o">-</span> <span class="n">arg_meta</span><span class="p">:</span> <span class="n">null</span>
-      <span class="n">kernel_name</span><span class="p">:</span> <span class="n">torch</span><span class="p">::</span><span class="n">executor</span><span class="p">::</span><span class="n">add_out</span>
+<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">op</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add.out</span>
+<span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="w">      </span><span class="nt">kernel_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">torch::executor::add_out</span>
 </pre></div>
 </div>
 <p>An out variant of a core ATen operator with a default kernel</p>
 <p>ATen operator with a dtype/dim order specialized kernel (works for <code class="docutils literal notranslate"><span class="pre">Double</span></code> dtype and dim order needs to be (0, 1, 2, 3))</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">-</span> <span class="n">op</span><span class="p">:</span> <span class="n">add</span><span class="o">.</span><span class="n">out</span>
-  <span class="n">type_alias</span><span class="p">:</span>
-    <span class="n">T0</span><span class="p">:</span> <span class="p">[</span><span class="n">Double</span><span class="p">]</span>
-  <span class="n">dim_order_alias</span><span class="p">:</span>
-    <span class="n">D0</span><span class="p">:</span> <span class="p">[[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]]</span>
-  <span class="n">kernels</span><span class="p">:</span>
-    <span class="o">-</span> <span class="n">arg_meta</span><span class="p">:</span>
-        <span class="bp">self</span><span class="p">:</span> <span class="p">[</span><span class="n">T0</span><span class="p">,</span> <span class="n">D0</span><span class="p">]</span>
-        <span class="n">other</span><span class="p">:</span> <span class="p">[</span><span class="n">T0</span> <span class="p">,</span> <span class="n">D0</span><span class="p">]</span>
-        <span class="n">out</span><span class="p">:</span> <span class="p">[</span><span class="n">T0</span><span class="p">,</span> <span class="n">D0</span><span class="p">]</span>
-      <span class="n">kernel_name</span><span class="p">:</span> <span class="n">torch</span><span class="p">::</span><span class="n">executor</span><span class="p">::</span><span class="n">add_out</span>
-
+<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">op</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add.out</span>
+<span class="w">  </span><span class="nt">type_alias</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">T0</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Double</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">dim_order_alias</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">D0</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[[</span><span class="nv">0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">3</span><span class="p p-Indicator">]]</span>
+<span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">self</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">T0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">D0</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">other</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">T0</span><span class="w"> </span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">D0</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">out</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">T0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">D0</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">kernel_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">torch::executor::add_out</span>
 </pre></div>
 </div>
 </div>
 <div class="section" id="custom-ops-yaml-entry">
 <h2>Custom Ops Yaml Entry<a class="headerlink" href="#custom-ops-yaml-entry" title="Permalink to this headline">¶</a></h2>
 <p>For custom ops (the ones that are not part of the out variants of core ATen opset) we need to specify the operator schema as well as a <code class="docutils literal notranslate"><span class="pre">kernel</span></code> section. So instead of <code class="docutils literal notranslate"><span class="pre">op</span></code> we use <code class="docutils literal notranslate"><span class="pre">func</span></code> with the operator schema. As an example, here’s a yaml entry for a custom op:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>- func: allclose.out(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False, bool dummy_param=False, *, Tensor(a!) out) -&gt; Tensor(a!)
-  kernels:
-    - arg_meta: null
-      kernel_name: torch::executor::allclose_out
+<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">func</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">allclose.out(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False, bool dummy_param=False, *, Tensor(a!) out) -&gt; Tensor(a!)</span>
+<span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="w">      </span><span class="nt">kernel_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">torch::executor::allclose_out</span>
 </pre></div>
 </div>
 <p>The <code class="docutils literal notranslate"><span class="pre">kernel</span></code> section is the same as the one defined in core ATen ops. For operator schema, we are reusing the DSL defined in this <a class="reference external" href="https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/README.md">README.md</a>, with a few differences:</p>
@@ -521,25 +520,24 @@
 <div class="section" id="cmake">
 <h3>CMake<a class="headerlink" href="#cmake" title="Permalink to this headline">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">generate_bindings_for_kernels(functions_yaml,</span> <span class="pre">custom_ops_yaml)</span></code> takes a yaml file for core ATen op out variants and also a yaml file for custom ops, generate C++ bindings for kernel registration. It also depends on the selective build artifact generated by <code class="docutils literal notranslate"><span class="pre">gen_selected_ops()</span></code>, see selective build doc for more information. Then <code class="docutils literal notranslate"><span class="pre">gen_operators_lib</span></code> will package those bindings to be a C++ library. As an example:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span># SELECT_OPS_LIST: aten::add.out,aten::mm.out
-gen_selected_ops(&quot;&quot; &quot;${SELECT_OPS_LIST}&quot; &quot;&quot;)
+<div class="highlight-none notranslate highlight-cmake"><div class="highlight"><pre><span></span><span class="c"># SELECT_OPS_LIST: aten::add.out,aten::mm.out</span>
+<span class="nb">gen_selected_ops</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;${SELECT_OPS_LIST}&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">)</span>
 
-# Look for functions.yaml associated with portable libs and generate C++ bindings
-generate_bindings_for_kernels(${EXECUTORCH_ROOT}/kernels/portable/functions.yaml &quot;&quot;)
+<span class="c"># Look for functions.yaml associated with portable libs and generate C++ bindings</span>
+<span class="nb">generate_bindings_for_kernels</span><span class="p">(</span><span class="o">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="o">}</span><span class="s">/kernels/portable/functions.yaml</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">)</span>
 
-# Prepare a C++ library called &quot;generated_lib&quot; with _kernel_lib being the portable library, executorch is a dependency of it.
-gen_operators_lib(&quot;generated_lib&quot; ${_kernel_lib} executorch)
+<span class="c"># Prepare a C++ library called &quot;generated_lib&quot; with _kernel_lib being the portable library, executorch is a dependency of it.</span>
+<span class="nb">gen_operators_lib</span><span class="p">(</span><span class="s2">&quot;generated_lib&quot;</span><span class="w"> </span><span class="o">${</span><span class="nv">_kernel_lib</span><span class="o">}</span><span class="w"> </span><span class="s">executorch</span><span class="p">)</span>
 
-# Link &quot;generated_lib&quot; into the application:
-target_link_libraries(executorch_binary generated_lib)
-
+<span class="c"># Link &quot;generated_lib&quot; into the application:</span>
+<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">executorch_binary</span><span class="w"> </span><span class="s">generated_lib</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
 <div class="section" id="buck2">
 <h3>Buck2<a class="headerlink" href="#buck2" title="Permalink to this headline">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">executorch_generated_lib</span></code> is the macro that takes the yaml files and depends on the selective build macro <code class="docutils literal notranslate"><span class="pre">et_operator_library</span></code>. For an example:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Yaml file for kernel library</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Yaml file for kernel library</span>
 <span class="n">export_file</span><span class="p">(</span>
   <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;functions.yaml&quot;</span>
 <span class="p">)</span>
@@ -689,8 +687,6 @@ target_link_libraries(executorch_binary generated_lib)
 </script>
 
  
-// Patch up links to point to ExecuTorch URLs instead of to
-// pytorch/pytorch URLs.
 <script type="text/javascript">
   $(document).ready(function () {
     // Patch links on interactive tutorial pages to point

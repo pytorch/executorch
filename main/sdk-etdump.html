@@ -403,29 +403,29 @@
 <ol class="arabic simple">
 <li><p><em><strong>Include</strong></em> the ETDump header in your code.</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1">#include &lt;executorch/sdk/etdump/etdump_flatcc.h&gt;</span>
+<div class="highlight-none notranslate highlight-C++"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/sdk/etdump/etdump_flatcc.h&gt;</span>
 </pre></div>
 </div>
 <ol class="arabic simple" start="2">
 <li><p><em><strong>Create</strong></em> an Instance of the ETDumpGen class and pass it into the <code class="docutils literal notranslate"><span class="pre">load_method</span></code> call that is invoked in the runtime.</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">torch</span><span class="p">::</span><span class="n">executor</span><span class="p">::</span><span class="n">ETDumpGen</span> <span class="n">etdump_gen</span> <span class="o">=</span> <span class="n">torch</span><span class="p">::</span><span class="n">executor</span><span class="p">::</span><span class="n">ETDumpGen</span><span class="p">();</span>
-<span class="n">Result</span><span class="o">&lt;</span><span class="n">Method</span><span class="o">&gt;</span> <span class="n">method</span> <span class="o">=</span>
-      <span class="n">program</span><span class="o">-&gt;</span><span class="n">load_method</span><span class="p">(</span><span class="n">method_name</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">memory_manager</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">etdump_gen</span><span class="p">);</span>
+<div class="highlight-none notranslate highlight-C++"><div class="highlight"><pre><span></span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="w"> </span><span class="n">etdump_gen</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="p">();</span>
+<span class="n">Result</span><span class="o">&lt;</span><span class="n">Method</span><span class="o">&gt;</span><span class="w"> </span><span class="n">method</span><span class="w"> </span><span class="o">=</span>
+<span class="w">      </span><span class="n">program</span><span class="o">-&gt;</span><span class="n">load_method</span><span class="p">(</span><span class="n">method_name</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">memory_manager</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">etdump_gen</span><span class="p">);</span>
 </pre></div>
 </div>
 <ol class="arabic simple" start="3">
 <li><p><em><strong>Dump out the ETDump buffer</strong></em> - after the inference iterations have been completed, users can dump out the ETDump buffer. If users are on a device which has a file-system, they could just write it out to the fileystem. For more constrained embedded devices, users will have to extract the ETDump buffer from the device through a mechanism that best suits them (e.g. UART, JTAG etc.)</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">etdump_result</span> <span class="n">result</span> <span class="o">=</span> <span class="n">etdump_gen</span><span class="o">.</span><span class="n">get_etdump_data</span><span class="p">();</span>
-<span class="k">if</span> <span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">buf</span> <span class="o">!=</span> <span class="n">nullptr</span> <span class="o">&amp;&amp;</span> <span class="n">result</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
-    <span class="o">//</span> <span class="n">On</span> <span class="n">a</span> <span class="n">device</span> <span class="k">with</span> <span class="n">a</span> <span class="n">file</span> <span class="n">system</span> <span class="n">users</span> <span class="n">can</span> <span class="n">just</span> <span class="n">write</span> <span class="n">it</span> <span class="n">out</span>
-    <span class="o">//</span> <span class="n">to</span> <span class="n">the</span> <span class="n">file</span><span class="o">-</span><span class="n">system</span><span class="o">.</span>
-    <span class="n">FILE</span><span class="o">*</span> <span class="n">f</span> <span class="o">=</span> <span class="n">fopen</span><span class="p">(</span><span class="n">FLAGS_etdump_path</span><span class="o">.</span><span class="n">c_str</span><span class="p">(),</span> <span class="s2">&quot;w+&quot;</span><span class="p">);</span>
-    <span class="n">fwrite</span><span class="p">((</span><span class="n">uint8_t</span><span class="o">*</span><span class="p">)</span><span class="n">result</span><span class="o">.</span><span class="n">buf</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">f</span><span class="p">);</span>
-    <span class="n">fclose</span><span class="p">(</span><span class="n">f</span><span class="p">);</span>
-    <span class="n">free</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">buf</span><span class="p">);</span>
-  <span class="p">}</span>
+<div class="highlight-none notranslate highlight-C++"><div class="highlight"><pre><span></span><span class="n">etdump_result</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">etdump_gen</span><span class="p">.</span><span class="n">get_etdump_data</span><span class="p">();</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="k">nullptr</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">size</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// On a device with a file system users can just write it out</span>
+<span class="w">    </span><span class="c1">// to the file-system.</span>
+<span class="w">    </span><span class="kt">FILE</span><span class="o">*</span><span class="w"> </span><span class="n">f</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">fopen</span><span class="p">(</span><span class="n">FLAGS_etdump_path</span><span class="p">.</span><span class="n">c_str</span><span class="p">(),</span><span class="w"> </span><span class="s">&quot;w+&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="n">fwrite</span><span class="p">((</span><span class="kt">uint8_t</span><span class="o">*</span><span class="p">)</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="n">f</span><span class="p">);</span>
+<span class="w">    </span><span class="n">fclose</span><span class="p">(</span><span class="n">f</span><span class="p">);</span>
+<span class="w">    </span><span class="n">free</span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="p">);</span>
+<span class="w">  </span><span class="p">}</span>
 </pre></div>
 </div>
 <ol class="arabic" start="4">
@@ -549,8 +549,6 @@
 </script>
 
  
-// Patch up links to point to ExecuTorch URLs instead of to
-// pytorch/pytorch URLs.
 <script type="text/javascript">
   $(document).ready(function () {
     // Patch links on interactive tutorial pages to point

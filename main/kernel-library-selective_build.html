@@ -445,38 +445,38 @@
 <div class="section" id="buck2-example">
 <h2>Buck2 example<a class="headerlink" href="#buck2-example" title="Permalink to this headline">¶</a></h2>
 <p>Let’s take a look at the following build:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Select a list of operators: defined in `ops`</span>
-<span class="n">et_operator_library</span><span class="p">(</span>
-    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;select_ops_in_list&quot;</span><span class="p">,</span>
-    <span class="n">ops</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="s2">&quot;aten::add.out&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;aten::mm.out&quot;</span><span class="p">,</span>
-    <span class="p">],</span>
-<span class="p">)</span>
+<div class="highlight-none notranslate highlight-starlark"><div class="highlight"><pre><span></span># Select a list of operators: defined in `ops`
+et_operator_library(
+    name = &quot;select_ops_in_list&quot;,
+    ops = [
+        &quot;aten::add.out&quot;,
+        &quot;aten::mm.out&quot;,
+    ],
+)
 </pre></div>
 </div>
 <p>This target generates the yaml file containing op info for these two ops.</p>
 <p>In addition to that, if we want to select all ops from a kernel library, we can do:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Select all ops from a yaml file</span>
-<span class="n">et_operator_library</span><span class="p">(</span>
-    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;select_ops_from_yaml&quot;</span><span class="p">,</span>
-    <span class="n">ops_schema_yaml_target</span> <span class="o">=</span> <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops.yaml&quot;</span><span class="p">,</span>
-<span class="p">)</span>
+<div class="highlight-none notranslate highlight-starlark"><div class="highlight"><pre><span></span># Select all ops from a yaml file
+et_operator_library(
+    name = &quot;select_ops_from_yaml&quot;,
+    ops_schema_yaml_target = &quot;//executorch/examples/portable/custom_ops:custom_ops.yaml&quot;,
+)
 </pre></div>
 </div>
 <p>Then in the kernel registration library we can do:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">executorch_generated_lib</span><span class="p">(</span>
-    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;select_ops_lib&quot;</span><span class="p">,</span>
-    <span class="n">custom_ops_yaml_target</span> <span class="o">=</span> <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops.yaml&quot;</span><span class="p">,</span>
-<span class="n">functions_yaml_target</span> <span class="o">=</span> <span class="s2">&quot;//executorch/kernels/portable:functions.yaml&quot;</span><span class="p">,</span>
-    <span class="n">deps</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops_1&quot;</span><span class="p">,</span> <span class="c1"># kernel library</span>
-        <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops_2&quot;</span><span class="p">,</span> <span class="c1"># kernel library</span>
-  <span class="s2">&quot;//executorch/kernels/portable:operators&quot;</span><span class="p">,</span> <span class="c1"># kernel library</span>
-        <span class="s2">&quot;:select_ops_from_yaml&quot;</span><span class="p">,</span>
-  <span class="s2">&quot;:select_ops_in_list&quot;</span><span class="p">,</span>
-    <span class="p">],</span>
-<span class="p">)</span>
+<div class="highlight-none notranslate highlight-starlark"><div class="highlight"><pre><span></span>executorch_generated_lib(
+    name = &quot;select_ops_lib&quot;,
+    custom_ops_yaml_target = &quot;//executorch/examples/portable/custom_ops:custom_ops.yaml&quot;,
+functions_yaml_target = &quot;//executorch/kernels/portable:functions.yaml&quot;,
+    deps = [
+        &quot;//executorch/examples/portable/custom_ops:custom_ops_1&quot;, # kernel library
+        &quot;//executorch/examples/portable/custom_ops:custom_ops_2&quot;, # kernel library
+  &quot;//executorch/kernels/portable:operators&quot;, # kernel library
+        &quot;:select_ops_from_yaml&quot;,
+  &quot;:select_ops_in_list&quot;,
+    ],
+)
 </pre></div>
 </div>
 <p>Notice we are allowlisting both add.out, mm.out from the list, and the ones from the schema yaml (<code class="docutils literal notranslate"><span class="pre">custom_ops.yaml</span></code>).</p>
@@ -484,15 +484,15 @@
 <div class="section" id="cmake-example">
 <h2>CMake example<a class="headerlink" href="#cmake-example" title="Permalink to this headline">¶</a></h2>
 <p>In CMakeLists.txt we have the following logic:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>set(_kernel_lib)
-if(SELECT_ALL_OPS)
-  gen_selected_ops(&quot;&quot; &quot;&quot; &quot;${SELECT_ALL_OPS}&quot;)
-elseif(SELECT_OPS_LIST)
-  gen_selected_ops(&quot;&quot; &quot;${SELECT_OPS_LIST}&quot; &quot;&quot;)
-elseif(SELECT_OPS_YAML)
- set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml)
-  gen_selected_ops(&quot;${_custom_ops_yaml}&quot; &quot;&quot; &quot;&quot;)
-endif()
+<div class="highlight-none notranslate highlight-cmake"><div class="highlight"><pre><span></span><span class="nb">set</span><span class="p">(</span><span class="s">_kernel_lib</span><span class="p">)</span>
+<span class="nb">if</span><span class="p">(</span><span class="s">SELECT_ALL_OPS</span><span class="p">)</span>
+<span class="w">  </span><span class="nb">gen_selected_ops</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;${SELECT_ALL_OPS}&quot;</span><span class="p">)</span>
+<span class="nb">elseif</span><span class="p">(</span><span class="s">SELECT_OPS_LIST</span><span class="p">)</span>
+<span class="w">  </span><span class="nb">gen_selected_ops</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;${SELECT_OPS_LIST}&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="nb">elseif</span><span class="p">(</span><span class="s">SELECT_OPS_YAML</span><span class="p">)</span>
+<span class="w"> </span><span class="nb">set</span><span class="p">(</span><span class="s">_custom_ops_yaml</span><span class="w"> </span><span class="o">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="o">}</span><span class="s">/examples/portable/custom_ops/custom_ops.yaml</span><span class="p">)</span>
+<span class="w">  </span><span class="nb">gen_selected_ops</span><span class="p">(</span><span class="s2">&quot;${_custom_ops_yaml}&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="nb">endif</span><span class="p">()</span>
 </pre></div>
 </div>
 <p>Then when calling CMake, we can do:</p>
@@ -601,8 +601,6 @@ endif()
 </script>
 
  
-// Patch up links to point to ExecuTorch URLs instead of to
-// pytorch/pytorch URLs.
 <script type="text/javascript">
   $(document).ready(function () {
     // Patch links on interactive tutorial pages to point

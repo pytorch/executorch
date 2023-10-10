@@ -437,7 +437,7 @@ defaults to ms (1ms = 1000us).</p></li>
 </dd></dl>
 
 <p><strong>Example Usage:</strong></p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.sdk.etdb.inspector</span> <span class="kn">import</span> <span class="n">Inspector</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.sdk.etdb.inspector</span> <span class="kn">import</span> <span class="n">Inspector</span>
 
 <span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">&quot;/path/to/etdump.etdp&quot;</span><span class="p">,</span> <span class="n">etrecord_path</span><span class="o">=</span><span class="s2">&quot;/path/to/etrecord.bin&quot;</span><span class="p">)</span>
 </pre></div>
@@ -460,7 +460,7 @@ defaults to ms (1ms = 1000us).</p></li>
 </dd></dl>
 
 <p id="example-usage-1"><strong>Example Usage:</strong></p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">inspector</span><span class="o">.</span><span class="n">print_data_tabular</span><span class="p">()</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">inspector</span><span class="o">.</span><span class="n">print_data_tabular</span><span class="p">()</span>
 </pre></div>
 </div>
 <img alt="_images/print_data_tabular.png" src="_images/print_data_tabular.png" />
@@ -482,7 +482,7 @@ defaults to ms (1ms = 1000us).</p></li>
 </dd></dl>
 
 <p id="example-usage-2"><strong>Example Usage:</strong></p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">inspector</span><span class="o">.</span><span class="n">find_total_for_module</span><span class="p">(</span><span class="s2">&quot;L__self___conv_layer&quot;</span><span class="p">))</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">inspector</span><span class="o">.</span><span class="n">find_total_for_module</span><span class="p">(</span><span class="s2">&quot;L__self___conv_layer&quot;</span><span class="p">))</span>
 </pre></div>
 </div>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="mf">0.002</span>
@@ -506,7 +506,7 @@ defaults to ms (1ms = 1000us).</p></li>
 </dd></dl>
 
 <p id="example-usage-3"><strong>Example Usage:</strong></p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">inspector</span><span class="o">.</span><span class="n">get_exported_program</span><span class="p">())</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">inspector</span><span class="o">.</span><span class="n">get_exported_program</span><span class="p">())</span>
 </pre></div>
 </div>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">ExportedProgram</span><span class="p">:</span>
@@ -531,7 +531,7 @@ defaults to ms (1ms = 1000us).</p></li>
 <h3><code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> Class<a class="headerlink" href="#eventblock-class" title="Permalink to this headline">¶</a></h3>
 <p>Access <code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> instances through the <code class="docutils literal notranslate"><span class="pre">event_blocks</span></code> attribute
 of an <code class="docutils literal notranslate"><span class="pre">Inspector</span></code> instance, for example:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span>
 </pre></div>
 </div>
 <dl class="py class">
@@ -555,7 +555,7 @@ If there’s a control flow, each branch will be represented by a separate <cite
 <h3><code class="docutils literal notranslate"><span class="pre">Event</span></code> Class<a class="headerlink" href="#event-class" title="Permalink to this headline">¶</a></h3>
 <p>Access <code class="docutils literal notranslate"><span class="pre">Event</span></code> instances through the <code class="docutils literal notranslate"><span class="pre">events</span></code> attribute of an
 <code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> instance, for example:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
     <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
         <span class="c1"># Do something with each event</span>
 </pre></div>
@@ -583,7 +583,7 @@ If there’s a control flow, each branch will be represented by a separate <cite
 </dd></dl>
 
 <p><strong>Example Usage:</strong></p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
     <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Method::execute&quot;</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span>
@@ -599,7 +599,7 @@ If there’s a control flow, each branch will be represented by a separate <cite
 <p>Execute the following command in your terminal to display the data
 table. This command produces the identical table output as calling the
 <a class="reference external" href="#print-data-tabular">print_data_tabular</a> mentioned earlier:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">sdk</span><span class="o">.</span><span class="n">inspector</span><span class="o">.</span><span class="n">inspector_cli</span> <span class="o">--</span><span class="n">etdump_path</span> <span class="o">&lt;</span><span class="n">path_to_etdump</span><span class="o">&gt;</span> <span class="o">--</span><span class="n">etrecord_path</span> <span class="o">&lt;</span><span class="n">path_to_etrecord</span><span class="o">&gt;</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>sdk.inspector.inspector_cli<span class="w"> </span>--etdump_path<span class="w"> </span>&lt;path_to_etdump&gt;<span class="w"> </span>--etrecord_path<span class="w"> </span>&lt;path_to_etrecord&gt;
 </pre></div>
 </div>
 <p>Note that the <cite>etrecord_path</cite> argument is optional.</p>
@@ -712,8 +712,6 @@ table. This command produces the identical table output as calling the
 </script>
 
  
-// Patch up links to point to ExecuTorch URLs instead of to
-// pytorch/pytorch URLs.
 <script type="text/javascript">
   $(document).ready(function () {
     // Patch links on interactive tutorial pages to point

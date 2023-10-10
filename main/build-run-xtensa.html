@@ -434,7 +434,7 @@ build ExecuTorch for an Xtensa Hifi4 DSP and running a simple model on it.</p>
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
 <div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
 <div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-learn docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
 <div class="sd-card-body docutils">
 <div class="sd-card-title sd-font-weight-bold docutils">
 What you will learn in this tutorial:</div>
@@ -509,11 +509,11 @@ Tutorials we recommend you complete before this:</div>
 <div class="section" id="working-tree-description">
 <h2>Working Tree Description<a class="headerlink" href="#working-tree-description" title="Permalink to this headline">¶</a></h2>
 <p>The working tree is:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">examples</span>
-<span class="o">|</span><span class="n">_</span> <span class="n">xtensa</span>
-   <span class="o">|</span><span class="n">_</span> <span class="n">aot</span>
-   <span class="o">|</span><span class="n">_</span> <span class="n">ops</span>
-   <span class="o">|</span><span class="n">_</span> <span class="n">kernels</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>examples
+<span class="p">|</span>_<span class="w"> </span>xtensa
+<span class="w">   </span><span class="p">|</span>_<span class="w"> </span>aot
+<span class="w">   </span><span class="p">|</span>_<span class="w"> </span>ops
+<span class="w">   </span><span class="p">|</span>_<span class="w"> </span>kernels
 </pre></div>
 </div>
 <p><em><strong>AoT (Ahead-of-Time) Components</strong></em>:</p>
@@ -528,15 +528,15 @@ Tutorials we recommend you complete before this:</div>
 <p>In this step, you will generate the ExecuTorch program from different models. You’ll then use this Program (the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file) during the runtime build step to bake this Program into the DSP image.</p>
 <p><em><strong>Simple Model</strong></em>:</p>
 <p>The first, simple model is meant to test that all components of this tutorial are working properly, and simply does an add operation. The generated file is called <code class="docutils literal notranslate"><span class="pre">add.pte</span></code>.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="n">executorch</span>
-<span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">portable</span><span class="o">.</span><span class="n">scripts</span><span class="o">.</span><span class="n">export</span> <span class="o">--</span><span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;add&quot;</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+python3<span class="w"> </span>-m<span class="w"> </span>examples.portable.scripts.export<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;add&quot;</span>
 </pre></div>
 </div>
 <p><em><strong>Quantized Linear</strong></em>:</p>
 <p>The second, more complex model is a quantized <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Linear.html">linear</a> operation. The model is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/export_example.py#L88">here</a>. Linear is the backbone of most Automatic Speech Recognition (ASR) models.</p>
 <p>The generated file is called <code class="docutils literal notranslate"><span class="pre">XtensaDemoModel.pte</span></code>.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="n">executorch</span>
-<span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">xtensa</span><span class="o">.</span><span class="n">aot</span><span class="o">.</span><span class="n">export_example</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+python3<span class="w"> </span>-m<span class="w"> </span>examples.xtensa.aot.export_example
 </pre></div>
 </div>
 <div class="section" id="runtime">
@@ -544,13 +544,13 @@ Tutorials we recommend you complete before this:</div>
 <p><strong>Building the DSP firmware image</strong>
 In this step, you’ll be building the DSP firmware image that consists of the sample ExecuTorch runner along with the Program generated from the previous step. This image when loaded onto the DSP will run through the model that this Program consists of.</p>
 <p><em><strong>Step 1</strong></em>. Configure the environment variables needed to point to the Xtensa toolchain that you have installed in the previous step. The three environment variables that need to be set include:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Directory in which the Xtensa toolchain was installed</span>
-<span class="n">export</span> <span class="n">XTENSA_TOOLCHAIN</span><span class="o">=/</span><span class="n">home</span><span class="o">/</span><span class="n">user_name</span><span class="o">/</span><span class="n">xtensa</span><span class="o">/</span><span class="n">XtDevTools</span><span class="o">/</span><span class="n">install</span><span class="o">/</span><span class="n">tools</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Directory in which the Xtensa toolchain was installed</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">XTENSA_TOOLCHAIN</span><span class="o">=</span>/home/user_name/xtensa/XtDevTools/install/tools
 <span class="c1"># The version of the toolchain that was installed. This is essentially the name of the directory</span>
 <span class="c1"># that is present in the XTENSA_TOOLCHAIN directory from above.</span>
-<span class="n">export</span> <span class="n">TOOLCHAIN_VER</span><span class="o">=</span><span class="n">RI</span><span class="o">-</span><span class="mf">2021.8</span><span class="o">-</span><span class="n">linux</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">TOOLCHAIN_VER</span><span class="o">=</span>RI-2021.8-linux
 <span class="c1"># The Xtensa core that you&#39;re targeting.</span>
-<span class="n">export</span> <span class="n">XTENSA_CORE</span><span class="o">=</span><span class="n">nxp_rt600_RI2021_8_newlib</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">XTENSA_CORE</span><span class="o">=</span>nxp_rt600_RI2021_8_newlib
 </pre></div>
 </div>
 <p><em><strong>Step 2</strong></em>. Clone the <a class="reference external" href="https://github.com/foss-xtensa/nnlib-hifi4">nnlib repo</a></p>
@@ -560,17 +560,17 @@ In order to run the CMake build, you need the path to the following:</p>
 <li><p>The Program generated in the previous step</p></li>
 <li><p>Path to the NXP SDK root. This should have been installed already in the <a class="reference internal" href="#setting-up-developer-environment"><span class="std std-doc">Setting up Developer Environment</span></a> section. This is the directory that contains the folders such as boards, components, devices, and other.</p></li>
 </ul>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="n">executorch</span>
-<span class="n">mkdir</span> <span class="n">cmake</span><span class="o">-</span><span class="n">xt</span>
-<span class="n">cd</span> <span class="n">cmake</span><span class="o">-</span><span class="n">xt</span>
-<span class="n">cmake</span> <span class="o">-</span><span class="n">DCMAKE_BUILD_TYPE</span><span class="o">=</span><span class="n">Debug</span> <span class="o">-</span><span class="n">DCMAKE_TOOLCHAIN_FILE</span><span class="o">=../</span><span class="n">examples</span><span class="o">/</span><span class="n">xtensa</span><span class="o">/</span><span class="n">xtensa</span><span class="o">.</span><span class="n">cmake</span> <span class="o">-</span><span class="n">DMODEL_PATH</span><span class="o">=&lt;</span><span class="n">path_to_program_file_generated_in_previous_step</span><span class="o">&gt;</span> <span class="o">-</span><span class="n">DNXP_SDK_ROOT_DIR</span><span class="o">=&lt;</span><span class="n">path_to_nxp_sdk_root</span><span class="o">&gt;</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_FLATC</span><span class="o">=</span><span class="mi">0</span> <span class="o">-</span><span class="n">DFLATC_EXECUTABLE</span><span class="o">=</span><span class="s2">&quot;$(which flatc)&quot;</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_XTENSA_EXAMPLE</span><span class="o">=</span><span class="mi">1</span> <span class="o">-</span><span class="n">DNN_LIB_BASE_DIR</span><span class="o">=&lt;</span><span class="n">path_to_nnlib_cloned_in_step_2</span><span class="o">&gt;</span>  <span class="o">..</span>
-<span class="n">cd</span> <span class="o">..</span>
-<span class="n">cmake</span> <span class="o">--</span><span class="n">build</span> <span class="n">cmake</span><span class="o">-</span><span class="n">xt</span> <span class="o">-</span><span class="n">j8</span> <span class="o">-</span><span class="n">t</span> <span class="n">xtensa_executorch_example</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+mkdir<span class="w"> </span>cmake-xt
+<span class="nb">cd</span><span class="w"> </span>cmake-xt
+cmake<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>../examples/xtensa/xtensa.cmake<span class="w"> </span>-DMODEL_PATH<span class="o">=</span>&lt;path_to_program_file_generated_in_previous_step&gt;<span class="w"> </span>-DNXP_SDK_ROOT_DIR<span class="o">=</span>&lt;path_to_nxp_sdk_root&gt;<span class="w"> </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span><span class="m">0</span><span class="w"> </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>flatc<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span>-DEXECUTORCH_BUILD_XTENSA_EXAMPLE<span class="o">=</span><span class="m">1</span><span class="w"> </span>-DNN_LIB_BASE_DIR<span class="o">=</span>&lt;path_to_nnlib_cloned_in_step_2&gt;<span class="w">  </span>..
+<span class="nb">cd</span><span class="w"> </span>..
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-xt<span class="w"> </span>-j8<span class="w"> </span>-t<span class="w"> </span>xtensa_executorch_example
 </pre></div>
 </div>
 <p>After having succesfully run the above step you should see two binary files in their CMake output directory.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">&gt;</span> <span class="n">ls</span> <span class="n">cmake</span><span class="o">-</span><span class="n">xt</span><span class="o">/*.</span><span class="n">bin</span>
-<span class="n">cmake</span><span class="o">-</span><span class="n">xt</span><span class="o">/</span><span class="n">dsp_data_release</span><span class="o">.</span><span class="n">bin</span>  <span class="n">cmake</span><span class="o">-</span><span class="n">xt</span><span class="o">/</span><span class="n">dsp_text_release</span><span class="o">.</span><span class="n">bin</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>&gt;<span class="w"> </span>ls<span class="w"> </span>cmake-xt/*.bin
+cmake-xt/dsp_data_release.bin<span class="w">  </span>cmake-xt/dsp_text_release.bin
 </pre></div>
 </div>
 </div>
@@ -582,13 +582,13 @@ In order to run the CMake build, you need the path to the following:</p>
 <p><em><strong>Step 2</strong></em>. Clean your work space</p>
 <p><em><strong>Step 3</strong></em>. Click <strong>Debug your Project</strong> which will flash the board with your binaries.</p>
 <p>On the UART console connected to your board (at a default baud rate of 115200), you should see an output similar to this:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">&gt;</span> <span class="n">screen</span> <span class="o">/</span><span class="n">dev</span><span class="o">/</span><span class="n">tty</span><span class="o">.</span><span class="n">usbmodem0007288234991</span> <span class="mi">115200</span>
-<span class="n">Booted</span> <span class="n">up</span> <span class="ow">in</span> <span class="n">DSP</span><span class="o">.</span>
-<span class="n">ET</span><span class="p">:</span> <span class="n">Model</span> <span class="n">buffer</span> <span class="n">loaded</span><span class="p">,</span> <span class="n">has</span> <span class="mi">1</span> <span class="n">methods</span>
-<span class="n">ET</span><span class="p">:</span> <span class="n">Running</span> <span class="n">method</span> <span class="n">forward</span>
-<span class="n">Method</span> <span class="n">loaded</span><span class="o">.</span>
-<span class="n">Starting</span> <span class="n">the</span> <span class="n">model</span> <span class="n">execution</span><span class="o">...</span>
-<span class="n">Model</span> <span class="n">executed</span> <span class="n">successfully</span><span class="o">.</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>&gt;<span class="w"> </span>screen<span class="w"> </span>/dev/tty.usbmodem0007288234991<span class="w"> </span><span class="m">115200</span>
+Booted<span class="w"> </span>up<span class="w"> </span><span class="k">in</span><span class="w"> </span>DSP.
+ET:<span class="w"> </span>Model<span class="w"> </span>buffer<span class="w"> </span>loaded,<span class="w"> </span>has<span class="w"> </span><span class="m">1</span><span class="w"> </span>methods
+ET:<span class="w"> </span>Running<span class="w"> </span>method<span class="w"> </span>forward
+Method<span class="w"> </span>loaded.
+Starting<span class="w"> </span>the<span class="w"> </span>model<span class="w"> </span>execution...
+Model<span class="w"> </span>executed<span class="w"> </span>successfully.
 </pre></div>
 </div>
 </div>
@@ -704,8 +704,6 @@ In order to run the CMake build, you need the path to the following:</p>
 </script>
 
  
-// Patch up links to point to ExecuTorch URLs instead of to
-// pytorch/pytorch URLs.
 <script type="text/javascript">
   $(document).ready(function () {
     // Patch links on interactive tutorial pages to point

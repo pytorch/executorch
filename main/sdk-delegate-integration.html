@@ -423,7 +423,7 @@
 <p>Identifiers are a means of connecting runtime results to the model graph; the interpretation of the identifiers is defined by the delegate author.*</p>
 </div>
 <p><strong>Debug Handle Maps</strong> are constructed through the use of <strong>DelegateMappingBuilder</strong> and returned as a part of <code class="docutils literal notranslate"><span class="pre">PreprocessResult</span></code>.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">PreprocessResult</span><span class="p">:</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">PreprocessResult</span><span class="p">:</span>
     <span class="n">processed_bytes</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">()</span>
 
     <span class="n">debug_handle_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
@@ -437,7 +437,7 @@
 <p><code class="docutils literal notranslate"><span class="pre">DelegateMappingBuilder</span></code> is a helper class for managing and constructing Debug Handle Maps. The result of the builder should be passed in when constructing PreprocessResult.</p>
 <p><code class="docutils literal notranslate"><span class="pre">DelegateMappingBuilder</span></code> is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/backend/utils.py">here</a></p>
 <p>A <code class="docutils literal notranslate"><span class="pre">DelegateMappingBuilder</span></code> instance can be constructed in one of 2 modes: manual identifiers or generated identifiers.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Manual Identifiers, Default</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Manual Identifiers, Default</span>
 <span class="n">builder</span> <span class="o">=</span> <span class="n">DelegateMappingBuilder</span><span class="p">(</span><span class="n">generated_identifiers</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
 <span class="c1"># Generated Identifiers</span>
@@ -447,7 +447,7 @@
 <p>With <strong>manual identifiers</strong>, users pass in a <strong>Delegate Debug Identifier</strong> when creating entries.
 With <strong>generated identifiers</strong>, the builder will auto-assign a <strong>Delegate Debug Identifier</strong>.</p>
 <p>To add an entry to the <strong>Debug Handle Map</strong>, use <code class="docutils literal notranslate"><span class="pre">insert_delegate_mapping_entry</span></code>. It takes <code class="docutils literal notranslate"><span class="pre">fx.Node(s)</span></code> to associate and an optional <strong>Delegate Debug Identifier</strong> (used for the manual identifiers). The identifier recorded is returned from the call.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">insert_delegate_mapping_entry</span><span class="p">(</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">insert_delegate_mapping_entry</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">nodes</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">]],</span>
     <span class="n">identifier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -455,7 +455,7 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
 </pre></div>
 </div>
 <p>To retrieve the <strong>Debug Handle Map</strong>, use <code class="docutils literal notranslate"><span class="pre">get_delegate_mapping</span></code>.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">get_delegate_mapping</span><span class="p">(</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">get_delegate_mapping</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">]],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]</span>
 </pre></div>
@@ -472,18 +472,18 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
 <p>ExecuTorch allows you to log in real time. <strong>Real time Logging</strong> is useful when timestamps are available as the execution occurs. It provides minimal overhead and is intuitive for authors to call.</p>
 <p>To log events in real-time (for example, explicitly denoting the profiling start and stop), <code class="docutils literal notranslate"><span class="pre">event_tracer_start_profiling_delegate</span></code> is used to create an <code class="docutils literal notranslate"><span class="pre">EventEntry</span></code> and <code class="docutils literal notranslate"><span class="pre">event_tracer_end_profiling_delegate</span></code> is used to conclude the <code class="docutils literal notranslate"><span class="pre">EventEntry</span></code> for the provided <code class="docutils literal notranslate"><span class="pre">EventTracer</span></code>.</p>
 <p>To start an <code class="docutils literal notranslate"><span class="pre">EventTracerEntry</span></code> using <code class="docutils literal notranslate"><span class="pre">event_tracer_start_profiling_delegate</span></code>, the <strong>Delegate Debug Identifier</strong> (provided AOT to the <code class="docutils literal notranslate"><span class="pre">debug_handle_map</span></code>) is passed as either the name or <code class="docutils literal notranslate"><span class="pre">delegate_debug_id</span></code> argument depending on the <strong>Delegate Debug Identifier</strong> type (str and int respectively)</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">EventTracerEntry</span> <span class="n">event_tracer_start_profiling_delegate</span><span class="p">(</span>
-    <span class="n">EventTracer</span><span class="o">*</span> <span class="n">event_tracer</span><span class="p">,</span>
-    <span class="n">const</span> <span class="n">char</span><span class="o">*</span> <span class="n">name</span><span class="p">,</span>
-    <span class="n">DebugHandle</span> <span class="n">delegate_debug_id</span><span class="p">)</span>
+<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="n">EventTracerEntry</span><span class="w"> </span><span class="n">event_tracer_start_profiling_delegate</span><span class="p">(</span>
+<span class="w">    </span><span class="n">EventTracer</span><span class="o">*</span><span class="w"> </span><span class="n">event_tracer</span><span class="p">,</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">name</span><span class="p">,</span>
+<span class="w">    </span><span class="n">DebugHandle</span><span class="w"> </span><span class="n">delegate_debug_id</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>To conclude an <code class="docutils literal notranslate"><span class="pre">EventTracerEntry</span></code>, <code class="docutils literal notranslate"><span class="pre">event_tracer_end_profiling_delegate</span></code> is simply provided the original <code class="docutils literal notranslate"><span class="pre">EventTracerEntry</span></code>.</p>
 <p>Optionally, additional runtime <code class="docutils literal notranslate"><span class="pre">metadata</span></code> can also be logged at this point.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">event_tracer_end_profiling_delegate</span><span class="p">(</span>
-    <span class="n">EventTracer</span><span class="o">*</span> <span class="n">event_tracer</span><span class="p">,</span>
-    <span class="n">EventTracerEntry</span> <span class="n">event_tracer_entry</span><span class="p">,</span>
-    <span class="n">const</span> <span class="n">char</span><span class="o">*</span> <span class="n">metadata</span> <span class="o">=</span> <span class="n">nullptr</span><span class="p">)</span>
+<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="kt">void</span><span class="w"> </span><span class="n">event_tracer_end_profiling_delegate</span><span class="p">(</span>
+<span class="w">    </span><span class="n">EventTracer</span><span class="o">*</span><span class="w"> </span><span class="n">event_tracer</span><span class="p">,</span>
+<span class="w">    </span><span class="n">EventTracerEntry</span><span class="w"> </span><span class="n">event_tracer_entry</span><span class="p">,</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">metadata</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">nullptr</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -491,13 +491,13 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
 <h3>Post-Time Logging<a class="headerlink" href="#post-time-logging" title="Permalink to this headline">¶</a></h3>
 <p>ExecuTorch also allows you to log in post time. Some runtime settings don’t have access to timestamps while it is executing. <strong>Post-Time Logging</strong> enables authors to still be able to log these events.</p>
 <p>To log events in post (for example, logging start and end time simultaneously) <code class="docutils literal notranslate"><span class="pre">event_tracer_log_profiling_delegate</span></code> is called with a combination of the arguments used in the real-time logging API’s and timestamps.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">void</span> <span class="n">event_tracer_log_profiling_delegate</span><span class="p">(</span>
-    <span class="n">EventTracer</span><span class="o">*</span> <span class="n">event_tracer</span><span class="p">,</span>
-    <span class="n">const</span> <span class="n">char</span><span class="o">*</span> <span class="n">name</span><span class="p">,</span>
-    <span class="n">DebugHandle</span> <span class="n">delegate_debug_id</span><span class="p">,</span>
-    <span class="n">et_timestamp_t</span> <span class="n">start_time</span><span class="p">,</span>
-    <span class="n">et_timestamp_t</span> <span class="n">end_time</span><span class="p">,</span>
-    <span class="n">const</span> <span class="n">char</span><span class="o">*</span> <span class="n">metadata</span> <span class="o">=</span> <span class="n">nullptr</span><span class="p">)</span>
+<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="kt">void</span><span class="w"> </span><span class="n">event_tracer_log_profiling_delegate</span><span class="p">(</span>
+<span class="w">    </span><span class="n">EventTracer</span><span class="o">*</span><span class="w"> </span><span class="n">event_tracer</span><span class="p">,</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">name</span><span class="p">,</span>
+<span class="w">    </span><span class="n">DebugHandle</span><span class="w"> </span><span class="n">delegate_debug_id</span><span class="p">,</span>
+<span class="w">    </span><span class="n">et_timestamp_t</span><span class="w"> </span><span class="n">start_time</span><span class="p">,</span>
+<span class="w">    </span><span class="n">et_timestamp_t</span><span class="w"> </span><span class="n">end_time</span><span class="p">,</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">metadata</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">nullptr</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>A demo of the runtime code can be found <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/executor/test/test_backend_with_delegate_mapping.cpp">here</a>.</p>
@@ -608,8 +608,6 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
 </script>
 
  
-// Patch up links to point to ExecuTorch URLs instead of to
-// pytorch/pytorch URLs.
 <script type="text/javascript">
   $(document).ready(function () {
     // Patch links on interactive tutorial pages to point
