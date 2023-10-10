@@ -276,7 +276,11 @@ python3 -m examples.arm.examples --model_name="softmax"
 
 Working with Arm, we introduced a new Arm backend delegate for ExecuTorch. This backend is under active development and has a limited set of features available as of writing this.
 
-By including a `to_backend(model.exported_program, ArmPartitioner)` call during the ExecuTorch AoT export pipeline to generate the `.pte` file, we can enable this backend delegate.
+By including a following step during the ExecuTorch AoT export pipeline to generate the `.pte` file, we can enable this backend delegate.
+
+```python
+graph_module_edge.exported_program = to_backend(model.exported_program, ArmPartitioner)
+<remove_this>```
 
 Similar to the non-delegate flow, the same script will server as a helper utility to help us generate the `.pte` file. Notice the `--delegate` option to enable the `to_backend` call.
 
