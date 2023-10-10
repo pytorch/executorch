@@ -14,12 +14,12 @@ import torch
 import torch._export as export
 from examples.models import MODEL_NAME_TO_MODEL
 from examples.models.model_factory import EagerModelFactory
-from examples.portable.utils import export_to_edge
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
 from executorch.backends.apple.mps.test.test_mps_models import MPS_MODEL_NAME_TO_MODEL
 from executorch.backends.apple.mps.test.test_mps_utils import (
     _CAPTURE_CONFIG,
     _EDGE_COMPILE_CONFIG,
+    dump_executorch_program_info,
     OpSequencesAddConv2d,
     randomize_bn,
     TestMPS,
@@ -30,6 +30,7 @@ from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
+from executorch.exir import ExirExportedProgram
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.tests.models import (
     BasicSinMax,
@@ -73,6 +74,8 @@ EXIR_MODEL_NAME_TO_MODEL = {
 def run_model(
     model: str,
     model_type: MODEL_TYPE = MODEL_TYPE.EXIR_DEFAULT_MODEL,
+    dump_non_lowered_module: bool = False,
+    dump_lowered_module: bool = False,
 ):
     logging.info(f"Step 1: Retrieving model: {model}...")
     if model_type == MODEL_TYPE.EXIR_DEFAULT_MODEL:
@@ -83,14 +86,18 @@ def run_model(
         m, m_inputs = MPS_MODEL_NAME_TO_MODEL.get(model)()
 
     m = m.eval()
+
     m = export.capture_pre_autograd_graph(m, m_inputs)
 
     logging.info("Step 2: EXIR capturing of original module...")
-    edge = export_to_edge(m, m_inputs, edge_compile_config=_EDGE_COMPILE_CONFIG)
+    edge = exir.capture(m, m_inputs, _CAPTURE_CONFIG).to_edge(_EDGE_COMPILE_CONFIG)
+
+    if dump_non_lowered_module:
+        dump_executorch_program_info(edge=edge, module_info="Non-lowered")
 
     # Step 3: Lower to MPSGraph
     logging.info("Step 3: Lowering to MPSGraph...")
-    lowered_module = to_backend(MPSBackend.__name__, edge.exported_program(), [])
+    lowered_module = to_backend(MPSBackend.__name__, edge.exported_program, [])
 
     logging.info("Step 4: Capturing executorch program with lowered module...")
 
@@ -109,6 +116,12 @@ def run_model(
         .to_edge(_EDGE_COMPILE_CONFIG)
         .to_executorch()
     )
+
+    if dump_lowered_module:
+        tmp_exported_program: ExirExportedProgram = exir.capture(
+            lowered_module, m_inputs, _CAPTURE_CONFIG
+        ).to_edge(_EDGE_COMPILE_CONFIG)
+        dump_executorch_program_info(edge=tmp_exported_program, module_info="Lowered")
 
     logging.info("Step 5: Generating bundled program... ")
 

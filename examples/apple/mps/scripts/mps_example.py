@@ -25,7 +25,7 @@ from executorch.exir.backend.backend_api import to_backend
 from ....models import MODEL_NAME_TO_MODEL
 from ....models.model_factory import EagerModelFactory
 
-from ....portable.utils import export_to_edge, save_pte_program
+from ....portable.utils import save_pte_program
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -62,18 +62,14 @@ if __name__ == "__main__":
     # pre-autograd export. eventually this will become torch.export
     model = export.capture_pre_autograd_graph(model, example_inputs)
 
-    edge = export_to_edge(
-        model,
-        example_inputs,
-        edge_compile_config=EdgeCompileConfig(
-            _check_ir_validity=True,
-        ),
-    )
-    logging.info(f"Exported graph:\n{edge.exported_program().graph}")
+    edge = exir.capture(
+        model, example_inputs, exir.CaptureConfig(enable_aot=True, _unlift=True)
+    ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+    logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
-    lowered_module = to_backend(MPSBackend.__name__, edge.exported_program(), [])
+    lowered_module = to_backend(MPSBackend.__name__, edge.exported_program, [])
 
-    logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
+    logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
 
     class WrappedModule(torch.nn.Module):
         def __init__(self):
