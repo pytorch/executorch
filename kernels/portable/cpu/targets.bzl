@@ -701,6 +701,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_split_with_sizes_copy",
         deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),

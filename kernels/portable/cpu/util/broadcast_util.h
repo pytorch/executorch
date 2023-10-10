@@ -15,11 +15,24 @@ namespace torch {
 namespace executor {
 
 /**
+ * Check whether or not the broadcast_from_shape can be broadcasted onto the
+ * broadcast_to_shape.
+ *
+ * @param[in] broadcast_from_shape The tensor shape which we want to broadcast.
+ * @param[in] broadcast_to_shape The tensor shape which we want to broadcast to.
+ * @returns A bool to indicate whether or not the shape can be broadcasted.
+ *
+ */
+bool tensor_is_broadcastable_to(
+    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    const exec_aten::ArrayRef<Tensor::SizesType> broadcast_to_shape);
+
+/**
  * Check whether or not the broadcast_from tensor should and can be broadcasted
  * onto the broadcast_to tensor. broadcast_tensor should only be called if this
  * returns true.
  *
- * @param[in] broadcast_from The tensor to which we want to broadcast from.
+ * @param[in] broadcast_from The tensor which we want to broadcast from.
  * @param[in] broadcast_to The tensor to which we want to broadcast to.
  * @returns A bool to indicate whether or not the tensor can be broadcasted.
  *
@@ -29,11 +42,11 @@ bool tensor_is_broadcastable_to(
     const Tensor& broadcast_to);
 
 /**
- * Returns true if the two tensors can both be broadcasted to a common shape.
+ * Returns true if the two tensor shapes can both be broadcasted to a common
+ * shape.
  *
  * @param[in] a_shape The sizes of the first tensor going to be test.
  * @param[in] b_shape The sizes of the second tensor going to be test.
- *
  * @returns true if the tensors are broadcastable, false otherwise.
  */
 bool tensors_are_broadcastable_between(
@@ -45,7 +58,6 @@ bool tensors_are_broadcastable_between(
  *
  * @param[in] a The first tensor going to be test.
  * @param[in] b The second tensor going to be test.
- *
  * @returns true if the tensors are broadcastable, false otherwise.
  */
 bool tensors_are_broadcastable_between(const Tensor& a, const Tensor& b);
@@ -196,11 +208,28 @@ void delinearize_index(
     const size_t out_indexes_len);
 
 /**
+ * Return the linear index for broatcast_from tensor, given the indexes and
+ * number of dimensions of broadcast_to tensor, and the shape and strides
+ * of broadcast_from tensor.
+ *
+ * @param[in] indexes_broadcast_to The access indexes of broadcast_to tensor.
+ * @param[in] broadcast_to_ndim The number of dims of broadcast_to tensor.
+ * @param[in] broadcast_from_shape The shape of the broadcasted tensor.
+ * @param[in] broadcast_from_strides The strides of the broadcasted tensor.
+ * @returns The flattend index for broadcast_from tensor.
+ */
+size_t linearize_access_indexes(
+    ArrayRef<size_t> indexes_broadcast_to,
+    ssize_t broadcast_to_ndim,
+    exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,
+    exec_aten::ArrayRef<Tensor::StridesType> broadcast_from_strides);
+
+/**
  * Return the linear index for broatcast_from tensor, given the indexes of
  * broadcast_to tensor and itself.
  *
- * @param[in] indexes The tensor access indexes of broadcast_to tensor
- * @param[in] broadcast_to_ndim The number of dims of the broadcasted shape.
+ * @param[in] indexes_broadcast_to The access indexes of broadcast_to tensor.
+ * @param[in] broadcast_to_ndim The number of dims of broadcast_to tensor.
  * @param[in] broadcast_from The tensor to be broadcasted.
  * @returns The flattend index for broadcast_from tensor.
  */
