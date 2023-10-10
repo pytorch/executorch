@@ -30,11 +30,15 @@ class BundledConfig (method_names, inputs, expected_outputs)
 
 __Parameters:__
 - method_names (_List[str]_): All names of Methods to be verified in the program.
-- inputs (_List[List[Any]]_): All sets of input to be tested on for all methods. Each list
+- inputs (_List[List[List[Union[torch.Tensor, int, float, bool]]]]_): All sets of input to be tested on for all methods. Each list
         of `inputs` is all sets which will be run on the method in the
         program with corresponding method name. Each set of any `inputs` element should contain all inputs required by Method with the same inference method name in ExecuTorch program for one-time execution.
 
-- expected_outputs (_List[List[Any]]_): Expected outputs for inputs sharing same index. The size of
+        It is worth mentioning that, although both bundled program and ET runtime apis support setting input
+        other than torch.tensor type, only the input in torch.tensor type will be actually updated in
+        the program, and the rest of the inputs will just do a sanity check if they match the default value in method.
+
+- expected_outputs (_List[List[List[torch.Tensor]]]_): Expected outputs for inputs sharing same index. The size of
         expected_outputs should be the same as the size of inputs and provided method_names.
 
 __Returns:__
@@ -236,14 +240,11 @@ Error GetProgramData(
     size_t* out_program_data_len);
 ```
 
- Finds the serialized ExecuTorch program data in the provided file data.
+ Finds the serialized ExecuTorch program data in the provided bundled program
+ file data.
 
  The returned buffer is appropriate for constructing a
  torch::executor::Program.
-
- Calling this is only necessary if the file could be a bundled program. If the
- file will only contain an unwrapped ExecuTorch program, callers can construct
- torch::executor::Program with file_data directly.
 
 __Parameters:__
  - @param[in] file_data The contents of an ExecuTorch program or bundled program
@@ -253,9 +254,9 @@ __Parameters:__
  - @param[out] out_program_data_len The length of out_program_data, in bytes.
 
 #### Returns
- - Error::Ok if the program was found, and
-     out_program_data/out_program_data_len point to the data. Other values
-     on failure.
+ - Error::Ok if the given file is bundled program, a program was found
+in it, and out_program_data/out_program_data_len point to the data. Other
+values on failure.
 
 Here's an example of how to use the `GetProgramData` API:
 ```c++
