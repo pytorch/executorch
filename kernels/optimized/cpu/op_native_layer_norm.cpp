@@ -84,18 +84,18 @@ void layer_norm(
     rstd_val = CTYPE(1) / std::sqrt(rstd_val + eps);
 
     const CTYPE scale = rstd_val;
-    const CTYPE bias = -rstd_val * mean_val;
+    const CTYPE offset = -rstd_val * mean_val;
 
     if (gamma_null || beta_null) {
       for (size_t j = 0; j < N; ++j) {
         const CTYPE gamma_v = gamma_null ? CTYPE(1) : gamma_data[j];
         const CTYPE beta_v = beta_null ? CTYPE(0) : beta_data[j];
-        dst_ptr[j] = (src_ptr[j] * scale + bias) * gamma_v + beta_v;
+        dst_ptr[j] = (src_ptr[j] * scale + offset) * gamma_v + beta_v;
       }
     } else {
       executorch::vec::map3<CTYPE>(
-          [scale, bias](Vec x, Vec gamma, Vec beta) {
-            return (x * Vec(scale) + Vec(bias)) * gamma + beta;
+          [scale, offset](Vec x, Vec gamma, Vec beta) {
+            return (x * Vec(scale) + Vec(offset)) * gamma + beta;
           },
           dst_ptr,
           src_ptr,
