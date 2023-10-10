@@ -409,6 +409,14 @@ SAMPLE_INPUT = {
         ],
         "returns": [Return(ArgType.Tensor)],
     },
+    "div.Tensor_mode": {  # (Tensor self, Tensor other, *, str? rounding_mode) -> Tensor
+        "args": [
+            InArg(ArgType.Tensor),
+            InArg(ArgType.Tensor),
+            InKwarg(ArgType.Param, "rounding_mode", value="floor"),
+        ],
+        "returns": [Return(ArgType.Tensor)],
+    },
     "div.Scalar": {  # (Tensor self, Scalar other) -> Tensor
         "args": [
             InArg(ArgType.Tensor),
