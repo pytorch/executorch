@@ -121,10 +121,6 @@ class PerfData:
     def max(self) -> float:
         return max(self.raw)
 
-    @property
-    def median(self) -> float:
-        return np.median(self.raw)
-
 
 # TODO: detailed documentation
 @dataclass
@@ -134,7 +130,7 @@ class Event:
 
     Args:
         name: Name of the profiling/debugging `Event`.
-        perf_data: Performance data associated with the event retrived from the runtime (available attributes: p50, p90, avg, min, max and median).
+        perf_data: Performance data associated with the event retrived from the runtime (available attributes: p50, p90, avg, min and max).
         op_type: List of op types corresponding to the event.
         delegate_debug_identifier: Supplemental identifier used in combination with instruction id.
         debug_handles: Debug handles in the model graph to which this event is correlated.
@@ -262,7 +258,6 @@ class EventBlock:
             "avg": [event.perf_data.avg for event in self.events],
             "min": [event.perf_data.min for event in self.events],
             "max": [event.perf_data.max for event in self.events],
-            "median": [event.perf_data.median for event in self.events],
             "op_types": [event.op_types for event in self.events],
             "delegate_debug_identifier": [
                 event.delegate_debug_identifier for event in self.events
