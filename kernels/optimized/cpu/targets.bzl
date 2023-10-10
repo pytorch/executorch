@@ -41,8 +41,11 @@ _OPTIMIZED_ATEN_OPS = (
     op_target(
         name = "op_log_softmax",
         deps = select({
-            "DEFAULT": [],
+            "DEFAULT": [
+                "//executorch/kernels/portable/cpu/util:activation_ops_util",
+            ],
             "ovr_config//runtime:fbcode-arm64": [
+                "//executorch/kernels/portable/cpu/util:activation_ops_util",
                 "fbsource//third-party/sleef:sleef_arm",
             ],
         }),
