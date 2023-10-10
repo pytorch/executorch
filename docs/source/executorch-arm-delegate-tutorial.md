@@ -272,10 +272,14 @@ Running it using the Python environment (on the same development Linux machine),
 
 ```python
 >>> m = AddModule()
->>> m(torch.ones(5, dtype=torch.int32))
+>>> m(torch.ones(5, dtype=torch.int32)) # integer types for non-quantized Ethos-U delegation
 tensor([2, 2, 2, 2, 2], dtype=torch.int32)
 ```
 Keep the inputs and outputs to these modules in mind. When we will lower and run this through alternate means as opposed to running on this Linux machine, we will use the same inputs, and expect the outputs to match with the one shown here.
+
+```{tip}
+We need to be aware of data types for running networks on the Ethos-U55 as it is an integer only processor. For this example we use integer types explicitly, for typical use of such a flow networks are built and trained in floating point, and then are quantized from floating point to integer for efficient inference.
+```
 
 ### Non-delegated Workflow
 
