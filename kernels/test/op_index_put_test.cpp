@@ -880,10 +880,7 @@ TEST(OpIndexPutOutTest, InvalidIndicesShapesDies) {
       op_index_put_out(x, indices, values, /*accumulate=*/false, out), "");
 }
 
-TEST(OpIndexPutOutTest, InvalidIndicesShapeDies2) {
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    GTEST_SKIP() << "ATen kernel will support non-linear shapes";
-  }
+TEST(OpIndexPutOutTest, NonLinearIndices) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -903,8 +900,13 @@ TEST(OpIndexPutOutTest, InvalidIndicesShapeDies2) {
   );
   // clang-format on
 
-  ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      op_index_put_out(x, indices, values, /*accumulate=*/false, out), "");
+  Tensor expected =
+      tf.make({4, 4}, {0, 0, 0, 0, 10, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0});
+
+  Tensor ret = op_index_put_out(x, indices, values, /*accumulate=*/false, out);
+
+  EXPECT_TENSOR_EQ(ret, out);
+  EXPECT_TENSOR_EQ(ret, expected);
 }
 
 //
