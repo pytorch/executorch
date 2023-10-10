@@ -525,7 +525,7 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 <p>Techniques for performing computations and memory accesses on tensors with lower precision data, usually <code class="docutils literal notranslate"><span class="pre">int8</span></code>. Quantization improves model performance by lowering the memory usage and (usually) decreasing computational latency; depending on the hardware, computation done in lower precision will typically be faster, e.g. <code class="docutils literal notranslate"><span class="pre">int8</span></code> matmul vs <code class="docutils literal notranslate"><span class="pre">fp32</span></code> matmul. Often, quantization comes at the cost of model accuracy.</p>
 <p><strong>Runtime</strong></p>
 <p>The ExecuTorch runtime executes models on edge devices. It is responsible for program initialization, program execution and, optionally, destruction (releasing backend owned resources).</p>
-<p><strong>SDK</strong></p>
+<p><a class="reference internal" href="sdk-overview.html"><span class="doc std std-doc"><strong>SDK</strong></span></a></p>
 <p>Software Development Kit. The tooling users need to profile, debug and visualize programs that are running with ExecuTorch.</p>
 <p><span class="xref myst"><strong>Selective build</strong></span></p>
 <p>An API used to build a leaner runtime by linking only to kernels used by the program. This provides significant binary size savings.</p>
