@@ -271,6 +271,8 @@ def create_bundled_program(
     Args:
         program: The program to be bundled.
         bundled_config: The config to be bundled.
+
+    Returns: The `BundledProgram` variable contains given ExecuTorch program and test cases.
     """
 
     assert_valid_bundle(program, bundled_config)

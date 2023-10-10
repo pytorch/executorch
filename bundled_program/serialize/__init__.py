@@ -77,6 +77,16 @@ def convert_from_flatbuffer(program_flatbuffer: bytes) -> bytes:
 def serialize_from_bundled_program_to_flatbuffer(
     bundled_program: BundledProgram,
 ) -> bytes:
+    """
+    Serialize a BundledProgram into FlatBuffer binary format.
+
+    Args:
+        bundled_program (BundledProgram): The `BundledProgram` variable to be serialized.
+
+    Returns:
+        The serialized FlatBuffer binary data in bytes.
+    """
+
     return convert_to_flatbuffer(
         serialize_from_bundled_program_to_json(bundled_program)
     )
@@ -84,4 +94,13 @@ def serialize_from_bundled_program_to_flatbuffer(
 
 # from flatbuffer to general program
 def deserialize_from_flatbuffer_to_bundled_program(flatbuffer: bytes) -> BundledProgram:
+    """
+    Deserialize a FlatBuffer binary format into a BundledProgram.
+
+    Args:
+        flatbuffer (bytes): The FlatBuffer binary data in bytes.
+
+    Returns:
+        A `BundledProgram` instance.
+    """
     return deserialize_from_json_to_bundled_program(convert_from_flatbuffer(flatbuffer))

@@ -62,6 +62,7 @@ extensions = [
     "myst_parser",
     "sphinx_design",
     "sphinx_gallery.gen_gallery",
+    "sphinx_togglebutton",
     "executorch_custom_versions",
 ]
 
