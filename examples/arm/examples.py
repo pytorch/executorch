@@ -21,6 +21,11 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
+# TODO: When we have a more reliable quantization flow through to
+#       Vela, and use the models in their original form with a
+#       quantization step in our example. This will take the models
+#       from examples/models/ and quantize then export to delegate.
+
 # Two simple models
 class AddModule(torch.nn.Module):
     def __init__(self):
