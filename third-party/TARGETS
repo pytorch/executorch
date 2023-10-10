@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build/runtime_wrapper.bzl", "runtime")
+load(":flatcc_defs.bzl", "define_flatcc_targets")
 load(":gflags.bzl", "define_gflags")
 load(":glob_defs.bzl", "subdir_glob")
 load(":gtest_defs.bzl", "define_gtest_targets")
@@ -125,6 +126,8 @@ runtime.cxx_library(
     visibility = ["PUBLIC"],
     _is_external_target = True,
 )
+
+define_flatcc_targets()
 
 runtime.cxx_library(
     name = "flatc_library",

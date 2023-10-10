@@ -2,57 +2,13 @@
 
 This is forked from [PyTorch android demo app](https://github.com/pytorch/android-demo-app)
 
-This guide explains how to setup ExecuTorch for Android using a demo app. The app employs a DeepLab v3 model for image segmentation tasks and Inception v3 model for image classification tasks. Models are exported to ExecuTorch using XNNPACK FP32 backend.
+This guide explains how to setup ExecuTorch for Android using a demo app. The app employs a DeepLab v3 model for image segmentation tasks. Models are exported to ExecuTorch using XNNPACK FP32 backend.
 
-## Pre-setup
+## Prerequsites
 
-1. Download [Android Studio and SDK](https://developer.android.com/studio).
-
-2. Install buck2 binary (using MacOS Apple Silicon build as example):
-    ```bash
-    curl -L -O https://github.com/facebook/buck2/releases/download/2023-07-18/buck2-aarch64-apple-darwin.zst
-    pip3 install zstd
-    zstd -cdq buck2-aarch64-apple-darwin.zst > /tmp/buck2 && chmod +x /tmp/buck2
-    ```
-
-3. Install and link [Cmake](cmake.org/download) to a system directory or `$PATH`:
-
-   ```bash
-   ln -s /Applications/CMake.app/Contents/bin/cmake /usr/bin/cmake
-   ```
-
-4. Clone ExecuTorch repository and update submodules:
-
-   ```bash
-   git clone https://github.com/pytorch/executorch.git
-   cd executorch
-   git submodule sync
-   git submodule update --init
-   ```
-
-5. Verify Python 3.10+ (standard since MacOS 13.5) and `pip3` installation:
-
-   ```bash
-   which python3 pip
-   python3 --version
-   ```
-
-6. Install PyTorch dependencies:
-
-   ```bash
-   ./install_requirements.sh
-   ```
-
-## Flatbuffers Compiler Setup
-
-Run the following in the `flatbuffers` directory:
-
-```bash
-cd third-party/flatbuffers
-rm -rf cmake-out && mkdir cmake-out && cd cmake-out
-cmake .. && cmake --build . --target flatc
-cd ../../..
-```
+ - Refer to [Setting up ExecuTorch](../../../../docs/website/docs/tutorials/00_setting_up_executorch.md) to set up the repo and dev environment.
+ - Download and install [Android Studio and SDK](https://developer.android.com/studio).
+ - *Optional:* To use Qualcomm HTP Backend, download and install [Qualcomm Neural Processing SDK](https://developer.qualcomm.com/software/qualcomm-neural-processing-sdk)
 
 ## ExecuTorch Configuration
 
@@ -60,52 +16,57 @@ Configure the libraries for Android:
 
 1. Configure a library with XNNPACK backend only
 
-Note: This demo app and tutorial is only validated with arm64-v8a [ABI](https://developer.android.com/ndk/guides/abis).
+> **Note**: This demo app and tutorial has only been validated with arm64-v8a [ABI](https://developer.android.com/ndk/guides/abis).
 
 ```bash
+export ANDROID_NDK=<path-to-android-ndk>
+
 rm -rf cmake-out && mkdir cmake-out && cd cmake-out
 cmake .. \
-    -DCMAKE_TOOLCHAIN_FILE=/path/to/ndk/build/cmake/android.toolchain.cmake \
+    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI=arm64-v8a \
     -DBUCK2=/tmp/buck2 \
-    -DFLATC_EXECUTABLE=$(realpath ../third-party/flatbuffers/cmake-out/flatc) \
     -DEXECUTORCH_BUILD_ANDROID_DEMO_APP_JNI=ON \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_FLATC=OFF \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
 ```
 
-When we set `EXECUTORCH_BUILD_XNNPACK=ON`, we will build the target [`xnn_executor_runner_lib`](../../../../backends/xnnpack/CMakeLists.txt) which in turn is built into  in [CMake](../jni/CMakeLists.txt).
+When we set `EXECUTORCH_BUILD_XNNPACK=ON`, we will build the target [`xnn_executor_runner_lib`](../../../../backends/xnnpack/CMakeLists.txt) which in turn is linked into libexecutorchdemo via [CMake](../jni/CMakeLists.txt).
 
 `libexecutorchdemo.so` wraps up the required XNNPACK Backend runtime library from `xnn_executor_runner_lib`, and adds an additional JNI layer using fbjni. This is later exposed to Java app.
 
 2. *Optional:* Configure a library with XNNPACK and [Qualcomm HTP backend](../../../../backends/qualcomm/README.md)
 
-Qualcomm SDK is required for this step.
+> **Note**: Qualcomm SDK is required for this step.
 
 ```bash
+export ANDROID_NDK=<path-to-android-ndk>
+export QNN_SDK=<path-to-qnn-sdk>
+
 rm -rf cmake-out && mkdir cmake-out && cd cmake-out
 cmake .. \
-    -DCMAKE_TOOLCHAIN_FILE=/path/to/ndk/build/cmake/android.toolchain.cmake \
+    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI=arm64-v8a \
     -DBUCK2=/tmp/buck2 \
-    -DFLATC_EXECUTABLE=$(realpath ../third-party/flatbuffers/cmake-out/flatc) \
     -DEXECUTORCH_BUILD_ANDROID_DEMO_APP_JNI=ON \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_FLATC=OFF \
     -DEXECUTORCH_BUILD_QNN=ON \
-    -DQNN_SDK_ROOT=/path/to/qnn/sdk \
+    -DQNN_SDK_ROOT=$QNN_SDK \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
 ```
 
-Similar to the previous XNNPACK library, with this setup, `libexecutorchdemo.so` wraps up the XNNPACK Backend and Qualcomm HTP runtime library and fbjni. This is later exposed to Java app.
+Similar to the previous XNNPACK library, with this setup, we compile `libexecutorchdemo.so` but it adds an additional static library `qnn_executorch_backend` which wraps up Qualcomm HTP runtime library and registers the Qualcomm HTP backend. This is later exposed to Java app.
+
+`qnn_executorch_backend` is built when we turn on CMake option `EXECUTORCH_BUILD_QNN`. It will include the [CMakeLists.txt](../../../../backends/qualcomm/CMakeLists.txt) from backends/qualcomm where we `add_library(qnn_executorch_backend STATIC)`.
 
 ## Building and Copying Libraries
 
 1. Build the libraries:
 
 ```bash
-cmake --build .
+cmake --build . -j16
 ```
 
 2. Copy the libraries to the appropriate location to link against them:
@@ -123,18 +84,16 @@ cp ./examples/demo-apps/android/jni/libexecutorchdemo.so \
    ../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 ```
 
-3. *Qualcomm HTP Only:* Copy Qualcomm HTP runtime library
+Later, this shared library will be loaded by `NativePeer.java` in Java code.
 
-If Qualcomm HTP backend is used, then we need to copy additional libraries from Qualcomm SDK artifacts:
+3. *Qualcomm HTP Only:* Copy Qualcomm HTP runtime library:
 
 ```bash
 cp libQnnHtp.so libQnnHtpV69Skel.so libQnnHtpStub.so libQnnSystem.so \
    ../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 ```
 
-Later, this shared library will be loaded by `NativePeer.java` in Java code.
-
-Then return to the `executorch` directory:
+4. Return to the `executorch` directory:
 
 ```bash
 cd ..
@@ -142,27 +101,25 @@ cd ..
 
 ## Model Download and Bundling
 
-Note: Please refer to [XNNPACK backend](../../../backend/README.md) and [Qualcomm backend](../../../../backends/qualcomm/README.md) for the full export tutorial on backends.
+> **Note**: Please refer to [XNNPACK backend](../../../backend/README.md) and [Qualcomm backend](../../../../backends/qualcomm/README.md) for the full export tutorial on backends.
 
-1. Export a DeepLab v3 model and Inception v4 model backed with XNNPACK delegate and bundle it with
-   the app:
+1. Export a DeepLab v3 model backed with XNNPACK delegate and bundle it with the app:
 
 ```bash
 export FLATC_EXECUTABLE=$(realpath third-party/flatbuffers/cmake-out/flatc)
 python3 -m examples.xnnpack.aot_compiler --model_name="dl3" --delegate
-python3 -m examples.xnnpack.aot_compiler --model_name="ic4" --delegate
 mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
-cp dl3_xnnpack_fp32.pte ic4_xnnpack_fp32.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+cp dl3_xnnpack_fp32.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 ```
 
 2. *Qualcomm HTP Only:* Copy HTP delegation models to the app:
 
 ```bash
-cp dlv3_qnn.pte ic4_qnn.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+cp dlv3_qnn.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 ```
 
-## Final Steps
+## Build the Project
 
 1. Open the project `examples/demo-apps/android/ExecuTorchDemo` with Android Studio.
 
-2. [Run](https://developer.android.com/studio/run) the app (^R)
+2. [Run](https://developer.android.com/studio/run) the app (^R).

@@ -11,7 +11,7 @@ cpp_python_extension(
         "bindings.cpp",
     ],
     visibility = [
-        "//executorch/backends/qnnpack/...",
+        "//executorch/backends/fb/qnnpack/...",
         "//executorch/backends/vulkan/...",
         "//executorch/backends/xnnpack/...",
         "//executorch/bundled_program/...",

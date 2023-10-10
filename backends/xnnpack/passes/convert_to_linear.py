@@ -165,7 +165,7 @@ class ConvertToLinearPass(XNNPACKPass):
     # override
     def call(self, graph_module: torch.fx.GraphModule):
         logger.debug("ConvertToLinear Begin: ")
-        logger.debug(graph_module.print_readable(print_output=True))
+        logger.debug(graph_module.print_readable(print_output=False))
 
         src_partition_dict = get_source_partitions(
             graph_module.graph, self.linear_modules
@@ -197,5 +197,5 @@ class ConvertToLinearPass(XNNPACKPass):
         graph_module = super().call(graph_module).graph_module
 
         logger.debug("ConvertToLinear End: ")
-        logger.debug(graph_module.print_readable(print_output=True))
+        logger.debug(graph_module.print_readable(print_output=False))
         return PassResult(graph_module, True)

@@ -224,7 +224,7 @@ Techniques for performing computations and memory accesses on tensors with lower
 
 The ExecuTorch runtime executes models on edge devices. It is responsible for program initialization, program execution and, optionally, destruction (releasing backend owned resources).
 
-**SDK**
+[**SDK**](./sdk-overview.md)
 
 Software Development Kit. The tooling users need to profile, debug and visualize programs that are running with ExecuTorch.
 

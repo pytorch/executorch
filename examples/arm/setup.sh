@@ -7,9 +7,10 @@
 
 set -eu
 
-if [[ "${1:-'.'}" == "-h" ]]; then
-    echo "Usage: $(basename $0) [path-to-a-scratch-dir]"
-    exit 0
+if [[ "${1:-'.'}" == "-h" || "${#}" -eq 0 || "${#}" -gt 2 ]]; then
+    echo "Usage: $(basename $0) <--i-agree-to-the-contained-eula> [path-to-a-scratch-dir]"
+    echo "Supplied args: $*"
+    exit 1
 fi
 
 ########
@@ -44,32 +45,41 @@ function verify_md5() {
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 
 if [[ $(get_cpu_arch) == "x86_64" ]]; then
-	# FVP
-	fvp_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
-	fvp_model_dir="Linux64_GCC-9.3"
-	fvp_md5_checksum="98e93b949d0fbac977292d8668d34523"
+    # FVP
+    fvp_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
+    fvp_model_dir="Linux64_GCC-9.3"
+    fvp_md5_checksum="98e93b949d0fbac977292d8668d34523"
 
-	# toochain
-	toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi.tar.xz"
-	toolchain_dir="arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi"
-	toolchain_md5_checksum="00ebb1b70b1f88906c61206457eacb61"
+    # toochain
+    toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi.tar.xz"
+    toolchain_dir="arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi"
+    toolchain_md5_checksum="00ebb1b70b1f88906c61206457eacb61"
 elif [[ $(get_cpu_arch) == "aarch64" ]]; then
     # FVP
-	fvp_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64_armv8l.tgz?rev=9cc6e9a32bb947ca9b21fa162144cb01&hash=7657A4CF27D42E892E3F08D452AAB073"
+    fvp_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64_armv8l.tgz?rev=9cc6e9a32bb947ca9b21fa162144cb01&hash=7657A4CF27D42E892E3F08D452AAB073"
     fvp_model_dir="Linux64_armv8l_GCC-9.3"
-	fvp_md5_checksum="cbbabbe39b07939cff7a3738e1492ef1"
+    fvp_md5_checksum="cbbabbe39b07939cff7a3738e1492ef1"
 
     # toochain
     toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi.tar.xz"
     toolchain_dir="arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi"
-	toolchain_md5_checksum="02c9b0d3bb1110575877d8eee1f223f2"
+    toolchain_md5_checksum="02c9b0d3bb1110575877d8eee1f223f2"
 else
-	echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"; exit 1;
+    echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"; exit 1;
 fi
 
 # ethos-u
 ethos_u_repo_url="https://review.mlplatform.org/ml/ethos-u/ethos-u"
 ethos_u_base_rev="0995223100e3da8011700f58e491f1bf59511e3c"
+
+########
+### Mandatory user args
+########
+eula_acceptance="${1:-'.'}"; shift
+if [[ "${eula_acceptance}" != "--i-agree-to-the-contained-eula" ]]; then
+    echo "Must pass first positional argument '--i-agree-to-the-contained-eula' to agree to EULA associated with downloading the FVP. Exiting!"
+    exit 1
+fi
 
 ########
 ### Optional user args
@@ -138,8 +148,8 @@ function setup_ethos_u() {
 
 function patch_repo() {
     # This is a temporary hack until it finds a better home in one for the ARM Ml repos
+    name="$(basename $repo_dir)"
     echo -e "[${FUNCNAME[0]}] Preparing ${name}..."
-    local repo_dir="${root_dir}/ethos-u/${name}"
     cd $repo_dir
 
     git reset --hard ${base_rev}
@@ -152,38 +162,40 @@ function patch_repo() {
 }
 
 function setup_tosa_reference_model() {
-	# The debug flow on the host includes running on a reference implementation of TOSA
-	# This is useful primarily for debug of quantization accuracy, but also for internal
-	# errors for the early codebase
-	cd "${root_dir}"
-	if [[ ! -e reference_model ]]; then
-		git clone https://git.mlplatform.org/tosa/reference_model.git -b v0.80.0
-		cd reference_model
-		git submodule update --init --recursive
-		cd ..
-	fi
-	cd reference_model
-	mkdir -p build
-	cd build
-	cmake ..
-	make
-	cd reference_model
-	tosa_bin_path=`pwd`
-	echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
+    # The debug flow on the host includes running on a reference implementation of TOSA
+    # This is useful primarily for debug of quantization accuracy, but also for internal
+    # errors for the early codebase
+    cd "${root_dir}"
+    if [[ ! -e reference_model ]]; then
+        git clone https://git.mlplatform.org/tosa/reference_model.git -b v0.80.0
+        cd reference_model
+        git submodule update --init --recursive
+        cd ..
+    fi
+    cd reference_model
+    mkdir -p build
+    cd build
+    cmake ..
+    n=$(nproc)
+    make -j"$((n - 5))" 
+    cd reference_model
+    tosa_bin_path=`pwd`
+    echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
 }
 
 function setup_vela() {
-	#
-	# Prepare the Vela compiler for AoT to Ethos-U compilation
-	#
-	cd "${root_dir}/ethos-u/"
-	if [[ ! -e ethos-u-vela ]]; then
-		git clone https://git.mlplatform.org/ml/ethos-u/ethos-u-vela.git
-		name="ethos-u-vela"
-		base_rev=00a15db3e1a188b25065d095152d701f4394cdc5
-		patch_repo
-	fi
-	pip install .
+    #
+    # Prepare the Vela compiler for AoT to Ethos-U compilation
+    #
+    cd "${root_dir}"
+    if [[ ! -e ethos-u-vela ]]; then
+        git clone https://git.mlplatform.org/ml/ethos-u/ethos-u-vela.git
+        repo_dir="${root_dir}/ethos-u-vela"
+        base_rev=00a15db3e1a188b25065d095152d701f4394cdc5
+        patch_repo
+    fi
+    cd "${root_dir}/ethos-u-vela"
+    pip install .
 }
 
 ########
@@ -218,7 +230,7 @@ setup_toolchain
 setup_ethos_u
 
 # Patch the ethos-u dev environment to include executorch application
-name="core_platform"
+repo_dir="${root_dir}/ethos-u/core_platform"
 base_rev=204210b1074071532627da9dc69950d058a809f4
 patch_repo
 

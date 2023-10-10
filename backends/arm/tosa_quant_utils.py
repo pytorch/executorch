@@ -161,3 +161,22 @@ def buildRescaleFromInt32(
     )
 
     return
+
+
+""" Creates a TOSA rescale op based on conv2d parameters. """
+
+
+def buildRescaleOpConvOutput(
+    tosa_fb, op, output_type, input_scale, weight_scale, output_scale
+):
+    # Only use double round if we are doing 32 bit scaling
+    double_round = isScale32(output_type)
+
+    # TODO add check to verify if this is a Per-channel quantization.
+    post_conv2d_scale = (input_scale.number * weight_scale.number) / output_scale.number
+
+    # Since we assume the input tensor that is being rescaled is int32 date type, zero point must be 0.
+    rescale_op = buildRescale(
+        tosa_fb, post_conv2d_scale, op, output_type, op.shape, 0, 0, double_round
+    )
+    return rescale_op
