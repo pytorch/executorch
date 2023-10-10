@@ -54,39 +54,42 @@ SDK Integration Tutorial
 # the eager model. This is generated via ``executorch.sdk.generate_etrecord``.
 #
 # ``executorch.sdk.generate_etrecord`` takes in an output file path (str), the
-# edge dialect model (ExirExportedProgram), the ExecuTorch dialect model
-# (ExecutorchProgram), and an optional dictionary of additional models
+# edge dialect model (``EdgeProgramManager``), the ExecuTorch dialect model
+# (``ExecutorchProgramManager``), and an optional dictionary of additional models
 #
 # In this tutorial, the mobilenet v2 example model is used to demonstrate::
 #
 #   # Imports
 #   import copy
-#
 #   import torch
 #
-#   from executorch import exir
 #   from executorch.examples.models.mobilenet_v2 import MV2Model
-#   from executorch.exir import ExecutorchProgram, ExirExportedProgram, ExportedProgram
+#   from executorch.exir import (
+#       EdgeCompileConfig,
+#       EdgeProgramManager,
+#       ExecutorchProgramManager,
+#       to_edge,
+#   )
 #   from executorch.sdk import generate_etrecord
+#   from torch.export import export, ExportedProgram
 #
 #   # Generate MV2 Model
 #   model: torch.nn.Module = MV2Model()
-#   aten_model: ExportedProgram = exir.capture(
+#
+#   aten_model: ExportedProgram = export(
 #       model.get_eager_model().eval(),
 #       model.get_example_inputs(),
-#       exir.CaptureConfig(),
 #   )
 #
-#   edge_model: ExirExportedProgram = aten_model.to_edge(
-#       exir.EdgeCompileConfig(_check_ir_validity=True)
-#   )
-#   edge_copy: ExirExportedProgram = copy.deepcopy(edge_model)
+#   edge_program_manager: EdgeProgramManager = to_edge(aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True))
+#   # Note: A copy is needed because the underlying graph_module is modified
+#   edge_program_manager_copy = copy.deepcopy(edge_program_manager)
+#   et_program_manager: ExecutorchProgramManager = edge_program_manager_copy.to_executorch()
 #
-#   et_model: ExecutorchProgram = edge_model.to_executorch()
 #
 #   # Generate ETRecord
 #   etrecord_path = "etrecord.bin"
-#   generate_etrecord(etrecord_path, edge_copy, et_model)
+#   generate_etrecord(etrecord_path, edge_program_manager, et_program_manager)
 #
 
 ######################################################################
