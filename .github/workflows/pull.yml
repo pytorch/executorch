@@ -116,6 +116,7 @@ jobs:
   test-coreml-delegate-macos-x86:
     name: test-macos-x86
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
     with:
       runner: macos-13-xlarge
       submodules: 'true'
