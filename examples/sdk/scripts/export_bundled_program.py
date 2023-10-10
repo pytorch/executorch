@@ -94,7 +94,7 @@ def export_to_bundled_program(
         for i in range(len(program.execution_plan))
     ]
 
-    bundled_program_name = f"{model_name}_bundled.bp"
+    bundled_program_name = f"{model_name}_bundled.bpte"
     output_path = os.path.join(output_directory, bundled_program_name)
 
     print(f"Saving exported program to {output_path}")

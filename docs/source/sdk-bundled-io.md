@@ -209,7 +209,7 @@ bundled_program = create_bundled_program(program, bundled_config)
 
 # Step 4: Serialize BundledProgram to flatbuffer.
 serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer(bundled_program)
-save_path = "bundled_program.bp"
+save_path = "bundled_program.bpte"
 with open(save_path, "wb") as f:
     f.write(serialized_bundled_program)
 
@@ -219,7 +219,7 @@ We can also regenerate `BundledProgram` from flatbuffer file if needed:
 
 ```python
 from executorch.bundled_program.serialize import deserialize_from_flatbuffer_to_bundled_program
-save_path = "bundled_program.bp"
+save_path = "bundled_program.bpte"
 with open(save_path, "rb") as f:
     serialized_bundled_program = f.read()
 

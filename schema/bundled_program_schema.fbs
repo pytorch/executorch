@@ -12,7 +12,7 @@ namespace executorch_flatbuffer;
 // Identifier of a valid bundled program schema.
 file_identifier "BP06";
 // Extension of written files.
-file_extension "bp";
+file_extension "bpte";
 
 // Reason for basic struct: union value type can only be table/struct/string
 table BundledInt {

@@ -38,7 +38,7 @@ static uint8_t bundled_allocator_pool[kBundledAllocatorPoolSize];
 
 DEFINE_string(
     bundled_program_path,
-    "model_bundled.bp",
+    "model_bundled.bpte",
     "Model serialized in flatbuffer format.");
 DEFINE_string(
     prof_result_path,
