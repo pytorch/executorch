@@ -85,18 +85,16 @@ if __name__ == "__main__":
     bias = True
     shape = [64, in_features]
 
-    class Model(torch.nn.Module):
+    class QuantizedLinear(torch.nn.Module):
         def __init__(self, in_features: int, out_features: int, bias: bool):
             super().__init__()
             self.output_linear = torch.nn.Linear(in_features, out_features, bias=bias)
-            self.layer_norm = torch.nn.LayerNorm(out_features)
 
         def forward(self, x: torch.Tensor):
             output_linear_out = self.output_linear(x)
-            layer_norm_out = self.layer_norm(output_linear_out)
-            return output_linear_out, layer_norm_out
+            return output_linear_out
 
-    model = Model(in_features, out_features, bias)
+    model = QuantizedLinear(in_features, out_features, bias)
     model.eval()
 
     example_inputs = (torch.ones(shape),)
