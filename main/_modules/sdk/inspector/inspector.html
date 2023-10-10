@@ -513,10 +513,6 @@
     <span class="k">def</span> <span class="nf">max</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
         <span class="k">return</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span>
 
-    <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">median</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">median</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span>
-
 
 <span class="c1"># TODO: detailed documentation</span>
 <div class="viewcode-block" id="Event"><a class="viewcode-back" href="../../../sdk-inspector.html#sdk.inspector.inspector.Event">[docs]</a><span class="nd">@dataclass</span>
@@ -526,7 +522,7 @@
 
 <span class="sd">    Args:</span>
 <span class="sd">        name: Name of the profiling/debugging `Event`.</span>
-<span class="sd">        perf_data: Performance data associated with the event retrived from the runtime (available attributes: p50, p90, avg, min, max and median).</span>
+<span class="sd">        perf_data: Performance data associated with the event retrived from the runtime (available attributes: p50, p90, avg, min and max).</span>
 <span class="sd">        op_type: List of op types corresponding to the event.</span>
 <span class="sd">        delegate_debug_identifier: Supplemental identifier used in combination with instruction id.</span>
 <span class="sd">        debug_handles: Debug handles in the model graph to which this event is correlated.</span>
@@ -654,7 +650,6 @@
             <span class="s2">&quot;avg&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">avg</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">],</span>
             <span class="s2">&quot;min&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">min</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">],</span>
             <span class="s2">&quot;max&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">max</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">],</span>
-            <span class="s2">&quot;median&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">median</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">],</span>
             <span class="s2">&quot;op_types&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">op_types</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">],</span>
             <span class="s2">&quot;delegate_debug_identifier&quot;</span><span class="p">:</span> <span class="p">[</span>
                 <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_identifier</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span>
