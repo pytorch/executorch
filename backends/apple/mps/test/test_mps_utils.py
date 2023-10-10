@@ -11,6 +11,8 @@ from typing import Any, Tuple
 import executorch.exir as exir
 
 import torch
+import torch._export as export
+from examples.portable.utils import export_to_edge
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
 from executorch.bundled_program.config import BundledConfig
 from executorch.bundled_program.core import create_bundled_program
@@ -19,8 +21,6 @@ from executorch.bundled_program.serialize import (
 )
 from executorch.exir import ExecutorchProgram, ExirExportedProgram
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
-
-from executorch.exir.print_program import print_program
 
 # Config for Capturing the weights, will be moved in the future
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True, _unlift=True)
@@ -37,27 +37,6 @@ class ansi_colors:
     ENDC = "\033[0m"
     BOLD = "\033[1m"
     UNDERLINE = "\033[4m"
-
-
-def dump_executorch_program_info(
-    edge: ExirExportedProgram, module_info: str = "Lowered"
-):
-    module_info = f"\033[92m{module_info}\033[0m"
-
-    logging.info("-----------------------------------")
-    logging.info(f"{module_info} exported edge graph:\n", edge.exported_program.graph)
-    executorch_program = edge.to_executorch()
-    program = executorch_program.program
-    logging.info("-----------------------------------")
-    logging.info(f"{module_info} flatbuffer representation:")
-    exir.print_program.pretty_print(program)
-    logging.info("-----------------------------------")
-    logging.info(f"{module_info} instruction list:")
-    print_program(program=program, show_meminfo=True, mark_dynamic_shape_tensor=True)
-    logging.info("-----------------------------------")
-    logging.info(f"{module_info} executorch program:")
-    logging.info(executorch_program.dump_exported_program())
-    logging.info("-----------------------------------")
 
 
 class OpSequencesAddConv2d(torch.nn.Module):
@@ -120,8 +99,6 @@ class TestMPS(unittest.TestCase):
         sample_inputs: Tuple[torch.Tensor],
         func_name: str,
         use_partitioner: bool = False,
-        dump_non_lowered_module: bool = False,
-        dump_lowered_module: bool = False,
     ) -> ExirExportedProgram:
         """
         Helper testing function that takes a torch.nn.Module and lowers it to XNNPACK with
@@ -139,12 +116,11 @@ class TestMPS(unittest.TestCase):
             def forward(self, *args):
                 return self.one_module(*args)
 
-        edge_program = exir.capture(
-            WrappedModule(), sample_inputs, _CAPTURE_CONFIG
-        ).to_edge(_EDGE_COMPILE_CONFIG)
+        m = export.capture_pre_autograd_graph(WrappedModule(), sample_inputs)
 
-        if dump_non_lowered_module:
-            dump_executorch_program_info(edge=edge_program, module_info="Non-lowered")
+        edge_program = export_to_edge(
+            m, sample_inputs, edge_compile_config=_EDGE_COMPILE_CONFIG
+        )
 
         logging.info("Step 2: Lowering to MPSGraph...")
         if use_partitioner:
@@ -152,7 +128,7 @@ class TestMPS(unittest.TestCase):
                 None
         else:
             delegated_program = to_backend(
-                "MPSBackend", edge_program.exported_program, []
+                "MPSBackend", edge_program.exported_program(), []
             )
 
         logging.info("Step 3: Capturing executorch program with lowered module...")
@@ -168,14 +144,6 @@ class TestMPS(unittest.TestCase):
         exported_program: ExirExportedProgram = exir.capture(
             WrappedModule(), sample_inputs, _CAPTURE_CONFIG
         ).to_edge(_EDGE_COMPILE_CONFIG)
-
-        if dump_lowered_module:
-            tmp_exported_program: ExirExportedProgram = exir.capture(
-                delegated_program, sample_inputs, _CAPTURE_CONFIG
-            ).to_edge(_EDGE_COMPILE_CONFIG)
-            dump_executorch_program_info(
-                edge=tmp_exported_program, module_info="Lowered"
-            )
 
         executorch_program: ExecutorchProgram = exported_program.to_executorch()
 
