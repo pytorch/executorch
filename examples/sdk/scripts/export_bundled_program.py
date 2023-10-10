@@ -7,12 +7,16 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
+import os
 
 from typing import List
 
 import torch
-import os
-from executorch.bundled_program.config import BundledConfig, MethodInputType, MethodOutputType
+from executorch.bundled_program.config import (
+    BundledConfig,
+    MethodInputType,
+    MethodOutputType,
+)
 from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
@@ -71,7 +75,6 @@ def export_to_bundled_program(
         example_inputs: An example input for model's all method for single execution.
                         To simplify, here we assume that all inference methods have the same inputs.
     """
-
 
     print("Exporting ET program...")
 
