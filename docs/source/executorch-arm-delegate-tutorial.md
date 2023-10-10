@@ -54,7 +54,7 @@ In this section, we will do a one-time setup, like downloading and installing ne
 2. Method 2: Follow the guide step by step to understand all the components and the logic of the script. You may want to use this method if you intend to change the behavior of the flow significantly.
 
 ```{tip}
-In the executorch repository we have a functioning script which followess the exact same steps to speed things up. It is located at `examples/arm/setup.sh`. Feel free to use that instead if it is convenient, or use it as a reference if some of the steps in the manual instruction aren't very clear.
+In the ExecuTorch repository we have a functioning script which follows the exact same steps to speed things up. It is located at `examples/arm/setup.sh`. Feel free to use that instead if it is convenient, or use it as a reference if some of the steps in the manual instruction aren't very clear.
 ```
 
 As mentioned before, we currently support only Linux based platforms with x86_64 or aarch64 processor architecture. Let’s make sure we are indeed on a supported platform.
