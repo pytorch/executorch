@@ -279,7 +279,7 @@ bool check_index_select_args(
 
   if (index.scalar_type() == ScalarType::Long) {
     const int64_t* const index_ptr = index.const_data_ptr<int64_t>();
-    for (size_t i = 1; i < index.numel(); ++i) {
+    for (size_t i = 0; i < index.numel(); ++i) {
       ET_LOG_MSG_AND_RETURN_IF_FALSE(
           index_ptr[i] >= 0 && index_ptr[i] < nonempty_size(in, dim),
           "index[%zu] = %" PRId64 " is out of range [0, %zd)",
@@ -289,7 +289,7 @@ bool check_index_select_args(
     }
   } else {
     const int32_t* const index_ptr = index.const_data_ptr<int32_t>();
-    for (size_t i = 1; i < index.numel(); ++i) {
+    for (size_t i = 0; i < index.numel(); ++i) {
       ET_LOG_MSG_AND_RETURN_IF_FALSE(
           index_ptr[i] >= 0 && index_ptr[i] < nonempty_size(in, dim),
           "index[%zu] = %" PRId32 " is out of range [0, %zd)",
