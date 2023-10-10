@@ -117,7 +117,7 @@ hash FVP_Corstone_SSE-300_Ethos-U55 # To make sure we are ready to use
 
 Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch runtime, executor-runner bare-metal application, as well as the rest of the bare-metal stack for Cortex-M55 CPU available on the Corstone-300 platform.
 
-These toolchains are available [here](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). We will be using GCC 12.3 targeting `arm-none-eabi` here for our tutorial. Just like MVP, to download the same version as we tested with in the top-level development dir,
+These toolchains are available [here](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). We will be using GCC 12.3 targeting `arm-none-eabi` here for our tutorial. Just like FVP, to download the same version as we tested with in the top-level development dir,
 
 ```bash
 # for aarch64
