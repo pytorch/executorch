@@ -82,7 +82,6 @@ SDK Integration Tutorial
 #   )
 #
 #   edge_program_manager: EdgeProgramManager = to_edge(aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True))
-#   # Note: A copy is needed because the underlying graph_module is modified
 #   edge_program_manager_copy = copy.deepcopy(edge_program_manager)
 #   et_program_manager: ExecutorchProgramManager = edge_program_manager_copy.to_executorch()
 #
@@ -90,6 +89,12 @@ SDK Integration Tutorial
 #   # Generate ETRecord
 #   etrecord_path = "etrecord.bin"
 #   generate_etrecord(etrecord_path, edge_program_manager, et_program_manager)
+#
+# .. warning::
+#    Users should do a deepcopy of the output of to_edge() and pass in the
+#    deepcopy to the generate_etrecord API. This is needed because the
+#    subsequent call, to_executorch(), does an in-place mutation and will
+#    lose debug data in the process.
 #
 
 ######################################################################
