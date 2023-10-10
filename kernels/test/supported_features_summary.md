@@ -18,4 +18,3 @@ Each kernel can have its own overrides, which are defined in
 ('portable', 'fbcode/executorch/kernels/portable/test/supported_features_def.yaml')
 ('quantized', 'fbcode/executorch/kernels/quantized/test/supported_features_def.yaml')
 ('custom_kernel_example', 'fbcode/executorch/kernels/test/custom_kernel_example/supported_features_def.yaml')
-

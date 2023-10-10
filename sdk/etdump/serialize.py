@@ -9,7 +9,6 @@
 import json
 import os
 import tempfile
-from typing import Union
 
 import pkg_resources
 
