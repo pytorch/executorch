@@ -20,35 +20,29 @@ if(NOT TORCH_ROOT)
   set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations)
-
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
-# Portable kernel sources TODO(larryliu0820): use buck2 to gather the sources
-set(_xtensa_kernels__srcs
+
+# ATen compliant ops that are needed to run this model.
+set(_aten_ops__srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/op_add.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_full.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/broadcast_util.cpp"
-    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/repeat_util.cpp"
-)
+    "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/repeat_util.cpp")
+add_library(aten_ops_xtensa ${_aten_ops__srcs})
+target_link_libraries(aten_ops_xtensa PUBLIC executorch)
+
+# Custom ops that are needed to run the test model.
+add_library(
+  custom_ops "quantized_linear_out.cpp" "quantize_per_tensor.cpp"
+  "dequantize_per_tensor.cpp")
+target_link_libraries(custom_ops PUBLIC executorch)
+target_link_libraries(custom_ops PRIVATE xtensa_kernels)
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in functions.yaml
 gen_selected_ops("${CMAKE_CURRENT_LIST_DIR}/functions.yaml" "" "")
-# Expect gen_selected_ops output file to be selected_operators.yaml
 generate_bindings_for_kernels(${CMAKE_CURRENT_SOURCE_DIR}/functions.yaml "")
 message("Generated files ${gen_command_sources}")
 
-#
-# portable_kernels: Pure-C++ kernel library for ATen ops
-#
-# Focused on portability and understandability rather than speed.
-#
-add_library(xtensa_kernels ${_xtensa_kernels__srcs})
-target_link_libraries(xtensa_kernels PRIVATE executorch)
-target_compile_options(xtensa_kernels PUBLIC ${_common_compile_options})
-
-# Build a library for _portable_kernels__srcs
-#
-# portable_ops_lib: Register portable_ops_lib ops kernels into Executorch
-# runtime
-gen_operators_lib("xtensa_ops_lib" xtensa_kernels executorch)
+gen_operators_lib("xtensa_ops_lib" custom_ops aten_ops_xtensa)
