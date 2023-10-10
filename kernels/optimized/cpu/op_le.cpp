@@ -9,6 +9,7 @@
 #include <executorch/kernels/optimized/vec/functional.h>
 #include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
+#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -26,17 +27,15 @@ Tensor& opt_le_tensor_out(
     Tensor& out) {
   (void)ctx;
 
-  ET_CHECK_SAME_SHAPE2(a, b);
-
-  // Resize for dynamic shape
-  auto error = resize_tensor(out, a.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
-
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  if (a_type == b_type && a_type == out_type) {
+  if (a_type == b_type && a_type == out_type && a.sizes().equals(b.sizes())) {
+    // Resize for dynamic shape
+    auto error = resize_tensor(out, a.sizes());
+    ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+
     ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "le", CTYPE, [&]() {
       using Vec = executorch::vec::Vectorized<CTYPE>;
       executorch::vec::map2<CTYPE>(
@@ -48,19 +47,23 @@ Tensor& opt_le_tensor_out(
     });
   } else {
     ScalarType common_type = promoteTypes(a_type, b_type);
+
+    resize_to_broadcast_target_size(a, b, out);
+
     ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "le", CTYPE_A, [&]() {
       ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "le", CTYPE_B, [&]() {
         ET_SWITCH_REAL_TYPES_AND(Bool, common_type, ctx, "le", CTYPE_IN, [&]() {
           ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "le", CTYPE_OUT, [&]() {
-            const size_t n = a.numel();
-            const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
-            const CTYPE_B* b_data = b.const_data_ptr<CTYPE_B>();
-            CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-            for (auto i = 0; i < n; ++i) {
-              out_data[i] = static_cast<CTYPE_OUT>(
-                  static_cast<CTYPE_IN>(a_data[i]) <=
-                  static_cast<CTYPE_IN>(b_data[i]));
-            }
+            apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
+                [](const CTYPE_A val_a, const CTYPE_B val_b) {
+                  CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+                  CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
+                  bool value = a_casted <= b_casted;
+                  return static_cast<CTYPE_OUT>(value);
+                },
+                a,
+                b,
+                out);
           });
         });
       });
