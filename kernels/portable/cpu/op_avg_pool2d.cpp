@@ -51,7 +51,7 @@ Tensor& avg_pool2d_out(
 
   ET_KERNEL_CHECK(
       ctx,
-      output_size_is_valid({output_sizes, output_ndim}),
+      output_size_is_valid({output_sizes, output_ndim}, 2),
       InvalidArgument,
       out);
 
