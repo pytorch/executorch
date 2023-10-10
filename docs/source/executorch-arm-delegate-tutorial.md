@@ -12,7 +12,7 @@
 :::
 
 :::{grid-item-card}  What you will learn in this tutorial:
-:class-card: card-learn
+:class-card: card-prerequisites
 In this tutorial you will learn how to export a simple PyTorch model for Executorch Arm Ethos-u backend delegate and run it on a Corstone-300 FVP Simulator.
 :::
 
