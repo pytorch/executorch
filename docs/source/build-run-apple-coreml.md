@@ -24,7 +24,7 @@
 
 <!---- DO NOT MODIFY Progress Bar End--->
 
-# TITLE
+# Building and Running ExecuTorch on Apple Devices using CoreML
 
 <!----This will show a grid card on the page----->
 ::::{grid} 2
