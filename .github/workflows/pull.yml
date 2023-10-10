@@ -60,11 +60,10 @@ jobs:
         XNNPACK_QUANTIZATION=${{ matrix.xnnpack_quantization }}
         XNNPACK_DELEGATION=${{ matrix.delegation }}
         DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
-        MPS_DELEGATION=false
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Build and test ExecuTorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${XNNPACK_QUANTIZATION}" "${XNNPACK_DELEGATION}" "${DEMO_BACKEND_DELEGATION}" "${MPS_DELEGATION}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${XNNPACK_QUANTIZATION}" "${XNNPACK_DELEGATION}" "${DEMO_BACKEND_DELEGATION}"
 
   test-custom-ops-linux:
     name: test-custom-ops-linux
@@ -114,37 +113,6 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
-
-  test-mps-macos:
-    name: test-mps-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    needs: gather-models
-    strategy:
-      matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
-      fail-fast: false
-    with:
-      runner: macos-m1-14
-      submodules: 'true'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        WORKSPACE=$(pwd)
-        pushd "${WORKSPACE}/pytorch/executorch"
-
-        MODEL_NAME=${{ matrix.model }}
-        BUILD_TOOL="cmake"
-        XNNPACK_QUANTIZATION=false
-        XNNPACK_DELEGATION=false
-        DEMO_BACKEND_DELEGATION=false
-        MPS_DELEGATION=true
-
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "cmake"
-        PYTHON_EXECUTABLE=python bash backends/apple/mps/install_requirements.sh
-
-        # Build and test executorch through MPS delegation
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${XNNPACK_QUANTIZATION}" "${XNNPACK_DELEGATION}" "${DEMO_BACKEND_DELEGATION}" "${MPS_DELEGATION}"
-        popd
   unittest:
     uses: ./.github/workflows/_unittest.yml
     with:
