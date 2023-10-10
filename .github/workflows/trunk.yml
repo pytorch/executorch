@@ -57,12 +57,11 @@ jobs:
         XNNPACK_QUANTIZATION=${{ matrix.xnnpack_quantization }}
         XNNPACK_DELEGATION=${{ matrix.delegation }}
         DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
-        MPS_DELEGATION=false
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test xecutorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${XNNPACK_QUANTIZATION}" "${XNNPACK_DELEGATION}" "${DEMO_BACKEND_DELEGATION}" "${MPS_DELEGATION}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${XNNPACK_QUANTIZATION}" "${XNNPACK_DELEGATION}" "${DEMO_BACKEND_DELEGATION}"
         popd
 
   test-custom-ops-macos:
