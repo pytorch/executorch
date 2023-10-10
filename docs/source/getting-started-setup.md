@@ -37,9 +37,33 @@ exporting your model, and finally building and running a runtime.
 :::{grid-item-card} Prerequisites
 :class-card: card-prerequisites
 * Understand the concepts defined in [ExecuTorch Overview](intro-overview.md)
-* Supported Host OS: CentOS, macOS Ventura (M1/x86_64)
 :::
 ::::
+
+## Supported Host Environments
+
+We have tested these instructions on the following systems, although they should
+also work on other systems with similar environments.
+
+**Linux (x86_64)**
+- CentOS 8 or later
+- Ubuntu 20.04.6 LTS or later
+- RHEL 8 or later
+- Windows Subsystem for Linux running any of the above
+
+**macOS (x86_64/M1/M2)**
+- Big Sur or later
+
+The most critical requirements are:
+- The ability to install a recent version of `conda`, described below.
+- `g++` version 8 or higher, `clang++` version 8 or higher, or another
+  C++17-compatible toolchain that supports GNU C-style [statement
+  expressions](https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html) (`({ ...
+  })` syntax).
+
+Note that the cross-compilable core runtime code supports a wider range of
+toolchains, down to C++11. See the [Runtime Overview](./runtime-overview.md) for
+portability details.
 
 ## Set up Your Environment
 
@@ -108,7 +132,7 @@ Follow these steps:
 1. Expose FlatBuffers compiler:
 
    ExecuTorch uses `flatc` to export models and builds it from sources at
-   `third-party/flatbuffers`. Make it's available by referring in `$PATH`,
+   `third-party/flatbuffers`. Make it available by adding it to the `$PATH` environment variable,
    as prompted by the previous step, or exporting as `$FLATC_EXECUTABLE`
    enironment variable.
    Run `./build/install_flatc.sh` to make sure `flatc` is installed correctly.
@@ -197,7 +221,7 @@ You will need the following prerequisits for this section:
 Complete the following steps:
 
 1. Ensure that Git has fetched and updated the submodules. This is necessary
-   any time commit hash of any of the submodule changes. Therefore, you need
+   whenever the commit hash of a submodule changes. Therefore, you need
    to periodically sync your submodules with upstream:
 
    ```bash
