@@ -42,11 +42,27 @@ Qualcomm AI Engine Direct is also referred to as QNN in the source and documenta
 :::
 ::::
 
+
+## What's Qualcomm AI Engine Direct?
+
+[Qualcomm AI Engine Direct](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
+is designed to provide unified, low-level APIs for AI development.
+
+Developers can interact with various accelerators on Qualcomm SoCs with this set of APIs, including
+Kryo CPU, Andreno GPU, and Hexagon processors. More details can be found [here](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/overview.html).
+
+Currently, this ExecuTorch Backend can delegate AI computations to Hexagon processors through Qualcomm AI Engine Direct APIs.
+
+
 ## Prerequsites (Hardware and Software)
 
 ### Host OS
 
 The Linux host operating system that QNN Backend is verified with is Ubuntu 20.04 LTS x64.
+
+However, because Qualcomm Package Manager(QPM) used to download necessary SDK (see below)
+only support Ubuntu, we recommend users to exercise this tutorial exacly
+on Ubuntu 20.04.
 
 ### Hardware:
 You will need an Android smartphone with adb-connected running on one of below Qualcomm SoCs:
@@ -54,7 +70,7 @@ You will need an Android smartphone with adb-connected running on one of below Q
  - SM8475 (Snapdragon 8 Gen 1+)
  - SM8550 (Snapdragon 8 Gen 2)
 
-This example is verified with SM8550.
+This example is verified with SM8550 and SM8450.
 
 ### Software:
 
@@ -68,6 +84,26 @@ This example is verified with SM8550.
    - The SDK should be installed to somewhere `/opt/qcom/aistack/qnn` by default.
    - It's also OK to place it somewhere else. We don't have assumption about the absolute path of the SDK.
    - This example is verified with version 2.12.0.
+
+The directory with installed Qualcomm AI Engine Direct SDK looks like:
+```
+$ tree -L 1 /opt/qcom/aistack/qnn/<version>/
+/opt/qcom/aistack/qnn/<version>/
+├── benchmarks
+├── bin
+├── docs
+├── examples
+├── include
+├── lib
+├── LICENSE.pdf
+├── qaisw-v2.13.1.230725130242_60412
+├── QNN_NOTICE.txt
+├── QNN_README.txt
+├── QNN_ReleaseNotes.txt
+├── QNN_SECUREPD_README.txt
+├── share
+└── Uninstall
+```
 
 
 ## Setting up your developer environment
@@ -140,15 +176,16 @@ You can find `qnn_executor_runner` under `build_android/examples/qualcomm/`.
 
 ### AOT compile a model
 
-You can refer to [this script](../../examples/qualcomm/scripts/export_example.py) for exact APIs.
-We use mobilenet v2 as an example in this tutorial. Run below commands to get
-a quantized mobilenetv2 delegated to QNN:
+You can refer to [this script](../../examples/qualcomm/scripts/deeplab_v3.py) for the exact flow.
+We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands to see how an
+end-to-end example works:
 
 ```
-python -m examples.qualcomm.scripts.export_example --model_name mv2
+cd $EXECUTORCH_ROOT
+python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 -s <adb_connected_device_serial>
 ```
 
-A file called `mv2.pte` would be generated.
+All artifacts would be put to a directory `./deeplab_v3`, including a compiled pte file, `dlv3_qnn.pte`.
 
 
 ### Run model Inference on an Android smartphone with Qualcomm SoCs
@@ -192,4 +229,16 @@ I 00:00:00.136768 executorch:qnn_executor_runner.cpp:278] Model executed success
 [INFO][Qnn ExecuTorch] Destroy Qnn device
 [INFO][Qnn ExecuTorch] Destroy Qnn backend
 ```
+
+
+### Running a model via ExecuTorch's android demo-app
+
+An Android demo-app using Qualcomm AI Engine Direct Backend can be found in
+`examples`. Please refer to [README.md](../../examples/demo-apps/android/ExecuTorchDemo/README.md).
+
+
+### What is coming?
+
+ - [An example using quantized mobilebert](https://github.com/pytorch/executorch/pull/658) to solve multi-class text classification.
+ - More Qualcomm AI Engine Direct accelerators, e.g., GPU.
 
