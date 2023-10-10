@@ -265,7 +265,7 @@ In the ExecuTorch AoT pipeline, one of the options is to select a backend. Execu
 
 In this flow, without any backend delegates, to illustrate the portability of the ExecuTorch runtime, as well as of the operator library we will skip specifying the backend during the `.pte` generation.
 
-Following script will server as a helper utility to help us generate the `.pte` file.
+Following script will serve as a helper utility to help us generate the `.pte` file. This is available in the `executorch/examples/arm` directory.
 
 ```bash
 python3 -m examples.arm.examples --model_name="softmax"
