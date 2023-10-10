@@ -69,11 +69,11 @@ if __name__ == "__main__":
             _check_ir_validity=True,
         ),
     )
-    logging.info(f"Exported graph:\n{edge.exported_program.graph}")
+    logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 
-    lowered_module = to_backend(MPSBackend.__name__, edge.exported_program, [])
+    lowered_module = to_backend(MPSBackend.__name__, edge.exported_program(), [])
 
-    logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
+    logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
     class WrappedModule(torch.nn.Module):
         def __init__(self):
