@@ -85,7 +85,7 @@ python3 -m unittest backends.apple.mps.test.test_mps --verbose -k mps_backend_pi
 
 ```bash
 # Build the mps_executor_runner
-rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DEXECUTORCH_BUILD_MPS=1 -DBUCK2=/tmp/buck2 —trace .. && cmake --build .
+rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DEXECUTORCH_BUILD_MPS=1 -DBUCK2=/tmp/buck2 —trace .. && cmake --build . && cd ..
 ```
 
 ***Step 2***. Run the model using the `mps_executor_runner`.
