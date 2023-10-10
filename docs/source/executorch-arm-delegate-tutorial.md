@@ -351,7 +351,9 @@ For example, here in the command line above, to run SoftmaxModule, we only inclu
 
 ### Building the executor_runner Bare-Metal Application
 
-The SDK dir is the same one prepared [earlier](#setup-the-arm-ethos-u-software-development). Notice here, we will be passing the `.pte` file (any one of them) generated above. Note, you have to generate a new `executor-runner` binary if you want to change the model or the `.pte` file. This constraint is stemming from the constrained bare-metal runtime envrionment we have for Corstone-300 platform.
+The SDK dir is the same one prepared [earlier](#setup-the-arm-ethos-u-software-development). And, we will be passing the `.pte` file (any one of them) generated above. 
+
+Note, you have to generate a new `executor-runner` binary if you want to change the model or the `.pte` file. This constraint is from the constrained bare-metal runtime environment we have for Corstone-300 platform.
 
 ```bash
 
