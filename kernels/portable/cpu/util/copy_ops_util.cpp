@@ -152,20 +152,25 @@ bool check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
 
   // Make sure no dimensions are duplicated and all in the range [-in.dim(),
-  // in.dim() - 1]. Use gaussian sum to check this.
-  size_t expected_sum = (dims.size() * (dims.size() + 1)) / 2;
-  size_t gauss_sum = 0;
-  for (int i = 0; i < dims.size(); i++) {
-    // Convert dimension to a non-negative number. dim_base is in the range
-    // [0 .. in.dim() - 1].
-    size_t dim = dims[i] > -1 ? dims[i] : in.dim() + dims[i];
-    ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim));
-    gauss_sum += dim + 1;
-  }
+  // in.dim() - 1].
+  bool dim_exist[kTensorDimensionLimit];
+  memset(dim_exist, false, sizeof(dim_exist));
 
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      gauss_sum == expected_sum,
-      "The dims passed to permute_copy must contain one of each dim!");
+  for (int i = 0; i < dims.size(); i++) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dims[i]));
+    // Convert dimension to a non-negative number in the range
+    // [0 .. in.dim() - 1].
+    size_t dim = dims[i] >= 0 ? dims[i] : in.dim() + dims[i];
+
+    // Internal check, since we have already validated this
+    ET_CHECK(dim < kTensorDimensionLimit && dim >= 0);
+
+    // Check that the dimension hasn't been seen previously.
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        dim_exist[dim] == false, "duplicate dims are not allowed.");
+
+    dim_exist[dim] = true;
+  }
 
   return true;
 }

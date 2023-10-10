@@ -327,10 +327,38 @@ TEST(OpPermuteCopyKernelTest, DupeDimensionPos) {
       t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
 }
 
+TEST(OpPermuteCopyKernelTest, DupeDimensionPos2) {
+  TensorFactory<ScalarType::Int> tf;
+
+  const std::vector<int64_t> new_dim = {1, 1, 1};
+
+  const std::vector<int32_t> sizes = {1, 1, 1};
+  Tensor t_int = tf.make(sizes, {1});
+
+  Tensor out = tf.zeros(sizes);
+
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(
+      t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
+}
+
 TEST(OpPermuteCopyKernelTest, DupeDimensionNeg) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int64_t> new_dim = {0, 1, -2};
+
+  const std::vector<int32_t> sizes = {1, 1, 1};
+  Tensor t_int = tf.make(sizes, {1});
+
+  Tensor out = tf.zeros(sizes);
+
+  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(
+      t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
+}
+
+TEST(OpPermuteCopyKernelTest, DupeDimensionNeg2) {
+  TensorFactory<ScalarType::Int> tf;
+
+  const std::vector<int64_t> new_dim = {0, 1, -5};
 
   const std::vector<int32_t> sizes = {1, 1, 1};
   Tensor t_int = tf.make(sizes, {1});
