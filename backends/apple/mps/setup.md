@@ -30,7 +30,7 @@ The MPS backend device maps machine learning computational graphs and primitives
 ::::{grid} 2
 :::{grid-item-card}  What you will learn in this tutorial:
 :class-card: card-learn
-* In this tutorial you will learn how to export a simple model using [Pixel Shuffle](https://pytorch.org/docs/stable/generated/torch.nn.PixelShuffle.html) to the MPS delegate.
+* In this tutorial you will learn how to export [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to the MPS delegate.
 * You will also learn how to compile and deploy the ExecuTorch runtime with the MPS delegate on macOS and iOS.
 :::
 :::{grid-item-card}  Tutorials we recommend you complete before this:
@@ -73,7 +73,7 @@ In order to be able to successfully build and run a model using the MPS backend 
 
 ```bash
 cd executorch
-python3 -m unittest backends.apple.mps.test.test_mps --verbose -k mps_backend_pixel_shuffle
+python3 -m unittest backends.apple.mps.test.test_mps --verbose -k mv3
 ```
 
 ### Runtime
@@ -90,21 +90,23 @@ rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DEXECUTORCH_BUILD_
 
 ***Step 2***. Run the model using the `mps_executor_runner`.
 ```bash
-./cmake-out/examples/apple/mps/mps_executor_runner --model_path mps_backend_pixel_shuffle.pte --bundled_program
+./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3.pte --bundled_program
 ```
 
 You should see the following results. Note that no output file will be generated in this example:
 ```
-./examples/apple/mps/mps_executor_runner --model_path mps_backend_pixel_shuffle.pte --bundled_program
-I 00:00:00.000452 executorch:mps_executor_runner.mm:286] Model file mps_backend_pixel_shuffle.pte is loaded.
-I 00:00:00.000467 executorch:mps_executor_runner.mm:292] Program methods: 1
-I 00:00:00.000469 executorch:mps_executor_runner.mm:294] Running method forward
-I 00:00:00.000487 executorch:mps_executor_runner.mm:349] Setting up non-const buffer 1, size 5376.
-I 00:00:00.000493 executorch:mps_executor_runner.mm:376] Setting up memory manager
-I 00:00:00.000495 executorch:mps_executor_runner.mm:392] Loading method name from plan
-I 00:00:00.008456 executorch:mps_executor_runner.mm:399] Method loaded.
-I 00:00:00.008458 executorch:mps_executor_runner.mm:404] Loading bundled program...
-I 00:00:00.061173 executorch:mps_executor_runner.mm:501] Model verified successfully.
+./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3.pte --bundled_program
+I 00:00:00.003290 executorch:mps_executor_runner.mm:286] Model file mv3.pte is loaded.
+I 00:00:00.003306 executorch:mps_executor_runner.mm:292] Program methods: 1
+I 00:00:00.003308 executorch:mps_executor_runner.mm:294] Running method forward
+I 00:00:00.003311 executorch:mps_executor_runner.mm:349] Setting up non-const buffer 1, size 606112.
+I 00:00:00.003374 executorch:mps_executor_runner.mm:376] Setting up memory manager
+I 00:00:00.003376 executorch:mps_executor_runner.mm:392] Loading method name from plan
+I 00:00:00.018942 executorch:mps_executor_runner.mm:399] Method loaded.
+I 00:00:00.018944 executorch:mps_executor_runner.mm:404] Loading bundled program...
+I 00:00:00.018980 executorch:mps_executor_runner.mm:421] Inputs prepared.
+I 00:00:00.118731 executorch:mps_executor_runner.mm:438] Model executed successfully.
+I 00:00:00.122615 executorch:mps_executor_runner.mm:501] Model verified successfully.
 ```
 
 ## Deploying and Running on Device
