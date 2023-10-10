@@ -13,7 +13,7 @@ import XCTest
 
 final class MobileNetClassifierTest: XCTestCase {
 
-  func testCPU() throws {
+  func testV3WithPortableBackend() throws {
     try run(model: "mv3")
   }
 
@@ -25,7 +25,7 @@ final class MobileNetClassifierTest: XCTestCase {
     try run(model: "mv3_mps")
   }
 
-  func testV3WithXnnPackBackend() throws {
+  func testV3WithXNNPACKBackend() throws {
     try run(model: "mv3_xnnpack_fp32")
   }
 
