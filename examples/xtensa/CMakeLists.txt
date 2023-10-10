@@ -72,6 +72,7 @@ target_include_directories(
          ${NXP_SDK_ROOT_DIR}/boards/evkmimxrt685/dsp_examples/mu_polling/dsp)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/ops)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels)
 
 # Generate the model header file
 add_custom_command(

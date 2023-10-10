@@ -73,7 +73,7 @@ void LED_TOGGLE() {
  */
 void delay(void) {
   volatile uint32_t i = 0;
-  for (i = 0; i < 5000000; ++i) {
+  for (i = 0; i < 50000000; ++i) {
     __NOP();
   }
 }
@@ -180,19 +180,28 @@ int main(int argc, char** argv) {
   torch::executor::util::PrepareInputTensors(*method);
   ET_LOG(Info, "Starting the model execution...");
 
-  Error status = method->execute();
-  ET_LOG(Info, "Executed model");
-  if (status != Error::Ok) {
-    ET_LOG(
-        Error,
-        "Execution of method %s failed with status 0x%" PRIx32,
-        method_name,
-        status);
-  } else {
-    ET_LOG(Info, "Model executed successfully.");
-  }
-
   while (1) {
+    Error status = method->execute();
+    ET_LOG(Info, "Executed model");
+    if (status != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Execution of method %s failed with status 0x%" PRIx32,
+          method_name,
+          status);
+    } else {
+      ET_LOG(Info, "Model executed successfully.");
+    }
+
+    std::vector<EValue> outputs(method->outputs_size());
+    status = method->get_outputs(outputs.data(), outputs.size());
+    for (int i = 0; i < outputs.size(); ++i) {
+      float* out_data_ptr = (float*)outputs[i].toTensor().const_data_ptr();
+      ET_LOG(Info, "First 20 elements of output %d", i);
+      for (size_t j = 0; j < 20; j++) {
+        PRINTF("%f \t", out_data_ptr[j]);
+      }
+    }
     delay();
     LED_TOGGLE();
   }

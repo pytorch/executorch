@@ -147,7 +147,9 @@ export TOOLCHAIN_VER=RI-2021.8-linux
 export XTENSA_CORE=nxp_rt600_RI2021_8_newlib
 ```
 
-***Step 2***. Run the CMake build.
+***Step 2***. Clone the [nnlib repo](https://github.com/foss-xtensa/nnlib-hifi4)
+
+***Step 3***. Run the CMake build.
 In order to run the CMake build, you need the path to the following:
 - The Program generated in the previous step
 - Path to the NXP SDK root. This should have been installed already in the [Setting up Developer Environment](#setting-up-developer-environment) section. This is the directory that contains the folders such as boards, components, devices, and other.
@@ -156,9 +158,9 @@ In order to run the CMake build, you need the path to the following:
 cd executorch
 mkdir cmake-xt
 cd cmake-xt
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=../examples/xtensa/xtensa.cmake -DMODEL_PATH=<path_to_program_file_generated_in_previous_step> -DNXP_SDK_ROOT_DIR=<path_to_nxp_sdk_root> -DEXECUTORCH_BUILD_FLATC=0 -DFLATC_EXECUTABLE="$(which flatc)" ..
+cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=../examples/xtensa/xtensa.cmake -DMODEL_PATH=<path_to_program_file_generated_in_previous_step> -DNXP_SDK_ROOT_DIR=<path_to_nxp_sdk_root> -DEXECUTORCH_BUILD_FLATC=0 -DFLATC_EXECUTABLE="$(which flatc)" -DEXECUTORCH_BUILD_XTENSA_EXAMPLE=1 -DNN_LIB_BASE_DIR=<path_to_nnlib_cloned_in_step_2>  ..
 cd ..
-cmake --build cmake-xt -j<num_cores> -t xtensa_executorch_example
+cmake --build cmake-xt -j8 -t xtensa_executorch_example
 ```
 
 After having succesfully run the above step you should see two binary files in their CMake output directory.
