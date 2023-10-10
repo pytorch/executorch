@@ -48,8 +48,8 @@ Qualcomm AI Engine Direct is also referred to as QNN in the source and documenta
 [Qualcomm AI Engine Direct](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
 is designed to provide unified, low-level APIs for AI development.
 
-Developers can interact with various accelerators on Qualcomm SoCs with this set of APIs, including
-Kryo CPU, Andreno GPU, and Hexagon processors. More details can be found [here](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/overview.html).
+Developers can interact with various accelerators on Qualcomm SoCs with these set of APIs, including
+Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found [here](https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/overview.html).
 
 Currently, this ExecuTorch Backend can delegate AI computations to Hexagon processors through Qualcomm AI Engine Direct APIs.
 
@@ -218,16 +218,43 @@ adb shell "cd ${DEVICE_DIR} \
 ```
 
 You should see the following result.
-Note that no output file will be generated in this example.
+Model outputs are put to `./deeplab_v3/outputs`.
 ```
-I 00:00:00.133366 executorch:qnn_executor_runner.cpp:156] Method loaded.
-I 00:00:00.133590 executorch:util.h:104] input already initialized, refilling.
-I 00:00:00.135162 executorch:qnn_executor_runner.cpp:161] Inputs prepared.
-I 00:00:00.136768 executorch:qnn_executor_runner.cpp:278] Model executed successfully.
+I 00:00:01.863385 executorch:qnn_executor_runner.cpp:298] 100 inference took 1096.624000 ms, avg 10.966240 ms
 [INFO][Qnn ExecuTorch] Destroy Qnn backend parameters
 [INFO][Qnn ExecuTorch] Destroy Qnn context
 [INFO][Qnn ExecuTorch] Destroy Qnn device
 [INFO][Qnn ExecuTorch] Destroy Qnn backend
+[WARNING] <W> Cannot get op package maps as singleton provider is already destroyed
+
+/data/local/tmp/executorch/dlv3_qnn/outputs/: 200 files pulled. 46.7 MB/s (842956800 bytes in 17.198s)
+PA   : 0.9279080163742056%
+MPA  : 0.8436995479010411%
+MIoU : 0.7295181225907508%
+CIoU :
+{
+  "Backround": 0.9118397702257772,
+  "Aeroplane": 0.9195003650537316,
+  "Bicycle": 0.4074836630439685,
+  "Bird": 0.8318192515690322,
+  "Boat": 0.5604090467931566,
+  "Bottle": 0.810288138560711,
+  "Bus": 0.9462156473522969,
+  "Car": 0.9036561912572266,
+  "Cat": 0.9218752933579742,
+  "Chair": 0.166601521782278,
+  "Cow": 0.9255118338630605,
+  "DiningTable": 0.7566001181986504,
+  "Dog": 0.7315379195337196,
+  "Horse": 0.6748639306871056,
+  "MotorBike": 0.8083967507343583,
+  "Person": 0.8554745611396247,
+  "PottedPlant": 0.40625618681325354,
+  "Sheep": 0.8037552530978187,
+  "Sofa": 0.47743485657288254,
+  "Train": 0.6377080913628297,
+  "TvMonitor": 0.8626521834063088
+}
 ```
 
 
