@@ -426,7 +426,7 @@ and optional ETRecord path.</p>
 <li><p><strong>etdump_path</strong> – Path to the ETDump file.</p></li>
 <li><p><strong>etrecord_path</strong> – Optional path to the ETRecord file.</p></li>
 <li><p><strong>etdump_scale</strong> – Inverse Scale Factor used to cast the timestamps in ETDump
-defaults to milli (1000ms = 1s).</p></li>
+defaults to ms (1ms = 1000us).</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
@@ -446,11 +446,11 @@ defaults to milli (1000ms = 1s).</p></li>
 <h3>print_data_tabular<a class="headerlink" href="#print-data-tabular" title="Permalink to this headline">¶</a></h3>
 <dl class="py function">
 <dt class="sig sig-object py" id="sdk.inspector.inspector.Inspector.print_data_tabular">
-<span class="sig-prename descclassname"><span class="pre">sdk.inspector.inspector.Inspector.</span></span><span class="sig-name descname"><span class="pre">print_data_tabular</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.inspector.inspector.Inspector.print_data_tabular" title="Permalink to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">sdk.inspector.inspector.Inspector.</span></span><span class="sig-name descname"><span class="pre">print_data_tabular</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_units</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.inspector.inspector.Inspector.print_data_tabular" title="Permalink to this definition">¶</a></dt>
 <dd><p>Displays the underlying EventBlocks in a structured tabular format, with each row representing an Event.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>None</strong> – </p>
+<dd class="field-odd"><p><strong>include_units</strong> – Whether headers should include units (default true)</p>
 </dd>
 <dt class="field-even">Returns</dt>
 <dd class="field-even"><p>None</p>
@@ -535,7 +535,7 @@ of an <code class="docutils literal notranslate"><span class="pre">Inspector</sp
 </div>
 <dl class="py class">
 <dt class="sig sig-object py" id="sdk.inspector.inspector.EventBlock">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sdk.inspector.inspector.</span></span><span class="sig-name descname"><span class="pre">EventBlock</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">events=&lt;factory&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sdk/inspector/inspector.html#EventBlock"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sdk.inspector.inspector.EventBlock" title="Permalink to this definition">¶</a></dt>
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sdk.inspector.inspector.</span></span><span class="sig-name descname"><span class="pre">EventBlock</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">events=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">scale_factor=1</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sdk/inspector/inspector.html#EventBlock"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sdk.inspector.inspector.EventBlock" title="Permalink to this definition">¶</a></dt>
 <dd><p>An <cite>EventBlock</cite> contains a collection of events associated with a particular profiling/debugging block retrieved from the runtime.
 Each <cite>EventBlock</cite> represents a pattern of execution. For example, model initiation and loading lives in a single <cite>EventBlock</cite>.
 If there’s a control flow, each branch will be represented by a separate <cite>EventBlock</cite>.</p>
