@@ -62,7 +62,7 @@ class ClassificationController: ObservableObject {
     let modelFileName: String
     switch mode {
     case .coreML:
-      modelFileName = "mv3_coreml"
+      modelFileName = "mv3_coreml_all"
     case .mps:
       modelFileName = "mv3_mps"
     case .xnnpack:

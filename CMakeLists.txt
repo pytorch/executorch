@@ -134,6 +134,8 @@ option(EXECUTORCH_BUILD_SDK
        "Build the ExecuTorch SDK library and the SDK example runner.")
 
 option(EXECUTORCH_BUILD_EXAMPLES "Build the ExecuTorch examples.")
+option(EXECUTORCH_BUILD_XTENSA_EXAMPLE
+       "Build the example targeted for the Xtensa Hifi4 DSP" OFF)
 
 if(NOT BUCK2)
   set(BUCK2 buck2)
@@ -182,16 +184,18 @@ include(${EXECUTORCH_SRCS_FILE})
 # EXECUTORCH_BUILD_HOST_TARGETS, which can still be overridden if desired.
 #
 
+# Detect if an iOS toolchain is set.
+set(CMAKE_TOOLCHAIN_IOS NOT CMAKE_TOOLCHAIN_FILE MATCHES
+                        ".*(iOS|ios\.toolchain)\.cmake$")
+
 # EXECUTORCH_BUILD_HOST_TARGETS: Option to control the building of host-only
 # tools like `flatc`, along with example executables like `executor_runner` and
 # libraries that it uses, like `gflags`. Disabling this can be helpful when
 # cross-compiling, but some required tools that would have been built need to be
 # provided directly (via, for example, FLATC_EXECUTABLE).
-cmake_policy(SET CMP0127 NEW)
-
 cmake_dependent_option(
   EXECUTORCH_BUILD_HOST_TARGETS "Build host-only targets." ON
-  "NOT CMAKE_TOOLCHAIN_FILE MATCHES \".*iOS\.cmake$\"" OFF)
+  "NOT CMAKE_TOOLCHAIN_IOS" OFF)
 
 
 #
@@ -199,7 +203,7 @@ cmake_dependent_option(
 #
 cmake_dependent_option(
   EXECUTORCH_BUILD_FLATC "Build the flatc executable." ON
-  "NOT FLATC_EXECUTABLE AND EXECUTORCH_BUILD_HOST_TARGETS" OFF)
+  "NOT FLATC_EXECUTABLE;EXECUTORCH_BUILD_HOST_TARGETS" OFF)
 
 if(EXECUTORCH_BUILD_FLATC)
   if(FLATC_EXECUTABLE)
@@ -239,7 +243,12 @@ add_subdirectory(schema)
 
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE program_schema)
-target_link_libraries(executorch PRIVATE dl) # For dladdr()
+# Check if dl exists for this toolchain and only then link it.
+find_library(DL_LIBRARY_EXISTS NAMES dl)
+# Check if the library was found
+if(DL_LIBRARY_EXISTS)
+  target_link_libraries(executorch PRIVATE dl) # For dladdr()
+endif()
 target_include_directories(executorch PUBLIC ${_common_include_directories})
 target_compile_options(executorch PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
@@ -337,10 +346,15 @@ endif()
 if(EXECUTORCH_BUILD_SDK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/sdk)
 endif()
 
 if(EXECUTORCH_BUILD_EXAMPLES)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples)
+endif()
+
+if(EXECUTORCH_BUILD_XTENSA_EXAMPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/xtensa)
 endif()
 
 # Print all summary

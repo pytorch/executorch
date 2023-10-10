@@ -434,7 +434,6 @@ _ATEN_OPS = (
         name = "op_log_softmax",
         deps = [
             ":vec_ops",
-            "//executorch/kernels/portable/cpu/util:activation_ops_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
@@ -640,7 +639,6 @@ _ATEN_OPS = (
     op_target(
         name = "op_scatter_add",
         deps = [
-            "//executorch/kernels/portable/cpu/util:index_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
@@ -695,7 +693,6 @@ _ATEN_OPS = (
         name = "op_softmax",
         deps = [
             ":vec_ops",
-            "//executorch/kernels/portable/cpu/util:activation_ops_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],

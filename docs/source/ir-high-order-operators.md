@@ -1,3 +1,0 @@
-# High-order Operators
-
-TBA
