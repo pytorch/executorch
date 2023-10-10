@@ -31,6 +31,10 @@ Tensor& select_copy_int_out(
       InvalidArgument,
       out);
 
+  if (dim < 0) {
+    dim += nonzero_dim(in);
+  }
+
   Tensor::SizesType target_sizes[kTensorDimensionLimit];
   size_t target_ndim = 0;
   get_select_copy_out_target_size(in, dim, target_sizes, &target_ndim);
@@ -49,9 +53,6 @@ Tensor& select_copy_int_out(
   // The code past this point assumes that the tensors are non-empty.
 
   // Support python-style negative indexing
-  if (dim < 0) {
-    dim += in.dim();
-  }
   if (index < 0) {
     index += in.size(dim);
   }
