@@ -31,9 +31,11 @@ MPSExecutor::set_inputs_outputs(std::vector<const Tensor*>& inputs, std::vector<
   ET_CHECK_OR_RETURN_ERROR(inputs.size() == getNumInputs(), Internal, "Inputs mismatch");
   ET_CHECK_OR_RETURN_ERROR(outputs.size() == getNumOutputs(), Internal, "Outputs mismatch");
 
+#if !TARGET_OS_SIMULATOR
   if (outputsArray_ != nil) {
     return Error::Ok;
   }
+#endif
 
   inputsArray_ = [[NSMutableArray<MPSGraphTensorData *> alloc] init];
   outputsArray_ = [[NSMutableArray<MPSGraphTensorData *> alloc] init];
