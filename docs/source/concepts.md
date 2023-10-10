@@ -5,7 +5,7 @@ This page provides an overview of key concepts and terms used throughout the Exe
 
 AOT generally refers to the program preparation that occurs before execution. On a high level, ExecuTorch workflow is split into an AOT compilation and a runtime. The AOT steps involve compilation into an Intermediate Representation (IR), along with optional transformations and optimizations.
 
-[**ATen**]((https://pytorch.org/cppdocs/#aten))
+[**ATen**](https://pytorch.org/cppdocs/#aten)
 
 Fundamentally, it is a tensor library on top of which almost all other Python and C++ interfaces in PyTorch are built. It provides a core Tensor class, on which many hundreds of operations are defined.
 
@@ -148,8 +148,7 @@ An implementation of an operator. There can be multiple implementations of an op
 
 The process of transforming a model to run on various backends. It is called 'lowering' as it is moving code closer to the hardware. In ExecuTorch, lowering is performed as part of backend delegation.
 
-[**Memory planning**](./tutorials/export-to-executorch-tutorial#running-user-defined-passes-and-memory-planning)
-
+[**Memory planning**](./tutorials_source/export-to-executorch-tutorial.py#running-user-defined-passes-and-memory-planning)
 The process of allocating and managing memory for a model. In ExecuTorch, a memory planning pass is run before the graph is saved to flatbuffer. This assigns a memory ID to each tensor and an offset in the buffer, marking where storage for the tensor starts.
 
 [**Node**](./ir-exir.md)
@@ -228,7 +227,7 @@ The ExecuTorch runtime executes models on edge devices. It is responsible for pr
 
 Software Development Kit. The tooling users need to profile, debug and visualize programs that are running with ExecuTorch.
 
-[**Selective build**](./selective_build.md)
+[**Selective build**](./kernel-library-selective_build.md.md)
 
 An API used to build a leaner runtime by linking only to kernels used by the program. This provides significant binary size savings.
 
