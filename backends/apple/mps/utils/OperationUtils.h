@@ -49,9 +49,12 @@ std::vector<int64_t> getMPSShapeVec(const MPSShape* shape);
 static inline id<MTLBuffer> getMTLBufferStorage(const Tensor& tensor) {
 #if EXIR_MPS_DELEGATE
 #if TARGET_OS_SIMULATOR
-  // Simulator crashes in newBufferWithBytesNoCopy, so we're making a copy of the data.
+  // Simulator crashes in newBufferWithBytesNoCopy, so we're making a copy of
+  // the data.
   uint8_t* data = tensor.mutable_data_ptr<uint8_t>();
-  return [MPSDevice::getInstance()->device() newBufferWithBytes:data length:tensor.nbytes() options:0];
+  return [MPSDevice::getInstance()->device() newBufferWithBytes:data
+                                                         length:tensor.nbytes()
+                                                        options:0];
 #else
   uint8_t* data = tensor.mutable_data_ptr<uint8_t>();
   return [MPSDevice::getInstance()->device()
