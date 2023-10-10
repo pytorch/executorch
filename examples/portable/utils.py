@@ -6,14 +6,15 @@
 
 import logging
 
-from typing import Tuple
+from typing import Tuple, Union
 
 import executorch.exir as exir
 
 import torch
-import torch._export as export
-from executorch.exir.program import ExirExportedProgram
+from executorch.exir import EdgeProgramManager, ExecutorchProgramManager, to_edge
 from executorch.exir.tracer import Value
+from torch._export import capture_pre_autograd_graph
+from torch.export import export, ExportedProgram
 
 
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
@@ -22,58 +23,62 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 
 
 def _to_core_aten(
-    model: torch.fx.GraphModule,
+    model: Union[torch.fx.GraphModule, torch.nn.Module],
     example_inputs: Tuple[Value, ...],
-) -> ExirExportedProgram:
+) -> ExportedProgram:
     # post autograd export. eventually this will become .to_core_aten
     if not isinstance(model, torch.fx.GraphModule):
         raise ValueError(
             f"Expected passed in model to be an instance of fx.GraphModule, got {type(model)}"
         )
-    core_aten_exir_ep = exir.capture(
-        model, example_inputs, exir.CaptureConfig(enable_aot=True)
-    )
-    logging.info(f"Core ATen graph:\n{core_aten_exir_ep.exported_program.graph}")
-    return core_aten_exir_ep
+    core_aten_ep = export(model, example_inputs)
+    logging.info(f"Core ATen graph:\n{core_aten_ep.graph}")
+    return core_aten_ep
 
 
 def _core_aten_to_edge(
-    core_aten_exir_ep: ExirExportedProgram,
-    edge_compile_config=_EDGE_COMPILE_CONFIG,
-) -> ExirExportedProgram:
-    edge = core_aten_exir_ep.to_edge(edge_compile_config)
-    logging.info(f"Exported graph:\n{edge.exported_program.graph}")
-    return edge
+    core_aten_exir_ep: ExportedProgram,
+    edge_compile_config=None,
+) -> EdgeProgramManager:
+    if not edge_compile_config:
+        edge_compile_config = exir.EdgeCompileConfig(
+            _check_ir_validity=False,  # quant ops currently break ir verification
+        )
+    edge_manager: EdgeProgramManager = to_edge(
+        core_aten_exir_ep, compile_config=edge_compile_config
+    )
+    logging.info(f"Exported graph:\n{edge_manager.exported_program().graph}")
+    return edge_manager
 
 
 def export_to_edge(
-    model: torch.fx.GraphModule,
+    model: Union[torch.fx.GraphModule, torch.nn.Module],
     example_inputs: Tuple[Value, ...],
     edge_compile_config=_EDGE_COMPILE_CONFIG,
-) -> ExirExportedProgram:
-    core_aten_exir_ep = _to_core_aten(model, example_inputs)
-    return _core_aten_to_edge(core_aten_exir_ep, edge_compile_config)
+) -> EdgeProgramManager:
+    core_aten_ep = _to_core_aten(model, example_inputs)
+    return _core_aten_to_edge(core_aten_ep, edge_compile_config)
 
 
 def export_to_exec_prog(
-    model,
-    example_inputs,
+    model: Union[torch.fx.GraphModule, torch.nn.Module],
+    example_inputs: Tuple[Value, ...],
     edge_compile_config=_EDGE_COMPILE_CONFIG,
     backend_config=None,
-):
+) -> ExecutorchProgramManager:
     m = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    m = export.capture_pre_autograd_graph(m, example_inputs)
+    m = capture_pre_autograd_graph(m, example_inputs)
 
-    core_aten_exir_ep = _to_core_aten(m, example_inputs)
+    core_aten_ep = _to_core_aten(m, example_inputs)
 
-    edge_m = _core_aten_to_edge(core_aten_exir_ep, edge_compile_config)
+    edge_m = _core_aten_to_edge(core_aten_ep, edge_compile_config)
 
     exec_prog = edge_m.to_executorch(backend_config)
     return exec_prog
 
 
-def save_pte_program(buffer, model_name):
+def save_pte_program(buffer: bytes, model_name: str) -> None:
     filename = f"{model_name}.pte"
     try:
         with open(filename, "wb") as file:

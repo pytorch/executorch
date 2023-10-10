@@ -860,28 +860,6 @@ inline size_t coordinateToIndex(
 }
 
 /**
- * Given the linear index return the N-dimensional tensor coordinate. This is
- * the inverse operation of coordinateToIndex.
- *
- * @param[in] tensor The tensor that will be indexed
- * @param[in] index The linear index to element at the specified coordinate in
- * the tensor.
- * @param[out] coordinate A n-dimensional array representing the coordinate to
- * index. It is assumed that the array has kTensorDimensionLimit elements.
- * @returns void
- */
-inline void
-indexToCoordinate(const Tensor& tensor, size_t index, size_t* coordinate) {
-  ET_CHECK(index < tensor.numel());
-  for (auto i = 0; i < tensor.dim(); ++i) {
-    auto dim = tensor.dim() - 1 - i;
-    size_t dim_size = tensor.size(dim);
-    coordinate[dim] = index % dim_size;
-    index /= dim_size;
-  }
-}
-
-/**
  * Extracts an integer value from a scalar Tensor.
  *
  * @param[in] tensor The source of the value to extract.

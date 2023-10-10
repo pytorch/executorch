@@ -40,8 +40,6 @@ To build the documentation locally:
 
 1. Clone the ExecuTorch repo to your machine.
 
-1. Switch to the `docs/` directory.
-
 1. If you don't have it already, start a conda environment:
 
    ```{note}
