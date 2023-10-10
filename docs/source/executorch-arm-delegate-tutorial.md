@@ -184,8 +184,23 @@ git am -3 <path_to>/executorch/examples/arm/ethos-u-setup/ethos-u-vela/patches/*
 Once the patching is done, let's finish the setup by installing the Vela compiler.
 
 ```bash
-cd ethos-u-vela
+# still in the ethos-u-vela directory
 pip install .
+```
+
+### Install the TOSA reference model
+```bash
+git clone https://git.mlplatform.org/tosa/reference_model.git -b v0.80.0
+cd reference_model
+git submodule update --init --recursive
+mkdir -p build
+cd build
+cmake ..
+n=$(nproc)
+make -j"$((n - 5))"
+cd reference_model # Within the build directory
+# Add tosa_reference_model to the path
+export PATH=${PATH}:`pwd`
 ```
 
 At the end of the setup, if everything goes well, your top level devlopement dir might look something like this,
@@ -275,7 +290,7 @@ In this flow, without any backend delegates, to illustrate the portability of th
 Following script will serve as a helper utility to help us generate the `.pte` file. This is available in the `examples/arm` directory.
 
 ```bash
-python3 -m examples.arm.examples --model_name="softmax"
+python3 -m examples.arm.aot_arm_compiler --model_name="softmax"
 # This should produce ./softmax.pte
 ```
 
@@ -292,7 +307,7 @@ graph_module_edge.exported_program = to_backend(model.exported_program, ArmParti
 Similar to the non-delegate flow, the same script will server as a helper utility to help us generate the `.pte` file. Notice the `--delegate` option to enable the `to_backend` call.
 
 ```bash
-python3 -m examples.arm.examples --model_name="add" --delegate
+python3 -m examples.arm.aot_arm_compiler --model_name="add" --delegate
 # should produce ./add_arm_delegate.pte
 ```
 
