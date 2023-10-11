@@ -170,4 +170,4 @@ Through this tutorial we've learnt how to build the ExecuTorch runtime library w
 
 ## Reporting Issues
 
-If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new), with hashtag #android-demo-app
+If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).
