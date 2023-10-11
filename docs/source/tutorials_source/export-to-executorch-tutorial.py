@@ -70,7 +70,7 @@ from torch._export import capture_pre_autograd_graph
 from torch.export import export, ExportedProgram
 
 
-class SimpleConv(torch.nn.Module):
+class M(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.conv = torch.nn.Conv2d(
@@ -84,7 +84,7 @@ class SimpleConv(torch.nn.Module):
 
 
 example_args = (torch.randn(1, 3, 256, 256),)
-pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(M(), example_args)
 print("Pre-Autograd ATen Dialect Graph")
 print(pre_autograd_aten_dialect)
 
@@ -111,7 +111,7 @@ print(aten_dialect)
 #   stacktrace from user's code.
 #
 # More specifications about the result of ``torch.export`` can be found
-# `here <https://pytorch.org/docs/2.1/export.html>`__ .
+# `here <https://pytorch.org/docs/2.1/export.html>`__.
 #
 # Since the result of ``torch.export`` is a graph containing the Core ATen
 # operators, we will call this the ``ATen Dialect``, and since
@@ -236,7 +236,7 @@ except Exception:
 # model properly for a specific backend.
 
 example_args = (torch.randn(1, 3, 256, 256),)
-pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(M(), example_args)
 print("Pre-Autograd ATen Dialect Graph")
 print(pre_autograd_aten_dialect)
 
@@ -258,7 +258,7 @@ print(aten_dialect)
 ######################################################################
 # More information on how to quantize a model, and how a backend can implement a
 # ``Quantizer`` can be found
-# `here <https://pytorch.org/tutorials/prototype/pt2e_quant_ptq_static.html>`__ .
+# `here <https://pytorch.org/tutorials/prototype/pt2e_quant_ptq_static.html>`__.
 
 ######################################################################
 # Lowering to Edge Dialect
@@ -266,8 +266,7 @@ print(aten_dialect)
 #
 # After exporting and lowering the graph to the ``ATen Dialect``, the next step
 # is to lower to the ``Edge Dialect``, in which specializations that are useful
-# for edge devices but not necessary for general (server) environments will be
-# applied.
+# for edge devices but not necessary for general (server) will be applied.
 # Some of these specializations include:
 #
 # - DType specialization
@@ -281,7 +280,7 @@ print(aten_dialect)
 from executorch.exir import EdgeProgramManager, to_edge
 
 example_args = (torch.randn(1, 3, 256, 256),)
-pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(M(), example_args)
 print("Pre-Autograd ATen Dialect Graph")
 print(pre_autograd_aten_dialect)
 
@@ -339,7 +338,7 @@ for method in edge_program.methods:
 # rather than the ``torch.ops.aten`` namespace.
 
 example_args = (torch.randn(1, 3, 256, 256),)
-pre_autograd_aten_dialect = capture_pre_autograd_graph(SimpleConv(), example_args)
+pre_autograd_aten_dialect = capture_pre_autograd_graph(M(), example_args)
 aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)
 edge_program: EdgeProgramManager = to_edge(aten_dialect)
 print("Edge Dialect Graph")
@@ -375,10 +374,9 @@ print(transformed_edge_program.exported_program())
 #
 # There are three ways for using this API:
 #
-# 1. We can lower the whole module.
-# 2. We can take the lowered module, and insert it in another larger module.
-# 3. We can partition the module into subgraphs that are lowerable, and then
-#    lower those subgraphs to a backend.
+# 1. Lowering the whole module
+# 2. Lowering the whole module and composing it in another module
+# 3. Paritioning the module, and lowering parts of the module
 
 ######################################################################
 # Lowering the Whole Module

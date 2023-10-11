@@ -32,7 +32,7 @@ def define_common_targets():
                 "//executorch/runtime/core/test/...",
                 "//executorch/test/...",
                 "//executorch/util/...",
-                "//executorch/backends/fb/qnnpack/test/...",
+                "//executorch/backends/qnnpack/test/...",
                 "@EXECUTORCH_CLIENTS",
             ],
             compiler_flags = ["-Wno-unneeded-internal-declaration"],

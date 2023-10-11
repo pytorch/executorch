@@ -36,11 +36,13 @@ Tensor& t_copy_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
     ET_KERNEL_CHECK(
         ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
-    ET_SWITCH_ALL_TYPES(in_type, ctx, __func__, CTYPE, [&]() {
-      const CTYPE* in_data = in.const_data_ptr<CTYPE>();
-      CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
-      memcpy(out_data, in_data, in.nbytes());
-    });
+    if (in.numel() > 0) {
+      ET_SWITCH_ALL_TYPES(in_type, ctx, __func__, CTYPE, [&]() {
+        const CTYPE* in_data = in.const_data_ptr<CTYPE>();
+        CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+        memcpy(out_data, in_data, in.nbytes());
+      });
+    }
 
     return out;
   }

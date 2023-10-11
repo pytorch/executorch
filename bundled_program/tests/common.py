@@ -162,7 +162,6 @@ def get_random_config(
         rand_method_names,
         rand_inputs,
         rand_expected_outputs,
-        # pyre-ignore[6]: Expected Union[Tensor, int, float, bool] for each element in 2nd positional argument, but got Union[Tensor, int]
         BundledConfig(rand_method_names, rand_inputs, rand_expected_outputs),
     )
 
@@ -193,7 +192,6 @@ def get_random_config_with_eager_model(
         for i, m_name in enumerate(method_names)
     ]
 
-    # pyre-ignore[6]: Expected Union[Tensor, int, float, bool] for each element in 2nd positional argument, but got Union[Tensor, int]
     return inputs, BundledConfig(method_names, inputs, expected_outputs)
 
 

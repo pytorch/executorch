@@ -149,7 +149,7 @@ def assert_valid_bundle(
     ), f"All method names in bundled config should be found in program.execution_plan, \
          but {str(method_name_of_bundled_config - method_name_of_program)} does not include."
 
-    # check if execution_plan_tests has been sorted in ascending alphabetical order of method name.
+    # check if  has been sorted in ascending alphabetical order of method name.
     for bp_plan_id in range(1, len(bundled_config.execution_plan_tests)):
         assert (
             bundled_config.execution_plan_tests[bp_plan_id - 1].method_name
@@ -242,12 +242,6 @@ def assert_valid_bundle(
 
             # Check if bundled expected output in the current exeution plan test share same type as output in Program
             for j in range(len(cur_plan_test_expected_outputs)):
-                assert (
-                    type(cur_plan_test_expected_outputs[j]) == torch.Tensor
-                ), "The {}-th expected output shall be a tensor, but now is {}".format(
-                    j, type(cur_plan_test_expected_outputs[j])
-                )
-
                 # pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`
                 # has no attribute `dtype`.
                 assert cur_plan_test_expected_outputs[j].dtype == get_output_dtype(

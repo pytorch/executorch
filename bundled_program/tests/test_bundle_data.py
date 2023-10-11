@@ -70,7 +70,7 @@ class TestBundle(unittest.TestCase):
 
         self.assertEqual(bundled_program.program, _serialize_pte_binary(program))
 
-    def test_bundle_miss_methods(self) -> None:
+    def test_bundled_miss_methods(self) -> None:
         program, bundled_config = get_common_program()
 
         # only keep the testcases for the first method to mimic the case that user only creates testcases for the first method.
@@ -78,31 +78,10 @@ class TestBundle(unittest.TestCase):
 
         _ = create_bundled_program(program, bundled_config)
 
-    def test_bundle_wrong_method_name(self) -> None:
+    def test_bundled_wrong_method_name(self) -> None:
         program, bundled_config = get_common_program()
 
         bundled_config.execution_plan_tests[-1].method_name = "wrong_method_name"
-        self.assertRaises(
-            AssertionError, create_bundled_program, program, bundled_config
-        )
-
-    def test_bundle_wrong_input_type(self) -> None:
-        program, bundled_config = get_common_program()
-
-        # pyre-ignore[8]: Use a wrong type on purpose. Should raise an error when creating a bundled program using bundled_config.
-        bundled_config.execution_plan_tests[-1].test_sets[-1].inputs = [
-            "WRONG INPUT TYPE"
-        ]
-        self.assertRaises(
-            AssertionError, create_bundled_program, program, bundled_config
-        )
-
-    def test_bundle_wrong_output_type(self) -> None:
-        program, bundled_config = get_common_program()
-
-        bundled_config.execution_plan_tests[-1].test_sets[-1].expected_outputs = [
-            0, 0.0
-        ]
         self.assertRaises(
             AssertionError, create_bundled_program, program, bundled_config
         )

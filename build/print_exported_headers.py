@@ -12,17 +12,13 @@ provided targets, including their exported deps recursively.
 
 import argparse
 import json
-import os
 import subprocess
 from typing import List, Set
-
-# Run buck2 from the same directory (and thus repo) as this script.
-BUCK_CWD: str = os.path.dirname(os.path.realpath(__file__))
 
 
 def run(command: List[str]) -> str:
     """Run subprocess and return its output."""
-    result = subprocess.run(command, capture_output=True, check=True, cwd=BUCK_CWD)
+    result = subprocess.run(command, capture_output=True, check=True)
     return result.stdout.decode()
 
 
