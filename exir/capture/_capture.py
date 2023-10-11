@@ -8,6 +8,7 @@ import copy
 import warnings
 from collections import namedtuple
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from unittest.mock import patch
 
 import torch
 import torch._export
@@ -124,8 +125,9 @@ def capture(  # noqa: C901
                     "Functionalization is required for enable_aot.",
                 )
 
-            ep = export(f, args, constraints=constraints)
-            ep = ep.run_decompositions(_default_decomposition_table())  # pyre-ignore[6]
+            # TODO remove this later
+            with patch("torch._export.DECOMP_TABLE", _default_decomposition_table()):
+                ep = export(f, args, constraints=constraints)
             ep = ep._transform(ReplaceViewOpsWithViewCopyOpsPass())
             if not config._unlift:
                 return ExirExportedProgram(ep, False)

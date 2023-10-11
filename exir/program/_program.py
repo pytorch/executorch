@@ -27,7 +27,6 @@ from executorch.exir.passes.remove_assert_async_pass import RemoveAssertAsyncPas
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.print_program import pretty_print, print_program
 from executorch.exir.schema import Program
-from executorch.exir.tracer import _default_decomposition_table
 from executorch.exir.verification.verifier import (
     EXIRATenDialectVerifier,
     EXIREdgeDialectVerifier,
@@ -590,11 +589,6 @@ def to_edge(
 
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
-        # Decompose to Core ATen
-        program = program.run_decompositions(
-            _default_decomposition_table()  # pyre-ignore[6]
-        )
-
         if config._check_ir_validity:
             try:
                 EXIRATenDialectVerifier()(program.graph_module)
