@@ -418,12 +418,8 @@ them to debug and visualize their model.</p>
 <p>The <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> object itself is intended to be opaque to users and they should not access any components inside it directly.
 It should be provided to the <a class="reference external" href="sdk-inspector.html">Inspector API</a> to link back performance and debug data sourced from the runtime back to the Python source code.</p>
 </div>
-<div class="section" id="apis">
-<h2>APIs<a class="headerlink" href="#apis" title="Permalink to this headline">¶</a></h2>
-<p>There are two important APIs users must be aware of when dealing with
-<code class="docutils literal notranslate"><span class="pre">ETRecord</span></code>: <code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code> and <code class="docutils literal notranslate"><span class="pre">parse_etrecord()</span></code>.</p>
-<div class="section" id="generating-an-etrecord-file">
-<h3>Generating an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> File<a class="headerlink" href="#generating-an-etrecord-file" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="generating-an-etrecord">
+<h2>Generating an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code><a class="headerlink" href="#generating-an-etrecord" title="Permalink to this headline">¶</a></h2>
 <p>The user should use the following API to generate an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> file. They
 will be expected to provide the Edge Dialect program (returned by the call to <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code>),
 the ExecuTorch program (returned by the call to <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>), and optional models that
@@ -461,28 +457,9 @@ output of <cite>capture()</cite> or <cite>to_edge()</cite>.</p></li>
 </dd></dl>
 
 </div>
-<div class="section" id="parsing-an-etrecord">
-<h3>Parsing an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code><a class="headerlink" href="#parsing-an-etrecord" title="Permalink to this headline">¶</a></h3>
-<dl class="py function">
-<dt class="sig sig-object py" id="sdk.etrecord._etrecord.parse_etrecord">
-<span class="sig-prename descclassname"><span class="pre">sdk.etrecord._etrecord.</span></span><span class="sig-name descname"><span class="pre">parse_etrecord</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">etrecord_path</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sdk/etrecord/_etrecord.html#parse_etrecord"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sdk.etrecord._etrecord.parse_etrecord" title="Permalink to this definition">¶</a></dt>
-<dd><p>Parses an <cite>ETRecord</cite> file and returns an <cite>ETRecord</cite> object that contains the deserialized graph
-modules, program buffer, and a debug handle map.
-In the graph map in the returned <cite>ETRecord</cite> object if a model with multiple entry points was provided
-originally by the user during <cite>ETRecord</cite> generation then each entry point will be stored as a separate
-graph module in the <cite>ETRecord</cite> object with the name being <cite>the original module name + “/” + the
-name of the entry point</cite>.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>etrecord_path</strong> – Path to the <cite>ETRecord</cite> file.</p>
-</dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p><cite>ETRecord</cite> object.</p>
-</dd>
-</dl>
-</dd></dl>
-
-</div>
+<div class="section" id="using-an-etrecord">
+<h2>Using an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code><a class="headerlink" href="#using-an-etrecord" title="Permalink to this headline">¶</a></h2>
+<p>Pass the <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> as an optional argument into the <a class="reference external" href="sdk-inspector.html">Inspector API</a> to access this data and  do post-run analysis.</p>
 </div>
 </div>
 
@@ -533,11 +510,8 @@ name of the entry point</cite>.</p>
               <ul>
 <li><a class="reference internal" href="#">Prerequisite | ETRecord - ExecuTorch Record</a><ul>
 <li><a class="reference internal" href="#overview">Overview</a></li>
-<li><a class="reference internal" href="#apis">APIs</a><ul>
-<li><a class="reference internal" href="#generating-an-etrecord-file">Generating an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> File</a></li>
-<li><a class="reference internal" href="#parsing-an-etrecord">Parsing an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code></a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#generating-an-etrecord">Generating an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code></a></li>
+<li><a class="reference internal" href="#using-an-etrecord">Using an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code></a></li>
 </ul>
 </li>
 </ul>
