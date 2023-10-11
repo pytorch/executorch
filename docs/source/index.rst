@@ -172,6 +172,7 @@ Topics in this section will help you get started with ExecuTorch.
    running-a-model-cpp-tutorial
    demo-apps-android
    build-run-xtensa
+   build-run-apple-coreml
    tutorials/sdk-integration-tutorial
    executorch-arm-delegate-tutorial
 
