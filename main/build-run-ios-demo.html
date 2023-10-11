@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>ExecuTorch Overview &mdash; ExecuTorch  documentation</title>
+  <title>ExecuTorch iOS Demo App Tutorial &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -39,8 +39,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="ExecuTorch Concepts" href="concepts.html" />
-    <link rel="prev" title="Welcome to the ExecuTorch Documentation" href="index.html" />
+    <link rel="next" title="Building an ExecuTorch Android Demo App" href="demo-apps-android.html" />
+    <link rel="prev" title="Running an ExecuTorch Model in C++ Tutorial" href="running-a-model-cpp-tutorial.html" />
 
 
   <!-- Google Tag Manager -->
@@ -246,8 +246,8 @@
             
             
               <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
-<ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch Overview</a></li>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="concepts.html">ExecuTorch Concepts</a></li>
 <li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
 </ul>
@@ -311,10 +311,10 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Delegate Integration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-ios-demo.html">ExecuTorch iOS Demo App Tutorial</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch iOS Demo App Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">SDK Integration Tutorial</a></li>
@@ -360,13 +360,13 @@
       </li>
 
         
-      <li>ExecuTorch Overview</li>
+      <li>ExecuTorch iOS Demo App Tutorial</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/intro-overview.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/build-run-ios-demo.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -398,48 +398,130 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="executorch-overview">
-<h1>ExecuTorch Overview<a class="headerlink" href="#executorch-overview" title="Permalink to this headline">¶</a></h1>
-<p><strong>ExecuTorch</strong> is an end-to-end solution for enabling on-device inference
-capabilities across mobile and edge devices including wearables, embedded
-devices and microcontrollers. It is part of the PyTorch Edge ecosystem and
-enables efficient deployment of PyTorch models to edge devices.</p>
-<p>Key value propositions of ExecuTorch are:</p>
-<ul class="simple">
-<li><p><strong>Portability:</strong> Compatibility with a wide variety of computing platforms,
-from high-end mobile phones to highly constrained embedded systems and
-microcontrollers.</p></li>
-<li><p><strong>Productivity:</strong> Enabling developers to use the same toolchains and SDK from
-PyTorch model authoring and conversion, to debugging and deployment to a wide
-variety of platforms.</p></li>
-<li><p><strong>Performance:</strong> Providing end users with a seamless and high-performance
-experience due to a lightweight runtime and utilizing full hardware
-capabilities such as CPUs, NPUs, and DSPs.</p></li>
-</ul>
-<div class="section" id="why-executorch">
-<h2>Why ExecuTorch?<a class="headerlink" href="#why-executorch" title="Permalink to this headline">¶</a></h2>
-<p>Supporting on-device AI presents unique challenges with diverse hardware,
-critical power requirements, low/no internet connectivity, and realtime
-processing needs. These constraints have historically prevented or slowed down
-the creation of scalable and performant on-device AI solutions. We designed
-ExecuTorch, backed by our industry partners like Meta, Arm, Apple, and Qualcomm,
-to be highly portable and provide superior developer productivity without losing
-on performance.</p>
+  <div class="section" id="executorch-ios-demo-app-tutorial">
+<h1>ExecuTorch iOS Demo App Tutorial<a class="headerlink" href="#executorch-ios-demo-app-tutorial" title="Permalink to this headline">¶</a></h1>
+<p>Welcome to the tutorial on setting up the ExecuTorch iOS Demo App!</p>
+<p>This app uses the
+<a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet v3</a> model to
+process live camera images leveraging three different backends:
+<a class="reference external" href="https://github.com/google/XNNPACK">XNNPACK</a>,
+<a class="reference external" href="https://developer.apple.com/documentation/coreml">Core ML</a> and
+<a class="reference external" href="https://developer.apple.com/documentation/metalperformanceshaders">Metal Performance Shaders</a>
+(MPS).</p>
+<p><img alt="" src="_images/demo_ios_xcode.jpg" /></p>
+<div class="section" id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this headline">¶</a></h2>
+<p>Before we start, make sure you have the following tools installed:</p>
+<div class="section" id="xcode-15-and-command-line-tools">
+<h3>1. Xcode 15 and Command Line Tools<a class="headerlink" href="#xcode-15-and-command-line-tools" title="Permalink to this headline">¶</a></h3>
+<p>Install Xcode 15 from the
+<a class="reference external" href="https://apps.apple.com/app/xcode/id497799835">Mac App Store</a> and then install
+the Command Line Tools using the terminal:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>xcode-select<span class="w"> </span>--install
+</pre></div>
 </div>
-<div class="section" id="how-is-executorch-different-from-pytorch-mobile-lite-interpreter">
-<h2>How is ExecuTorch Different from PyTorch Mobile (Lite Interpreter)?<a class="headerlink" href="#how-is-executorch-different-from-pytorch-mobile-lite-interpreter" title="Permalink to this headline">¶</a></h2>
-<p>PyTorch Mobile uses <a class="reference external" href="https://pytorch.org/docs/stable/jit.html">TorchScript</a> to
-allow PyTorch models to run on devices with limited resources. ExecuTorch has a
-significantly smaller memory size and a dynamic memory footprint resulting in
-superior performance compared to PyTorch Mobile. Also, ExecuTorch does not rely
-on TorchScript, and instead leverages PyTorch 2 compiler and export
-functionality for on-device execution of PyTorch models.</p>
-<p>Read more in-depth technical overview topics about ExecuTorch:</p>
-<ul class="simple">
-<li><p><a class="reference internal" href="intro-how-it-works.html"><span class="doc std std-doc">How ExecuTorch Works</span></a></p></li>
-<li><p><a class="reference internal" href="getting-started-architecture.html"><span class="doc std std-doc">High-level Architecture and Components of ExecuTorch</span></a></p></li>
-<li><p><a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">ExecuTorch Runtime Overview</span></a></p></li>
-</ul>
+</div>
+<div class="section" id="python-3-10">
+<h3>2. Python 3.10+<a class="headerlink" href="#python-3-10" title="Permalink to this headline">¶</a></h3>
+<p>Python 3.10 or above, along with <code class="docutils literal notranslate"><span class="pre">pip</span></code>, should be pre-installed on MacOS 13.5+.
+If needed, <a class="reference external" href="https://www.python.org/downloads/macos/">download Python</a> and
+install it. Verify the Python and pip versions using these commands:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>which<span class="w"> </span>python3<span class="w"> </span>pip
+python3<span class="w"> </span>--version
+pip<span class="w"> </span>--version
+</pre></div>
+</div>
+</div>
+<div class="section" id="getting-started-tutorial">
+<h3>3. Getting Started Tutorial<a class="headerlink" href="#getting-started-tutorial" title="Permalink to this headline">¶</a></h3>
+<p>Before proceeding, follow the <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting Up ExecuTorch</span></a>
+tutorial to configure the basic environment.</p>
+</div>
+<div class="section" id="backend-dependencies">
+<h3>4. Backend Dependencies<a class="headerlink" href="#backend-dependencies" title="Permalink to this headline">¶</a></h3>
+<p>Also, follow the corresponding sections from <span class="xref myst">Core ML</span> and
+<span class="xref myst">MPS</span> tutorials to install additional dependencies for those
+backends. Do not build anything just yet!</p>
+</div>
+</div>
+<div class="section" id="models-and-labels">
+<h2>Models and Labels<a class="headerlink" href="#models-and-labels" title="Permalink to this headline">¶</a></h2>
+<p>Now let’s move on to exporting and bundling the MobileNet v3 model.</p>
+<div class="section" id="export-model">
+<h3>1. Export Model<a class="headerlink" href="#export-model" title="Permalink to this headline">¶</a></h3>
+<p>Export the MobileNet v3 model with CoreML, MPS and XNNPACK delegates, and move
+the exported model to a specific location where the Demo App will pick them up:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.portable.scripts.export<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span>
+python3<span class="w"> </span>-m<span class="w"> </span>examples.xnnpack.aot_compiler<span class="w"> </span>--delegate<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span>
+python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.scripts.export_and_delegate<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span>
+python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span>
+
+mkdir<span class="w"> </span>-p<span class="w"> </span>examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
+mv<span class="w"> </span>mv3*.pte<span class="w"> </span>examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
+</pre></div>
+</div>
+</div>
+<div class="section" id="download-labels">
+<h3>2. Download Labels<a class="headerlink" href="#download-labels" title="Permalink to this headline">¶</a></h3>
+<p>Download the MobileNet model labels required for image classification:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>curl<span class="w"> </span>https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-o<span class="w"> </span>examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/imagenet_classes.txt
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="build-runtime-and-backends">
+<h2>Build Runtime and Backends<a class="headerlink" href="#build-runtime-and-backends" title="Permalink to this headline">¶</a></h2>
+<p>Next, we will build the necessary
+<a class="reference external" href="https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle">frameworks</a>
+for ExecuTorch and move them over for app linking.</p>
+<div class="section" id="build-frameworks">
+<h3>1. Build Frameworks<a class="headerlink" href="#build-frameworks" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./build/build_apple_frameworks.sh<span class="w"> </span>--Release<span class="w"> </span>--coreml<span class="w"> </span>--mps<span class="w"> </span>--xnnpack
+</pre></div>
+</div>
+</div>
+<div class="section" id="move-frameworks-for-app-linking">
+<h3>2. Move Frameworks for App Linking<a class="headerlink" href="#move-frameworks-for-app-linking" title="Permalink to this headline">¶</a></h3>
+<p>Make sure to have all the <code class="docutils literal notranslate"><span class="pre">.xcframework</span></code> bundles generated at the previous step
+at a specific location where the Demo App will pick them up:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>mv<span class="w"> </span>cmake-out<span class="w"> </span>examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="final-steps">
+<h2>Final Steps<a class="headerlink" href="#final-steps" title="Permalink to this headline">¶</a></h2>
+<p>We’re almost done! Now, we just need to open the project in Xcode, run the
+tests, and finally run the app.</p>
+<div class="section" id="open-project-in-xcode">
+<h3>1. Open Project in Xcode<a class="headerlink" href="#open-project-in-xcode" title="Permalink to this headline">¶</a></h3>
+<p>Double-click on the project file under
+<code class="docutils literal notranslate"><span class="pre">examples/demo-apps/apple_ios/ExecuTorchDemo</span></code> or run the command:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>open<span class="w"> </span>examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo.xcodeproj
+</pre></div>
+</div>
+</div>
+<div class="section" id="run-tests">
+<h3>2. Run Tests<a class="headerlink" href="#run-tests" title="Permalink to this headline">¶</a></h3>
+<p>You can run tests on Simulaltor directly in Xcode with <code class="docutils literal notranslate"><span class="pre">Cmd</span> <span class="pre">+</span> <span class="pre">U</span></code> or use the
+command line:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>xcrun<span class="w"> </span>simctl<span class="w"> </span>create<span class="w"> </span>executorch<span class="w"> </span><span class="s2">&quot;iPhone 15&quot;</span>
+xcodebuild<span class="w"> </span>clean<span class="w"> </span><span class="nb">test</span><span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>-project<span class="w"> </span>examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo.xcodeproj<span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>-scheme<span class="w"> </span>App<span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>-destination<span class="w"> </span><span class="nv">name</span><span class="o">=</span>executorch
+xcrun<span class="w"> </span>simctl<span class="w"> </span>delete<span class="w"> </span>executorch
+</pre></div>
+</div>
+</div>
+<div class="section" id="run-app">
+<h3>3. Run App<a class="headerlink" href="#run-app" title="Permalink to this headline">¶</a></h3>
+<p>Finally, set up Code Signing in Xcode, and then run the app using <code class="docutils literal notranslate"><span class="pre">Cmd</span> <span class="pre">+</span> <span class="pre">R</span></code>.</p>
+<p>Congratulations! You’ve successfully set up the ExecuTorch iOS Demo App. Now,
+you can explore and enjoy the power of ExecuTorch on your iOS device!</p>
+<p><img alt="" src="_images/demo_ios_app.jpg" /></p>
+</div>
 </div>
 </div>
 
@@ -451,10 +533,10 @@ functionality for on-device execution of PyTorch models.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="concepts.html" class="btn btn-neutral float-right" title="ExecuTorch Concepts" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="demo-apps-android.html" class="btn btn-neutral float-right" title="Building an ExecuTorch Android Demo App" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="index.html" class="btn btn-neutral" title="Welcome to the ExecuTorch Documentation" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="running-a-model-cpp-tutorial.html" class="btn btn-neutral" title="Running an ExecuTorch Model in C++ Tutorial" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -488,9 +570,30 @@ functionality for on-device execution of PyTorch models.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">ExecuTorch Overview</a><ul>
-<li><a class="reference internal" href="#why-executorch">Why ExecuTorch?</a></li>
-<li><a class="reference internal" href="#how-is-executorch-different-from-pytorch-mobile-lite-interpreter">How is ExecuTorch Different from PyTorch Mobile (Lite Interpreter)?</a></li>
+<li><a class="reference internal" href="#">ExecuTorch iOS Demo App Tutorial</a><ul>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a><ul>
+<li><a class="reference internal" href="#xcode-15-and-command-line-tools">1. Xcode 15 and Command Line Tools</a></li>
+<li><a class="reference internal" href="#python-3-10">2. Python 3.10+</a></li>
+<li><a class="reference internal" href="#getting-started-tutorial">3. Getting Started Tutorial</a></li>
+<li><a class="reference internal" href="#backend-dependencies">4. Backend Dependencies</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#models-and-labels">Models and Labels</a><ul>
+<li><a class="reference internal" href="#export-model">1. Export Model</a></li>
+<li><a class="reference internal" href="#download-labels">2. Download Labels</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#build-runtime-and-backends">Build Runtime and Backends</a><ul>
+<li><a class="reference internal" href="#build-frameworks">1. Build Frameworks</a></li>
+<li><a class="reference internal" href="#move-frameworks-for-app-linking">2. Move Frameworks for App Linking</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#final-steps">Final Steps</a><ul>
+<li><a class="reference internal" href="#open-project-in-xcode">1. Open Project in Xcode</a></li>
+<li><a class="reference internal" href="#run-tests">2. Run Tests</a></li>
+<li><a class="reference internal" href="#run-app">3. Run App</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
