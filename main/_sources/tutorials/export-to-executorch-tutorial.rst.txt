@@ -228,15 +228,15 @@ different than the ones we used while tracing, we will run into an error:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 146, in <module>
         print(aten_dialect(torch.ones(3, 2), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 367, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 369, in __call__
         self._check_input_constraints(*ordered_params, *ordered_buffers, *args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 662, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 664, in _check_input_constraints
         _assertion_graph(*args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 726, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 728, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 305, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 307, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 292, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 294, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
@@ -244,7 +244,7 @@ different than the ones we used while tracing, we will run into an error:
         return forward_call(*args, **kwargs)
       File "<eval_with_key>.41", line 11, in forward
         _assert_async = torch.ops.aten._assert_async.msg(scalar_tensor, 'Input arg1_1.shape[1] is specialized at 3');  scalar_tensor = None
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 499, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 516, in __call__
         return self._op(*args, **kwargs or {})
     RuntimeError: Input arg1_1.shape[1] is specialized at 3
 
@@ -303,7 +303,7 @@ the exporting flow. This is done through the ``dynamic_dim`` API:
                 return (add,)
             
     Graph signature: ExportGraphSignature(parameters=[], buffers=[], user_inputs=['arg0_1', 'arg1_1'], user_outputs=['add'], inputs_to_parameters={}, inputs_to_buffers={}, buffers_to_mutate={}, backward_signature=None, assertion_dep_token=None)
-    Range constraints: {s0: RangeConstraint(min_val=2, max_val=10), s1: RangeConstraint(min_val=2, max_val=9223372036854775806)}
+    Range constraints: {s0: RangeConstraint(min_val=2, max_val=10)}
     Equality constraints: [(InputDim(input_name='arg1_1', dim=1), InputDim(input_name='arg0_1', dim=1))]
 
 
@@ -363,37 +363,37 @@ Now let's try running the model with different shapes:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 198, in <module>
         print(aten_dialect(torch.ones(3, 15), torch.ones(3, 15)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 367, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 369, in __call__
         self._check_input_constraints(*ordered_params, *ordered_buffers, *args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 662, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 664, in _check_input_constraints
         _assertion_graph(*args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 726, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 728, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 305, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 307, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 292, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 294, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1528, in _call_impl
         return forward_call(*args, **kwargs)
-      File "<eval_with_key>.75", line 20, in forward
-        _assert_async_3 = torch.ops.aten._assert_async.msg(scalar_tensor_3, 'Input arg0_1.shape[1] is outside of specified dynamic range [2, 10]');  scalar_tensor_3 = None
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 499, in __call__
+      File "<eval_with_key>.75", line 17, in forward
+        _assert_async_2 = torch.ops.aten._assert_async.msg(scalar_tensor_2, 'Input arg0_1.shape[1] is outside of specified dynamic range [2, 10]');  scalar_tensor_2 = None
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 516, in __call__
         return self._op(*args, **kwargs or {})
     RuntimeError: Input arg0_1.shape[1] is outside of specified dynamic range [2, 10]
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 204, in <module>
         print(aten_dialect(torch.ones(3, 3), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 367, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 369, in __call__
         self._check_input_constraints(*ordered_params, *ordered_buffers, *args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 662, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 664, in _check_input_constraints
         _assertion_graph(*args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 726, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 728, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 305, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 307, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 292, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 294, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
@@ -401,7 +401,7 @@ Now let's try running the model with different shapes:
         return forward_call(*args, **kwargs)
       File "<eval_with_key>.80", line 11, in forward
         _assert_async = torch.ops.aten._assert_async.msg(scalar_tensor, 'Input arg1_1.shape[1] is not equal to input arg0_1.shape[1]');  scalar_tensor = None
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 499, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 516, in __call__
         return self._op(*args, **kwargs or {})
     RuntimeError: Input arg1_1.shape[1] is not equal to input arg0_1.shape[1]
 
@@ -1382,7 +1382,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 4.332 seconds)
+   **Total running time of the script:** (0 minutes 4.497 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
