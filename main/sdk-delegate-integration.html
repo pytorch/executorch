@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Delegate Integration &mdash; ExecuTorch  documentation</title>
+  <title>SDK Delegate Integration &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -272,7 +272,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">An end-to-end example to lower a model as a delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
@@ -308,12 +307,13 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Delegate Integration</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">SDK Delegate Integration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">An end-to-end example to lower a model as a delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-ios-demo.html">ExecuTorch iOS Demo App Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
@@ -361,7 +361,7 @@
       </li>
 
         
-      <li>Delegate Integration</li>
+      <li>SDK Delegate Integration</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -399,8 +399,8 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="delegate-integration">
-<h1>Delegate Integration<a class="headerlink" href="#delegate-integration" title="Permalink to this headline">¶</a></h1>
+  <div class="section" id="sdk-delegate-integration">
+<h1>SDK Delegate Integration<a class="headerlink" href="#sdk-delegate-integration" title="Permalink to this headline">¶</a></h1>
 <p><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">Delegate backends</span></a> are a prominent component of on-device models due to their flexibility in defining behavior. A side effect of this flexibility is that it operates as an opaque transformation. This obfuscates rich associations and mutations that are valuable in post-processing.</p>
 <ul class="simple">
 <li><p>For example, if two different operator fusions were to occur within a delegate, post processing wouldn’t be able to separate the two transformations.</p></li>
@@ -555,7 +555,7 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Delegate Integration</a><ul>
+<li><a class="reference internal" href="#">SDK Delegate Integration</a><ul>
 <li><a class="reference internal" href="#ahead-of-time">Ahead-of-Time</a><ul>
 <li><a class="reference internal" href="#generating-a-debug-handle-map">Generating a Debug Handle Map</a><ul>
 <li><a class="reference internal" href="#delegatemappingbuilder">DelegateMappingBuilder</a></li>

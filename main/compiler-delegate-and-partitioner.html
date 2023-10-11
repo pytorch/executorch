@@ -40,7 +40,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Backend Dialect" href="compiler-backend-dialect.html" />
-    <link rel="prev" title="An end-to-end example to lower a model as a delegate" href="examples-end-to-end-to-lower-model-to-delegate.html" />
+    <link rel="prev" title="Definition of the Core ATen Operator Set" href="ir-ops-set-definition.html" />
 
 <link rel="stylesheet" href="../_static/css/progress-bar.css">
 <script src="../_static/js/progress-bar.js" defer></script>
@@ -275,7 +275,6 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">An end-to-end example to lower a model as a delegate</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Backend and Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
@@ -311,12 +310,13 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">SDK Delegate Integration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">An end-to-end example to lower a model as a delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-ios-demo.html">ExecuTorch iOS Demo App Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
@@ -461,10 +461,25 @@ the <code class="docutils literal notranslate"><span class="pre">to_edge</span><
 <li><p>An ahead-of-time preprocessing interface</p></li>
 <li><p>A runtime initialization and execution interface</p></li>
 </ol>
+<p>The diagram looks like following</p>
+<img src="./_static/img/backend_interface.png" alt="drawing" style="width:500px;"/>
+<p><strong>Figure 1.</strong> A high level of entry points for backend interfaces, including both ahead-of-time and runtime.</p>
 </div>
 <div class="section" id="backend-interfaces-ahead-of-time-preprocessing">
 <h2>Backend Interfaces: Ahead-of-Time Preprocessing<a class="headerlink" href="#backend-interfaces-ahead-of-time-preprocessing" title="Permalink to this headline">¶</a></h2>
-<p>For the AOT preprocessing, backends are given an edge dialect program,
+<p>There are mainly two Ahead-of-Time entry point for backend to implement: <code class="docutils literal notranslate"><span class="pre">partition</span></code> and <code class="docutils literal notranslate"><span class="pre">preprocess</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">partitioner</span></code> is an algorithm implemented by the backend to tag the nodes to be lowered to the backend. <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> API
+will apply the partition algorithm and lowered each subgraph, consists of connected tagged nodes, to the backend. Every subgraph
+will be sent to the <code class="docutils literal notranslate"><span class="pre">preprocess</span></code> part provided by the backend to compiled as a binary blob.</p>
+<p>During partition, the <code class="docutils literal notranslate"><span class="pre">exported_program</span></code> is not allowed to mutate the program, and it’s supposed to apply tag to each node. The
+<code class="docutils literal notranslate"><span class="pre">PartitionResult</span></code> includes both tagged exported program and the partition tags dictionary for <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> to look up the tag and
+link to the <code class="docutils literal notranslate"><span class="pre">backend_id</span></code> and <code class="docutils literal notranslate"><span class="pre">compile_spec</span></code></p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">partition</span><span class="p">(</span>
+    <span class="n">exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PartitionResult</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>During preprocessing, backends are given an edge dialect program,
 a list of compile specs specifying the values needed for compilation, and are
 expected to return a compiled blob, or binary contains the desired program to be
 run in the backend, and profiling information. During serialization, the
@@ -481,6 +496,9 @@ API looks something like:</p>
 The demo loops through the nodes in the graph module of the <code class="docutils literal notranslate"><span class="pre">edge_program</span></code> and
 serializes the <code class="docutils literal notranslate"><span class="pre">add</span></code>, <code class="docutils literal notranslate"><span class="pre">mul</span></code>, and <code class="docutils literal notranslate"><span class="pre">sin</span></code> instructions into a string, which is later
 parsed and executed at runtime.</p>
+<p>The diagram looks like following</p>
+<img src="./_static/img/backend_interface_aot.png" alt="drawing" style="width:800px;"/>
+<p><strong>Figure 2.</strong> The graph goes through partition and each subgraph will be sent to the preprocess part.</p>
 </div>
 <div class="section" id="backend-interfaces-runtime-initialization-and-execution">
 <h2>Backend Interfaces: Runtime Initialization and Execution<a class="headerlink" href="#backend-interfaces-runtime-initialization-and-execution" title="Permalink to this headline">¶</a></h2>
@@ -491,7 +509,10 @@ perform any backend initialization. The backend’s custom <code class="docutils
 then be called to execute the handle produced by <code class="docutils literal notranslate"><span class="pre">init</span></code>. And finally, if
 destroying is required for some backend, backends can implement a <code class="docutils literal notranslate"><span class="pre">destroy</span></code>
 function which will be called when the program is out of its lifespan.</p>
-<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// Runtime initialization</span>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// Runtime check</span>
+<span class="n">__ET_NODISCARD</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="n">is_available</span><span class="p">();</span>
+
+<span class="c1">// Runtime initialization</span>
 <span class="n">__ET_NODISCARD</span><span class="w"> </span><span class="k">virtual</span><span class="w"> </span><span class="n">Result</span><span class="o">&lt;</span><span class="n">DelegateHandle</span><span class="o">*&gt;</span><span class="w"> </span><span class="n">init</span><span class="p">(</span>
 <span class="w">    </span><span class="n">BackendInitContext</span><span class="o">&amp;</span><span class="w"> </span><span class="n">context</span><span class="p">,</span>
 <span class="w">    </span><span class="n">FreeableBuffer</span><span class="o">*</span><span class="w"> </span><span class="n">processed</span><span class="p">,</span>
@@ -507,6 +528,9 @@ function which will be called when the program is out of its lifespan.</p>
 <span class="k">virtual</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="nf">destroy</span><span class="p">(</span><span class="n">__ET_UNUSED</span><span class="w"> </span><span class="n">DelegateHandle</span><span class="o">*</span><span class="w"> </span><span class="n">handle</span><span class="p">);</span>
 </pre></div>
 </div>
+<p>The diagram looks like following</p>
+<img src="./_static/img/backend_interface_runtime.png" alt="drawing" style="width:500px;"/>
+<p><strong>Figure 3.</strong> The relationship between standard ExecuTorch Runtime and backend entry point.</p>
 <p>Once the backend is ready, they can then be registered via the <code class="docutils literal notranslate"><span class="pre">register_backend</span></code> API:</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">__ET_NODISCARD</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="n">register_backend</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">Backend</span><span class="o">&amp;</span><span class="w"> </span><span class="n">backend</span><span class="p">);</span>
 </pre></div>
@@ -696,7 +720,7 @@ We provide an helper function</p>
         <a href="compiler-backend-dialect.html" class="btn btn-neutral float-right" title="Backend Dialect" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="examples-end-to-end-to-lower-model-to-delegate.html" class="btn btn-neutral" title="An end-to-end example to lower a model as a delegate" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="ir-ops-set-definition.html" class="btn btn-neutral" title="Definition of the Core ATen Operator Set" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
