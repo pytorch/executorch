@@ -1,4 +1,4 @@
-## Overview
+# Kernel Library Selective Build
 
 _Selective build_ is a build mode on ExecuTorch that uses model metadata to guide ExecuTorch build. This build mode contains build tool APIs available on both CMake and buck2. ExecuTorch users can use selective build APIs to build an ExecuTorch runtime binary with minimal binary size by only including operators required by models.
 
@@ -76,7 +76,7 @@ This API takes a model and extracts all op info from it.
 
 Let’s take a look at the following build:
 
-```starlark
+```
 # Select a list of operators: defined in `ops`
 et_operator_library(
     name = "select_ops_in_list",
@@ -90,7 +90,7 @@ This target generates the yaml file containing op info for these two ops.
 
 In addition to that, if we want to select all ops from a kernel library, we can do:
 
-```starlark
+```
 # Select all ops from a yaml file
 et_operator_library(
     name = "select_ops_from_yaml",
@@ -98,7 +98,7 @@ et_operator_library(
 )
 ```
 Then in the kernel registration library we can do:
-```starlark
+```
 executorch_generated_lib(
     name = "select_ops_lib",
     custom_ops_yaml_target = "//executorch/examples/portable/custom_ops:custom_ops.yaml",
