@@ -61,6 +61,7 @@ SDK Integration Tutorial
 #
 #   # Imports
 #   import copy
+#
 #   import torch
 #
 #   from executorch.examples.models.mobilenet_v2 import MV2Model
@@ -81,7 +82,9 @@ SDK Integration Tutorial
 #       model.get_example_inputs(),
 #   )
 #
-#   edge_program_manager: EdgeProgramManager = to_edge(aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True))
+#   edge_program_manager: EdgeProgramManager = to_edge(
+#       aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True)
+#   )
 #   edge_program_manager_copy = copy.deepcopy(edge_program_manager)
 #   et_program_manager: ExecutorchProgramManager = edge_program_manager_copy.to_executorch()
 #
@@ -131,7 +134,7 @@ SDK Integration Tutorial
 # Note: An ``ETRecord`` is not required. If an ``ETRecord`` is not provided,
 # the Inspector will show runtime results without operator correlation.
 #
-# To visualize all runtime events, call ``print_data_tabular``::
+# To visualize all runtime events, call Inspector's ``print_data_tabular``::
 #
 #   from executorch.sdk import Inspector
 #
@@ -140,12 +143,11 @@ SDK Integration Tutorial
 #   inspector.print_data_tabular()
 #
 
-
 ######################################################################
 # Analyzing with an Inspector
 # ---------------------------
 #
-# ``Inspector`` provides 2 ways of accessing ingested information: `EventBlocks <../sdk-inspector.rst>`__
+# ``Inspector`` provides 2 ways of accessing ingested information: `EventBlocks <../sdk-inspector.html>`__
 # and ``DataFrames``. These mediums give users the ability to perform custom
 # analysis about their model performance.
 #
@@ -154,26 +156,30 @@ SDK Integration Tutorial
 #   # Set Up
 #
 #   import pprint as pp
+#
 #   import pandas as pd
 #
-#   pd.set_option('display.max_colwidth', None)
-#   pd.set_option('display.max_columns', None)
-#
+#   pd.set_option("display.max_colwidth", None)
+#   pd.set_option("display.max_columns", None)
+
+######################################################################
 # If a user wants the raw profiling results, they would do something similar to
 # finding the raw runtime data of an ``addmm.out`` event::
 #
 #   for event_block in inspector.event_blocks:
 #       # Via EventBlocks
 #       for event in event_block.events:
-#           if event.name == 'native_call_addmm.out':
+#           if event.name == "native_call_addmm.out":
 #               print(event.name, event.perf_data.raw)
 #
 #       # Via Dataframe
 #       df = event_block.to_dataframe()
-#       df = df[df.event_name == 'native_call_addmm.out']
-#       print(df[['event_name', 'raw']])
+#       df = df[df.event_name == "native_call_addmm.out"]
+#       print(df[["event_name', 'raw"]])
 #       print()
 #
+
+######################################################################
 # If a user wants to trace an operator back to their model code, they would do
 # something similar to finding the module hierarchy and stack trace of the
 # slowest ``convolution.out`` call::
@@ -182,7 +188,7 @@ SDK Integration Tutorial
 #       # Via EventBlocks
 #       slowest = None
 #       for event in event_block.events:
-#           if event.name == 'native_call_convolution.out':
+#           if event.name == "native_call_convolution.out":
 #               if slowest is None or event.perf_data.p50 > slowest.perf_data.p50:
 #                   slowest = event
 #       if slowest is not None:
@@ -190,27 +196,30 @@ SDK Integration Tutorial
 #           print()
 #           pp.pprint(slowest.stack_traces)
 #           print()
-#           pp.pprint(slowest.module_hierarchy
+#           pp.pprint(slowest.module_hierarchy)
 #
 #       # Via Dataframe
 #       df = event_block.to_dataframe()
-#       df = df[df.event_name == 'native_call_convolution.out']
+#       df = df[df.event_name == "native_call_convolution.out"]
 #       if len(df) > 0:
-#           slowest = df.loc[df['p50'].idxmax()]
+#           slowest = df.loc[df["p50"].idxmax()]
 #           print(slowest.event_name)
 #           print()
 #           pp.pprint(slowest.stack_traces)
 #           print()
 #           pp.pprint(slowest.module_hierarchy)
 #
-# If a user wants the total runtime of a module::
+
+######################################################################
+# If a user wants the total runtime of a module, they can use
+# ``find_total_for_module``::
 #
 #   print(inspector.find_total_for_module("L__self___features"))
 #   print(inspector.find_total_for_module("L__self___features_14"))
-#
+
+######################################################################
 # Note: ``find_total_for_module`` is a special first class method of
 # `Inspector <../sdk-inspector.html>`__
-#
 
 ######################################################################
 # Conclusion
