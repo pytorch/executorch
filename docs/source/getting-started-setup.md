@@ -55,9 +55,15 @@ the required dependencies.
 
 Follow these steps:
 
-1. If you do not have it already, install conda on your machine by following the
-   steps in the
-   [conda installation guide](https://conda.io/projects/conda/en/latest/user-guide/install/index.html).
+1. If you do not have it already, install conda on your machine by following
+the steps in the [conda installation guide](https://conda.io/projects/conda/en/latest/user-guide/install/index.html).
+
+1. Create and activate your conda environment:
+
+   ```bash
+   conda create -yn executorch python=3.10.0
+   conda activate executorch
+   ```
 
 1. Clone the `executorch` repository:
 
@@ -73,45 +79,11 @@ Follow these steps:
    git submodule update --init
    ```
 
-1. Create and activate your conda environment:
-
-   ```bash
-   conda create -yn executorch python=3.10.0
-   conda activate executorch
-   ```
-
-   Or alternatively use a Python virtual environment:
-
-   ```bash
-   python3 -m venv .executorch
-   source .executorch/bin/activate
-   ```
-
-1. Install [Cmake](https://cmake.org/download)
-
-   ```bash
-   conda install cmake
-   ```
-
-   Alternatively:
-
-   ```bash
-   pip install cmake
-   ```
-
 1. Install ExecuTorch and dependencies:
 
    ```bash
-   ./install_requirements.sh
+   bash ./install_requirements.sh
    ```
-
-1. Expose FlatBuffers compiler:
-
-   ExecuTorch uses `flatc` to export models and builds it from sources at
-   `third-party/flatbuffers`. Make it's available by referring in `$PATH`,
-   as prompted by the previous step, or exporting as `$FLATC_EXECUTABLE`
-   enironment variable.
-   Run `./build/install_flatc.sh` to make sure `flatc` is installed correctly.
 
 You have successfully set up your environment to work with ExecuTorch. The next
 step is to generate a sample ExecuTorch program.
@@ -186,13 +158,9 @@ all the operators and backends.
 
 You will need the following prerequisits for this section:
 
-* The `zstd` command line tool — install by running `pip3 install zstd`.
+* **Zstandard**, or `zstd`, command line tool — install by running `pip3 install zstd`.
 
-* Version `2023-07-18` of the `buck2` commandline tool — you can download a
-  prebuilt archive for your system from [the Buck2
-  repo](https://github.com/facebook/buck2/releases/tag/2023-07-18). Note that
-  the version is important, and newer or older versions may not work with the
-  version of the buck2 prelude used by the ExecuTorch repo.
+* A prebuilt Buck2 archive for your system from [the Buck2 repo](https://github.com/facebook/buck2/releases/tag/2023-07-18).
 
 Complete the following steps:
 
@@ -206,25 +174,18 @@ Complete the following steps:
    git submodule update --init
    ```
 
-1. Install ExecuTorch and dependencies:
-
-   ```bash
-   ./install_requirements.sh
-   ```
-
-1. Configure Buck2 by decompressing with the following command (filename depends
+2. Configure Buck2 by decompressing with the following command (filename depends
    on your system):
 
    ```bash
-   # For example, buck2-x86_64-unknown-linux-musl.zst or buck2-aarch64-apple-darwin.zst
+   # For example, buck2-x86_64-unknown-linux-musl.zst
    zstd -cdq buck2-DOWNLOADED_FILENAME.zst > /tmp/buck2 && chmod +x /tmp/buck2
    ```
 
    You may want to copy the `buck2` binary into your `$PATH` so you can run it
    as `buck2`.
 
-1. Build a binary:
-
+3. Build a binary:
    ```bash
    /tmp/buck2 build //examples/portable/executor_runner:executor_runner --show-output
    ```

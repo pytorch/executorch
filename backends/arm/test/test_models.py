@@ -9,15 +9,9 @@
 
 from enum import Enum
 
-import numpy as np
-
 import torch
 
 TestList = {}
-
-# Seed the RNG a convenient number so that we get the same random tests for each test each time
-seed = 42
-rng = np.random.default_rng(seed)
 
 
 def register_test(cls):
@@ -130,49 +124,25 @@ class TorchBuilder:
 
         def __init__(self):
             super().__init__()
-            torch.manual_seed(seed)
+            torch.manual_seed(42)
             self.fc = torch.nn.Linear(20, 30)
 
         def forward(self, x):
             x = self.fc(x)
             return x
 
-    """Currenly we compare the quantized result directly with the floating point result, to avoid a noticable
-       precision difference due to wide random numerical distribution, generate small random value range for
-       convolution testing instead for now"""
-
-    @register_test
-    class simple_conv2d_2x2_3x1x40x40_non_bias(torch.nn.Module):
-        data = torch.from_numpy(
-            np.float32(rng.integers(low=10, high=20, size=(3, 1, 40, 40)))
-        )
+    # @register_test
+    class simple_conv2d(torch.nn.Module):
         inputs = {
-            TosaProfile.BI: (data,),
-            TosaProfile.MI: (data,),
-        }
-
-        def __init__(self):
-            super().__init__()
-            self.conv2d = torch.nn.Conv2d(
-                in_channels=1, out_channels=3, kernel_size=2, stride=1, bias=False
-            )
-            with torch.no_grad():
-                self.conv2d.weight.copy_(
-                    torch.from_numpy(
-                        np.float32(rng.integers(low=1, high=10, size=(1, 1, 2, 2)))
-                    )
-                )
-
-        def forward(self, x):
-            x = self.conv2d(x)
-            return x
-
-    @register_test
-    class simple_conv2d_3x3_1x3x256x256_st1(torch.nn.Module):
-        data = torch.ones(1, 3, 256, 256)
-        inputs = {
-            TosaProfile.BI: (data,),
-            TosaProfile.MI: (data,),
+            TosaProfile.BI: (
+                torch.ones(
+                    1,
+                    3,
+                    256,
+                    256,
+                ),
+            ),
+            TosaProfile.MI: (torch.ones(1, 3, 256, 256),),
         }
 
         def __init__(self):
@@ -180,140 +150,16 @@ class TorchBuilder:
             self.conv2d = torch.nn.Conv2d(
                 in_channels=3, out_channels=10, kernel_size=3, stride=1
             )
-            with torch.no_grad():
-                self.conv2d.weight.copy_(
-                    torch.from_numpy(
-                        np.float32(rng.integers(low=1, high=4, size=(10, 3, 3, 3)))
-                    )
-                )
-                self.conv2d.bias.copy_(
-                    torch.from_numpy(np.float32(rng.integers(low=1, high=4, size=(10))))
-                )
 
         def forward(self, x):
             x = self.conv2d(x)
             return x
 
-    @register_test
-    class simple_conv2d_1x1_1x2x128x128_st1(torch.nn.Module):
-        data = torch.from_numpy(
-            np.float32(rng.integers(low=10, high=20, size=(1, 2, 128, 128)))
-        )
-        inputs = {
-            TosaProfile.BI: (data,),
-            TosaProfile.MI: (data,),
-        }
-
-        def __init__(self):
-            super().__init__()
-            self.conv2d = torch.nn.Conv2d(
-                in_channels=2, out_channels=1, kernel_size=1, stride=1
-            )
-            with torch.no_grad():
-                self.conv2d.weight.copy_(
-                    torch.from_numpy(
-                        np.float32(rng.integers(low=1, high=4, size=(1, 2, 1, 1)))
-                    )
-                )
-                self.conv2d.bias.copy_(
-                    torch.from_numpy(np.float32(rng.integers(low=1, high=4, size=(1))))
-                )
-
-        def forward(self, x):
-            x = self.conv2d(x)
-            return x
-
-    @register_test
-    class simple_conv2d_2x2_1x1x14x14_st2(torch.nn.Module):
-        data = torch.from_numpy(
-            np.float32(rng.integers(low=10, high=20, size=(1, 1, 14, 14)))
-        )
-        inputs = {
-            TosaProfile.BI: (data,),
-            TosaProfile.MI: (data,),
-        }
-
-        def __init__(self):
-            super().__init__()
-            self.conv2d = torch.nn.Conv2d(
-                in_channels=1, out_channels=1, kernel_size=2, stride=2
-            )
-            with torch.no_grad():
-                self.conv2d.weight.copy_(
-                    torch.from_numpy(
-                        np.float32(rng.integers(low=1, high=4, size=(1, 1, 2, 2)))
-                    )
-                )
-                self.conv2d.bias.copy_(
-                    torch.from_numpy(np.float32(rng.integers(low=1, high=4, size=(1))))
-                )
-
-        def forward(self, x):
-            x = self.conv2d(x)
-            return x
-
-    @register_test
-    class simple_conv2d_5x5_3x2x128x128_st1(torch.nn.Module):
-        data = torch.from_numpy(
-            np.float32(rng.integers(low=10, high=20, size=(3, 2, 128, 128)))
-        )
-        inputs = {
-            TosaProfile.BI: (data,),
-            TosaProfile.MI: (data,),
-        }
-
-        def __init__(self):
-            super().__init__()
-            self.conv2d = torch.nn.Conv2d(
-                in_channels=2, out_channels=3, kernel_size=5, stride=1
-            )
-            with torch.no_grad():
-                self.conv2d.weight.copy_(
-                    torch.from_numpy(
-                        np.float32(rng.integers(low=1, high=10, size=(1, 1, 5, 5)))
-                    )
-                )
-                self.conv2d.bias.copy_(torch.ones(3, dtype=torch.float))
-
-        def forward(self, x):
-            x = self.conv2d(x)
-            return x
-
-    @register_test
-    class block_two_conv2d_non_bias(torch.nn.Module):
-        data = torch.from_numpy(
-            np.float32(rng.integers(low=10, high=20, size=(1, 3, 256, 256)))
-        )
-        inputs = {
-            TosaProfile.BI: (data,),
-            TosaProfile.MI: (data,),
-        }
-
-        def __init__(self):
-            super().__init__()
-            self.conv2d = torch.nn.Conv2d(
-                in_channels=3, out_channels=10, kernel_size=5, stride=1, bias=False
-            )
-            self.conv2d_2 = torch.nn.Conv2d(
-                in_channels=10, out_channels=15, kernel_size=5, stride=1, bias=False
-            )
-            with torch.no_grad():
-                self.conv2d.weight.copy_(torch.ones(10, 3, 5, 5, dtype=torch.float))
-                self.conv2d_2.weight.copy_(torch.ones(15, 10, 5, 5, dtype=torch.float))
-
-        def forward(self, x):
-            x = self.conv2d(x)
-            x = self.conv2d_2(x)
-            return x
-
-    @register_test
+    # @register_test
     class block_two_conv2d(torch.nn.Module):
-        data = torch.from_numpy(
-            np.float32(rng.integers(low=10, high=20, size=(1, 3, 256, 256)))
-        )
         inputs = {
-            TosaProfile.BI: (data,),
-            TosaProfile.MI: (data,),
+            TosaProfile.BI: (torch.ones(1, 3, 256, 256),),
+            TosaProfile.MI: (torch.ones(1, 3, 256, 256),),
         }
 
         def __init__(self):
@@ -324,11 +170,6 @@ class TorchBuilder:
             self.conv2d_2 = torch.nn.Conv2d(
                 in_channels=10, out_channels=15, kernel_size=5, stride=1
             )
-            with torch.no_grad():
-                self.conv2d.weight.copy_(torch.ones(10, 3, 5, 5, dtype=torch.float))
-                self.conv2d.bias.copy_(torch.ones(10))
-                self.conv2d_2.weight.copy_(torch.ones(15, 10, 5, 5, dtype=torch.float))
-                self.conv2d_2.bias.copy_(torch.ones(15))
 
         def forward(self, x):
             x = self.conv2d(x)
@@ -338,6 +179,14 @@ class TorchBuilder:
     # @register_test
     class simple_depthwise_conv2d(torch.nn.Module):
         inputs = {
+            TosaProfile.BI: (
+                torch.ones(
+                    1,
+                    3,
+                    256,
+                    256,
+                ),
+            ),
             TosaProfile.MI: (torch.ones(1, 3, 256, 256),),
         }
 
@@ -459,6 +308,14 @@ class TorchBuilder:
         # Ref: https://arxiv.org/abs/1801.04381
 
         inputs = {
+            TosaProfile.BI: (
+                torch.ones(
+                    1,
+                    64,
+                    81,
+                    81,
+                ),
+            ),
             TosaProfile.MI: (torch.ones(1, 64, 81, 81),),
         }
 

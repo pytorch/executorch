@@ -11,9 +11,9 @@ python_unittest(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/fb/qnnpack:qnnpack_backend",
-        "//executorch/backends/fb/qnnpack:qnnpack_preprocess",
-        "//executorch/backends/fb/qnnpack/partition:qnnpack_partitioner",
+        "//executorch/backends/qnnpack:qnnpack_backend",
+        "//executorch/backends/qnnpack:qnnpack_preprocess",
+        "//executorch/backends/qnnpack/partition:qnnpack_partitioner",
         "//executorch/backends/xnnpack:xnnpack_backend",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",

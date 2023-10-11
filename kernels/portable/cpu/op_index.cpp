@@ -9,7 +9,6 @@
 #include <cinttypes>
 #include <cstdint>
 #include <cstring>
-#include <tuple>
 
 #include <executorch/kernels/portable/cpu/util/advanced_index_util.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>

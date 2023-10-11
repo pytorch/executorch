@@ -65,12 +65,12 @@ def export_composite_module_with_lower_graph():
     # pre-autograd export. eventually this will become torch.export
     m = export.capture_pre_autograd_graph(m, m_inputs)
     edge = export_to_edge(m, m_inputs)
-    logging.info(f"Exported graph:\n{edge.exported_program().graph}")
+    logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
     # Lower AddMulModule to the demo backend
     logging.info("Lowering to the demo backend...")
     lowered_graph = to_backend(
-        BackendWithCompilerDemo.__name__, edge.exported_program(), m_compile_spec
+        BackendWithCompilerDemo.__name__, edge.exported_program, m_compile_spec
     )
 
     # Composite the lower graph with other module
@@ -90,9 +90,9 @@ def export_composite_module_with_lower_graph():
     composited_edge = export_to_edge(m, m_inputs)
 
     # The graph module is still runnerable
-    composited_edge.exported_program().graph_module(*m_inputs)
+    composited_edge.exported_program.graph_module(*m_inputs)
 
-    logging.info(f"Lowered graph:\n{composited_edge.exported_program().graph}")
+    logging.info(f"Lowered graph:\n{composited_edge.exported_program.graph}")
 
     exec_prog = composited_edge.to_executorch()
     buffer = exec_prog.buffer
@@ -138,12 +138,12 @@ def export_and_lower_partitioned_graph():
     # pre-autograd export. eventually this will become torch.export
     m = export.capture_pre_autograd_graph(m, m_inputs)
     edge = export_to_edge(m, m_inputs)
-    logging.info(f"Exported graph:\n{edge.exported_program().graph}")
+    logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
     # Lower to backend_with_compiler_demo
     logging.info("Lowering to the demo backend...")
-    edge = edge.to_backend(AddMulPartitionerDemo)
-    logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
+    edge.exported_program = to_backend(edge.exported_program, AddMulPartitionerDemo)
+    logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
 
     exec_prog = edge.to_executorch()
     buffer = exec_prog.buffer
@@ -175,12 +175,12 @@ def export_and_lower_the_whole_graph():
     # pre-autograd export. eventually this will become torch.export
     m = export.capture_pre_autograd_graph(m, m_inputs)
     edge = export_to_edge(m, m_inputs)
-    logging.info(f"Exported graph:\n{edge.exported_program().graph}")
+    logging.info(f"Exported graph:\n{edge.exported_program.graph}")
 
     # Lower AddMulModule to the demo backend
     logging.info("Lowering to the demo backend...")
     lowered_module = to_backend(
-        BackendWithCompilerDemo.__name__, edge.exported_program(), m_compile_spec
+        BackendWithCompilerDemo.__name__, edge.exported_program, m_compile_spec
     )
 
     buffer = lowered_module.buffer()

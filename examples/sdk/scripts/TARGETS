@@ -4,7 +4,6 @@ runtime.python_binary(
     name = "export_bundled_program",
     main_src = "export_bundled_program.py",
     deps = [
-        "//caffe2:torch",
         "//executorch/bundled_program:config",
         "//executorch/bundled_program:core",
         "//executorch/bundled_program/serialize:lib",

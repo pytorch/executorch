@@ -6,10 +6,10 @@ Backend delegation is an entry point for backends to process and execute PyTorch
 programs to leverage performance and efficiency benefits of specialized
 backends and hardware, while still providing PyTorch users with an experience
 close to that of the PyTorch runtime. The backend delegate is usually either provited by
-ExecuTorch or vendors. The way to leverage delegate in your program is via a standard entry point `to_backend`.
+Exececutorch or vendors. The way to leverage delegate in your program is via a standard entry point `to_backend`.
 
 
-## Frontend Interfaces
+## Frontend interfaces
 
 There are three flows for delegating a program to a backend:
 
