@@ -467,6 +467,7 @@ edge dialect model (<code class="docutils literal notranslate"><span class="pre"
 <p>In this tutorial, the mobilenet v2 example model is used to demonstrate:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Imports</span>
 <span class="kn">import</span> <span class="nn">copy</span>
+
 <span class="kn">import</span> <span class="nn">torch</span>
 
 <span class="kn">from</span> <span class="nn">executorch.examples.models.mobilenet_v2</span> <span class="kn">import</span> <span class="n">MV2Model</span>
@@ -487,7 +488,9 @@ edge dialect model (<code class="docutils literal notranslate"><span class="pre"
     <span class="n">model</span><span class="o">.</span><span class="n">get_example_inputs</span><span class="p">(),</span>
 <span class="p">)</span>
 
-<span class="n">edge_program_manager</span><span class="p">:</span> <span class="n">EdgeProgramManager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">aten_model</span><span class="p">,</span> <span class="n">compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
+<span class="n">edge_program_manager</span><span class="p">:</span> <span class="n">EdgeProgramManager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span>
+    <span class="n">aten_model</span><span class="p">,</span> <span class="n">compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="p">)</span>
 <span class="n">edge_program_manager_copy</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program_manager</span><span class="p">)</span>
 <span class="n">et_program_manager</span><span class="p">:</span> <span class="n">ExecutorchProgramManager</span> <span class="o">=</span> <span class="n">edge_program_manager_copy</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
@@ -532,7 +535,7 @@ Inspector takes the runtime results from <code class="docutils literal notransla
 the operators of the Edge Dialect Graph.</p>
 <p>Note: An <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> is not required. If an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code> is not provided,
 the Inspector will show runtime results without operator correlation.</p>
-<p>To visualize all runtime events, call <code class="docutils literal notranslate"><span class="pre">print_data_tabular</span></code>:</p>
+<p>To visualize all runtime events, call Inspector’s <code class="docutils literal notranslate"><span class="pre">print_data_tabular</span></code>:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">Inspector</span>
 
 <span class="n">etdump_path</span> <span class="o">=</span> <span class="s2">&quot;etdump.etdp&quot;</span>
@@ -543,17 +546,18 @@ the Inspector will show runtime results without operator correlation.</p>
 </div>
 <div class="section" id="analyzing-with-an-inspector">
 <h2>Analyzing with an Inspector<a class="headerlink" href="#analyzing-with-an-inspector" title="Permalink to this headline">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">Inspector</span></code> provides 2 ways of accessing ingested information: <a class="reference external" href="../sdk-inspector.rst">EventBlocks</a>
+<p><code class="docutils literal notranslate"><span class="pre">Inspector</span></code> provides 2 ways of accessing ingested information: <a class="reference external" href="../sdk-inspector.html">EventBlocks</a>
 and <code class="docutils literal notranslate"><span class="pre">DataFrames</span></code>. These mediums give users the ability to perform custom
 analysis about their model performance.</p>
 <p>Below are examples usages, with both <code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> and <code class="docutils literal notranslate"><span class="pre">DataFrame</span></code> approaches:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Set Up</span>
 
 <span class="kn">import</span> <span class="nn">pprint</span> <span class="k">as</span> <span class="nn">pp</span>
+
 <span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="nn">pd</span>
 
-<span class="n">pd</span><span class="o">.</span><span class="n">set_option</span><span class="p">(</span><span class="s1">&#39;display.max_colwidth&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
-<span class="n">pd</span><span class="o">.</span><span class="n">set_option</span><span class="p">(</span><span class="s1">&#39;display.max_columns&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+<span class="n">pd</span><span class="o">.</span><span class="n">set_option</span><span class="p">(</span><span class="s2">&quot;display.max_colwidth&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+<span class="n">pd</span><span class="o">.</span><span class="n">set_option</span><span class="p">(</span><span class="s2">&quot;display.max_columns&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>If a user wants the raw profiling results, they would do something similar to
@@ -561,13 +565,13 @@ finding the raw runtime data of an <code class="docutils literal notranslate"><s
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
     <span class="c1"># Via EventBlocks</span>
     <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;native_call_addmm.out&#39;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;native_call_addmm.out&quot;</span><span class="p">:</span>
             <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">raw</span><span class="p">)</span>
 
     <span class="c1"># Via Dataframe</span>
     <span class="n">df</span> <span class="o">=</span> <span class="n">event_block</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">()</span>
-    <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="o">.</span><span class="n">event_name</span> <span class="o">==</span> <span class="s1">&#39;native_call_addmm.out&#39;</span><span class="p">]</span>
-    <span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">[[</span><span class="s1">&#39;event_name&#39;</span><span class="p">,</span> <span class="s1">&#39;raw&#39;</span><span class="p">]])</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="o">.</span><span class="n">event_name</span> <span class="o">==</span> <span class="s2">&quot;native_call_addmm.out&quot;</span><span class="p">]</span>
+    <span class="nb">print</span><span class="p">(</span><span class="n">df</span><span class="p">[[</span><span class="s2">&quot;event_name&#39;, &#39;raw&quot;</span><span class="p">]])</span>
     <span class="nb">print</span><span class="p">()</span>
 </pre></div>
 </div>
@@ -578,7 +582,7 @@ slowest <code class="docutils literal notranslate"><span class="pre">convolution
     <span class="c1"># Via EventBlocks</span>
     <span class="n">slowest</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;native_call_convolution.out&#39;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;native_call_convolution.out&quot;</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">slowest</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">p50</span> <span class="o">&gt;</span> <span class="n">slowest</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">p50</span><span class="p">:</span>
                 <span class="n">slowest</span> <span class="o">=</span> <span class="n">event</span>
     <span class="k">if</span> <span class="n">slowest</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
@@ -586,13 +590,13 @@ slowest <code class="docutils literal notranslate"><span class="pre">convolution
         <span class="nb">print</span><span class="p">()</span>
         <span class="n">pp</span><span class="o">.</span><span class="n">pprint</span><span class="p">(</span><span class="n">slowest</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">)</span>
         <span class="nb">print</span><span class="p">()</span>
-        <span class="n">pp</span><span class="o">.</span><span class="n">pprint</span><span class="p">(</span><span class="n">slowest</span><span class="o">.</span><span class="n">module_hierarchy</span>
+        <span class="n">pp</span><span class="o">.</span><span class="n">pprint</span><span class="p">(</span><span class="n">slowest</span><span class="o">.</span><span class="n">module_hierarchy</span><span class="p">)</span>
 
     <span class="c1"># Via Dataframe</span>
     <span class="n">df</span> <span class="o">=</span> <span class="n">event_block</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">()</span>
-    <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="o">.</span><span class="n">event_name</span> <span class="o">==</span> <span class="s1">&#39;native_call_convolution.out&#39;</span><span class="p">]</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="o">.</span><span class="n">event_name</span> <span class="o">==</span> <span class="s2">&quot;native_call_convolution.out&quot;</span><span class="p">]</span>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="n">slowest</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;p50&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">idxmax</span><span class="p">()]</span>
+        <span class="n">slowest</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="s2">&quot;p50&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">idxmax</span><span class="p">()]</span>
         <span class="nb">print</span><span class="p">(</span><span class="n">slowest</span><span class="o">.</span><span class="n">event_name</span><span class="p">)</span>
         <span class="nb">print</span><span class="p">()</span>
         <span class="n">pp</span><span class="o">.</span><span class="n">pprint</span><span class="p">(</span><span class="n">slowest</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">)</span>
@@ -600,7 +604,8 @@ slowest <code class="docutils literal notranslate"><span class="pre">convolution
         <span class="n">pp</span><span class="o">.</span><span class="n">pprint</span><span class="p">(</span><span class="n">slowest</span><span class="o">.</span><span class="n">module_hierarchy</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>If a user wants the total runtime of a module:</p>
+<p>If a user wants the total runtime of a module, they can use
+<code class="docutils literal notranslate"><span class="pre">find_total_for_module</span></code>:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span><span class="n">inspector</span><span class="o">.</span><span class="n">find_total_for_module</span><span class="p">(</span><span class="s2">&quot;L__self___features&quot;</span><span class="p">))</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">inspector</span><span class="o">.</span><span class="n">find_total_for_module</span><span class="p">(</span><span class="s2">&quot;L__self___features_14&quot;</span><span class="p">))</span>
 </pre></div>
