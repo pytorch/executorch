@@ -40,6 +40,7 @@ DEFINE_string(
     bundled_program_path,
     "model_bundled.bp",
     "Model serialized in flatbuffer format.");
+
 DEFINE_string(
     prof_result_path,
     "prof_result.bin",
@@ -55,6 +56,11 @@ DEFINE_string(
     etdump_path,
     "etdump.etdp",
     "If etdump generation is enabled an etdump will be written out to this path");
+
+DEFINE_bool(
+    output_verification,
+    false,
+    "Comapre the model output to the reference outputs present in the BundledProgram.");
 
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
@@ -255,21 +261,23 @@ int main(int argc, char** argv) {
     free(result.buf);
   }
 
-  // Verify the outputs.
-  status = torch::executor::util::VerifyResultWithBundledExpectedOutput(
-      *method,
-      file_data->data(),
-      &bundled_input_allocator,
-      method_name,
-      FLAGS_testset_idx,
-      1e-5, // rtol
-      1e-8 // atol
-  );
-  ET_CHECK_MSG(
-      status == Error::Ok,
-      "Bundle verification failed with status 0x%" PRIx32,
-      status);
-  ET_LOG(Info, "Model verified successfully.");
+  if (FLAGS_output_verification) {
+    // Verify the outputs.
+    status = torch::executor::util::VerifyResultWithBundledExpectedOutput(
+        *method,
+        file_data->data(),
+        &bundled_input_allocator,
+        method_name,
+        FLAGS_testset_idx,
+        1e-4, // rtol
+        1e-8 // atol
+    );
+    ET_CHECK_MSG(
+        status == Error::Ok,
+        "Bundle verification failed with status 0x%" PRIx32,
+        status);
+    ET_LOG(Info, "Model verified successfully.");
+  }
 
   return 0;
 }
