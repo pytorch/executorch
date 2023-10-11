@@ -178,6 +178,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
+   build-run-ios-demo
    demo-apps-android
    build-run-xtensa
    tutorials/sdk-integration-tutorial
@@ -214,11 +215,11 @@ ExecuTorch tutorials.
    :tags:
 
 .. customcarditem::
-   :header: XNNPACK Backend Delegate Lowering Tutorial
-   :card_description: A demo tutorial for lowering and export models with the XNNPACK Backend
-   :image: _static/img/generic-pytorch-logo.png
-   :link: tutorial-xnnpack-delegate-lowering.html
-   :tags: Export,Delegation,Quantization,XNNPACK
+   :header: Building an ExecuTorch iOS Demo App
+   :card_description: A demo tutorial that explains how to build ExecuTorch into iOS frameworks and run an iOS app.
+   :image: _static/img/ios_app.jpg
+   :link: demo-apps-ios.html
+   :tags: Delegation,iOS
 
 .. customcarditem::
    :header: Building an ExecuTorch Android Demo App
@@ -226,6 +227,13 @@ ExecuTorch tutorials.
    :image: _static/img/android_app.png
    :link: demo-apps-android.html
    :tags: Delegation,Android
+
+.. customcarditem::
+   :header: XNNPACK Backend Delegate Lowering Tutorial
+   :card_description: A demo tutorial for lowering and export models with the XNNPACK Backend
+   :image: _static/img/generic-pytorch-logo.png
+   :link: tutorial-xnnpack-delegate-lowering.html
+   :tags: Export,Delegation,Quantization,XNNPACK
 
 .. customcarditem::
    :header: Building and Running ExecuTorch on Xtensa HiFi4 DSP

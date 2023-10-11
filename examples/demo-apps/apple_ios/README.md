@@ -1,96 +1,136 @@
-# ExecuTorch: iOS Demo App Setup
+# ExecuTorch iOS Demo App Tutorial
 
-This README guides you through the setup of ExecuTorch on iOS using a demo app.
-This app utilizes the MobileNet v3 model to process live camera images.
+Welcome to the tutorial on setting up the ExecuTorch iOS Demo App!
+
+This app uses the
+[MobileNet v3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to
+process live camera images leveraging three different backends:
+[XNNPACK](https://github.com/google/XNNPACK),
+[Core ML](https://developer.apple.com/documentation/coreml) and
+[Metal Performance Shaders](https://developer.apple.com/documentation/metalperformanceshaders)
+(MPS).
+
+![](_static/img/demo_ios_xcode.jpg)
 
 ## Prerequisites
 
-1. **Install Xcode 15 and Command Line Tools**
+Before we start, make sure you have the following tools installed:
 
-   ```bash
-   xcode-select --install
-   ```
+### 1. Xcode 15 and Command Line Tools
 
-2. **Python 3.10+ and `pip`** (Pre-installed from MacOS 13.5+)
+Install Xcode 15 from the
+[Mac App Store](https://apps.apple.com/app/xcode/id497799835) and then install
+the Command Line Tools using the terminal:
 
-   [Download](https://www.python.org/downloads/macos/) and install Python 3.10
-   or 3.11, if needed, and verify the versions:
+```bash
+xcode-select --install
+```
 
-   ```bash
-   which python3 pip
-   python3 --version
-   pip --version
-   ```
+### 2. Python 3.10+
 
-3. **Follow the [Getting Started](../../../docs/source/getting-started-setup.md)
-   Tutorial**
+Python 3.10 or above, along with `pip`, should be pre-installed on MacOS 13.5+.
+If needed, [download Python](https://www.python.org/downloads/macos/) and
+install it. Verify the Python and pip versions using these commands:
 
-4. **Backend Dependency Installation**
+```bash
+which python3 pip
+python3 --version
+pip --version
+```
 
-   Install additional dependencies for **CoreML**:
+### 3. Getting Started Tutorial
 
-   ```bash
-   ./backends/apple/coreml/scripts/install_requirements.sh
-   ```
+Before proceeding, follow the [Setting Up ExecuTorch](getting-started-setup.md)
+tutorial to configure the basic environment.
 
-   And **Metal Performance Shaders**:
+### 4. Backend Dependencies
 
-   ```bash
-   ./backends/apple/mps/install_requirements.sh
-   ```
+Also, follow the corresponding sections from [Core ML](build-run-coreml.md) and
+[MPS](build-run-mps.md) tutorials to install additional dependencies for those
+backends. Do not build anything just yet!
 
-## Model Export & Bundling
+## Models and Labels
 
-1. **Export MobileNet v3 model with CoreML, MPS and XNNPACK delegates**
+Now let's move on to exporting and bundling the MobileNet v3 model.
 
-   ```bash
-   python3 -m examples.portable.scripts.export --model_name="mv3"
-   python3 -m examples.xnnpack.aot_compiler --delegate --model_name="mv3"
-   python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name="mv3"
-   python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3"
+### 1. Export Model
 
-   mkdir -p examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
-   mv mv3*.pte examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
-   ```
+Export the MobileNet v3 model with CoreML, MPS and XNNPACK delegates, and move
+the exported model to a specific location where the Demo App will pick them up:
 
-2. **Download MobileNet model labels**
+```bash
+python3 -m examples.portable.scripts.export --model_name="mv3"
+python3 -m examples.xnnpack.aot_compiler --delegate --model_name="mv3"
+python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name="mv3"
+python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3"
 
-   ```bash
-   curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
-     -o examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/imagenet_classes.txt
-   ```
+mkdir -p examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
+mv mv3*.pte examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
+```
 
-## ExecuTorch & Backend Building
+### 2. Download Labels
 
-1. **Build frameworks**
+Download the MobileNet model labels required for image classification:
 
-   ```bash
-   ./build/build_apple_frameworks.sh --Release --coreml --mps --xnnpack
-   ```
+```bash
+curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
+  -o examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/imagenet_classes.txt
+```
 
-2. **Move frameworks for app linking**
+## Build Runtime and Backends
 
-   ```bash
-   mv cmake-out examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks
-   ```
+Next, we will build the necessary
+[frameworks](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle)
+for ExecuTorch and move them over for app linking.
+
+### 1. Build Frameworks
+
+```bash
+./build/build_apple_frameworks.sh --Release --coreml --mps --xnnpack
+```
+
+### 2. Move Frameworks for App Linking
+
+Make sure to have all the `.xcframework` bundles generated at the previous step
+at a specific location where the Demo App will pick them up:
+
+```bash
+mv cmake-out examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks
+```
 
 ## Final Steps
 
-1. **Open project in Xcode**
+We're almost done! Now, we just need to open the project in Xcode, run the
+tests, and finally run the app.
 
-   ```bash
-   open examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo.xcodeproj
-   ```
+### 1. Open Project in Xcode
 
-2. **Run tests in Xcode** (Cmd + U) or command line:
+Double-click on the project file under
+`examples/demo-apps/apple_ios/ExecuTorchDemo` or run the command:
 
-   ```bash
-   xcrun simctl create executorch "iPhone 15"
-   xcodebuild clean test \
-        -project examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo.xcodeproj \
-        -scheme App \
-        -destination name=executorch
-   xcrun simctl delete executorch
-   ```
+```bash
+open examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo.xcodeproj
+```
 
-3. **Setup Code Signing and run app** (Cmd + R).
+### 2. Run Tests
+
+You can run tests on Simulaltor directly in Xcode with `Cmd + U` or use the
+command line:
+
+```bash
+xcrun simctl create executorch "iPhone 15"
+xcodebuild clean test \
+     -project examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo.xcodeproj \
+     -scheme App \
+     -destination name=executorch
+xcrun simctl delete executorch
+```
+
+### 3. Run App
+
+Finally, set up Code Signing in Xcode, and then run the app using `Cmd + R`.
+
+Congratulations! You've successfully set up the ExecuTorch iOS Demo App. Now,
+you can explore and enjoy the power of ExecuTorch on your iOS device!
+
+![](_static/img/demo_ios_app.jpg)
