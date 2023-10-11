@@ -94,12 +94,13 @@ Step 2. Make sure you have completed the ExecuTorch setup tutorials linked to at
 
 The working tree is:
 
-```bash
-examples
-|_ xtensa
-   |_ aot
-   |_ ops
-   |_ kernels
+```
+examples/xtensa/
+├── aot
+├── kernels
+├── ops
+├── third-party
+└── utils
 ```
 
 ***AoT (Ahead-of-Time) Components***:
