@@ -1,68 +1,46 @@
 # ExecuTorch
-A unified ML software stack within the PyTorch platform for edge devices. It defines new compiler entry points as well as a state-of-art runtime.
 
-## Why ExecuTorch?
-Compared to the legacy Lite Interpreter, there are some major benefits:
-* Performance wins compared to Lite Interpreter
-  * Faster (orders of magnitude lower framework tax in both DSP and CPU)
-  * Much smaller binary size, 1.5 MB vs 30 KB without operators.
-  * Smaller memory footprint because we do ahead of time memory planning in ExecuTorch and also have clear granular control over where the runtime allocations are done.
-* Long term alignment with the direction of PyTorch infrastructure
-  * Lite Interpreter relies on TorchScript, which is being phased out; ExecuTorch is the planned replacement for Lite Interpreter.
-* Model Authoring & Productivity gains
-  * More and better defined entry points to perform model, device, and/or use-case specific optimizations (e.g. better backend delegation, user-defined compiler transformations, default or user-defined memory planning, etc)
-  * Ability to lower constructs like dynamic control flow to run on device.
+**ExecuTorch** is an end-to-end solution for enabling on-device inference
+capabilities across mobile and edge devices including wearables, embedded
+devices and microcontrollers. It is part of the PyTorch Edge ecosystem and
+enables efficient deployment of PyTorch models to edge devices.
 
+Key value propositions of ExecuTorch are:
 
-## Design goals
-* Minimal binary size (< 50KB not including kernels)
-* Minimal framework tax: loading program, initializing executor, kernel and
-  backend-delegate dispatch, runtime memory utilization
-* Portable (cross-compile across many toolchains)
-* Executes ATen kernels (or ATen custom kernels)
-* Executes custom op kernels
-* Supports inter op asynchronous execution
-* Supports static memory allocation (heapless)
-* Supports custom allocation across memory hierarchies
-* Supports control flow needed by models
-* Allows selective build of kernels
-* Allows backend delegation with lightweight interface
+- **Portability:** Compatibility with a wide variety of computing platforms,
+  from high-end mobile phones to highly constrained embedded systems and
+  microcontrollers.
+- **Productivity:** Enabling developers to use the same toolchains and SDK from
+  PyTorch model authoring and conversion, to debugging and deployment to a wide
+  variety of platforms.
+- **Performance:** Providing end users with a seamless and high-performance
+  experience due to a lightweight runtime and utilizing full hardware
+  capabilities such as CPUs, NPUs, and DSPs.
 
-## Quick Links
+For a comprehensive technical overview of ExecuTorch and step-by-step tutorials,
+please visit our [documentation website](https://pytorch.org/executorch).
 
-- [Basics: Terminology](/docs/website/docs/basics/terminology.md)
-- [Wiki (internal-only)](https://www.internalfb.com/intern/wiki/PyTorch/Using_PyTorch/Executorch/)
-- [Static docs website (internal-only)](https://www.internalfb.com/intern/staticdocs/executorch/)
-- [Testing (internal-only)](https://www.internalfb.com/intern/staticdocs/executorch/docs/fb/poc/)
+## Important: This is a preview release
 
-## Quick Links for Partners
-
-- [Setting up ExecuTorch from GitHub](/docs/website/docs/tutorials/00_setting_up_executorch.md)
-    - (Optional) [Building with CMake](/docs/website/docs/tutorials/cmake_build_system.md)
-- [Exporting to ExecuTorch](/docs/website/docs/tutorials/exporting_to_executorch.md)
-    - [EXIR Spec](/docs/website/docs/ir_spec/00_exir.md)
-    - [Exporting manual](/docs/website/docs/export/00_export_manual.md)
-    - [Quantization](/docs/website/docs/tutorials/quantization_flow.md)
-    - [Delegate to a backend](/docs/website/docs/tutorials/backend_delegate.md)
-    - [Profiling](/docs/website/docs/tutorials/profiling.md)
-- [ExecuTorch Google Colab](https://colab.research.google.com/drive/1m8iU4y7CRVelnnolK3ThS2l2gBo7QnAP#scrollTo=1o2t3LlYJQY5)
+This is a preview version of ExecuTorch and should be used for testing and evaluation purposes only.
+It is not recommended for use in production settings. We welcome any feedback, suggestions, and bug
+reports from the community to help us improve the technology.
+Please use the [PyTorch Forums](https://discuss.pytorch.org/) for discussion
+and feedback about ExecuTorch using the tag **#executorch** and
+our [GitHub repository](https://github.com/pytorch/executorch/issues)
+for bug reporting.
 
 ## Directory Structure [WIP]
 
 ```
 executorch
-├── backends                        #  1st party backend implementations.
-|   ├── xnnpack
-|   ├── vulkan
+├── backends                        #  Backend delegate implementations.
 ├── build                           #  Utilities for managing the build system.
 ├── bundled_program                 #  Utilities for attaching reference inputs and outputs to models. TODO move to extension
 ├── codegen                         #  Tooling to autogenerate bindings between kernels and the runtime. TODO move to tool
 ├── configurations                  #  TODO delete this
 ├── docs                            #  Static docs tooling
 ├── examples                        #  Examples of various user flows, such as model export, delegates, and runtime execution.
-|   ├── executor_runner
-|   ├── export
-|   ├── models
 ├── exir                            #  Ahead of time library, model capture and lowering apis.
 |   ├── backend                     #  Backend delegate ahead of time APIs
 |   ├── capture                     #  Program capture.
@@ -92,7 +70,7 @@ executorch
 |   ├── platform                    #  Layer between architecture specific code and user calls.
 ├── schema                          #  ExecuTorch program definition, TODO move under serialization/
 ├── scripts                         #  Utility scripts for size management, dependency management, etc.
-├── sdk                             #  Model profiling, debugging, and introspection: NOT READY YET FOR OSS USE
+├── sdk                             #  Model profiling, debugging, and introspection.
 ├── shim                            #  Compatibility layer between OSS and Internal builds
 ├── test                            #  Broad scoped end2end tests
 ├── third-party                     #  third-party dependencies
