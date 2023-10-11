@@ -274,7 +274,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">An end-to-end example to lower a model as a delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-kernel-fusion-pass.html">Kernel Fusion Pass</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
@@ -566,161 +566,7 @@ for all core ATen ops.</p>
 </div>
 <div class="section" id="backend-dialect">
 <h2>Backend Dialect<a class="headerlink" href="#backend-dialect" title="Permalink to this headline">¶</a></h2>
-<p>Backend dialect is the name we gave to the <code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code> in Edge dialect,
-after optional <strong>target specific</strong> passes. The difference between backend
-dialect and edge dialect is that backend dialect is target-aware and may contain
-operators or submodules that are only meaningful to the target backend. Backend
-specific operators are new components we may see in a backend dialect, comparing
-with Edge dialect. They are a set of operators for the target backend.</p>
-<p>Another property to notice is that the memory formats of the tensor can be any
-format (this is subject to change in the near future when we introduce dim order
-to backend dialect).</p>
-<p>This dialect allows introduction of operators that do not conform to the schema
-defined in the canonical ATen operator set, and are not showing up in any of the
-dialects above (ATen dialect and edge dialect). Consider to use backend
-operators if your use case satisfies one or more of the following criteria:</p>
-<ol class="arabic simple">
-<li><p>Your backend provides a library that optimizes a certain operator that is
-equivalent to a subgraph. E.g., linear_relu (equivalent to linear + relu) that
-can be executed faster on a certain backend.</p></li>
-<li><p>There’s a need to retrace the graph module after it is already lowered to a
-backend. When we retrace, backend operators can transform back to the original
-subgraph (in ATen dialect) where normal custom op doesn’t take care of that.</p></li>
-<li><p>Your backend specific operator doesn’t have a generic CPU kernel but only a
-kernel for a certain backend. Using backend operator can workaround this issue
-by using the original subgraph as default kernel and keep the graph module
-runnable.</p></li>
-</ol>
-<div class="section" id="running-backend-passes">
-<h3>Running Backend Passes<a class="headerlink" href="#running-backend-passes" title="Permalink to this headline">¶</a></h3>
-<p>To lower edge ops to backend ops, a pass will perform pattern matching to
-identify the edge ops of interest in the graph, and then replace them with
-equivalent backend operators. There are two APIs to register such passes:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">transform()</span></code>. An API on <code class="docutils literal notranslate"><span class="pre">ExportProgram</span></code> that allows users to provide custom
-passes. Note that this is not guarded by any validator so the soundness of the
-program is not guaranteed.</p></li>
-<li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/capture/_config.py#L40"><code class="docutils literal notranslate"><span class="pre">ExecutorchBackendConfig.passes</span></code></a>.
-If added here, the pass will be part of the lowering process from backend
-dialect to <code class="docutils literal notranslate"><span class="pre">ExecutorchProgram</span></code>.</p></li>
-</ul>
-<p>Example: One such pass is <code class="docutils literal notranslate"><span class="pre">QuantFusion</span></code>. This pass takes a “canonical
-quantization pattern”, that is, “dequant - some_op - quant”, and fusees this
-pattern into a single operator that is backend specific, that is,
-<code class="docutils literal notranslate"><span class="pre">quantized_decomposed::some_op</span></code>. You can find more details
-<a class="reference internal" href="quantization-custom-quantization.html"><span class="doc std std-doc">here</span></a>. Another simpler example is
-<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/passes/replace_edge_with_backend_pass.py#L20">here</a>
-where we replace sym_size operators with ones that are understood by ExecuTorch.</p>
-</div>
-<div class="section" id="backend-dialect-operators">
-<h3>Backend Dialect Operators<a class="headerlink" href="#backend-dialect-operators" title="Permalink to this headline">¶</a></h3>
-<p>We provide a decorator <code class="docutils literal notranslate"><span class="pre">bind_pattern_to_op</span></code> to help users easily register their
-backend operators into Export IR. This decorator takes:
-their backend operators into Export IR. This decorator takes:</p>
-<ul class="simple">
-<li><p>a <code class="docutils literal notranslate"><span class="pre">torch.Library</span></code> object, that indicates which library or namespace this backend
-operator belongs to.</p></li>
-<li><p>a name or schema. If we already defined the schema of the backend operator in
-the <code class="docutils literal notranslate"><span class="pre">torch.Library</span></code> object, only a name is needed. Otherwise we can register
-the schema if a schema string is being passed in.</p></li>
-</ul>
-<p>This decorator should be added to the pattern we are trying to match (and then
-lower to this backend op) on the edge dialect. This way we are registering this
-pattern as a <code class="docutils literal notranslate"><span class="pre">CompositeImplicitAutograd</span></code> kernel for this backend operator.</p>
-<p>Then the operator can be accessed/used from the passes. The <code class="docutils literal notranslate"><span class="pre">CompositeImplicitAutograd</span></code> kernel makes sure:</p>
-<ol class="arabic simple">
-<li><p>No need for the user to write a (CPU) runnable kernel</p></li>
-<li><p>Ensures the retracability of <code class="docutils literal notranslate"><span class="pre">ExportProgram</span></code>. Once retraced, the backend
-operator will be decomposed into the ATen ops used in the pattern.</p></li>
-</ol>
-<p>Unlike edge dialect where we have a well defined op set, for backend dialect,
-since it is target-aware we will be allowing user to use our API to register
-target-aware ops and they will be grouped by namespaces. Here are some examples:
-<code class="docutils literal notranslate"><span class="pre">executorch_prims</span></code> are ops that are used by ExecuTorch runtime to perform
-operation on <code class="docutils literal notranslate"><span class="pre">SymInt</span></code>s. <code class="docutils literal notranslate"><span class="pre">quantized_decomposed</span></code> are ops that fuses edge operators
-for quantization purpose and are meaningful to targets that support
-quantization.</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::add.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">SymInt</span></code></p>
-<ul>
-<li><p>pattern: builtin.add</p></li>
-<li><p>backend: executor</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::mul.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">SymInt</span></code></p>
-<ul>
-<li><p>pattern: builtin.mul</p></li>
-<li><p>backend: executor</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::sub.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">SymInt</span></code></p>
-<ul>
-<li><p>pattern: builtin.sub</p></li>
-<li><p>backend: executor</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::floordiv.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">SymInt</span></code></p>
-<ul>
-<li><p>pattern: builtin.floordiv</p></li>
-<li><p>backend: executor</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::gt.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p>
-<ul>
-<li><p>pattern: builtin.gt</p></li>
-<li><p>backend: executor</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::lt.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p>
-<ul>
-<li><p>pattern: builtin.lt</p></li>
-<li><p>backend: executor</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::ge.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p>
-<ul>
-<li><p>pattern: builtin.ge</p></li>
-<li><p>backend: executor</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::le.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p>
-<ul>
-<li><p>pattern: builtin.le</p></li>
-<li><p>backend: executor</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::eq.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p>
-<ul>
-<li><p>pattern: builtin.eq</p></li>
-<li><p>backend: executor</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">quantized_decomposed::embedding_byte(Tensor</span> <span class="pre">weight,</span> <span class="pre">Tensor</span> <span class="pre">weight_scales,</span> <span class="pre">Tensor</span> <span class="pre">weight_zero_points,</span> <span class="pre">int</span> <span class="pre">weight_quant_min,</span> <span class="pre">int</span> <span class="pre">weight_quant_max,</span> <span class="pre">Tensor</span> <span class="pre">indices)</span> <span class="pre">-&gt;</span> <span class="pre">Tensor</span></code></p>
-<ul>
-<li><p>pattern: <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/passes/_quant_patterns_and_replacements.py">source</a></p></li>
-<li><p>backend: quantization</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">quantized_decomposed::add(Tensor</span> <span class="pre">a,</span> <span class="pre">float</span> <span class="pre">a_scale,</span> <span class="pre">int</span> <span class="pre">a_zero_point,</span> <span class="pre">int</span> <span class="pre">a_quant_min,</span> <span class="pre">int</span> <span class="pre">a_quant_max,</span> <span class="pre">Tensor</span> <span class="pre">b,</span> <span class="pre">float</span> <span class="pre">b_scale,</span> <span class="pre">int</span> <span class="pre">b_zero_point,</span> <span class="pre">int</span> <span class="pre">b_quant_min,</span> <span class="pre">int</span> <span class="pre">b_quant_max,</span> <span class="pre">float</span> <span class="pre">out_scale,</span> <span class="pre">int</span> <span class="pre">out_zero_point,</span> <span class="pre">int</span> <span class="pre">out_quant_min,</span> <span class="pre">int</span> <span class="pre">out_quant_max)</span> <span class="pre">-&gt;</span> <span class="pre">Tensor</span> <span class="pre">qc</span></code></p>
-<ul>
-<li><p>pattern: <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/passes/_quant_patterns_and_replacements.py">source</a></p></li>
-<li><p>backend: quantization</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">quantized_decomposed::add.scalar(Tensor</span> <span class="pre">qa,</span> <span class="pre">float</span> <span class="pre">a_scale,</span> <span class="pre">int</span> <span class="pre">a_zero_point,</span> <span class="pre">int</span> <span class="pre">a_quant_min,</span> <span class="pre">int</span> <span class="pre">a_quant_max,</span> <span class="pre">ScalarType</span> <span class="pre">a_dtype,</span> <span class="pre">Scalar</span> <span class="pre">b,</span> <span class="pre">float</span> <span class="pre">out_scale,</span> <span class="pre">int</span> <span class="pre">out_zero_point,</span> <span class="pre">int</span> <span class="pre">out_quant_min,</span> <span class="pre">int</span> <span class="pre">out_quant_max,</span> <span class="pre">ScalarType</span> <span class="pre">out_dtype)</span> <span class="pre">-&gt;</span> <span class="pre">Tensor</span></code></p>
-<ul>
-<li><p>pattern: <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/passes/_quant_patterns_and_replacements.py">source</a></p></li>
-<li><p>backend: quantization</p></li>
-</ul>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">quantized_decomposed::add_relu(Tensor</span> <span class="pre">a,</span> <span class="pre">float</span> <span class="pre">a_scale,</span> <span class="pre">int</span> <span class="pre">a_zero_point,</span> <span class="pre">int</span> <span class="pre">a_quant_min,</span> <span class="pre">int</span> <span class="pre">a_quant_max,</span> <span class="pre">Tensor</span> <span class="pre">b,</span> <span class="pre">float</span> <span class="pre">b_scale,</span> <span class="pre">int</span> <span class="pre">b_zero_point,</span> <span class="pre">int</span> <span class="pre">b_quant_min,</span> <span class="pre">int</span> <span class="pre">b_quant_max,</span> <span class="pre">float</span> <span class="pre">out_scale,</span> <span class="pre">int</span> <span class="pre">out_zero_point,</span> <span class="pre">int</span> <span class="pre">out_quant_min,</span> <span class="pre">int</span> <span class="pre">out_quant_max)</span> <span class="pre">-&gt;</span> <span class="pre">Tensor</span> <span class="pre">qc</span></code></p>
-<ul>
-<li><p>pattern: <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/passes/_quant_patterns_and_replacements.py">source</a></p></li>
-<li><p>backend: quantization</p></li>
-</ul>
-</li>
-</ul>
-</div>
+<p>See this <a class="reference internal" href="compiler-backend-dialect.html"><span class="doc std std-doc">doc</span></a></p>
 </div>
 </div>
 
@@ -782,11 +628,7 @@ quantization.</p>
 <li><a class="reference internal" href="#op-set-wip">Op Set (WIP)</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#backend-dialect">Backend Dialect</a><ul>
-<li><a class="reference internal" href="#running-backend-passes">Running Backend Passes</a></li>
-<li><a class="reference internal" href="#backend-dialect-operators">Backend Dialect Operators</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#backend-dialect">Backend Dialect</a></li>
 </ul>
 </li>
 </ul>

@@ -274,7 +274,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">An end-to-end example to lower a model as a delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-kernel-fusion-pass.html">Kernel Fusion Pass</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
@@ -438,7 +438,7 @@
 <p>Backend dialect is the result of exporting Edge dialect to specific backend. It’s target-aware, and may contain operators or submodules that are only meaningful to the target backend. This dialect allows the introduction of target-specific operators that do not conform to the schema defined in the Core ATen Operator Set and are not shown in ATen or Edge Dialect.</p>
 </div>
 <div class="section" id="backend-specific-operator">
-<h2><a class="reference internal" href="compiler-kernel-fusion-pass.html"><span class="doc std std-doc">Backend Specific Operator</span></a><a class="headerlink" href="#backend-specific-operator" title="Permalink to this headline">¶</a></h2>
+<h2><span class="xref myst">Backend Specific Operator</span><a class="headerlink" href="#backend-specific-operator" title="Permalink to this headline">¶</a></h2>
 <p>These are operators that are not part of ATen dialect or Edge dialect. Backend specific operators are only introduced by passes that happen after Edge dialect (see Backend dialect). These operators are specific to the target backend and will generally execute faster.</p>
 </div>
 <div class="section" id="buck2">

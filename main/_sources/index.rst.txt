@@ -113,7 +113,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    examples-end-to-end-to-lower-model-to-delegate
    compiler-delegate-and-partitioner
-   compiler-kernel-fusion-pass
+   compiler-backend-dialect
    compiler-custom-compiler-passes
    compiler-memory-planning
 
