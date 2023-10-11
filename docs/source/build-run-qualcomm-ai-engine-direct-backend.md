@@ -17,6 +17,10 @@
      <div class="step-number" id="step-4">4</div>
      <span class="step-caption" id="caption-4"></span>
    </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-5">5</div>
+     <span class="step-caption" id="caption-5"></span>
+   </div>
 </div>
 
 <!---- DO NOT MODIFY Progress Bar End--->
