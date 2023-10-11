@@ -29,3 +29,8 @@ $ ./setup.sh --i-agree-to-the-contained-eula [optional-scratch-dir]
 # suited for Corstone300 to run a simple PyTorch model.
 $ ./run.sh [same-optional-scratch-dir-as-before]
 ```
+### Online Tutorial
+
+We also have a [tutorial](https://pytorch.org/executorch/executorch-arm-delegate-tutorial.html) explaining the steps performed in these 
+scripts, expected results, and more. It is a step-by-step guide 
+you can follow to better understand this delegate.
