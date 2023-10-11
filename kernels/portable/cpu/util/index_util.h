@@ -167,5 +167,12 @@ void get_index_select_out_target_size(
     Tensor::SizesType* out_sizes,
     size_t* out_ndim);
 
+bool check_scatter_add_args(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    const Tensor& src,
+    Tensor& out);
+
 } // namespace executor
 } // namespace torch
