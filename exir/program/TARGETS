@@ -21,7 +21,6 @@ python_library(
         "//executorch/exir:pass_manager",
         "//executorch/exir:print_program",
         "//executorch/exir:schema",
-        "//executorch/exir:tracer",
         "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir/backend:partitioner",
