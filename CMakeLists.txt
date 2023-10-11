@@ -137,6 +137,10 @@ option(EXECUTORCH_BUILD_EXAMPLES "Build the ExecuTorch examples.")
 option(EXECUTORCH_BUILD_XTENSA_EXAMPLE
        "Build the example targeted for the Xtensa Hifi4 DSP" OFF)
 
+# Build mps_executor_runner which depends on MPSGraph framework
+option(EXECUTORCH_BUILD_MPS
+       "Build mps_executor_runner which depends on MPS" OFF)
+
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
@@ -334,6 +338,12 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
        "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF)
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
+endif()
+
+option(EXECUTORCH_BUILD_MPS "Build the backends/apple/mps directory" OFF)
+if(EXECUTORCH_BUILD_MPS)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/apple/mps)
 endif()
 
 # Add selective build subdirectory
