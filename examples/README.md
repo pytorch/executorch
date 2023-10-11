@@ -15,6 +15,7 @@ examples
 ├── selective_build                   # Contains demos of selective build for optimizing the binary size of the ExecuTorch runtime
 ├── arm                               # Contains demos of the Arm TOSA and Ethos-U NPU flows
 ├── qualcomm                          # Contains demos of Qualcomm QNN backend
+├── xtensa                            # Contains demos of exporting and running a simple model on Xtensa Hifi4 DSP
 ├── demo-apps                         # Contains demo apps for Android and iOS
 ├── third-party                       # Third-party libraries required for working on the demos
 └── README.md                         # This file
@@ -49,6 +50,11 @@ The [`arm/`](./arm) directory contains scripts to help you run a PyTorch model o
 ## Demo of ExecuTorch QNN Backend
 
 You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`](./qualcomm) directory.
+
+
+## Demo of ExecuTorch on Xtensa Hifi4 DSP
+
+The [`xtensa/`](./xtensa) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
 
 
 ## Dependencies
