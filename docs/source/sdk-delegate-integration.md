@@ -22,7 +22,7 @@ For example:
 - **{ “Fancy Fusion”: (11, 12, 15) }**: Identifier “Fancy Fusion” in the runtime corresponds to operators with debug handles (11, 12, 15).
 
 ```{Note}
-Identifiers are a means of connecting runtime results to the model graph; the interpretation of the identifiers is defined by the delegate author.*
+Identifiers are a means of connecting runtime results to the model graph; the interpretation of the identifiers is defined by the delegate author.
 ```
 
 **Debug Handle Maps** are constructed through the use of **DelegateMappingBuilder** and returned as a part of `PreprocessResult`.
