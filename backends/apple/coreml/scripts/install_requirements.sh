@@ -64,7 +64,7 @@ rm -rf "$COREML_DIR_PATH/third-party"
 mkdir "$COREML_DIR_PATH/third-party"
 
 echo "${green}ExecuTorch: Cloning ios-cmake."
-git clone git@github.com:leetal/ios-cmake.git "$COREML_DIR_PATH/third-party/ios-cmake"
+git clone https://github.com/leetal/ios-cmake.git "$COREML_DIR_PATH/third-party/ios-cmake"
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to clone ios-cmake."
@@ -72,7 +72,7 @@ if [ $STATUS -ne 0 ]; then
 fi
 
 echo "${green}ExecuTorch: Cloning nlohmann."
-git clone git@github.com:nlohmann/json.git "$COREML_DIR_PATH/third-party/nlohmann_json"
+git clone https://github.com/nlohmann/json.git "$COREML_DIR_PATH/third-party/nlohmann_json"
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to clone nlohmann."

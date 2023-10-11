@@ -138,14 +138,16 @@ jobs:
         popd
   
         
-  test-coreml-delegate-macos-x86:
-    name: test-macos-x86
+  test-coreml-delegate-macos:
+    name: test-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    secrets: inherit
     with:
-      runner: macos-12
+      runner: macos-13-xlarge
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 60
+      secrets-env: TOKEN_COREML_PRIVATE_REPO
       script: |
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"

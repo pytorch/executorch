@@ -33,7 +33,7 @@ CoreML backend uses the [CoreML framework](https://developer.apple.com/documenta
 
 ::::{grid} 2
 :::{grid-item-card}  What you will learn in this tutorial:
-:class-card: card-learn
+:class-card: card-prerequisites
 * In this tutorial you will learn how to export [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model so that it runs on CoreML backend. 
 * You will also learn how to deploy and run the exported model on a supported Apple device.
 :::
