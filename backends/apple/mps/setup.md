@@ -33,7 +33,7 @@ The MPS backend device maps machine learning computational graphs and primitives
 
 ::::{grid} 2
 :::{grid-item-card}  What you will learn in this tutorial:
-:class-card: card-learn
+:class-card: card-prerequisites
 * In this tutorial you will learn how to export [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to the MPS delegate.
 * You will also learn how to compile and deploy the ExecuTorch runtime with the MPS delegate on macOS and iOS.
 :::

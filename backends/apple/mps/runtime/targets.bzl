@@ -11,36 +11,37 @@ def define_common_targets(is_fbcode = False):
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
-    runtime.cxx_library(
-        name = "MPSBackend",
-        srcs = [
-          "MPSExecutor.mm",
-          "MPSCompiler.mm",
-          "MPSBackend.mm",
-          "MPSStream.mm",
-          "MPSDevice.mm",
-        ] + native.glob(["utils/OperationUtils.mm"]),
-        # lang_preprocessor_flags = 'objective-c++'
-        visibility = [
-            "//executorch/exir/backend:backend_lib",
-            "//executorch/backends/apple/...",
-            "//executorch/runtime/backend/...",
-            "//executorch/extension/pybindings/...",
-            "//executorch/sdk/runners/...",
-            "//executorch/test/...",
-            "//executorch/examples/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        headers = native.glob([
-          "runtime/*.h",
-        ]),
-        # registration of backends is done through a static global
-        compiler_flags = ["-Wno-global-constructors"],
-        external_deps = [
-        "gflags",
-        ],
-        exported_deps = [
-            "//executorch/runtime/backend:interface",
-        ],
-        link_whole = True,
-    )
+    if runtime.is_oss:
+        runtime.cxx_library(
+            name = "MPSBackend",
+            srcs = [
+              "MPSExecutor.mm",
+              "MPSCompiler.mm",
+              "MPSBackend.mm",
+              "MPSStream.mm",
+              "MPSDevice.mm",
+            ] + native.glob(["utils/OperationUtils.mm"]),
+            # lang_preprocessor_flags = 'objective-c++'
+            visibility = [
+                "//executorch/exir/backend:backend_lib",
+                "//executorch/backends/apple/...",
+                "//executorch/runtime/backend/...",
+                "//executorch/extension/pybindings/...",
+                "//executorch/sdk/runners/...",
+                "//executorch/test/...",
+                "//executorch/examples/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            headers = native.glob([
+              "runtime/*.h",
+            ]),
+            # registration of backends is done through a static global
+            compiler_flags = ["-Wno-global-constructors"],
+            external_deps = [
+            "gflags",
+            ],
+            exported_deps = [
+                "//executorch/runtime/backend:interface",
+            ],
+            link_whole = True,
+        )
