@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		C94D51592ACF4BFC00AF47FD /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = C94D51582ACF4BFC00AF47FD /* main.mm */; };
 		C94D515E2ACFCBA000AF47FD /* libexecutorch.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D515C2ACFCBA000AF47FD /* libexecutorch.a */; };
-		C94D515F2ACFCBA000AF47FD /* libgflags_nothreads_debug.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D515D2ACFCBA000AF47FD /* libgflags_nothreads_debug.a */; };
 		C94D51622ACFCBBA00AF47FD /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D51612ACFCBBA00AF47FD /* libsqlite3.tbd */; };
 		C94D51642ACFCBC500AF47FD /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D51632ACFCBC500AF47FD /* CoreML.framework */; };
 		C94D51662ACFCBCB00AF47FD /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D51652ACFCBCB00AF47FD /* Accelerate.framework */; };
@@ -48,7 +47,6 @@
 				C94D51662ACFCBCB00AF47FD /* Accelerate.framework in Frameworks */,
 				C94D51642ACFCBC500AF47FD /* CoreML.framework in Frameworks */,
 				C94D51622ACFCBBA00AF47FD /* libsqlite3.tbd in Frameworks */,
-				C94D515F2ACFCBA000AF47FD /* libgflags_nothreads_debug.a in Frameworks */,
 				C94D515E2ACFCBA000AF47FD /* libexecutorch.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

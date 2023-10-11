@@ -33,7 +33,6 @@ cmake "$EXECUTORCH_ROOT_PATH" -B"$CMAKE_BUILD_DIR_PATH" \
 -DFLATC_EXECUTABLE="$FLATC_EXECUTABLE_PATH" \
 -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
 -DEXECUTORCH_BUILD_XNNPACK=OFF \
--DEXECUTORCH_BUILD_GFLAGS=ON \
 -DEXECUTORCH_BUILD_COREML=ON
 
 cmake --build "$CMAKE_BUILD_DIR_PATH" -j9 -t coremldelegate -t gflags_nothreads_static
@@ -41,7 +40,6 @@ cmake --build "$CMAKE_BUILD_DIR_PATH" -j9 -t coremldelegate -t gflags_nothreads_
 # Copy include headers
 echo "ExecuTorch: Copying headers"
 mkdir "$INCLUDE_DIR_PATH"
-cp -rf "$CMAKE_BUILD_DIR_PATH/third-party/gflags/include/" "$INCLUDE_DIR_PATH"
 cp -rf "$COREML_DIR_PATH/runtime/include/" "$INCLUDE_DIR_PATH"
 
 # Copy required libraries
@@ -49,7 +47,6 @@ echo "ExecuTorch: Copying libraries"
 mkdir "$LIBRARIES_DIR_PATH"
 cp -f "$CMAKE_BUILD_DIR_PATH/libexecutorch.a" "$LIBRARIES_DIR_PATH"
 cp -f "$CMAKE_BUILD_DIR_PATH/backends/apple/coreml/libcoremldelegate.a" "$LIBRARIES_DIR_PATH"
-cp -f "$CMAKE_BUILD_DIR_PATH/third-party/gflags/libgflags_nothreads_debug.a" "$LIBRARIES_DIR_PATH"
 
 # Build the runner
 echo "ExecuTorch: Building runner"
