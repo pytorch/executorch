@@ -4,7 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-add_library(xtensa_kernels kernels.cpp matmul_asym8uxasym8u_asym8u.cpp)
+# lint_cmake: -linelength
+add_library(xtensa_kernels kernels.cpp ${EXECUTORCH_ROOT}/examples/xtensa/third-party/nnlib-hifi4/matmul_asym8uxasym8u_asym8u.cpp)
 
 target_include_directories(
   xtensa_kernels
