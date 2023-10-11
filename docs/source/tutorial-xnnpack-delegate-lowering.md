@@ -122,4 +122,4 @@ buck2 run examples/backend:xnn_executor_runner -- --model_path ./mv2_xnnpack_qs8
 ```
 
 ## Building and Linking with the XNNPACK Backend
-You can build the XNNPACK backend [target](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/targets.bzl#L54), and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this [resource](runtime-backend-delegate-implementation-and-linking.md) next.
+You can build the XNNPACK backend [target](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/targets.bzl#L54), and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this [resource](demo-apps-android.md) next.
