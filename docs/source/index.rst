@@ -218,7 +218,7 @@ ExecuTorch tutorials.
 .. customcarditem::
    :header: Building an ExecuTorch iOS Demo App
    :card_description: A demo tutorial that explains how to build ExecuTorch into iOS frameworks and run an iOS app.
-   :image: _static/img/ios_app.jpg
+   :image: _static/img/demo_ios_app.jpg
    :link: demo-apps-ios.html
    :tags: Delegation,iOS
 
