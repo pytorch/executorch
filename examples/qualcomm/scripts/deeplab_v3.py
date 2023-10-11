@@ -133,7 +133,6 @@ if __name__ == "__main__":
             "Please specify a device serial by -s/--device argument."
         )
 
-
     data_num = 100
     inputs, targets, input_list = get_dataset(
         data_size=data_num, dataset_dir=args.artifact, download=args.download
