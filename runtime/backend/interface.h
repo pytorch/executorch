@@ -46,7 +46,7 @@ class PyTorchBackendInterface {
   /**
    * Returns true if the backend is available to process delegation calls.
    */
-  virtual bool is_available() const = 0;
+  __ET_NODISCARD virtual bool is_available() const = 0;
 
   /**
    * Responsible to further process (compile/transform/optimize) the compiled
