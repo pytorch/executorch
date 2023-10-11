@@ -148,7 +148,7 @@ SDK Integration Tutorial
 # Analyzing with an Inspector
 # ---------------------------
 #
-# ``Inspector`` provides 2 ways of accessing ingested information: `EventBlocks <../sdk-inspector.html>`__
+# ``Inspector`` provides 2 ways of accessing ingested information: `EventBlocks <../sdk-inspector#eventblock-class>`__
 # and ``DataFrames``. These mediums give users the ability to perform custom
 # analysis about their model performance.
 #
