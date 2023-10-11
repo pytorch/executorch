@@ -128,8 +128,10 @@ if __name__ == "__main__":
     os.makedirs(args.artifact, exist_ok=True)
 
     if not args.compile_only and args.device is None:
-        raise RuntimeError("device serial is required if not compile only. "
-                           "Please specify a device serial by -s/--device argument.")
+        raise RuntimeError(
+            "device serial is required if not compile only. "
+            "Please specify a device serial by -s/--device argument."
+        )
 
 
     data_num = 100
