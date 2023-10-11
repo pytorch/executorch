@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Export to ExecuTorch API Reference &mdash; ExecuTorch  documentation</title>
+  <title>Building and Running ExecuTorch on MPS Backend &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -39,8 +39,11 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="ExecuTorch Runtime API Reference" href="executorch-runtime-api-reference.html" />
-    <link rel="prev" title="Exporting to ExecuTorch" href="export-overview.html" />
+    <link rel="next" title="SDK Integration Tutorial" href="tutorials/sdk-integration-tutorial.html" />
+    <link rel="prev" title="Building and Running ExecuTorch on Qualcomm AI Engine Direct" href="build-run-qualcomm-ai-engine-direct-backend.html" />
+
+<link rel="stylesheet" href="../_static/css/progress-bar.css">
+<script src="../_static/js/progress-bar.js" defer></script>
 
 
   <!-- Google Tag Manager -->
@@ -257,7 +260,7 @@
 <li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">An end-to-end example to lower a model as a delegate</a></li>
@@ -265,7 +268,7 @@
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch on Qualcomm AI Engine Direct</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch on MPS Backend</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Building and Running ExecuTorch on MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">SDK Integration Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">ExecuTorch Arm Ethos-U Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">XNNPACK Backend Delegate Lowering Tutorial</a></li>
@@ -275,8 +278,8 @@
 <li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
-<ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Export to ExecuTorch API Reference</a></li>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
@@ -363,13 +366,13 @@
       </li>
 
         
-      <li>Export to ExecuTorch API Reference</li>
+      <li>Building and Running ExecuTorch on MPS Backend</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/export-to-executorch-api-reference.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/build-run-mps.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -401,249 +404,163 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="module-exir">
-<span id="export-to-executorch-api-reference"></span><h1>Export to ExecuTorch API Reference<a class="headerlink" href="#module-exir" title="Permalink to this headline">¶</a></h1>
-<dl class="py function">
-<dt class="sig sig-object py" id="exir.to_edge">
-<span class="sig-prename descclassname"><span class="pre">exir.</span></span><span class="sig-name descname"><span class="pre">to_edge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constant_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#to_edge"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.to_edge" title="Permalink to this definition">¶</a></dt>
-<dd><p><a class="reference internal" href="#exir.to_edge" title="exir.to_edge"><code class="xref py py-func docutils literal notranslate"><span class="pre">to_edge()</span></code></a> constructs an EdgeProgramManger from a set of exported programs in
-ATen dialect. Upon construction those programs are transformed into edge dialect.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>programs</strong> – Can be a single ExportedProgram or a dictionary mapping function names to their corresponding ExportedPrograms. If only a single ExportedProgram is provided it will be assigned the name “forward”.</p></li>
-<li><p><strong>constant_methods</strong> – An optional dictionary of method name to the constant value returned by that method in eager mode. Often used to store config information on Edge models.</p></li>
-<li><p><strong>compile_config</strong> – An optional argument used to provide greater control over the transformation to edge dialect process.</p></li>
+  <!---- DO NOT MODIFY Progress Bar Start --->
+<div class="progress-bar-wrapper">
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-1">1</div>
+     <span class="step-caption" id="caption-1"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-2">2</div>
+     <span class="step-caption" id="caption-2"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-3">3</div>
+     <span class="step-caption" id="caption-3"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-4">4</div>
+     <span class="step-caption" id="caption-4"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-5">5</div>
+     <span class="step-caption" id="caption-5"></span>
+   </div>
+</div>
+<!---- DO NOT MODIFY Progress Bar End--->
+<div class="section" id="building-and-running-executorch-on-mps-backend">
+<h1>Building and Running ExecuTorch on MPS Backend<a class="headerlink" href="#building-and-running-executorch-on-mps-backend" title="Permalink to this headline">¶</a></h1>
+<p>In this tutorial we will walk you through the process of getting setup to build the MPS backend for ExecuTorch and running a simple model on it.</p>
+<p>The MPS backend device maps machine learning computational graphs and primitives on the <a class="reference external" href="https://developer.apple.com/documentation/metalperformanceshadersgraph/mpsgraph?language=objc">MPS Graph</a> framework and tuned kernels provided by <a class="reference external" href="https://developer.apple.com/documentation/metalperformanceshaders?language=objc">MPS</a>.</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+What you will learn in this tutorial:</div>
+<ul class="simple">
+<li><p class="sd-card-text">In this tutorial you will learn how to export <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model to the MPS delegate.</p></li>
+<li><p class="sd-card-text">You will also learn how to compile and deploy the ExecuTorch runtime with the MPS delegate on macOS and iOS.</p></li>
 </ul>
-</dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p>EdgeProgramManager</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py class">
-<dt class="sig sig-object py" id="exir.EdgeProgramManager">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">exir.</span></span><span class="sig-name descname"><span class="pre">EdgeProgramManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">edge_programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constant_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager" title="Permalink to this definition">¶</a></dt>
-<dd><p>Package of one or more :class:’ExportedPrograms’ in Edge dialect. Designed to simplify
-lowering to ExecuTorch.</p>
-<p>Allows easy applications of transforms across a collection of exported programs
-including the delegation of subgraphs.</p>
-<p>Manages the second link in the lowering chain of ATen -&gt; Edge -&gt; ExecuTorch.</p>
-<dl class="py property">
-<dt class="sig sig-object py" id="exir.EdgeProgramManager.config_methods">
-<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">config_methods</span></span><a class="headerlink" href="#exir.EdgeProgramManager.config_methods" title="Permalink to this definition">¶</a></dt>
-<dd><p>Returns the set of config methods in this EdgeProgramManager.</p>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="exir.EdgeProgramManager.exported_program">
-<span class="sig-name descname"><span class="pre">exported_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'forward'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager.exported_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager.exported_program" title="Permalink to this definition">¶</a></dt>
-<dd><p>Returns the ExportedProgram specified by ‘method_name’.</p>
-</dd></dl>
-
-<dl class="py property">
-<dt class="sig sig-object py" id="exir.EdgeProgramManager.methods">
-<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">methods</span></span><a class="headerlink" href="#exir.EdgeProgramManager.methods" title="Permalink to this definition">¶</a></dt>
-<dd><p>Returns the set of methods in this EdgeProgramManager.</p>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="exir.EdgeProgramManager.to_backend">
-<span class="sig-name descname"><span class="pre">to_backend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">partitioner</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager.to_backend"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager.to_backend" title="Permalink to this definition">¶</a></dt>
-<dd><p>Returns a semantically-equivalent program to the one given as input,
-but with portions of each program in the EdgeProgramManager targeted
-for delegation as determined by the partitioner.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>partitioner</strong> – <p>The partitioner can either be a Partitioner subclass, or a
-dictionary mapping method names to Partitioner subclass. If it is a
-Partitioner subclass, all programs in the given EdgeProgramManager
-will be lowered using the given partitioner. If it is a
-dictionary, only method names specified in the dictionary will be
-lowered with the given partitioner.</p>
-<p>The Partitioner subclass is in charge with tagging portions of the
-input program for delegation. A valid partitioner must have
-partition_tags: Dict[str, DelegationSpec], where each key is a tag
-name and the nodes with same tag will be fused a one subgraph and
-delegated to backend specififed in delegation spec.</p>
-</p>
-</dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p>A copy of the calling EdgeProgramManager with the
-specified subgraphs lowered.</p>
-</dd>
-<dt class="field-odd">Return type</dt>
-<dd class="field-odd"><p><a class="reference internal" href="#exir.EdgeProgramManager" title="exir.EdgeProgramManager">EdgeProgramManager</a></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="exir.EdgeProgramManager.to_executorch">
-<span class="sig-name descname"><span class="pre">to_executorch</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager.to_executorch"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager.to_executorch" title="Permalink to this definition">¶</a></dt>
-<dd><p>Transforms the program to the ExecuTorch backend.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>config</strong> – An optional argument used to provide greater control over</p></li>
-<li><p><strong>backend.</strong> (<em>the transformation to the ExecuTorch</em>) – </p></li>
+</div>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Tutorials we recommend you complete before this:</div>
+<ul class="simple">
+<li><p class="sd-card-text"><a class="reference internal" href="intro-how-it-works.html"><span class="doc std std-doc">Introduction to ExecuTorch</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="runtime-build-and-cross-compilation.html"><span class="doc std std-doc">Building ExecuTorch with CMake</span></a></p></li>
 </ul>
-</dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p>A manager representing the state of the EdgeProgramManager
-after it has been transformed to the ExecuTorch backend.</p>
-</dd>
-<dt class="field-odd">Return type</dt>
-<dd class="field-odd"><p><a class="reference internal" href="#exir.ExecutorchProgramManager" title="exir.ExecutorchProgramManager">ExecutorchProgramManager</a></p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="exir.EdgeProgramManager.transform">
-<span class="sig-name descname"><span class="pre">transform</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">passes</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager.transform"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager.transform" title="Permalink to this definition">¶</a></dt>
-<dd><p>Transforms the program according to the provided passes.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>passes</strong> (<em>just a list of</em>) – The passes can either be a list of passes, or a</p></li>
-<li><p><strong>is</strong> (<em>dictionary mapping method names to lists of passes. If it</em>) – </p></li>
-<li><p><strong>passes</strong> – </p></li>
-<li><p><strong>EdgeProgramManager</strong> (<em>all methods in the given</em>) – </p></li>
-<li><p><strong>a</strong> (<em>will be transformed with the provided passes. If it is</em>) – </p></li>
-<li><p><strong>dictionary</strong> – </p></li>
-<li><p><strong>be</strong> (<em>only method names specified in the dictionary will</em>) – </p></li>
-<li><p><strong>passes.</strong> (<em>transformed with their corresponding</em>) – </p></li>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="section" id="prerequisites-hardware-and-software">
+<h2>Prerequisites (Hardware and Software)<a class="headerlink" href="#prerequisites-hardware-and-software" title="Permalink to this headline">¶</a></h2>
+<p>In order to be able to successfully build and run a model using the MPS backend for ExecuTorch, you’ll need the following hardware and software components.</p>
+<div class="section" id="hardware">
+<h3>Hardware<a class="headerlink" href="#hardware" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><p><a class="reference external" href="https://support.apple.com/en-us/HT211814">Apple Silicon</a></p></li>
 </ul>
-</dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p>A copy of the calling EdgeProgramManager with the
-transformations applied.</p>
-</dd>
-<dt class="field-odd">Return type</dt>
-<dd class="field-odd"><p><a class="reference internal" href="#exir.EdgeProgramManager" title="exir.EdgeProgramManager">EdgeProgramManager</a></p>
-</dd>
-</dl>
-</dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
-<dt class="sig sig-object py" id="exir.ExecutorchProgramManager">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">exir.</span></span><span class="sig-name descname"><span class="pre">ExecutorchProgramManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">execution_programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">backend_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#ExecutorchProgramManager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.ExecutorchProgramManager" title="Permalink to this definition">¶</a></dt>
-<dd><p>Package of one or more :class:’ExportedPrograms’ in Execution dialect. Designed to simplify
-lowering to ExecuTorch.</p>
-<p>When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect
-are used to form the executorch binary (in a process called emission) and then serialized
-to a buffer.</p>
-<p>Manages the final link in the lowering chain of ATen -&gt; Edge -&gt; ExecuTorch.</p>
-<dl class="py property">
-<dt class="sig sig-object py" id="exir.ExecutorchProgramManager.buffer">
-<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">buffer</span></span><a class="headerlink" href="#exir.ExecutorchProgramManager.buffer" title="Permalink to this definition">¶</a></dt>
-<dd><p>Returns a buffer containing the serialized ExecuTorch binary.</p>
-</dd></dl>
-
-<dl class="py property">
-<dt class="sig sig-object py" id="exir.ExecutorchProgramManager.config_methods">
-<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">config_methods</span></span><a class="headerlink" href="#exir.ExecutorchProgramManager.config_methods" title="Permalink to this definition">¶</a></dt>
-<dd><p>Returns the set of config methods in this ExecutorchProgramManager.</p>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="exir.ExecutorchProgramManager.dump_executorch_program">
-<span class="sig-name descname"><span class="pre">dump_executorch_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">verbose</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#ExecutorchProgramManager.dump_executorch_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.ExecutorchProgramManager.dump_executorch_program" title="Permalink to this definition">¶</a></dt>
-<dd><p>Prints the ExecuTorch binary in a human readable format.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>verbose</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.12)"><em>bool</em></a>) – If False prints the binary in a condensed format.
-If True prints the binary 1-1 with the specification in the schema.</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py method">
-<dt class="sig sig-object py" id="exir.ExecutorchProgramManager.exported_program">
-<span class="sig-name descname"><span class="pre">exported_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'forward'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#ExecutorchProgramManager.exported_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.ExecutorchProgramManager.exported_program" title="Permalink to this definition">¶</a></dt>
-<dd><p>Returns the ExportedProgram specified by ‘method_name’.</p>
-</dd></dl>
-
-<dl class="py property">
-<dt class="sig sig-object py" id="exir.ExecutorchProgramManager.methods">
-<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">methods</span></span><a class="headerlink" href="#exir.ExecutorchProgramManager.methods" title="Permalink to this definition">¶</a></dt>
-<dd><p>Returns the set of methods in this ExecutorchProgramManager.</p>
-</dd></dl>
-
-</dd></dl>
-
-<span class="target" id="module-exir.backend.backend_api"></span><dl class="py function">
-<dt class="sig sig-object py" id="exir.backend.backend_api.to_backend">
-<span class="sig-prename descclassname"><span class="pre">exir.backend.backend_api.</span></span><span class="sig-name descname"><span class="pre">to_backend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">args</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/exir/backend/backend_api.html#to_backend"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.backend.backend_api.to_backend" title="Permalink to this definition">¶</a></dt>
-<dd><p>A generic function the dispatch happens on the type of the first argument. There are currently to overloaded to_backend function:</p>
-<p>Note: Python is dynamically-typed language and therefore cannot have proper method overloading as that requires the language to
-be able to discriminate between types at compile-time. &#64;to_backend.register will attach the function to to_backend() base on the type of the first
-argument (type annotation is required). However, it can’t take multiple types as arguments.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
-    <span class="n">backend_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="n">edge_graph_module</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
-    <span class="n">compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LoweredBackendModule</span><span class="p">:</span>
-
-<span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
-    <span class="n">graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
-    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">TPartitioner</span><span class="p">],</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span>
+</div>
+<div class="section" id="software">
+<h3>Software<a class="headerlink" href="#software" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><p><a class="reference external" href="https://www.apple.com/macos/sonoma/">macOS Sonoma</a> (for lowering to MPS delegate)</p></li>
+<li><p><a class="reference external" href="https://www.apple.com/ios/ios-17/">iOS 17</a> / <a class="reference external" href="https://www.apple.com/ipados/ipados-17/">iPadOS 17</a> (for running on device)</p></li>
+</ul>
+</div>
+</div>
+<div class="section" id="setting-up-developer-environment">
+<h2>Setting up Developer Environment<a class="headerlink" href="#setting-up-developer-environment" title="Permalink to this headline">¶</a></h2>
+<p><em><strong>Step 1.</strong></em> Please finish tutorial <span class="xref myst">Setting up executorch</span>.</p>
+<p><em><strong>Step 2.</strong></em> Install dependencies needed to lower MPS delegate:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>bash<span class="w"> </span>./backends/apple/mps/install_requirements.sh
 </pre></div>
 </div>
-</dd></dl>
-
-<dl class="py class">
-<dt class="sig sig-object py" id="exir.backend.backend_api.LoweredBackendModule">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">exir.backend.backend_api.</span></span><span class="sig-name descname"><span class="pre">LoweredBackendModule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">edge_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">backend_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">processed_bytes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_specs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/lowered_backend_module.html#LoweredBackendModule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.backend.backend_api.LoweredBackendModule" title="Permalink to this definition">¶</a></dt>
-<dd><p>A subclass of nn.Module that is generated for modules containing
-delegated functions. This is can be created by calling <cite>to_backend</cite>.</p>
-<dl class="simple">
-<dt>Private Attributes:</dt><dd><ul class="simple">
-<li><p><strong>backend_id</strong>: The backend’s name</p></li>
-<li><p><strong>processed_bytes</strong>: The delegate blobs created from backend.preprocess</p></li>
-<li><dl class="simple">
-<dt><strong>compile_specs</strong>: A list of backend-specific objects with static</dt><dd><p>metadata to configure the “compilation” process.</p>
-</dd>
-</dl>
-</li>
-<li><p><strong>original_module</strong>: The original EXIR module</p></li>
+</div>
+<div class="section" id="build">
+<h2>Build<a class="headerlink" href="#build" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="aot-ahead-of-time-components">
+<h3>AOT (Ahead-of-time) Components<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this headline">¶</a></h3>
+<p><strong>Compiling model for MPS delegate</strong>:</p>
+<ul class="simple">
+<li><p>In this step, you will generate a simple ExecuTorch program that lowers MobileNetV3 model to the MPS delegate. You’ll then pass this Program(the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file) during the runtime to run it using the MPS backend.</p></li>
 </ul>
-</dd>
-</dl>
-<dl class="py method">
-<dt class="sig sig-object py" id="exir.backend.backend_api.LoweredBackendModule.program">
-<span class="sig-name descname"><span class="pre">program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">emit_stacktrace</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/lowered_backend_module.html#LoweredBackendModule.program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.backend.backend_api.LoweredBackendModule.program" title="Permalink to this definition">¶</a></dt>
-<dd><p>The idea in this function is to create a module based on the original module. The original module will
-look something like following:</p>
-<p>opcode         name                 target            args                                        kwargs
-————-  ——————-  —————-  ——————————————  ——–
-placeholder    arg0_1               arg0_1            ()                                          {}
-placeholder    arg1_1               arg1_1            ()                                          {}
-call_function  aten_repeat_default  *                 (arg1_1, [4, 1])                            {}
-call_function  aten_mul_tensor      *                 (aten_repeat_default, aten_repeat_default)  {}
-call_function  aten_add_tensor      *                 (arg1_1, arg1_1)                            {}
-output         output               output            ([aten_mul_tensor, aten_add_tensor],)       {}</p>
-<p>if the whole module is lowered, the resulting lowered module look like</p>
-<p>opcode         name                      target                       args                                kwargs
-————-  ————————  —————————  ———————————-  ——–
-placeholder    arg0_1                    arg0_1                       ()                                  {}
-placeholder    arg1_1                    arg1_1                       ()                                  {}
-get_attr       lowered_module_0          lowered_module_0             ()                                  {}
-call_function  executorch_call_delegate  executorch_call_delegate     (lowered_module_0, arg0_1, arg1_1)  {}
-call_function  getitem                   &lt;built-in function getitem&gt;  (executorch_call_delegate, 0)       {}
-call_function  getitem_1                 &lt;built-in function getitem&gt;  (executorch_call_delegate, 1)       {}
-output         output_1                  output                       ([getitem, getitem_1],)             {}</p>
-<p>We’ll remove all call_function nodes, insert an call_delegate node, inserting getitems nodes to get the result for call_delegate node
-and return the list of getitems as the output</p>
-</dd></dl>
-
-</dd></dl>
-
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+python3<span class="w"> </span>-m<span class="w"> </span>unittest<span class="w"> </span>backends.apple.mps.test.test_mps<span class="w"> </span>--verbose<span class="w"> </span>-k<span class="w"> </span>mv3
+</pre></div>
+</div>
+</div>
+<div class="section" id="runtime">
+<h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h3>
+<p><strong>Building the MPS executor runner</strong></p>
+<ul class="simple">
+<li><p>In this step, you’ll be building the <code class="docutils literal notranslate"><span class="pre">mps_executor_runner</span></code> that is able to run MPS lowered modules.</p></li>
+</ul>
+<p><em><strong>Step 1</strong></em>. Run the CMake build.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Build the mps_executor_runner</span>
+rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>-DEXECUTORCH_BUILD_MPS<span class="o">=</span><span class="m">1</span><span class="w"> </span>-DBUCK2<span class="o">=</span>/tmp/buck2<span class="w"> </span>—trace<span class="w"> </span>..<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>..
+</pre></div>
+</div>
+<p><em><strong>Step 2</strong></em>. Run the model using the <code class="docutils literal notranslate"><span class="pre">mps_executor_runner</span></code>.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/examples/apple/mps/mps_executor_runner<span class="w"> </span>--model_path<span class="w"> </span>mv3.pte<span class="w"> </span>--bundled_program
+</pre></div>
+</div>
+<p>You should see the following results. Note that no output file will be generated in this example:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">./</span><span class="n">cmake</span><span class="o">-</span><span class="n">out</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">apple</span><span class="o">/</span><span class="n">mps</span><span class="o">/</span><span class="n">mps_executor_runner</span> <span class="o">--</span><span class="n">model_path</span> <span class="n">mv3</span><span class="o">.</span><span class="n">pte</span> <span class="o">--</span><span class="n">bundled_program</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003290</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">286</span><span class="p">]</span> <span class="n">Model</span> <span class="n">file</span> <span class="n">mv3</span><span class="o">.</span><span class="n">pte</span> <span class="ow">is</span> <span class="n">loaded</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003306</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">292</span><span class="p">]</span> <span class="n">Program</span> <span class="n">methods</span><span class="p">:</span> <span class="mi">1</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003308</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">294</span><span class="p">]</span> <span class="n">Running</span> <span class="n">method</span> <span class="n">forward</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003311</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">349</span><span class="p">]</span> <span class="n">Setting</span> <span class="n">up</span> <span class="n">non</span><span class="o">-</span><span class="n">const</span> <span class="n">buffer</span> <span class="mi">1</span><span class="p">,</span> <span class="n">size</span> <span class="mf">606112.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003374</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">376</span><span class="p">]</span> <span class="n">Setting</span> <span class="n">up</span> <span class="n">memory</span> <span class="n">manager</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.003376</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">392</span><span class="p">]</span> <span class="n">Loading</span> <span class="n">method</span> <span class="n">name</span> <span class="kn">from</span> <span class="nn">plan</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.018942</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">399</span><span class="p">]</span> <span class="n">Method</span> <span class="n">loaded</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.018944</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">404</span><span class="p">]</span> <span class="n">Loading</span> <span class="n">bundled</span> <span class="n">program</span><span class="o">...</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.018980</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">421</span><span class="p">]</span> <span class="n">Inputs</span> <span class="n">prepared</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.118731</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">438</span><span class="p">]</span> <span class="n">Model</span> <span class="n">executed</span> <span class="n">successfully</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.122615</span> <span class="n">executorch</span><span class="p">:</span><span class="n">mps_executor_runner</span><span class="o">.</span><span class="n">mm</span><span class="p">:</span><span class="mi">501</span><span class="p">]</span> <span class="n">Model</span> <span class="n">verified</span> <span class="n">successfully</span><span class="o">.</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="deploying-and-running-on-device">
+<h2>Deploying and Running on Device<a class="headerlink" href="#deploying-and-running-on-device" title="Permalink to this headline">¶</a></h2>
+<p><em><strong>Step 1</strong></em>. Create the ExecuTorch core and MPS delegate frameworks to link on iOS</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+./build/build_apple_frameworks.sh<span class="w"> </span>--Release<span class="w"> </span>--mps
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">mps_delegate.xcframework</span></code> will be in <code class="docutils literal notranslate"><span class="pre">cmake-out</span></code> folder, along with <code class="docutils literal notranslate"><span class="pre">executorch.xcframework</span></code> and <code class="docutils literal notranslate"><span class="pre">portable_delegate.xcframework</span></code>:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ls
+</pre></div>
+</div>
+<p><em><strong>Step 2</strong></em>. Link the frameworks into your XCode project:
+Go to project Target’s  <code class="docutils literal notranslate"><span class="pre">Build</span> <span class="pre">Phases</span></code>  -  <code class="docutils literal notranslate"><span class="pre">Link</span> <span class="pre">Binaries</span> <span class="pre">With</span> <span class="pre">Libraries</span></code>, click the <strong>+</strong> sign and add the frameworks: files located in  <code class="docutils literal notranslate"><span class="pre">Release</span></code> folder.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch.xcframework</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">portable_delegate.xcframework</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mps_delegate.xcframework</span></code></p></li>
+</ul>
+<p>From the same page, include the needed libraries for the MPS delegate:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">MetalPerformanceShaders.framework</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MetalPerformanceShadersGraph.framework</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Metal.framework</span></code></p></li>
+</ul>
+<p>In this tutorial, you have learned how to lower a model to the MPS delegate, build the mps_executor_runner and run a lowered model through the MPS delegate, or directly on device using the MPS delegate static library.</p>
+</div>
+<div class="section" id="frequently-encountered-errors-and-resolution">
+<h2>Frequently encountered errors and resolution.<a class="headerlink" href="#frequently-encountered-errors-and-resolution" title="Permalink to this headline">¶</a></h2>
+<p>If you encountered any bugs or issues following this tutorial please file a bug/issue on the ExecuTorch repository, with hashtag <strong>#mps</strong>.</p>
+</div>
 </div>
 
 
@@ -654,10 +571,10 @@ and return the list of getitems as the output</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="executorch-runtime-api-reference.html" class="btn btn-neutral float-right" title="ExecuTorch Runtime API Reference" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="tutorials/sdk-integration-tutorial.html" class="btn btn-neutral float-right" title="SDK Integration Tutorial" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="export-overview.html" class="btn btn-neutral" title="Exporting to ExecuTorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="build-run-qualcomm-ai-engine-direct-backend.html" class="btn btn-neutral" title="Building and Running ExecuTorch on Qualcomm AI Engine Direct" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -691,7 +608,22 @@ and return the list of getitems as the output</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Export to ExecuTorch API Reference</a></li>
+<li><a class="reference internal" href="#">Building and Running ExecuTorch on MPS Backend</a><ul>
+<li><a class="reference internal" href="#prerequisites-hardware-and-software">Prerequisites (Hardware and Software)</a><ul>
+<li><a class="reference internal" href="#hardware">Hardware</a></li>
+<li><a class="reference internal" href="#software">Software</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#setting-up-developer-environment">Setting up Developer Environment</a></li>
+<li><a class="reference internal" href="#build">Build</a><ul>
+<li><a class="reference internal" href="#aot-ahead-of-time-components">AOT (Ahead-of-time) Components</a></li>
+<li><a class="reference internal" href="#runtime">Runtime</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#deploying-and-running-on-device">Deploying and Running on Device</a></li>
+<li><a class="reference internal" href="#frequently-encountered-errors-and-resolution">Frequently encountered errors and resolution.</a></li>
+</ul>
+</li>
 </ul>
 
             </div>
