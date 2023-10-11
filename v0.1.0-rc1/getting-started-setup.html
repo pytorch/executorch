@@ -1,0 +1,1114 @@
+
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Setting Up ExecuTorch &mdash; ExecuTorch  documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="_static/copybutton.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-binder.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-dataframe.css" type="text/css" />
+  <link rel="stylesheet" href="_static/sg_gallery-rendered-html.css" type="text/css" />
+  <link rel="stylesheet" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
+  <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Exporting to ExecuTorch" href="export-overview.html" />
+    <link rel="prev" title="High-level Architecture and Components of ExecuTorch" href="getting-started-architecture.html" />
+
+<link rel="stylesheet" href="_static/css/progress-bar.css">
+<script src="_static/js/progress-bar.js" defer></script>
+
+
+  <!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-T8XT4PS');</script>
+    <!-- End Google Tag Manager -->
+  
+
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+  <!-- Preload the theme fonts -->
+
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+
+<!-- Preload the katex fonts -->
+
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Math-Italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Main-Bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size1-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size4-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size2-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Size3-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/katex@0.10.0/dist/fonts/KaTeX_Caligraphic-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.2/css/all.css" integrity="sha384-vSIIfh2YWi9wW0r9iZe7RJPrKwp6bG+s9QZMoITbCckVJqGCCRhc+ccxNcdpHuYu" crossorigin="anonymous">
+</head>
+
+<div class="container-fluid header-holder tutorials-header" id="header-holder">
+  <div class="container">
+    <div class="header-container">
+      <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://pytorch.org/get-started">Get Started</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/ecosystem">Ecosystem</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/mobile">Mobile</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/blog/">Blog</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/tutorials">Tutorials</a>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="resource-option with-down-orange-arrow">
+                Docs
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/docs/stable/index.html">
+                  <span class="dropdown-title">PyTorch</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/audio/stable/index.html">
+                  <span class="dropdown-title">torchaudio</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/text/stable/index.html">
+                  <span class="dropdown-title">torchtext</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/vision/stable/index.html">
+                  <span class="dropdown-title">torchvision</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/torcharrow">
+                  <span class="dropdown-title">torcharrow</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/data">
+                  <span class="dropdown-title">TorchData</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/torchrec">
+                  <span class="dropdown-title">TorchRec</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/serve/">
+                  <span class="dropdown-title">TorchServe</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/torchx/">
+                  <span class="dropdown-title">TorchX</span>
+                  <p></p>
+                </a>
+                <a class="doc-dropdown-option nav-dropdown-item" href="https://pytorch.org/xla">
+                  <span class="dropdown-title">PyTorch on XLA Devices</span>
+                  <p></p>
+                </a>
+            </div>
+          </li>
+
+          <li>
+            <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="resource-option with-down-arrow">
+                Resources
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/features">
+                  <span class="dropdown-title">About</span>
+                  <p>Learn about PyTorch’s features and capabilities</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/foundation">
+                  <span class="dropdown-title">PyTorch Foundation</span>
+                  <p>Learn about the PyTorch foundation</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/#community-module">
+                  <span class="dropdown-title">Community</span>
+                  <p>Join the PyTorch developer community to contribute, learn, and get your questions answered.</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/community-stories">
+                  <span class="dropdown-title">Community Stories</span>
+                  <p>Learn how our community solves real, everyday machine learning problems with PyTorch.</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/resources">
+                  <span class="dropdown-title">Developer Resources</span>
+                  <p>Find resources and get questions answered</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/events">
+                  <span class="dropdown-title">Events</span>
+                  <p>Find events, webinars, and podcasts</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://discuss.pytorch.org/" target="_blank">
+                  <span class="dropdown-title">Forums</span>
+                  <p>A place to discuss PyTorch code, issues, install, research</p>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/hub">
+                  <span class="dropdown-title">Models (Beta)</span>
+                  <p>Discover, publish, and reuse pre-trained models</p>
+                </a>
+              </div>
+            </div>
+          </li>
+
+          <li>
+            <a href="https://github.com/pytorch/pytorch">GitHub</a>
+          </li>
+        </ul>
+      </div>
+
+      <a class="main-menu-open-button" href="#" data-behavior="open-mobile-menu"></a>
+    </div>
+  </div>
+</div>
+
+<body class="pytorch-body">
+
+   
+
+    
+
+    <div class="table-of-contents-link-wrapper">
+      <span>Table of Contents</span>
+      <a href="#" class="toggle-table-of-contents" data-behavior="toggle-table-of-contents"></a>
+    </div>
+
+    <nav data-toggle="wy-nav-shift" class="pytorch-left-menu" id="pytorch-left-menu">
+      <div class="pytorch-side-scroll">
+        <div class="pytorch-menu pytorch-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          <div class="pytorch-left-menu-search">
+            
+
+
+
+  
+
+
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search Docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          </div>
+
+          
+            
+            
+              
+            
+            
+              <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="intro-overview.html">ExecuTorch Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="concepts.html">ExecuTorch Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="intro-how-it-works.html">How ExecuTorch Works</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Setting Up ExecuTorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Exporting to ExecuTorch</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-overview.html">Exporting to ExecuTorch</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-custom-memory-allocator.html">Custom Memory Allocator</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-error-handling.html">Runtime Error Handling</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="quantization-custom-quantization.html">Custom Quantization</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Native Delegates</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK Delegate</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">SDK</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">SDK Delegate Integration</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">An end-to-end example to lower a model as a delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-ios-demo.html">ExecuTorch iOS Demo App Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch on Qualcomm AI Engine Direct</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">SDK Integration Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">ExecuTorch Arm Ethos-U Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">XNNPACK Backend Delegate Lowering Tutorial</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <div class="pytorch-container">
+      <div class="pytorch-page-level-bar" id="pytorch-page-level-bar">
+        <div class="pytorch-breadcrumbs-wrapper">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="pytorch-breadcrumbs">
+    
+      <li>
+        <a href="index.html">
+          
+            Docs
+          
+        </a> &gt;
+      </li>
+
+        
+      <li>Setting Up ExecuTorch</li>
+    
+    
+      <li class="pytorch-breadcrumbs-aside">
+        
+            
+            <a href="_sources/getting-started-setup.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+</div>
+        </div>
+
+        <div class="pytorch-shortcuts-wrapper" id="pytorch-shortcuts-wrapper">
+          Shortcuts
+        </div>
+      </div>
+
+      <section data-toggle="wy-nav-shift" id="pytorch-content-wrap" class="pytorch-content-wrap">
+        <div class="pytorch-content-left">
+
+        
+
+
+          <!-- Google Tag Manager (noscript) -->
+          <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
+          height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+          <!-- End Google Tag Manager (noscript) -->
+          
+          <div class="rst-content">
+          
+            <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
+             <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
+              
+  <!---- DO NOT MODIFY Progress Bar Start --->
+<div class="progress-bar-wrapper">
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-1">1</div>
+     <span class="step-caption" id="caption-1"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-2">2</div>
+     <span class="step-caption" id="caption-2"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-3">3</div>
+     <span class="step-caption" id="caption-3"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-4">4</div>
+     <span class="step-caption" id="caption-4"></span>
+   </div>
+</div>
+<!---- DO NOT MODIFY Progress Bar End--->
+<div class="section" id="setting-up-executorch">
+<h1>Setting Up ExecuTorch<a class="headerlink" href="#setting-up-executorch" title="Permalink to this headline">¶</a></h1>
+<p>This tutorial walks you through an end-to-end example of configuring your
+environment for ExecuTorch, installing ExecuTorch,
+exporting your model, and finally building and running a runtime.</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+What you will learn</div>
+<ul class="simple">
+<li><p class="sd-card-text">How to set up your environment to work on ExecuTorch</p></li>
+<li><p class="sd-card-text">How to generate a sample ExecuTorch program</p></li>
+<li><p class="sd-card-text">How to build and run an ExecuTorch runtime</p></li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Prerequisites</div>
+<ul class="simple">
+<li><p class="sd-card-text">Understand the concepts defined in <a class="reference internal" href="intro-overview.html"><span class="doc std std-doc">ExecuTorch Overview</span></a></p></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="section" id="supported-host-environments">
+<h2>Supported Host Environments<a class="headerlink" href="#supported-host-environments" title="Permalink to this headline">¶</a></h2>
+<p>We have tested these instructions on the following systems, although they should
+also work on other systems with similar environments.</p>
+<p><strong>Linux (x86_64)</strong></p>
+<ul class="simple">
+<li><p>CentOS 8 or later</p></li>
+<li><p>Ubuntu 20.04.6 LTS or later</p></li>
+<li><p>RHEL 8 or later</p></li>
+<li><p>Windows Subsystem for Linux running any of the above</p></li>
+</ul>
+<p><strong>macOS (x86_64/M1/M2)</strong></p>
+<ul class="simple">
+<li><p>Big Sur or later</p></li>
+</ul>
+<p>The most critical requirements are:</p>
+<ul class="simple">
+<li><p>The ability to install a recent version of <code class="docutils literal notranslate"><span class="pre">conda</span></code>, described below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">g++</span></code> version 8 or higher, <code class="docutils literal notranslate"><span class="pre">clang++</span></code> version 8 or higher, or another
+C++17-compatible toolchain that supports GNU C-style <a class="reference external" href="https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html">statement
+expressions</a> (<code class="docutils literal notranslate"><span class="pre">({</span> <span class="pre">...</span> <span class="pre">})</span></code> syntax).</p></li>
+</ul>
+<p>Note that the cross-compilable core runtime code supports a wider range of
+toolchains, down to C++11. See the <a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Runtime Overview</span></a> for
+portability details.</p>
+</div>
+<div class="section" id="set-up-your-environment">
+<h2>Set up Your Environment<a class="headerlink" href="#set-up-your-environment" title="Permalink to this headline">¶</a></h2>
+<p>Before you can start working with ExecuTorch, you’ll need to set up your
+environment. This is an important step to ensure that everything runs
+smoothly and efficiently. We recommend using <code class="docutils literal notranslate"><span class="pre">conda</span></code> to create and
+manage your virtual environment. Conda is a package management system
+and environment manager for Python and other programming languages,
+which is built on top of the Python package manager pip, and provides
+a more convenient and flexible way to manage packages and environments.
+In this section, you will set up your <code class="docutils literal notranslate"><span class="pre">conda</span></code> environment and install
+the required dependencies.</p>
+<p>Follow these steps:</p>
+<ol class="arabic">
+<li><p>If you do not have it already, install conda on your machine by following the
+steps in the
+<a class="reference external" href="https://conda.io/projects/conda/en/latest/user-guide/install/index.html">conda installation guide</a>.</p></li>
+<li><p>Clone the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> repository:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>git@github.com:pytorch/executorch.git
+</pre></div>
+</div>
+</li>
+<li><p>Update the submodules:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+git<span class="w"> </span>submodule<span class="w"> </span>sync
+git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
+</pre></div>
+</div>
+</li>
+<li><p>Create and activate your conda environment:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>conda<span class="w"> </span>create<span class="w"> </span>-yn<span class="w"> </span>executorch<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.10.0
+conda<span class="w"> </span>activate<span class="w"> </span>executorch
+</pre></div>
+</div>
+<p>Or alternatively use a Python virtual environment:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.executorch
+<span class="nb">source</span><span class="w"> </span>.executorch/bin/activate
+</pre></div>
+</div>
+</li>
+<li><p>Install <a class="reference external" href="https://cmake.org/download">Cmake</a></p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>conda<span class="w"> </span>install<span class="w"> </span>cmake
+</pre></div>
+</div>
+<p>Alternatively:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>cmake
+</pre></div>
+</div>
+</li>
+<li><p>Install ExecuTorch and dependencies:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh
+</pre></div>
+</div>
+</li>
+<li><p>Expose FlatBuffers compiler:</p>
+<p>ExecuTorch uses <code class="docutils literal notranslate"><span class="pre">flatc</span></code> to export models and builds it from sources at
+<code class="docutils literal notranslate"><span class="pre">third-party/flatbuffers</span></code>. Make it available by adding it to the <code class="docutils literal notranslate"><span class="pre">$PATH</span></code> environment variable,
+as prompted by the previous step, or exporting as <code class="docutils literal notranslate"><span class="pre">$FLATC_EXECUTABLE</span></code>
+enironment variable.
+Run <code class="docutils literal notranslate"><span class="pre">./build/install_flatc.sh</span></code> to make sure <code class="docutils literal notranslate"><span class="pre">flatc</span></code> is installed correctly.</p>
+</li>
+</ol>
+<p>You have successfully set up your environment to work with ExecuTorch. The next
+step is to generate a sample ExecuTorch program.</p>
+</div>
+<div class="section" id="generate-a-sample-executorch-program">
+<h2>Generate a Sample ExecuTorch program<a class="headerlink" href="#generate-a-sample-executorch-program" title="Permalink to this headline">¶</a></h2>
+<p>After you set up your environment, you are ready to convert your programs
+into ExecuTorch programs. You will need to use <code class="docutils literal notranslate"><span class="pre">torch.export</span></code> and the
+<code class="docutils literal notranslate"><span class="pre">executorch.exir</span></code> to export your program. Then, you can save your program as
+a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, which is the file extension ExecuTorch expects. To demonstrate
+how to do it, we will generate an ExecuTorch program file from an <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>.</p>
+<p>You can generate an ExecuTorch program by using a sample script or by using
+the Python interpreter.</p>
+<p>We have created the <code class="docutils literal notranslate"><span class="pre">export.py</span></code> script that demonstrates a simple model
+export to flatbuffer. This script is available
+in the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/portable">pytorch/executorch</a>
+repository.</p>
+<p>To generate a sample program, complete the following steps:</p>
+<ol class="arabic simple">
+<li><p>Run the <code class="docutils literal notranslate"><span class="pre">export.py</span></code> script:</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.portable.scripts.export<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;add&quot;</span>
+</pre></div>
+</div>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+Output<div class="sd-summary-down docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
+<div class="sd-summary-up docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
+</summary><div class="sd-summary-content sd-card-body docutils">
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Exported</span> <span class="n">graph</span><span class="p">:</span>
+ <span class="n">graph</span><span class="p">():</span>
+   <span class="o">%</span><span class="n">arg0_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">arg0_1</span><span class="p">]</span>
+    <span class="o">%</span><span class="n">arg1_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">arg1_1</span><span class="p">]</span>
+    <span class="o">%</span><span class="n">aten_add_tensor</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">arg0_1</span><span class="p">,</span> <span class="o">%</span><span class="n">arg1_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+    <span class="o">%</span><span class="n">aten_add_tensor_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_add_tensor</span><span class="p">,</span> <span class="o">%</span><span class="n">arg0_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+    <span class="o">%</span><span class="n">aten_add_tensor_2</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_add_tensor_1</span><span class="p">,</span> <span class="o">%</span><span class="n">arg0_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+    <span class="o">%</span><span class="n">aten_add_tensor_3</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_add_tensor_2</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_add_tensor_2</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">aten_add_tensor_3</span><span class="p">,)</span>
+<span class="n">Saving</span> <span class="n">exported</span> <span class="n">program</span> <span class="n">to</span> <span class="n">add</span><span class="o">.</span><span class="n">pte</span>
+</pre></div>
+</div>
+</div>
+</details><p>This command has created a <code class="docutils literal notranslate"><span class="pre">add.pte</span></code> file that contains your sample program.</p>
+<p>Alternatively, you can use a Python Interpreter to perform the same action:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span>$ python3
+&gt;&gt;&gt; import executorch.exir as exir
+&gt;&gt;&gt; from executorch.exir.tests.models import Mul
+&gt;&gt;&gt; m = Mul()
+&gt;&gt;&gt; print(exir.capture(m, m.get_random_inputs()).to_edge())
+&gt;&gt;&gt; open(&quot;mul.pte&quot;, &quot;wb&quot;).write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
+</pre></div>
+</div>
+<p>In this step, you learned how you can export your PyTorch program to an ExecuTorch
+program. You can apply the same principle to your own PyTorch programs.</p>
+<p>The next step is to run your program by setting up Buck2 and building an
+<code class="docutils literal notranslate"><span class="pre">executor_runner</span></code>.</p>
+</div>
+<div class="section" id="building-a-runtime">
+<h2>Building a Runtime<a class="headerlink" href="#building-a-runtime" title="Permalink to this headline">¶</a></h2>
+<p>After you have exported your program, you are almost ready to run it.
+The next step involves using Buck2 to build a runtime.</p>
+<p><strong>Buck2</strong> is an open-source build system that enables developers to manage
+project dependencies easily and efficiently. We will use Buck2 to build the
+<code class="docutils literal notranslate"><span class="pre">executor_runner</span></code>, a sample wrapper for the ExecuTorch runtime which includes
+all the operators and backends.</p>
+<p>You will need the following prerequisits for this section:</p>
+<ul class="simple">
+<li><p>The <code class="docutils literal notranslate"><span class="pre">zstd</span></code> command line tool — install by running <code class="docutils literal notranslate"><span class="pre">pip3</span> <span class="pre">install</span> <span class="pre">zstd</span></code>.</p></li>
+<li><p>Version <code class="docutils literal notranslate"><span class="pre">2023-07-18</span></code> of the <code class="docutils literal notranslate"><span class="pre">buck2</span></code> commandline tool — you can download a
+prebuilt archive for your system from <a class="reference external" href="https://github.com/facebook/buck2/releases/tag/2023-07-18">the Buck2
+repo</a>. Note that
+the version is important, and newer or older versions may not work with the
+version of the buck2 prelude used by the ExecuTorch repo.</p></li>
+</ul>
+<p>Complete the following steps:</p>
+<ol class="arabic">
+<li><p>Ensure that Git has fetched and updated the submodules. This is necessary
+whenever the commit hash of a submodule changes. Therefore, you need
+to periodically sync your submodules with upstream:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+git<span class="w"> </span>submodule<span class="w"> </span>sync
+git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
+</pre></div>
+</div>
+</li>
+<li><p>Install ExecuTorch and dependencies:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh
+</pre></div>
+</div>
+</li>
+<li><p>Configure Buck2 by decompressing with the following command (filename depends
+on your system):</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># For example, buck2-x86_64-unknown-linux-musl.zst or buck2-aarch64-apple-darwin.zst</span>
+zstd<span class="w"> </span>-cdq<span class="w"> </span>buck2-DOWNLOADED_FILENAME.zst<span class="w"> </span>&gt;<span class="w"> </span>/tmp/buck2<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>/tmp/buck2
+</pre></div>
+</div>
+<p>You may want to copy the <code class="docutils literal notranslate"><span class="pre">buck2</span></code> binary into your <code class="docutils literal notranslate"><span class="pre">$PATH</span></code> so you can run it
+as <code class="docutils literal notranslate"><span class="pre">buck2</span></code>.</p>
+</li>
+<li><p>Build a binary:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>/tmp/buck2<span class="w"> </span>build<span class="w"> </span>//examples/portable/executor_runner:executor_runner<span class="w"> </span>--show-output
+</pre></div>
+</div>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+Output<div class="sd-summary-down docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
+<div class="sd-summary-up docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
+</summary><div class="sd-summary-content sd-card-body docutils">
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>File changed: root//.git/config.lock
+File changed: root//.git/config
+File changed: root//.git/modules
+27036 additional file change events
+Build ID: e725eb0d-f4a1-484e-b0d3-8133d67b6fdd
+Network: Up:   0 B              Down: 670 KiB
+Command: build.                 Remaining: 340/954. Cache hits: 0%. Time elapsed: 13.2s
+…
+Cache hits: 0%. Commands: 376 (cached: 0, remote: 0, local: 376)
+BUILD SUCCEEDED
+</pre></div>
+</div>
+</div>
+</details><p>The <code class="docutils literal notranslate"><span class="pre">--show-output</span></code> flag prints the path to the executable if you want to run it directly.</p>
+</li>
+</ol>
+<p>Now that you have built our sample programs, you can proceed to
+run them.</p>
+</div>
+<div class="section" id="run-your-program">
+<h2>Run Your Program<a class="headerlink" href="#run-your-program" title="Permalink to this headline">¶</a></h2>
+<p>After you build your program, you are ready to run it. We will use
+the <code class="docutils literal notranslate"><span class="pre">buck</span> <span class="pre">run</span></code> command to run our program.</p>
+<ol class="arabic">
+<li><p>Run the binary:</p>
+<ul>
+<li><p>To run the <code class="docutils literal notranslate"><span class="pre">add.pte</span></code> program:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>/tmp/buck2<span class="w"> </span>run<span class="w"> </span>//examples/portable/executor_runner:executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>add.pte
+</pre></div>
+</div>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+Sample Output<div class="sd-summary-down docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
+<div class="sd-summary-up docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
+</summary><div class="sd-summary-content sd-card-body docutils">
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Build</span> <span class="n">ID</span><span class="p">:</span> <span class="mi">4</span><span class="n">a23602b</span><span class="o">-</span><span class="mi">25</span><span class="n">ba</span><span class="o">-</span><span class="mi">4</span><span class="n">b95</span><span class="o">-</span><span class="n">a212</span><span class="o">-</span><span class="mi">3</span><span class="n">cd077136062</span>
+<span class="n">Network</span><span class="p">:</span> <span class="n">Up</span><span class="p">:</span> <span class="mi">0</span> <span class="n">B</span>  <span class="n">Down</span><span class="p">:</span> <span class="mi">0</span> <span class="n">B</span>
+<span class="n">Jobs</span> <span class="n">completed</span><span class="p">:</span> <span class="mf">3.</span> <span class="n">Time</span> <span class="n">elapsed</span><span class="p">:</span> <span class="mf">0.0</span><span class="n">s</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005837</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">75</span><span class="p">]</span> <span class="n">Model</span> <span class="n">file</span> <span class="n">add</span><span class="o">.</span><span class="n">pte</span> <span class="ow">is</span> <span class="n">loaded</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005852</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">85</span><span class="p">]</span> <span class="n">Running</span> <span class="n">method</span> <span class="n">forward</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005860</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">140</span><span class="p">]</span> <span class="n">Setting</span> <span class="n">up</span> <span class="n">non</span><span class="o">-</span><span class="n">const</span> <span class="n">buffer</span> <span class="mi">1</span><span class="p">,</span> <span class="n">size</span> <span class="mf">48.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005909</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">181</span><span class="p">]</span> <span class="n">Method</span> <span class="n">loaded</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005913</span> <span class="n">executorch</span><span class="p">:</span><span class="n">util</span><span class="o">.</span><span class="n">h</span><span class="p">:</span><span class="mi">104</span><span class="p">]</span> <span class="nb">input</span> <span class="n">already</span> <span class="n">initialized</span><span class="p">,</span> <span class="n">refilling</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005915</span> <span class="n">executorch</span><span class="p">:</span><span class="n">util</span><span class="o">.</span><span class="n">h</span><span class="p">:</span><span class="mi">104</span><span class="p">]</span> <span class="nb">input</span> <span class="n">already</span> <span class="n">initialized</span><span class="p">,</span> <span class="n">refilling</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005917</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">186</span><span class="p">]</span> <span class="n">Inputs</span> <span class="n">prepared</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005949</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">195</span><span class="p">]</span> <span class="n">Model</span> <span class="n">executed</span> <span class="n">successfully</span><span class="o">.</span>
+<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005954</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">210</span><span class="p">]</span> <span class="mf">8.000000</span>
+</pre></div>
+</div>
+</div>
+</details></li>
+</ul>
+</li>
+</ol>
+<p>Alternatively, you can execute the binary directly from the <code class="docutils literal notranslate"><span class="pre">--show-output</span></code> path
+shown in the build step. For example, you can run the following command for the
+<code class="docutils literal notranslate"><span class="pre">add.pte</span></code> program:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./buck-out/.../executor_runner<span class="w"> </span>--model_path<span class="w"> </span>add.pte
+</pre></div>
+</div>
+</div>
+<div class="section" id="next-steps">
+<h2>Next Steps<a class="headerlink" href="#next-steps" title="Permalink to this headline">¶</a></h2>
+<p>Congratulations! You have successfully exported, built, and run your first
+ExecuTorch program. Now that you have a basic understanding of how ExecuTorch
+works, you can start exploring its advanced features and capabilities. Here
+is a list of sections you might want to read next:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="export-overview.html"><span class="doc std std-doc">Exporting a model</span></a></p></li>
+<li><p>Using <a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">EXIR</span></a> for advanced exports</p></li>
+<li><p>Review more advanced examples in the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples">executorch/examples</a> directory</p></li>
+</ul>
+</div>
+</div>
+
+
+             </article>
+             
+            </div>
+            <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="export-overview.html" class="btn btn-neutral float-right" title="Exporting to ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="getting-started-architecture.html" class="btn btn-neutral" title="High-level Architecture and Components of ExecuTorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
+  
+
+  
+
+    <hr>
+
+  
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2023, ExecuTorch.
+
+    </p>
+  </div>
+    
+      <div>
+        Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+      </div>
+     
+
+</footer>
+
+          </div>
+
+
+        </div>
+
+        <div class="pytorch-content-right" id="pytorch-content-right">
+          <div class="pytorch-right-menu" id="pytorch-right-menu">
+            <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
+              <ul>
+<li><a class="reference internal" href="#">Setting Up ExecuTorch</a><ul>
+<li><a class="reference internal" href="#supported-host-environments">Supported Host Environments</a></li>
+<li><a class="reference internal" href="#set-up-your-environment">Set up Your Environment</a></li>
+<li><a class="reference internal" href="#generate-a-sample-executorch-program">Generate a Sample ExecuTorch program</a></li>
+<li><a class="reference internal" href="#building-a-runtime">Building a Runtime</a></li>
+<li><a class="reference internal" href="#run-your-program">Run Your Program</a></li>
+<li><a class="reference internal" href="#next-steps">Next Steps</a></li>
+</ul>
+</li>
+</ul>
+
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+  
+
+
+  
+
+     
+       <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+         <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+         <script src="_static/jquery.js"></script>
+         <script src="_static/underscore.js"></script>
+         <script src="_static/doctools.js"></script>
+         <script src="_static/clipboard.min.js"></script>
+         <script src="_static/copybutton.js"></script>
+         <script src="_static/design-tabs.js"></script>
+         <script src="_static/js/progress-bar.js"></script>
+     
+
+  
+
+  <script type="text/javascript" src="_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="_static/js/vendor/bootstrap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
+  <script type="text/javascript" src="_static/js/theme.js"></script>
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(false);
+      });
+  </script>
+ 
+<script script type="text/javascript">
+  var collapsedSections = ['Introduction', 'Getting Started', 'Exporting to ExecuTorch', 'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'SDK', 'Tutorials']
+</script>
+
+ 
+<script type="text/javascript">
+  $(document).ready(function () {
+    // Patch links on interactive tutorial pages to point
+    // to the correct ExecuTorch URLs.
+    var downloadNote = $(".sphx-glr-download-link-note.admonition.note");
+    if (downloadNote.length >= 1) {
+      var tutorialUrl = $("#tutorial-type").text().substring($("#tutorial-type").text().indexOf("tutorials/") + 9); // 9 is the length of "tutorials/"
+      var githubLink = "https://github.com/pytorch/executorch/blob/main/docs/source/tutorials_source" + tutorialUrl + ".py",
+        notebookLink = $(".reference.download")[1].href,
+        notebookDownloadPath = notebookLink.split('_downloads')[1],
+        colabLink = "https://colab.research.google.com/github/pytorch/executorch/blob/gh-pages/main/_downloads" + notebookDownloadPath;
+
+      $(".pytorch-call-to-action-links a[data-response='Run in Google Colab']").attr("href", colabLink);
+      $(".pytorch-call-to-action-links a[data-response='View on Github']").attr("href", githubLink);
+    }
+
+    // Patch the "GitHub" link at the top of the page
+    // to point to the ExecuTorch repo.
+    var overwrite = function (_) {
+      if ($(this).length > 0) {
+        $(this)[0].href = "https://github.com/pytorch/executorch"
+      }
+    }
+    // PC
+    $(".main-menu a:contains('GitHub')").each(overwrite);
+    // Mobile
+    $(".mobile-menu a:contains('Github')").each(overwrite);
+  });
+</script>
+
+
+  <!-- Begin Footer -->
+
+  <div class="container-fluid docs-tutorials-resources" id="docs-tutorials-resources">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-4 text-center">
+          <h2>Docs</h2>
+          <p>Access comprehensive developer documentation for PyTorch</p>
+          <a class="with-right-arrow" href="https://pytorch.org/docs/stable/index.html">View Docs</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Tutorials</h2>
+          <p>Get in-depth tutorials for beginners and advanced developers</p>
+          <a class="with-right-arrow" href="https://pytorch.org/tutorials">View Tutorials</a>
+        </div>
+
+        <div class="col-md-4 text-center">
+          <h2>Resources</h2>
+          <p>Find development resources and get your questions answered</p>
+          <a class="with-right-arrow" href="https://pytorch.org/resources">View Resources</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-container">
+      <div class="footer-logo-wrapper">
+        <a href="https://pytorch.org/" class="footer-logo"></a>
+      </div>
+
+      <div class="footer-links-wrapper">
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/">PyTorch</a></li>
+            <li><a href="https://pytorch.org/get-started">Get Started</a></li>
+            <li><a href="https://pytorch.org/features">Features</a></li>
+            <li><a href="https://pytorch.org/ecosystem">Ecosystem</a></li>
+            <li><a href="https://pytorch.org/blog/">Blog</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/blob/master/CONTRIBUTING.md">Contributing</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title"><a href="https://pytorch.org/resources">Resources</a></li>
+            <li><a href="https://pytorch.org/tutorials">Tutorials</a></li>
+            <li><a href="https://pytorch.org/docs/stable/index.html">Docs</a></li>
+            <li><a href="https://discuss.pytorch.org" target="_blank">Discuss</a></li>
+            <li><a href="https://github.com/pytorch/pytorch/issues" target="_blank">Github Issues</a></li>
+            <li><a href="https://pytorch.org/assets/brand-guidelines/PyTorch-Brand-Guidelines.pdf" target="_blank">Brand Guidelines</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">Stay up to date</li>
+            <li><a href="https://www.facebook.com/pytorch" target="_blank">Facebook</a></li>
+            <li><a href="https://twitter.com/pytorch" target="_blank">Twitter</a></li>
+            <li><a href="https://www.youtube.com/pytorch" target="_blank">YouTube</a></li>
+            <li><a href="https://www.linkedin.com/company/pytorch" target="_blank">LinkedIn</a></li>
+          </ul>  
+          </div>
+
+        <div class="footer-links-col">
+          <ul>
+            <li class="list-title">PyTorch Podcasts</li>
+            <li><a href="https://open.spotify.com/show/6UzHKeiy368jKfQMKKvJY5" target="_blank">Spotify</a></li>
+            <li><a href="https://podcasts.apple.com/us/podcast/pytorch-developer-podcast/id1566080008" target="_blank">Apple</a></li>
+            <li><a href="https://www.google.com/podcasts?feed=aHR0cHM6Ly9mZWVkcy5zaW1wbGVjYXN0LmNvbS9PQjVGa0lsOA%3D%3D" target="_blank">Google</a></li>
+            <li><a href="https://music.amazon.com/podcasts/7a4e6f0e-26c2-49e9-a478-41bd244197d0/PyTorch-Developer-Podcast?" target="_blank">Amazon</a></li>
+          </ul>
+         </div>
+        </div>
+        
+        <div class="privacy-policy">
+          <ul>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/terms/" target="_blank">Terms</a></li>
+            <li class="privacy-policy-links">|</li>
+            <li class="privacy-policy-links"><a href="https://www.linuxfoundation.org/privacy-policy/" target="_blank">Privacy</a></li>
+          </ul>
+        </div>
+        <div class="copyright">
+        <p>© Copyright The Linux Foundation. The PyTorch Foundation is a project of The Linux Foundation.
+          For web site terms of use, trademark policy and other policies applicable to The PyTorch Foundation please see
+          <a href="www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
+          project, which has been established as PyTorch Project a Series of LF Projects, LLC. For policies applicable to the PyTorch Project a Series of LF Projects, LLC,
+          please see <a href="www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
+      </div>
+     </div>
+
+  </footer>
+
+  <div class="cookie-banner-wrapper">
+  <div class="container">
+    <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
+    <img class="close-button" src="_static/images/pytorch-x.svg">
+  </div>
+</div>
+
+  <!-- End Footer -->
+
+  <!-- Begin Mobile Menu -->
+
+  <div class="mobile-main-menu">
+    <div class="container-fluid">
+      <div class="container">
+        <div class="mobile-main-menu-header-container">
+          <a class="header-logo" href="https://pytorch.org/" aria-label="PyTorch"></a>
+          <a class="main-menu-close-button" href="#" data-behavior="close-mobile-menu"></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="mobile-main-menu-links-container">
+      <div class="main-menu">
+        <ul>
+          <li>
+            <a href="https://pytorch.org/get-started">Get Started</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/ecosystem">Ecosystem</a>
+          </li>
+            
+          <li>
+            <a href="https://pytorch.org/mobile">Mobile</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/blog/">Blog</a>
+          </li>
+
+          <li>
+            <a href="https://pytorch.org/tutorials">Tutorials</a>
+          </li>
+
+          <li class="resources-mobile-menu-title">
+            Docs
+          </li>
+
+          <ul class="resources-mobile-menu-items">
+            <li>
+              <a href="https://pytorch.org/docs/stable/index.html">PyTorch</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/audio/stable/index.html">torchaudio</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/text/stable/index.html">torchtext</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/vision/stable/index.html">torchvision</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/torcharrow">torcharrow</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/data">TorchData</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/torchrec">TorchRec</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/serve/">TorchServe</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/torchx/">TorchX</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/xla">PyTorch on XLA Devices</a>
+            </li>
+          </ul>
+
+          <li class="resources-mobile-menu-title">
+            Resources
+          </li>
+            
+           <ul class="resources-mobile-menu-items">
+
+            <li>
+              <a href="https://pytorch.org/features">About</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/foundation">PyTorch Foundation</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/#community-module">Community</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/community-stories">Community Stories</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/resources">Developer Resources</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/events">Events</a>
+            </li>
+
+            <li>
+              <a href="https://discuss.pytorch.org/">Forums</a>
+            </li>
+
+            <li>
+              <a href="https://pytorch.org/hub">Models (Beta)</a>
+            </li>
+          </ul>
+
+          <li>
+            <a href="https://github.com/pytorch/pytorch">Github</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- End Mobile Menu -->
+
+  <script type="text/javascript" src="_static/js/vendor/anchor.min.js"></script>
+
+  <script type="text/javascript">
+    $(document).ready(function() {
+      mobileMenu.bind();
+      mobileTOC.bind();
+      pytorchAnchors.bind();
+      sideMenus.bind();
+      scrollToAnchor.bind();
+      highlightNavigation.bind();
+      mainMenuDropdown.bind();
+      filterTags.bind();
+
+      // Add class to links that have code blocks, since we cannot create links in code blocks
+      $("article.pytorch-article a span.pre").each(function(e) {
+        $(this).closest("a").addClass("has-code");
+      });
+    })
+  </script>
+</body>
+</html>
