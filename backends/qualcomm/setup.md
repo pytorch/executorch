@@ -60,9 +60,8 @@ export PYTHONPATH=$EXECUTORCH_ROOT/..
 
 ### Step 1: Build Python APIs for AOT compilation on x64
 
-Python APIs on x64 are required to compile models to Qualcomm AI
+Python APIs on x64 are required to compile models to Qualcomm AI Engine Direct binary.
 Make sure `buck2` is under a directory in `PATH`.
-Engine Direct binary.
 
 ```bash
 cd $EXECUTORCH_ROOT
@@ -101,13 +100,13 @@ cmake .. -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
 cmake --build . -j8
 ```
 
-You can find `qnn_executor_runner` under `build_android/backends/qualcomm`.
+You can find `qnn_executor_runner` under `build_android/examples/qualcomm/`.
 
 
 ### Step 3: Compile a model
 
 ```
-python -m examples.backend.qualcomm.export_example --model_name mv2
+python -m examples.qualcomm.scripts.export_example --model_name mv2
 ```
 
 Then the generated `mv2.pte` can be run on the device by
@@ -142,8 +141,8 @@ by setting `ADSP_LIBRARY_PATH` and `LD_LIBRARY_PATH`.
 
 So, we can run `qnn_executor_runner` like
 ```bash
-adb push mv2_qnn.pte ${DEVICE_DIR}
-adb push ${EXECUTORCH_ROOT}/build_android/backends/qualcomm/qnn_executor_runner ${DEVICE_DIR}
+adb push mv2.pte ${DEVICE_DIR}
+adb push ${EXECUTORCH_ROOT}/build_android/examples/qualcomm/qnn_executor_runner ${DEVICE_DIR}
 adb shell "cd ${DEVICE_DIR} \
            && export LD_LIBRARY_PATH=${DEVICE_DIR} \
            && export ADSP_LIBRARY_PATH=${DEVICE_DIR} \

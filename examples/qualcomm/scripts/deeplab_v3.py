@@ -9,6 +9,7 @@ import json
 import os
 import random
 import re
+import sys
 
 import numpy as np
 
@@ -78,7 +79,6 @@ if __name__ == "__main__":
         "--device",
         help="serial number for android device communicated via ADB.",
         type=str,
-        required=True,
     )
     parser.add_argument(
         "-H",
@@ -101,6 +101,13 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "-c",
+        "--compile_only",
+        help="If specified, only compile the model.",
+        action="store_true",
+        default=False,
+    )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
@@ -120,6 +127,12 @@ if __name__ == "__main__":
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
+    if not args.compile_only and args.device is None:
+        raise RuntimeError(
+            "device serial is required if not compile only. "
+            "Please specify a device serial by -s/--device argument."
+        )
+
     data_num = 100
     inputs, targets, input_list = get_dataset(
         data_size=data_num, dataset_dir=args.artifact, download=args.download
@@ -134,6 +147,10 @@ if __name__ == "__main__":
         f"{args.artifact}/{pte_filename}",
         inputs,
     )
+
+    if args.compile_only:
+        sys.exit(0)
+
     # setup required paths accordingly
     # qnn_sdk       : QNN SDK path setup in environment variable
     # artifact_path : path where artifacts were built
