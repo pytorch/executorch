@@ -5,7 +5,7 @@ The following tutorial will familiarize you with leveraging the ExecuTorch XNNPA
 <!----This will show a grid card on the page----->
 ::::{grid} 2
 :::{grid-item-card}  What you will learn in this tutorial:
-:class-card: card-learn
+:class-card: card-prerequisites
 In this tutorial, you will learn how to export an XNNPACK lowered Model and run it on a target platform
 :::
 :::{grid-item-card}  Before you begin it is recommended you go through the following:
@@ -13,7 +13,7 @@ In this tutorial, you will learn how to export an XNNPACK lowered Model and run 
 * [Setting up ExecuTorch](./getting-started-setup.md)
 * [Model Lowering Tutorial](./tutorials/export-to-executorch-tutorial)
 * [Custom Quantization](./quantization-custom-quantization.md)
-* [ExecuTorch XNNPACK Delegate](./native-delegates-XNNPACK-Delegate.md)
+* [ExecuTorch XNNPACK Delegate](./native-delegates-executorch-xnnpack-delegate.md)
 :::
 ::::
 

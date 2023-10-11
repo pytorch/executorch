@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Overview &mdash; ExecuTorch  documentation</title>
+  <title>Kernel Library Selective Build &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -39,6 +39,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="ExecuTorch XNNPACK Delegate" href="native-delegates-executorch-xnnpack-delegate.html" />
+    <link rel="prev" title="Kernel Registration" href="kernel-library-custom-aten-kernel.html" />
 
 
   <!-- Google Tag Manager -->
@@ -302,9 +304,10 @@
 <li class="toctree-l1"><a class="reference internal" href="quantization-custom-quantization.html">Custom Quantization</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Kernel Library Selective Build</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Native Delegates</span></p>
 <ul>
@@ -359,7 +362,7 @@
       </li>
 
         
-      <li>Overview</li>
+      <li>Kernel Library Selective Build</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -397,20 +400,19 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="overview">
-<h1>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h1>
+  <div class="section" id="kernel-library-selective-build">
+<h1>Kernel Library Selective Build<a class="headerlink" href="#kernel-library-selective-build" title="Permalink to this headline">¶</a></h1>
 <p><em>Selective build</em> is a build mode on ExecuTorch that uses model metadata to guide ExecuTorch build. This build mode contains build tool APIs available on both CMake and buck2. ExecuTorch users can use selective build APIs to build an ExecuTorch runtime binary with minimal binary size by only including operators required by models.</p>
 <p>This document aims to help ExecuTorch users better use selective build, by listing out available APIs, providing an overview of high level architecture and showcasing examples.</p>
 <p>Preread: Overview of the ExecuTorch runtime, High-level architecture and components of ExecuTorch</p>
-</div>
 <div class="section" id="design-principles">
-<h1>Design Principles<a class="headerlink" href="#design-principles" title="Permalink to this headline">¶</a></h1>
+<h2>Design Principles<a class="headerlink" href="#design-principles" title="Permalink to this headline">¶</a></h2>
 <p><strong>Why selective build?</strong> Many ExecuTorch use cases are constrained by binary size. Selective build can reduce the binary size of the ExecuTorch runtime without compromising support for a target model.</p>
 <p><strong>What are we selecting?</strong> Our core ExecuTorch library is around 50kB with no operators/kernels or delegates. If we link in kernel libraries such as the ExecuTorch in-house portable kernel library, the binary size of the whole application surges, due to unused kernels being registered into the ExecuTorch runtime. Selective build is able to apply a filter on the kernel libraries, so that only the kernels actually being used are linked, thus reducing the binary size of the application.</p>
 <p>**How do we select? **Selective build provides APIs to allow users to pass in <em>op info</em>, operator metadata derived from target models. Selective build tools will gather these op info and build a filter for all kernel libraries being linked in.</p>
 </div>
 <div class="section" id="high-level-architecture">
-<h1>High Level Architecture<a class="headerlink" href="#high-level-architecture" title="Permalink to this headline">¶</a></h1>
+<h2>High Level Architecture<a class="headerlink" href="#high-level-architecture" title="Permalink to this headline">¶</a></h2>
 <p><img alt="" src="_images/kernel-library-selective_build.png" /></p>
 <p>Note that all of the selective build tools are running at build-time (to be distinguished from compile-time or runtime). Therefore selective build tools only have access to static data from user input or models.</p>
 <p>The basic flow looks like this:</p>
@@ -421,7 +423,7 @@
 </ol>
 </div>
 <div class="section" id="apis">
-<h1>APIs<a class="headerlink" href="#apis" title="Permalink to this headline">¶</a></h1>
+<h2>APIs<a class="headerlink" href="#apis" title="Permalink to this headline">¶</a></h2>
 <p>We expose build macros for CMake and Buck2, to allow users specifying op info.</p>
 <p>On CMake:</p>
 <p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/build/Codegen.cmake#L12">gen_selected_ops</a></p>
@@ -429,65 +431,65 @@
 <p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/shim/xplat/executorch/codegen/codegen.bzl#L44C21-L44C21">et_operator_library</a></p>
 <p>Both of these build macros take the following inputs:</p>
 <div class="section" id="select-all-ops">
-<h2>Select all ops<a class="headerlink" href="#select-all-ops" title="Permalink to this headline">¶</a></h2>
+<h3>Select all ops<a class="headerlink" href="#select-all-ops" title="Permalink to this headline">¶</a></h3>
 <p>If this input is set to true, it means we are registering all the kernels from all the kernel libraries linked into the application. If set to true it is effectively turning off selective build mode.</p>
 </div>
 <div class="section" id="select-ops-from-schema-yaml">
-<h2>Select ops from schema yaml<a class="headerlink" href="#select-ops-from-schema-yaml" title="Permalink to this headline">¶</a></h2>
+<h3>Select ops from schema yaml<a class="headerlink" href="#select-ops-from-schema-yaml" title="Permalink to this headline">¶</a></h3>
 <p>Context: each kernel library is designed to have a yaml file associated with it. For more information on this yaml file, see here (TODO: add link to kernel library documentation). This API allows users to pass in the schema yaml for a kernel library directly, effectively allowlisting all kernels in the library to be registered.</p>
 </div>
 <div class="section" id="select-root-ops-from-operator-list">
-<h2>Select root ops from operator list<a class="headerlink" href="#select-root-ops-from-operator-list" title="Permalink to this headline">¶</a></h2>
+<h3>Select root ops from operator list<a class="headerlink" href="#select-root-ops-from-operator-list" title="Permalink to this headline">¶</a></h3>
 <p>This API lets users pass in a list of operator names. Note that this API can be combined with the API above and we will create a allowlist from the union of both API inputs.</p>
 </div>
 <div class="section" id="select-from-model-wip">
-<h2>Select from model (WIP)<a class="headerlink" href="#select-from-model-wip" title="Permalink to this headline">¶</a></h2>
+<h3>Select from model (WIP)<a class="headerlink" href="#select-from-model-wip" title="Permalink to this headline">¶</a></h3>
 <p>This API takes a model and extracts all op info from it.</p>
 </div>
 </div>
 <div class="section" id="example-walkthrough">
-<h1>Example Walkthrough<a class="headerlink" href="#example-walkthrough" title="Permalink to this headline">¶</a></h1>
+<h2>Example Walkthrough<a class="headerlink" href="#example-walkthrough" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="buck2-example">
-<h2>Buck2 example<a class="headerlink" href="#buck2-example" title="Permalink to this headline">¶</a></h2>
+<h3>Buck2 example<a class="headerlink" href="#buck2-example" title="Permalink to this headline">¶</a></h3>
 <p>Let’s take a look at the following build:</p>
-<div class="highlight-none notranslate highlight-starlark"><div class="highlight"><pre><span></span># Select a list of operators: defined in `ops`
-et_operator_library(
-    name = &quot;select_ops_in_list&quot;,
-    ops = [
-        &quot;aten::add.out&quot;,
-        &quot;aten::mm.out&quot;,
-    ],
-)
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Select a list of operators: defined in `ops`</span>
+<span class="n">et_operator_library</span><span class="p">(</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;select_ops_in_list&quot;</span><span class="p">,</span>
+    <span class="n">ops</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;aten::add.out&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;aten::mm.out&quot;</span><span class="p">,</span>
+    <span class="p">],</span>
+<span class="p">)</span>
 </pre></div>
 </div>
 <p>This target generates the yaml file containing op info for these two ops.</p>
 <p>In addition to that, if we want to select all ops from a kernel library, we can do:</p>
-<div class="highlight-none notranslate highlight-starlark"><div class="highlight"><pre><span></span># Select all ops from a yaml file
-et_operator_library(
-    name = &quot;select_ops_from_yaml&quot;,
-    ops_schema_yaml_target = &quot;//executorch/examples/portable/custom_ops:custom_ops.yaml&quot;,
-)
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Select all ops from a yaml file</span>
+<span class="n">et_operator_library</span><span class="p">(</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;select_ops_from_yaml&quot;</span><span class="p">,</span>
+    <span class="n">ops_schema_yaml_target</span> <span class="o">=</span> <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops.yaml&quot;</span><span class="p">,</span>
+<span class="p">)</span>
 </pre></div>
 </div>
 <p>Then in the kernel registration library we can do:</p>
-<div class="highlight-none notranslate highlight-starlark"><div class="highlight"><pre><span></span>executorch_generated_lib(
-    name = &quot;select_ops_lib&quot;,
-    custom_ops_yaml_target = &quot;//executorch/examples/portable/custom_ops:custom_ops.yaml&quot;,
-functions_yaml_target = &quot;//executorch/kernels/portable:functions.yaml&quot;,
-    deps = [
-        &quot;//executorch/examples/portable/custom_ops:custom_ops_1&quot;, # kernel library
-        &quot;//executorch/examples/portable/custom_ops:custom_ops_2&quot;, # kernel library
-  &quot;//executorch/kernels/portable:operators&quot;, # kernel library
-        &quot;:select_ops_from_yaml&quot;,
-  &quot;:select_ops_in_list&quot;,
-    ],
-)
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">executorch_generated_lib</span><span class="p">(</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;select_ops_lib&quot;</span><span class="p">,</span>
+    <span class="n">custom_ops_yaml_target</span> <span class="o">=</span> <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops.yaml&quot;</span><span class="p">,</span>
+<span class="n">functions_yaml_target</span> <span class="o">=</span> <span class="s2">&quot;//executorch/kernels/portable:functions.yaml&quot;</span><span class="p">,</span>
+    <span class="n">deps</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops_1&quot;</span><span class="p">,</span> <span class="c1"># kernel library</span>
+        <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops_2&quot;</span><span class="p">,</span> <span class="c1"># kernel library</span>
+  <span class="s2">&quot;//executorch/kernels/portable:operators&quot;</span><span class="p">,</span> <span class="c1"># kernel library</span>
+        <span class="s2">&quot;:select_ops_from_yaml&quot;</span><span class="p">,</span>
+  <span class="s2">&quot;:select_ops_in_list&quot;</span><span class="p">,</span>
+    <span class="p">],</span>
+<span class="p">)</span>
 </pre></div>
 </div>
 <p>Notice we are allowlisting both add.out, mm.out from the list, and the ones from the schema yaml (<code class="docutils literal notranslate"><span class="pre">custom_ops.yaml</span></code>).</p>
 </div>
 <div class="section" id="cmake-example">
-<h2>CMake example<a class="headerlink" href="#cmake-example" title="Permalink to this headline">¶</a></h2>
+<h3>CMake example<a class="headerlink" href="#cmake-example" title="Permalink to this headline">¶</a></h3>
 <p>In CMakeLists.txt we have the following logic:</p>
 <div class="highlight-none notranslate highlight-cmake"><div class="highlight"><pre><span></span><span class="nb">set</span><span class="p">(</span><span class="s">_kernel_lib</span><span class="p">)</span>
 <span class="nb">if</span><span class="p">(</span><span class="s">SELECT_ALL_OPS</span><span class="p">)</span>
@@ -511,12 +513,22 @@ functions_yaml_target = &quot;//executorch/kernels/portable:functions.yaml&quot;
 <p>To select from either an operator name list or a schema yaml from kernel library.</p>
 </div>
 </div>
+</div>
 
 
              </article>
              
             </div>
             <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="native-delegates-executorch-xnnpack-delegate.html" class="btn btn-neutral float-right" title="ExecuTorch XNNPACK Delegate" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="kernel-library-custom-aten-kernel.html" class="btn btn-neutral" title="Kernel Registration" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
   
 
   
@@ -548,7 +560,7 @@ functions_yaml_target = &quot;//executorch/kernels/portable:functions.yaml&quot;
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Overview</a></li>
+<li><a class="reference internal" href="#">Kernel Library Selective Build</a><ul>
 <li><a class="reference internal" href="#design-principles">Design Principles</a></li>
 <li><a class="reference internal" href="#high-level-architecture">High Level Architecture</a></li>
 <li><a class="reference internal" href="#apis">APIs</a><ul>
@@ -561,6 +573,8 @@ functions_yaml_target = &quot;//executorch/kernels/portable:functions.yaml&quot;
 <li><a class="reference internal" href="#example-walkthrough">Example Walkthrough</a><ul>
 <li><a class="reference internal" href="#buck2-example">Buck2 example</a></li>
 <li><a class="reference internal" href="#cmake-example">CMake example</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -602,7 +616,7 @@ functions_yaml_target = &quot;//executorch/kernels/portable:functions.yaml&quot;
   </script>
  
 <script script type="text/javascript">
-  var collapsedSections = ['Introduction', 'Getting Started', 'Exporting to ExecuTorch', 'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'SDK', 'Tutorials']
+  var collapsedSections = ['Introduction', 'Getting Started', 'Exporting to ExecuTorch', 'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'SDK', 'Tutorials']
 </script>
 
  

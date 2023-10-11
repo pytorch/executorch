@@ -307,6 +307,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective_build.html">Kernel Library Selective Build</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Native Delegates</span></p>
 <ul>
@@ -438,7 +439,7 @@
 <p>Backend dialect is the result of exporting Edge dialect to specific backend. It’s target-aware, and may contain operators or submodules that are only meaningful to the target backend. This dialect allows the introduction of target-specific operators that do not conform to the schema defined in the Core ATen Operator Set and are not shown in ATen or Edge Dialect.</p>
 </div>
 <div class="section" id="backend-specific-operator">
-<h2><span class="xref myst">Backend Specific Operator</span><a class="headerlink" href="#backend-specific-operator" title="Permalink to this headline">¶</a></h2>
+<h2>[Backend Specific Operator]<a class="headerlink" href="#backend-specific-operator" title="Permalink to this headline">¶</a></h2>
 <p>These are operators that are not part of ATen dialect or Edge dialect. Backend specific operators are only introduced by passes that happen after Edge dialect (see Backend dialect). These operators are specific to the target backend and will generally execute faster.</p>
 </div>
 <div class="section" id="buck2">
@@ -714,7 +715,7 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 <li><a class="reference internal" href="#autograd-safe-aten-dialect">Autograd safe ATen Dialect</a></li>
 <li><a class="reference internal" href="#backend">Backend</a></li>
 <li><a class="reference internal" href="#backend-dialect"><span class="xref myst">Backend Dialect</span></a></li>
-<li><a class="reference internal" href="#backend-specific-operator"><span class="xref myst">Backend Specific Operator</span></a></li>
+<li><a class="reference internal" href="#backend-specific-operator">[Backend Specific Operator]</a></li>
 <li><a class="reference internal" href="#buck2">Buck2</a></li>
 <li><a class="reference internal" href="#cmake">CMake</a></li>
 <li><a class="reference internal" href="#core-aten-dialect">Core ATen Dialect</a></li>
@@ -805,7 +806,7 @@ The default PAL implementation can be overridden if it doesn’t work for a part
   </script>
  
 <script script type="text/javascript">
-  var collapsedSections = ['Introduction', 'Getting Started', 'Exporting to ExecuTorch', 'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'SDK', 'Tutorials']
+  var collapsedSections = ['Introduction', 'Getting Started', 'Exporting to ExecuTorch', 'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'SDK', 'Tutorials']
 </script>
 
  

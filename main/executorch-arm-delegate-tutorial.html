@@ -307,6 +307,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective_build.html">Kernel Library Selective Build</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Native Delegates</span></p>
 <ul>
@@ -694,7 +695,7 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 <span class="c1"># should produce ./add_arm_delegate.pte</span>
 </pre></div>
 </div>
-<p>At the end of this, we should have two different <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files. First one with the <span class="xref myst">SoftmaxModule</span>, without any backend delegates. And the second one with the <span class="xref myst">AddModule</span>, and with Arm Ethos-U backend delegate enabled. Now let’s try to run these <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files on a Corstone-300 platform in a bare-metal environment.</p>
+<p>At the end of this, we should have two different <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files. First one with the <a class="reference internal" href="#softmaxmodule"><span class="std std-doc">SoftmaxModule</span></a>, without any backend delegates. And the second one with the <a class="reference internal" href="#addmodule"><span class="std std-doc">AddModule</span></a>, and with Arm Ethos-U backend delegate enabled. Now let’s try to run these <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files on a Corstone-300 platform in a bare-metal environment.</p>
 </div>
 </div>
 <div class="section" id="getting-a-bare-metal-executable">
@@ -807,8 +808,8 @@ FVP_Corstone_SSE-300_Ethos-U55<span class="w">                          </span><
 <span class="go">Info: Simulation is stopping. Reason: CPU time has been exceeded.</span>
 </pre></div>
 </div>
-<p>Here in this example, we ran the <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> binary with the <code class="docutils literal notranslate"><span class="pre">softmax.pte</span></code> file generated for the <span class="xref myst">SoftmaxModule</span>, we do see the expected results generated from the baremetal binary running on the Corstone-300 virtual hardware on FVP simulator.</p>
-<p>If you rerun the same FVP command with the delegated <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file for the <span class="xref myst">AddModule</span>, i.e. <code class="docutils literal notranslate"><span class="pre">add_arm_delegate.pte</span></code> - you may get something like following, again the expected results. Pay attention to the messages printed with prefix <code class="docutils literal notranslate"><span class="pre">ArmBackend::</span></code>, they indicate that the backend was sucecssfully initialized and the <code class="docutils literal notranslate"><span class="pre">add</span></code> operator from our AddModule in the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> was exexuted on the Ethos-U55 NPU.</p>
+<p>Here in this example, we ran the <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> binary with the <code class="docutils literal notranslate"><span class="pre">softmax.pte</span></code> file generated for the <a class="reference internal" href="#softmaxmodule"><span class="std std-doc">SoftmaxModule</span></a>, we do see the expected results generated from the baremetal binary running on the Corstone-300 virtual hardware on FVP simulator.</p>
+<p>If you rerun the same FVP command with the delegated <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file for the <a class="reference internal" href="#addmodule"><span class="std std-doc">AddModule</span></a>, i.e. <code class="docutils literal notranslate"><span class="pre">add_arm_delegate.pte</span></code> - you may get something like following, again the expected results. Pay attention to the messages printed with prefix <code class="docutils literal notranslate"><span class="pre">ArmBackend::</span></code>, they indicate that the backend was sucecssfully initialized and the <code class="docutils literal notranslate"><span class="pre">add</span></code> operator from our AddModule in the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> was exexuted on the Ethos-U55 NPU.</p>
 <div class="highlight-none notranslate highlight-console"><div class="highlight"><pre><span></span><span class="go">    Ethos-U rev 136b7d75 --- Apr 12 2023 13:44:01</span>
 <span class="go">    (C) COPYRIGHT 2019-2023 Arm Limited</span>
 <span class="go">    ALL RIGHTS RESERVED</span>
@@ -982,7 +983,7 @@ Describe what common errors users may see and how to resolve them.
   </script>
  
 <script script type="text/javascript">
-  var collapsedSections = ['Introduction', 'Getting Started', 'Exporting to ExecuTorch', 'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'SDK', 'Tutorials']
+  var collapsedSections = ['Introduction', 'Getting Started', 'Exporting to ExecuTorch', 'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'SDK', 'Tutorials']
 </script>
 
  
