@@ -26,9 +26,7 @@
 
 # Building and Running ExecuTorch on CoreML Backend
 
-In this tutorial we will walk you through all the steps required to export, deploy, and run a model on CoreML backend.
-
-CoreML backend uses the [CoreML framework](https://developer.apple.com/documentation/coreml) to run the model. CoreML framework optimizes on-device performance by leveraging the CPU, GPU, and Neural Engine while minimizing its memory footprint and power consumption.  
+CoreML delegate uses CoreML apis to enable running neural networks via Apple's hardware acceleration. For more about coreml you can read [here]((https://developer.apple.com/documentation/coreml)). In this tutorial we will walk through steps of lowering a PyTorch model to CoreML delegate
 
 
 ::::{grid} 2
@@ -42,7 +40,7 @@ CoreML backend uses the [CoreML framework](https://developer.apple.com/documenta
 * [Introduction to ExecuTorch](intro-how-it-works.md)
 * [Setting up ExecuTorch](getting-started-setup.md)
 * [Building ExecuTorch with CMake](runtime-build-and-cross-compilation.md)
-* [Building iOS Demo App](demo-apps-ios.md)
+* [Building and Running iOS Demo App](build-run-ios-demo.md)
 :::
 ::::
 
@@ -114,11 +112,11 @@ cd executorch
 ## Deploying and running on a device
 
 **Running the CoreML delegated Program using the Demo iOS App**:
-1. Please follow the [model export](demo-apps-ios.md#model-export-bundling) section of the demo iOS app setup tutorial to bundle the exported [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) program. You only need to do the CoreML part.
+1. Please follow the [model export](build-run-ios-demo.md#model-export-bundling) section of the demo iOS app setup tutorial to bundle the exported [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) program. You only need to do the CoreML part.
 
-2. Complete the [backend building](demo-apps-ios.md#executorch-backend-building) section of the tutorial. When building the frameworks you only need the `coreml` option.
+2. Complete the [backend building](build-run-ios-demo.md#executorch-backend-building) section of the tutorial. When building the frameworks you only need the `coreml` option.
 
-3. Complete the [final steps](demo-apps-ios.md#final-steps) section of the tutorial to build and run the demo app.
+3. Complete the [final steps](build-run-ios-demo.md#final-steps) section of the tutorial to build and run the demo app.
 
 <br>**Running the CoreML delegated Program using your own App**
 1. Build **CoreML** delegate. The following will create a `executorch.xcframework` in the `cmake-out` directory.
@@ -130,7 +128,7 @@ cd executorch
 
 3. Drag the `executorch.xcframework` generated from Step 2 to Frameworks.
 
-4. Go to project Target’s Build Phases -  Link Binaries With Libraries, click the + sign, and add the following frameworks:
+4. Go to the project's [Build Phases](https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target) -  Link Binaries With Libraries, click the + sign, and add the following frameworks:
 ```
 - executorch.xcframework
 - coreml_backend.xcframework
