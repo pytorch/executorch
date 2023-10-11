@@ -5,7 +5,7 @@ Audience: ML Engineers, who are interested in applying delegates to accelerate t
 Backend delegation is an entry point for backends to process and execute PyTorch
 programs to leverage performance and efficiency benefits of specialized
 backends and hardware, while still providing PyTorch users with an experience
-close to that of the PyTorch runtime. The backend delegate is usually either provited by
+close to that of the PyTorch runtime. The backend delegate is usually either provided by
 ExecuTorch or vendors. The way to leverage delegate in your program is via a standard entry point `to_backend`.
 
 
@@ -135,7 +135,7 @@ This function takes in a `Partitioner` which adds a tag to all the nodes that
 are meant to be lowered. It will return a `partition_tags` mapping tags to
 backend names and module compile specs. The tagged nodes will then be
 partitioned and lowered to their mapped backends using Flow 1's process.
-Available helper partitioner are documented
+Available helper partitioners are documented
 [here](./compiler-custom-compiler-passes.md). These lowered modules
 will be inserted into the top-level module and serialized.
 
