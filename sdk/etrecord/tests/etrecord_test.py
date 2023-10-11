@@ -11,8 +11,10 @@ import unittest
 
 import executorch.exir.tests.models as models
 from executorch import exir
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from executorch.sdk.etrecord import generate_etrecord, parse_etrecord
 from executorch.sdk.etrecord._etrecord import ETRecordReservedFileNames
+from torch.export import export
 
 
 # TODO : T154728484  Add test cases to cover multiple entry points
@@ -27,8 +29,16 @@ class TestETRecord(unittest.TestCase):
         )
         edge_output_copy = copy.deepcopy(edge_output)
         et_output = edge_output.to_executorch()
-        buffer = et_output.buffer
-        return (captured_output_copy, edge_output_copy, et_output, buffer)
+        return (captured_output_copy, edge_output_copy, et_output)
+
+    def get_test_model_with_manager(self):
+        f = models.BasicSinMax()
+        aten_dialect = export(f, f.get_random_inputs())
+        edge_program: EdgeProgramManager = to_edge(
+            aten_dialect, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+        )
+        edge_program_copy = copy.deepcopy(edge_program)
+        return (aten_dialect, edge_program_copy, edge_program.to_executorch())
 
     # Serialized and deserialized graph modules are not completely the same, so we check
     # that they are close enough and match especially on the parameters we care about in the SDK.
@@ -47,7 +57,7 @@ class TestETRecord(unittest.TestCase):
                 )
 
     def test_etrecord_generation(self):
-        captured_output, edge_output, et_output, program_buffer = self.get_test_model()
+        captured_output, edge_output, et_output = self.get_test_model()
         with tempfile.TemporaryDirectory() as tmpdirname:
             generate_etrecord(
                 tmpdirname + "/etrecord.bin",
@@ -67,18 +77,32 @@ class TestETRecord(unittest.TestCase):
                 etrecord.edge_dialect_program,
                 edge_output.exported_program.graph_module,
             )
+            self.assertEqual(
+                etrecord._debug_handle_map,
+                json.loads(json.dumps(et_output.debug_handle_map)),
+            )
+
+    def test_etrecord_generation_with_manager(self):
+        captured_output, edge_output, et_output = self.get_test_model_with_manager()
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            generate_etrecord(
+                tmpdirname + "/etrecord.bin",
+                edge_output,
+                et_output,
+            )
+
+            etrecord = parse_etrecord(tmpdirname + "/etrecord.bin")
             self.check_graph_closeness(
-                etrecord.graph_map["et_dialect_graph_module/forward"],
-                et_output.dump_exported_program(),
+                etrecord.edge_dialect_program,
+                edge_output.exported_program().graph_module,
             )
             self.assertEqual(
                 etrecord._debug_handle_map,
                 json.loads(json.dumps(et_output.debug_handle_map)),
             )
-            self.assertEqual(etrecord.program_buffer, program_buffer)
 
     def test_etrecord_invalid_input(self):
-        captured_output, edge_output, et_output, program_buffer = self.get_test_model()
+        captured_output, edge_output, et_output = self.get_test_model()
         with tempfile.TemporaryDirectory() as tmpdirname:
             with self.assertRaises(RuntimeError):
                 generate_etrecord(
@@ -89,7 +113,7 @@ class TestETRecord(unittest.TestCase):
                 )
 
     def test_etrecord_reserved_name(self):
-        captured_output, edge_output, et_output, program_buffer = self.get_test_model()
+        captured_output, edge_output, et_output = self.get_test_model()
         with tempfile.TemporaryDirectory() as tmpdirname:
             for reserved_name in ETRecordReservedFileNames:
                 with self.assertRaises(RuntimeError):
