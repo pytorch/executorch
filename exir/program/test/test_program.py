@@ -44,11 +44,11 @@ def get_exported_programs() -> Dict[str, ExportedProgram]:
             torch.ones(1),
             torch.zeros(1),
         ),
-    )
+    ).run_decompositions()
     programs["foo"] = export(
         foo,
         (torch.ones(1),),
-    )
+    ).run_decompositions()
     return programs
 
 
