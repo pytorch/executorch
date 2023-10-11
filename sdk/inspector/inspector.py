@@ -39,7 +39,7 @@ from tabulate import tabulate
 
 
 FORWARD = "forward"
-RESERVED_FRAMEWORK_EVENT_NAMES = [
+RESERVED_SPECIAL_EVENT_NAMES = [
     "Method::init",
     "Program::load_method",
     "Method::execute",
@@ -51,7 +51,6 @@ EXCLUDED_COLUMNS_WHEN_PRINTING = [
     "module_hierarchy",
     "debug_data",
 ]
-EXCLUDED_EVENTS_WHEN_PRINTING = {"OPERATOR_CALL"}
 
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -121,6 +120,10 @@ class PerfData:
     def max(self) -> float:
         return max(self.raw)
 
+    @property
+    def median(self) -> float:
+        return np.median(self.raw)
+
 
 # TODO: detailed documentation
 @dataclass
@@ -130,7 +133,7 @@ class Event:
 
     Args:
         name: Name of the profiling/debugging `Event`.
-        perf_data: Performance data associated with the event retrived from the runtime (available attributes: p50, p90, avg, min and max).
+        perf_data: Performance data associated with the event retrived from the runtime (available attributes: p50, p90, avg, min, max and median).
         op_type: List of op types corresponding to the event.
         delegate_debug_identifier: Supplemental identifier used in combination with instruction id.
         debug_handles: Debug handles in the model graph to which this event is correlated.
@@ -198,11 +201,6 @@ class Event:
         Helper function to populate the stack_traces, module_hierarchy and op_types attributes
         based on the debug handles of this event
         """
-
-        # Framework events aren't logically associated with any nodes
-        if self.name in RESERVED_FRAMEWORK_EVENT_NAMES:
-            return
-
         if (debug_handles := self.debug_handles) is None:
             return
 
@@ -233,34 +231,29 @@ class EventBlock:
 
     name: str
     events: List[Event] = dataclasses.field(default_factory=list)
-    scale_factor: int = 1
 
-    def to_dataframe(self, include_units: bool = False) -> pd.DataFrame:
+    def to_dataframe(self) -> pd.DataFrame:
         """
         Converts the EventBlock into a DataFrame with each row being an event instance
 
-        Note: Rows that have an event_name = OPERATOR_CALL correspond to the perf of the
-            previous operator + framework tax of making said operator call.
-
         Args:
-            include_units: Whether headers should include units (default false)
+            None
 
         Returns:
             A Pandas DataFrame containing the data of each Event instance in this EventBlock.
         """
-
-        units = " (" + str(self._get_time_unit()) + ")" if include_units else ""
 
         # TODO: push row generation down to Event
         data = {
             "event_block_name": [self.name] * len(self.events),
             "event_name": [event.name for event in self.events],
             "raw": [event.perf_data.raw for event in self.events],
-            "p50" + units: [event.perf_data.p50 for event in self.events],
-            "p90" + units: [event.perf_data.p90 for event in self.events],
-            "avg" + units: [event.perf_data.avg for event in self.events],
-            "min" + units: [event.perf_data.min for event in self.events],
-            "max" + units: [event.perf_data.max for event in self.events],
+            "p50": [event.perf_data.p50 for event in self.events],
+            "p90": [event.perf_data.p90 for event in self.events],
+            "avg": [event.perf_data.avg for event in self.events],
+            "min": [event.perf_data.min for event in self.events],
+            "max": [event.perf_data.max for event in self.events],
+            "median": [event.perf_data.median for event in self.events],
             "op_types": [event.op_types for event in self.events],
             "delegate_debug_identifier": [
                 event.delegate_debug_identifier for event in self.events
@@ -275,25 +268,6 @@ class EventBlock:
         }
         df = pd.DataFrame(data)
         return df
-
-    def _get_time_unit(self):
-        """
-        Determines the appropriate metric time unit for the EventBlock if the
-        scale is a common factor
-
-        Args:
-            None
-
-        Returns:
-            The most appropriate time unit for the EventBlock,
-            defaults to numerical representation if not found
-        """
-
-        # Inverse scale factor to unit
-        units_map = {1: "us", 1000: "ms", 1000000: "s"}
-        return units_map.get(
-            self.scale_factor, "1/" + str(1000000 / self.scale_factor) + " s"
-        )
 
     @staticmethod
     def _gen_from_etdump(
@@ -343,7 +317,6 @@ class EventBlock:
                     Event._gen_from_profile_events(signature, event, scale_factor)
                     for signature, event in profile_events.items()
                 ],
-                scale_factor=scale_factor,
             )
             for index, profile_events in enumerate(profile_run_groups.values())
         ]
@@ -427,7 +400,7 @@ class Inspector:
             etdump_path: Path to the ETDump file.
             etrecord_path: Optional path to the ETRecord file.
             etdump_scale: Inverse Scale Factor used to cast the timestamps in ETDump
-                defaults to ms (1ms = 1000us).
+                defaults to milli (1000ms = 1s).
 
         Returns:
             None
@@ -467,12 +440,12 @@ class Inspector:
             for event in event_block.events:
                 event._associate_with_op_graph_nodes(debug_handle_to_op_node_map)
 
-    def print_data_tabular(self, include_units: bool = True) -> None:
+    def print_data_tabular(self) -> None:
         """
         Displays the underlying EventBlocks in a structured tabular format, with each row representing an Event.
 
         Args:
-            include_units: Whether headers should include units (default true)
+            None
 
         Returns:
             None
@@ -481,17 +454,10 @@ class Inspector:
         def style_text_size(val, size=12):
             return f"font-size: {size}px"
 
-        df_list = [
-            event_block.to_dataframe(include_units=include_units)
-            for event_block in self.event_blocks
-        ]
+        df_list = [event_block.to_dataframe() for event_block in self.event_blocks]
         combined_df = pd.concat(df_list, ignore_index=True)
-
-        # Filter out some columns and rows for better readability when printing
-        filtered_column_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
-        filtered_df = filtered_column_df[
-            ~filtered_column_df["event_name"].isin(EXCLUDED_EVENTS_WHEN_PRINTING)
-        ]
+        # Filter out some columns for better readability when printing
+        filtered_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
         try:
             from IPython import get_ipython
             from IPython.display import display

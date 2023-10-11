@@ -164,7 +164,7 @@ python_unittest(
         "fbsource//third-party/pypi/parameterized:parameterized",
         ":asr_joiner",
         "//caffe2:torch",
-        "//executorch/backends/fb/qnnpack/partition:qnnpack_partitioner",
+        "//executorch/backends/qnnpack/partition:qnnpack_partitioner",
         "//executorch/exir:lib",
         "//executorch/exir:memory_planning",
         "//executorch/exir:pass_base",

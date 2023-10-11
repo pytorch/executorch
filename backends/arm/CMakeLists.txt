@@ -15,10 +15,7 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
-# Third-party folder and Ethos-U driver inclued
-set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
-set(DRIVER_ETHOSU_INCLUDE_DIR "${THIRD_PARTY_ROOT}/ethos-u-core-driver/include")
-include_directories( ${DRIVER_ETHOSU_INCLUDE_DIR} )
+include(cmake/Dependencies.cmake)
 
 set(_arm_baremetal_sources backends/arm/runtime/ArmBackendEthosU.cpp)
 list(TRANSFORM _arm_baremetal_sources PREPEND "${EXECUTORCH_ROOT}/")

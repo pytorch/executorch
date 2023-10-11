@@ -58,11 +58,10 @@ class PermuteMemoryFormatsPass(ExportPass):
                             # Handle the case when the pattern output is also the graph output,
                             # like, x -> conv -> out will become x -> conv -> to_dim(contiguous) -> out
                             if exit_node.op == "output":
-                                exit_node_args = exit_node.args[0]
                                 exit_to_dim_op = graph_module.graph.call_function(
                                     exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-                                    args=exit_node_args,
-                                    kwargs={
+                                    exit_node.args,
+                                    {
                                         "dtype": torch.float64,
                                         "dim_order": get_dim_order(
                                             torch.contiguous_format, 4
@@ -84,8 +83,8 @@ class PermuteMemoryFormatsPass(ExportPass):
                                     ):
                                         exit_to_dim_op = graph_module.graph.call_function(
                                             exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-                                            args=(exit_node_arg,),
-                                            kwargs={
+                                            (exit_node_arg,),
+                                            {
                                                 "dtype": torch.float64,
                                                 "dim_order": get_dim_order(
                                                     torch.contiguous_format, 4
@@ -112,11 +111,15 @@ class PermuteMemoryFormatsPass(ExportPass):
                             to_dim_op = graph_module.graph.call_function(
                                 # Insert the to_dim op and update input_node_map
                                 exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
-                                args=(input_node,),
-                                kwargs={
-                                    "dtype": torch.float64,
-                                    "dim_order": get_dim_order(torch.channels_last, 4),
-                                },
+                                (
+                                    input_node,
+                                    {
+                                        "dtype": torch.float64,
+                                        "dim_order": get_dim_order(
+                                            torch.channels_last, 4
+                                        ),
+                                    },
+                                ),
                             )
                             input_node_map[input_node] = to_dim_op
                             to_dim_op_set.add(to_dim_op)

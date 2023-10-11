@@ -11,22 +11,20 @@ import copy
 import unittest
 
 import executorch.exir as exir
+import torch._export as export
 from executorch.backends.arm.arm_backend import ArmPartitioner
 from executorch.backends.arm.test.test_models import TestList, TosaProfile
-from executorch.exir import EdgeCompileConfig
+
+from executorch.exir.backend.backend_api import to_backend
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from torch._export import capture_pre_autograd_graph
-from torch.export import export
 
 # Config for Capturing the weights, will be moved in the future
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
-_EDGE_COMPILE_CONFIG: EdgeCompileConfig = exir.EdgeCompileConfig(
+_EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
 )
 
-from executorch.exir import EdgeCompileConfig
-from executorch.exir.program import to_edge
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 ## For quantization
@@ -83,7 +81,7 @@ def prepare_model_and_ref(test_model, profile=TosaProfile.MI):
     model.eval()
     if profile == TosaProfile.BI:
         # Quantize the model
-        captured_model_graph_module = capture_pre_autograd_graph(
+        captured_model_graph_module = export.capture_pre_autograd_graph(
             model, copy.deepcopy(model.inputs[profile])
         )
         # Setup the quantizer
@@ -101,10 +99,12 @@ def prepare_model_and_ref(test_model, profile=TosaProfile.MI):
 
 
 def export_model(model, inputs, compile_spec):
-    model_capture = export(model, inputs)
-    model_edge = to_edge(model_capture, compile_config=_EDGE_COMPILE_CONFIG)
+    model_capture = exir.capture(model, inputs, _CAPTURE_CONFIG)
+    model_edge = model_capture.to_edge(_EDGE_COMPILE_CONFIG)
     ArmPartitioner.compile_spec = compile_spec
 
-    model_edge = model_edge.to_backend(ArmPartitioner)
+    model_edge.exported_program = to_backend(
+        model_edge.exported_program, ArmPartitioner
+    )
     exec_prog = model_edge.to_executorch()
     return model_edge, exec_prog

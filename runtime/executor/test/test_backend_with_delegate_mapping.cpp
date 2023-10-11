@@ -9,7 +9,6 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
-#include <executorch/runtime/core/event_tracer_hooks_delegate.h>
 
 #include <cstdlib> /* strtol */
 #include <cstring>
@@ -126,23 +125,22 @@ class BackendWithDelegateMapping final : public PyTorchBackendInterface {
           "Op name = %s Delegate debug index = %ld",
           op_list->ops[index].name,
           op_list->ops[index].debug_handle);
-      event_tracer_log_profiling_delegate(
-          context.event_tracer(),
-          nullptr,
-          op_list->ops[index].debug_handle,
-          0,
-          1);
-      /**
-       If you used string based delegate debug identifiers then the profiling
-       call would be as below.
-       event_tracer_log_profiling_delegate(
-          context.event_tracer(),
-          pointer_to_delegate_debug_string,
-          -1,
-          0,
-          1);
-       */
     }
+    // The below API's are not available yet but they are a representative
+    // example of what we'll be enabling.
+    /*
+    Option 1: Log performance event with an ID. An integer ID must have been
+    provided to DelegateMappingBuilder during AOT compilation.
+    */
+    // EVENT_TRACER_LOG_DELEGATE_PROFILING_EVENT_ID(op_list->ops[index].debug_handle,
+    // start_time, end_time);
+    /*
+    Option 2: Log performance event with a name. A string
+    name must have been provided to DelegateMappingBuilder during AOT
+    compilation.
+    */
+    // EVENT_TRACER_LOG_DELEGATE_PROFILING_EVENT_NAME(op_list->ops[index].name,
+    // start_time, end_time);
 
     return Error::Ok;
   }

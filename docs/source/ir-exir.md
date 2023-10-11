@@ -28,7 +28,7 @@ finally to a binary format for execution.
 ## ATen Dialect
 
 ATen dialect will be used as the entry point of the ExecuTorch compilation
-pipeline. It is the first time an eager mode PyTorch program becomes an Exported
+pipeline, it is the first time an eager mode Pytorch program becomes an Exported
 IR graph. At this stage, functionalization is performed, removing any tensor
 aliases and mutations, and allowing for more flexible graph transformations to
 be made. Additionally, all tensors are converted to continuous format.
@@ -50,7 +50,7 @@ properties:
 1. All operators in `call_function` nodes are either ATen operators (in the
   `torch.ops.aten` namespace, higher order operators (like control flow
   operators), or a registered custom operator. A registered custom operator is
-  an operator registered into the current PyTorch eager mode runtime, usually
+  an operator registered into the current Pytorch eager mode runtime, usually
   with `TORCH_LIBRARY` call (implies schema). Details for how to register a
   custom operator can be found
   [here](https://docs.google.com/document/d/1_W62p8WJOQQUzPsJYa7s701JXt0qf2OfLub2sbkHOaU/edit#heading=h.3rgxk3v387wl).

@@ -49,17 +49,13 @@ class ExportTest(unittest.TestCase):
         self.assertTrue(validation_fn(eager_output, executorch_output))
 
     @staticmethod
-    def validate_tensor_allclose(eager_output, executorch_output, rtol=1e-5, atol=1e-5):
-        result = torch.allclose(
+    def validate_tensor_allclose(eager_output, executorch_output):
+        return torch.allclose(
             eager_output,
             executorch_output[0],
-            rtol=rtol,
-            atol=atol,
+            rtol=1e-5,
+            atol=1e-5,
         )
-        if not result:
-            print(f"eager output: {eager_output}")
-            print(f"executorch output: {executorch_output}")
-        return result
 
     def test_mv3_export_to_executorch(self):
         eager_model, example_inputs = EagerModelFactory.create_model(
@@ -67,11 +63,8 @@ class ExportTest(unittest.TestCase):
         )
         eager_model = eager_model.eval()
 
-        # TODO(T166083470): Fix accuracy issue
         self._assert_eager_lowered_same_result(
-            eager_model,
-            example_inputs,
-            lambda x, y: self.validate_tensor_allclose(x, y, rtol=1e-3, atol=1e-5),
+            eager_model, example_inputs, self.validate_tensor_allclose
         )
 
     def test_mv2_export_to_executorch(self):

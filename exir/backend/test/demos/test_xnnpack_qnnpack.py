@@ -9,10 +9,8 @@ import unittest
 import executorch.exir as exir
 
 import torch
-from executorch.backends.fb.qnnpack.partition.qnnpack_partitioner import (
-    QnnpackPartitioner,
-)
-from executorch.backends.fb.qnnpack.qnnpack_preprocess import QnnpackBackend
+from executorch.backends.qnnpack.partition.qnnpack_partitioner import QnnpackPartitioner
+from executorch.backends.qnnpack.qnnpack_preprocess import QnnpackBackend
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackFloatingPointPartitioner,
 )

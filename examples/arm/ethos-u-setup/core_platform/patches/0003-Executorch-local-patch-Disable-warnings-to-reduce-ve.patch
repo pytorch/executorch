@@ -1,7 +1,8 @@
-From cbda805f968a45205c9d3d4a2f4cb534e207d504 Mon Sep 17 00:00:00 2001
+From b13de10ad4920da069d44efb99eceb86f6169a32 Mon Sep 17 00:00:00 2001
 From: Digant Desai <digantdesai@meta.com>
 Date: Thu, 28 Sep 2023 18:05:30 -0700
-Subject: [Executorch 3/7] Disable warnings to reduce verbosity
+Subject: [PATCH 3/6] [Executorch][local-patch] Disable warnings to reduce
+ verbosity
 
 ---
  cmake/toolchain/arm-none-eabi-gcc.cmake | 28 ++++++++++++-------------
@@ -48,5 +49,5 @@ index 093005e..0e6a2ed 100644
 +    # -Wno-psabi
  )
 -- 
-2.42.0
+2.39.3
 

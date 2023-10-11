@@ -121,6 +121,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    ir-exir
    ir-ops-set-definition
+   ir-high-order-operators
 
 .. toctree::
    :glob:
@@ -143,6 +144,7 @@ Topics in this section will help you get started with ExecuTorch.
    runtime-overview
    runtime-build-and-cross-compilation
    runtime-backend-delegate-implementation-and-linking
+   runtime-api
    runtime-custom-memory-allocator
    runtime-error-handling
    runtime-platform-abstraction-layer
@@ -163,7 +165,6 @@ Topics in this section will help you get started with ExecuTorch.
 
    kernel-library-overview
    kernel-library-custom-aten-kernel
-   kernel-library-selective-build
 
 .. toctree::
    :glob:
@@ -172,12 +173,13 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    sdk-overview
-   sdk-etrecord
-   sdk-etdump
    sdk-profiling
-   sdk-inspector
+   sdk-debugging
    sdk-bundled-io
    sdk-delegate-integration
+   sdk-etdump
+   sdk-inspector
+   sdk-etrecord
 
 .. toctree::
    :glob:
@@ -186,15 +188,13 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    tutorials/export-to-executorch-tutorial
-   running-a-model-cpp-tutorial
-   demo-apps-android
    build-run-xtensa
    tutorials/sdk-integration-tutorial
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
 
-Ready to experiment? Check out some of the
+Ready to experiment? Check out some of the interactive
 ExecuTorch tutorials.
 
 .. customcardstart::
@@ -203,28 +203,14 @@ ExecuTorch tutorials.
    :header: Exporting to ExecuTorch Tutorial
    :card_description: A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.
    :image: _static/img/generic-pytorch-logo.png
-   :link: tutorials/export-to-executorch-tutorial.html
+   :link: tutorials/export-to-executorch.html
    :tags: Export,Delegation,Quantization
 
 .. customcarditem::
    :header: Integrating with ExecuTorch SDK Tutorial
    :card_description: A tutorial for integrating a model with runtime results and utilizing it on the ExecuTorch SDK.
    :image: _static/img/generic-pytorch-logo.png
-   :link: tutorials/sdk-integration-tutorial.html
+   :link: tutorials/sdk-integration.html
    :tags: Export
-
-.. customcarditem::
-   :header: Running an ExecuTorch Model C++ Tutorial
-   :card_description: A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.
-   :image: _static/img/generic-pytorch-logo.png
-   :link: running-a-model-cpp.html
-   :tags:
-
-.. customcarditem::
-   :header: Building an ExecuTorch Android Demo App
-   :card_description: A demo tutorial that explains how to build ExecuTorch into a JNI library and build an Android app.
-   :image: _static/img/android_app.png
-   :link: demo-apps-android.html
-   :tags: Delegation,Android
 
 .. customcardend::

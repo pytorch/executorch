@@ -26,16 +26,6 @@ ConfigValue: TypeAlias = Union[
 ]
 
 """
-The data type of the input for method single execution.
-"""
-MethodInputType: TypeAlias = List[ConfigValue]
-
-"""
-The data type of the output for method single execution.
-"""
-MethodOutputType: TypeAlias = List[torch.Tensor]
-
-"""
 All supported types for input/expected output of test set.
 
 Namedtuple is also supported and listed implicity since it is a subclass of tuple.
@@ -72,8 +62,10 @@ class BundledConfig:
     def __init__(
         self,
         method_names: List[str],
-        inputs: List[List[MethodInputType]],
-        expected_outputs: List[List[MethodOutputType]],
+        # pyre-ignore
+        inputs: List[List[Any]],
+        # pyre-ignore
+        expected_outputs: List[List[Any]],
     ) -> None:
         """Contruct the config given inputs and expected outputs
 
@@ -84,10 +76,6 @@ class BundledConfig:
                     program with corresponding method name. Each set of any `inputs` element should
                     contain all inputs required by eager_model with the same inference function
                     as corresponding execution plan for one-time execution.
-
-                    It is worth mentioning that, although both bundled program and ET runtime apis support setting input
-                    other than torch.tensor type, only the input in torch.tensor type will be actually updated in
-                    the method, and the rest of the inputs will just do a sanity check if they match the default value in method.
 
             expected_outputs: Expected outputs for inputs sharing same index. The size of
                     expected_outputs should be the same as the size of inputs and provided method_names.
@@ -160,8 +148,10 @@ class BundledConfig:
     @staticmethod
     def _gen_execution_plan_tests(
         method_names: List[str],
-        inputs: List[List[MethodInputType]],
-        expected_outputs: List[List[MethodOutputType]],
+        # pyre-ignore
+        inputs: List[List[Any]],
+        # pyre-ignore
+        expected_outputs: List[List[Any]],
     ) -> List[ConfigExecutionPlanTest]:
         """Generate execution plan test given inputs, expected outputs for verifying each execution plan"""
 
