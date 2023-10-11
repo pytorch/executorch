@@ -299,11 +299,11 @@
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Delegate Integration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
@@ -396,14 +396,14 @@
 <h1>Profiling Models in ExecuTorch<a class="headerlink" href="#profiling-models-in-executorch" title="Permalink to this headline">¶</a></h1>
 <p>Profiling in ExecuTorch gives users access to these runtime metrics:</p>
 <ul class="simple">
-<li><p>Model loading time.</p></li>
-<li><p>Operator level execution time</p></li>
-<li><p>Delegate execution time</p>
+<li><p>Model Load Time.</p></li>
+<li><p>Operator Level Execution Time.</p></li>
+<li><p>Delegate Execution Time.</p>
 <ul>
 <li><p>If the delegate that the user is calling into has been integrated with the <a class="reference internal" href="sdk-delegate-integration.html"><span class="doc std std-doc">SDK</span></a>, then users will also be able to access delegated operator execution time.</p></li>
 </ul>
 </li>
-<li><p>End-to-end inference execution time</p></li>
+<li><p>End-to-end Inference Execution Time.</p></li>
 </ul>
 <p>One uniqe aspect of ExecuTorch Profiling is the ability to link every runtime executed operator back to the exact line of python code from which this operator originated. This capability enables users to easily identify hotspots in their model, source them back to the exact line of Python code, and optimize if chosen to.</p>
 <p>We provide access to all the profiling data via the Python <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a>. The data mentioned above can be accessed through these interfaces, allowing users to perform any post-run analysis of their choice.</p>
@@ -419,7 +419,7 @@
 </ul>
 </li>
 </ol>
-<p>Please refer to the [SDK tutorial](link to SDK tutorial) for a step-by-step walkthrough of the above process on a sample model.</p>
+<p>Please refer to the <a class="reference internal" href="tutorials/sdk-integration-tutorial.html"><span class="doc std std-doc">SDK tutorial</span></a> for a step-by-step walkthrough of the above process on a sample model.</p>
 </div>
 </div>
 

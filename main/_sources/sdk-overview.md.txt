@@ -8,10 +8,10 @@ All the components of the SDK have been designed from the ground up with deep in
 
 The ExecuTorch SDK supports the following features:
 
+- **BundledProgram** is a utility tool for exporting the model bundled with a sample set of (representative) inputs and expected outputs, so that during runtime users can validate that the actual output is in fact the same as the expected output.
 - **Profiling** models with operator level breakdown of performance stats
     - Linking back operator performance stats to source code and module hierarchy
     - Model loading and execution time
-- **BundledProgram** is a utility tool for exporting the model bundled with a sample set of (representative) inputs and expected outputs, so that during runtime users can validate that the actual output is in fact the same as the expected output.
 - **Delegate Integration** - Surfacing performance details from delegate backends
     - Link back delegate operator execution to the nodes they represent in the edge dialect graph (and subsequently linking back to source code and module hierarchy)
 - **Debugging** (Intermediate outputs and output quality analysis) - Coming soon

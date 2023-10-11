@@ -299,11 +299,11 @@
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">Delegate Integration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
@@ -503,13 +503,22 @@ lose debug data in the process.</p>
 <div class="section" id="generate-etdump">
 <h2>Generate ETDump<a class="headerlink" href="#generate-etdump" title="Permalink to this headline">¶</a></h2>
 <p>Next step is to generate an <code class="docutils literal notranslate"><span class="pre">ETDump</span></code>. <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> contains runtime results
-from executing the model. To generate, simply pass the ExecuTorch model
-to the <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code>:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">buck2</span> <span class="n">run</span> <span class="n">executorch</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">portable</span><span class="o">/</span><span class="n">scripts</span><span class="p">:</span><span class="n">export</span> <span class="o">--</span> <span class="o">-</span><span class="n">m</span> <span class="n">mv2</span>
-<span class="n">buck2</span> <span class="n">run</span> <span class="nd">@mode</span><span class="o">/</span><span class="n">opt</span> <span class="o">-</span><span class="n">c</span> <span class="n">executorch</span><span class="o">.</span><span class="n">event_tracer_enabled</span><span class="o">=</span><span class="n">true</span> <span class="n">executorch</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">runners</span><span class="p">:</span><span class="n">executor_runner</span> <span class="o">--</span> <span class="o">--</span><span class="n">model_path</span> <span class="n">mv2</span><span class="o">.</span><span class="n">pte</span>
+from executing the model. To generate, users have two options:</p>
+<p><strong>Option 1:</strong></p>
+<p>Use Buck:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">sdk</span><span class="o">.</span><span class="n">scripts</span><span class="o">.</span><span class="n">export_bundled_program</span> <span class="o">-</span><span class="n">m</span> <span class="n">mv2</span>
+<span class="n">buck2_oss</span> <span class="n">run</span> <span class="o">-</span><span class="n">c</span> <span class="n">executorch</span><span class="o">.</span><span class="n">event_tracer_enabled</span><span class="o">=</span><span class="n">true</span> <span class="n">examples</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">sdk_example_runner</span><span class="p">:</span><span class="n">sdk_example_runner</span> <span class="o">--</span> <span class="o">--</span><span class="n">bundled_program_path</span> <span class="n">mv2_bundled</span><span class="o">.</span><span class="n">bp</span>
 </pre></div>
 </div>
-<p>TODO: Add Instructions for CMake, when landed</p>
+<p><strong>Option 2:</strong></p>
+<dl class="simple">
+<dt>Use CMake::</dt><dd><p>cd executorch
+rm -rf cmake-out &amp;&amp; mkdir cmake-out &amp;&amp; cd cmake-out &amp;&amp; cmake -DBUCK2=buck2_oss -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
+cd ..
+cmake –build cmake-out -j8 -t sdk_example_runner
+./cmake-out/examples/sdk/sdk_example_runner –bundled_program_path mv2_bundled.bp</p>
+</dd>
+</dl>
 </div>
 <div class="section" id="creating-an-inspector">
 <h2>Creating an Inspector<a class="headerlink" href="#creating-an-inspector" title="Permalink to this headline">¶</a></h2>

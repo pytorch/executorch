@@ -155,11 +155,11 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    sdk-overview
+   sdk-bundled-io
    sdk-etrecord
    sdk-etdump
    sdk-profiling
    sdk-inspector
-   sdk-bundled-io
    sdk-delegate-integration
 
 .. toctree::

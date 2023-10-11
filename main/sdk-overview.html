@@ -39,7 +39,7 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Prerequisite | ETRecord - ExecuTorch Record" href="sdk-etrecord.html" />
+    <link rel="next" title="Bundled Program – a Tool for ExecuTorch Model Validation" href="sdk-bundled-io.html" />
     <link rel="prev" title="Kernel Registration" href="kernel-library-custom-aten-kernel.html" />
 
 
@@ -299,11 +299,11 @@
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Introduction to the ExecuTorch SDK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Delegate Integration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
@@ -400,13 +400,13 @@
 <h2>SDK Features<a class="headerlink" href="#sdk-features" title="Permalink to this headline">¶</a></h2>
 <p>The ExecuTorch SDK supports the following features:</p>
 <ul class="simple">
+<li><p><strong>BundledProgram</strong> is a utility tool for exporting the model bundled with a sample set of (representative) inputs and expected outputs, so that during runtime users can validate that the actual output is in fact the same as the expected output.</p></li>
 <li><p><strong>Profiling</strong> models with operator level breakdown of performance stats</p>
 <ul>
 <li><p>Linking back operator performance stats to source code and module hierarchy</p></li>
 <li><p>Model loading and execution time</p></li>
 </ul>
 </li>
-<li><p><strong>BundledProgram</strong> is a utility tool for exporting the model bundled with a sample set of (representative) inputs and expected outputs, so that during runtime users can validate that the actual output is in fact the same as the expected output.</p></li>
 <li><p><strong>Delegate Integration</strong> - Surfacing performance details from delegate backends</p>
 <ul>
 <li><p>Link back delegate operator execution to the nodes they represent in the edge dialect graph (and subsequently linking back to source code and module hierarchy)</p></li>
@@ -450,7 +450,7 @@
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="sdk-etrecord.html" class="btn btn-neutral float-right" title="Prerequisite | ETRecord - ExecuTorch Record" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="sdk-bundled-io.html" class="btn btn-neutral float-right" title="Bundled Program – a Tool for ExecuTorch Model Validation" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
         <a href="kernel-library-custom-aten-kernel.html" class="btn btn-neutral" title="Kernel Registration" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
