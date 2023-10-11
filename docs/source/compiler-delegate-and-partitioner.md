@@ -29,12 +29,12 @@
 
 Audience: Vendors, Backend Delegate developers, who are interested in integrating their own compilers and hardware as part of ExecuTorch
 
-## Backend Interfaces: Overview
-
 Backend delegation is an entry point for backends to process and execute PyTorch
 programs to leverage performance and efficiency benefits of specialized
 backends and hardware, while still providing PyTorch users with an experience
 close to that of the PyTorch runtime.
+
+## Backend Interfaces: Overview
 
 At a high level, the entry point for backends is defined by 2 components:
 
@@ -57,10 +57,10 @@ A delegate backend implementation is composed of:
 
 For the AOT preprocessing, backends are given an edge dialect program,
 a list of compile specs specifying the values needed for compilation, and are
-expected to return a compiled blob, or binary contains the desired program to be
-run in the backend, and profiling information. During serialization, the
+expected to return a compiled blob, or binary containing the desired program to be
+run in the backend. During serialization, the
 compiled blob will be serialized as part of the `.pte` file, and directly loaded to the device. The
-API looks something like:
+API for this process is:
 
 ```python
 def preprocess(
@@ -71,7 +71,7 @@ def preprocess(
 
 A demo of the preprocess function is implemented
 [here](https://github.com/pytorch/executorch/blob/main/exir/backend/test/backend_with_compiler_demo.py).
-The demo loops through the nodes in the graph module of the `edge_program` and
+This demo loops through the nodes in the graph module of the `edge_program` and
 serializes the `add`, `mul`, and `sin` instructions into a string, which is later
 parsed and executed at runtime.
 
@@ -80,7 +80,7 @@ parsed and executed at runtime.
 During the runtime, the compiled blob from the `preprocess` function will be
 loaded and passed directly to the backend's custom `init` function. This
 function is responsible for further processing the compiled unit, as well as
-perform any backend initialization. The backend's custom `execute` function will
+performing any backend initialization and return a handle. The backend's custom `execute` function will
 then be called to execute the handle produced by `init`. And finally, if
 destroying is required for some backend, backends can implement a `destroy`
 function which will be called when the program is out of its lifespan.
@@ -102,12 +102,12 @@ __ET_NODISCARD virtual Error execute(
 virtual void destroy(__ET_UNUSED DelegateHandle* handle);
 ```
 
-Once the backend is ready, they can then be registered via the `register_backend` API:
+In order to make backend available to ExecuTorch runtime, it must be registered via the `register_backend` API:
 ```cpp
 __ET_NODISCARD Error register_backend(const Backend& backend);
 ```
 
-`register_backend` can be statically registered like the following
+Static registeration, i.e., at libraray init or load time, of a backend can be achieved as follows:
 ```cpp
 namespace {
 auto cls = BackendWithCompiler();
@@ -119,60 +119,20 @@ static auto success_with_compiler = register_backend(backend);
 
 ## SDK: Debug Handle
 
-If there is an error in the backend, for example, if there is any operator that
-is not supported by the backend, a debug handler can be thrown. It can surface
-back to the Python frontend with the source code information. Below is an
-example where the `tan` operator is not supported in `BackendWithCompilerDemo`
-backend. Please refer to [SDK delegate integration](./sdk-delegate-integration)
+While delegation allows acceleration of PyTorch programs or subgraph, it does so
+via generating backend specific opaque blobs that are "uninterpretable" to ExecuTorch runtime.
+As a result it is not composable with other tooling, such as SDK,
+ built on top of the core runtime. Concretely, when runtime ecounters an error,
+ instruction on which the error happened can be correlated to original PyTorch program.
+ The same applies for latency or memory profiling. However, delegated blobs are opaque
+ to the runtime. Thus, in order to provide visibility into the execution of a delegate blob
+ , delegation API provides delegates with a way to associate backend consumed blob
+ with original lowered program. These are called delegate handle map. Delegate handles map
+ allows delegates to generate internal handles that can be associated with lowered program
+ consumed by the delegate. Then at runtime, delegates can report error or profiling using
+ the internal handle, which will be mapped to lowered program using the debug handle map.
+ For more information, please refer to [SDK delegate integration](./sdk-delegate-integration)
 for more details.
-
-A problematic program:
-```python
-class TanModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        return torch.tan(x)
-
-tan_module = TanModule()
-model_inputs = (torch.ones(1),)
-edgeir_m = exir.capture(tan_module, model_inputs).to_edge()
-lowered_tan_module = to_backend(
-    "BackendWithCompilerDemo", edgeir_m, []
-)
-
-class CompositeModelWithTan(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.lowered_tan = lowered_tan_module
-
-    def forward(self, x):
-        output_from_submodule = self.lowered_tan(x)
-        return output_from_submodule
-
-composite_model_with_tan = CompositeModelWithTan()
-model_inputs = (torch.ones(1),)
-
-composite_model_with_tan(*model_inputs)
-
-exec_prog = (
-    exir.capture(composite_model_with_tan, model_inputs).to_edge().to_executorch()
-)
-
-buff = exec_prog.buffer
-model_inputs = torch.ones(1)
-
-# Load and init the program in executor
-executorch_module = _load_for_executorch_from_buffer(buff)
-
-# Expect to throw with debug handler here.
-model_outputs = executorch_module.forward([model_inputs])
-```
-
-It's expected to capture debug handler like `instruction
-demo::tan_default<debug_handle>1 is not supported, debug handler is: 1`
-
 
 ## Common Questions
 
