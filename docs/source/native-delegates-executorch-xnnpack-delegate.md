@@ -6,10 +6,10 @@ This is a high-level overview of the ExecuTorch XNNPACK Backend Delegate. This h
 XNNPACK Delegate is currently under active development, and may change in the future
 ::::
 
-### What is XNNPACK?
+## What is XNNPACK?
 XNNPACK is a library of highly-optimized neural network operators for ARM, x86, and WebAssembly architectures in Android, iOS, Windows, Linux, and macOS environments. It is an open source project, you can find more information about it on [github](https://github.com/google/XNNPACK).
 
-### What are ExecuTorch Delegates?
+## What are ExecuTorch Delegates?
 A delegate is an entry point for backends to process and execute parts of the ExecuTorch program. Delegated portions of ExecuTorch models hand off execution to backends. The XNNPACK Backend Delegate is one of many available in ExecuTorch. It leverages the XNNPACK third-party library to accelerate ExecuTorch programs efficiently across a variety of CPUs. More detailed information on the delegates and developing your own delegates is available [here](compiler-delegate-and-partitioner.md). It is recommended that you get familiar with that content before continuing on to the Architecture section.
 
 ## Architecture
@@ -82,7 +82,7 @@ Total Time: 109.510002
 ```
 
 ::::{note}
-Profiling is a work in progress, and is planned to be integrated with [SDK Tools](sdk-delegate-integrations.md) and Tensorboard.
+Profiling is a work in progress, and is planned to be integrated with [SDK Tools](sdk-delegate-integration.md) and Tensorboard.
 ::::
 
 [comment]: <> (TODO: Refactor quantizer to a more official quantization doc)

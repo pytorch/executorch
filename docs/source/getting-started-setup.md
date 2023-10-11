@@ -184,7 +184,6 @@ To generate a sample program, complete the following steps:
 Alternatively, you can use a Python Interpreter to perform the same action:
 
 ```python
-$ python3
 >>> import executorch.exir as exir
 >>> from executorch.exir.tests.models import Mul
 >>> m = Mul()
