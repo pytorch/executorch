@@ -1,3 +1,0 @@
-# Kernel Fusion Pass
-
-TBA
