@@ -425,6 +425,7 @@
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.spec_prop_pass</span> <span class="kn">import</span> <span class="n">SpecPropPass</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.print_program</span> <span class="kn">import</span> <span class="n">pretty_print</span><span class="p">,</span> <span class="n">print_program</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.schema</span> <span class="kn">import</span> <span class="n">Program</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.tracer</span> <span class="kn">import</span> <span class="n">_default_decomposition_table</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.verification.verifier</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">EXIRATenDialectVerifier</span><span class="p">,</span>
     <span class="n">EXIREdgeDialectVerifier</span><span class="p">,</span>
@@ -987,6 +988,11 @@
 
     <span class="n">edge_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">aten_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="c1"># Decompose to Core ATen</span>
+        <span class="n">program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">run_decompositions</span><span class="p">(</span>
+            <span class="n">_default_decomposition_table</span><span class="p">()</span>  <span class="c1"># pyre-ignore[6]</span>
+        <span class="p">)</span>
+
         <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
             <span class="k">try</span><span class="p">:</span>
                 <span class="n">EXIRATenDialectVerifier</span><span class="p">()(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
