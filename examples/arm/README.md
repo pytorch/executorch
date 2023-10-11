@@ -1,7 +1,7 @@
 ## ExecuTorch on ARM Cortex-M55 + Ethos-U55
 
 This dir contains scripts to help you prepare setup needed to run a PyTorch
-model on a ARM Corstone-300 platform via ExecuTorch. Corstone-300 platform
+model on an ARM Corstone-300 platform via ExecuTorch. Corstone-300 platform
 contains the Cortex-M55 CPU and Ethos-U55 NPU.
 
 We will start from a PyTorch model in python, export it, convert it to a `.pte`
