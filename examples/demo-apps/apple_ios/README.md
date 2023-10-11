@@ -10,7 +10,7 @@ process live camera images leveraging three different backends:
 [Metal Performance Shaders](https://developer.apple.com/documentation/metalperformanceshaders)
 (MPS).
 
-![](_static/img/demo_ios_xcode.jpg)
+![](_static/img/demo_ios_app.jpg)
 
 ## Prerequisites
 
@@ -133,4 +133,4 @@ Finally, set up Code Signing in Xcode, and then run the app using `Cmd + R`.
 Congratulations! You've successfully set up the ExecuTorch iOS Demo App. Now,
 you can explore and enjoy the power of ExecuTorch on your iOS device!
 
-![](_static/img/demo_ios_app.jpg)
+![](_static/img/demo_ios_xcode.jpg)
