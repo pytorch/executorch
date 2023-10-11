@@ -109,8 +109,7 @@ can build it for a wide variety of target systems.
 The runtime makes no direct system calls. All access to memory, files, logging,
 and clocks are abstracted through the [_Runtime Platform Abstraction Layer
 (PAL)_](runtime-platform-abstraction-layer.md) and injected interfaces like
-`DataLoader` and `MemoryAllocator`. [TODO: link these types to their generated
-docs]
+`DataLoader` and `MemoryAllocator`. See the [runtime api reference](executorch-runtime-api-reference.rst) to learn more.
 
 Applications can control all memory allocation through the `MemoryManager`,
 `MemoryAllocator`, `HierarchicalAllocator`, and `DataLoader` classes. The core
