@@ -719,26 +719,26 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 <li><p><code class="docutils literal notranslate"><span class="pre">libexecutorch_delegate_ethos_u.a</span></code></p></li>
 </ul>
 <p>To generate these libraries, use following commands,</p>
-<div class="highlight-none notranslate highlight-console"><div class="highlight"><pre><span></span><span class="gp"># </span>Empty<span class="w"> </span>and<span class="w"> </span>already<span class="w"> </span>created
-<span class="go">cd &lt;executorch_build_dir&gt;</span>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Empty and already created</span>
+<span class="nb">cd</span><span class="w"> </span>&lt;executorch_build_dir&gt;
 
-<span class="go">toolchain_cmake=&lt;executorch_source_root_dir&gt;/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake</span>
+<span class="nv">toolchain_cmake</span><span class="o">=</span>&lt;executorch_source_root_dir&gt;/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
 
-<span class="go">cmake                                                 \</span>
-<span class="go">    -DBUCK2=${buck2}                                  \</span>
-<span class="go">    -DEXECUTORCH_BUILD_XNNPACK=OFF                    \</span>
-<span class="go">    -DEXECUTORCH_BUILD_GFLAGS=OFF                     \</span>
-<span class="go">    -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \</span>
-<span class="go">    -DEXECUTORCH_BUILD_HOST_TARGETS=OFF               \</span>
-<span class="go">    -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \</span>
-<span class="go">    -DCMAKE_BUILD_TYPE=Release                        \</span>
-<span class="go">    -DEXECUTORCH_ENABLE_LOGGING=ON                    \</span>
-<span class="go">    -DEXECUTORCH_SELECT_OPS_LIST=&quot;aten::_softmax.out&quot; \</span>
-<span class="go">    -DFLATC_EXECUTABLE=&quot;$(which flatc)&quot;               \</span>
-<span class="go">    -DCMAKE_TOOLCHAIN_FILE=&quot;${toolchain_cmake}&quot;       \</span>
-<span class="go">    &lt;executorch_source_root_dir&gt;</span>
+cmake<span class="w">                                                 </span><span class="se">\</span>
+<span class="w">    </span>-DBUCK2<span class="o">=</span><span class="si">${</span><span class="nv">buck2</span><span class="si">}</span><span class="w">                                  </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>OFF<span class="w">                    </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_GFLAGS<span class="o">=</span>OFF<span class="w">                     </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXECUTOR_RUNNER<span class="o">=</span>OFF<span class="w">            </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_HOST_TARGETS<span class="o">=</span>OFF<span class="w">               </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_ARM_BAREMETAL<span class="o">=</span>ON<span class="w">               </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w">                        </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span>ON<span class="w">                    </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_SELECT_OPS_LIST<span class="o">=</span><span class="s2">&quot;aten::_softmax.out&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>flatc<span class="k">)</span><span class="s2">&quot;</span><span class="w">               </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">toolchain_cmake</span><span class="si">}</span><span class="s2">&quot;</span><span class="w">       </span><span class="se">\</span>
+<span class="w">    </span>&lt;executorch_source_root_dir&gt;
 
-<span class="go">cmake --build . -- VERBOSE=1</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>--<span class="w"> </span><span class="nv">VERBOSE</span><span class="o">=</span><span class="m">1</span>
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">EXECUTORCH_SELECT_OPS_LIST</span></code> will decide the number of portable operators included in the build and are available at runtime. It must match with <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file’s requirements, otherwise you will get <code class="docutils literal notranslate"><span class="pre">Missing</span> <span class="pre">Operator</span></code> error at runtime.</p>

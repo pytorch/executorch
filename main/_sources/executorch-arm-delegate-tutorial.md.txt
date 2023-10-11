@@ -348,7 +348,7 @@ To run a `.pte` file with the Arm backend delegate call instructions, we will ne
 
 To generate these libraries, use following commands,
 
-```console
+```bash
 # Empty and already created
 cd <executorch_build_dir>
 
@@ -377,7 +377,7 @@ For example, here in the command line above, to run SoftmaxModule, we only inclu
 
 ### Building the executor_runner Bare-Metal Application
 
-The SDK dir is the same one prepared [earlier](#setup-the-arm-ethos-u-software-development). And, we will be passing the `.pte` file (any one of them) generated above. 
+The SDK dir is the same one prepared [earlier](#setup-the-arm-ethos-u-software-development). And, we will be passing the `.pte` file (any one of them) generated above.
 
 Note, you have to generate a new `executor-runner` binary if you want to change the model or the `.pte` file. This constraint is from the constrained bare-metal runtime environment we have for Corstone-300 platform.
 
