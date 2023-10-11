@@ -181,6 +181,7 @@ Topics in this section will help you get started with ExecuTorch.
    build-run-ios-demo
    demo-apps-android
    build-run-xtensa
+   build-run-qualcomm-ai-engine-direct-backend
    tutorials/sdk-integration-tutorial
    executorch-arm-delegate-tutorial
    tutorial-xnnpack-delegate-lowering
