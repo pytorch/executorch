@@ -317,6 +317,7 @@
 <li class="toctree-l1"><a class="reference internal" href="build-run-ios-demo.html">ExecuTorch iOS Demo App Tutorial</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch on Qualcomm AI Engine Direct</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">SDK Integration Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">ExecuTorch Arm Ethos-U Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">XNNPACK Backend Delegate Lowering Tutorial</a></li>
@@ -426,7 +427,7 @@ Prerequisites</div>
 <li><p class="sd-card-text">Refer to <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a> to set up the repo and dev environment.</p></li>
 <li><p class="sd-card-text">Download and install <a class="reference external" href="https://developer.android.com/studio">Android Studio and SDK</a>.</p></li>
 <li><p class="sd-card-text">Supported Host OS: CentOS, macOS Ventura (M1/x86_64). See below for Qualcomm HTP specific requirements.</p></li>
-<li><p class="sd-card-text"><em>Qualcomm HTP Only<a class="footnote-reference brackets" href="#id3" id="id1">1</a>:</em> To build and run on Qualcomm’s AI Engine Direct, please follow <span class="xref myst">Building and Running ExecuTorch on Qualcomm AI Engine Direct</span> for hardware and software pre-requisites.</p></li>
+<li><p class="sd-card-text"><em>Qualcomm HTP Only<a class="footnote-reference brackets" href="#id3" id="id1">1</a>:</em> To build and run on Qualcomm’s AI Engine Direct, please follow <a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html"><span class="doc std std-doc">Building and Running ExecuTorch on Qualcomm AI Engine Direct</span></a> for hardware and software pre-requisites.</p></li>
 </ul>
 </div>
 </div>
@@ -455,7 +456,7 @@ cp<span class="w"> </span>dl3_xnnpack_fp32.pte<span class="w"> </span>examples/d
 </div>
 <div class="section" id="qualcomm-hexagon-npu">
 <h4>Qualcomm Hexagon NPU<a class="headerlink" href="#qualcomm-hexagon-npu" title="Permalink to this headline">¶</a></h4>
-<p>For delegating to Qualcomm Hexagon NPU, please follow the tutorial <span class="xref myst">here</span>.</p>
+<p>For delegating to Qualcomm Hexagon NPU, please follow the tutorial <a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html"><span class="doc std std-doc">here</span></a>.</p>
 <p>After generating the model, copy the model to <code class="docutils literal notranslate"><span class="pre">assets</span></code> directory.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build_android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>-s<span class="w"> </span>&lt;adb_connected_device_serial&gt;
 cp<span class="w"> </span>deeplab_v3/dlv3_qnn.pte<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
@@ -544,7 +545,7 @@ cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>-p<span class="w"> </span>../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 </pre></div>
 </div>
-<p>We need to push some additional Qualcomm HTP backend libraries to the app. Please refer to <span class="xref myst">Qualcomm docs</span> here.</p>
+<p>We need to push some additional Qualcomm HTP backend libraries to the app. Please refer to <a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html"><span class="doc std std-doc">Qualcomm docs</span></a> here.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cp<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtp.so<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV69Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpStub.so<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnSystem.so<span class="w"> </span><span class="se">\</span>
 <span class="w">   </span>../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 </pre></div>

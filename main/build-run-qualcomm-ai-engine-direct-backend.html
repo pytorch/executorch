@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Index &mdash; ExecuTorch  documentation</title>
+  <title>Building and Running ExecuTorch on Qualcomm AI Engine Direct &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -37,8 +37,13 @@
   <link rel="stylesheet" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
   <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
-    <link rel="index" title="Index" href="#" />
+    <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="SDK Integration Tutorial" href="tutorials/sdk-integration-tutorial.html" />
+    <link rel="prev" title="Building and Running ExecuTorch on Xtensa HiFi4 DSP" href="build-run-xtensa.html" />
+
+<link rel="stylesheet" href="../_static/css/progress-bar.css">
+<script src="../_static/js/progress-bar.js" defer></script>
 
 
   <!-- Google Tag Manager -->
@@ -309,13 +314,13 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Delegate Integration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-ios-demo.html">ExecuTorch iOS Demo App Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch on Qualcomm AI Engine Direct</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Building and Running ExecuTorch on Qualcomm AI Engine Direct</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">SDK Integration Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">ExecuTorch Arm Ethos-U Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">XNNPACK Backend Delegate Lowering Tutorial</a></li>
@@ -359,12 +364,14 @@
       </li>
 
         
-      <li>Index</li>
+      <li>Building and Running ExecuTorch on Qualcomm AI Engine Direct</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
+            <a href="_sources/build-run-qualcomm-ai-engine-direct-backend.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+          
         
       </li>
     
@@ -395,322 +402,282 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-
-<h1 id="index">Index</h1>
-
-<div class="genindex-jumpbox">
- <a href="#_"><strong>_</strong></a>
- | <a href="#B"><strong>B</strong></a>
- | <a href="#C"><strong>C</strong></a>
- | <a href="#D"><strong>D</strong></a>
- | <a href="#E"><strong>E</strong></a>
- | <a href="#F"><strong>F</strong></a>
- | <a href="#G"><strong>G</strong></a>
- | <a href="#L"><strong>L</strong></a>
- | <a href="#M"><strong>M</strong></a>
- | <a href="#P"><strong>P</strong></a>
- | <a href="#T"><strong>T</strong></a>
- 
+  <!---- DO NOT MODIFY Progress Bar Start --->
+<div class="progress-bar-wrapper">
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-1">1</div>
+     <span class="step-caption" id="caption-1"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-2">2</div>
+     <span class="step-caption" id="caption-2"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-3">3</div>
+     <span class="step-caption" id="caption-3"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-4">4</div>
+     <span class="step-caption" id="caption-4"></span>
+   </div>
+   <div class="progress-bar-item">
+     <div class="step-number" id="step-5">5</div>
+     <span class="step-caption" id="caption-5"></span>
+   </div>
 </div>
-<h2 id="_">_</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="sdk-inspector.html#sdk.inspector.inspector.Inspector.__init__">__init__() (in module sdk.inspector.inspector.Inspector)</a>
+<!---- DO NOT MODIFY Progress Bar End--->
+<div class="section" id="building-and-running-executorch-on-qualcomm-ai-engine-direct">
+<h1>Building and Running ExecuTorch on Qualcomm AI Engine Direct<a class="headerlink" href="#building-and-running-executorch-on-qualcomm-ai-engine-direct" title="Permalink to this headline">¶</a></h1>
+<p>In this tutorial we will walk you through the process of getting setup to
+build ExecuTorch for Qualcomm AI Engine Direct and running a model on it.</p>
+<p>Qualcomm AI Engine Direct is also referred to as QNN in the source and documentation.</p>
+<!----This will show a grid card on the page----->
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-learn docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+What you will learn in this tutorial:</div>
+<ul class="simple">
+<li><p class="sd-card-text">In this tutorial you will learn how to lower and deploy a model for Qualcomm AI Engine Direct.</p></li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Tutorials we recommend you complete before this:</div>
+<ul class="simple">
+<li><p class="sd-card-text"><a class="reference internal" href="intro-how-it-works.html"><span class="doc std std-doc">Introduction to ExecuTorch</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="runtime-build-and-cross-compilation.html"><span class="doc std std-doc">Building ExecuTorch with CMake</span></a></p></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="section" id="what-s-qualcomm-ai-engine-direct">
+<h2>What’s Qualcomm AI Engine Direct?<a class="headerlink" href="#what-s-qualcomm-ai-engine-direct" title="Permalink to this headline">¶</a></h2>
+<p><a class="reference external" href="https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk">Qualcomm AI Engine Direct</a>
+is designed to provide unified, low-level APIs for AI development.</p>
+<p>Developers can interact with various accelerators on Qualcomm SoCs with these set of APIs, including
+Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found <a class="reference external" href="https://docs.qualcomm.com/bundle/publicresource/topics/80-63442-50/overview.html">here</a>.</p>
+<p>Currently, this ExecuTorch Backend can delegate AI computations to Hexagon processors through Qualcomm AI Engine Direct APIs.</p>
+</div>
+<div class="section" id="prerequsites-hardware-and-software">
+<h2>Prerequsites (Hardware and Software)<a class="headerlink" href="#prerequsites-hardware-and-software" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="host-os">
+<h3>Host OS<a class="headerlink" href="#host-os" title="Permalink to this headline">¶</a></h3>
+<p>The Linux host operating system that QNN Backend is verified with is Ubuntu 20.04 LTS x64.</p>
+<p>However, because Qualcomm Package Manager(QPM) used to download necessary SDK (see below)
+only support Ubuntu, we recommend users to exercise this tutorial exacly
+on Ubuntu 20.04.</p>
+</div>
+<div class="section" id="hardware">
+<h3>Hardware:<a class="headerlink" href="#hardware" title="Permalink to this headline">¶</a></h3>
+<p>You will need an Android smartphone with adb-connected running on one of below Qualcomm SoCs:</p>
+<ul class="simple">
+<li><p>SM8450 (Snapdragon 8 Gen 1)</p></li>
+<li><p>SM8475 (Snapdragon 8 Gen 1+)</p></li>
+<li><p>SM8550 (Snapdragon 8 Gen 2)</p></li>
+</ul>
+<p>This example is verified with SM8550 and SM8450.</p>
+</div>
+<div class="section" id="software">
+<h3>Software:<a class="headerlink" href="#software" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><p>Follow ExecuTorch recommneded Python version.</p></li>
+<li><p>A compiler to compile AOT parts. GCC 9.4 come with Ubuntu20.04 is verified.</p></li>
+<li><p>Android NDK. This example is verified with NDK 25c.</p></li>
+<li><p><a class="reference external" href="https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk">Qualcomm AI Engine Direct SDK</a></p>
+<ul>
+<li><p>Follow the download button. After logging in, search Qualcomm AI Stack at the <em>Tool</em> panel.</p></li>
+<li><p>You can find Qualcomm AI Engine Direct SDK under the AI Stack group.</p></li>
+<li><p>Please download the Linux version, and follow instructions on the page to extract the file.</p></li>
+<li><p>The SDK should be installed to somewhere <code class="docutils literal notranslate"><span class="pre">/opt/qcom/aistack/qnn</span></code> by default.</p></li>
+<li><p>It’s also OK to place it somewhere else. We don’t have assumption about the absolute path of the SDK.</p></li>
+<li><p>This example is verified with version 2.12.0.</p></li>
+</ul>
 </li>
-  </ul></td>
-</tr></table>
+</ul>
+<p>The directory with installed Qualcomm AI Engine Direct SDK looks like:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>$ tree -L 1 /opt/qcom/aistack/qnn/&lt;version&gt;/
+/opt/qcom/aistack/qnn/&lt;version&gt;/
+├── benchmarks
+├── bin
+├── docs
+├── examples
+├── include
+├── lib
+├── LICENSE.pdf
+├── qaisw-v2.13.1.230725130242_60412
+├── QNN_NOTICE.txt
+├── QNN_README.txt
+├── QNN_ReleaseNotes.txt
+├── QNN_SECUREPD_README.txt
+├── share
+└── Uninstall
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="setting-up-your-developer-environment">
+<h2>Setting up your developer environment<a class="headerlink" href="#setting-up-your-developer-environment" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="conventions">
+<h3>Conventions<a class="headerlink" href="#conventions" title="Permalink to this headline">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">$QNN_SDK_ROOT</span></code> refers to the root of Qualcomm AI Engine Direct SDK,
+i.e., the directory containing <code class="docutils literal notranslate"><span class="pre">QNN_README.txt</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">$ANDROID_NDK</span></code> refers to the root of Android NDK.</p>
+<p><code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT</span></code> refers to the root of executorch git repository.</p>
+</div>
+<div class="section" id="setup-environment-variables">
+<h3>Setup environment variables<a class="headerlink" href="#setup-environment-variables" title="Permalink to this headline">¶</a></h3>
+<p>We set <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code> to make sure the dynamic linker can find QNN libraries.</p>
+<p>Further, we set <code class="docutils literal notranslate"><span class="pre">PYTHONPATH</span></code> because it’s easier to develop and import ExecuTorch
+Pytho APIs.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span><span class="nv">$QNN_SDK_ROOT</span>/lib/x86_64-linux-clang/:<span class="nv">$LD_LIBRARY_PATH</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">PYTHONPATH</span><span class="o">=</span><span class="nv">$EXECUTORCH_ROOT</span>/..
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="build">
+<h2>Build<a class="headerlink" href="#build" title="Permalink to this headline">¶</a></h2>
+<p>An example script for below building instructions is <a class="reference download internal" download="" href="_downloads/d9e3387e8f389f6a68c05c3f3bc13e0b/build.sh"><span class="xref download myst">here</span></a>.</p>
+<div class="section" id="aot-ahead-of-time-components">
+<h3>AOT (Ahead-of-time) components:<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this headline">¶</a></h3>
+<p>Python APIs on x64 are required to compile models to Qualcomm AI Engine Direct binary.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
+mkdir<span class="w"> </span>build_x86_64
+<span class="nb">cd</span><span class="w"> </span>build_x86_64
+cmake<span class="w"> </span>..<span class="w"> </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>-t<span class="w"> </span><span class="s2">&quot;PyQnnManagerAdaptor&quot;</span><span class="w"> </span><span class="s2">&quot;PyQnnWrapperAdaptor&quot;</span><span class="w"> </span>-j8
 
-<h2 id="B">B</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#exir.ExecutorchProgramManager.buffer">buffer (exir.ExecutorchProgramManager property)</a>
-</li>
-  </ul></td>
-</tr></table>
+<span class="c1"># install Python APIs to correct import path</span>
+<span class="c1"># The filename might vary depending on your Python and host version.</span>
+cp<span class="w"> </span>-f<span class="w"> </span>backends/qualcomm/PyQnnManagerAdaptor.cpython-310-x86_64-linux-gnu.so<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/backends/qualcomm/python
+cp<span class="w"> </span>-f<span class="w"> </span>backends/qualcomm/PyQnnWrapperAdaptor.cpython-310-x86_64-linux-gnu.so<span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>/backends/qualcomm/python
+</pre></div>
+</div>
+</div>
+<div class="section" id="runtime">
+<h3>Runtime:<a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h3>
+<p>A example <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> executable would be used to run the compiled <code class="docutils literal notranslate"><span class="pre">pte</span></code> model.</p>
+<p>Commands to build <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> for Android:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
+mkdir<span class="w"> </span>build_android
+<span class="nb">cd</span><span class="w"> </span>build_android
+cmake<span class="w"> </span>..<span class="w"> </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="nv">$QNN_SDK_ROOT</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="s1">&#39;arm64-v8a&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_NATIVE_API_LEVEL<span class="o">=</span><span class="m">23</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DBUCK2<span class="o">=</span>buck2
+cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>-j8
+</pre></div>
+</div>
+<p>You can find <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> under <code class="docutils literal notranslate"><span class="pre">build_android/examples/qualcomm/</span></code>.</p>
+</div>
+</div>
+<div class="section" id="deploying-and-running-on-device">
+<h2>Deploying and running on device<a class="headerlink" href="#deploying-and-running-on-device" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="aot-compile-a-model">
+<h3>AOT compile a model<a class="headerlink" href="#aot-compile-a-model" title="Permalink to this headline">¶</a></h3>
+<p>You can refer to <a class="reference download internal" download="" href="_downloads/780f2a7e6f1e5aca7ce0c3869b88c778/deeplab_v3.py"><span class="xref download myst">this script</span></a> for the exact flow.
+We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands to compile:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>cd $EXECUTORCH_ROOT
+python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 --compile_only --download
+</pre></div>
+</div>
+<p>You might see something like below:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">context</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">device</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">backend</span>
 
-<h2 id="C">C</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#exir.EdgeProgramManager.config_methods">config_methods (exir.EdgeProgramManager property)</a>
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#exir.ExecutorchProgramManager.config_methods">(exir.ExecutorchProgramManager property)</a>
-</li>
-      </ul></li>
-  </ul></td>
-</tr></table>
-
-<h2 id="D">D</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#exir.ExecutorchProgramManager.dump_executorch_program">dump_executorch_program() (exir.ExecutorchProgramManager method)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="E">E</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#exir.EdgeProgramManager">EdgeProgramManager (class in exir)</a>
-</li>
-      <li><a href="sdk-inspector.html#sdk.inspector.inspector.Event">Event (class in sdk.inspector.inspector)</a>
-</li>
-      <li><a href="sdk-inspector.html#sdk.inspector.inspector.EventBlock">EventBlock (class in sdk.inspector.inspector)</a>
-</li>
-      <li><a href="export-to-executorch-api-reference.html#exir.ExecutorchProgramManager">ExecutorchProgramManager (class in exir)</a>
-</li>
-      <li>
-    exir
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#module-exir">module</a>
-</li>
-      </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li>
-    exir.backend.backend_api
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#module-exir.backend.backend_api">module</a>
-</li>
-      </ul></li>
-      <li><a href="export-to-executorch-api-reference.html#exir.EdgeProgramManager.exported_program">exported_program() (exir.EdgeProgramManager method)</a>
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#exir.ExecutorchProgramManager.exported_program">(exir.ExecutorchProgramManager method)</a>
-</li>
-      </ul></li>
-  </ul></td>
-</tr></table>
-
-<h2 id="F">F</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="sdk-inspector.html#sdk.inspector.inspector.Inspector.find_total_for_module">find_total_for_module() (in module sdk.inspector.inspector.Inspector)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="G">G</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="sdk-etrecord.html#sdk.etrecord._etrecord.generate_etrecord">generate_etrecord() (in module sdk.etrecord._etrecord)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="sdk-inspector.html#sdk.inspector.inspector.Inspector.get_exported_program">get_exported_program() (in module sdk.inspector.inspector.Inspector)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="L">L</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#exir.backend.backend_api.LoweredBackendModule">LoweredBackendModule (class in exir.backend.backend_api)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="M">M</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#exir.EdgeProgramManager.methods">methods (exir.EdgeProgramManager property)</a>
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#exir.ExecutorchProgramManager.methods">(exir.ExecutorchProgramManager property)</a>
-</li>
-      </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li>
-    module
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#module-exir">exir</a>
-</li>
-        <li><a href="export-to-executorch-api-reference.html#module-exir.backend.backend_api">exir.backend.backend_api</a>
-</li>
-      </ul></li>
-  </ul></td>
-</tr></table>
-
-<h2 id="P">P</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="sdk-etrecord.html#sdk.etrecord._etrecord.parse_etrecord">parse_etrecord() (in module sdk.etrecord._etrecord)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="sdk-inspector.html#sdk.inspector.inspector.Inspector.print_data_tabular">print_data_tabular() (in module sdk.inspector.inspector.Inspector)</a>
-</li>
-      <li><a href="export-to-executorch-api-reference.html#exir.backend.backend_api.LoweredBackendModule.program">program() (exir.backend.backend_api.LoweredBackendModule method)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="T">T</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#exir.EdgeProgramManager.to_backend">to_backend() (exir.EdgeProgramManager method)</a>
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#exir.backend.backend_api.to_backend">(in module exir.backend.backend_api)</a>
-</li>
-      </ul></li>
-      <li><a href="export-to-executorch-api-reference.html#exir.to_edge">to_edge() (in module exir)</a>
-</li>
-      <li><a href="export-to-executorch-api-reference.html#exir.EdgeProgramManager.to_executorch">to_executorch() (exir.EdgeProgramManager method)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor10DataLoaderE">torch::executor::DataLoader (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6EValueE">torch::executor::EValue (C++ struct)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6EValue6EValueEN9exec_aten6ScalarE">torch::executor::EValue::EValue (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6EValue7PayloadE">torch::executor::EValue::Payload (C++ union)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6EValue7Payload24TriviallyCopyablePayloadE">torch::executor::EValue::Payload::TriviallyCopyablePayload (C++ union)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0ENK5torch8executor6EValue10toOptionalEN9exec_aten8optionalI1TEEv">torch::executor::EValue::toOptional (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor21HierarchicalAllocatorE">torch::executor::HierarchicalAllocator (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE4SpanI4SpanI7uint8_tEE">torch::executor::HierarchicalAllocator::HierarchicalAllocator (C++ function)</a>, <a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE8uint32_tP15MemoryAllocator">[1]</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor15MemoryAllocatorE">torch::executor::MemoryAllocator (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor15MemoryAllocator8allocateE6size_t6size_t">torch::executor::MemoryAllocator::allocate (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0EN5torch8executor15MemoryAllocator16allocateInstanceEP1T6size_t">torch::executor::MemoryAllocator::allocateInstance (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0EN5torch8executor15MemoryAllocator12allocateListEP1T6size_t6size_t">torch::executor::MemoryAllocator::allocateList (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor15MemoryAllocator17kDefaultAlignmentE">torch::executor::MemoryAllocator::kDefaultAlignment (C++ member)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t">torch::executor::MemoryAllocator::MemoryAllocator (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor13MemoryManagerE">torch::executor::MemoryManager (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocator">torch::executor::MemoryManager::MemoryManager (C++ function)</a>, <a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocatorP15MemoryAllocator">[1]</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor13MemoryManager16method_allocatorEv">torch::executor::MemoryManager::method_allocator (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor13MemoryManager14planned_memoryEv">torch::executor::MemoryManager::planned_memory (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor13MemoryManager14temp_allocatorEv">torch::executor::MemoryManager::temp_allocator (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6MethodE">torch::executor::Method (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Method10get_outputE6size_t">torch::executor::Method::get_output (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Method11inputs_sizeEv">torch::executor::Method::inputs_size (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6Method6MethodERR6Method">torch::executor::Method::Method (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Method11method_metaEv">torch::executor::Method::method_meta (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Method12outputs_sizeEv">torch::executor::Method::outputs_size (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor10MethodMetaE">torch::executor::MethodMeta (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta9input_tagE6size_t">torch::executor::MethodMeta::input_tag (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta17input_tensor_metaE6size_t">torch::executor::MethodMeta::input_tensor_meta (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta26memory_planned_buffer_sizeE6size_t">torch::executor::MethodMeta::memory_planned_buffer_size (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta4nameEv">torch::executor::MethodMeta::name (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta21non_const_buffer_sizeE6size_t">torch::executor::MethodMeta::non_const_buffer_size (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta10num_inputsEv">torch::executor::MethodMeta::num_inputs (C++ function)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta26num_memory_planned_buffersEv">torch::executor::MethodMeta::num_memory_planned_buffers (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta11num_outputsEv">torch::executor::MethodMeta::num_outputs (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta10output_tagE6size_t">torch::executor::MethodMeta::output_tag (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta18output_tensor_metaE6size_t">torch::executor::MethodMeta::output_tensor_meta (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7ProgramE">torch::executor::Program (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12check_headerEPKv6size_t">torch::executor::Program::check_header (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program24get_constant_buffer_dataE6size_t">torch::executor::Program::get_constant_buffer_data (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program15get_method_nameE6size_t">torch::executor::Program::get_method_name (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatusE">torch::executor::Program::HeaderStatus (C++ enum)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatus17CompatibleVersionE">torch::executor::Program::HeaderStatus::CompatibleVersion (C++ enumerator)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatus19IncompatibleVersionE">torch::executor::Program::HeaderStatus::IncompatibleVersion (C++ enumerator)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatus10NotPresentE">torch::executor::Program::HeaderStatus::NotPresent (C++ enumerator)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatus9ShortDataE">torch::executor::Program::HeaderStatus::ShortData (C++ enumerator)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program13kMinHeadBytesE">torch::executor::Program::kMinHeadBytes (C++ member)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program11load_methodEPKcP13MemoryManagerP11EventTracer">torch::executor::Program::load_method (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program11method_metaEPKc">torch::executor::Program::method_meta (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program11num_methodsEv">torch::executor::Program::num_methods (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12VerificationE">torch::executor::Program::Verification (C++ enum)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12Verification19InternalConsistencyE">torch::executor::Program::Verification::InternalConsistency (C++ enumerator)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12Verification7MinimalE">torch::executor::Program::Verification::Minimal (C++ enumerator)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6TensorE">torch::executor::Tensor (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0ENK5torch8executor6Tensor14const_data_ptrEPK1Tv">torch::executor::Tensor::const_data_ptr (C++ function)</a>, <a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor14const_data_ptrEv">[1]</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor3dimEv">torch::executor::Tensor::dim (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor9dim_orderEv">torch::executor::Tensor::dim_order (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6Tensor12DimOrderTypeE">torch::executor::Tensor::DimOrderType (C++ type)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor12element_sizeEv">torch::executor::Tensor::element_size (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0ENK5torch8executor6Tensor16mutable_data_ptrEP1Tv">torch::executor::Tensor::mutable_data_ptr (C++ function)</a>, <a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor16mutable_data_ptrEv">[1]</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor6nbytesEv">torch::executor::Tensor::nbytes (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor5numelEv">torch::executor::Tensor::numel (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor11scalar_typeEv">torch::executor::Tensor::scalar_type (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor4sizeE7ssize_t">torch::executor::Tensor::size (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor5sizesEv">torch::executor::Tensor::sizes (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6Tensor9SizesTypeE">torch::executor::Tensor::SizesType (C++ type)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor7stridesEv">torch::executor::Tensor::strides (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6Tensor11StridesTypeE">torch::executor::Tensor::StridesType (C++ type)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor19unsafeGetTensorImplEv">torch::executor::Tensor::unsafeGetTensorImpl (C++ function)</a>
-</li>
-      <li><a href="export-to-executorch-api-reference.html#exir.EdgeProgramManager.transform">transform() (exir.EdgeProgramManager method)</a>
-</li>
-  </ul></td>
-</tr></table>
-
+<span class="n">opcode</span>         <span class="n">name</span>                      <span class="n">target</span>                       <span class="n">args</span>                           <span class="n">kwargs</span>
+<span class="o">-------------</span>  <span class="o">------------------------</span>  <span class="o">---------------------------</span>  <span class="o">-----------------------------</span>  <span class="o">--------</span>
+<span class="n">placeholder</span>    <span class="n">arg684_1</span>                  <span class="n">arg684_1</span>                     <span class="p">()</span>                             <span class="p">{}</span>
+<span class="n">get_attr</span>       <span class="n">lowered_module_0</span>          <span class="n">lowered_module_0</span>             <span class="p">()</span>                             <span class="p">{}</span>
+<span class="n">call_function</span>  <span class="n">executorch_call_delegate</span>  <span class="n">executorch_call_delegate</span>     <span class="p">(</span><span class="n">lowered_module_0</span><span class="p">,</span> <span class="n">arg684_1</span><span class="p">)</span>   <span class="p">{}</span>
+<span class="n">call_function</span>  <span class="n">getitem</span>                   <span class="o">&lt;</span><span class="n">built</span><span class="o">-</span><span class="ow">in</span> <span class="n">function</span> <span class="n">getitem</span><span class="o">&gt;</span>  <span class="p">(</span><span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>  <span class="p">{}</span>
+<span class="n">call_function</span>  <span class="n">getitem_1</span>                 <span class="o">&lt;</span><span class="n">built</span><span class="o">-</span><span class="ow">in</span> <span class="n">function</span> <span class="n">getitem</span><span class="o">&gt;</span>  <span class="p">(</span><span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>  <span class="p">{}</span>
+<span class="n">output</span>         <span class="n">output</span>                    <span class="n">output</span>                       <span class="p">([</span><span class="n">getitem_1</span><span class="p">,</span> <span class="n">getitem</span><span class="p">],)</span>        <span class="p">{}</span>
+</pre></div>
+</div>
+<p>The compiled model is <code class="docutils literal notranslate"><span class="pre">./deeplab_v3/dlv3_qnn.pte</span></code>.</p>
+</div>
+<div class="section" id="run-model-inference-on-an-android-smartphone-with-qualcomm-socs">
+<h3>Run model Inference on an Android smartphone with Qualcomm SoCs<a class="headerlink" href="#run-model-inference-on-an-android-smartphone-with-qualcomm-socs" title="Permalink to this headline">¶</a></h3>
+<p><em><strong>Step 1</strong></em>. We need to push required QNN libraries to the device.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># make sure you have write-permission on below path.</span>
+<span class="nv">DEVICE_DIR</span><span class="o">=</span>/data/local/tmp/executorch_qualcomm_tutorial/
+adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;mkdir -p </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2">&quot;</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtp.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV69Stub.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV73Stub.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnSystem.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/hexagon-v73/unsigned/libQnnHtpV73Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+</pre></div>
+</div>
+<p><em><strong>Step 2</strong></em>.  We also need to indicate dynamic linkers on Android and Hexagon
+where to find these libraries by setting <code class="docutils literal notranslate"><span class="pre">ADSP_LIBRARY_PATH</span></code> and <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code>.
+So, we can run <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> like</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>./deeplab_v3/dlv3_qnn.pte<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="si">}</span>/build_android/examples/qualcomm/qnn_executor_runner<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;cd </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
+<span class="s2">           &amp;&amp; export LD_LIBRARY_PATH=</span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
+<span class="s2">           &amp;&amp; export ADSP_LIBRARY_PATH=</span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
+<span class="s2">           &amp;&amp; ./qnn_executor_runner --model_path ./dlv3_qnn.pte&quot;</span>
+</pre></div>
+</div>
+<p>You should see something like below:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">01.835706</span> <span class="n">executorch</span><span class="p">:</span><span class="n">qnn_executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">298</span><span class="p">]</span> <span class="mi">100</span> <span class="n">inference</span> <span class="n">took</span> <span class="mf">1096.626000</span> <span class="n">ms</span><span class="p">,</span> <span class="n">avg</span> <span class="mf">10.966260</span> <span class="n">ms</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">backend</span> <span class="n">parameters</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">context</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">device</span>
+<span class="p">[</span><span class="n">INFO</span><span class="p">][</span><span class="n">Qnn</span> <span class="n">ExecuTorch</span><span class="p">]</span> <span class="n">Destroy</span> <span class="n">Qnn</span> <span class="n">backend</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="running-a-model-via-executorch-s-android-demo-app">
+<h3>Running a model via ExecuTorch’s android demo-app<a class="headerlink" href="#running-a-model-via-executorch-s-android-demo-app" title="Permalink to this headline">¶</a></h3>
+<p>An Android demo-app using Qualcomm AI Engine Direct Backend can be found in
+<code class="docutils literal notranslate"><span class="pre">examples</span></code>. Please refer to android demo app tutorial.</p>
+</div>
+</div>
+<div class="section" id="what-is-coming">
+<h2>What is coming?<a class="headerlink" href="#what-is-coming" title="Permalink to this headline">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/pull/658">An example using quantized mobilebert</a> to solve multi-class text classification.</p></li>
+<li><p>More Qualcomm AI Engine Direct accelerators, e.g., GPU.</p></li>
+</ul>
+</div>
+<div class="section" id="faq">
+<h2>FAQ<a class="headerlink" href="#faq" title="Permalink to this headline">¶</a></h2>
+<p>If you encounter any issues while reproducing the tutorial, please file a github
+issue on ExecuTorch repo and tag use <code class="docutils literal notranslate"><span class="pre">#qcom_aisw</span></code> tag</p>
+</div>
+</div>
 
 
              </article>
              
             </div>
             <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="tutorials/sdk-integration-tutorial.html" class="btn btn-neutral float-right" title="SDK Integration Tutorial" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="build-run-xtensa.html" class="btn btn-neutral" title="Building and Running ExecuTorch on Xtensa HiFi4 DSP" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
   
 
   
@@ -741,7 +708,37 @@
         <div class="pytorch-content-right" id="pytorch-content-right">
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
-              
+              <ul>
+<li><a class="reference internal" href="#">Building and Running ExecuTorch on Qualcomm AI Engine Direct</a><ul>
+<li><a class="reference internal" href="#what-s-qualcomm-ai-engine-direct">What’s Qualcomm AI Engine Direct?</a></li>
+<li><a class="reference internal" href="#prerequsites-hardware-and-software">Prerequsites (Hardware and Software)</a><ul>
+<li><a class="reference internal" href="#host-os">Host OS</a></li>
+<li><a class="reference internal" href="#hardware">Hardware:</a></li>
+<li><a class="reference internal" href="#software">Software:</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#setting-up-your-developer-environment">Setting up your developer environment</a><ul>
+<li><a class="reference internal" href="#conventions">Conventions</a></li>
+<li><a class="reference internal" href="#setup-environment-variables">Setup environment variables</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#build">Build</a><ul>
+<li><a class="reference internal" href="#aot-ahead-of-time-components">AOT (Ahead-of-time) components:</a></li>
+<li><a class="reference internal" href="#runtime">Runtime:</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#deploying-and-running-on-device">Deploying and running on device</a><ul>
+<li><a class="reference internal" href="#aot-compile-a-model">AOT compile a model</a></li>
+<li><a class="reference internal" href="#run-model-inference-on-an-android-smartphone-with-qualcomm-socs">Run model Inference on an Android smartphone with Qualcomm SoCs</a></li>
+<li><a class="reference internal" href="#running-a-model-via-executorch-s-android-demo-app">Running a model via ExecuTorch’s android demo-app</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#what-is-coming">What is coming?</a></li>
+<li><a class="reference internal" href="#faq">FAQ</a></li>
+</ul>
+</li>
+</ul>
+
             </div>
           </div>
         </div>
