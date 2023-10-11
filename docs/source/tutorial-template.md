@@ -29,7 +29,7 @@
 <!----This will show a grid card on the page----->
 ::::{grid} 2
 :::{grid-item-card}  What you will learn in this tutorial:
-:class-card: card-learn
+:class-card: card-prerequisites
 * In this tutorial you will learn how to lower and deploy a model for Backend X.
 :::
 :::{grid-item-card}  Tutorials we recommend you complete before this:

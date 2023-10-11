@@ -42,7 +42,7 @@ On top of being able to run on the Xtensa HiFi4 DSP, another goal of this tutori
 
 ::::{grid} 2
 :::{grid-item-card}  What you will learn in this tutorial:
-:class-card: card-learn
+:class-card: card-prerequisites
 * In this tutorial you will learn how to export a quantized model with a linear operation targeted for the Xtensa HiFi4 DSP.
 * You will also learn how to compile and deploy the ExecuTorch runtime with the kernels required for running the quantized model generated in the previous step on the Xtensa HiFi4 DSP.
 :::

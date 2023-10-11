@@ -83,7 +83,7 @@ myst_enable_extensions = [
     "colon_fence",
 ]
 
-myst_heading_anchors = 3
+myst_heading_anchors = 4
 
 sphinx_gallery_conf = {
     "examples_dirs": ["tutorials_source"],
