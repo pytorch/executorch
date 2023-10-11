@@ -3,12 +3,13 @@ This folder contains examples to register custom operators into PyTorch as well 
 
 ## How to run
 
-Prerequisite: finish the [setting up wiki](https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/00_setting_up_executorch.md).
+Prerequisite: finish the [setting up wiki](../../../docs/source/getting-started-setup.md).
 
 Run:
 
 ```bash
-bash test_custom_ops.sh
+cd executorch
+bash examples/portable/custom_ops/test_custom_ops.sh [cmake|buck2]
 ```
 
 ## AOT registration
@@ -27,7 +28,7 @@ By linking them both with `libtorch` and `executorch` library, we can build a sh
 
 ## C++ kernel registration
 
-After the model is exported by EXIR, we need C++ implementations of these custom ops in order to run it. For example, `custom_ops_1_out.cpp` is C++ kernel that can be plugged in to ExecuTorch runtime. Other than that, we also need a way to bind the PyTorch op to this kernel. This binding is specified in `custom_ops.yaml`:
+After the model is exported by EXIR, we need C++ implementations of these custom ops in order to run it. For example, `custom_ops_1_out.cpp` is a C++ kernel that can be plugged into the ExecuTorch runtime. Other than that, we also need a way to bind the PyTorch op to this kernel. This binding is specified in `custom_ops.yaml`:
 ```yaml
 - func: my_ops::mul3.out(Tensor input, *, Tensor(a!) output) -> Tensor(a!)
   kernels:
@@ -57,4 +58,4 @@ et_operator_library(
 
 We then let the custom ops library depend on this target, to only register the ops we want.
 
-For more information about selective build, please refer to [`docs/tutorials/selective_build.md`](https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/selective_build.md).
+For more information about selective build, please refer to [`selective_build.md`](../../../docs/source/kernel-library-selective_build.md).

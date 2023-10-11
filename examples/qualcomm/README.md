@@ -8,7 +8,7 @@ Here are some general information and limitations.
 
 ## Prerequisite
 
-Please finish tutorial [Setting up executorch](../../docs/website/docs/tutorials/00_setting_up_executorch.md).
+Please finish tutorial [Setting up executorch](../../docs/source/getting-started-setup.md).
 
 Please finish [setup QNN backend](../../backends/qualcomm/setup.md).
 
@@ -57,8 +57,7 @@ but the performance and accuracy number can differ.
 set of SoCs. Please check QNN documents for details.
 
 3. The mobilebert example needs to train the last classifier layer a bit, so it takes
-time to run. 
+time to run.
 
 4. [**Important**] Due to the numerical limits of FP16, other use cases leveraging mobileBert wouldn't
 guarantee to work.
-

@@ -16,11 +16,11 @@ examples/portable
 
 ## Using portable mode
 
-We will walk through an example model to generate a `.pte` file in [portable mode](/docs/website/docs/basics/terminology.md) from a python `torch.nn.module`
+We will walk through an example model to generate a `.pte` file in [portable mode](../../docs/source/concepts.md#portable-mode-lean-mode) from a python `torch.nn.module`
 from the [`models/`](../models) directory using scripts in the `portable/scripts` directory. Then we will run on the `.pte` model on the ExecuTorch runtime. For that we will use `executor_runner`.
 
 
-1. Following the setup guide in [Setting up ExecuTorch from GitHub](/docs/website/docs/tutorials/00_setting_up_executorch.md)
+1. Following the setup guide in [Setting up ExecuTorch from GitHub](../../docs/source/getting-started-setup.md)
 you should be able to get the basic development environment for ExecuTorch working.
 
 2. Using the script `portable/scripts/export.py` generate a model binary file by selecting a
