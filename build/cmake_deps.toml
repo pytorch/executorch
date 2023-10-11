@@ -102,6 +102,32 @@ deps = [
   "executorch",
 ]
 
+[targets.mps_executor_runner]
+buck_targets = [
+  "//examples/apple/mps/executor_runner:mps_executor_runner",
+]
+filters = [
+  "(.mm|.cpp)$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "portable_kernels",
+]
+
+[targets.mps_backend]
+buck_targets = [
+  "//backends/apple/mps:mps_backend",
+]
+filters = [
+  "(.mm|.cpp)$",
+]
+deps = [
+  "executorch",
+]
+
 [targets.xnn_executor_runner]
 buck_targets = [
   "//examples/xnnpack:xnn_executor_runner",

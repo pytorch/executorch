@@ -9,6 +9,8 @@ ExecuTorch's extensive support spans from simple modules like "Add" to comprehen
 ## Directory structure
 ```
 examples
+├── apple
+|   ├── mps                           # Contains end-to-end demos of MPS backend
 ├── models                            # Contains a set of popular and representative PyTorch models
 ├── portable                          # Contains end-to-end demos for ExecuTorch in portable mode
 ├── xnnpack                           # Contains end-to-end ExecuTorch demos with first-party optimization using XNNPACK
