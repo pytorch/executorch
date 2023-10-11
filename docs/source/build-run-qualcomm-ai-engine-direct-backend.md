@@ -177,15 +177,31 @@ You can find `qnn_executor_runner` under `build_android/examples/qualcomm/`.
 ### AOT compile a model
 
 You can refer to [this script](../../examples/qualcomm/scripts/deeplab_v3.py) for the exact flow.
-We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands to see how an
-end-to-end example works:
+We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands to compile:
 
 ```
 cd $EXECUTORCH_ROOT
-python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 -s <adb_connected_device_serial>
+python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 --compile_only --download
 ```
 
-All artifacts would be put to a directory `./deeplab_v3`, including a compiled pte file, `dlv3_qnn.pte`.
+You might see something like below:
+
+```
+[INFO][Qnn ExecuTorch] Destroy Qnn context
+[INFO][Qnn ExecuTorch] Destroy Qnn device
+[INFO][Qnn ExecuTorch] Destroy Qnn backend
+
+opcode         name                      target                       args                           kwargs
+-------------  ------------------------  ---------------------------  -----------------------------  --------
+placeholder    arg684_1                  arg684_1                     ()                             {}
+get_attr       lowered_module_0          lowered_module_0             ()                             {}
+call_function  executorch_call_delegate  executorch_call_delegate     (lowered_module_0, arg684_1)   {}
+call_function  getitem                   <built-in function getitem>  (executorch_call_delegate, 0)  {}
+call_function  getitem_1                 <built-in function getitem>  (executorch_call_delegate, 1)  {}
+output         output                    output                       ([getitem_1, getitem],)        {}
+```
+
+The compiled model is `./deeplab_v3/dlv3_qnn.pte`.
 
 
 ### Run model Inference on an Android smartphone with Qualcomm SoCs
@@ -209,63 +225,38 @@ where to find these libraries by setting `ADSP_LIBRARY_PATH` and `LD_LIBRARY_PAT
 So, we can run `qnn_executor_runner` like
 
 ```bash
-adb push mv2.pte ${DEVICE_DIR}
+adb push ./deeplab_v3/dlv3_qnn.pte ${DEVICE_DIR}
 adb push ${EXECUTORCH_ROOT}/build_android/examples/qualcomm/qnn_executor_runner ${DEVICE_DIR}
 adb shell "cd ${DEVICE_DIR} \
            && export LD_LIBRARY_PATH=${DEVICE_DIR} \
            && export ADSP_LIBRARY_PATH=${DEVICE_DIR} \
-           && ./qnn_executor_runner --model_path ./mv2_qnn.pte"
+           && ./qnn_executor_runner --model_path ./dlv3_qnn.pte"
 ```
 
-You should see the following result.
-Model outputs are put to `./deeplab_v3/outputs`.
+You should see something like below:
+
 ```
-I 00:00:01.863385 executorch:qnn_executor_runner.cpp:298] 100 inference took 1096.624000 ms, avg 10.966240 ms
+I 00:00:01.835706 executorch:qnn_executor_runner.cpp:298] 100 inference took 1096.626000 ms, avg 10.966260 ms
 [INFO][Qnn ExecuTorch] Destroy Qnn backend parameters
 [INFO][Qnn ExecuTorch] Destroy Qnn context
 [INFO][Qnn ExecuTorch] Destroy Qnn device
 [INFO][Qnn ExecuTorch] Destroy Qnn backend
-[WARNING] <W> Cannot get op package maps as singleton provider is already destroyed
-
-/data/local/tmp/executorch/dlv3_qnn/outputs/: 200 files pulled. 46.7 MB/s (842956800 bytes in 17.198s)
-PA   : 0.9279080163742056%
-MPA  : 0.8436995479010411%
-MIoU : 0.7295181225907508%
-CIoU :
-{
-  "Backround": 0.9118397702257772,
-  "Aeroplane": 0.9195003650537316,
-  "Bicycle": 0.4074836630439685,
-  "Bird": 0.8318192515690322,
-  "Boat": 0.5604090467931566,
-  "Bottle": 0.810288138560711,
-  "Bus": 0.9462156473522969,
-  "Car": 0.9036561912572266,
-  "Cat": 0.9218752933579742,
-  "Chair": 0.166601521782278,
-  "Cow": 0.9255118338630605,
-  "DiningTable": 0.7566001181986504,
-  "Dog": 0.7315379195337196,
-  "Horse": 0.6748639306871056,
-  "MotorBike": 0.8083967507343583,
-  "Person": 0.8554745611396247,
-  "PottedPlant": 0.40625618681325354,
-  "Sheep": 0.8037552530978187,
-  "Sofa": 0.47743485657288254,
-  "Train": 0.6377080913628297,
-  "TvMonitor": 0.8626521834063088
-}
 ```
 
 
 ### Running a model via ExecuTorch's android demo-app
 
 An Android demo-app using Qualcomm AI Engine Direct Backend can be found in
-`examples`. Please refer to [README.md](../../examples/demo-apps/android/ExecuTorchDemo/README.md).
+`examples`. Please refer to android demo app tutorial.
 
 
-### What is coming?
+## What is coming?
 
  - [An example using quantized mobilebert](https://github.com/pytorch/executorch/pull/658) to solve multi-class text classification.
  - More Qualcomm AI Engine Direct accelerators, e.g., GPU.
+
+## FAQ
+
+If you encounter any issues while reproducing the tutorial, please file a github
+issue on ExecuTorch repo and tag use `#qcom_aisw` tag
 
