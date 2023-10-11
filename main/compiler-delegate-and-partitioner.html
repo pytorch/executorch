@@ -546,9 +546,9 @@ function which will be called when the program is out of its lifespan.</p>
 </div>
 <div class="section" id="sdk-debug-handle">
 <h2>SDK: Debug Handle<a class="headerlink" href="#sdk-debug-handle" title="Permalink to this headline">¶</a></h2>
-<p>If there is an error in the backend, for example, if there is any operator that
-is not supported by the backend, a debug handler can be thrown. It can surface
-back to the Python frontend with the source code information. Below is an
+<p>If there is an error in the backend, for example, if there is any operator that is not
+supported by the backend, backend developer can raise an exception with debug handler.
+The debug handle can surface back to the Python frontend with the source code information. Below is an
 example where the <code class="docutils literal notranslate"><span class="pre">tan</span></code> operator is not supported in <code class="docutils literal notranslate"><span class="pre">BackendWithCompilerDemo</span></code>
 backend. Please refer to <a class="reference internal" href="sdk-delegate-integration.html"><span class="doc std std-doc">SDK delegate integration</span></a>
 for more details.</p>
@@ -595,7 +595,7 @@ for more details.</p>
 <span class="n">model_outputs</span> <span class="o">=</span> <span class="n">executorch_module</span><span class="o">.</span><span class="n">forward</span><span class="p">([</span><span class="n">model_inputs</span><span class="p">])</span>
 </pre></div>
 </div>
-<p>It’s expected to capture debug handler like <code class="docutils literal notranslate"><span class="pre">instruction</span> <span class="pre">demo::tan_default&lt;debug_handle&gt;1</span> <span class="pre">is</span> <span class="pre">not</span> <span class="pre">supported,</span> <span class="pre">debug</span> <span class="pre">handler</span> <span class="pre">is:</span> <span class="pre">1</span></code></p>
+<p>It’s expected to throw with the error message mentioning debug handler like <code class="docutils literal notranslate"><span class="pre">instruction</span> <span class="pre">demo::tan_default&lt;debug_handle&gt;1</span> <span class="pre">is</span> <span class="pre">not</span> <span class="pre">supported,</span> <span class="pre">debug</span> <span class="pre">handler</span> <span class="pre">is:</span> <span class="pre">1</span></code></p>
 </div>
 <div class="section" id="common-questions">
 <h2>Common Questions<a class="headerlink" href="#common-questions" title="Permalink to this headline">¶</a></h2>

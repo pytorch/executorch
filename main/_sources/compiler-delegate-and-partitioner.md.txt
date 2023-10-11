@@ -157,9 +157,9 @@ static auto success_with_compiler = register_backend(backend);
 
 ## SDK: Debug Handle
 
-If there is an error in the backend, for example, if there is any operator that
-is not supported by the backend, a debug handler can be thrown. It can surface
-back to the Python frontend with the source code information. Below is an
+If there is an error in the backend, for example, if there is any operator that is not
+supported by the backend, backend developer can raise an exception with debug handler.
+The debug handle can surface back to the Python frontend with the source code information. Below is an
 example where the `tan` operator is not supported in `BackendWithCompilerDemo`
 backend. Please refer to [SDK delegate integration](./sdk-delegate-integration)
 for more details.
@@ -208,7 +208,7 @@ executorch_module = _load_for_executorch_from_buffer(buff)
 model_outputs = executorch_module.forward([model_inputs])
 ```
 
-It's expected to capture debug handler like `instruction
+It's expected to throw with the error message mentioning debug handler like `instruction
 demo::tan_default<debug_handle>1 is not supported, debug handler is: 1`
 
 
