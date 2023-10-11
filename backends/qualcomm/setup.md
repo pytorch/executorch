@@ -7,7 +7,7 @@ on a Android device.
 
 ## Prerequisite
 
-Please finish tutorial [Setting up executorch](../../docs/website/docs/tutorials/00_setting_up_executorch.md).
+Please finish tutorial [Setting up executorch](../../docs/source/getting-started-setup.md).
 
 
 ## Conventions

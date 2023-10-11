@@ -21,7 +21,7 @@ test_buck2_custom_op_1() {
   # should save file custom_ops_1.pte
 
   echo 'Running executor_runner'
-  buck2 run //examples/portable/executor_runner:executor_runner \
+  $BUCK2 run //examples/portable/executor_runner:executor_runner \
       --config=executorch.register_custom_op=1 -- --model_path="./${model_name}.pte"
   # should give correct result
 
@@ -37,7 +37,7 @@ test_cmake_custom_op_1() {
   (rm -rf cmake-out \
     && mkdir cmake-out \
     && cd cmake-out \
-    && retry cmake -DBUCK2=buck2 \
+    && retry cmake -DBUCK2=$BUCK2 \
         -DREGISTER_EXAMPLE_CUSTOM_OP=1 \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
@@ -52,13 +52,13 @@ test_buck2_custom_op_2() {
   local model_name='custom_ops_2'
 
   echo 'Building custom ops shared library'
-  SO_LIB=$(buck2 build //examples/portable/custom_ops:custom_ops_aot_lib_2 --show-output | grep "buck-out" | cut -d" " -f2)
+  SO_LIB=$($BUCK2 build //examples/portable/custom_ops:custom_ops_aot_lib_2 --show-output | grep "buck-out" | cut -d" " -f2)
 
   echo "Exporting ${model_name}.pte"
   ${PYTHON_EXECUTABLE} -m "examples.portable.custom_ops.${model_name}" --so_library="$SO_LIB"
   # should save file custom_ops_2.pte
 
-  buck2 run //examples/portable/executor_runner:executor_runner \
+  $BUCK2 run //examples/portable/executor_runner:executor_runner \
       --config=executorch.register_custom_op=2 -- --model_path="./${model_name}.pte"
   # should give correct result
   echo "Removing ${model_name}.pte"
@@ -88,7 +88,7 @@ test_cmake_custom_op_2() {
   (rm -rf cmake-out \
     && mkdir cmake-out \
     && cd cmake-out \
-    && retry cmake -DBUCK2=buck2 \
+    && retry cmake -DBUCK2=$BUCK2 \
       -DREGISTER_EXAMPLE_CUSTOM_OP=2 \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
@@ -109,6 +109,12 @@ if [[ -z $PYTHON_EXECUTABLE ]];
 then
   PYTHON_EXECUTABLE=python3
 fi
+
+if [[ -z $BUCK2 ]];
+then
+  BUCK2=buck2
+fi
+
 if [[ $1 == "cmake" ]];
 then
   test_cmake_custom_op_1

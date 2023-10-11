@@ -1,14 +1,15 @@
 # Selective Build Examples
-To optimize binary size of ExecuTorch runtime, selective build can be used. This folder contains examples to select only the operators needed for ExecuTorch build. We provide APIs for both CMake build and buck2 build. This example will demonstrate both. You can find more information on how to use buck2 macros in [wiki](https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/selective_build.md).
+To optimize binary size of ExecuTorch runtime, selective build can be used. This folder contains examples to select only the operators needed for ExecuTorch build. We provide APIs for both CMake build and buck2 build. This example will demonstrate both. You can find more information on how to use buck2 macros in [wiki](../../docs/source/kernel-library-selective_build.md).
 
 ## How to run
 
-Prerequisite: finish the [setting up wiki](https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/00_setting_up_executorch.md).
+Prerequisite: finish the [setting up wiki](../../docs/source/getting-started-setup.md).
 
 Run:
 
 ```bash
-bash test_selective_build.sh [cmake|buck2]
+cd executorch
+bash examples/selective_build/test_selective_build.sh [cmake|buck2]
 ```
 
 ## BUCK2 examples
