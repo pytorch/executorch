@@ -426,6 +426,10 @@ It should be provided to the <a class="reference external" href="sdk-inspector.h
 will be expected to provide the Edge Dialect program (returned by the call to <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code>),
 the ExecuTorch program (returned by the call to <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>), and optional models that
 they are interested in working with via our tooling.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Users should do a deepcopy of the output of to_edge() and pass in the deepcopy to the generate_etrecord API. This is needed because the subsequent call, to_executorch(), does an in-place mutation and will lose debug data in the process.</p>
+</div>
 <dl class="py function">
 <dt class="sig sig-object py" id="sdk.etrecord._etrecord.generate_etrecord">
 <span class="sig-prename descclassname"><span class="pre">sdk.etrecord._etrecord.</span></span><span class="sig-name descname"><span class="pre">generate_etrecord</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">etrecord_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">edge_dialect_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">executorch_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">export_modules</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sdk/etrecord/_etrecord.html#generate_etrecord"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sdk.etrecord._etrecord.generate_etrecord" title="Permalink to this definition">¶</a></dt>
@@ -441,10 +445,9 @@ for SDK tooling usage.</p>
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>etrecord_path</strong> – Path to where the <cite>ETRecord</cite> file will be saved to.</p></li>
-<li><p><strong>edge_dialect_program</strong> – <cite>ExirExportedProgram</cite> for this model returned by the call to to_edge()</p></li>
-<li><p><strong>executorch_program</strong> – <cite>ExecutorchProgram</cite> or <cite>MultiMethodExecutorchProgram</cite> for this model returned by the
-call to <cite>to_executorch()</cite></p></li>
-<li><p><strong>export_modules</strong> – A dictionary of graph modules with the key being the user provided name and the
+<li><p><strong>edge_dialect_program</strong> – <cite>EdgeProgramManager</cite> for this model returned by the call to to_edge()</p></li>
+<li><p><strong>executorch_program</strong> – <cite>ExecutorchProgramManager</cite> for this model returned by the call to <cite>to_executorch()</cite></p></li>
+<li><p><strong>export_modules</strong><strong>[</strong><strong>Optional</strong><strong>]</strong> – <strong>Should be ignored by OSS users</strong>. A dictionary of graph modules with the key being the user provided name and the
 value being the corresponding exported module. The exported graph modules can be either the
 output of <cite>capture()</cite> or <cite>to_edge()</cite>.</p></li>
 </ul>

@@ -406,8 +406,11 @@
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Union</span>
 <span class="kn">from</span> <span class="nn">zipfile</span> <span class="kn">import</span> <span class="n">BadZipFile</span><span class="p">,</span> <span class="n">ZipFile</span>
 
+<span class="kn">from</span> <span class="nn">executorch</span> <span class="kn">import</span> <span class="n">exir</span>
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">EdgeProgramManager</span><span class="p">,</span>
     <span class="n">ExecutorchProgram</span><span class="p">,</span>
+    <span class="n">ExecutorchProgramManager</span><span class="p">,</span>
     <span class="n">ExirExportedProgram</span><span class="p">,</span>
     <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">MultiMethodExecutorchProgram</span><span class="p">,</span>
@@ -461,7 +464,9 @@
 
 <span class="k">def</span> <span class="nf">_handle_export_module</span><span class="p">(</span>
     <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">,</span>
-    <span class="n">export_module</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">MultiMethodExirExportedProgram</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">],</span>
+    <span class="n">export_module</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
+        <span class="n">MultiMethodExirExportedProgram</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">,</span> <span class="n">EdgeProgramManager</span>
+    <span class="p">],</span>
     <span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">export_module</span><span class="p">,</span> <span class="n">MultiMethodExirExportedProgram</span><span class="p">):</span>
@@ -470,43 +475,19 @@
         <span class="n">_handle_exported_program</span><span class="p">(</span>
             <span class="n">etrecord_zip</span><span class="p">,</span> <span class="n">module_name</span><span class="p">,</span> <span class="s2">&quot;forward&quot;</span><span class="p">,</span> <span class="n">export_module</span><span class="o">.</span><span class="n">exported_program</span>
         <span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span>
+        <span class="n">export_module</span><span class="p">,</span>
+        <span class="p">(</span><span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">exir</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">EdgeProgramManager</span><span class="p">),</span>
+    <span class="p">):</span>
+        <span class="k">for</span> <span class="n">method</span> <span class="ow">in</span> <span class="n">export_module</span><span class="o">.</span><span class="n">methods</span><span class="p">:</span>
+            <span class="n">_handle_exported_program</span><span class="p">(</span>
+                <span class="n">etrecord_zip</span><span class="p">,</span>
+                <span class="n">module_name</span><span class="p">,</span>
+                <span class="n">method</span><span class="p">,</span>
+                <span class="n">export_module</span><span class="o">.</span><span class="n">exported_program</span><span class="p">(</span><span class="n">method</span><span class="p">),</span>
+            <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported graph module type. </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">export_module</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-
-<span class="k">def</span> <span class="nf">_handle_executorch_program</span><span class="p">(</span>
-    <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">,</span>
-    <span class="n">program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExecutorchProgram</span><span class="p">,</span> <span class="n">MultiMethodExecutorchProgram</span><span class="p">],</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">MultiMethodExecutorchProgram</span><span class="p">):</span>
-        <span class="c1"># Do a dummy read of the program here to make sure that the emitter runs</span>
-        <span class="c1"># under the hood which will result in the debug handle map being generated.</span>
-        <span class="n">program</span><span class="o">.</span><span class="n">program</span>
-
-        <span class="n">_handle_multi_method_exported_program</span><span class="p">(</span>
-            <span class="n">etrecord_zip</span><span class="p">,</span>
-            <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">ET_DIALECT_GRAPH_MODULE</span><span class="p">,</span>
-            <span class="n">program</span><span class="o">.</span><span class="n">_executorch_dialect_ir_program</span><span class="p">,</span>
-        <span class="p">)</span>
-
-    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">ExecutorchProgram</span><span class="p">):</span>
-        <span class="c1"># Do a dummy read of the program here to make sure that the emitter runs</span>
-        <span class="c1"># under the hood which will result in the debug handle map being generated.</span>
-        <span class="n">program</span><span class="o">.</span><span class="n">program</span>
-
-        <span class="n">_handle_exported_program</span><span class="p">(</span>
-            <span class="n">etrecord_zip</span><span class="p">,</span>
-            <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">ET_DIALECT_GRAPH_MODULE</span><span class="p">,</span>
-            <span class="s2">&quot;forward&quot;</span><span class="p">,</span>
-            <span class="n">program</span><span class="o">.</span><span class="n">dump_exported_program</span><span class="p">(),</span>
-        <span class="p">)</span>
-
-        <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">PROGRAM_BUFFER</span><span class="p">,</span> <span class="n">program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
-
-    <span class="k">else</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;program passed in should be either ExecutorchProgram or MultiMethodExecutorchProgram. </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">program</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
-        <span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">_handle_edge_dialect_exported_program</span><span class="p">(</span>
@@ -526,12 +507,16 @@
 
 <div class="viewcode-block" id="generate_etrecord"><a class="viewcode-back" href="../../../sdk-etrecord.html#sdk.etrecord._etrecord.generate_etrecord">[docs]</a><span class="k">def</span> <span class="nf">generate_etrecord</span><span class="p">(</span>
     <span class="n">etrecord_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">ExirExportedProgram</span><span class="p">,</span>
-    <span class="n">executorch_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExecutorchProgram</span><span class="p">,</span> <span class="n">MultiMethodExecutorchProgram</span><span class="p">],</span>
+    <span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">],</span>
+    <span class="n">executorch_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
+        <span class="n">ExecutorchProgram</span><span class="p">,</span> <span class="n">MultiMethodExecutorchProgram</span><span class="p">,</span> <span class="n">ExecutorchProgramManager</span>
+    <span class="p">],</span>
     <span class="n">export_modules</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
         <span class="n">Dict</span><span class="p">[</span>
             <span class="nb">str</span><span class="p">,</span>
-            <span class="n">Union</span><span class="p">[</span><span class="n">MultiMethodExirExportedProgram</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">],</span>
+            <span class="n">Union</span><span class="p">[</span>
+                <span class="n">MultiMethodExirExportedProgram</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">,</span> <span class="n">EdgeProgramManager</span>
+            <span class="p">],</span>
         <span class="p">]</span>
     <span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -547,10 +532,9 @@
 
 <span class="sd">    Args:</span>
 <span class="sd">        etrecord_path: Path to where the `ETRecord` file will be saved to.</span>
-<span class="sd">        edge_dialect_program: `ExirExportedProgram` for this model returned by the call to to_edge()</span>
-<span class="sd">        executorch_program: `ExecutorchProgram` or `MultiMethodExecutorchProgram` for this model returned by the</span>
-<span class="sd">            call to `to_executorch()`</span>
-<span class="sd">        export_modules: A dictionary of graph modules with the key being the user provided name and the</span>
+<span class="sd">        edge_dialect_program: `EdgeProgramManager` for this model returned by the call to to_edge()</span>
+<span class="sd">        executorch_program: `ExecutorchProgramManager` for this model returned by the call to `to_executorch()`</span>
+<span class="sd">        export_modules[Optional]: **Should be ignored by OSS users**. A dictionary of graph modules with the key being the user provided name and the</span>
 <span class="sd">            value being the corresponding exported module. The exported graph modules can be either the</span>
 <span class="sd">            output of `capture()` or `to_edge()`.</span>
 
@@ -575,12 +559,23 @@
                 <span class="p">)</span>
             <span class="n">_handle_export_module</span><span class="p">(</span><span class="n">etrecord_zip</span><span class="p">,</span> <span class="n">export_module</span><span class="p">,</span> <span class="n">module_name</span><span class="p">)</span>
 
-    <span class="n">_handle_executorch_program</span><span class="p">(</span><span class="n">etrecord_zip</span><span class="p">,</span> <span class="n">executorch_program</span><span class="p">)</span>
-
-    <span class="n">_handle_edge_dialect_exported_program</span><span class="p">(</span>
-        <span class="n">etrecord_zip</span><span class="p">,</span>
-        <span class="n">edge_dialect_program</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span>
-    <span class="p">)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+        <span class="n">edge_dialect_program</span><span class="p">,</span>
+        <span class="p">(</span><span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">exir</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">EdgeProgramManager</span><span class="p">),</span>
+    <span class="p">):</span>
+        <span class="n">_handle_edge_dialect_exported_program</span><span class="p">(</span>
+            <span class="n">etrecord_zip</span><span class="p">,</span>
+            <span class="n">edge_dialect_program</span><span class="o">.</span><span class="n">exported_program</span><span class="p">(),</span>
+        <span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">edge_dialect_program</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">):</span>
+        <span class="n">_handle_edge_dialect_exported_program</span><span class="p">(</span>
+            <span class="n">etrecord_zip</span><span class="p">,</span>
+            <span class="n">edge_dialect_program</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Unsupported type of edge_dialect_program passed in </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">edge_dialect_program</span><span class="p">)</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
 
     <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span>
         <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">DEBUG_HANDLE_MAP_NAME</span><span class="p">,</span>
