@@ -426,52 +426,52 @@
 <div class="section" id="step-2-construct-bundledconfig">
 <h3>Step 2: Construct <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code><a class="headerlink" href="#step-2-construct-bundledconfig" title="Permalink to this headline">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code> is a class under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/config.py</span></code> that contains all information to be bundled for model verification. Here’s the constructor api to create <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code>:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">BundledConfig</span> <span class="p">(</span><span class="n">method_names</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">expected_outputs</span><span class="p">)</span>
-</pre></div>
-</div>
-<p><strong>Parameters:</strong></p>
-<ul>
-<li><p>method_names (<em>List[str]</em>): All names of Methods to be verified in the program.</p></li>
-<li><p>inputs (<em>List[List[List[Union[torch.Tensor, int, float, bool]]]]</em>): All sets of input to be tested on for all methods. Each list
-of <code class="docutils literal notranslate"><span class="pre">inputs</span></code> is all sets which will be run on the method in the
-program with corresponding method name. Each set of any <code class="docutils literal notranslate"><span class="pre">inputs</span></code> element should contain all inputs required by Method with the same inference method name in ExecuTorch program for one-time execution.</p>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>  It is worth mentioning that, although both bundled program and ET runtime apis support setting input
-  other than torch.tensor type, only the input in torch.tensor type will be actually updated in
-  the program, and the rest of the inputs will just do a sanity check if they match the default value in method.
-</pre></div>
-</div>
-</li>
-<li><p>expected_outputs (<em>List[List[List[torch.Tensor]]]</em>): Expected outputs for inputs sharing same index. The size of
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">bundled_program.config.BundledConfig.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method_names</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inputs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected_outputs</span></span></em><span class="sig-paren">)</span></dt>
+<dd><p>Contruct the config given inputs and expected outputs</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>method_names</strong> – All method names need to be verified in program.</p></li>
+<li><p><strong>inputs</strong> – <p>All sets of input need to be test on for all methods. Each list
+of <cite>inputs</cite> is all sets which will be run on the method in the
+program with corresponding method name. Each set of any <cite>inputs</cite> element should
+contain all inputs required by eager_model with the same inference function
+as corresponding execution plan for one-time execution.</p>
+<p>It is worth mentioning that, although both bundled program and ET runtime apis support setting input
+other than torch.tensor type, only the input in torch.tensor type will be actually updated in
+the method, and the rest of the inputs will just do a sanity check if they match the default value in method.</p>
+</p></li>
+<li><p><strong>expected_outputs</strong> – Expected outputs for inputs sharing same index. The size of
 expected_outputs should be the same as the size of inputs and provided method_names.</p></li>
 </ul>
-<p><strong>Returns:</strong></p>
-<ul class="simple">
-<li><p>self</p></li>
-</ul>
-<p><strong>Return type:</strong></p>
-<ul class="simple">
-<li><p>BundledConfig</p></li>
-</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>self</p>
+</dd>
+</dl>
+</dd></dl>
+
 </div>
 <div class="section" id="step-3-generate-bundledprogram">
 <h3>Step 3: Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><a class="headerlink" href="#step-3-generate-bundledprogram" title="Permalink to this headline">¶</a></h3>
 <p>We provide <code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> API under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/core.py</span></code> to generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> by bundling the emitted ExecuTorch program with the bundled_config:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
-</pre></div>
-</div>
-<p><strong>Parameters:</strong></p>
-<ul class="simple">
-<li><p>program (<em>Program</em>): The ExecuTorch program to be bundled.</p></li>
-<li><p>bundled_config (<em>BundledConfig</em>): The config to be bundled.</p></li>
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">bundled_program.core.</span></span><span class="sig-name descname"><span class="pre">create_bundled_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bundled_config</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/bundled_program/core.html#create_bundled_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
+<dd><p>Create BundledProgram by bundling the given program and bundled_config together.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>program</strong> – The program to be bundled.</p></li>
+<li><p><strong>bundled_config</strong> – The config to be bundled.</p></li>
 </ul>
-<p><strong>Returns:</strong></p>
-<ul class="simple">
-<li><p>The <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> variable contains given ExecuTorch program and test cases.</p></li>
-</ul>
-<p><strong>Return type:</strong></p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code></p></li>
-</ul>
+</dd>
+</dl>
+<p>Returns: The <cite>BundledProgram</cite> variable contains given ExecuTorch program and test cases.</p>
+</dd></dl>
+
 <p><code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> will do sannity check internally to see if the given BundledConfig matches the given Program’s requirements. Specifically:</p>
 <ol class="arabic simple">
 <li><p>The name of methods we create BundledConfig for should be also in program. Please notice that it is no need to set testcases for every method in the Program.</p></li>
@@ -481,38 +481,34 @@ expected_outputs should be the same as the size of inputs and provided method_na
 <div class="section" id="step-4-serialize-bundledprogram-to-flatbuffer">
 <h3>Step 4: Serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to Flatbuffer.<a class="headerlink" href="#step-4-serialize-bundledprogram-to-flatbuffer" title="Permalink to this headline">¶</a></h3>
 <p>To serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to make runtime APIs use it, we provide two APIs, both under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/serialize/__init__.py</span></code>.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span><span class="n">bundled_program</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>Serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to flatbuffer:</p>
-<p><strong>Parameters:</strong></p>
-<ul class="simple">
-<li><p>bundled_program (<em>BundledProgram</em>): The <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> variable to be serialized</p></li>
-</ul>
-<p><strong>Returns:</strong></p>
-<ul class="simple">
-<li><p>Serialized <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> in bytes</p></li>
-</ul>
-<p><strong>Return type:</strong></p>
-<ul class="simple">
-<li><p><em>bytes</em></p></li>
-</ul>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">deserialize_from_flatbuffer_to_bundled_program</span><span class="p">(</span><span class="n">flatbuffer</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>Deserialize flatbuffer to BundledProgram:</p>
-<p><strong>Parameters:</strong></p>
-<ul class="simple">
-<li><p>flatbuffer (<em>bytes</em>): The serialized <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> in bytes to be deserialized.</p></li>
-</ul>
-<p><strong>Returns:</strong></p>
-<ul class="simple">
-<li><p>The deserialized original <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> variable, contains same information as input flatbuffer.</p></li>
-</ul>
-<p><strong>Return type:</strong></p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code></p></li>
-</ul>
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">bundled_program.serialize.</span></span><span class="sig-name descname"><span class="pre">serialize_from_bundled_program_to_flatbuffer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bundled_program</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/bundled_program/serialize.html#serialize_from_bundled_program_to_flatbuffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
+<dd><p>Serialize a BundledProgram into FlatBuffer binary format.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>bundled_program</strong> (<em>BundledProgram</em>) – The <cite>BundledProgram</cite> variable to be serialized.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The serialized FlatBuffer binary data in bytes.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">bundled_program.serialize.</span></span><span class="sig-name descname"><span class="pre">deserialize_from_flatbuffer_to_bundled_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">flatbuffer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/bundled_program/serialize.html#deserialize_from_flatbuffer_to_bundled_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
+<dd><p>Deserialize a FlatBuffer binary format into a BundledProgram.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>flatbuffer</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#bytes" title="(in Python v3.12)"><em>bytes</em></a>) – The FlatBuffer binary data in bytes.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A <cite>BundledProgram</cite> instance.</p>
+</dd>
+</dl>
+</dd></dl>
+
 </div>
 <div class="section" id="emit-example">
 <h3>Emit Example<a class="headerlink" href="#emit-example" title="Permalink to this headline">¶</a></h3>
@@ -639,32 +635,28 @@ expected_outputs should be the same as the size of inputs and provided method_na
 <div class="section" id="get-executorch-program-pointer-from-bundledprogram-buffer">
 <h3>Get ExecuTorch Program Pointer from <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> Buffer<a class="headerlink" href="#get-executorch-program-pointer-from-bundledprogram-buffer" title="Permalink to this headline">¶</a></h3>
 <p>We need the pointer to ExecuTorch program to do the execution. To unify the process of loading and executing <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and Program flatbuffer, we create an API:</p>
-<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="n">Error</span><span class="w"> </span><span class="nf">GetProgramData</span><span class="p">(</span>
-<span class="w">   </span><span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">file_data</span><span class="p">,</span>
-<span class="w">   </span><span class="kt">size_t</span><span class="w"> </span><span class="n">file_data_len</span><span class="p">,</span>
-<span class="w">   </span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="o">**</span><span class="w"> </span><span class="n">out_program_data</span><span class="p">,</span>
-<span class="w">   </span><span class="kt">size_t</span><span class="o">*</span><span class="w"> </span><span class="n">out_program_data_len</span><span class="p">);</span>
-</pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>doxygenfunction: Unable to resolve function “torch::executor::util::GetProgramData” with arguments “None”.
+Candidate function could not be parsed. Parsing error is
+Error when parsing function declaration.
+If the function has no return type:
+  Error in declarator or parameters-and-qualifiers
+  Invalid C++ declaration: Expecting “(” in parameters-and-qualifiers. [error at 15]
+    __ET_NODISCARD Error GetProgramData (void *file_data, size_t file_data_len, const void **out_program_data, size_t *out_program_data_len)
+    —————^
+If the function has a return type:
+  Error in declarator or parameters-and-qualifiers
+  If pointer to member declarator:
+    Invalid C++ declaration: Expected ‘::’ in pointer to member (function). [error at 21]
+      __ET_NODISCARD Error GetProgramData (void *file_data, size_t file_data_len, const void **out_program_data, size_t *out_program_data_len)
+      ———————^
+  If declarator-id:
+    Invalid C++ declaration: Expecting “(” in parameters-and-qualifiers. [error at 21]
+      __ET_NODISCARD Error GetProgramData (void *file_data, size_t file_data_len, const void **out_program_data, size_t *out_program_data_len)
+      ———————^
+</p>
 </div>
-<p>Finds the serialized ExecuTorch program data in the provided bundled program
-file data.</p>
-<p>The returned buffer is appropriate for constructing a
-torch::executor::Program.</p>
-<p><strong>Parameters:</strong></p>
-<ul class="simple">
-<li><p>&#64;param[in] file_data The contents of an ExecuTorch program or bundled program
-file.</p></li>
-<li><p>&#64;param[in] file_data_len The length of file_data, in bytes.</p></li>
-<li><p>&#64;param[out] out_program_data The serialized Program data, if found.</p></li>
-<li><p>&#64;param[out] out_program_data_len The length of out_program_data, in bytes.</p></li>
-</ul>
-<div class="section" id="returns">
-<h4>Returns<a class="headerlink" href="#returns" title="Permalink to this headline">¶</a></h4>
-<ul class="simple">
-<li><p>Error::Ok if the given file is bundled program, a program was found
-in it, and out_program_data/out_program_data_len point to the data. Other
-values on failure.</p></li>
-</ul>
 <p>Here’s an example of how to use the <code class="docutils literal notranslate"><span class="pre">GetProgramData</span></code> API:</p>
 <div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="n">std</span><span class="o">::</span><span class="n">shared_ptr</span><span class="o">&lt;</span><span class="kt">char</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buff_ptr</span><span class="p">;</span>
 <span class="kt">size_t</span><span class="w"> </span><span class="n">buff_len</span><span class="p">;</span>
@@ -688,62 +680,57 @@ values on failure.</p></li>
 </pre></div>
 </div>
 </div>
-</div>
 <div class="section" id="load-bundled-input-to-method">
 <h3>Load Bundled Input to Method<a class="headerlink" href="#load-bundled-input-to-method" title="Permalink to this headline">¶</a></h3>
 <p>To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called <code class="docutils literal notranslate"><span class="pre">torch::executor::util::LoadBundledInput</span></code>:</p>
-<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="n">__ET_NODISCARD</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="n">LoadBundledInput</span><span class="p">(</span>
-<span class="w">    </span><span class="n">Method</span><span class="o">&amp;</span><span class="w"> </span><span class="n">method</span><span class="p">,</span>
-<span class="w">    </span><span class="n">serialized_bundled_program</span><span class="o">*</span><span class="w"> </span><span class="n">bundled_program_ptr</span><span class="p">,</span>
-<span class="w">    </span><span class="n">MemoryAllocator</span><span class="o">*</span><span class="w"> </span><span class="n">memory_allocator</span><span class="p">,</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">method_name</span><span class="p">,</span>
-<span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">testset_idx</span><span class="p">);</span>
-</pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>doxygenfunction: Unable to resolve function “torch::executor::util::LoadBundledInput” with arguments “None”.
+Candidate function could not be parsed. Parsing error is
+Error when parsing function declaration.
+If the function has no return type:
+  Error in declarator or parameters-and-qualifiers
+  Invalid C++ declaration: Expecting “(” in parameters-and-qualifiers. [error at 15]
+    __ET_NODISCARD Error LoadBundledInput (Method &amp;method, serialized_bundled_program *bundled_program_ptr, MemoryAllocator *memory_allocator, const char *method_name, size_t testset_idx)
+    —————^
+If the function has a return type:
+  Error in declarator or parameters-and-qualifiers
+  If pointer to member declarator:
+    Invalid C++ declaration: Expected ‘::’ in pointer to member (function). [error at 21]
+      __ET_NODISCARD Error LoadBundledInput (Method &amp;method, serialized_bundled_program *bundled_program_ptr, MemoryAllocator *memory_allocator, const char *method_name, size_t testset_idx)
+      ———————^
+  If declarator-id:
+    Invalid C++ declaration: Expecting “(” in parameters-and-qualifiers. [error at 21]
+      __ET_NODISCARD Error LoadBundledInput (Method &amp;method, serialized_bundled_program *bundled_program_ptr, MemoryAllocator *memory_allocator, const char *method_name, size_t testset_idx)
+      ———————^
+</p>
 </div>
-<p>Load testset_idx-th bundled input of method_idx-th Method test in
-bundled_program_ptr to given Method.</p>
-<p><strong>Parameters:</strong></p>
-<ul class="simple">
-<li><p>&#64;param[in] method The Method to verify.</p></li>
-<li><p>&#64;param[in] bundled_program_ptr The bundled program contains expected output.</p></li>
-<li><p>&#64;param[in] method_name  The name of the Method being verified.</p></li>
-<li><p>&#64;param[in] testset_idx  The index of input to be set into given Method.</p></li>
-</ul>
-<p><strong>Returns:</strong></p>
-<ul class="simple">
-<li><p>Return Error::Ok if load successfully, or the error happens during
-execution.</p></li>
-</ul>
 </div>
 <div class="section" id="verify-the-method-s-output">
 <h3>Verify the Method’s Output.<a class="headerlink" href="#verify-the-method-s-output" title="Permalink to this headline">¶</a></h3>
 <p>We call <code class="docutils literal notranslate"><span class="pre">torch::executor::util::VerifyResultWithBundledExpectedOutput</span></code> to verify the method’s output with bundled expected outputs. Here’s the details of this API:</p>
-<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="n">__ET_NODISCARD</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="n">VerifyResultWithBundledExpectedOutput</span><span class="p">(</span>
-<span class="w">    </span><span class="n">Method</span><span class="o">&amp;</span><span class="w"> </span><span class="n">method</span><span class="p">,</span>
-<span class="w">    </span><span class="n">serialized_bundled_program</span><span class="o">*</span><span class="w"> </span><span class="n">bundled_program_ptr</span><span class="p">,</span>
-<span class="w">    </span><span class="n">MemoryAllocator</span><span class="o">*</span><span class="w"> </span><span class="n">memory_allocator</span><span class="p">,</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">method_name</span><span class="p">,</span>
-<span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">testset_idx</span><span class="p">,</span>
-<span class="w">    </span><span class="kt">double</span><span class="w"> </span><span class="n">rtol</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1e-5</span><span class="p">,</span>
-<span class="w">    </span><span class="kt">double</span><span class="w"> </span><span class="n">atol</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1e-8</span><span class="p">);</span>
-</pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>doxygenfunction: Unable to resolve function “torch::executor::util::VerifyResultWithBundledExpectedOutput” with arguments “None”.
+Candidate function could not be parsed. Parsing error is
+Error when parsing function declaration.
+If the function has no return type:
+  Error in declarator or parameters-and-qualifiers
+  Invalid C++ declaration: Expecting “(” in parameters-and-qualifiers. [error at 15]
+    __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput (Method &amp;method, serialized_bundled_program *bundled_program_ptr, MemoryAllocator *memory_allocator, const char *method_name, size_t testset_idx, double rtol, double atol)
+    —————^
+If the function has a return type:
+  Error in declarator or parameters-and-qualifiers
+  If pointer to member declarator:
+    Invalid C++ declaration: Expected ‘::’ in pointer to member (function). [error at 21]
+      __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput (Method &amp;method, serialized_bundled_program *bundled_program_ptr, MemoryAllocator *memory_allocator, const char *method_name, size_t testset_idx, double rtol, double atol)
+      ———————^
+  If declarator-id:
+    Invalid C++ declaration: Expecting “(” in parameters-and-qualifiers. [error at 21]
+      __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput (Method &amp;method, serialized_bundled_program *bundled_program_ptr, MemoryAllocator *memory_allocator, const char *method_name, size_t testset_idx, double rtol, double atol)
+      ———————^
+</p>
 </div>
-<p>Compare the Method’s output with testset_idx-th bundled expected
-output in method_idx-th Method test.</p>
-<p><strong>Parameters:</strong></p>
-<ul class="simple">
-<li><p>&#64;param[in] method The Method to extract outputs from.</p></li>
-<li><p>&#64;param[in] bundled_program_ptr The bundled program contains expected output.</p></li>
-<li><p>&#64;param[in] method_name  The name of the Method being verified.</p></li>
-<li><p>&#64;param[in] testset_idx  The index of expected output to be compared.</p></li>
-<li><p>&#64;param[in] rtol Relative tolerance used for data comparsion.</p></li>
-<li><p>&#64;param[in] atol Absolute tolerance used for data comparsion.</p></li>
-</ul>
-<p><strong>Returns:</strong></p>
-<ul class="simple">
-<li><p>Return Error::Ok if two outputs match, or the error happens during
-execution.</p></li>
-</ul>
 </div>
 <div class="section" id="runtime-example">
 <h3>Runtime Example<a class="headerlink" href="#runtime-example" title="Permalink to this headline">¶</a></h3>
@@ -1099,10 +1086,7 @@ Raised Error<div class="sd-summary-down docutils">
 </ul>
 </li>
 <li><a class="reference internal" href="#runtime-stage">Runtime Stage</a><ul>
-<li><a class="reference internal" href="#get-executorch-program-pointer-from-bundledprogram-buffer">Get ExecuTorch Program Pointer from <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> Buffer</a><ul>
-<li><a class="reference internal" href="#returns">Returns</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#get-executorch-program-pointer-from-bundledprogram-buffer">Get ExecuTorch Program Pointer from <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> Buffer</a></li>
 <li><a class="reference internal" href="#load-bundled-input-to-method">Load Bundled Input to Method</a></li>
 <li><a class="reference internal" href="#verify-the-method-s-output">Verify the Method’s Output.</a></li>
 <li><a class="reference internal" href="#runtime-example">Runtime Example</a></li>
