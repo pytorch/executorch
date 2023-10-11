@@ -187,9 +187,11 @@ Topics in this section will help you get started with ExecuTorch.
 
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
+   demo-apps-android
    build-run-xtensa
    build-run-qualcomm-ai-engine-direct-backend
    tutorials/sdk-integration-tutorial
+   executorch-arm-delegate-tutorial
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -217,7 +219,21 @@ ExecuTorch tutorials.
    :header: Running an ExecuTorch Model C++ Tutorial
    :card_description: A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.
    :image: _static/img/generic-pytorch-logo.png
-   :link: running-a-model-cpp.html
+   :link: running-a-model-cpp-tutorial.html
    :tags:
+
+.. customcarditem::
+   :header: Building an ExecuTorch Android Demo App
+   :card_description: A demo tutorial that explains how to build ExecuTorch into a JNI library and build an Android app.
+   :image: _static/img/android_app.png
+   :link: demo-apps-android.html
+   :tags: Delegation,Android
+   
+.. customcarditem::
+   :header: Building and Running ExecuTorch on Xtensa HiFi4 DSP
+   :card_description: A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: build-run-xtensa.html
+   :tags: DSP
 
 .. customcardend::

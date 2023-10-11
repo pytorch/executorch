@@ -13,12 +13,52 @@ Current backend support is being developed for TOSA to Ethos-U55/65 via the
 ethos-u-vela compilation stack. which follows the fully AoT flow.
 
 ## Layout
-- `arm_backend.py` - AoT Partitioner which maps to a subset of Base Inference and Main Inference TOSA profiles, where the subset may be further constrained for early support devices like Ethos-U55. AoT Backend which implements the preprocess step which converts to TOSA and can emit files for ethos-u-vela as shown in `executorch/examples/arm/`
-- `test/` - unit test and test support functions
-- `third-party/` - source dependencies - currently just on TOSA serialization_lib
-- `tosa_mapping.py` - helper functions for mapping edge dialect to TOSA
+
+Export:
+- `arm_backend.py` - Main entrypoint for the ArmPartitioner and ArmBackend. For more information see the section on [Arm Bac
+kend Architecture](#arm-backend-architecture). For examples of use see `executorch/examples/arm`.
+- `tosa_mapping.py` - utilities for mapping edge dialect to TOSA
+- `tosa_quant_utils.py` - utilities for mapping quantization information to TOSA encoding
+
+Runtime:
+- `runtime/ArmBackendEthosU.cpp` - The Arm backend implementation of the ExecuTorch runtime backend (PyTorchBackendInterface) for Ethos-U
+
+Other:
+- `third-party/` - Dependencies on other code - in particular the TOSA serialization_lib for compiling to TOSA and the ethos-u-core-driver for the bare-metal backend supporting Ethos-U
+- `test/` - Unit test and test support functions
 
 ## Help & Improvements
 If you have problems or questions, or have suggestions for ways to make
 implementation and testing better, please reach out to the Arm team developing this delegate, or
 create an issue on [github](https://www.github.com/pytorch/executorch/issues).
+
+# Arm Backend Architecture
+
+The broad principle with the Arm backend implemention for ExecuTorch is to support multiple Arm devices and device configurations through a largely Homogeneous flow with maximal sharing of class logic.
+
+In practice for compilation, this means that the flow goes via [Arm TOSA](https://www.mlplatform.org/tosa/tosa_spec.html) to produce a common IR and quantization behaviour compatible with our various IP, and typically, device-specific backends to further lower to a device specific binary which can happen ahead of time (within the Python development flow) or at runtime (during a JIT compilation stage).
+
+In practice for the runtime, this means we will share common runtime backend functionality, with the aim for features like debugging to be available through common tooling.
+
+
+## Arm Backend Status and Maturity
+
+The Arm Backend should be considered a prototype quality at this point, likely subject to significant change and improvement, and with a limited coverage of functionality. We are actively developing this codebase.
+
+## Current flows
+
+The ArmBackend has a two stage process,
+- Compile to TOSA to rationalise the graph into known hardware support profiles. Currently this is to v0.80.0 TOSA BI with specific concern to a subset which gives support on Ethos-U55, the target of the initial prototype efforts.
+- Lower via the ethos-u-vela compilation flow which takes TOSA v0.80.0 as an input and produces a low level commandstream for the hardware which is then passed via the delegate to the ethos-u-core-driver for direct execution.
+
+The ArmPartitioner is currenly used to ensure the operations converted are Ethos-U compatible, but will be extended to offer spec-correct TOSA Base inference and TOSA Main Inference generation in future.
+
+### Controlling compilation
+
+It is possible to control the compilation flow to aid in development and debug of both networks and the code itself.
+
+Configuration of the ArmBackend export flow is controlled by CompileSpec information (essentially used as compilation flags) to determine which of these outputs is produced. In particular this allows for use of the tosa_reference_model to run intermediate output to check for correctness and quantization accuracy without a full loop via hardware implemntation.
+
+As this is in active development see the ArmBackend for accurate information on [compilation flags](https://github.com/pytorch/executorch/blob/29f6dc9353e90951ed3fae3c57ae416de0520067/backends/arm/arm_backend.py#L319-L324)
+
+You can also refer to the [example TOSA end-to-end code](/examples/arm/arm_tosa_e2e.py)

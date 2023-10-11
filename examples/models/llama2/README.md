@@ -21,4 +21,3 @@ This example tries to reuse the Python code, with modifications to make it compa
 2. `cd examples/third-party/llama`
 3. `pip install -e .`
 4. Go back to `executorch` root, run `python3 -m examples.portable.scripts.export --model_name="llama2"`. The exported program, llama2.pte would be saved in current directory
-5. Use the `executor_runner` (build instruction in step 1) to load and run llama2.pte, `executor_runner --model_path llama2.pte`

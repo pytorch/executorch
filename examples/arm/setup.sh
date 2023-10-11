@@ -148,8 +148,8 @@ function setup_ethos_u() {
 
 function patch_repo() {
     # This is a temporary hack until it finds a better home in one for the ARM Ml repos
+    name="$(basename $repo_dir)"
     echo -e "[${FUNCNAME[0]}] Preparing ${name}..."
-    local repo_dir="${root_dir}/ethos-u/${name}"
     cd $repo_dir
 
     git reset --hard ${base_rev}
@@ -190,7 +190,7 @@ function setup_vela() {
     cd "${root_dir}"
     if [[ ! -e ethos-u-vela ]]; then
         git clone https://git.mlplatform.org/ml/ethos-u/ethos-u-vela.git
-        name="ethos-u-vela"
+        repo_dir="${root_dir}/ethos-u-vela"
         base_rev=00a15db3e1a188b25065d095152d701f4394cdc5
         patch_repo
     fi
@@ -230,7 +230,7 @@ setup_toolchain
 setup_ethos_u
 
 # Patch the ethos-u dev environment to include executorch application
-name="core_platform"
+repo_dir="${root_dir}/ethos-u/core_platform"
 base_rev=204210b1074071532627da9dc69950d058a809f4
 patch_repo
 

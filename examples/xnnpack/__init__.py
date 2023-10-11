@@ -8,26 +8,26 @@ from dataclasses import dataclass
 
 
 @dataclass
-class XNNPackOptions(object):
+class XNNPACKOptions(object):
     quantization: bool
     delegation: bool
 
 
 MODEL_NAME_TO_OPTIONS = {
-    "linear": XNNPackOptions(True, True),
-    "add": XNNPackOptions(True, True),
-    "add_mul": XNNPackOptions(True, True),
-    "dl3": XNNPackOptions(True, True),
-    "ic3": XNNPackOptions(True, True),
-    "ic4": XNNPackOptions(True, True),
-    "mv2": XNNPackOptions(True, True),
-    "mv3": XNNPackOptions(True, True),
-    "resnet18": XNNPackOptions(True, True),
-    "resnet50": XNNPackOptions(True, True),
-    "vit": XNNPackOptions(False, True),
-    "w2l": XNNPackOptions(False, True),
-    "edsr": XNNPackOptions(True, True),
-    "mobilebert": XNNPackOptions(True, False),
+    "linear": XNNPACKOptions(True, True),
+    "add": XNNPACKOptions(True, True),
+    "add_mul": XNNPACKOptions(True, True),
+    "dl3": XNNPACKOptions(True, True),
+    "ic3": XNNPACKOptions(True, True),
+    "ic4": XNNPACKOptions(True, True),
+    "mv2": XNNPACKOptions(True, True),
+    "mv3": XNNPACKOptions(True, True),
+    "resnet18": XNNPACKOptions(True, True),
+    "resnet50": XNNPACKOptions(True, True),
+    "vit": XNNPACKOptions(False, True),
+    "w2l": XNNPACKOptions(False, True),
+    "edsr": XNNPACKOptions(True, True),
+    "mobilebert": XNNPACKOptions(True, False),
 }
 
 

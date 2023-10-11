@@ -93,7 +93,7 @@ def main(args: List[Any]) -> None:
     """
     This binary generates the supported_features.h from supported_features.yaml
     from this (//executorch/kernels/test) directory. Then for a specific kernel,
-    we need to supply the overriden supported_features_def.yaml for the kernel.
+    we need to supply the overridden supported_features_def.yaml for the kernel.
     """
     with open(args[0]) as f:
         y = yaml.full_load(f)

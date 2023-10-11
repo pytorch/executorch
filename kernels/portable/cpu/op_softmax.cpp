@@ -8,6 +8,7 @@
 
 #include <cmath>
 
+#include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/reduce_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -18,37 +19,6 @@ namespace native {
 
 using Tensor = exec_aten::Tensor;
 
-namespace {
-
-void check_preconditions(
-    const Tensor& in,
-    int64_t dim,
-    bool half_to_float,
-    Tensor& out) {
-  // Ensure half_to_float is not true
-  ET_CHECK_MSG(
-      !half_to_float,
-      "softmax with half to float conversion is not supported on CPU");
-  // Check both in and out are of the same dtype
-  ET_CHECK_SAME_DTYPE2(in, out);
-  // Check both in and out have the same number of dimensions
-  ET_CHECK_MSG(
-      in.dim() == out.dim(),
-      "in.dim() %zd!= out.dim() %zd",
-      in.dim(),
-      out.dim());
-  // Ensure dim is valid
-  if (in.dim() == 0) {
-    ET_CHECK(dim == 0 || dim == -1);
-  } else {
-    ET_CHECK_VALID_DIM(dim, in.dim());
-  }
-  ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(in);
-  ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(out);
-}
-
-} // namespace
-
 Tensor& softmax_out(
     RuntimeContext& ctx,
     const Tensor& in,
@@ -57,13 +27,13 @@ Tensor& softmax_out(
     Tensor& out) {
   (void)ctx;
 
-  check_preconditions(in, dim, half_to_float, out);
+  check_softmax_args(in, dim, half_to_float, out);
 
-  Error err = resize_tensor(out, in.sizes());
-  ET_CHECK_MSG(err == Error::Ok, "Failed to resize out tensor in softmax_out");
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
   // Adjust for negative dim
-  dim = dim < 0 ? dim + in.dim() : dim;
+  dim = dim < 0 ? dim + nonzero_dim(in) : dim;
 
   ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, "softmax", CTYPE, [&]() {
     const CTYPE* const in_data = in.const_data_ptr<CTYPE>();

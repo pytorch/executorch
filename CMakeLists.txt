@@ -185,8 +185,11 @@ include(${EXECUTORCH_SRCS_FILE})
 #
 
 # Detect if an iOS toolchain is set.
-set(CMAKE_TOOLCHAIN_IOS NOT CMAKE_TOOLCHAIN_FILE MATCHES
-                        ".*(iOS|ios\.toolchain)\.cmake$")
+if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
+  set(CMAKE_TOOLCHAIN_IOS ON)
+else()
+  set(CMAKE_TOOLCHAIN_IOS OFF)
+endif()
 
 # EXECUTORCH_BUILD_HOST_TARGETS: Option to control the building of host-only
 # tools like `flatc`, along with example executables like `executor_runner` and

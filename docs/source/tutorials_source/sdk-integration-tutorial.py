@@ -54,39 +54,47 @@ SDK Integration Tutorial
 # the eager model. This is generated via ``executorch.sdk.generate_etrecord``.
 #
 # ``executorch.sdk.generate_etrecord`` takes in an output file path (str), the
-# edge dialect model (ExirExportedProgram), the ExecuTorch dialect model
-# (ExecutorchProgram), and an optional dictionary of additional models
+# edge dialect model (``EdgeProgramManager``), the ExecuTorch dialect model
+# (``ExecutorchProgramManager``), and an optional dictionary of additional models
 #
 # In this tutorial, the mobilenet v2 example model is used to demonstrate::
 #
 #   # Imports
 #   import copy
-#
 #   import torch
 #
-#   from executorch import exir
 #   from executorch.examples.models.mobilenet_v2 import MV2Model
-#   from executorch.exir import ExecutorchProgram, ExirExportedProgram, ExportedProgram
+#   from executorch.exir import (
+#       EdgeCompileConfig,
+#       EdgeProgramManager,
+#       ExecutorchProgramManager,
+#       to_edge,
+#   )
 #   from executorch.sdk import generate_etrecord
+#   from torch.export import export, ExportedProgram
 #
 #   # Generate MV2 Model
 #   model: torch.nn.Module = MV2Model()
-#   aten_model: ExportedProgram = exir.capture(
+#
+#   aten_model: ExportedProgram = export(
 #       model.get_eager_model().eval(),
 #       model.get_example_inputs(),
-#       exir.CaptureConfig(),
 #   )
 #
-#   edge_model: ExirExportedProgram = aten_model.to_edge(
-#       exir.EdgeCompileConfig(_check_ir_validity=True)
-#   )
-#   edge_copy: ExirExportedProgram = copy.deepcopy(edge_model)
+#   edge_program_manager: EdgeProgramManager = to_edge(aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True))
+#   edge_program_manager_copy = copy.deepcopy(edge_program_manager)
+#   et_program_manager: ExecutorchProgramManager = edge_program_manager_copy.to_executorch()
 #
-#   et_model: ExecutorchProgram = edge_model.to_executorch()
 #
 #   # Generate ETRecord
 #   etrecord_path = "etrecord.bin"
-#   generate_etrecord(etrecord_path, edge_copy, et_model)
+#   generate_etrecord(etrecord_path, edge_program_manager, et_program_manager)
+#
+# .. warning::
+#    Users should do a deepcopy of the output of to_edge() and pass in the
+#    deepcopy to the generate_etrecord API. This is needed because the
+#    subsequent call, to_executorch(), does an in-place mutation and will
+#    lose debug data in the process.
 #
 
 ######################################################################
@@ -122,6 +130,78 @@ SDK Integration Tutorial
 #   inspector.print_data_tabular()
 #
 
+
+######################################################################
+# Analyzing with an Inspector
+# ---------------------------
+#
+# ``Inspector`` provides 2 ways of accessing ingested information: `EventBlocks <../sdk-inspector.rst>`__
+# and ``DataFrames``. These mediums give users the ability to perform custom
+# analysis about their model performance.
+#
+# Below are examples usages, with both ``EventBlock`` and ``DataFrame`` approaches::
+#
+#   # Set Up
+#
+#   import pprint as pp
+#   import pandas as pd
+#
+#   pd.set_option('display.max_colwidth', None)
+#   pd.set_option('display.max_columns', None)
+#
+# If a user wants the raw profiling results, they would do something similar to
+# finding the raw runtime data of an ``addmm.out`` event::
+#
+#   for event_block in inspector.event_blocks:
+#       # Via EventBlocks
+#       for event in event_block.events:
+#           if event.name == 'native_call_addmm.out':
+#               print(event.name, event.perf_data.raw)
+#
+#       # Via Dataframe
+#       df = event_block.to_dataframe()
+#       df = df[df.event_name == 'native_call_addmm.out']
+#       print(df[['event_name', 'raw']])
+#       print()
+#
+# If a user wants to trace an operator back to their model code, they would do
+# something similar to finding the module hierarchy and stack trace of the
+# slowest ``convolution.out`` call::
+#
+#   for event_block in inspector.event_blocks:
+#       # Via EventBlocks
+#       slowest = None
+#       for event in event_block.events:
+#           if event.name == 'native_call_convolution.out':
+#               if slowest is None or event.perf_data.p50 > slowest.perf_data.p50:
+#                   slowest = event
+#       if slowest is not None:
+#           print(slowest.name)
+#           print()
+#           pp.pprint(slowest.stack_traces)
+#           print()
+#           pp.pprint(slowest.module_hierarchy
+#
+#       # Via Dataframe
+#       df = event_block.to_dataframe()
+#       df = df[df.event_name == 'native_call_convolution.out']
+#       if len(df) > 0:
+#           slowest = df.loc[df['p50'].idxmax()]
+#           print(slowest.event_name)
+#           print()
+#           pp.pprint(slowest.stack_traces)
+#           print()
+#           pp.pprint(slowest.module_hierarchy)
+#
+# If a user wants the total runtime of a module::
+#
+#   print(inspector.find_total_for_module("L__self___features"))
+#   print(inspector.find_total_for_module("L__self___features_14"))
+#
+# Note: ``find_total_for_module`` is a special first class method of
+# `Inspector <../sdk-inspector.html>`__
+#
+
 ######################################################################
 # Conclusion
 # ----------
@@ -136,3 +216,4 @@ SDK Integration Tutorial
 # - `ExecuTorch SDK <../sdk-overview.html>`__
 # - `ETRecord <../sdk-etrecord>`__
 # - `ETDump <../sdk-etdump.html>`__
+# - `Inspector <../sdk-inspector.html>`__
