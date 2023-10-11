@@ -10,10 +10,10 @@ import sys
 import executorch.exir as exir
 import torch
 
+from executorch.backends.apple.coreml.compiler import CoreMLBackend
+
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-
-from executorch.backends.apple.coreml.compiler import CoreMLBackend
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent.parent.parent
 EXAMPLES_DIR = REPO_ROOT / "examples"
