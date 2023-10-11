@@ -878,8 +878,13 @@ class ExecutorchProgramManager:
 
     @property
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
-        # TODO ask Tarun what the docstring here should be.
         return self._emitter_output.debug_handle_map
+
+    @property
+    def delegate_map(
+        self,
+    ) -> Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]:
+        return self._emitter_output.method_to_delegate_debug_id_map
 
     @property
     def executorch_program(self) -> Program:

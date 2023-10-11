@@ -27,7 +27,7 @@ from executorch.sdk.inspector._inspector_utils import (
 
 class TestInspectorUtils(unittest.TestCase):
     def test_gen_graphs_from_etrecord(self):
-        captured_output, edge_output, et_output, _ = TestETRecord().get_test_model()
+        captured_output, edge_output, et_output = TestETRecord().get_test_model()
         with tempfile.TemporaryDirectory() as tmpdirname:
             generate_etrecord(
                 tmpdirname + "/etrecord.bin",
@@ -43,14 +43,10 @@ class TestInspectorUtils(unittest.TestCase):
             graphs = gen_graphs_from_etrecord(etrecord)
 
             self.assertTrue("aten_dialect_output/forward" in graphs)
-            self.assertTrue("et_dialect_graph_module/forward" in graphs)
             self.assertTrue(EDGE_DIALECT_GRAPH_KEY in graphs)
 
             self.assertTrue(
                 isinstance(graphs["aten_dialect_output/forward"], FXOperatorGraph)
-            )
-            self.assertTrue(
-                isinstance(graphs["et_dialect_graph_module/forward"], FXOperatorGraph)
             )
             self.assertTrue(isinstance(graphs[EDGE_DIALECT_GRAPH_KEY], FXOperatorGraph))
 

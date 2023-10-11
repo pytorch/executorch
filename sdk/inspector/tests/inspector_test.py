@@ -197,7 +197,7 @@ class TestInspector(unittest.TestCase):
             )
 
             # Gen a mock etrecord
-            captured_output, edge_output, et_output, _ = TestETRecord().get_test_model()
+            captured_output, edge_output, et_output = TestETRecord().get_test_model()
             with tempfile.TemporaryDirectory() as tmpdirname:
                 generate_etrecord(
                     tmpdirname + "/etrecord.bin",
