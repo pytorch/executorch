@@ -24,46 +24,20 @@ ExecuTorch Program can be emitted from user's model by using ExecuTorch APIs. [H
 
 `BundledConfig` is a class under `executorch/bundled_program/config.py` that contains all information to be bundled for model verification. Here's the constructor api to create `BundledConfig`:
 
-```python
-class BundledConfig (method_names, inputs, expected_outputs)
+```{eval-rst}
+.. autofunction:: bundled_program.config.BundledConfig.__init__
+    :noindex:
 ```
-
-__Parameters:__
-- method_names (_List[str]_): All names of Methods to be verified in the program.
-- inputs (_List[List[List[Union[torch.Tensor, int, float, bool]]]]_): All sets of input to be tested on for all methods. Each list
-        of `inputs` is all sets which will be run on the method in the
-        program with corresponding method name. Each set of any `inputs` element should contain all inputs required by Method with the same inference method name in ExecuTorch program for one-time execution.
-
-        It is worth mentioning that, although both bundled program and ET runtime apis support setting input
-        other than torch.tensor type, only the input in torch.tensor type will be actually updated in
-        the program, and the rest of the inputs will just do a sanity check if they match the default value in method.
-
-- expected_outputs (_List[List[List[torch.Tensor]]]_): Expected outputs for inputs sharing same index. The size of
-        expected_outputs should be the same as the size of inputs and provided method_names.
-
-__Returns:__
-- self
-
-__Return type:__
-- BundledConfig
 
 ### Step 3: Generate `BundledProgram`
 
 We provide `create_bundled_program` API under `executorch/bundled_program/core.py` to generate `BundledProgram` by bundling the emitted ExecuTorch program with the bundled_config:
 
-```python
-def create_bundled_program(program, bundled_config)
+```{eval-rst}
+.. currentmodule:: bundled_program.core
+.. autofunction:: create_bundled_program
+    :noindex:
 ```
-
-__Parameters:__
-- program (_Program_): The ExecuTorch program to be bundled.
-- bundled_config (_BundledConfig_): The config to be bundled.
-
-__Returns:__
-- The `BundledProgram` variable contains given ExecuTorch program and test cases.
-
-__Return type:__
-- `BundledProgram`
 
 `create_bundled_program` will do sannity check internally to see if the given BundledConfig matches the given Program's requirements. Specifically:
 1. The name of methods we create BundledConfig for should be also in program. Please notice that it is no need to set testcases for every method in the Program.
@@ -74,36 +48,17 @@ __Return type:__
 To serialize `BundledProgram` to make runtime APIs use it, we provide two APIs, both under `executorch/bundled_program/serialize/__init__.py`.
 
 
-```python
-def serialize_from_bundled_program_to_flatbuffer(bundled_program)
+```{eval-rst}
+.. currentmodule:: bundled_program.serialize
+.. autofunction:: serialize_from_bundled_program_to_flatbuffer
+    :noindex:
 ```
 
-Serialize `BundledProgram` to flatbuffer:
-
-__Parameters:__
-- bundled_program (_BundledProgram_): The `BundledProgram` variable to be serialized
-
-__Returns:__
-- Serialized `BundledProgram` in bytes
-
-__Return type:__
-- _bytes_
-
-
-```python
-def deserialize_from_flatbuffer_to_bundled_program(flatbuffer)
+```{eval-rst}
+.. currentmodule:: bundled_program.serialize
+.. autofunction:: deserialize_from_flatbuffer_to_bundled_program
+    :noindex:
 ```
-
-Deserialize flatbuffer to BundledProgram:
-
-__Parameters:__
-- flatbuffer (_bytes_): The serialized `BundledProgram` in bytes to be deserialized.
-
-__Returns:__
-- The deserialized original `BundledProgram` variable, contains same information as input flatbuffer.
-
-__Return type:__
-- `BundledProgram`
 
 ### Emit Example
 
@@ -231,32 +186,10 @@ This stage mainly focuses on executing the model with the bundled inputs and and
 
 ### Get ExecuTorch Program Pointer from `BundledProgram` Buffer
 We need the pointer to ExecuTorch program to do the execution. To unify the process of loading and executing `BundledProgram` and Program flatbuffer, we create an API:
- ```c++
 
-Error GetProgramData(
-    void* file_data,
-    size_t file_data_len,
-    const void** out_program_data,
-    size_t* out_program_data_len);
+```{eval-rst}
+.. doxygenfunction:: torch::executor::util::GetProgramData
 ```
-
- Finds the serialized ExecuTorch program data in the provided bundled program
- file data.
-
- The returned buffer is appropriate for constructing a
- torch::executor::Program.
-
-__Parameters:__
- - @param[in] file_data The contents of an ExecuTorch program or bundled program
-                      file.
- - @param[in] file_data_len The length of file_data, in bytes.
- - @param[out] out_program_data The serialized Program data, if found.
- - @param[out] out_program_data_len The length of out_program_data, in bytes.
-
-#### Returns
- - Error::Ok if the given file is bundled program, a program was found
-in it, and out_program_data/out_program_data_len point to the data. Other
-values on failure.
 
 Here's an example of how to use the `GetProgramData` API:
 ```c++
@@ -284,55 +217,16 @@ ET_CHECK_MSG(
 ### Load Bundled Input to Method
 To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called `torch::executor::util::LoadBundledInput`:
 
-```c++
-__ET_NODISCARD Error LoadBundledInput(
-    Method& method,
-    serialized_bundled_program* bundled_program_ptr,
-    MemoryAllocator* memory_allocator,
-    const char* method_name,
-    size_t testset_idx);
+```{eval-rst}
+.. doxygenfunction:: torch::executor::util::LoadBundledInput
 ```
-
- Load testset_idx-th bundled input of method_idx-th Method test in
- bundled_program_ptr to given Method.
-
-__Parameters:__
- - @param[in] method The Method to verify.
- - @param[in] bundled_program_ptr The bundled program contains expected output.
- - @param[in] method_name  The name of the Method being verified.
- - @param[in] testset_idx  The index of input to be set into given Method.
-
-__Returns:__
- - Return Error::Ok if load successfully, or the error happens during
- execution.
 
 ### Verify the Method's Output.
 We call `torch::executor::util::VerifyResultWithBundledExpectedOutput` to verify the method's output with bundled expected outputs. Here's the details of this API:
 
-```c++
-__ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
-    Method& method,
-    serialized_bundled_program* bundled_program_ptr,
-    MemoryAllocator* memory_allocator,
-    const char* method_name,
-    size_t testset_idx,
-    double rtol = 1e-5,
-    double atol = 1e-8);
+```{eval-rst}
+.. doxygenfunction:: torch::executor::util::VerifyResultWithBundledExpectedOutput
 ```
- Compare the Method's output with testset_idx-th bundled expected
- output in method_idx-th Method test.
-
-__Parameters:__
- - @param[in] method The Method to extract outputs from.
- - @param[in] bundled_program_ptr The bundled program contains expected output.
- - @param[in] method_name  The name of the Method being verified.
- - @param[in] testset_idx  The index of expected output to be compared.
- - @param[in] rtol Relative tolerance used for data comparsion.
- - @param[in] atol Absolute tolerance used for data comparsion.
-
-__Returns:__
- - Return Error::Ok if two outputs match, or the error happens during
- execution.
 
 
 ### Runtime Example

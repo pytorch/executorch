@@ -91,6 +91,9 @@ class BundledConfig:
 
             expected_outputs: Expected outputs for inputs sharing same index. The size of
                     expected_outputs should be the same as the size of inputs and provided method_names.
+
+        Returns:
+            self
         """
         BundledConfig._check_io_type(inputs)
         BundledConfig._check_io_type(expected_outputs)
