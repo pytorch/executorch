@@ -61,6 +61,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_native_layer_norm",
         deps = [
             ":moments_utils",
+            "//executorch/kernels/portable/cpu/util:normalization_ops_util",
         ],
     ),
     op_target(name = "op_neg"),
