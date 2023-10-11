@@ -20,14 +20,8 @@ them to debug and visualize their model.
 The ``ETRecord`` object itself is intended to be opaque to users and they should not access any components inside it directly.
 It should be provided to the `Inspector API <sdk-inspector.html>`__ to link back performance and debug data sourced from the runtime back to the Python source code.
 
-APIs
-----
-
-There are two important APIs users must be aware of when dealing with
-``ETRecord``: ``generate_etrecord()`` and ``parse_etrecord()``.
-
-Generating an ``ETRecord`` File
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Generating an ``ETRecord``
+--------------------------
 
 The user should use the following API to generate an ``ETRecord`` file. They
 will be expected to provide the Edge Dialect program (returned by the call to ``to_edge()``),
@@ -40,8 +34,7 @@ they are interested in working with via our tooling.
 .. currentmodule:: sdk.etrecord._etrecord
 .. autofunction:: generate_etrecord
 
-Parsing an ``ETRecord``
-~~~~~~~~~~~~~~~~~~~~~~~
+Using an ``ETRecord``
+---------------------
 
-.. currentmodule:: sdk.etrecord._etrecord
-.. autofunction:: parse_etrecord
+Pass the ``ETRecord`` as an optional argument into the `Inspector API <sdk-inspector.html>`__ to access this data and  do post-run analysis.
