@@ -7,10 +7,9 @@
 
 set -eu
 
-if [[ "${1:-'.'}" == "-h" || "${#}" -gt 2 ]]; then
+if [[ "${1:-"."}" == "-h" ]]; then
     echo "Usage: $(basename $0) [path-to-a-scratch-dir] [buck2 binary]"
-    echo "Supplied args: $*"
-    exit 1
+    exit 0
 fi
 
 ########
@@ -48,8 +47,8 @@ function generate_pte_file() {
 # Generate the ethos delegate PTE file
 function generate_ethos_pte_file() {
     cd $et_root_dir
-    python3 examples/arm/arm_ethosu_minimal.py &> /dev/null
-    cd ./ethosout/simple_add/torch/
+	python3 examples/arm/arm_ethosu_minimal.py &> /dev/null
+	cd ./ethosout/simple_add/torch/
     local pte_file=$(realpath ./delegated.pte)
     [[ -f ${pte_file} ]] || { echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
     echo "${pte_file}"
@@ -68,7 +67,6 @@ function build_executorch() {
         -DEXECUTORCH_BUILD_GFLAGS=OFF                     \
         -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
         -DEXECUTORCH_BUILD_HOST_TARGETS=OFF               \
-        -DEXECUTORCH_BUILD_SDK=OFF                        \
         -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_ENABLE_LOGGING=ON                    \
@@ -80,16 +78,16 @@ function build_executorch() {
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
-    cmake --build . -- -j"$((n - 5))"
+    cmake --build . -j"$((n - 5))" -- VERBOSE=1
     echo "[${FUNCNAME[0]}] Generated static libraries for ExecuTorch:"
     find . -name "*.a" -exec ls -al {} \;
 }
 
 # build Arm Baremetal executor_runner
 function build_executorch_runner() {
-    echo "[${FUNCNAME[0]}] Generating ExecuTorch libraries"
-    [[ $# -ne 1 ]] && { echo "[${FUNCNAME[0]}]" "Expecting a single pte file as argument got, $*"; exit 1; }
+    [[ $# -ne 2 ]] && { echo "[${FUNCNAME[0]}]" "Expecting 2 pte files as arguments got, $*"; exit 1; }
     local pte=${1}
+    local pte_delegate=${2}
     cd "${ethos_u_root_dir}"/core_platform
     cmake                                         \
         -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} \
@@ -97,11 +95,12 @@ function build_executorch_runner() {
         -DET_DIR_PATH:PATH=${et_root_dir}         \
         -DET_BUILD_DIR_PATH:PATH=${et_build_dir}  \
         -DET_PTE_FILE_PATH:PATH="${pte}"          \
+        -DET_PTE_DELEGATE_FILE_PATH:PATH="${pte_delegate}" \
         -DPYTHON_EXECUTABLE=$(which python3)
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
-    cmake --build build -- -j"$((n - 5))" executor_runner
+    cmake --build build -- -j"$((n - 5))" executor_runner executor_runner_delegate VERBOSE=1
     echo "[${FUNCNAME[0]}] Generated baremetal elf file:"
     find . -name "executor_runner.elf"
 }
@@ -147,19 +146,20 @@ hash arm-none-eabi-gcc \
 type ${buck2} 2>&1 > /dev/null \
     || { echo "Need a functioning buck2. Got ${buck2}."; exit 1; }
 
-# build executorch libraries
+# get the pte
+pte=$(generate_pte_file)
+pte_delegate=$(generate_ethos_pte_file)
+
+# build et
 build_executorch
 
-# generate a .pte file - in this case a non-delegated one
-pte=$(generate_pte_file)
-# build and run the runner with a non-delegated .pte
-build_executorch_runner "${pte}"
+# build the et baremetal app
+build_executorch_runner "${pte}" "${pte_delegate}"
+
+# run the app
 run_fvp executor_runner.elf
 
-# generate a pte with an ArmBackend delegate
-pte_delegate=$(generate_ethos_pte_file)
-# build and run the same app with a delegated .pte
-build_executorch_runner "${pte_delegate}"
-run_fvp executor_runner.elf
+# run the delegate app
+run_fvp executor_runner_delegate.elf
 
 exit 0

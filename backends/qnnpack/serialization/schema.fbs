@@ -1,0 +1,20 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+
+namespace fb_qnnpack;
+
+table ConstTensor {
+  shape: [int];
+  buffer: [ubyte] (force_align: 16);
+}
+
+
+table QNNDynamicLinear {
+  input_shape:[int];
+  bias:ConstTensor;
+  weights:ConstTensor;
+  weights_zero_point:ConstTensor;
+  weights_scale:ConstTensor;
+
+}
+
+root_type QNNDynamicLinear;
