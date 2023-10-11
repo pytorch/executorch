@@ -10,8 +10,11 @@ from enum import Enum
 from typing import Dict, List, Optional, Union
 from zipfile import BadZipFile, ZipFile
 
+from executorch import exir
 from executorch.exir import (
+    EdgeProgramManager,
     ExecutorchProgram,
+    ExecutorchProgramManager,
     ExirExportedProgram,
     ExportedProgram,
     MultiMethodExecutorchProgram,
@@ -65,7 +68,9 @@ def _handle_multi_method_exported_program(
 
 def _handle_export_module(
     etrecord_zip: ZipFile,
-    export_module: Union[MultiMethodExirExportedProgram, ExirExportedProgram],
+    export_module: Union[
+        MultiMethodExirExportedProgram, ExirExportedProgram, EdgeProgramManager
+    ],
     module_name: str,
 ) -> None:
     if isinstance(export_module, MultiMethodExirExportedProgram):
@@ -74,43 +79,19 @@ def _handle_export_module(
         _handle_exported_program(
             etrecord_zip, module_name, "forward", export_module.exported_program
         )
+    elif isinstance(
+        export_module,
+        (EdgeProgramManager, exir.program._program.EdgeProgramManager),
+    ):
+        for method in export_module.methods:
+            _handle_exported_program(
+                etrecord_zip,
+                module_name,
+                method,
+                export_module.exported_program(method),
+            )
     else:
         raise RuntimeError(f"Unsupported graph module type. {type(export_module)}")
-
-
-def _handle_executorch_program(
-    etrecord_zip: ZipFile,
-    program: Union[ExecutorchProgram, MultiMethodExecutorchProgram],
-) -> None:
-    if isinstance(program, MultiMethodExecutorchProgram):
-        # Do a dummy read of the program here to make sure that the emitter runs
-        # under the hood which will result in the debug handle map being generated.
-        program.program
-
-        _handle_multi_method_exported_program(
-            etrecord_zip,
-            ETRecordReservedFileNames.ET_DIALECT_GRAPH_MODULE,
-            program._executorch_dialect_ir_program,
-        )
-
-    elif isinstance(program, ExecutorchProgram):
-        # Do a dummy read of the program here to make sure that the emitter runs
-        # under the hood which will result in the debug handle map being generated.
-        program.program
-
-        _handle_exported_program(
-            etrecord_zip,
-            ETRecordReservedFileNames.ET_DIALECT_GRAPH_MODULE,
-            "forward",
-            program.dump_exported_program(),
-        )
-
-        etrecord_zip.writestr(ETRecordReservedFileNames.PROGRAM_BUFFER, program.buffer)
-
-    else:
-        raise RuntimeError(
-            f"program passed in should be either ExecutorchProgram or MultiMethodExecutorchProgram. {type(program)}"
-        )
 
 
 def _handle_edge_dialect_exported_program(
@@ -130,12 +111,16 @@ def _handle_edge_dialect_exported_program(
 
 def generate_etrecord(
     etrecord_path: str,
-    edge_dialect_program: ExirExportedProgram,
-    executorch_program: Union[ExecutorchProgram, MultiMethodExecutorchProgram],
+    edge_dialect_program: Union[EdgeProgramManager, ExirExportedProgram],
+    executorch_program: Union[
+        ExecutorchProgram, MultiMethodExecutorchProgram, ExecutorchProgramManager
+    ],
     export_modules: Optional[
         Dict[
             str,
-            Union[MultiMethodExirExportedProgram, ExirExportedProgram],
+            Union[
+                MultiMethodExirExportedProgram, ExirExportedProgram, EdgeProgramManager
+            ],
         ]
     ] = None,
 ) -> None:
@@ -151,10 +136,9 @@ def generate_etrecord(
 
     Args:
         etrecord_path: Path to where the `ETRecord` file will be saved to.
-        edge_dialect_program: `ExirExportedProgram` for this model returned by the call to to_edge()
-        executorch_program: `ExecutorchProgram` or `MultiMethodExecutorchProgram` for this model returned by the
-            call to `to_executorch()`
-        export_modules: A dictionary of graph modules with the key being the user provided name and the
+        edge_dialect_program: `EdgeProgramManager` for this model returned by the call to to_edge()
+        executorch_program: `ExecutorchProgramManager` for this model returned by the call to `to_executorch()`
+        export_modules[Optional]: **Should be ignored by OSS users**. A dictionary of graph modules with the key being the user provided name and the
             value being the corresponding exported module. The exported graph modules can be either the
             output of `capture()` or `to_edge()`.
 
@@ -179,12 +163,23 @@ def generate_etrecord(
                 )
             _handle_export_module(etrecord_zip, export_module, module_name)
 
-    _handle_executorch_program(etrecord_zip, executorch_program)
-
-    _handle_edge_dialect_exported_program(
-        etrecord_zip,
-        edge_dialect_program.exported_program,
-    )
+    if isinstance(
+        edge_dialect_program,
+        (EdgeProgramManager, exir.program._program.EdgeProgramManager),
+    ):
+        _handle_edge_dialect_exported_program(
+            etrecord_zip,
+            edge_dialect_program.exported_program(),
+        )
+    elif isinstance(edge_dialect_program, ExirExportedProgram):
+        _handle_edge_dialect_exported_program(
+            etrecord_zip,
+            edge_dialect_program.exported_program,
+        )
+    else:
+        raise RuntimeError(
+            f"Unsupported type of edge_dialect_program passed in {type(edge_dialect_program)}."
+        )
 
     etrecord_zip.writestr(
         ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME,
