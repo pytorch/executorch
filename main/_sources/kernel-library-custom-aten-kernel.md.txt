@@ -1,11 +1,12 @@
-# Overview
+# Kernel Registration
+## Overview
 
 At the last stage of [ExecuTorch model exporting](./export-overview.md), we lower the operators in the dialect to the _out variants_ of the [core ATen operators](./ir-ops-set-definition.md). Then we serialize these operator names into the model artifact. During runtime execution, for each operator name we will need to find the actual _kernels_, i.e., the C++ functions that do the heavy-lifting calculations and return results.
 
 Portable kernel library is the in-house default kernel library, it’s easy to use and portable for most of the target backends. However it’s not optimized for performance, because it’s not specialized for any certain target. Therefore we provide kernel registration APIs for ExecuTorch users to easily register their own optimized kernels.
 
 
-# Design Principles
+## Design Principles
 
 **What do we support?** On the operator coverage side, the kernel registration APIs allow users to register kernels for all core ATen ops as well as custom ops, as long as the custom ops schemas are specified.
 
@@ -18,7 +19,7 @@ Notice that we also support _partial kernels, _for example the kernel only suppo
 * Gives correct result. We will provide a testing framework to automatically test the custom kernels.
 
 
-# High Level Architecture
+## High Level Architecture
 
 ![](./_static/img/kernel-library-custom-aten-kernel.png)
 
@@ -29,7 +30,7 @@ ExecuTorch users are asked to provide:
 2. a yaml file associated with the library that describes what operators are being implemented by this library. For partial kernels, the yaml file also contains information on the dtypes and dim orders supported by the  kernel. More details in the API section.
 
 
-## Workflow
+### Workflow
 
 At build time, the yaml files associated with kernel libraries will be passed to the _kernel resolver_ along with the model op info (see selective build doc) and the outcome is a mapping between a combination of operator names and tensor metadata, to kernel symbols. Then codegen tools will use this mapping to generate C++ bindings that connect the kernels to ExecuTorch runtime. ExecuTorch users need to link this generated library into their application to use these kernels.
 
@@ -38,12 +39,12 @@ At static object initialization time, kernels will be registered into the ExecuT
 At runtime initialization stage, ExecuTorch will use the operator name and argument metadata as a key to lookup for the kernels. For example, with “aten::add.out” and inputs being float tensors with dim order (0, 1, 2, 3), ExecuTorch will go into the kernel registry and lookup for a kernel that matches the name and the input metadata.
 
 
-# APIs
+## APIs
 
 There are two sets of APIs: yaml files that describe kernel - operator mappings and codegen tools to consume these mappings.
 
 
-## Yaml Entry for Core ATen Op Out Variant
+### Yaml Entry for Core ATen Op Out Variant
 
 Top level attributes:
 
@@ -86,7 +87,7 @@ ATen operator with a dtype/dim order specialized kernel (works for `Double` dtyp
 
 ```
 
-## Custom Ops Yaml Entry
+### Custom Ops Yaml Entry
 
 For custom ops (the ones that are not part of the out variants of core ATen opset) we need to specify the operator schema as well as a `kernel` section. So instead of `op` we use `func` with the operator schema. As an example, here’s a yaml entry for a custom op:
 ```yaml
@@ -98,7 +99,7 @@ For custom ops (the ones that are not part of the out variants of core ATen opse
 The `kernel` section is the same as the one defined in core ATen ops. For operator schema, we are reusing the DSL defined in this [README.md](https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/README.md), with a few differences:
 
 
-### Out variants only
+#### Out variants only
 
 ExecuTorch only supports out-style operators, where:
 
@@ -112,12 +113,12 @@ ExecuTorch only supports out-style operators, where:
 Since all output values are returned via an `out` parameter, ExecuTorch ignores the actual C++ function return value. But, to be consistent, functions should always return `out` when the return type is non-`void`.
 
 
-### Can only return `Tensor` or `()`
+#### Can only return `Tensor` or `()`
 
 ExecuTorch only supports operators that return a single `Tensor`, or the unit type `()` (which maps to `void`). It does not support returning any other types, including lists, optionals, tuples, or scalars like `bool`.
 
 
-### Supported argument types
+#### Supported argument types
 
 ExecuTorch does not support all of the argument types that core PyTorch supports. Here's a list of the argument types we currently support:
 * Tensor
@@ -135,12 +136,12 @@ ExecuTorch does not support all of the argument types that core PyTorch supports
 * Optional<List<Type>>
 
 
-## Build Tool Macros
+### Build Tool Macros
 
 We provide build time macros to help users to build their kernel registration library. The macro takes the yaml file describing the kernel library as well as model operator metadata, and packages the generated C++ bindings into a C++ library. The macro is available on both CMake and Buck2.
 
 
-### CMake
+#### CMake
 
 `generate_bindings_for_kernels(functions_yaml, custom_ops_yaml)` takes a yaml file for core ATen op out variants and also a yaml file for custom ops, generate C++ bindings for kernel registration. It also depends on the selective build artifact generated by `gen_selected_ops()`, see selective build doc for more information. Then `gen_operators_lib` will package those bindings to be a C++ library. As an example:
 ```cmake
@@ -158,7 +159,7 @@ target_link_libraries(executorch_binary generated_lib)
 
 ```
 
-### Buck2
+#### Buck2
 
 `executorch_generated_lib` is the macro that takes the yaml files and depends on the selective build macro `et_operator_library`. For an example:
 ```python

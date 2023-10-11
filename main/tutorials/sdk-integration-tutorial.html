@@ -39,6 +39,7 @@
   <link rel="stylesheet" href="../_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="ExecuTorch Arm Ethos-U Delegate" href="../executorch-arm-delegate-tutorial.html" />
     <link rel="prev" title="Building and Running ExecuTorch on Xtensa HiFi4 DSP" href="../build-run-xtensa.html" />
 
 
@@ -293,10 +294,7 @@
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../kernel-library-custom-aten-kernel.html">Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../kernel-library-custom-aten-kernel.html#design-principles">Design Principles</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../kernel-library-custom-aten-kernel.html#high-level-architecture">High Level Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../kernel-library-custom-aten-kernel.html#apis">APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
@@ -315,6 +313,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">SDK Integration Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../executorch-arm-delegate-tutorial.html">ExecuTorch Arm Ethos-U Delegate</a></li>
 </ul>
 
             
@@ -484,7 +483,6 @@ edge dialect model (<code class="docutils literal notranslate"><span class="pre"
 <span class="p">)</span>
 
 <span class="n">edge_program_manager</span><span class="p">:</span> <span class="n">EdgeProgramManager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">aten_model</span><span class="p">,</span> <span class="n">compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span>
-<span class="c1"># Note: A copy is needed because the underlying graph_module is modified</span>
 <span class="n">edge_program_manager_copy</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program_manager</span><span class="p">)</span>
 <span class="n">et_program_manager</span><span class="p">:</span> <span class="n">ExecutorchProgramManager</span> <span class="o">=</span> <span class="n">edge_program_manager_copy</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
@@ -493,6 +491,13 @@ edge dialect model (<code class="docutils literal notranslate"><span class="pre"
 <span class="n">etrecord_path</span> <span class="o">=</span> <span class="s2">&quot;etrecord.bin&quot;</span>
 <span class="n">generate_etrecord</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">,</span> <span class="n">edge_program_manager</span><span class="p">,</span> <span class="n">et_program_manager</span><span class="p">)</span>
 </pre></div>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Users should do a deepcopy of the output of to_edge() and pass in the
+deepcopy to the generate_etrecord API. This is needed because the
+subsequent call, to_executorch(), does an in-place mutation and will
+lose debug data in the process.</p>
 </div>
 </div>
 <div class="section" id="generate-etdump">
@@ -623,6 +628,8 @@ to analyze the model run results.</p>
             <footer>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="../executorch-arm-delegate-tutorial.html" class="btn btn-neutral float-right" title="ExecuTorch Arm Ethos-U Delegate" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
         <a href="../build-run-xtensa.html" class="btn btn-neutral" title="Building and Running ExecuTorch on Xtensa HiFi4 DSP" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>

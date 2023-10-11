@@ -58,7 +58,7 @@ sure Colab -> Setting -> Github -> Access Private Repo is checked::
   !git clone https://{github_username}:{token}@github.com/pytorch/executorch.git
   !cd executorch && bash ./install_requirements.sh
 
-.. GENERATED FROM PYTHON SOURCE LINES 49-94
+.. GENERATED FROM PYTHON SOURCE LINES 49-99
 
 Generate ETRecord (Optional)
 ----------------------------
@@ -96,7 +96,6 @@ In this tutorial, the mobilenet v2 example model is used to demonstrate::
   )
 
   edge_program_manager: EdgeProgramManager = to_edge(aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True))
-  # Note: A copy is needed because the underlying graph_module is modified
   edge_program_manager_copy = copy.deepcopy(edge_program_manager)
   et_program_manager: ExecutorchProgramManager = edge_program_manager_copy.to_executorch()
 
@@ -105,8 +104,14 @@ In this tutorial, the mobilenet v2 example model is used to demonstrate::
   etrecord_path = "etrecord.bin"
   generate_etrecord(etrecord_path, edge_program_manager, et_program_manager)
 
+.. warning::
+   Users should do a deepcopy of the output of to_edge() and pass in the
+   deepcopy to the generate_etrecord API. This is needed because the
+   subsequent call, to_executorch(), does an in-place mutation and will
+   lose debug data in the process.
 
-.. GENERATED FROM PYTHON SOURCE LINES 96-107
+
+.. GENERATED FROM PYTHON SOURCE LINES 101-112
 
 Generate ETDump
 ---------------
@@ -120,7 +125,7 @@ to the ``executor_runner``::
 
 TODO: Add Instructions for CMake, when landed
 
-.. GENERATED FROM PYTHON SOURCE LINES 109-127
+.. GENERATED FROM PYTHON SOURCE LINES 114-132
 
 Creating an Inspector
 ---------------------
@@ -141,7 +146,7 @@ To visualize all runtime events, call ``print_data_tabular``::
   inspector.print_data_tabular()
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 130-199
+.. GENERATED FROM PYTHON SOURCE LINES 135-204
 
 Analyzing with an Inspector
 ---------------------------
@@ -213,7 +218,7 @@ Note: ``find_total_for_module`` is a special first class method of
 `Inspector <../sdk-inspector.html>`__
 
 
-.. GENERATED FROM PYTHON SOURCE LINES 201-215
+.. GENERATED FROM PYTHON SOURCE LINES 206-220
 
 Conclusion
 ----------

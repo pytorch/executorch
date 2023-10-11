@@ -294,10 +294,7 @@
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html#design-principles">Design Principles</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html#high-level-architecture">High Level Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html#apis">APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
@@ -316,6 +313,7 @@
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">SDK Integration Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">ExecuTorch Arm Ethos-U Delegate</a></li>
 </ul>
 
             
@@ -396,8 +394,8 @@
               
   <div class="section" id="building-an-executorch-android-demo-app">
 <h1>Building an ExecuTorch Android Demo App<a class="headerlink" href="#building-an-executorch-android-demo-app" title="Permalink to this headline">¶</a></h1>
-<p>This is forked from <a class="reference external" href="https://github.com/pytorch/android-demo-app">PyTorch android demo app</a>.</p>
-<p>This guide explains how to setup ExecuTorch for Android using a demo app. The app employs a DeepLab v3 model for image segmentation tasks. Models are exported to ExecuTorch using XNNPACK FP32 backend.</p>
+<p>This is forked from <a class="reference external" href="https://github.com/pytorch/android-demo-app">PyTorch Android Demo App</a>.</p>
+<p>This guide explains how to setup ExecuTorch for Android using a demo app. The app employs a <a class="reference external" href="https://pytorch.org/hub/pytorch_vision_deeplabv3_resnet101/">DeepLab v3</a> model for image segmentation tasks. Models are exported to ExecuTorch using (XNNPACK FP32 backend)[https://github.com/pytorch/executorch/blob/main/backends/xnnpack/README.md].</p>
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
 <div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
 <div class="sd-col sd-d-flex-row docutils">
@@ -421,24 +419,52 @@ Prerequisites</div>
 <ul class="simple">
 <li><p class="sd-card-text">Refer to <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a> to set up the repo and dev environment.</p></li>
 <li><p class="sd-card-text">Download and install <a class="reference external" href="https://developer.android.com/studio">Android Studio and SDK</a>.</p></li>
-<li><p class="sd-card-text"><em>Optional:</em> To use Qualcomm HTP Backend, download and install <a class="reference external" href="https://developer.qualcomm.com/software/qualcomm-neural-processing-sdk">Qualcomm Neural Processing SDK</a></p></li>
-<li><p class="sd-card-text">Supported Host OS: CentOS, macOS Ventura (M1/x86_64). To use Qualcomm QNN SDK, Linux is required.</p></li>
+<li><p class="sd-card-text">Supported Host OS: CentOS, macOS Ventura (M1/x86_64). See below for Qualcomm HTP specific requirements.</p></li>
+<li><p class="sd-card-text"><em>Qualcomm HTP Only<a class="footnote-reference brackets" href="#id3" id="id1">1</a>:</em> To build and run on Qualcomm’s AI Engine Direct, please follow <span class="xref myst">Building and Running ExecuTorch on Qualcomm AI Engine Direct</span> for hardware and software pre-requisites.</p></li>
 </ul>
 </div>
 </div>
 </div>
 </div>
 </div>
-<div class="section" id="executorch-configuration">
-<h2>ExecuTorch Configuration<a class="headerlink" href="#executorch-configuration" title="Permalink to this headline">¶</a></h2>
-<p>Configure the libraries for Android:</p>
-<ol class="arabic simple">
-<li><p>Configure a library with XNNPACK backend only</p></li>
-</ol>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>This demo app and tutorial has only been validated with arm64-v8a <a class="reference external" href="https://developer.android.com/ndk/guides/abis">ABI</a>.</p>
 </div>
+<div class="section" id="build">
+<h2>Build<a class="headerlink" href="#build" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="ahead-of-time">
+<h3>Ahead-Of-Time<a class="headerlink" href="#ahead-of-time" title="Permalink to this headline">¶</a></h3>
+<p>We generate the model file for the ExecuTorch runtime in Android Demo App.</p>
+<div class="section" id="xnnpack-delegation">
+<h4>XNNPACK Delegation<a class="headerlink" href="#xnnpack-delegation" title="Permalink to this headline">¶</a></h4>
+<p>For delegating DeepLab v3 to XNNPACK backend, please do the following to export the model:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">FLATC_EXECUTABLE</span><span class="o">=</span><span class="k">$(</span>realpath<span class="w"> </span>third-party/flatbuffers/cmake-out/flatc<span class="k">)</span>
+python3<span class="w"> </span>-m<span class="w"> </span>examples.xnnpack.aot_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;dl3&quot;</span><span class="w"> </span>--delegate
+mkdir<span class="w"> </span>-p<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+cp<span class="w"> </span>dl3_xnnpack_fp32.pte<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+</pre></div>
+</div>
+<p>For more detailed tutorial of lowering to XNNPACK, please see <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/README.md">XNNPACK backend</a>.</p>
+</div>
+<div class="section" id="qualcomm-hexagon-npu">
+<h4>Qualcomm Hexagon NPU<a class="headerlink" href="#qualcomm-hexagon-npu" title="Permalink to this headline">¶</a></h4>
+<p>For delegating to Qualcomm Hexagon NPU, please follow the tutorial <span class="xref myst">here</span>.</p>
+<p>After generating the model, copy the model to <code class="docutils literal notranslate"><span class="pre">assets</span></code> directory.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build_android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>-s<span class="w"> </span>&lt;adb_connected_device_serial&gt;
+cp<span class="w"> </span>deeplab_v3/dlv3_qnn.pte<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="runtime">
+<h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h3>
+<p>We build the required ExecuTorch runtime library to run the model.</p>
+<div class="section" id="xnnpack">
+<h4>XNNPACK<a class="headerlink" href="#xnnpack" title="Permalink to this headline">¶</a></h4>
+<ol class="arabic simple">
+<li><p>Configure the CMake target for the library with XNNPACK backend:</p></li>
+</ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path-to-android-ndk&gt;
 
 rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out
@@ -455,12 +481,17 @@ cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
 <p>When we set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_XNNPACK=ON</span></code>, we will build the target <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt"><code class="docutils literal notranslate"><span class="pre">xnn_executor_runner_lib</span></code></a> which in turn is linked into libexecutorchdemo via <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/jni/CMakeLists.txt">CMake</a>.</p>
 <p><code class="docutils literal notranslate"><span class="pre">libexecutorchdemo.so</span></code> wraps up the required XNNPACK Backend runtime library from <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner_lib</span></code>, and adds an additional JNI layer using fbjni. This is later exposed to Java app.</p>
 <ol class="arabic simple" start="2">
-<li><p><em>Optional:</em> Configure a library with XNNPACK and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/README.md">Qualcomm HTP backend</a></p></li>
+<li><p>Build the libraries:</p></li>
 </ol>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Qualcomm SDK is required for this step.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>-j16
+</pre></div>
 </div>
+</div>
+<div class="section" id="id2">
+<h4>Qualcomm Hexagon NPU<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h4>
+<ol class="arabic simple">
+<li><p>Configure the CMake target for the library with Qualcomm Hexagon NPU (HTP) backend (XNNPACK also included):</p></li>
+</ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path-to-android-ndk&gt;
 <span class="nb">export</span><span class="w"> </span><span class="nv">QNN_SDK</span><span class="o">=</span>&lt;path-to-qnn-sdk&gt;
 
@@ -477,21 +508,21 @@ cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON
 </pre></div>
 </div>
-<p>Similar to the previous XNNPACK library, with this setup, we compile <code class="docutils literal notranslate"><span class="pre">libexecutorchdemo.so</span></code> but it adds an additional static library <code class="docutils literal notranslate"><span class="pre">qnn_executorch_backend</span></code> which wraps up Qualcomm HTP runtime library and registers the Qualcomm HTP backend. This is later exposed to Java app.</p>
+<p>Similar to the XNNPACK library, with this setup, we compile <code class="docutils literal notranslate"><span class="pre">libexecutorchdemo.so</span></code> but it adds an additional static library <code class="docutils literal notranslate"><span class="pre">qnn_executorch_backend</span></code> which wraps up Qualcomm HTP runtime library and registers the Qualcomm HTP backend. This is later exposed to Java app.</p>
 <p><code class="docutils literal notranslate"><span class="pre">qnn_executorch_backend</span></code> is built when we turn on CMake option <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_QNN</span></code>. It will include the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/CMakeLists.txt">CMakeLists.txt</a> from backends/qualcomm where we <code class="docutils literal notranslate"><span class="pre">add_library(qnn_executorch_backend</span> <span class="pre">STATIC)</span></code>.</p>
-</div>
-<div class="section" id="building-and-copying-libraries">
-<h2>Building and Copying Libraries<a class="headerlink" href="#building-and-copying-libraries" title="Permalink to this headline">¶</a></h2>
-<ol class="arabic simple">
+<ol class="arabic simple" start="2">
 <li><p>Build the libraries:</p></li>
 </ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>-j16
 </pre></div>
 </div>
-<ol class="arabic simple" start="2">
-<li><p>Copy the libraries to the appropriate location to link against them:</p></li>
-</ol>
-<p>Navigate to the build artifacts directory:</p>
+</div>
+</div>
+</div>
+<div class="section" id="deploying-on-device-via-demo-app">
+<h2>Deploying on Device via Demo App<a class="headerlink" href="#deploying-on-device-via-demo-app" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="steps-for-deploying-model-via-xnnpack">
+<h3>Steps for Deploying Model via XNNPACK<a class="headerlink" href="#steps-for-deploying-model-via-xnnpack" title="Permalink to this headline">¶</a></h3>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>-p<span class="w"> </span>../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 </pre></div>
 </div>
@@ -500,50 +531,46 @@ cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
 <span class="w">   </span>../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 </pre></div>
 </div>
-<p>Later, this shared library will be loaded by <code class="docutils literal notranslate"><span class="pre">NativePeer.java</span></code> in Java code.</p>
-<ol class="arabic simple" start="3">
-<li><p><em>Qualcomm HTP Only:</em> Copy Qualcomm HTP runtime library:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cp<span class="w"> </span>libQnnHtp.so<span class="w"> </span>libQnnHtpV69Skel.so<span class="w"> </span>libQnnHtpStub.so<span class="w"> </span>libQnnSystem.so<span class="w"> </span><span class="se">\</span>
+<p>This allows the Android app to load ExecuTorch runtime with XNNPACK backend as a JNI library. Later, this shared library will be loaded by <code class="docutils literal notranslate"><span class="pre">NativePeer.java</span></code> in Java code.</p>
+</div>
+<div class="section" id="steps-for-deploying-model-via-qualcomm-s-ai-engine-direct">
+<h3>Steps for Deploying Model via Qualcomm’s AI Engine Direct<a class="headerlink" href="#steps-for-deploying-model-via-qualcomm-s-ai-engine-direct" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>-p<span class="w"> </span>../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
+</pre></div>
+</div>
+<p>We need to push some additional Qualcomm HTP backend libraries to the app. Please refer to <span class="xref myst">Qualcomm docs</span> here.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cp<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtp.so<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpV69Skel.so<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnHtpStub.so<span class="w"> </span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>/lib/aarch64-android/libQnnSystem.so<span class="w"> </span><span class="se">\</span>
 <span class="w">   </span>../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 </pre></div>
 </div>
-<ol class="arabic simple" start="4">
-<li><p>Return to the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> directory:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>..
+<p>Copy the core libraries:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cp<span class="w"> </span>./examples/demo-apps/android/jni/libexecutorchdemo.so<span class="w"> </span><span class="se">\</span>
+<span class="w">   </span>../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 </pre></div>
 </div>
 </div>
-<div class="section" id="model-download-and-bundling">
-<h2>Model Download and Bundling<a class="headerlink" href="#model-download-and-bundling" title="Permalink to this headline">¶</a></h2>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Please refer to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/README.md">XNNPACK backend</a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/README.md">Qualcomm backend</a> for the full export tutorial on backends.</p>
 </div>
-<ol class="arabic simple">
-<li><p>Export a DeepLab v3 model backed with XNNPACK delegate and bundle it with the app:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">FLATC_EXECUTABLE</span><span class="o">=</span><span class="k">$(</span>realpath<span class="w"> </span>third-party/flatbuffers/cmake-out/flatc<span class="k">)</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.xnnpack.aot_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;dl3&quot;</span><span class="w"> </span>--delegate
-mkdir<span class="w"> </span>-p<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
-cp<span class="w"> </span>dl3_xnnpack_fp32.pte<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p><em>Qualcomm HTP Only:</em> Copy HTP delegation models to the app:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cp<span class="w"> </span>dlv3_qnn.pte<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
-</pre></div>
-</div>
-</div>
-<div class="section" id="build-the-project">
-<h2>Build the Project<a class="headerlink" href="#build-the-project" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="running-the-app">
+<h2>Running the App<a class="headerlink" href="#running-the-app" title="Permalink to this headline">¶</a></h2>
 <ol class="arabic simple">
 <li><p>Open the project <code class="docutils literal notranslate"><span class="pre">examples/demo-apps/android/ExecuTorchDemo</span></code> with Android Studio.</p></li>
 <li><p><a class="reference external" href="https://developer.android.com/studio/run">Run</a> the app (^R).</p></li>
 </ol>
 <p><img src="_static/img/android_studio.png" alt="Android Studio View" /><br></p>
+</div>
+<div class="section" id="takeaways">
+<h2>Takeaways<a class="headerlink" href="#takeaways" title="Permalink to this headline">¶</a></h2>
+<p>Through this tutorial we’ve learnt how to build the ExecuTorch runtime library with XNNPACK (or Qualcomm HTP) backend, and expose it to JNI layer to build the Android app running segmentation model.</p>
+</div>
+<div class="section" id="reporting-issues">
+<h2>Reporting Issues<a class="headerlink" href="#reporting-issues" title="Permalink to this headline">¶</a></h2>
+<p>If you encountered any bugs or issues following this tutorial please file a bug/issue here on <a class="reference external" href="https://github.com/pytorch/executorch/issues/new">Github</a>, with hashtag #android-demo-app</p>
+<hr class="footnotes docutils" />
+<dl class="footnote brackets">
+<dt class="label" id="id3"><span class="brackets"><a class="fn-backref" href="#id1">1</a></span></dt>
+<dd><p>This section applies only if Qualcomm HTP Backend is needed in the app. Same applies to sections with title<code class="docutils literal notranslate"><span class="pre">Qualcomm</span> <span class="pre">Hexagon</span> <span class="pre">NPU</span></code>.</p>
+</dd>
+</dl>
 </div>
 </div>
 
@@ -593,10 +620,27 @@ cp<span class="w"> </span>dl3_xnnpack_fp32.pte<span class="w"> </span>examples/d
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
 <li><a class="reference internal" href="#">Building an ExecuTorch Android Demo App</a><ul>
-<li><a class="reference internal" href="#executorch-configuration">ExecuTorch Configuration</a></li>
-<li><a class="reference internal" href="#building-and-copying-libraries">Building and Copying Libraries</a></li>
-<li><a class="reference internal" href="#model-download-and-bundling">Model Download and Bundling</a></li>
-<li><a class="reference internal" href="#build-the-project">Build the Project</a></li>
+<li><a class="reference internal" href="#build">Build</a><ul>
+<li><a class="reference internal" href="#ahead-of-time">Ahead-Of-Time</a><ul>
+<li><a class="reference internal" href="#xnnpack-delegation">XNNPACK Delegation</a></li>
+<li><a class="reference internal" href="#qualcomm-hexagon-npu">Qualcomm Hexagon NPU</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#runtime">Runtime</a><ul>
+<li><a class="reference internal" href="#xnnpack">XNNPACK</a></li>
+<li><a class="reference internal" href="#id2">Qualcomm Hexagon NPU</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a class="reference internal" href="#deploying-on-device-via-demo-app">Deploying on Device via Demo App</a><ul>
+<li><a class="reference internal" href="#steps-for-deploying-model-via-xnnpack">Steps for Deploying Model via XNNPACK</a></li>
+<li><a class="reference internal" href="#steps-for-deploying-model-via-qualcomm-s-ai-engine-direct">Steps for Deploying Model via Qualcomm’s AI Engine Direct</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#running-the-app">Running the App</a></li>
+<li><a class="reference internal" href="#takeaways">Takeaways</a></li>
+<li><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>
 </ul>
 </li>
 </ul>

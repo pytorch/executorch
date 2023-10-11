@@ -293,10 +293,7 @@
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html#design-principles">Design Principles</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html#high-level-architecture">High Level Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html#apis">APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
@@ -315,6 +312,7 @@
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">SDK Integration Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">ExecuTorch Arm Ethos-U Delegate</a></li>
 </ul>
 
             
@@ -411,26 +409,9 @@ PyTorch programs everywhere from AR/VR wearables to standard on-device
 iOS and Android mobile deployments. One of the main
 goals for ExecuTorch is to enable wider customization and deployment
 capabilities of the PyTorch programs.</p>
-<p>ExecuTorch heavily relies on such PyTorch technologies as TorchDynamo
-and torch.export. If you are not familiar with these APIs, you might want
-to read about them in the PyTorch documentation before diving into
-the ExecuTorch documentation.</p>
-<p>Features described in this documentation are classified by release status:</p>
-<blockquote>
-<div><p><em>Stable:</em>  These features will be maintained long-term and there should
-generally be no major performance limitations or gaps in documentation.
-We also expect to maintain backwards compatibility (although
-breaking changes can happen and notice will be given one release ahead
-of time).</p>
-<p><em>Beta:</em>  These features are tagged as Beta because the API may change based on
-user feedback, because the performance needs to improve, or because
-coverage across operators is not yet complete. For Beta features, we are
-committing to seeing the feature through to the Stable classification.
-We are not, however, committing to backwards compatibility.</p>
-<p><em>Prototype:</em>  These features are typically not available as part of
-binary distributions like PyPI or Conda, except sometimes behind run-time
-flags, and are at an early stage for feedback and testing.</p>
-</div></blockquote>
+<p>ExecuTorch heavily relies on such PyTorch technologies as <a class="reference external" href="https://pytorch.org/docs/stable/torch.compiler.html">torch.compile</a> and <a class="reference external" href="https://pytorch.org/docs/main/export.html">torch.export</a>. If you are not familiar with
+these APIs, you might want to read about them in the PyTorch documentation
+before diving into the ExecuTorch documentation.</p>
 <div class="section" id="getting-started">
 <h2>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this headline">¶</a></h2>
 <p>Topics in this section will help you get started with ExecuTorch.</p>
@@ -545,7 +526,7 @@ ExecuTorch tutorials.</p>
 </div></p>
 <p><div class="col-md-12 tutorials-card-container" data-tags=>
   <div class="card tutorials-card">
-    <a href="running-a-model-cpp.html">
+    <a href="running-a-model-cpp-tutorial.html">
       <div class="card-body">
         <div class="card-title-container">
           <h4>Running an ExecuTorch Model C++ Tutorial</h4>

@@ -297,10 +297,7 @@
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html#design-principles">Design Principles</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html#high-level-architecture">High Level Architecture</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html#apis">APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
@@ -319,6 +316,7 @@
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">SDK Integration Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">ExecuTorch Arm Ethos-U Delegate</a></li>
 </ul>
 
             
@@ -444,12 +442,37 @@ What you will learn</div>
 Prerequisites</div>
 <ul class="simple">
 <li><p class="sd-card-text">Understand the concepts defined in <a class="reference internal" href="intro-overview.html"><span class="doc std std-doc">ExecuTorch Overview</span></a></p></li>
-<li><p class="sd-card-text">Supported Host OS: CentOS, macOS Ventura (M1/x86_64)</p></li>
 </ul>
 </div>
 </div>
 </div>
 </div>
+</div>
+<div class="section" id="supported-host-environments">
+<h2>Supported Host Environments<a class="headerlink" href="#supported-host-environments" title="Permalink to this headline">¶</a></h2>
+<p>We have tested these instructions on the following systems, although they should
+also work on other systems with similar environments.</p>
+<p><strong>Linux (x86_64)</strong></p>
+<ul class="simple">
+<li><p>CentOS 8 or later</p></li>
+<li><p>Ubuntu 20.04.6 LTS or later</p></li>
+<li><p>RHEL 8 or later</p></li>
+<li><p>Windows Subsystem for Linux running any of the above</p></li>
+</ul>
+<p><strong>macOS (x86_64/M1/M2)</strong></p>
+<ul class="simple">
+<li><p>Big Sur or later</p></li>
+</ul>
+<p>The most critical requirements are:</p>
+<ul class="simple">
+<li><p>The ability to install a recent version of <code class="docutils literal notranslate"><span class="pre">conda</span></code>, described below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">g++</span></code> version 8 or higher, <code class="docutils literal notranslate"><span class="pre">clang++</span></code> version 8 or higher, or another
+C++17-compatible toolchain that supports GNU C-style <a class="reference external" href="https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html">statement
+expressions</a> (<code class="docutils literal notranslate"><span class="pre">({</span> <span class="pre">...</span> <span class="pre">})</span></code> syntax).</p></li>
+</ul>
+<p>Note that the cross-compilable core runtime code supports a wider range of
+toolchains, down to C++11. See the <a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Runtime Overview</span></a> for
+portability details.</p>
 </div>
 <div class="section" id="set-up-your-environment">
 <h2>Set up Your Environment<a class="headerlink" href="#set-up-your-environment" title="Permalink to this headline">¶</a></h2>
@@ -506,7 +529,7 @@ conda<span class="w"> </span>activate<span class="w"> </span>executorch
 </li>
 <li><p>Expose FlatBuffers compiler:</p>
 <p>ExecuTorch uses <code class="docutils literal notranslate"><span class="pre">flatc</span></code> to export models and builds it from sources at
-<code class="docutils literal notranslate"><span class="pre">third-party/flatbuffers</span></code>. Make it’s available by referring in <code class="docutils literal notranslate"><span class="pre">$PATH</span></code>,
+<code class="docutils literal notranslate"><span class="pre">third-party/flatbuffers</span></code>. Make it available by adding it to the <code class="docutils literal notranslate"><span class="pre">$PATH</span></code> environment variable,
 as prompted by the previous step, or exporting as <code class="docutils literal notranslate"><span class="pre">$FLATC_EXECUTABLE</span></code>
 enironment variable.
 Run <code class="docutils literal notranslate"><span class="pre">./build/install_flatc.sh</span></code> to make sure <code class="docutils literal notranslate"><span class="pre">flatc</span></code> is installed correctly.</p>
@@ -590,7 +613,7 @@ version of the buck2 prelude used by the ExecuTorch repo.</p></li>
 <p>Complete the following steps:</p>
 <ol class="arabic">
 <li><p>Ensure that Git has fetched and updated the submodules. This is necessary
-any time commit hash of any of the submodule changes. Therefore, you need
+whenever the commit hash of a submodule changes. Therefore, you need
 to periodically sync your submodules with upstream:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
 git<span class="w"> </span>submodule<span class="w"> </span>sync
@@ -746,6 +769,7 @@ is a list of sections you might want to read next:</p>
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
 <li><a class="reference internal" href="#">Setting Up ExecuTorch</a><ul>
+<li><a class="reference internal" href="#supported-host-environments">Supported Host Environments</a></li>
 <li><a class="reference internal" href="#set-up-your-environment">Set up Your Environment</a></li>
 <li><a class="reference internal" href="#generate-a-sample-executorch-program">Generate a Sample ExecuTorch program</a></li>
 <li><a class="reference internal" href="#building-a-runtime">Building a Runtime</a></li>
