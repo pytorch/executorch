@@ -403,7 +403,7 @@
 <p>Backend delegation is an entry point for backends to process and execute PyTorch
 programs to leverage performance and efficiency benefits of specialized
 backends and hardware, while still providing PyTorch users with an experience
-close to that of the PyTorch runtime. The backend delegate is usually either provited by
+close to that of the PyTorch runtime. The backend delegate is usually either provided by
 ExecuTorch or vendors. The way to leverage delegate in your program is via a standard entry point <code class="docutils literal notranslate"><span class="pre">to_backend</span></code>.</p>
 <div class="section" id="frontend-interfaces">
 <h2>Frontend Interfaces<a class="headerlink" href="#frontend-interfaces" title="Permalink to this headline">¶</a></h2>
@@ -522,7 +522,7 @@ function</a>.</p>
 are meant to be lowered. It will return a <code class="docutils literal notranslate"><span class="pre">partition_tags</span></code> mapping tags to
 backend names and module compile specs. The tagged nodes will then be
 partitioned and lowered to their mapped backends using Flow 1’s process.
-Available helper partitioner are documented
+Available helper partitioners are documented
 <a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="doc std std-doc">here</span></a>. These lowered modules
 will be inserted into the top-level module and serialized.</p>
 <p>The following is an example of the flow:</p>
