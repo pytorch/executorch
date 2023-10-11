@@ -53,9 +53,31 @@ A delegate backend implementation is composed of:
 1) An ahead-of-time preprocessing interface
 2) A runtime initialization and execution interface
 
+The diagram looks like following
+
+<img src="./_static/img/backend_interface.png" alt="drawing" style="width:500px;"/>
+
+**Figure 1.** A high level of entry points for backend interfaces, including both ahead-of-time and runtime.
+
 ## Backend Interfaces: Ahead-of-Time Preprocessing
 
-For the AOT preprocessing, backends are given an edge dialect program,
+There are mainly two Ahead-of-Time entry point for backend to implement: `partition` and `preprocess`.
+
+`partitioner` is an algorithm implemented by the backend to tag the nodes to be lowered to the backend. `to_backend` API
+will apply the partition algorithm and lowered each subgraph, consists of connected tagged nodes, to the backend. Every subgraph
+will be sent to the `preprocess` part provided by the backend to compiled as a binary blob.
+
+During partition, the `exported_program` is not allowed to mutate the program, and it's supposed to apply tag to each node. The
+`PartitionResult` includes both tagged exported program and the partition tags dictionary for `to_backend` to look up the tag and
+link to the `backend_id` and `compile_spec`
+
+```python
+def partition(
+    exported_program: ExportedProgram,
+) -> PartitionResult:
+```
+
+During preprocessing, backends are given an edge dialect program,
 a list of compile specs specifying the values needed for compilation, and are
 expected to return a compiled blob, or binary contains the desired program to be
 run in the backend, and profiling information. During serialization, the
@@ -75,6 +97,12 @@ The demo loops through the nodes in the graph module of the `edge_program` and
 serializes the `add`, `mul`, and `sin` instructions into a string, which is later
 parsed and executed at runtime.
 
+The diagram looks like following
+
+<img src="./_static/img/backend_interface_aot.png" alt="drawing" style="width:800px;"/>
+
+**Figure 2.** The graph goes through partition and each subgraph will be sent to the preprocess part.
+
 ## Backend Interfaces: Runtime Initialization and Execution
 
 During the runtime, the compiled blob from the `preprocess` function will be
@@ -86,6 +114,9 @@ destroying is required for some backend, backends can implement a `destroy`
 function which will be called when the program is out of its lifespan.
 
 ```cpp
+// Runtime check
+__ET_NODISCARD bool is_available();
+
 // Runtime initialization
 __ET_NODISCARD virtual Result<DelegateHandle*> init(
     BackendInitContext& context,
@@ -101,6 +132,13 @@ __ET_NODISCARD virtual Error execute(
 // [optional] Runtime destroy. Destroy the resource held by the backend
 virtual void destroy(__ET_UNUSED DelegateHandle* handle);
 ```
+
+The diagram looks like following
+
+<img src="./_static/img/backend_interface_runtime.png" alt="drawing" style="width:500px;"/>
+
+**Figure 3.** The relationship between standard ExecuTorch Runtime and backend entry point.
+
 
 Once the backend is ready, they can then be registered via the `register_backend` API:
 ```cpp

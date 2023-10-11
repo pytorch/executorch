@@ -111,7 +111,6 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Compiler Entry Points
    :hidden:
 
-   examples-end-to-end-to-lower-model-to-delegate
    compiler-delegate-and-partitioner
    compiler-backend-dialect
    compiler-custom-compiler-passes
@@ -178,6 +177,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
+   examples-end-to-end-to-lower-model-to-delegate
    build-run-ios-demo
    demo-apps-android
    build-run-xtensa
