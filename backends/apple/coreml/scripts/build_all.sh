@@ -58,7 +58,7 @@ echo "${green}ExecuTorch: Installing ExecuTorch requirements"
 source "$EXECUTORCH_ROOT_PATH/install_requirements.sh"
 
 echo "${green}ExecuTorch: Installing CoreML requirements"
-source "$COREML_DIR_PATH/scripts/install_requirements_ci.sh"
+source "$COREML_DIR_PATH/scripts/install_requirements_internal.sh"
 STATUS=$?
 if [ ${STATUS} -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to install dependencies required by CoreML backend."

@@ -18,7 +18,8 @@ examples
 ├── arm                               # Contains demos of the Arm TOSA and Ethos-U NPU flows
 ├── qualcomm                          # Contains demos of Qualcomm QNN backend
 ├── xtensa                            # Contains demos of exporting and running a simple model on Xtensa Hifi4 DSP
-├── apple/coreml                      # Contains demos of Apple's CoreML backend
+├── apple
+|   └── coreml                        # Contains demos of Apple's CoreML backend
 ├── demo-apps                         # Contains demo apps for Android and iOS
 ├── sdk                               # Contains demos of BundledProgram and ETDump
 ├── third-party                       # Third-party libraries required for working on the demos
@@ -59,7 +60,7 @@ You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`]
 
 The [`xtensa/`](./xtensa) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
 
-## Demo of ExecuTorch CoreML Backend
+## Demo of ExecuTorch Apple Backend
 
 You will find demos of [ExecuTorch CoreML Backend](./apple/coreml/) in the [`apple/coreml/`](./apple/coreml) directory. 
 

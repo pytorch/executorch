@@ -21,8 +21,19 @@ if [ -d "/tmp/coremltools" ]; then
     rm -rf "/tmp/coremltools"
 fi
 
+if [ -z "${SECRET_TOKEN_COREML_PRIVATE_REPO}" ]; then
+    git clone "https://${SECRET_TOKEN_COREML_PRIVATE_REPO}@github.com/DawerG/coremltools.git" /tmp/coremltools
+else
+    git clone "https://github.com/DawerG/coremltools.git" /tmp/coremltools
+fi
+
 echo "${green}ExecuTorch: Cloning coremltools."
-git clone "https://${SECRET_TOKEN_COREML_PRIVATE_REPO}@github.com/DawerG/coremltools.git" /tmp/coremltools
+if [ -z "$ANDROID_NDK" ]
+then
+  echo "ANDROID_NDK not set; please set it to the Android NDK directory"
+  exit 1
+fi
+
 cd /tmp/coremltools
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
