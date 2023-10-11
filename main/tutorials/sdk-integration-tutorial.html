@@ -520,14 +520,14 @@ from executing the model. To generate, users have two options:</p>
 </pre></div>
 </div>
 <p><strong>Option 2:</strong></p>
-<dl class="simple">
-<dt>Use CMake::</dt><dd><p>cd executorch
-rm -rf cmake-out &amp;&amp; mkdir cmake-out &amp;&amp; cd cmake-out &amp;&amp; cmake -DBUCK2=buck2_oss -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
-cd ..
-cmake –build cmake-out -j8 -t sdk_example_runner
-./cmake-out/examples/sdk/sdk_example_runner –bundled_program_path mv2_bundled.bp</p>
-</dd>
-</dl>
+<p>Use CMake:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="n">executorch</span>
+<span class="n">rm</span> <span class="o">-</span><span class="n">rf</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">mkdir</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cd</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cmake</span> <span class="o">-</span><span class="n">DBUCK2</span><span class="o">=</span><span class="n">buck2_oss</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_SDK</span><span class="o">=</span><span class="mi">1</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER</span><span class="o">=</span><span class="mi">1</span> <span class="o">..</span>
+<span class="n">cd</span> <span class="o">..</span>
+<span class="n">cmake</span> <span class="o">--</span><span class="n">build</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">-</span><span class="n">j8</span> <span class="o">-</span><span class="n">t</span> <span class="n">sdk_example_runner</span>
+<span class="o">./</span><span class="n">cmake</span><span class="o">-</span><span class="n">out</span><span class="o">/</span><span class="n">examples</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">sdk_example_runner</span> <span class="o">--</span><span class="n">bundled_program_path</span> <span class="n">mv2_bundled</span><span class="o">.</span><span class="n">bp</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="creating-an-inspector">
 <h2>Creating an Inspector<a class="headerlink" href="#creating-an-inspector" title="Permalink to this headline">¶</a></h2>
