@@ -318,5 +318,57 @@ void get_index_select_out_target_size(
   }
 }
 
+bool check_scatter_add_args(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    const Tensor& src,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(self, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(self, src));
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      index.scalar_type() == ScalarType::Long,
+      "Expected dypte int64 for index");
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(self, dim));
+
+  if (index.numel() == 0) {
+    return true;
+  }
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      nonzero_dim(self) == nonzero_dim(src) &&
+          nonzero_dim(self) == nonzero_dim(index),
+      "self, index and src should have same number of dimensions.");
+
+  // Normalize dim to non-negative value
+  if (dim < 0) {
+    dim += nonzero_dim(self);
+  }
+
+  for (size_t d = 0; d < nonzero_dim(self); ++d) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        nonempty_size(index, d) <= nonempty_size(src, d),
+        "size of dimension %zd of index should be smaller than the size of that dimension of src",
+        d);
+    if (d != dim) {
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          nonempty_size(index, d) <= nonempty_size(self, d),
+          "size of dimension %zd of index should be smaller than the size of that dimension of self if dimension %zd != dim %zd",
+          d,
+          d,
+          (size_t)dim);
+    }
+  }
+  const long* index_data = index.const_data_ptr<long>();
+  for (size_t i = 0; i < index.numel(); ++i) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        index_data[i] >= 0 && index_data[i] < nonempty_size(self, dim),
+        "Index is out of bounds for dimension %zd with size %zd",
+        (size_t)dim,
+        nonempty_size(self, dim));
+  }
+  return true;
+}
+
 } // namespace executor
 } // namespace torch
