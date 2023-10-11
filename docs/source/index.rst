@@ -151,6 +151,14 @@ Topics in this section will help you get started with ExecuTorch.
 .. toctree::
    :glob:
    :maxdepth: 1
+   :caption: Native Delegates
+   :hidden:
+
+   native-delegates-executorch-xnnpack-delegate
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
    :caption: SDK
    :hidden:
 
