@@ -111,12 +111,13 @@ SDK Integration Tutorial
 #
 # Use Buck::
 #
-#  python3 -m examples.sdk.scripts.export_bundled_program -m mv2
-#  buck2_oss run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bp
+#   python3 -m examples.sdk.scripts.export_bundled_program -m mv2
+#   buck2_oss run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bp
 #
 # **Option 2:**
 #
 # Use CMake::
+#
 #   cd executorch
 #   rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DBUCK2=buck2_oss -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
 #   cd ..
