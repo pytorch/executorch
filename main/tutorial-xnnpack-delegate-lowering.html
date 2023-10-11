@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Prerequisite | ETDump - ExecuTorch Dump &mdash; ExecuTorch  documentation</title>
+  <title>XNNPACK Backend Delegate Lowering Tutorial &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -39,8 +39,7 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Profiling Models in ExecuTorch" href="sdk-profiling.html" />
-    <link rel="prev" title="Prerequisite | ETRecord - ExecuTorch Record" href="sdk-etrecord.html" />
+    <link rel="prev" title="ExecuTorch Arm Ethos-U Delegate" href="executorch-arm-delegate-tutorial.html" />
 
 
   <!-- Google Tag Manager -->
@@ -301,24 +300,24 @@
 <li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK Delegate</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
-<ul class="current">
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">Delegate Integration</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">SDK Integration Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">ExecuTorch Arm Ethos-U Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">XNNPACK Backend Delegate Lowering Tutorial</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">XNNPACK Backend Delegate Lowering Tutorial</a></li>
 </ul>
 
             
@@ -359,13 +358,13 @@
       </li>
 
         
-      <li>Prerequisite | ETDump - ExecuTorch Dump</li>
+      <li>XNNPACK Backend Delegate Lowering Tutorial</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/sdk-etdump.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/tutorial-xnnpack-delegate-lowering.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -397,69 +396,137 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="prerequisite-etdump-executorch-dump">
-<h1>Prerequisite | ETDump - ExecuTorch Dump<a class="headerlink" href="#prerequisite-etdump-executorch-dump" title="Permalink to this headline">¶</a></h1>
-<p>ETDump (ExecuTorch Dump) is one of the core components of the ExecuTorch SDK experience. It is the mechanism through which all forms of profiling and debugging data is extracted from the runtime. Users can’t parse ETDump directly; instead, they should pass it into the Inspector API, which deserializes the data, offering interfaces for flexible analysis and debugging.</p>
-<div class="section" id="generating-an-etdump">
-<h2>Generating an ETDump<a class="headerlink" href="#generating-an-etdump" title="Permalink to this headline">¶</a></h2>
-<p>Generating an ETDump is a relatively straight forward process. Users can follow the steps detailed below to integrate it into their application that uses ExecuTorch.</p>
-<ol class="arabic simple">
-<li><p><em><strong>Include</strong></em> the ETDump header in your code.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-C++"><div class="highlight"><pre><span></span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;executorch/sdk/etdump/etdump_flatcc.h&gt;</span>
+  <div class="section" id="xnnpack-backend-delegate-lowering-tutorial">
+<h1>XNNPACK Backend Delegate Lowering Tutorial<a class="headerlink" href="#xnnpack-backend-delegate-lowering-tutorial" title="Permalink to this headline">¶</a></h1>
+<p>The following tutorial will familiarize you with leveraging the ExecuTorch XNNPACK Delegate for accelerating your ML Models using CPU hardware. It will go over exporting and serializing a model to a binary file, targeting the XNNPACK Delegate Backend and running the model on a supported target  platform. To get started quickly, use the script in the ExecuTorch repository with instructions on exporting and generating  a binary file for a few sample models demonstrating the flow.</p>
+<!----This will show a grid card on the page----->
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-learn docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+What you will learn in this tutorial:</div>
+<p class="sd-card-text">In this tutorial, you will learn how to export an XNNPACK lowered Model and run it on a target platform</p>
+</div>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Before you begin it is recommended you go through the following:</div>
+<ul class="simple">
+<li><p class="sd-card-text"><a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Model Lowering Tutorial</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="quantization-custom-quantization.html"><span class="doc std std-doc">Custom Quantization</span></a></p></li>
+<li><p class="sd-card-text"><span class="xref myst">ExecuTorch XNNPACK Delegate</span></p></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="section" id="lowering-a-model-to-xnnpack">
+<h2>Lowering a model to XNNPACK<a class="headerlink" href="#lowering-a-model-to-xnnpack" title="Permalink to this headline">¶</a></h2>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span> <span class="nn">torchvision.models</span> <span class="k">as</span> <span class="nn">models</span>
+
+<span class="kn">from</span> <span class="nn">torchvision.models.mobilenetv2</span> <span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
+<span class="kn">from</span> <span class="nn">executorch.examples.portable.utils</span> <span class="kn">import</span> <span class="n">export_to_edge</span>
+<span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span> <span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+
+
+<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
+
+<span class="n">edge</span> <span class="o">=</span> <span class="n">export_to_edge</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
+
+
+<span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">)</span>
 </pre></div>
 </div>
-<ol class="arabic simple" start="2">
-<li><p><em><strong>Create</strong></em> an Instance of the ETDumpGen class and pass it into the <code class="docutils literal notranslate"><span class="pre">load_method</span></code> call that is invoked in the runtime.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-C++"><div class="highlight"><pre><span></span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="w"> </span><span class="n">etdump_gen</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="p">();</span>
-<span class="n">Result</span><span class="o">&lt;</span><span class="n">Method</span><span class="o">&gt;</span><span class="w"> </span><span class="n">method</span><span class="w"> </span><span class="o">=</span>
-<span class="w">      </span><span class="n">program</span><span class="o">-&gt;</span><span class="n">load_method</span><span class="p">(</span><span class="n">method_name</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">memory_manager</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">etdump_gen</span><span class="p">);</span>
+<p>We will go through this example with the MobileNetV2 pretrained model downloaded from the TorchVision library. The flow of lowering a model starts after exporting the model <code class="docutils literal notranslate"><span class="pre">to_edge</span></code>. We call the <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> api with the <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code>. The partitioner identifies the subgraphs suitable for XNNPACK backend delegate to consume. Afterwards, the identified subgraphs will be serialized with the XNNPACK Delegate flatbuffer schema and each subgraph will be replaced with a call to the XNNPACK Delegate.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">edge</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
+<span class="go">class GraphModule(torch.nn.Module):</span>
+<span class="go">        def forward(self, arg314_1: f32[1, 3, 224, 224]):</span>
+<span class="go">            lowered_module_0 = self.lowered_module_0</span>
+<span class="go">            executorch_call_delegate = torch.ops.executorch_call_delegate(lowered_module_0, arg314_1)</span>
+<span class="go">            getitem: f32[1, 1280, 1, 1] = executorch_call_delegate[0]</span>
+
+<span class="go">            aten_view_copy_default: f32[1, 1280] = executorch_exir_dialects_edge__ops_aten_view_copy_default(getitem, [1, 1280])</span>
+
+<span class="go">            aten_clone_default: f32[1, 1280] = executorch_exir_dialects_edge__ops_aten_clone_default(aten_view_copy_default)</span>
+
+<span class="go">            lowered_module_1 = self.lowered_module_1</span>
+<span class="go">            executorch_call_delegate_1 = torch.ops.executorch_call_delegate(lowered_module_1, aten_clone_default)</span>
+<span class="go">            getitem_1: f32[1, 1000] = executorch_call_delegate_1[0]</span>
+<span class="go">            return (getitem_1,)</span>
 </pre></div>
 </div>
-<ol class="arabic simple" start="3">
-<li><p><em><strong>Dump Out the ETDump Buffer</strong></em> - after the inference iterations have been completed, users can dump out the ETDump buffer. If users are on a device which has a file-system, they could just write it out to the fileystem. For more constrained embedded devices, users will have to extract the ETDump buffer from the device through a mechanism that best suits them (e.g. UART, JTAG etc.)</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-C++"><div class="highlight"><pre><span></span><span class="n">etdump_result</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">etdump_gen</span><span class="p">.</span><span class="n">get_etdump_data</span><span class="p">();</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="k">nullptr</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">size</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="c1">// On a device with a file system users can just write it out</span>
-<span class="w">    </span><span class="c1">// to the file-system.</span>
-<span class="w">    </span><span class="kt">FILE</span><span class="o">*</span><span class="w"> </span><span class="n">f</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">fopen</span><span class="p">(</span><span class="n">FLAGS_etdump_path</span><span class="p">.</span><span class="n">c_str</span><span class="p">(),</span><span class="w"> </span><span class="s">&quot;w+&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="n">fwrite</span><span class="p">((</span><span class="kt">uint8_t</span><span class="o">*</span><span class="p">)</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">result</span><span class="p">.</span><span class="n">size</span><span class="p">,</span><span class="w"> </span><span class="n">f</span><span class="p">);</span>
-<span class="w">    </span><span class="n">fclose</span><span class="p">(</span><span class="n">f</span><span class="p">);</span>
-<span class="w">    </span><span class="n">free</span><span class="p">(</span><span class="n">result</span><span class="p">.</span><span class="n">buf</span><span class="p">);</span>
-<span class="w">  </span><span class="p">}</span>
+<p>We print the graph after lowering above to show the new nodes that were inserted to call the XNNPACK Delegate. The subgraphs which are being delegated to XNNPACK are the first argument at each call site. It can be observed that the majority of <code class="docutils literal notranslate"><span class="pre">convolution-relu-add</span></code> blocks and <code class="docutils literal notranslate"><span class="pre">linear</span></code> blocks were able to be delegated to XNNPACK. We can also see the operators which were not able to be lowered to the XNNPACK delegate, such as <code class="docutils literal notranslate"><span class="pre">clone</span></code> and <code class="docutils literal notranslate"><span class="pre">view_copy</span></code>.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.examples.portable.utils</span> <span class="kn">import</span> <span class="n">save_pte_program</span>
+
+<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+<span class="n">save_pte_program</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">,</span> <span class="s2">&quot;xnnpack_mobilenetv2.pte&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
-<ol class="arabic" start="4">
-<li><p><em><strong>Compile</strong></em> your binary with the <code class="docutils literal notranslate"><span class="pre">ET_EVENT_TRACER_ENABLED</span></code> flag to enable events to be traced and logged into ETDump inside the ExecuTorch runtime.</p>
-<p>i). <em><strong>Buck</strong></em></p>
-<p>In Buck, users simply depend on the etdump target which is:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">//</span><span class="n">executorch</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">etdump</span><span class="p">:</span><span class="n">etdump_flatcc</span>
+<p>After lowering to the XNNPACK Program, we can then prepare it for executorch and save the model as a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. <code class="docutils literal notranslate"><span class="pre">.pte</span></code> is a binary format that stores the serialized ExecuTorch graph.</p>
+</div>
+<div class="section" id="lowering-a-quantized-model-to-xnnpack">
+<h2>Lowering a Quantized Model to XNNPACK<a class="headerlink" href="#lowering-a-quantized-model-to-xnnpack" title="Permalink to this headline">¶</a></h2>
+<p>The XNNPACK delegate can also execute symmetrically quantized models. To understand the quantization flow and learn how to quantize models, refer to <a class="reference internal" href="quantization-custom-quantization.html"><span class="doc std std-doc">Custom Quantization</span></a> note. For the sake of this tutorial, we will leverage the <code class="docutils literal notranslate"><span class="pre">quantize()</span></code> python helper function conveniently added to the <code class="docutils literal notranslate"><span class="pre">executorch/executorch/examples</span></code> folder.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch._export</span> <span class="k">as</span> <span class="nn">export</span>
+<span class="kn">from</span> <span class="nn">executorch.examples.xnnpack.quantization.utils</span> <span class="kn">import</span> <span class="n">quantize</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span>
+
+<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
+
+<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">export</span><span class="o">.</span><span class="n">capture_pre_autograd_graph</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span> <span class="c1"># 2-stage export for quantization path</span>
+<span class="n">quantized_mobilenetv2</span> <span class="o">=</span> <span class="n">quantize</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>When compiling their binary through Buck, users can pass in this buck config to enable the pre-processor flag. For example, when compiling <code class="docutils literal notranslate"><span class="pre">sdk_example_runner</span></code> to enable ETDump generation, users compile using the following command:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">buck2</span> <span class="n">build</span> <span class="o">-</span><span class="n">c</span> <span class="n">executorch</span><span class="o">.</span><span class="n">event_tracer_enabled</span><span class="o">=</span><span class="n">true</span> <span class="n">examples</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">sdk_example_runner</span><span class="p">:</span><span class="n">sdk_example_runner</span>
+<p>Quantization requires a two stage export. First we use the <code class="docutils literal notranslate"><span class="pre">capture_pre_autograd_graph</span></code> API to capture the model before giving it to <code class="docutils literal notranslate"><span class="pre">quantize</span></code> utility function. After performing the quantization step, we can now leverage the XNNPACK delegate to lower the quantized exported model graph. From here, the procedure is the same as for the non-quantized model lowering to XNNPACK.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Continued from earlier...</span>
+<span class="n">edge</span> <span class="o">=</span> <span class="n">export_to_edge</span><span class="p">(</span>
+    <span class="n">quantized_mobilenetv2</span><span class="p">,</span>
+    <span class="n">example_inputs</span><span class="p">,</span>
+    <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="p">)</span>
+<span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">)</span>
+
+<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+<span class="n">save_pte_program</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">,</span> <span class="s2">&quot;qs8_xnnpack_mobilenetv2.pte&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>ii). <em><strong>CMake</strong></em></p>
-<p>In CMake, users add this to their compile flags:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span>
+</div>
+<div class="section" id="lowering-with-aot-compiler-py-script">
+<h2>Lowering with <code class="docutils literal notranslate"><span class="pre">aot_compiler.py</span></code> script<a class="headerlink" href="#lowering-with-aot-compiler-py-script" title="Permalink to this headline">¶</a></h2>
+<p>We have also provided a script to quickly lower and export a few example models. You can run the script to generate lowered fp32 and quantized models. This script is used simply for convenience and performs all the same steps as those listed in the previous two sections.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">xnnpack</span><span class="o">.</span><span class="n">aot_compiler</span><span class="o">.</span><span class="n">py</span> <span class="o">--</span><span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;mv2&quot;</span> <span class="o">--</span><span class="n">quantize</span> <span class="o">--</span><span class="n">delegate</span>
 </pre></div>
 </div>
-<p>This flag needs to be added to the ExecuTorch library and any operator library that the users are compiling into their binary. For reference, users can take a look at <code class="docutils literal notranslate"><span class="pre">examples/sdk/CMakeLists.txt</span></code>. The lines of of interest are:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">target_compile_options</span><span class="p">(</span><span class="n">executorch</span> <span class="n">PUBLIC</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
-<span class="n">target_compile_options</span><span class="p">(</span><span class="n">portable_ops_lib</span> <span class="n">PUBLIC</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
+<p>Note in the example above,</p>
+<ul class="simple">
+<li><p>the <code class="docutils literal notranslate"><span class="pre">-—model_name</span></code> specifies the model to use</p></li>
+<li><p>the <code class="docutils literal notranslate"><span class="pre">-—quantize</span></code> flag controls whether the model should be quantized or not</p></li>
+<li><p>the <code class="docutils literal notranslate"><span class="pre">-—delegate</span></code> flag controls whether we attempt to lower parts of the graph to the XNNPACK delegate.</p></li>
+</ul>
+<p>The generated model file will be named <code class="docutils literal notranslate"><span class="pre">[model_name]_xnnpack_[qs8/fp32].pte</span></code> depending on the arguments supplied.</p>
+</div>
+<div class="section" id="running-the-xnnpack-model">
+<h2>Running the XNNPACK Model<a class="headerlink" href="#running-the-xnnpack-model" title="Permalink to this headline">¶</a></h2>
+<p>We will use <code class="docutils literal notranslate"><span class="pre">buck2</span></code> to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file with XNNPACK delegate instructions in it on your host platform. You can follow the instructions here to install <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">buck2</span></a>. You can now run it with the prebuilt <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner</span></code> provided in the examples. This will run the model on some sample inputs.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>buck2<span class="w"> </span>run<span class="w"> </span>examples/backend:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_fp32.pte
+<span class="c1"># or to run the quantized variant</span>
+buck2<span class="w"> </span>run<span class="w"> </span>examples/backend:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_qs8.pte
 </pre></div>
 </div>
-</li>
-</ol>
 </div>
-<div class="section" id="using-an-etdump">
-<h2>Using an ETDump<a class="headerlink" href="#using-an-etdump" title="Permalink to this headline">¶</a></h2>
-<ol class="arabic simple">
-<li><p>Pass this ETDump into the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a> to access this data and  do post-run analysis.</p></li>
-</ol>
+<div class="section" id="building-and-linking-with-the-xnnpack-backend">
+<h2>Building and Linking with the XNNPACK Backend<a class="headerlink" href="#building-and-linking-with-the-xnnpack-backend" title="Permalink to this headline">¶</a></h2>
+<p>You can build the XNNPACK backend <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/targets.bzl#L54">target</a>, and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this <a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html"><span class="doc std std-doc">resource</span></a> next.</p>
 </div>
 </div>
 
@@ -471,10 +538,8 @@
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="sdk-profiling.html" class="btn btn-neutral float-right" title="Profiling Models in ExecuTorch" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
-      
-        <a href="sdk-etrecord.html" class="btn btn-neutral" title="Prerequisite | ETRecord - ExecuTorch Record" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="executorch-arm-delegate-tutorial.html" class="btn btn-neutral" title="ExecuTorch Arm Ethos-U Delegate" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -508,9 +573,12 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Prerequisite | ETDump - ExecuTorch Dump</a><ul>
-<li><a class="reference internal" href="#generating-an-etdump">Generating an ETDump</a></li>
-<li><a class="reference internal" href="#using-an-etdump">Using an ETDump</a></li>
+<li><a class="reference internal" href="#">XNNPACK Backend Delegate Lowering Tutorial</a><ul>
+<li><a class="reference internal" href="#lowering-a-model-to-xnnpack">Lowering a model to XNNPACK</a></li>
+<li><a class="reference internal" href="#lowering-a-quantized-model-to-xnnpack">Lowering a Quantized Model to XNNPACK</a></li>
+<li><a class="reference internal" href="#lowering-with-aot-compiler-py-script">Lowering with <code class="docutils literal notranslate"><span class="pre">aot_compiler.py</span></code> script</a></li>
+<li><a class="reference internal" href="#running-the-xnnpack-model">Running the XNNPACK Model</a></li>
+<li><a class="reference internal" href="#building-and-linking-with-the-xnnpack-backend">Building and Linking with the XNNPACK Backend</a></li>
 </ul>
 </li>
 </ul>
