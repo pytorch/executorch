@@ -481,21 +481,26 @@ def greedy(
         spec.realign(alignment)
         spec2obj[spec] = pick_shared_obj(shared_objects[spec.mem_id], spec)
 
-    total_sizes = [0] * (max(shared_objects.keys()) + 1)
-    for mem_id in shared_objects:
-        input_total_size = 0
-        if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
-            if len(bufsizes) > mem_id:
-                input_total_size = bufsizes[mem_id]
-        total_sizes[mem_id] = materialize_buffer(
-            shared_objects[mem_id], input_total_size
-        )
+    if len(shared_objects) == 0:
+        # Cannot find any tensor in the graph that needs to be allocated.
+        # Return [0, 0] to be consistent with default behavior of naive.
+        total_sizes = [0, 0]
+    else:
+        total_sizes = [0] * (max(shared_objects.keys()) + 1)
+        for mem_id in shared_objects:
+            input_total_size = 0
+            if bufsizes := getattr(graph_module, "input_mem_buffer_sizes", None):
+                if len(bufsizes) > mem_id:
+                    input_total_size = bufsizes[mem_id]
+            total_sizes[mem_id] = materialize_buffer(
+                shared_objects[mem_id], input_total_size
+            )
 
-    # Since we now know the number of shared objects we need and the size of
-    # each shared object, we can assign offset in the memory buffer for each
-    # shared object.
-    for spec, sobj in spec2obj.items():
-        spec.mem_offset = sobj.offset
+        # Since we now know the number of shared objects we need and the size of
+        # each shared object, we can assign offset in the memory buffer for each
+        # shared object.
+        for spec, sobj in spec2obj.items():
+            spec.mem_offset = sobj.offset
 
     logging.debug(f"greedy algorithm returns bufsizes: {total_sizes}")
     return total_sizes

@@ -25,7 +25,7 @@ from executorch.exir.tensor import ALIGNMENT
 class MemoryPlanningPass(PassBase):
     def __init__(
         self,
-        memory_planning_algo: str = "naive",
+        memory_planning_algo: str = "greedy",
         allow_lifetime_and_storage_overlap: bool = False,
         alloc_graph_input: bool = True,
         alloc_graph_output: bool = True,
