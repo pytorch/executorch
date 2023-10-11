@@ -510,8 +510,7 @@ easier.</p></li>
 <p>The runtime makes no direct system calls. All access to memory, files, logging,
 and clocks are abstracted through the <a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="doc std std-doc"><em>Runtime Platform Abstraction Layer
 (PAL)</em></span></a> and injected interfaces like
-<code class="docutils literal notranslate"><span class="pre">DataLoader</span></code> and <code class="docutils literal notranslate"><span class="pre">MemoryAllocator</span></code>. [TODO: link these types to their generated
-docs]</p>
+<code class="docutils literal notranslate"><span class="pre">DataLoader</span></code> and <code class="docutils literal notranslate"><span class="pre">MemoryAllocator</span></code>. See the <a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc std std-doc">runtime api reference</span></a> to learn more.</p>
 <p>Applications can control all memory allocation through the <code class="docutils literal notranslate"><span class="pre">MemoryManager</span></code>,
 <code class="docutils literal notranslate"><span class="pre">MemoryAllocator</span></code>, <code class="docutils literal notranslate"><span class="pre">HierarchicalAllocator</span></code>, and <code class="docutils literal notranslate"><span class="pre">DataLoader</span></code> classes. The core
 runtime makes no direct calls to <code class="docutils literal notranslate"><span class="pre">malloc()</span></code> or <code class="docutils literal notranslate"><span class="pre">new</span></code>, or to types like
