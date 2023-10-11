@@ -5,11 +5,8 @@ on:
   push:
     branches:
       - main
-      - release/*
     tags:
-      - stable-*
-      - v[0-9]+.[0-9]+.[0-9]
-      - v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+
+      - v[0-9]+.[0-9]+.[0-9]+
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'
@@ -85,8 +82,12 @@ jobs:
         # as the target folder in the gh-pages branch. The artifacts created
         # during the build will be copied over to the target dir in the
         # gh-pages branch.
-        if [[ "${REF_TYPE}" == branch || "${REF_TYPE}" == tag ]]; then
+        if [[ "${REF_TYPE}" == branch ]]; then
           TARGET_FOLDER="${REF_NAME}"
+        elif [[ "${REF_TYPE}" == tag ]]; then
+          # Strip the leading "v" as well as the trailing patch version. For example:
+          # 'v0.1.2' -> '0.1'
+          TARGET_FOLDER=$(echo "${REF_NAME}" | sed 's/v\([0-9]\+\)\.\([0-9]\+\)\.[0-9]\+/\1.\2/'
         else
           echo "ERROR: Invalid REF_TYPE: ${REF_TYPE}. Expected 'branch' or 'tag'."
           exit 1
