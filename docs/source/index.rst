@@ -82,6 +82,23 @@ Topics in this section will help you get started with ExecuTorch.
 .. toctree::
    :glob:
    :maxdepth: 1
+   :caption: Tutorials
+   :hidden:
+
+   tutorials/export-to-executorch-tutorial
+   running-a-model-cpp-tutorial
+   examples-end-to-end-to-lower-model-to-delegate
+   build-run-ios-demo
+   demo-apps-android
+   build-run-xtensa
+   build-run-qualcomm-ai-engine-direct-backend
+   tutorials/sdk-integration-tutorial
+   executorch-arm-delegate-tutorial
+   tutorial-xnnpack-delegate-lowering
+
+.. toctree::
+   :glob:
+   :maxdepth: 1
    :caption: Exporting to ExecuTorch
    :hidden:
 
@@ -168,23 +185,6 @@ Topics in this section will help you get started with ExecuTorch.
    sdk-profiling
    sdk-inspector
    sdk-delegate-integration
-
-.. toctree::
-   :glob:
-   :maxdepth: 1
-   :caption: Tutorials
-   :hidden:
-
-   tutorials/export-to-executorch-tutorial
-   running-a-model-cpp-tutorial
-   examples-end-to-end-to-lower-model-to-delegate
-   build-run-ios-demo
-   demo-apps-android
-   build-run-xtensa
-   build-run-qualcomm-ai-engine-direct-backend
-   tutorials/sdk-integration-tutorial
-   executorch-arm-delegate-tutorial
-   tutorial-xnnpack-delegate-lowering
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
