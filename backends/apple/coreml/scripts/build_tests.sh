@@ -15,7 +15,7 @@ COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/apple/coreml"
 IOS_TOOLCHAIN_PATH="$COREML_DIR_PATH/third-party/ios-cmake/ios.toolchain.cmake"
 CMAKE_BUILD_DIR_PATH="$COREML_DIR_PATH/cmake-out"
 LIBRARIES_DIR_PATH="$COREML_DIR_PATH/runtime/libraries"
-FLATC_EXECUTABLE_PATH="$EXECUTORCH_ROOT_PATH/third-party/flatbuffers/cmake-out/flatc" 
+FLATC_EXECUTABLE_PATH="$EXECUTORCH_ROOT_PATH/third-party/flatbuffers/cmake-out/flatc"
 
 echo "ExecuTorch: Building Tests"
 
