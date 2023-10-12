@@ -447,7 +447,7 @@ Before you begin it is recommended you go through the following:</div>
 <span class="n">edge</span> <span class="o">=</span> <span class="n">export_to_edge</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
 
 
-<span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">)</span>
+<span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>We will go through this example with the MobileNetV2 pretrained model downloaded from the TorchVision library. The flow of lowering a model starts after exporting the model <code class="docutils literal notranslate"><span class="pre">to_edge</span></code>. We call the <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> api with the <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code>. The partitioner identifies the subgraphs suitable for XNNPACK backend delegate to consume. Afterwards, the identified subgraphs will be serialized with the XNNPACK Delegate flatbuffer schema and each subgraph will be replaced with a call to the XNNPACK Delegate.</p>
@@ -498,7 +498,7 @@ Before you begin it is recommended you go through the following:</div>
     <span class="n">example_inputs</span><span class="p">,</span>
     <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 <span class="p">)</span>
-<span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">)</span>
+<span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">)</span>
 
 <span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 <span class="n">save_pte_program</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">,</span> <span class="s2">&quot;qs8_xnnpack_mobilenetv2.pte&quot;</span><span class="p">)</span>
