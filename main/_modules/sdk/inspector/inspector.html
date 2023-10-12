@@ -407,6 +407,7 @@
 <span class="kn">import</span> <span class="nn">logging</span>
 <span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">defaultdict</span><span class="p">,</span> <span class="n">OrderedDict</span>
 <span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">Dict</span><span class="p">,</span>
     <span class="n">List</span><span class="p">,</span>
@@ -435,7 +436,6 @@
 <span class="p">)</span>
 
 <span class="kn">from</span> <span class="nn">tabulate</span> <span class="kn">import</span> <span class="n">tabulate</span>
-
 
 <span class="n">FORWARD</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span>
 <span class="n">RESERVED_FRAMEWORK_EVENT_NAMES</span> <span class="o">=</span> <span class="p">[</span>
@@ -493,6 +493,23 @@
     <span class="s2">&quot;DelegateMetadata&quot;</span><span class="p">,</span>
     <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="s2">&quot;delegate_map&quot;</span><span class="p">:</span> <span class="n">DelegateIdentifierDebugHandleMap</span><span class="p">},</span>
 <span class="p">)</span>
+
+
+<span class="k">class</span> <span class="nc">TimeScale</span><span class="p">(</span><span class="n">Enum</span><span class="p">):</span>
+    <span class="n">NS</span> <span class="o">=</span> <span class="s2">&quot;ns&quot;</span>
+    <span class="n">US</span> <span class="o">=</span> <span class="s2">&quot;us&quot;</span>
+    <span class="n">MS</span> <span class="o">=</span> <span class="s2">&quot;ms&quot;</span>
+    <span class="n">S</span> <span class="o">=</span> <span class="s2">&quot;s&quot;</span>
+    <span class="n">CYCLES</span> <span class="o">=</span> <span class="s2">&quot;cycles&quot;</span>
+
+
+<span class="n">time_scale_dict</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">TimeScale</span><span class="o">.</span><span class="n">NS</span><span class="p">:</span> <span class="mi">1000000000</span><span class="p">,</span>
+    <span class="n">TimeScale</span><span class="o">.</span><span class="n">US</span><span class="p">:</span> <span class="mi">1000000</span><span class="p">,</span>
+    <span class="n">TimeScale</span><span class="o">.</span><span class="n">MS</span><span class="p">:</span> <span class="mi">1000</span><span class="p">,</span>
+    <span class="n">TimeScale</span><span class="o">.</span><span class="n">S</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">TimeScale</span><span class="o">.</span><span class="n">CYCLES</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span>
+<span class="p">}</span>
 
 
 <span class="nd">@dataclass</span>
@@ -557,7 +574,7 @@
     <span class="k">def</span> <span class="nf">_gen_from_profile_events</span><span class="p">(</span>
         <span class="n">signature</span><span class="p">:</span> <span class="n">ProfileEventSignature</span><span class="p">,</span>
         <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">ProfileEvent</span><span class="p">],</span>
-        <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+        <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1.0</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Event&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Given a ProfileEventSignature and a list of ProfileEvents with that signature,</span>
@@ -581,7 +598,6 @@
                 <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">events</span>
             <span class="p">]</span>
         <span class="p">)</span>
-
         <span class="k">return</span> <span class="n">Event</span><span class="p">(</span>
             <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
             <span class="n">perf_data</span><span class="o">=</span><span class="n">perf_data</span><span class="p">,</span>
@@ -632,7 +648,8 @@
 
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">events</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Event</span><span class="p">]</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
-    <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">source_time_scale</span><span class="p">:</span> <span class="n">TimeScale</span> <span class="o">=</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">NS</span>
+    <span class="n">target_time_scale</span><span class="p">:</span> <span class="n">TimeScale</span> <span class="o">=</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">MS</span>
 
     <span class="k">def</span> <span class="nf">to_dataframe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">include_units</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -648,7 +665,7 @@
 <span class="sd">            A Pandas DataFrame containing the data of each Event instance in this EventBlock.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
-        <span class="n">units</span> <span class="o">=</span> <span class="s2">&quot; (&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_time_unit</span><span class="p">())</span> <span class="o">+</span> <span class="s2">&quot;)&quot;</span> <span class="k">if</span> <span class="n">include_units</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+        <span class="n">units</span> <span class="o">=</span> <span class="s2">&quot; (&quot;</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">target_time_scale</span><span class="o">.</span><span class="n">value</span> <span class="o">+</span> <span class="s2">&quot;)&quot;</span> <span class="k">if</span> <span class="n">include_units</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
 
         <span class="c1"># TODO: push row generation down to Event</span>
         <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
@@ -675,28 +692,11 @@
         <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">df</span>
 
-    <span class="k">def</span> <span class="nf">_get_time_unit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Determines the appropriate metric time unit for the EventBlock if the</span>
-<span class="sd">        scale is a common factor</span>
-
-<span class="sd">        Args:</span>
-<span class="sd">            None</span>
-
-<span class="sd">        Returns:</span>
-<span class="sd">            The most appropriate time unit for the EventBlock,</span>
-<span class="sd">            defaults to numerical representation if not found</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-
-        <span class="c1"># Inverse scale factor to unit</span>
-        <span class="n">units_map</span> <span class="o">=</span> <span class="p">{</span><span class="mi">1</span><span class="p">:</span> <span class="s2">&quot;us&quot;</span><span class="p">,</span> <span class="mi">1000</span><span class="p">:</span> <span class="s2">&quot;ms&quot;</span><span class="p">,</span> <span class="mi">1000000</span><span class="p">:</span> <span class="s2">&quot;s&quot;</span><span class="p">}</span>
-        <span class="k">return</span> <span class="n">units_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">scale_factor</span><span class="p">,</span> <span class="s2">&quot;1/&quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="mi">1000000</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_factor</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot; s&quot;</span>
-        <span class="p">)</span>
-
     <span class="nd">@staticmethod</span>
     <span class="k">def</span> <span class="nf">_gen_from_etdump</span><span class="p">(</span>
-        <span class="n">etdump</span><span class="p">:</span> <span class="n">ETDumpFlatCC</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="n">etdump</span><span class="p">:</span> <span class="n">ETDumpFlatCC</span><span class="p">,</span>
+        <span class="n">source_time_scale</span><span class="p">:</span> <span class="n">TimeScale</span> <span class="o">=</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">NS</span><span class="p">,</span>
+        <span class="n">target_time_scale</span><span class="p">:</span> <span class="n">TimeScale</span> <span class="o">=</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">MS</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="s2">&quot;EventBlock&quot;</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Given an etdump, generate a list of EventBlocks corresponding to the</span>
@@ -734,6 +734,9 @@
             <span class="k">for</span> <span class="n">event_signature</span><span class="p">,</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">profile_events</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
                 <span class="n">run_signature_events</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="n">event_signature</span><span class="p">,</span> <span class="p">[])</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
 
+        <span class="n">scale_factor</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">time_scale_dict</span><span class="p">[</span><span class="n">source_time_scale</span><span class="p">]</span> <span class="o">/</span> <span class="n">time_scale_dict</span><span class="p">[</span><span class="n">target_time_scale</span><span class="p">]</span>
+        <span class="p">)</span>
         <span class="c1"># Create EventBlocks from the Profile Run Groups</span>
         <span class="k">return</span> <span class="p">[</span>
             <span class="n">EventBlock</span><span class="p">(</span>
@@ -742,7 +745,8 @@
                     <span class="n">Event</span><span class="o">.</span><span class="n">_gen_from_profile_events</span><span class="p">(</span><span class="n">signature</span><span class="p">,</span> <span class="n">event</span><span class="p">,</span> <span class="n">scale_factor</span><span class="p">)</span>
                     <span class="k">for</span> <span class="n">signature</span><span class="p">,</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">profile_events</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
                 <span class="p">],</span>
-                <span class="n">scale_factor</span><span class="o">=</span><span class="n">scale_factor</span><span class="p">,</span>
+                <span class="n">source_time_scale</span><span class="o">=</span><span class="n">source_time_scale</span><span class="p">,</span>
+                <span class="n">target_time_scale</span><span class="o">=</span><span class="n">target_time_scale</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="k">for</span> <span class="n">index</span><span class="p">,</span> <span class="n">profile_events</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">profile_run_groups</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
         <span class="p">]</span>
@@ -816,7 +820,8 @@
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">etdump_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">etrecord_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">etdump_scale</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1000</span><span class="p">,</span>
+        <span class="n">source_time_scale</span><span class="p">:</span> <span class="n">TimeScale</span> <span class="o">=</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">NS</span><span class="p">,</span>
+        <span class="n">target_time_scale</span><span class="p">:</span> <span class="n">TimeScale</span> <span class="o">=</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">MS</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path</span>
@@ -825,8 +830,8 @@
 <span class="sd">        Args:</span>
 <span class="sd">            etdump_path: Path to the ETDump file.</span>
 <span class="sd">            etrecord_path: Optional path to the ETRecord file.</span>
-<span class="sd">            etdump_scale: Inverse Scale Factor used to cast the timestamps in ETDump</span>
-<span class="sd">                defaults to ms (1ms = 1000us).</span>
+<span class="sd">            source_time_scale: The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.</span>
+<span class="sd">            target_time_scale: The target time scale to which the users want their performance data converted to. Defaults to MS.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            None</span>
@@ -839,7 +844,18 @@
         <span class="p">)</span>
 
         <span class="n">etdump</span> <span class="o">=</span> <span class="n">gen_etdump_object</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="n">etdump_path</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">event_blocks</span> <span class="o">=</span> <span class="n">EventBlock</span><span class="o">.</span><span class="n">_gen_from_etdump</span><span class="p">(</span><span class="n">etdump</span><span class="p">,</span> <span class="n">etdump_scale</span><span class="p">)</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">source_time_scale</span> <span class="o">==</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">CYCLES</span><span class="p">)</span> <span class="o">^</span> <span class="p">(</span>
+            <span class="n">target_time_scale</span> <span class="o">==</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">CYCLES</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="s2">&quot;For TimeScale in cycles both the source and target time scale have to be in cycles.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_source_time_scale</span> <span class="o">=</span> <span class="n">source_time_scale</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_target_time_scale</span> <span class="o">=</span> <span class="n">target_time_scale</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">event_blocks</span> <span class="o">=</span> <span class="n">EventBlock</span><span class="o">.</span><span class="n">_gen_from_etdump</span><span class="p">(</span>
+            <span class="n">etdump</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_source_time_scale</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_target_time_scale</span>
+        <span class="p">)</span>
 
         <span class="c1"># No additional data association can be done without ETRecord, so return early</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
