@@ -2,7 +2,7 @@
 
 This is forked from [PyTorch Android Demo App](https://github.com/pytorch/android-demo-app).
 
-This guide explains how to setup ExecuTorch for Android using a demo app. The app employs a [DeepLab v3](https://pytorch.org/hub/pytorch_vision_deeplabv3_resnet101/) model for image segmentation tasks. Models are exported to ExecuTorch using (XNNPACK FP32 backend)[https://github.com/pytorch/executorch/blob/main/backends/xnnpack/README.md].
+This guide explains how to setup ExecuTorch for Android using a demo app. The app employs a [DeepLab v3](https://pytorch.org/hub/pytorch_vision_deeplabv3_resnet101/) model for image segmentation tasks. Models are exported to ExecuTorch using [XNNPACK FP32 backend](tutorial-xnnpack-delegate-lowering.md).
 
 ::::{grid} 2
 :::{grid-item-card}  What you will learn
@@ -45,7 +45,7 @@ mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 cp dl3_xnnpack_fp32.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 ```
 
-For more detailed tutorial of lowering to XNNPACK, please see [XNNPACK backend](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/README.md).
+For more detailed tutorial of lowering to XNNPACK, please see [XNNPACK backend](tutorial-xnnpack-delegate-lowering.md).
 
 #### Qualcomm Hexagon NPU
 
