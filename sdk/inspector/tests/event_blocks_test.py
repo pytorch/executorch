@@ -128,7 +128,7 @@ class TestEventBlock(unittest.TestCase):
         - Correct number of Events and Raw Data values (iterations)
         """
         etdump: ETDumpFlatCC = TestEventBlock._get_sample_etdump_flatcc()
-        blocks: List[EventBlock] = EventBlock._gen_from_etdump(etdump, 1000)
+        blocks: List[EventBlock] = EventBlock._gen_from_etdump(etdump)
 
         self.assertEqual(len(blocks), 2, f"Expected 2 runs, got {len(blocks)}")
 
