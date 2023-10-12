@@ -176,7 +176,7 @@ SDK Integration Tutorial
 #       # Via Dataframe
 #       df = event_block.to_dataframe()
 #       df = df[df.event_name == "native_call_addmm.out"]
-#       print(df[["event_name', 'raw"]])
+#       print(df[["event_name", "raw"]])
 #       print()
 #
 
