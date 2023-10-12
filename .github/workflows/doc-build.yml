@@ -87,7 +87,7 @@ jobs:
         elif [[ "${REF_TYPE}" == tag ]]; then
           # Strip the leading "v" as well as the trailing patch version. For example:
           # 'v0.1.2' -> '0.1'
-          TARGET_FOLDER=$(echo "${REF_NAME}" | sed 's/v\([0-9]\+\)\.\([0-9]\+\)\.[0-9]\+/\1.\2/'
+          TARGET_FOLDER=$(echo "${REF_NAME}" | sed 's/v\([0-9]\+\)\.\([0-9]\+\)\.[0-9]\+/\1.\2/')
         else
           echo "ERROR: Invalid REF_TYPE: ${REF_TYPE}. Expected 'branch' or 'tag'."
           exit 1
