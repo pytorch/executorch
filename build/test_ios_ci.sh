@@ -41,19 +41,9 @@ say "Installing Requirements"
 
 ./install_requirements.sh
 
-say "Installing CoreML Backend Requirements"
-
-./backends/apple/coreml/scripts/install_requirements.sh
-
-say "Installing MPS Backend Requirements"
-
-./backends/apple/mps/install_requirements.sh
-
 say "Exporting Models"
 
 python3 -m examples.portable.scripts.export --model_name="mv3"
-python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name="mv3"
-python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3"
 python3 -m examples.xnnpack.aot_compiler --model_name="mv3" --delegate
 
 mkdir -p examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
@@ -66,12 +56,12 @@ curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
 
 say "Building Frameworks"
 
-./build/build_apple_frameworks.sh --buck2="$(which buck2)" --flatc="$(which flatc)" --coreml --mps --xnnpack
+./build/build_apple_frameworks.sh --buck2="$(which buck2)" --flatc="$(which flatc)" --xnnpack
 mv cmake-out examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks
 
 say "Creating Simulator"
 
-xcrun simctl create executorch "iPhone 15"
+xcrun simctl create executorch "iPhone 14"
 
 say "Running Tests"
 

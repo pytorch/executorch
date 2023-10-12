@@ -17,14 +17,6 @@ final class MobileNetClassifierTest: XCTestCase {
     try run(model: "mv3")
   }
 
-  func testV3WithCoreMLBackend() throws {
-    try run(model: "mv3_coreml_all")
-  }
-
-  func testV3WithMPSBackend() throws {
-    try run(model: "mv3_mps")
-  }
-
   func testV3WithXNNPACKBackend() throws {
     try run(model: "mv3_xnnpack_fp32")
   }

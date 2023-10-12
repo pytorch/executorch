@@ -7,15 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		031B92ED2ACF214B00D4EBE0 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92EC2ACF214B00D4EBE0 /* Accelerate.framework */; };
-		031B92EF2ACF214F00D4EBE0 /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92EE2ACF214F00D4EBE0 /* CoreML.framework */; };
-		031B92F12ACF215400D4EBE0 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92F02ACF215400D4EBE0 /* libsqlite3.tbd */; };
-		031B92F72ACF2A5400D4EBE0 /* mv3_mps.pte in Resources */ = {isa = PBXBuildFile; fileRef = 031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */; };
-		031B92F82ACF2A5400D4EBE0 /* mv3_mps.pte in Resources */ = {isa = PBXBuildFile; fileRef = 031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */; };
 		031B930D2ACFE0EC00D4EBE0 /* portable_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930A2ACFE0EC00D4EBE0 /* portable_backend.xcframework */; };
 		031B930E2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930B2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework */; };
 		031B930F2ACFE0EC00D4EBE0 /* executorch.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930C2ACFE0EC00D4EBE0 /* executorch.xcframework */; };
-		031B93112ACFE51000D4EBE0 /* coreml_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93102ACFE51000D4EBE0 /* coreml_backend.xcframework */; };
 		032C01A52AC22B16002955E1 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C018B2AC22B16002955E1 /* App.swift */; };
 		032C01A72AC22B16002955E1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C018D2AC22B16002955E1 /* ContentView.swift */; };
 		032C01B72AC329B6002955E1 /* CustomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C01B62AC329B6002955E1 /* CustomViews.swift */; };
@@ -27,12 +21,6 @@
 		032C02082AC47CFB002955E1 /* imagenet_classes.txt in Resources */ = {isa = PBXBuildFile; fileRef = 032C02012AC47CFB002955E1 /* imagenet_classes.txt */; };
 		036834D52ACB710D00BA100F /* mv3.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D42ACB710D00BA100F /* mv3.pte */; };
 		036834D62ACB710D00BA100F /* mv3.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D42ACB710D00BA100F /* mv3.pte */; };
-		036834D82ACB893700BA100F /* mv3_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D72ACB893700BA100F /* mv3_coreml_all.pte */; };
-		036834D92ACB893700BA100F /* mv3_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D72ACB893700BA100F /* mv3_coreml_all.pte */; };
-		03AD23EB2AD12360001FF45B /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B931F2AD1008A00D4EBE0 /* Metal.framework */; };
-		03AD23EC2AD12363001FF45B /* MetalPerformanceShaders.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93172AD0FFB700D4EBE0 /* MetalPerformanceShaders.framework */; };
-		03AD23ED2AD12366001FF45B /* MetalPerformanceShadersGraph.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B931B2AD0FFEC00D4EBE0 /* MetalPerformanceShadersGraph.framework */; };
-		03AD23EF2AD12556001FF45B /* mps_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03AD23EE2AD12556001FF45B /* mps_backend.xcframework */; };
 		03C818192AC671980084CC29 /* Samoyed.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 03C818182AC671980084CC29 /* Samoyed.jpg */; };
 		03C8181D2AC69C280084CC29 /* Arctic fox.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 03C8181C2AC69C280084CC29 /* Arctic fox.jpg */; };
 		03C8181F2AC69DFF0084CC29 /* hot pot.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 03C8181E2AC69DFF0084CC29 /* hot pot.jpg */; };
@@ -93,17 +81,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		031B92EC2ACF214B00D4EBE0 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
-		031B92EE2ACF214F00D4EBE0 /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = System/Library/Frameworks/CoreML.framework; sourceTree = SDKROOT; };
-		031B92F02ACF215400D4EBE0 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
-		031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */ = {isa = PBXFileReference; lastKnownFileType = file; path = mv3_mps.pte; sourceTree = "<group>"; };
 		031B930A2ACFE0EC00D4EBE0 /* portable_backend.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = portable_backend.xcframework; sourceTree = "<group>"; };
 		031B930B2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = xnnpack_backend.xcframework; sourceTree = "<group>"; };
 		031B930C2ACFE0EC00D4EBE0 /* executorch.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = executorch.xcframework; sourceTree = "<group>"; };
-		031B93102ACFE51000D4EBE0 /* coreml_backend.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = coreml_backend.xcframework; sourceTree = "<group>"; };
-		031B93172AD0FFB700D4EBE0 /* MetalPerformanceShaders.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalPerformanceShaders.framework; path = System/Library/Frameworks/MetalPerformanceShaders.framework; sourceTree = SDKROOT; };
-		031B931B2AD0FFEC00D4EBE0 /* MetalPerformanceShadersGraph.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalPerformanceShadersGraph.framework; path = System/Library/Frameworks/MetalPerformanceShadersGraph.framework; sourceTree = SDKROOT; };
-		031B931F2AD1008A00D4EBE0 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		032C016F2AC228E6002955E1 /* ExecuTorchDemo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ExecuTorchDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		032C018A2AC22B16002955E1 /* MobileNetClassifier.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MobileNetClassifier.swift; sourceTree = "<group>"; };
 		032C018B2AC22B16002955E1 /* App.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
@@ -119,8 +99,6 @@
 		032C01FC2AC47CFB002955E1 /* mv3_xnnpack_fp32.pte */ = {isa = PBXFileReference; lastKnownFileType = file; path = mv3_xnnpack_fp32.pte; sourceTree = "<group>"; };
 		032C02012AC47CFB002955E1 /* imagenet_classes.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = imagenet_classes.txt; sourceTree = "<group>"; };
 		036834D42ACB710D00BA100F /* mv3.pte */ = {isa = PBXFileReference; lastKnownFileType = file; path = mv3.pte; sourceTree = "<group>"; };
-		036834D72ACB893700BA100F /* mv3_coreml_all.pte */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = mv3_coreml_all.pte; sourceTree = "<group>"; };
-		03AD23EE2AD12556001FF45B /* mps_backend.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = mps_backend.xcframework; sourceTree = "<group>"; };
 		03C8180A2AC66FC30084CC29 /* MobileNetClassifierTest.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MobileNetClassifierTest.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		03C818182AC671980084CC29 /* Samoyed.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = Samoyed.jpg; sourceTree = "<group>"; };
 		03C8181C2AC69C280084CC29 /* Arctic fox.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "Arctic fox.jpg"; sourceTree = "<group>"; };
@@ -137,13 +115,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				031B92ED2ACF214B00D4EBE0 /* Accelerate.framework in Frameworks */,
-				031B92EF2ACF214F00D4EBE0 /* CoreML.framework in Frameworks */,
-				03AD23ED2AD12366001FF45B /* MetalPerformanceShadersGraph.framework in Frameworks */,
-				03AD23EB2AD12360001FF45B /* Metal.framework in Frameworks */,
 				032C01EC2AC34CAC002955E1 /* libMobileNetClassifier.a in Frameworks */,
-				03AD23EC2AD12363001FF45B /* MetalPerformanceShaders.framework in Frameworks */,
-				031B92F12ACF215400D4EBE0 /* libsqlite3.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -153,10 +125,8 @@
 			files = (
 				03C818472AC7A1190084CC29 /* libImageClassification.a in Frameworks */,
 				031B930E2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework in Frameworks */,
-				031B93112ACFE51000D4EBE0 /* coreml_backend.xcframework in Frameworks */,
 				031B930D2ACFE0EC00D4EBE0 /* portable_backend.xcframework in Frameworks */,
 				031B930F2ACFE0EC00D4EBE0 /* executorch.xcframework in Frameworks */,
-				03AD23EF2AD12556001FF45B /* mps_backend.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -265,8 +235,6 @@
 			isa = PBXGroup;
 			children = (
 				032C02012AC47CFB002955E1 /* imagenet_classes.txt */,
-				036834D72ACB893700BA100F /* mv3_coreml_all.pte */,
-				031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */,
 				032C01FC2AC47CFB002955E1 /* mv3_xnnpack_fp32.pte */,
 				036834D42ACB710D00BA100F /* mv3.pte */,
 			);
@@ -276,15 +244,7 @@
 		032C01E52AC34826002955E1 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				031B92EC2ACF214B00D4EBE0 /* Accelerate.framework */,
-				031B92EE2ACF214F00D4EBE0 /* CoreML.framework */,
-				031B931F2AD1008A00D4EBE0 /* Metal.framework */,
-				031B93172AD0FFB700D4EBE0 /* MetalPerformanceShaders.framework */,
-				031B931B2AD0FFEC00D4EBE0 /* MetalPerformanceShadersGraph.framework */,
-				031B92F02ACF215400D4EBE0 /* libsqlite3.tbd */,
-				031B93102ACFE51000D4EBE0 /* coreml_backend.xcframework */,
 				031B930C2ACFE0EC00D4EBE0 /* executorch.xcframework */,
-				03AD23EE2AD12556001FF45B /* mps_backend.xcframework */,
 				031B930A2ACFE0EC00D4EBE0 /* portable_backend.xcframework */,
 				031B930B2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework */,
 			);
@@ -441,8 +401,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				031B92F72ACF2A5400D4EBE0 /* mv3_mps.pte in Resources */,
-				036834D82ACB893700BA100F /* mv3_coreml_all.pte in Resources */,
 				036834D52ACB710D00BA100F /* mv3.pte in Resources */,
 				032C02082AC47CFB002955E1 /* imagenet_classes.txt in Resources */,
 				032C02032AC47CFB002955E1 /* mv3_xnnpack_fp32.pte in Resources */,
@@ -458,9 +416,7 @@
 				03C8184A2AC7BF470084CC29 /* mv3_xnnpack_fp32.pte in Resources */,
 				03C8181D2AC69C280084CC29 /* Arctic fox.jpg in Resources */,
 				03C818192AC671980084CC29 /* Samoyed.jpg in Resources */,
-				036834D92ACB893700BA100F /* mv3_coreml_all.pte in Resources */,
 				03C8181F2AC69DFF0084CC29 /* hot pot.jpg in Resources */,
-				031B92F82ACF2A5400D4EBE0 /* mv3_mps.pte in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
