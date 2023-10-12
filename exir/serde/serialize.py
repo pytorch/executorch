@@ -34,7 +34,6 @@ from executorch.exir.serde.schema import (
     CompileSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
 )
-from torch._export.serde.schema import Argument, GraphSignature
 from torch._export.serde.serialize import SerializeError
 from torch.fx.experimental import symbolic_shapes
 
@@ -347,11 +346,6 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
     def __init__(self, state_dict: Dict[str, torch.Tensor]) -> None:
         super().__init__()
         self.state_dict: Dict[str, Any] = state_dict  # TODO(T157676982)
-
-    def deserialize_signature(
-        self, sig: GraphSignature, inputs: List[Argument], outputs: List[Argument]
-    ) -> ep.ExportGraphSignature:
-        return ep.ExportGraphSignature(input_specs=[], output_specs=[])
 
     def deserialize_operator(self, serialized_target: str) -> str:
         def find_operator(module: _DialectNamespace, serialized_target: str) -> str:
