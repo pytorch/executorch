@@ -100,11 +100,9 @@ $ tree -L 1 /opt/qcom/aistack/qnn/<version>/
 ├── include
 ├── lib
 ├── LICENSE.pdf
-├── qaisw-v2.13.1.230725130242_60412
 ├── QNN_NOTICE.txt
 ├── QNN_README.txt
 ├── QNN_ReleaseNotes.txt
-├── QNN_SECUREPD_README.txt
 ├── share
 └── Uninstall
 ```

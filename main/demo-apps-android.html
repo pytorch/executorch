@@ -403,7 +403,7 @@
   <div class="section" id="building-an-executorch-android-demo-app">
 <h1>Building an ExecuTorch Android Demo App<a class="headerlink" href="#building-an-executorch-android-demo-app" title="Permalink to this headline">¶</a></h1>
 <p>This is forked from <a class="reference external" href="https://github.com/pytorch/android-demo-app">PyTorch Android Demo App</a>.</p>
-<p>This guide explains how to setup ExecuTorch for Android using a demo app. The app employs a <a class="reference external" href="https://pytorch.org/hub/pytorch_vision_deeplabv3_resnet101/">DeepLab v3</a> model for image segmentation tasks. Models are exported to ExecuTorch using (XNNPACK FP32 backend)[https://github.com/pytorch/executorch/blob/main/backends/xnnpack/README.md].</p>
+<p>This guide explains how to setup ExecuTorch for Android using a demo app. The app employs a <a class="reference external" href="https://pytorch.org/hub/pytorch_vision_deeplabv3_resnet101/">DeepLab v3</a> model for image segmentation tasks. Models are exported to ExecuTorch using <a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html"><span class="doc std std-doc">XNNPACK FP32 backend</span></a>.</p>
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
 <div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
 <div class="sd-col sd-d-flex-row docutils">
@@ -453,7 +453,7 @@ mkdir<span class="w"> </span>-p<span class="w"> </span>examples/demo-apps/androi
 cp<span class="w"> </span>dl3_xnnpack_fp32.pte<span class="w"> </span>examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 </pre></div>
 </div>
-<p>For more detailed tutorial of lowering to XNNPACK, please see <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/README.md">XNNPACK backend</a>.</p>
+<p>For more detailed tutorial of lowering to XNNPACK, please see <a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html"><span class="doc std std-doc">XNNPACK backend</span></a>.</p>
 </div>
 <div class="section" id="qualcomm-hexagon-npu">
 <h4>Qualcomm Hexagon NPU<a class="headerlink" href="#qualcomm-hexagon-npu" title="Permalink to this headline">¶</a></h4>
