@@ -28,13 +28,6 @@ from torch._dynamo.eval_frame import Constraint
 from torch._export import CallSpec, export, ExportedProgram, ExportGraphSignature
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
 from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
-from torch.export.exported_program import (
-    InputKind,
-    InputSpec,
-    OutputKind,
-    OutputSpec,
-    TensorArgument,
-)
 from torch.func import functionalize
 from torch.fx._compatibility import compatibility
 from torch.fx.experimental.proxy_tensor import make_fx
@@ -79,20 +72,7 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
     ep = HackedUpExportedProgramDONOTUSE(
         graph_module,
         graph_module.graph,
-        ExportGraphSignature(
-            input_specs=[
-                InputSpec(
-                    kind=InputKind.USER_INPUT, arg=TensorArgument(name=i), target=None
-                )
-                for i in user_inputs
-            ],
-            output_specs=[
-                OutputSpec(
-                    kind=OutputKind.USER_OUTPUT, arg=TensorArgument(name=o), target=None
-                )
-                for o in user_outputs
-            ],
-        ),
+        ExportGraphSignature([], [], user_inputs, user_outputs, {}, {}, {}, None),
         CallSpec(in_spec, out_spec),
         {},
         {},
@@ -253,25 +233,16 @@ def capture(  # noqa: C901
     graph_module._apply(torch.Tensor.contiguous)
 
     user_inputs = [
-        InputSpec(
-            kind=InputKind.USER_INPUT, arg=TensorArgument(name=node.name), target=None
-        )
-        for node in graph_module.graph.nodes
-        if node.op == "placeholder"
+        node.name for node in graph_module.graph.nodes if node.op == "placeholder"
     ]
     output_node = list(graph_module.graph.nodes)[-1]
     assert output_node.op == "output"
-    user_outputs = [
-        OutputSpec(
-            kind=OutputKind.USER_OUTPUT, arg=TensorArgument(name=arg.name), target=None
-        )
-        for arg in output_node.args[0]
-    ]
+    user_outputs = [arg.name for arg in output_node.args[0]]
 
     ep = ExportedProgram(
         graph_module,
         graph_module.graph,
-        ExportGraphSignature(user_inputs, user_outputs),
+        ExportGraphSignature([], [], user_inputs, user_outputs, {}, {}, {}, None),
         CallSpec(in_spec, out_spec),
         {},
         {},

@@ -27,6 +27,6 @@ def update_with_proxy(t: torch.Tensor, proxy: torch.fx.Proxy) -> torch.Tensor:
     unwrapped = unwrap_functional(t)
     assert isinstance(unwrapped, PythonTensor)
     unwrapped.update_proxy(proxy)
-    if is_functionaltensor(t):  # type: ignore
+    if is_functionaltensor(t):
         _assert_wrapped_functional(unwrapped, t)
     return t
