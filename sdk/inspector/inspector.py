@@ -8,6 +8,7 @@ import dataclasses
 import logging
 from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
+from enum import Enum
 from typing import (
     Dict,
     List,
@@ -36,7 +37,6 @@ from executorch.sdk.inspector._inspector_utils import (
 )
 
 from tabulate import tabulate
-
 
 FORWARD = "forward"
 RESERVED_FRAMEWORK_EVENT_NAMES = [
@@ -94,6 +94,23 @@ DelegateMetadata = TypedDict(
     "DelegateMetadata",
     {"name": str, "delegate_map": DelegateIdentifierDebugHandleMap},
 )
+
+
+class TimeScale(Enum):
+    NS = "ns"
+    US = "us"
+    MS = "ms"
+    S = "s"
+    CYCLES = "cycles"
+
+
+time_scale_dict = {
+    TimeScale.NS: 1000000000,
+    TimeScale.US: 1000000,
+    TimeScale.MS: 1000,
+    TimeScale.S: 1,
+    TimeScale.CYCLES: 1,
+}
 
 
 @dataclass
@@ -158,7 +175,7 @@ class Event:
     def _gen_from_profile_events(
         signature: ProfileEventSignature,
         events: List[ProfileEvent],
-        scale_factor: int = 1,
+        scale_factor: float = 1.0,
     ) -> "Event":
         """
         Given a ProfileEventSignature and a list of ProfileEvents with that signature,
@@ -182,7 +199,6 @@ class Event:
                 for event in events
             ]
         )
-
         return Event(
             name=name,
             perf_data=perf_data,
@@ -233,7 +249,8 @@ class EventBlock:
 
     name: str
     events: List[Event] = dataclasses.field(default_factory=list)
-    scale_factor: int = 1
+    source_time_scale: TimeScale = TimeScale.NS
+    target_time_scale: TimeScale = TimeScale.MS
 
     def to_dataframe(self, include_units: bool = False) -> pd.DataFrame:
         """
@@ -249,7 +266,7 @@ class EventBlock:
             A Pandas DataFrame containing the data of each Event instance in this EventBlock.
         """
 
-        units = " (" + str(self._get_time_unit()) + ")" if include_units else ""
+        units = " (" + self.target_time_scale.value + ")" if include_units else ""
 
         # TODO: push row generation down to Event
         data = {
@@ -276,28 +293,11 @@ class EventBlock:
         df = pd.DataFrame(data)
         return df
 
-    def _get_time_unit(self):
-        """
-        Determines the appropriate metric time unit for the EventBlock if the
-        scale is a common factor
-
-        Args:
-            None
-
-        Returns:
-            The most appropriate time unit for the EventBlock,
-            defaults to numerical representation if not found
-        """
-
-        # Inverse scale factor to unit
-        units_map = {1: "us", 1000: "ms", 1000000: "s"}
-        return units_map.get(
-            self.scale_factor, "1/" + str(1000000 / self.scale_factor) + " s"
-        )
-
     @staticmethod
     def _gen_from_etdump(
-        etdump: ETDumpFlatCC, scale_factor: int = 1
+        etdump: ETDumpFlatCC,
+        source_time_scale: TimeScale = TimeScale.NS,
+        target_time_scale: TimeScale = TimeScale.MS,
     ) -> List["EventBlock"]:
         """
         Given an etdump, generate a list of EventBlocks corresponding to the
@@ -335,6 +335,9 @@ class EventBlock:
             for event_signature, event in profile_events.items():
                 run_signature_events.setdefault(event_signature, []).append(event)
 
+        scale_factor = (
+            time_scale_dict[source_time_scale] / time_scale_dict[target_time_scale]
+        )
         # Create EventBlocks from the Profile Run Groups
         return [
             EventBlock(
@@ -343,7 +346,8 @@ class EventBlock:
                     Event._gen_from_profile_events(signature, event, scale_factor)
                     for signature, event in profile_events.items()
                 ],
-                scale_factor=scale_factor,
+                source_time_scale=source_time_scale,
+                target_time_scale=target_time_scale,
             )
             for index, profile_events in enumerate(profile_run_groups.values())
         ]
@@ -417,7 +421,8 @@ class Inspector:
         self,
         etdump_path: Optional[str] = None,
         etrecord_path: Optional[str] = None,
-        etdump_scale: int = 1000,
+        source_time_scale: TimeScale = TimeScale.NS,
+        target_time_scale: TimeScale = TimeScale.MS,
     ) -> None:
         r"""
         Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path
@@ -426,8 +431,8 @@ class Inspector:
         Args:
             etdump_path: Path to the ETDump file.
             etrecord_path: Optional path to the ETRecord file.
-            etdump_scale: Inverse Scale Factor used to cast the timestamps in ETDump
-                defaults to ms (1ms = 1000us).
+            source_time_scale: The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.
+            target_time_scale: The target time scale to which the users want their performance data converted to. Defaults to MS.
 
         Returns:
             None
@@ -440,7 +445,18 @@ class Inspector:
         )
 
         etdump = gen_etdump_object(etdump_path=etdump_path)
-        self.event_blocks = EventBlock._gen_from_etdump(etdump, etdump_scale)
+        if (source_time_scale == TimeScale.CYCLES) ^ (
+            target_time_scale == TimeScale.CYCLES
+        ):
+            raise RuntimeError(
+                "For TimeScale in cycles both the source and target time scale have to be in cycles."
+            )
+
+        self._source_time_scale = source_time_scale
+        self._target_time_scale = target_time_scale
+        self.event_blocks = EventBlock._gen_from_etdump(
+            etdump, self._source_time_scale, self._target_time_scale
+        )
 
         # No additional data association can be done without ETRecord, so return early
         if self._etrecord is None:
