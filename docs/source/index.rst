@@ -203,11 +203,11 @@ ExecuTorch tutorials.
    :tags: Export,Delegation,Quantization
 
 .. customcarditem::
-   :header: Integrating with ExecuTorch SDK Tutorial
-   :card_description: A tutorial for integrating a model with runtime results and utilizing it on the ExecuTorch SDK.
+   :header: Using the ExecuTorch SDK to profile a model
+   :card_description: A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.
    :image: _static/img/generic-pytorch-logo.png
    :link: tutorials/sdk-integration-tutorial.html
-   :tags: Export
+   :tags: SDK
 
 .. customcarditem::
    :header: Running an ExecuTorch Model C++ Tutorial
