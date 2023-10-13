@@ -182,7 +182,6 @@ Result<Method> Program::load_method(
 }
 
 Result<MethodMeta> Program::method_meta(const char* method_name) const {
-  EXECUTORCH_SCOPE_PROF("Program::method_meta");
   auto plan = get_execution_plan(internal_program_, method_name);
   if (!plan.ok()) {
     return plan.error();
