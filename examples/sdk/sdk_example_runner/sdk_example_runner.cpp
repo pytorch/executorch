@@ -26,7 +26,6 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
-#include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/sdk/etdump/etdump_flatcc.h>
 #include <executorch/util/bundled_program_verification.h>
@@ -40,11 +39,6 @@ DEFINE_string(
     bundled_program_path,
     "model_bundled.bp",
     "Model serialized in flatbuffer format.");
-
-DEFINE_string(
-    prof_result_path,
-    "prof_result.bin",
-    "ExecuTorch profiler output path.");
 
 DEFINE_int32(
     testset_idx,
@@ -61,6 +55,11 @@ DEFINE_bool(
     output_verification,
     false,
     "Comapre the model output to the reference outputs present in the BundledProgram.");
+
+DEFINE_bool(
+    print_output,
+    false,
+    "Print the output of the ET model to stdout, if needs.");
 
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
@@ -158,7 +157,6 @@ int main(int argc, char** argv) {
   // In this example we use a statically allocated memory pool.
   MemoryAllocator method_allocator{
       MemoryAllocator(sizeof(method_allocator_pool), method_allocator_pool)};
-  method_allocator.enable_profiling("method allocator");
 
   // The memory-planned buffers will back the mutable tensors used by the
   // method. The sizes of these buffers were determined ahead of time during the
@@ -230,29 +228,24 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "Model executed successfully.");
 
   // Print the outputs.
-  std::vector<EValue> outputs(method->outputs_size());
-  status = method->get_outputs(outputs.data(), outputs.size());
-  ET_CHECK(status == Error::Ok);
-  for (EValue& output : outputs) {
-    // TODO(T159700776): This assumes that all outputs are fp32 tensors. Add
-    // support for other EValues and Tensor dtypes, and print tensors in a more
-    // readable way.
-    auto output_tensor = output.toTensor();
-    auto data_output = output_tensor.const_data_ptr<float>();
-    for (size_t j = 0; j < output_tensor.numel(); ++j) {
-      ET_LOG(Info, "%f", data_output[j]);
+  if (FLAGS_print_output) {
+    std::vector<EValue> outputs(method->outputs_size());
+    status = method->get_outputs(outputs.data(), outputs.size());
+    ET_CHECK(status == Error::Ok);
+    for (EValue& output : outputs) {
+      // TODO(T159700776): This assumes that all outputs are fp32 tensors. Add
+      // support for other EValues and Tensor dtypes, and print tensors in a
+      // more readable way.
+      auto output_tensor = output.toTensor();
+      auto data_output = output_tensor.const_data_ptr<float>();
+      for (size_t j = 0; j < output_tensor.numel(); ++j) {
+        ET_LOG(Info, "%f", data_output[j]);
+      }
     }
   }
 
-  // Dump the profiling data to the specified file.
-  torch::executor::prof_result_t prof_result;
-  EXECUTORCH_DUMP_PROFILE_RESULTS(&prof_result);
-  if (prof_result.num_bytes != 0) {
-    FILE* ptr = fopen(FLAGS_prof_result_path.c_str(), "w+");
-    fwrite(prof_result.prof_data, 1, prof_result.num_bytes, ptr);
-    fclose(ptr);
-  }
-
+  // Dump the etdump data containing profiling/debugging data to the specified
+  // file.
   etdump_result result = etdump_gen.get_etdump_data();
   if (result.buf != nullptr && result.size > 0) {
     FILE* f = fopen(FLAGS_etdump_path.c_str(), "w+");
