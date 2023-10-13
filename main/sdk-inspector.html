@@ -427,8 +427,8 @@ APIs:</p>
 <div class="section" id="constructor">
 <h3>Constructor<a class="headerlink" href="#constructor" title="Permalink to this headline">¶</a></h3>
 <dl class="py function">
-<dt class="sig sig-object py" id="sdk.inspector.inspector.Inspector.__init__">
-<span class="sig-prename descclassname"><span class="pre">sdk.inspector.inspector.Inspector.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etdump_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etrecord_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">source_time_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">TimeScale.NS</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_time_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">TimeScale.MS</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.inspector.inspector.Inspector.__init__" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="sdk.Inspector.__init__">
+<span class="sig-prename descclassname"><span class="pre">sdk.Inspector.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etdump_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etrecord_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">source_time_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">TimeScale.NS</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_time_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">TimeScale.MS</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.Inspector.__init__" title="Permalink to this definition">¶</a></dt>
 <dd><p>Initialize an <cite>Inspector</cite> instance with the underlying <cite>EventBlock</cite>s populated with data from the provided ETDump path
 and optional ETRecord path.</p>
 <dl class="field-list simple">
@@ -447,7 +447,7 @@ and optional ETRecord path.</p>
 </dd></dl>
 
 <p><strong>Example Usage:</strong></p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.sdk.etdb.inspector</span> <span class="kn">import</span> <span class="n">Inspector</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">Inspector</span>
 
 <span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">&quot;/path/to/etdump.etdp&quot;</span><span class="p">,</span> <span class="n">etrecord_path</span><span class="o">=</span><span class="s2">&quot;/path/to/etrecord.bin&quot;</span><span class="p">)</span>
 </pre></div>
@@ -456,8 +456,8 @@ and optional ETRecord path.</p>
 <div class="section" id="print-data-tabular">
 <h3>print_data_tabular<a class="headerlink" href="#print-data-tabular" title="Permalink to this headline">¶</a></h3>
 <dl class="py function">
-<dt class="sig sig-object py" id="sdk.inspector.inspector.Inspector.print_data_tabular">
-<span class="sig-prename descclassname"><span class="pre">sdk.inspector.inspector.Inspector.</span></span><span class="sig-name descname"><span class="pre">print_data_tabular</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_units</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.inspector.inspector.Inspector.print_data_tabular" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="sdk.Inspector.print_data_tabular">
+<span class="sig-prename descclassname"><span class="pre">sdk.Inspector.</span></span><span class="sig-name descname"><span class="pre">print_data_tabular</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_units</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.Inspector.print_data_tabular" title="Permalink to this definition">¶</a></dt>
 <dd><p>Displays the underlying EventBlocks in a structured tabular format, with each row representing an Event.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
@@ -478,8 +478,8 @@ and optional ETRecord path.</p>
 <div class="section" id="find-total-for-module">
 <h3>find_total_for_module<a class="headerlink" href="#find-total-for-module" title="Permalink to this headline">¶</a></h3>
 <dl class="py function">
-<dt class="sig sig-object py" id="sdk.inspector.inspector.Inspector.find_total_for_module">
-<span class="sig-prename descclassname"><span class="pre">sdk.inspector.inspector.Inspector.</span></span><span class="sig-name descname"><span class="pre">find_total_for_module</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module_name</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.inspector.inspector.Inspector.find_total_for_module" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="sdk.Inspector.find_total_for_module">
+<span class="sig-prename descclassname"><span class="pre">sdk.Inspector.</span></span><span class="sig-name descname"><span class="pre">find_total_for_module</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module_name</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.Inspector.find_total_for_module" title="Permalink to this definition">¶</a></dt>
 <dd><p>Returns the total average compute time of all operators within the specified module.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
@@ -502,8 +502,8 @@ and optional ETRecord path.</p>
 <div class="section" id="get-exported-program">
 <h3>get_exported_program<a class="headerlink" href="#get-exported-program" title="Permalink to this headline">¶</a></h3>
 <dl class="py function">
-<dt class="sig sig-object py" id="sdk.inspector.inspector.Inspector.get_exported_program">
-<span class="sig-prename descclassname"><span class="pre">sdk.inspector.inspector.Inspector.</span></span><span class="sig-name descname"><span class="pre">get_exported_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">graph</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.inspector.inspector.Inspector.get_exported_program" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="sdk.Inspector.get_exported_program">
+<span class="sig-prename descclassname"><span class="pre">sdk.Inspector.</span></span><span class="sig-name descname"><span class="pre">get_exported_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">graph</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.Inspector.get_exported_program" title="Permalink to this definition">¶</a></dt>
 <dd><p>Access helper for ETRecord, defaults to returning the Edge Dialect program.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
@@ -564,12 +564,7 @@ If there’s a control flow, each branch will be represented by a separate <cite
 <div class="section" id="event-class">
 <h3><code class="docutils literal notranslate"><span class="pre">Event</span></code> Class<a class="headerlink" href="#event-class" title="Permalink to this headline">¶</a></h3>
 <p>Access <code class="docutils literal notranslate"><span class="pre">Event</span></code> instances through the <code class="docutils literal notranslate"><span class="pre">events</span></code> attribute of an
-<code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> instance, for example:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
-    <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
-        <span class="c1"># Do something with each event</span>
-</pre></div>
-</div>
+<code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> instance.</p>
 <dl class="py class">
 <dt class="sig sig-object py" id="sdk.inspector.inspector.Event">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sdk.inspector.inspector.</span></span><span class="sig-name descname"><span class="pre">Event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">perf_data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">op_types=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delegate_debug_identifier=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">debug_handles=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stack_traces=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module_hierarchy=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_delegated_op=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delegate_backend_name=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">debug_data=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_instruction_id=None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sdk/inspector/inspector.html#Event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sdk.inspector.inspector.Event" title="Permalink to this definition">¶</a></dt>
