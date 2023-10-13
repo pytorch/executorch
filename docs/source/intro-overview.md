@@ -32,8 +32,8 @@ on performance.
 PyTorch Mobile uses [TorchScript](https://pytorch.org/docs/stable/jit.html) to
 allow PyTorch models to run on devices with limited resources. ExecuTorch has a
 significantly smaller memory size and a dynamic memory footprint resulting in
-superior performance compared to PyTorch Mobile. Also, ExecuTorch does not rely
-on TorchScript, and instead leverages PyTorch 2 compiler and export
+superior performance and portability compared to PyTorch Mobile. Also, ExecuTorch
+does not rely on TorchScript, and instead leverages PyTorch 2 compiler and export
 functionality for on-device execution of PyTorch models.
 
 Read more in-depth technical overview topics about ExecuTorch:
