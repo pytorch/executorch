@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, get_args, List, Union
 
 import torch
-from executorch.extension.pytree import tree_flatten
+from torch.utils._pytree import tree_flatten
 
 from typing_extensions import TypeAlias
 
@@ -126,7 +126,6 @@ class BundledConfig:
         Returns:
             flatten_data: Flatten data with legal type.
         """
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         flatten_data, _ = tree_flatten(unflatten_data)
 
         for data in flatten_data:
