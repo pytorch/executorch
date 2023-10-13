@@ -11,11 +11,7 @@
 		031B92EF2ACF214F00D4EBE0 /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92EE2ACF214F00D4EBE0 /* CoreML.framework */; };
 		031B92F12ACF215400D4EBE0 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92F02ACF215400D4EBE0 /* libsqlite3.tbd */; };
 		031B92F72ACF2A5400D4EBE0 /* mv3_mps.pte in Resources */ = {isa = PBXBuildFile; fileRef = 031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */; };
-		031B92F82ACF2A5400D4EBE0 /* mv3_mps.pte in Resources */ = {isa = PBXBuildFile; fileRef = 031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */; };
-		031B930D2ACFE0EC00D4EBE0 /* portable_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930A2ACFE0EC00D4EBE0 /* portable_backend.xcframework */; };
-		031B930E2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930B2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework */; };
 		031B930F2ACFE0EC00D4EBE0 /* executorch.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930C2ACFE0EC00D4EBE0 /* executorch.xcframework */; };
-		031B93112ACFE51000D4EBE0 /* coreml_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93102ACFE51000D4EBE0 /* coreml_backend.xcframework */; };
 		032C01A52AC22B16002955E1 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C018B2AC22B16002955E1 /* App.swift */; };
 		032C01A72AC22B16002955E1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C018D2AC22B16002955E1 /* ContentView.swift */; };
 		032C01B72AC329B6002955E1 /* CustomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C01B62AC329B6002955E1 /* CustomViews.swift */; };
@@ -25,14 +21,18 @@
 		032C01EC2AC34CAC002955E1 /* libMobileNetClassifier.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 032C01CB2AC34632002955E1 /* libMobileNetClassifier.a */; };
 		032C02032AC47CFB002955E1 /* mv3_xnnpack_fp32.pte in Resources */ = {isa = PBXBuildFile; fileRef = 032C01FC2AC47CFB002955E1 /* mv3_xnnpack_fp32.pte */; };
 		032C02082AC47CFB002955E1 /* imagenet_classes.txt in Resources */ = {isa = PBXBuildFile; fileRef = 032C02012AC47CFB002955E1 /* imagenet_classes.txt */; };
+		0332E0A12AD9001400B7D462 /* coreml_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93102ACFE51000D4EBE0 /* coreml_backend.xcframework */; };
+		0332E0A22AD9001A00B7D462 /* mps_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03AD23EE2AD12556001FF45B /* mps_backend.xcframework */; };
+		0332E0A32AD9001D00B7D462 /* portable_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930A2ACFE0EC00D4EBE0 /* portable_backend.xcframework */; };
+		0332E0A42AD9002000B7D462 /* xnnpack_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930B2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework */; };
+		0332E0A52AD9002900B7D462 /* xnnpack_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930B2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework */; };
+		0332E0A62AD9002B00B7D462 /* portable_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930A2ACFE0EC00D4EBE0 /* portable_backend.xcframework */; };
 		036834D52ACB710D00BA100F /* mv3.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D42ACB710D00BA100F /* mv3.pte */; };
 		036834D62ACB710D00BA100F /* mv3.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D42ACB710D00BA100F /* mv3.pte */; };
 		036834D82ACB893700BA100F /* mv3_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D72ACB893700BA100F /* mv3_coreml_all.pte */; };
-		036834D92ACB893700BA100F /* mv3_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D72ACB893700BA100F /* mv3_coreml_all.pte */; };
 		03AD23EB2AD12360001FF45B /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B931F2AD1008A00D4EBE0 /* Metal.framework */; };
 		03AD23EC2AD12363001FF45B /* MetalPerformanceShaders.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93172AD0FFB700D4EBE0 /* MetalPerformanceShaders.framework */; };
 		03AD23ED2AD12366001FF45B /* MetalPerformanceShadersGraph.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B931B2AD0FFEC00D4EBE0 /* MetalPerformanceShadersGraph.framework */; };
-		03AD23EF2AD12556001FF45B /* mps_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03AD23EE2AD12556001FF45B /* mps_backend.xcframework */; };
 		03C818192AC671980084CC29 /* Samoyed.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 03C818182AC671980084CC29 /* Samoyed.jpg */; };
 		03C8181D2AC69C280084CC29 /* Arctic fox.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 03C8181C2AC69C280084CC29 /* Arctic fox.jpg */; };
 		03C8181F2AC69DFF0084CC29 /* hot pot.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 03C8181E2AC69DFF0084CC29 /* hot pot.jpg */; };
@@ -54,13 +54,6 @@
 			proxyType = 1;
 			remoteGlobalIDString = 032C01CA2AC34632002955E1;
 			remoteInfo = VisionModel;
-		};
-		03AD23F22AD39C0D001FF45B /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 032C01672AC228E5002955E1 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 032C016E2AC228E6002955E1;
-			remoteInfo = App;
 		};
 		03C818452AC7A0DB0084CC29 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -139,8 +132,12 @@
 			files = (
 				031B92ED2ACF214B00D4EBE0 /* Accelerate.framework in Frameworks */,
 				031B92EF2ACF214F00D4EBE0 /* CoreML.framework in Frameworks */,
+				0332E0A42AD9002000B7D462 /* xnnpack_backend.xcframework in Frameworks */,
+				0332E0A12AD9001400B7D462 /* coreml_backend.xcframework in Frameworks */,
 				03AD23ED2AD12366001FF45B /* MetalPerformanceShadersGraph.framework in Frameworks */,
 				03AD23EB2AD12360001FF45B /* Metal.framework in Frameworks */,
+				0332E0A32AD9001D00B7D462 /* portable_backend.xcframework in Frameworks */,
+				0332E0A22AD9001A00B7D462 /* mps_backend.xcframework in Frameworks */,
 				032C01EC2AC34CAC002955E1 /* libMobileNetClassifier.a in Frameworks */,
 				03AD23EC2AD12363001FF45B /* MetalPerformanceShaders.framework in Frameworks */,
 				031B92F12ACF215400D4EBE0 /* libsqlite3.tbd in Frameworks */,
@@ -152,11 +149,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				03C818472AC7A1190084CC29 /* libImageClassification.a in Frameworks */,
-				031B930E2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework in Frameworks */,
-				031B93112ACFE51000D4EBE0 /* coreml_backend.xcframework in Frameworks */,
-				031B930D2ACFE0EC00D4EBE0 /* portable_backend.xcframework in Frameworks */,
 				031B930F2ACFE0EC00D4EBE0 /* executorch.xcframework in Frameworks */,
-				03AD23EF2AD12556001FF45B /* mps_backend.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -164,6 +157,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0332E0A62AD9002B00B7D462 /* portable_backend.xcframework in Frameworks */,
+				0332E0A52AD9002900B7D462 /* xnnpack_backend.xcframework in Frameworks */,
 				03C818282AC760650084CC29 /* libMobileNetClassifier.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -368,7 +363,6 @@
 			buildRules = (
 			);
 			dependencies = (
-				03AD23F32AD39C0D001FF45B /* PBXTargetDependency */,
 			);
 			name = MobileNetClassifierTest;
 			productName = ExecuTorchDemoTests;
@@ -458,9 +452,7 @@
 				03C8184A2AC7BF470084CC29 /* mv3_xnnpack_fp32.pte in Resources */,
 				03C8181D2AC69C280084CC29 /* Arctic fox.jpg in Resources */,
 				03C818192AC671980084CC29 /* Samoyed.jpg in Resources */,
-				036834D92ACB893700BA100F /* mv3_coreml_all.pte in Resources */,
 				03C8181F2AC69DFF0084CC29 /* hot pot.jpg in Resources */,
-				031B92F82ACF2A5400D4EBE0 /* mv3_mps.pte in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -513,11 +505,6 @@
 			isa = PBXTargetDependency;
 			target = 032C01CA2AC34632002955E1 /* MobileNetClassifier */;
 			targetProxy = 032C01EA2AC34CA8002955E1 /* PBXContainerItemProxy */;
-		};
-		03AD23F32AD39C0D001FF45B /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 032C016E2AC228E6002955E1 /* App */;
-			targetProxy = 03AD23F22AD39C0D001FF45B /* PBXContainerItemProxy */;
 		};
 		03C818462AC7A0DB0084CC29 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -585,6 +572,10 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				OTHER_LDFLAGS = (
+					"-lc++",
+					"-all_load",
+				);
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -643,6 +634,10 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				OTHER_LDFLAGS = (
+					"-lc++",
+					"-all_load",
+				);
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_VERSION = 5.0;
@@ -667,10 +662,6 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				OTHER_LDFLAGS = (
-					"-lc++",
-					"-all_load",
-				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.demo;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
 				SUPPORTS_MACCATALYST = NO;
@@ -696,10 +687,6 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				OTHER_LDFLAGS = (
-					"-lc++",
-					"-all_load",
-				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.demo;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
 				SUPPORTS_MACCATALYST = NO;
@@ -729,7 +716,6 @@
 		03C818112AC66FC30084CC29 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -740,14 +726,12 @@
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ExecuTorchDemo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ExecuTorchDemo";
 			};
 			name = Debug;
 		};
 		03C818122AC66FC30084CC29 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_ENABLE_MODULES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -757,7 +741,6 @@
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ExecuTorchDemo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ExecuTorchDemo";
 			};
 			name = Release;
 		};

@@ -15,6 +15,7 @@ MODE="Debug"
 TOOLCHAIN=""
 BUCK2="/tmp/buck2"
 PYTHON=$(which python3)
+FLATC=""
 IOS_DEPLOYMENT_TARGET="17.0"
 COREML=OFF
 MPS=OFF
@@ -37,6 +38,7 @@ usage() {
   echo "  --toolchain=FILE     Cmake toolchain file. Default: '\$SOURCE_ROOT_DIR/third-party/pytorch/cmake/iOS.cmake'"
   echo "  --buck2=FILE         Buck2 executable path. Default: '/tmp/buck2'"
   echo "  --python=FILE        Python executable path. Default: Path of python3 found in the current \$PATH"
+  echo "  --flatc=FILE         FlatBuffers Compiler executable path. Default: '\$SOURCE_ROOT_DIR/third-party/flatbuffers/cmake-out/flatc'"
   echo "  --coreml             Include this flag to build Core ML backend."
   echo "  --mps                Include this flag to build Metal Performance Shaders backend."
   echo "  --xnnpack            Include this flag to build XNNPACK backend."
@@ -54,6 +56,7 @@ for arg in "$@"; do
       --toolchain=*) TOOLCHAIN="${arg#*=}" ;;
       --buck2=*) BUCK2="${arg#*=}" ;;
       --python=*) PYTHON="${arg#*=}" ;;
+      --flatc=*) FLATC="${arg#*=}" ;;
       --ios-deployment-target=*) IOS_DEPLOYMENT_TARGET="${arg#*=}" ;;
       --coreml) COREML=ON ;;
       --mps) MPS=ON ;;
@@ -78,6 +81,10 @@ if [[ -z "$TOOLCHAIN" ]]; then
 fi
 [[ -f "$TOOLCHAIN" ]] || { echo >&2 "Toolchain file $TOOLCHAIN does not exist."; exit 1; }
 
+if [[ -z "$FLATC" ]]; then
+    FLATC="$SOURCE_ROOT_DIR/third-party/flatbuffers/cmake-out/flatc"
+fi
+
 check_command() {
   command -v "$1" >/dev/null 2>&1 || { echo >&2 "$1 is not installed"; exit 1; }
 }
@@ -86,12 +93,9 @@ check_command cmake
 check_command rsync
 check_command "$BUCK2"
 check_command "$PYTHON"
+check_command "$FLATC"
 
 echo "Building libraries"
-
-if [[ -z "$SOURCE_ROOT_DIR" ]]; then
-    SOURCE_ROOT_DIR=$(pwd)
-fi
 
 rm -rf "$OUTPUT" && mkdir -p "$OUTPUT" && cd "$OUTPUT" || exit 1
 
@@ -102,9 +106,11 @@ cmake_build() {
     mkdir "$platform" && cd "$platform" || exit 1
     cmake "$SOURCE_ROOT_DIR" -G Xcode \
         -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
+        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="c++17" \
+        -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY="libc++" \
         -DBUCK2="$BUCK2" \
         -DPYTHON_EXECUTABLE="$PYTHON" \
-        -DFLATC_EXECUTABLE="$SOURCE_ROOT_DIR/third-party/flatbuffers/cmake-out/flatc" \
+        -DFLATC_EXECUTABLE="$FLATC" \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
         -DIOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
