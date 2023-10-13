@@ -31,6 +31,9 @@ from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 from torch.export.exported_program import (
     InputKind,
     InputSpec,
+    ModuleCallEntry,
+    ModuleCallEntry,
+    ModuleCallSignature,
     OutputKind,
     OutputSpec,
     TensorArgument,
@@ -97,7 +100,17 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
         {},
         {},
         [],
-        [],
+        [
+            ModuleCallEntry(
+                fqn="",
+                signature=ModuleCallSignature(
+                    inputs=[],
+                    outputs=[],
+                    in_spec=in_spec,
+                    out_spec=out_spec,
+                ),
+            )
+        ],
         None,
     )
     return ExirExportedProgram(ep, False)
@@ -272,11 +285,21 @@ def capture(  # noqa: C901
         graph_module,
         graph_module.graph,
         ExportGraphSignature(user_inputs, user_outputs),
-        CallSpec(in_spec, out_spec),
+        CallSpec(in_spec, out_spec),  # FIXME
         {},
         {},
         [],
-        [],
+        [
+            ModuleCallEntry(
+                fqn="",
+                signature=ModuleCallSignature(
+                    inputs=[],
+                    outputs=[],
+                    in_spec=in_spec,
+                    out_spec=out_spec,
+                ),
+            )
+        ],
         dialect="OLD_EXIR_ATEN",
     )
     return ExirExportedProgram(ep, False)
