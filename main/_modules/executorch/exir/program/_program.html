@@ -1034,7 +1034,7 @@
 
 <div class="viewcode-block" id="EdgeProgramManager"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.EdgeProgramManager">[docs]</a><span class="k">class</span> <span class="nc">EdgeProgramManager</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Package of one or more :class:&#39;ExportedPrograms&#39; in Edge dialect. Designed to simplify</span>
+<span class="sd">    Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify</span>
 <span class="sd">    lowering to ExecuTorch.</span>
 
 <span class="sd">    Allows easy applications of transforms across a collection of exported programs</span>
@@ -1095,11 +1095,11 @@
 
 <span class="sd">        Args:</span>
 <span class="sd">            passes: The passes can either be a list of passes, or a</span>
-<span class="sd">            dictionary mapping method names to lists of passes. If it is</span>
-<span class="sd">            just a list of passes, all methods in the given EdgeProgramManager</span>
-<span class="sd">            will be transformed with the provided passes. If it is a</span>
-<span class="sd">            dictionary, only method names specified in the dictionary will be</span>
-<span class="sd">            transformed with their corresponding passes.</span>
+<span class="sd">                dictionary mapping method names to lists of passes. If it is</span>
+<span class="sd">                just a list of passes, all methods in the given EdgeProgramManager</span>
+<span class="sd">                will be transformed with the provided passes. If it is a</span>
+<span class="sd">                dictionary, only method names specified in the dictionary will be</span>
+<span class="sd">                transformed with their corresponding passes.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            EdgeProgramManager: A copy of the calling EdgeProgramManager with the</span>
@@ -1174,7 +1174,7 @@
 
 <span class="sd">        Args:</span>
 <span class="sd">            config: An optional argument used to provide greater control over</span>
-<span class="sd">            the transformation to the ExecuTorch backend.</span>
+<span class="sd">                the transformation to the ExecuTorch backend.</span>
 
 <span class="sd">        Returns:</span>
 <span class="sd">            ExecutorchProgramManager: A manager representing the state of the EdgeProgramManager</span>

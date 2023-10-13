@@ -428,7 +428,7 @@ ATen dialect. Upon construction those programs are transformed into edge dialect
 <dl class="py class">
 <dt class="sig sig-object py" id="exir.EdgeProgramManager">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">exir.</span></span><span class="sig-name descname"><span class="pre">EdgeProgramManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">edge_programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constant_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager" title="Permalink to this definition">¶</a></dt>
-<dd><p>Package of one or more :class:’ExportedPrograms’ in Edge dialect. Designed to simplify
+<dd><p>Package of one or more <cite>ExportedPrograms</cite> in Edge dialect. Designed to simplify
 lowering to ExecuTorch.</p>
 <p>Allows easy applications of transforms across a collection of exported programs
 including the delegation of subgraphs.</p>
@@ -488,10 +488,8 @@ specified subgraphs lowered.</p>
 <dd><p>Transforms the program to the ExecuTorch backend.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>config</strong> – An optional argument used to provide greater control over</p></li>
-<li><p><strong>backend.</strong> (<em>the transformation to the ExecuTorch</em>) – </p></li>
-</ul>
+<dd class="field-odd"><p><strong>config</strong> – An optional argument used to provide greater control over
+the transformation to the ExecuTorch backend.</p>
 </dd>
 <dt class="field-even">Returns</dt>
 <dd class="field-even"><p>A manager representing the state of the EdgeProgramManager
@@ -509,16 +507,12 @@ after it has been transformed to the ExecuTorch backend.</p>
 <dd><p>Transforms the program according to the provided passes.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>passes</strong> (<em>just a list of</em>) – The passes can either be a list of passes, or a</p></li>
-<li><p><strong>is</strong> (<em>dictionary mapping method names to lists of passes. If it</em>) – </p></li>
-<li><p><strong>passes</strong> – </p></li>
-<li><p><strong>EdgeProgramManager</strong> (<em>all methods in the given</em>) – </p></li>
-<li><p><strong>a</strong> (<em>will be transformed with the provided passes. If it is</em>) – </p></li>
-<li><p><strong>dictionary</strong> – </p></li>
-<li><p><strong>be</strong> (<em>only method names specified in the dictionary will</em>) – </p></li>
-<li><p><strong>passes.</strong> (<em>transformed with their corresponding</em>) – </p></li>
-</ul>
+<dd class="field-odd"><p><strong>passes</strong> – The passes can either be a list of passes, or a
+dictionary mapping method names to lists of passes. If it is
+just a list of passes, all methods in the given EdgeProgramManager
+will be transformed with the provided passes. If it is a
+dictionary, only method names specified in the dictionary will be
+transformed with their corresponding passes.</p>
 </dd>
 <dt class="field-even">Returns</dt>
 <dd class="field-even"><p>A copy of the calling EdgeProgramManager with the
@@ -605,44 +599,40 @@ argument (type annotation is required). However, it can’t take multiple types 
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">exir.backend.backend_api.</span></span><span class="sig-name descname"><span class="pre">LoweredBackendModule</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">edge_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">backend_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">processed_bytes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_specs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/lowered_backend_module.html#LoweredBackendModule"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.backend.backend_api.LoweredBackendModule" title="Permalink to this definition">¶</a></dt>
 <dd><p>A subclass of nn.Module that is generated for modules containing
 delegated functions. This is can be created by calling <cite>to_backend</cite>.</p>
-<dl class="simple">
-<dt>Private Attributes:</dt><dd><ul class="simple">
-<li><p><strong>backend_id</strong>: The backend’s name</p></li>
-<li><p><strong>processed_bytes</strong>: The delegate blobs created from backend.preprocess</p></li>
-<li><dl class="simple">
-<dt><strong>compile_specs</strong>: A list of backend-specific objects with static</dt><dd><p>metadata to configure the “compilation” process.</p>
-</dd>
-</dl>
-</li>
-<li><p><strong>original_module</strong>: The original EXIR module</p></li>
-</ul>
-</dd>
-</dl>
+<dl class="py property">
+<dt class="sig sig-object py" id="exir.backend.backend_api.LoweredBackendModule.backend_id">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">backend_id</span></span><a class="headerlink" href="#exir.backend.backend_api.LoweredBackendModule.backend_id" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the backends name.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="exir.backend.backend_api.LoweredBackendModule.buffer">
+<span class="sig-name descname"><span class="pre">buffer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">extract_segments</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">segment_alignment</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4096</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constant_tensor_alignment</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delegate_alignment</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/lowered_backend_module.html#LoweredBackendModule.buffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.backend.backend_api.LoweredBackendModule.buffer" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns a buffer containing the serialized ExecuTorch binary.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="exir.backend.backend_api.LoweredBackendModule.compile_specs">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">compile_specs</span></span><a class="headerlink" href="#exir.backend.backend_api.LoweredBackendModule.compile_specs" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns a list of backend-specific objects with static metadata to configure the “compilation” process.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="exir.backend.backend_api.LoweredBackendModule.original_module">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">original_module</span></span><a class="headerlink" href="#exir.backend.backend_api.LoweredBackendModule.original_module" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the original EXIR module</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="exir.backend.backend_api.LoweredBackendModule.processed_bytes">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">processed_bytes</span></span><a class="headerlink" href="#exir.backend.backend_api.LoweredBackendModule.processed_bytes" title="Permalink to this definition">¶</a></dt>
+<dd><p>Returns the delegate blob created from backend.preprocess</p>
+</dd></dl>
+
 <dl class="py method">
 <dt class="sig sig-object py" id="exir.backend.backend_api.LoweredBackendModule.program">
 <span class="sig-name descname"><span class="pre">program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">emit_stacktrace</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/lowered_backend_module.html#LoweredBackendModule.program"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.backend.backend_api.LoweredBackendModule.program" title="Permalink to this definition">¶</a></dt>
-<dd><p>The idea in this function is to create a module based on the original module. The original module will
-look something like following:</p>
-<p>opcode         name                 target            args                                        kwargs
-————-  ——————-  —————-  ——————————————  ——–
-placeholder    arg0_1               arg0_1            ()                                          {}
-placeholder    arg1_1               arg1_1            ()                                          {}
-call_function  aten_repeat_default  *                 (arg1_1, [4, 1])                            {}
-call_function  aten_mul_tensor      *                 (aten_repeat_default, aten_repeat_default)  {}
-call_function  aten_add_tensor      *                 (arg1_1, arg1_1)                            {}
-output         output               output            ([aten_mul_tensor, aten_add_tensor],)       {}</p>
-<p>if the whole module is lowered, the resulting lowered module look like</p>
-<p>opcode         name                      target                       args                                kwargs
-————-  ————————  —————————  ———————————-  ——–
-placeholder    arg0_1                    arg0_1                       ()                                  {}
-placeholder    arg1_1                    arg1_1                       ()                                  {}
-get_attr       lowered_module_0          lowered_module_0             ()                                  {}
-call_function  executorch_call_delegate  executorch_call_delegate     (lowered_module_0, arg0_1, arg1_1)  {}
-call_function  getitem                   &lt;built-in function getitem&gt;  (executorch_call_delegate, 0)       {}
-call_function  getitem_1                 &lt;built-in function getitem&gt;  (executorch_call_delegate, 1)       {}
-output         output_1                  output                       ([getitem, getitem_1],)             {}</p>
-<p>We’ll remove all call_function nodes, insert an call_delegate node, inserting getitems nodes to get the result for call_delegate node
-and return the list of getitems as the output</p>
+<dd><p>Returns the object that represents the ExecuTorch binary before serialization.</p>
 </dd></dl>
 
 </dd></dl>

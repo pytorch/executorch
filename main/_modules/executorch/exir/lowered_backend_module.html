@@ -452,19 +452,14 @@
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A subclass of nn.Module that is generated for modules containing</span>
 <span class="sd">    delegated functions. This is can be created by calling `to_backend`.</span>
-
-<span class="sd">    Private Attributes:</span>
-<span class="sd">        * **backend_id**: The backend&#39;s name</span>
-<span class="sd">        * **processed_bytes**: The delegate blobs created from backend.preprocess</span>
-<span class="sd">        * **compile_specs**: A list of backend-specific objects with static</span>
-<span class="sd">            metadata to configure the &quot;compilation&quot; process.</span>
-<span class="sd">        * **original_module**: The original EXIR module</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">_backend_id</span><span class="p">:</span> <span class="nb">str</span>
-    <span class="n">_processed_bytes</span><span class="p">:</span> <span class="nb">bytes</span>
-    <span class="n">_compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">]</span>
-    <span class="n">_original_module</span><span class="p">:</span> <span class="n">ExportedProgram</span>
+    <span class="n">_backend_id</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># The backend&#39;s name</span>
+    <span class="n">_processed_bytes</span><span class="p">:</span> <span class="nb">bytes</span>  <span class="c1"># The delegate blobs created from backend.preprocess</span>
+    <span class="n">_compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span>
+        <span class="n">CompileSpec</span>
+    <span class="p">]</span>  <span class="c1"># A list of backend-specific objects with static metadata to configure the &quot;compilation&quot; process.</span>
+    <span class="n">_original_module</span><span class="p">:</span> <span class="n">ExportedProgram</span>  <span class="c1"># The original EXIR module</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -481,28 +476,43 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">backend_id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the backends name.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_backend_id</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">processed_bytes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the delegate blob created from backend.preprocess</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_processed_bytes</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">compile_specs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a list of backend-specific objects with static metadata to configure the &quot;compilation&quot; process.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_compile_specs</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">original_module</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns the original EXIR module</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_original_module</span>
 
     <span class="c1"># TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api</span>
-    <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span>
+<div class="viewcode-block" id="LoweredBackendModule.buffer"><a class="viewcode-back" href="../../../export-to-executorch-api-reference.html#exir.backend.backend_api.LoweredBackendModule.buffer">[docs]</a>    <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">extract_segments</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">segment_alignment</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4096</span><span class="p">,</span>
         <span class="n">constant_tensor_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">delegate_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a buffer containing the serialized ExecuTorch binary.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">out</span> <span class="o">=</span> <span class="n">_serialize_pte_binary</span><span class="p">(</span>
             <span class="n">program</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">program</span><span class="p">(),</span>
             <span class="n">extract_segments</span><span class="o">=</span><span class="n">extract_segments</span><span class="p">,</span>
@@ -510,39 +520,41 @@
             <span class="n">constant_tensor_alignment</span><span class="o">=</span><span class="n">constant_tensor_alignment</span><span class="p">,</span>
             <span class="n">delegate_alignment</span><span class="o">=</span><span class="n">delegate_alignment</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="k">return</span> <span class="n">out</span>
+        <span class="k">return</span> <span class="n">out</span></div>
 
     <span class="c1"># TODO(chenlai): re-consider recapture instead of manually constructing the program because</span>
     <span class="c1"># the meta data construction is done manually.</span>
 <div class="viewcode-block" id="LoweredBackendModule.program"><a class="viewcode-back" href="../../../export-to-executorch-api-reference.html#exir.backend.backend_api.LoweredBackendModule.program">[docs]</a>    <span class="k">def</span> <span class="nf">program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">emit_stacktrace</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        The idea in this function is to create a module based on the original module. The original module will</span>
-<span class="sd">        look something like following:</span>
-
-<span class="sd">        opcode         name                 target            args                                        kwargs</span>
-<span class="sd">        -------------  -------------------  ----------------  ------------------------------------------  --------</span>
-<span class="sd">        placeholder    arg0_1               arg0_1            ()                                          {}</span>
-<span class="sd">        placeholder    arg1_1               arg1_1            ()                                          {}</span>
-<span class="sd">        call_function  aten_repeat_default  *                 (arg1_1, [4, 1])                            {}</span>
-<span class="sd">        call_function  aten_mul_tensor      *                 (aten_repeat_default, aten_repeat_default)  {}</span>
-<span class="sd">        call_function  aten_add_tensor      *                 (arg1_1, arg1_1)                            {}</span>
-<span class="sd">        output         output               output            ([aten_mul_tensor, aten_add_tensor],)       {}</span>
-
-<span class="sd">        if the whole module is lowered, the resulting lowered module look like</span>
-
-<span class="sd">        opcode         name                      target                       args                                kwargs</span>
-<span class="sd">        -------------  ------------------------  ---------------------------  ----------------------------------  --------</span>
-<span class="sd">        placeholder    arg0_1                    arg0_1                       ()                                  {}</span>
-<span class="sd">        placeholder    arg1_1                    arg1_1                       ()                                  {}</span>
-<span class="sd">        get_attr       lowered_module_0          lowered_module_0             ()                                  {}</span>
-<span class="sd">        call_function  executorch_call_delegate  executorch_call_delegate     (lowered_module_0, arg0_1, arg1_1)  {}</span>
-<span class="sd">        call_function  getitem                   &lt;built-in function getitem&gt;  (executorch_call_delegate, 0)       {}</span>
-<span class="sd">        call_function  getitem_1                 &lt;built-in function getitem&gt;  (executorch_call_delegate, 1)       {}</span>
-<span class="sd">        output         output_1                  output                       ([getitem, getitem_1],)             {}</span>
-
-<span class="sd">        We&#39;ll remove all call_function nodes, insert an call_delegate node, inserting getitems nodes to get the result for call_delegate node</span>
-<span class="sd">        and return the list of getitems as the output</span>
+<span class="sd">        Returns the object that represents the ExecuTorch binary before serialization.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Creates a new module based on the original module. The original module will</span>
+        <span class="c1"># look something like following:</span>
+        <span class="c1">#</span>
+        <span class="c1"># opcode         name                 target            args                                        kwargs</span>
+        <span class="c1"># -------------  -------------------  ----------------  ------------------------------------------  --------</span>
+        <span class="c1"># placeholder    arg0_1               arg0_1            ()                                          {}</span>
+        <span class="c1"># placeholder    arg1_1               arg1_1            ()                                          {}</span>
+        <span class="c1"># call_function  aten_repeat_default  *                 (arg1_1, [4, 1])                            {}</span>
+        <span class="c1"># call_function  aten_mul_tensor      *                 (aten_repeat_default, aten_repeat_default)  {}</span>
+        <span class="c1"># call_function  aten_add_tensor      *                 (arg1_1, arg1_1)                            {}</span>
+        <span class="c1"># output         output               output            ([aten_mul_tensor, aten_add_tensor],)       {}</span>
+        <span class="c1">#</span>
+        <span class="c1"># if the whole module is lowered, the resulting lowered module look like</span>
+        <span class="c1">#</span>
+        <span class="c1"># opcode         name                      target                       args                                kwargs</span>
+        <span class="c1"># -------------  ------------------------  ---------------------------  ----------------------------------  --------</span>
+        <span class="c1"># placeholder    arg0_1                    arg0_1                       ()                                  {}</span>
+        <span class="c1"># placeholder    arg1_1                    arg1_1                       ()                                  {}</span>
+        <span class="c1"># get_attr       lowered_module_0          lowered_module_0             ()                                  {}</span>
+        <span class="c1"># call_function  executorch_call_delegate  executorch_call_delegate     (lowered_module_0, arg0_1, arg1_1)  {}</span>
+        <span class="c1"># call_function  getitem                   &lt;built-in function getitem&gt;  (executorch_call_delegate, 0)       {}</span>
+        <span class="c1"># call_function  getitem_1                 &lt;built-in function getitem&gt;  (executorch_call_delegate, 1)       {}</span>
+        <span class="c1"># output         output_1                  output                       ([getitem, getitem_1],)             {}</span>
+        <span class="c1">#</span>
+        <span class="c1"># We&#39;ll remove all call_function nodes, insert an call_delegate node, inserting getitems nodes to get the result for call_delegate node</span>
+        <span class="c1"># and return the list of getitems as the output</span>
+
         <span class="n">lowered_exported_program</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">original_module</span><span class="p">)</span>
 
         <span class="c1"># The real input nodes are the ones not buffer or parameter</span>
@@ -837,7 +849,7 @@
 <span class="sd">    Args:</span>
 <span class="sd">        submodule: submodule to create and exported program from</span>
 <span class="sd">        owning_program: exported program containing the parameters and buffers used within</span>
-<span class="sd">                the submodule</span>
+<span class="sd">            the submodule</span>
 
 <span class="sd">    Returns:</span>
 <span class="sd">        The ExportedProgram created from submodule</span>
