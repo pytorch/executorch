@@ -86,7 +86,7 @@ Follow these steps:
 1. Clone the `executorch` repository:
 
    ```bash
-   git clone git@github.com:pytorch/executorch.git
+   git clone --branch v0.1.0 git@github.com:pytorch/executorch.git
    ```
 
 1. Update the submodules:
