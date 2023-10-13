@@ -66,6 +66,10 @@ class QuantParams:
 
     def quantize_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
         if self.per_channel:
+            assert (
+                tensor.shape[self.axis] == cast(torch.Tensor, self.scale).shape[0]
+            ), f"Invalid size of per channel quantization scales, axis: {self.axis}, scale size: {self.scale.shape}, tensor shape: {tensor.shape}"
+
             return exir_ops.edge.quantized_decomposed.quantize_per_channel.default(
                 tensor, self.scale, self.zp, self.axis, self.qmin, self.qmax, self.dtype
             )
@@ -238,7 +242,7 @@ class QuantParams:
             q_input=bias,
             scale=weight_quantizer.scale * cast(float, input_quantizer.scale),
             zp=weight_quantizer.zp * 0,
-            axis=weight_quantizer.axis,
+            axis=0,  # not using weight_quantizer.axis because bias is always of shape [out_channels] i.e. 1D
             dtype=torch.int32,
             qmin=-(2**31),
             qmax=(2**31) - 1,
