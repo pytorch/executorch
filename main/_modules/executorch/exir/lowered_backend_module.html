@@ -256,6 +256,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../getting-started-setup.html">Setting Up ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../getting-started-build-and-cross-compilation.html">Building with CMake</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
@@ -294,7 +295,6 @@
 <p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../../runtime-overview.html">ExecuTorch Runtime Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../runtime-build-and-cross-compilation.html">Building with CMake</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../runtime-custom-memory-allocator.html">Custom Memory Allocator</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../runtime-error-handling.html">Runtime Error Handling</a></li>
@@ -427,12 +427,16 @@
 
 <span class="kn">from</span> <span class="nn">executorch.exir.tracer</span> <span class="kn">import</span> <span class="n">Value</span>
 
-<span class="kn">from</span> <span class="nn">torch._export.exported_program</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">CallSpec</span><span class="p">,</span>
-    <span class="n">ExportedProgram</span><span class="p">,</span>
-    <span class="n">ExportGraphSignature</span><span class="p">,</span>
-<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">torch._export.exported_program</span> <span class="kn">import</span> <span class="n">CallSpec</span><span class="p">,</span> <span class="n">ExportedProgram</span>
 <span class="kn">from</span> <span class="nn">torch._subclasses</span> <span class="kn">import</span> <span class="n">FakeTensor</span>
+<span class="kn">from</span> <span class="nn">torch.export.exported_program</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ExportGraphSignature</span><span class="p">,</span>
+    <span class="n">InputKind</span><span class="p">,</span>
+    <span class="n">InputSpec</span><span class="p">,</span>
+    <span class="n">OutputKind</span><span class="p">,</span>
+    <span class="n">OutputSpec</span><span class="p">,</span>
+    <span class="n">TensorArgument</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span> <span class="nn">torch.fx.passes.utils.fuser_utils</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">erase_nodes</span><span class="p">,</span>
     <span class="n">fuse_as_graphmodule</span><span class="p">,</span>
@@ -611,30 +615,37 @@
         <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">lint</span><span class="p">()</span>
 
         <span class="c1"># Users output will be the get items nodes instead</span>
-        <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">user_outputs</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">getitem_node</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">getitem_node</span> <span class="ow">in</span> <span class="n">getitem_nodes</span>
+        <span class="n">output_specs</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">OutputSpec</span><span class="p">(</span>
+                <span class="n">kind</span><span class="o">=</span><span class="n">OutputKind</span><span class="o">.</span><span class="n">USER_OUTPUT</span><span class="p">,</span>
+                <span class="n">arg</span><span class="o">=</span><span class="n">TensorArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">getitem_node</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="n">getitem_node</span> <span class="ow">in</span> <span class="n">getitem_nodes</span>
         <span class="p">]</span>
         <span class="c1"># All data are consumed by the delegates so they should be removed from the state dict.</span>
         <span class="n">inputs_to_parameters</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">inputs_to_parameters</span>
         <span class="p">)</span>
         <span class="n">inputs_to_buffers</span> <span class="o">=</span> <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">inputs_to_buffers</span>
-        <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">user_inputs</span> <span class="o">=</span> <span class="p">[</span>
-            <span class="n">user_input</span>
+        <span class="n">input_specs</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">InputSpec</span><span class="p">(</span>
+                <span class="n">kind</span><span class="o">=</span><span class="n">InputKind</span><span class="o">.</span><span class="n">USER_INPUT</span><span class="p">,</span>
+                <span class="n">arg</span><span class="o">=</span><span class="n">TensorArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+            <span class="p">)</span>
             <span class="k">for</span> <span class="n">user_input</span> <span class="ow">in</span> <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">user_inputs</span>
             <span class="k">if</span> <span class="n">user_input</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">inputs_to_parameters</span>
             <span class="ow">and</span> <span class="n">user_input</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">inputs_to_buffers</span>
         <span class="p">]</span>
-        <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">buffers</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">parameters</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">inputs_to_parameters</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">inputs_to_buffers</span> <span class="o">=</span> <span class="p">{}</span>
 
         <span class="c1"># Double check the ExportedProgram data(especially everything except graph) is good</span>
         <span class="n">exported_program</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
             <span class="n">root</span><span class="o">=</span><span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
             <span class="n">graph</span><span class="o">=</span><span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
-            <span class="n">graph_signature</span><span class="o">=</span><span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span>
+            <span class="n">graph_signature</span><span class="o">=</span><span class="n">ExportGraphSignature</span><span class="p">(</span>
+                <span class="n">input_specs</span><span class="o">=</span><span class="n">input_specs</span><span class="p">,</span> <span class="n">output_specs</span><span class="o">=</span><span class="n">output_specs</span>
+            <span class="p">),</span>
             <span class="c1"># TODO: May need to set lowered_exported_program.call_spec = CallSpec(None, None)</span>
             <span class="c1"># somewhere as we should pass it a list of tensors to the lowered module and output a</span>
             <span class="c1"># list of tensors. Putting call_spec=lowered_exported_program.call_spec is correct here as the</span>
@@ -749,20 +760,16 @@
     <span class="k">return</span> <span class="n">gm</span>
 
 
+<span class="c1"># TODO Don&#39;t regenerate new signature manually.</span>
 <span class="k">def</span> <span class="nf">_get_new_signature</span><span class="p">(</span>
     <span class="n">original_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">ExportGraphSignature</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">]]]:</span>
     <span class="n">old_signature</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">graph_signature</span>
 
+    <span class="n">input_specs</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">output_specs</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="n">new_signature</span> <span class="o">=</span> <span class="n">ExportGraphSignature</span><span class="p">(</span>
-        <span class="n">parameters</span><span class="o">=</span><span class="p">[],</span>
-        <span class="n">buffers</span><span class="o">=</span><span class="p">[],</span>
-        <span class="n">user_inputs</span><span class="o">=</span><span class="p">[],</span>
-        <span class="n">user_outputs</span><span class="o">=</span><span class="p">[],</span>
-        <span class="n">inputs_to_parameters</span><span class="o">=</span><span class="p">{},</span>
-        <span class="n">inputs_to_buffers</span><span class="o">=</span><span class="p">{},</span>
-        <span class="n">buffers_to_mutate</span><span class="o">=</span><span class="p">{},</span>
-        <span class="n">backward_signature</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+        <span class="n">input_specs</span><span class="o">=</span><span class="n">input_specs</span><span class="p">,</span> <span class="n">output_specs</span><span class="o">=</span><span class="n">output_specs</span>
     <span class="p">)</span>
     <span class="n">new_state_dict</span> <span class="o">=</span> <span class="p">{}</span>
 
@@ -771,8 +778,13 @@
             <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">old_signature</span><span class="o">.</span><span class="n">inputs_to_parameters</span><span class="p">:</span>
                 <span class="n">parameter_name</span> <span class="o">=</span> <span class="n">old_signature</span><span class="o">.</span><span class="n">inputs_to_parameters</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>
                 <span class="c1"># add param to graph signature</span>
-                <span class="n">new_signature</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">parameter_name</span><span class="p">)</span>
-                <span class="n">new_signature</span><span class="o">.</span><span class="n">inputs_to_parameters</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">parameter_name</span>
+                <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">InputSpec</span><span class="p">(</span>
+                        <span class="n">kind</span><span class="o">=</span><span class="n">InputKind</span><span class="o">.</span><span class="n">PARAMETER</span><span class="p">,</span>
+                        <span class="n">arg</span><span class="o">=</span><span class="n">TensorArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                        <span class="n">target</span><span class="o">=</span><span class="n">parameter_name</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
 
                 <span class="c1"># add param to state_dict</span>
                 <span class="n">new_state_dict</span><span class="p">[</span><span class="n">parameter_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">[</span>
@@ -781,17 +793,34 @@
             <span class="k">elif</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">old_signature</span><span class="o">.</span><span class="n">inputs_to_buffers</span><span class="p">:</span>
                 <span class="n">buffer_name</span> <span class="o">=</span> <span class="n">old_signature</span><span class="o">.</span><span class="n">inputs_to_buffers</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>
                 <span class="c1"># add buffer to graph signature</span>
-                <span class="n">new_signature</span><span class="o">.</span><span class="n">buffers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">buffer_name</span><span class="p">)</span>
-                <span class="n">new_signature</span><span class="o">.</span><span class="n">inputs_to_buffers</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">buffer_name</span>
+                <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">InputSpec</span><span class="p">(</span>
+                        <span class="n">kind</span><span class="o">=</span><span class="n">InputKind</span><span class="o">.</span><span class="n">BUFFER</span><span class="p">,</span>
+                        <span class="n">arg</span><span class="o">=</span><span class="n">TensorArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                        <span class="n">target</span><span class="o">=</span><span class="n">buffer_name</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
 
                 <span class="c1"># add param to new_state_dict</span>
                 <span class="n">new_state_dict</span><span class="p">[</span><span class="n">buffer_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">[</span><span class="n">buffer_name</span><span class="p">]</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="c1"># not param or buffer then user input</span>
-                <span class="n">new_signature</span><span class="o">.</span><span class="n">user_inputs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+                <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">InputSpec</span><span class="p">(</span>
+                        <span class="n">kind</span><span class="o">=</span><span class="n">InputKind</span><span class="o">.</span><span class="n">USER_INPUT</span><span class="p">,</span>
+                        <span class="n">arg</span><span class="o">=</span><span class="n">TensorArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                        <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
         <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">output</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">all_input_nodes</span><span class="p">:</span>
-                <span class="n">new_signature</span><span class="o">.</span><span class="n">user_outputs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">output</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+                <span class="n">output_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">OutputSpec</span><span class="p">(</span>
+                        <span class="n">kind</span><span class="o">=</span><span class="n">OutputKind</span><span class="o">.</span><span class="n">USER_OUTPUT</span><span class="p">,</span>
+                        <span class="n">arg</span><span class="o">=</span><span class="n">TensorArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">output</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                        <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
 
     <span class="k">return</span> <span class="n">new_signature</span><span class="p">,</span> <span class="n">new_state_dict</span>
 

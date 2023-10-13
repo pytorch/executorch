@@ -258,6 +258,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started-build-and-cross-compilation.html">Building with CMake</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
@@ -296,7 +297,6 @@
 <p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-custom-memory-allocator.html">Custom Memory Allocator</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-error-handling.html">Runtime Error Handling</a></li>
@@ -441,8 +441,12 @@
 <h2><a class="reference internal" href="ir-exir.html#backend-dialect"><span class="std std-doc">Backend Dialect</span></a><a class="headerlink" href="#backend-dialect" title="Permalink to this headline">¶</a></h2>
 <p>Backend dialect is the result of exporting Edge dialect to specific backend. It’s target-aware, and may contain operators or submodules that are only meaningful to the target backend. This dialect allows the introduction of target-specific operators that do not conform to the schema defined in the Core ATen Operator Set and are not shown in ATen or Edge Dialect.</p>
 </div>
+<div class="section" id="backend-registry">
+<h2>Backend registry<a class="headerlink" href="#backend-registry" title="Permalink to this headline">¶</a></h2>
+<p>A table mapping backend names to backend interfaces. This allows backends to be called via name during runtime.</p>
+</div>
 <div class="section" id="backend-specific-operator">
-<h2>[Backend Specific Operator]<a class="headerlink" href="#backend-specific-operator" title="Permalink to this headline">¶</a></h2>
+<h2>Backend Specific Operator<a class="headerlink" href="#backend-specific-operator" title="Permalink to this headline">¶</a></h2>
 <p>These are operators that are not part of ATen dialect or Edge dialect. Backend specific operators are only introduced by passes that happen after Edge dialect (see Backend dialect). These operators are specific to the target backend and will generally execute faster.</p>
 </div>
 <div class="section" id="buck2">
@@ -452,6 +456,10 @@
 <div class="section" id="cmake">
 <h2><a class="reference external" href="https://cmake.org/">CMake</a><a class="headerlink" href="#cmake" title="Permalink to this headline">¶</a></h2>
 <p>An open-source, cross-platform family of tools designed to build, test and package software. Used to build ExecuTorch.</p>
+</div>
+<div class="section" id="codegen">
+<h2>Codegen<a class="headerlink" href="#codegen" title="Permalink to this headline">¶</a></h2>
+<p>In ExecuTorch, code generation is used to generate the <a class="reference internal" href="kernel-library-selective_build.html"><span class="doc std std-doc">kernel registration library</span></a>.</p>
 </div>
 <div class="section" id="core-aten-dialect">
 <h2>Core ATen Dialect<a class="headerlink" href="#core-aten-dialect" title="Permalink to this headline">¶</a></h2>
@@ -528,11 +536,15 @@
 </div>
 <div class="section" id="executor-runner">
 <h2>executor_runner<a class="headerlink" href="#executor-runner" title="Permalink to this headline">¶</a></h2>
-<p>The ExecuTorch runtime that executes the exported PyTorch model on-device.</p>
+<p>A sample wrapper around the ExecuTorch runtime which includes all the operators and backends.</p>
 </div>
 <div class="section" id="exir">
 <h2><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">EXIR</span></a><a class="headerlink" href="#exir" title="Permalink to this headline">¶</a></h2>
 <p>The <strong>EX</strong>port <strong>I</strong>ntermediate <strong>R</strong>epresentation (IR) from <code class="docutils literal notranslate"><span class="pre">torch.export</span></code>. Contains the computational graph of the model. All EXIR graphs are valid <a class="reference external" href="https://pytorch.org/docs/stable/fx.html#torch.fx.Graph">FX graphs</a>.</p>
+</div>
+<div class="section" id="exportedprogram">
+<h2><code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code><a class="headerlink" href="#exportedprogram" title="Permalink to this headline">¶</a></h2>
+<p>The output of <code class="docutils literal notranslate"><span class="pre">torch.export</span></code> that bundles the computational graph of a PyTorch model (usually an <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>) with the parameters or weights that the model consumes.</p>
 </div>
 <div class="section" id="flatbuffer">
 <h2><a class="reference external" href="https://github.com/google/flatbuffers">flatbuffer</a><a class="headerlink" href="#flatbuffer" title="Permalink to this headline">¶</a></h2>
@@ -541,6 +553,10 @@
 <div class="section" id="framework-tax">
 <h2>Framework tax<a class="headerlink" href="#framework-tax" title="Permalink to this headline">¶</a></h2>
 <p>The cost of various loading and initialization tasks (not inference). For example; loading a program, initializing executor, kernel and backend-delegate dispatch, and runtime memory utilization.</p>
+</div>
+<div class="section" id="functional-aten-operators">
+<h2>Functional ATen operators<a class="headerlink" href="#functional-aten-operators" title="Permalink to this headline">¶</a></h2>
+<p>ATen operators that do not have any side effects.</p>
 </div>
 <div class="section" id="graph">
 <h2><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">Graph</span></a><a class="headerlink" href="#graph" title="Permalink to this headline">¶</a></h2>
@@ -562,6 +578,10 @@
 <h2>Kernel<a class="headerlink" href="#kernel" title="Permalink to this headline">¶</a></h2>
 <p>An implementation of an operator. There can be multiple implementations of an operator for different backends/inputs/etc.</p>
 </div>
+<div class="section" id="kernel-registry-operator-registry">
+<h2>Kernel registry / Operator registry<a class="headerlink" href="#kernel-registry-operator-registry" title="Permalink to this headline">¶</a></h2>
+<p>A table with mappings between kernel names and their implementations. This allows the ExecuTorch runtime to resolve references to kernels during execution.</p>
+</div>
 <div class="section" id="lowering">
 <h2>Lowering<a class="headerlink" href="#lowering" title="Permalink to this headline">¶</a></h2>
 <p>The process of transforming a model to run on various backends. It is called ‘lowering’ as it is moving code closer to the hardware. In ExecuTorch, lowering is performed as part of backend delegation.</p>
@@ -582,9 +602,10 @@
 <h2>Operator fusion<a class="headerlink" href="#operator-fusion" title="Permalink to this headline">¶</a></h2>
 <p>Operator fusion is the process of combining multiple operators into a single compound operator, resulting in faster computation due to fewer kernel launches and fewer memory read/writes. This is a performance advantage of graph mode vs eager mode.</p>
 </div>
-<div class="section" id="operator-registration">
-<h2>Operator registration<a class="headerlink" href="#operator-registration" title="Permalink to this headline">¶</a></h2>
-<p>Operators need to be registered with the ExecuTorch runtime. This allows the compiler to resolve references to the operator in code.</p>
+<div class="section" id="out-variant">
+<h2>Out variant<a class="headerlink" href="#out-variant" title="Permalink to this headline">¶</a></h2>
+<p>Instead of allocating returned tensors in kernel implementations, an operator’s out variant will take in a pre-allocated tensor to its out kwarg, and store the result there.</p>
+<p>This makes it easier for memory planners to perform tensor lifetime analysis. In ExecuTorch, an out variant pass is performed before memory planning.</p>
 </div>
 <div class="section" id="pal-platform-abstraction-layer">
 <h2><a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="doc std std-doc">PAL (Platform Abstraction Layer)</span></a><a class="headerlink" href="#pal-platform-abstraction-layer" title="Permalink to this headline">¶</a></h2>
@@ -718,9 +739,11 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 <li><a class="reference internal" href="#autograd-safe-aten-dialect">Autograd safe ATen Dialect</a></li>
 <li><a class="reference internal" href="#backend">Backend</a></li>
 <li><a class="reference internal" href="#backend-dialect"><span class="xref myst">Backend Dialect</span></a></li>
-<li><a class="reference internal" href="#backend-specific-operator">[Backend Specific Operator]</a></li>
+<li><a class="reference internal" href="#backend-registry">Backend registry</a></li>
+<li><a class="reference internal" href="#backend-specific-operator">Backend Specific Operator</a></li>
 <li><a class="reference internal" href="#buck2">Buck2</a></li>
 <li><a class="reference internal" href="#cmake">CMake</a></li>
+<li><a class="reference internal" href="#codegen">Codegen</a></li>
 <li><a class="reference internal" href="#core-aten-dialect">Core ATen Dialect</a></li>
 <li><a class="reference internal" href="#core-aten-operators-canonical-aten-operator-set"><span class="xref myst">Core ATen operators / Canonical ATen operator set</span></a></li>
 <li><a class="reference internal" href="#core-aten-decomposition-table">Core ATen Decomposition Table</a></li>
@@ -740,19 +763,22 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 <li><a class="reference internal" href="#executorch-program">ExecuTorch Program</a></li>
 <li><a class="reference internal" href="#executor-runner">executor_runner</a></li>
 <li><a class="reference internal" href="#exir"><span class="xref myst">EXIR</span></a></li>
+<li><a class="reference internal" href="#exportedprogram"><code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code></a></li>
 <li><a class="reference internal" href="#flatbuffer">flatbuffer</a></li>
 <li><a class="reference internal" href="#framework-tax">Framework tax</a></li>
+<li><a class="reference internal" href="#functional-aten-operators">Functional ATen operators</a></li>
 <li><a class="reference internal" href="#graph"><span class="xref myst">Graph</span></a></li>
 <li><a class="reference internal" href="#graph-mode">Graph mode</a></li>
 <li><a class="reference internal" href="#hybrid-quantization">Hybrid Quantization</a></li>
 <li><a class="reference internal" href="#intermediate-representation-ir">Intermediate Representation (IR)</a></li>
 <li><a class="reference internal" href="#kernel">Kernel</a></li>
+<li><a class="reference internal" href="#kernel-registry-operator-registry">Kernel registry / Operator registry</a></li>
 <li><a class="reference internal" href="#lowering">Lowering</a></li>
 <li><a class="reference internal" href="#memory-planning"><span class="xref myst">Memory planning</span></a></li>
 <li><a class="reference internal" href="#node"><span class="xref myst">Node</span></a></li>
 <li><a class="reference internal" href="#operator">Operator</a></li>
 <li><a class="reference internal" href="#operator-fusion">Operator fusion</a></li>
-<li><a class="reference internal" href="#operator-registration">Operator registration</a></li>
+<li><a class="reference internal" href="#out-variant">Out variant</a></li>
 <li><a class="reference internal" href="#pal-platform-abstraction-layer"><span class="xref myst">PAL (Platform Abstraction Layer)</span></a></li>
 <li><a class="reference internal" href="#partial-kernels">Partial kernels</a></li>
 <li><a class="reference internal" href="#partitioner">Partitioner</a></li>
