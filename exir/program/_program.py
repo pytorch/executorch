@@ -631,7 +631,7 @@ def to_edge(
 
 class EdgeProgramManager:
     """
-    Package of one or more :class:'ExportedPrograms' in Edge dialect. Designed to simplify
+    Package of one or more 'ExportedPrograms' in Edge dialect. Designed to simplify
     lowering to ExecuTorch.
 
     Allows easy applications of transforms across a collection of exported programs

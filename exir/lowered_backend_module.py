@@ -49,19 +49,14 @@ class LoweredBackendModule(torch.nn.Module):
     """
     A subclass of nn.Module that is generated for modules containing
     delegated functions. This is can be created by calling `to_backend`.
-
-    Private Attributes:
-        * **backend_id**: The backend's name
-        * **processed_bytes**: The delegate blobs created from backend.preprocess
-        * **compile_specs**: A list of backend-specific objects with static
-            metadata to configure the "compilation" process.
-        * **original_module**: The original EXIR module
     """
 
-    _backend_id: str
-    _processed_bytes: bytes
-    _compile_specs: List[CompileSpec]
-    _original_module: ExportedProgram
+    _backend_id: str  # The backend's name
+    _processed_bytes: bytes  # The delegate blobs created from backend.preprocess
+    _compile_specs: List[
+        CompileSpec
+    ]  # A list of backend-specific objects with static metadata to configure the "compilation" process.
+    _original_module: ExportedProgram  # The original EXIR module
 
     def __init__(
         self,
@@ -78,18 +73,30 @@ class LoweredBackendModule(torch.nn.Module):
 
     @property
     def backend_id(self) -> str:
+        """
+        Returns the backends name.
+        """
         return self._backend_id
 
     @property
     def processed_bytes(self) -> bytes:
+        """
+        Returns the delegate blob created from backend.preprocess
+        """
         return self._processed_bytes
 
     @property
     def compile_specs(self) -> List[CompileSpec]:
+        """
+        Returns a list of backend-specific objects with static metadata to configure the "compilation" process.
+        """
         return self._compile_specs
 
     @property
     def original_module(self) -> ExportedProgram:
+        """
+        Returns the original EXIR module
+        """
         return self._original_module
 
     # TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api
@@ -100,6 +107,9 @@ class LoweredBackendModule(torch.nn.Module):
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
     ) -> bytes:
+        """
+        Returns a buffer containing the serialized ExecuTorch binary.
+        """
         out = _serialize_pte_binary(
             program=self.program(),
             extract_segments=extract_segments,
@@ -113,33 +123,36 @@ class LoweredBackendModule(torch.nn.Module):
     # the meta data construction is done manually.
     def program(self, emit_stacktrace: bool = False) -> Program:
         """
-        The idea in this function is to create a module based on the original module. The original module will
-        look something like following:
-
-        opcode         name                 target            args                                        kwargs
-        -------------  -------------------  ----------------  ------------------------------------------  --------
-        placeholder    arg0_1               arg0_1            ()                                          {}
-        placeholder    arg1_1               arg1_1            ()                                          {}
-        call_function  aten_repeat_default  *                 (arg1_1, [4, 1])                            {}
-        call_function  aten_mul_tensor      *                 (aten_repeat_default, aten_repeat_default)  {}
-        call_function  aten_add_tensor      *                 (arg1_1, arg1_1)                            {}
-        output         output               output            ([aten_mul_tensor, aten_add_tensor],)       {}
-
-        if the whole module is lowered, the resulting lowered module look like
-
-        opcode         name                      target                       args                                kwargs
-        -------------  ------------------------  ---------------------------  ----------------------------------  --------
-        placeholder    arg0_1                    arg0_1                       ()                                  {}
-        placeholder    arg1_1                    arg1_1                       ()                                  {}
-        get_attr       lowered_module_0          lowered_module_0             ()                                  {}
-        call_function  executorch_call_delegate  executorch_call_delegate     (lowered_module_0, arg0_1, arg1_1)  {}
-        call_function  getitem                   <built-in function getitem>  (executorch_call_delegate, 0)       {}
-        call_function  getitem_1                 <built-in function getitem>  (executorch_call_delegate, 1)       {}
-        output         output_1                  output                       ([getitem, getitem_1],)             {}
-
-        We'll remove all call_function nodes, insert an call_delegate node, inserting getitems nodes to get the result for call_delegate node
-        and return the list of getitems as the output
+        Returns the object that represents the ExecuTorch binary before serialization.
         """
+
+        # Creates a new module based on the original module. The original module will
+        # look something like following:
+        #
+        # opcode         name                 target            args                                        kwargs
+        # -------------  -------------------  ----------------  ------------------------------------------  --------
+        # placeholder    arg0_1               arg0_1            ()                                          {}
+        # placeholder    arg1_1               arg1_1            ()                                          {}
+        # call_function  aten_repeat_default  *                 (arg1_1, [4, 1])                            {}
+        # call_function  aten_mul_tensor      *                 (aten_repeat_default, aten_repeat_default)  {}
+        # call_function  aten_add_tensor      *                 (arg1_1, arg1_1)                            {}
+        # output         output               output            ([aten_mul_tensor, aten_add_tensor],)       {}
+        #
+        # if the whole module is lowered, the resulting lowered module look like
+        #
+        # opcode         name                      target                       args                                kwargs
+        # -------------  ------------------------  ---------------------------  ----------------------------------  --------
+        # placeholder    arg0_1                    arg0_1                       ()                                  {}
+        # placeholder    arg1_1                    arg1_1                       ()                                  {}
+        # get_attr       lowered_module_0          lowered_module_0             ()                                  {}
+        # call_function  executorch_call_delegate  executorch_call_delegate     (lowered_module_0, arg0_1, arg1_1)  {}
+        # call_function  getitem                   <built-in function getitem>  (executorch_call_delegate, 0)       {}
+        # call_function  getitem_1                 <built-in function getitem>  (executorch_call_delegate, 1)       {}
+        # output         output_1                  output                       ([getitem, getitem_1],)             {}
+        #
+        # We'll remove all call_function nodes, insert an call_delegate node, inserting getitems nodes to get the result for call_delegate node
+        # and return the list of getitems as the output
+
         lowered_exported_program = copy.deepcopy(self.original_module)
 
         # The real input nodes are the ones not buffer or parameter
