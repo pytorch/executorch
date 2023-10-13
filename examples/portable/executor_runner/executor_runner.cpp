@@ -27,7 +27,6 @@
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
-#include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/util.h>
 
@@ -37,10 +36,6 @@ DEFINE_string(
     model_path,
     "model.pte",
     "Model serialized in flatbuffer format.");
-DEFINE_string(
-    prof_result_path,
-    "prof_result.bin",
-    "ExecuTorch profiler output path.");
 
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
@@ -113,7 +108,6 @@ int main(int argc, char** argv) {
   // In this example we use a statically allocated memory pool.
   MemoryAllocator method_allocator{
       MemoryAllocator(sizeof(method_allocator_pool), method_allocator_pool)};
-  method_allocator.enable_profiling("method allocator");
 
   // The memory-planned buffers will back the mutable tensors used by the
   // method. The sizes of these buffers were determined ahead of time during the
@@ -178,15 +172,6 @@ int main(int argc, char** argv) {
   std::cout << torch::executor::util::evalue_edge_items(100);
   for (int i = 0; i < outputs.size(); ++i) {
     std::cout << "Output " << i << ": " << outputs[i] << std::endl;
-  }
-
-  // Dump the profiling data to the specified file.
-  torch::executor::prof_result_t prof_result;
-  EXECUTORCH_DUMP_PROFILE_RESULTS(&prof_result);
-  if (prof_result.num_bytes != 0) {
-    FILE* ptr = fopen(FLAGS_prof_result_path.c_str(), "w+");
-    fwrite(prof_result.prof_data, 1, prof_result.num_bytes, ptr);
-    fclose(ptr);
   }
 
   util::FreeInputs(inputs);
