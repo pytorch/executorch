@@ -32,18 +32,18 @@ SDK Integration Tutorial
 #
 # Set up a conda environment. To set up a conda environment in Google Colab::
 #
-#   !pip install -q condacolab
-#   import condacolab
-#   condacolab.install()
+#       !pip install -q condacolab
+#       import condacolab
+#       condacolab.install()
 #
-#   !conda create --name executorch python=3.10
-#   !conda install -c conda-forge flatbuffers
+#       !conda create --name executorch python=3.10
+#       !conda install -c conda-forge flatbuffers
 #
 # Install ExecuTorch from source. If cloning is failing on Google Colab, make
 # sure Colab -> Setting -> Github -> Access Private Repo is checked::
 #
-#   !git clone https://{github_username}:{token}@github.com/pytorch/executorch.git
-#   !cd executorch && bash ./install_requirements.sh
+#       !git clone https://{github_username}:{token}@github.com/pytorch/executorch.git
+#       !cd executorch && bash ./install_requirements.sh
 
 ######################################################################
 # Generate ETRecord (Optional)
@@ -57,41 +57,48 @@ SDK Integration Tutorial
 # edge dialect model (``EdgeProgramManager``), the ExecuTorch dialect model
 # (``ExecutorchProgramManager``), and an optional dictionary of additional models
 #
-# In this tutorial, the mobilenet v2 example model is used to demonstrate::
-#
-#   # Imports
-#   import copy
-#
-#   import torch
-#
-#   from executorch.examples.models.mobilenet_v2 import MV2Model
-#   from executorch.exir import (
-#       EdgeCompileConfig,
-#       EdgeProgramManager,
-#       ExecutorchProgramManager,
-#       to_edge,
-#   )
-#   from executorch.sdk import generate_etrecord
-#   from torch.export import export, ExportedProgram
-#
-#   # Generate MV2 Model
-#   model: torch.nn.Module = MV2Model()
-#
-#   aten_model: ExportedProgram = export(
-#       model.get_eager_model().eval(),
-#       model.get_example_inputs(),
-#   )
-#
-#   edge_program_manager: EdgeProgramManager = to_edge(
-#       aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True)
-#   )
-#   edge_program_manager_copy = copy.deepcopy(edge_program_manager)
-#   et_program_manager: ExecutorchProgramManager = edge_program_manager_copy.to_executorch()
-#
-#
-#   # Generate ETRecord
-#   etrecord_path = "etrecord.bin"
-#   generate_etrecord(etrecord_path, edge_program_manager, et_program_manager)
+# In this tutorial, the mobilenet v2 example model is used to demonstrate.
+
+import copy
+
+import torch
+
+from executorch.examples.models.mobilenet_v2 import MV2Model
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+    to_edge,
+)
+from executorch.sdk import generate_etrecord
+from torch.export import export, ExportedProgram
+
+
+# Generate MV2 Model
+model: torch.nn.Module = MV2Model()
+
+aten_model: ExportedProgram = export(
+    model.get_eager_model().eval(),
+    model.get_example_inputs(),
+)
+
+edge_program_manager: EdgeProgramManager = to_edge(
+    aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True)
+)
+edge_program_manager_copy = copy.deepcopy(edge_program_manager)
+et_program_manager: ExecutorchProgramManager = edge_program_manager_copy.to_executorch()
+
+
+# Generate ETRecord
+etrecord_path = "etrecord.bin"
+generate_etrecord(etrecord_path, edge_program_manager, et_program_manager)
+
+# sphinx_gallery_start_ignore
+from unittest.mock import patch
+
+# sphinx_gallery_end_ignore
+
+######################################################################
 #
 # .. warning::
 #    Users should do a deepcopy of the output of to_edge() and pass in the
@@ -111,18 +118,18 @@ SDK Integration Tutorial
 #
 # Use Buck::
 #
-#   python3 -m examples.sdk.scripts.export_bundled_program -m mv2
-#   buck2 run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bp
+#       python3 -m examples.sdk.scripts.export_bundled_program -m mv2
+#       buck2 run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bp
 #
 # **Option 2:**
 #
 # Use CMake::
 #
-#   cd executorch
-#   rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DBUCK2=buck2 -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
-#   cd ..
-#   cmake --build cmake-out -j8 -t sdk_example_runner
-#   ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path mv2_bundled.bp
+#       cd executorch
+#       rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DBUCK2=buck2 -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
+#       cd ..
+#       cmake --build cmake-out -j8 -t sdk_example_runner
+#       ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path mv2_bundled.bp
 
 ######################################################################
 # Creating an Inspector
@@ -135,14 +142,27 @@ SDK Integration Tutorial
 # Note: An ``ETRecord`` is not required. If an ``ETRecord`` is not provided,
 # the Inspector will show runtime results without operator correlation.
 #
-# To visualize all runtime events, call Inspector's ``print_data_tabular``::
-#
-#   from executorch.sdk import Inspector
-#
-#   etdump_path = "etdump.etdp"
-#   inspector = Inspector(etdump_path=etdump_path, etrecord_path=etrecord_path)
-#   inspector.print_data_tabular()
-#
+# To visualize all runtime events, call Inspector's ``print_data_tabular``.
+
+from executorch.sdk import Inspector
+
+# sphinx_gallery_start_ignore
+inspector_patch = patch.object(Inspector, "__init__", return_value=None)
+inspector_patch_print = patch.object(Inspector, "print_data_tabular", return_value=None)
+inspector_patch.start()
+inspector_patch_print.start()
+# sphinx_gallery_end_ignore
+etdump_path = "etdump.etdp"
+inspector = Inspector(etdump_path=etdump_path, etrecord_path=etrecord_path)
+# sphinx_gallery_start_ignore
+inspector.event_blocks = []
+# sphinx_gallery_end_ignore
+inspector.print_data_tabular()
+
+# sphinx_gallery_start_ignore
+inspector_patch.stop()
+inspector_patch_print.stop()
+# sphinx_gallery_end_ignore
 
 ######################################################################
 # Analyzing with an Inspector
@@ -152,71 +172,68 @@ SDK Integration Tutorial
 # and ``DataFrames``. These mediums give users the ability to perform custom
 # analysis about their model performance.
 #
-# Below are examples usages, with both ``EventBlock`` and ``DataFrame`` approaches::
-#
-#   # Set Up
-#
-#   import pprint as pp
-#
-#   import pandas as pd
-#
-#   pd.set_option("display.max_colwidth", None)
-#   pd.set_option("display.max_columns", None)
+# Below are examples usages, with both ``EventBlock`` and ``DataFrame`` approaches.
+
+# Set Up
+import pprint as pp
+
+import pandas as pd
+
+pd.set_option("display.max_colwidth", None)
+pd.set_option("display.max_columns", None)
 
 ######################################################################
 # If a user wants the raw profiling results, they would do something similar to
-# finding the raw runtime data of an ``addmm.out`` event::
-#
-#   for event_block in inspector.event_blocks:
-#       # Via EventBlocks
-#       for event in event_block.events:
-#           if event.name == "native_call_addmm.out":
-#               print(event.name, event.perf_data.raw)
-#
-#       # Via Dataframe
-#       df = event_block.to_dataframe()
-#       df = df[df.event_name == "native_call_addmm.out"]
-#       print(df[["event_name", "raw"]])
-#       print()
-#
+# finding the raw runtime data of an ``addmm.out`` event.
+
+for event_block in inspector.event_blocks:
+    # Via EventBlocks
+    for event in event_block.events:
+        if event.name == "native_call_addmm.out":
+            print(event.name, event.perf_data.raw)
+
+    # Via Dataframe
+    df = event_block.to_dataframe()
+    df = df[df.event_name == "native_call_addmm.out"]
+    print(df[["event_name", "raw"]])
+    print()
 
 ######################################################################
 # If a user wants to trace an operator back to their model code, they would do
 # something similar to finding the module hierarchy and stack trace of the
-# slowest ``convolution.out`` call::
-#
-#   for event_block in inspector.event_blocks:
-#       # Via EventBlocks
-#       slowest = None
-#       for event in event_block.events:
-#           if event.name == "native_call_convolution.out":
-#               if slowest is None or event.perf_data.p50 > slowest.perf_data.p50:
-#                   slowest = event
-#       if slowest is not None:
-#           print(slowest.name)
-#           print()
-#           pp.pprint(slowest.stack_traces)
-#           print()
-#           pp.pprint(slowest.module_hierarchy)
-#
-#       # Via Dataframe
-#       df = event_block.to_dataframe()
-#       df = df[df.event_name == "native_call_convolution.out"]
-#       if len(df) > 0:
-#           slowest = df.loc[df["p50"].idxmax()]
-#           print(slowest.event_name)
-#           print()
-#           pp.pprint(slowest.stack_traces)
-#           print()
-#           pp.pprint(slowest.module_hierarchy)
-#
+# slowest ``convolution.out`` call.
+
+for event_block in inspector.event_blocks:
+    # Via EventBlocks
+    slowest = None
+    for event in event_block.events:
+        if event.name == "native_call_convolution.out":
+            if slowest is None or event.perf_data.p50 > slowest.perf_data.p50:
+                slowest = event
+    if slowest is not None:
+        print(slowest.name)
+        print()
+        pp.pprint(slowest.stack_traces)
+        print()
+        pp.pprint(slowest.module_hierarchy)
+
+    # Via Dataframe
+    df = event_block.to_dataframe()
+    df = df[df.event_name == "native_call_convolution.out"]
+    if len(df) > 0:
+        slowest = df.loc[df["p50"].idxmax()]
+        print(slowest.event_name)
+        print()
+        pp.pprint(slowest.stack_traces)
+        print()
+        pp.pprint(slowest.module_hierarchy)
 
 ######################################################################
 # If a user wants the total runtime of a module, they can use
-# ``find_total_for_module``::
-#
-#   print(inspector.find_total_for_module("L__self___features"))
-#   print(inspector.find_total_for_module("L__self___features_14"))
+# ``find_total_for_module``.
+
+print(inspector.find_total_for_module("L__self___features"))
+print(inspector.find_total_for_module("L__self___features_14"))
 
 ######################################################################
 # Note: ``find_total_for_module`` is a special first class method of
