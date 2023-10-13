@@ -11,9 +11,9 @@ Fundamentally, it is a tensor library on top of which almost all other Python an
 
 ## [ATen Dialect](./ir-exir.md#aten-dialect)
 
-ATen dialect is the result of exporting an eager module to a graph representation. It is the entry point of the ExecuTorch compilation pipeline; after exporting to ATen dialect, subsequent passes can lower to Core ATen dialect and Edge dialect.
+ATen dialect is the immediate result of exporting an eager module to a graph representation. It is the entry point of the ExecuTorch compilation pipeline; after exporting to ATen dialect, subsequent passes can lower to [Core ATen dialect](./concepts.md#concepts#core-aten-dialect) and [Edge dialect](./concepts.md#edge-dialect).
 
-ATen dialect is a valid Export IR with additional properties. It consists of functional ATen operators, higher order operators (like control flow operators) and registered custom operators.
+ATen dialect is a valid [EXIR](./concepts.md#exir) with additional properties. It consists of functional ATen operators, higher order operators (like control flow operators) and registered custom operators.
 
 The goal of ATen dialect is to capture users’ programs as faithfully as possible.
 
@@ -26,7 +26,7 @@ ATen mode uses the ATen implementation of Tensor (`at::Tensor`) and related type
 
 ## Autograd safe ATen Dialect
 
-Autograd safe ATen dialect contains the autograd safe ATen operators, along with higher order operators (control flow ops) and registered custom operators.
+Autograd safe ATen dialect includes only differentiable ATen operators, along with higher order operators (control flow ops) and registered custom operators.
 
 ## Backend
 
@@ -34,7 +34,7 @@ A specific hardware (like GPU, NPU) or a software stack (like XNNPACK) that cons
 
 ## [Backend Dialect](./ir-exir.md#backend-dialect)
 
-Backend dialect is the result of exporting Edge dialect to specific backend. It’s target-aware, and may contain operators or submodules that are only meaningful to the target backend. This dialect allows the introduction of target-specific operators that do not conform to the schema defined in the Core ATen Operator Set and are not shown in ATen or Edge Dialect.
+Backend dialect is the immediate result of exporting Edge dialect to specific backend. It’s target-aware, and may contain operators or submodules that are only meaningful to the target backend. This dialect allows the introduction of target-specific operators that do not conform to the schema defined in the Core ATen Operator Set and are not shown in ATen or Edge Dialect.
 
 ## Backend registry
 
@@ -56,7 +56,7 @@ An open-source, cross-platform family of tools designed to build, test and packa
 
 In ExecuTorch, code generation is used to generate the [kernel registration library](./kernel-library-selective_build.md).
 
-## Core ATen Dialect
+## [Core ATen Dialect](https://pytorch.org/docs/stable/torch.compiler_ir.html#irs)
 
 Core ATen dialect contains the core ATen operators along with higher order operators (control flow) and registered custom operators.
 
@@ -66,15 +66,11 @@ A select subset of the PyTorch ATen operator library. Core ATen operators will n
 
 ## Core ATen Decomposition Table
 
-Decomposing an operator involves expressing it as a combination of other operators. During the export process, a default list of decompositions are used; this is known as the Core ATen Decomposition Table.
-
-## [Core ATen IR](https://pytorch.org/docs/stable/torch.compiler_ir.html#irs)
-
-Contains only the core ATen operators and registered custom operators. Registered custom operators are registered into the current PyTorch eager mode runtime, usually with a `TORCH_LIBRARY` call.
+Decomposing an operator means expressing it as a combination of other operators. During the AOT process, a default list of decompositions is employed, breaking down ATen operators into core ATen operators. This is referred to as the Core ATen Decomposition Table.
 
 ## [Custom operator](https://docs.google.com/document/d/1_W62p8WJOQQUzPsJYa7s701JXt0qf2OfLub2sbkHOaU/edit?fbclid=IwAR1qLTrChO4wRokhh_wHgdbX1SZwsU-DUv1XE2xFq0tIKsZSdDLAe6prTxg#heading=h.ahugy69p2jmz)
 
-These are operators that aren't part of the ATen library, but which appear in eager mode. They are most likely associated with a specific target model or hardware platform. For example, [torchvision::roi_align](https://pytorch.org/vision/main/generated/torchvision.ops.roi_align.html) is a custom operator widely used by torchvision (doesn't target a specific hardware).
+These are operators that aren't part of the ATen library, but which appear in [eager mode](./concepts.md#eager-mode). Registered custom operators are registered into the current PyTorch eager mode runtime, usually with a `TORCH_LIBRARY` call. They are most likely associated with a specific target model or hardware platform. For example, [torchvision::roi_align](https://pytorch.org/vision/main/generated/torchvision.ops.roi_align.html) is a custom operator widely used by torchvision (doesn't target a specific hardware).
 
 ## DataLoader
 
@@ -94,7 +90,7 @@ Data type, the type of data (eg. float, integer, etc.) in a tensor.
 
 ## [Dynamic Quantization](https://pytorch.org/docs/main/quantization.html#general-quantization-flow)
 
-A method of quantizing wherein tensors are quantized on the fly during inference. This is in contrast to static quantization, where tensors are quantized before inference.
+A method of quantizing wherein tensors are quantized on the fly during inference. This is in contrast to [static quantization](./concepts.md#static-quantization), where tensors are quantized before inference.
 
 ## Dynamic shapes
 
@@ -159,6 +155,12 @@ An EXIR Graph is a PyTorch program represented in the form of a DAG (directed ac
 ## Graph mode
 
 In graph mode, operators are first synthesized into a graph, which will then be compiled and executed as a whole. This is in contrast to eager mode, where operators are executed as they are encountered. Graph mode typically delivers higher performance as it allows optimizations such as operator fusion.
+
+## Higher Order Operators
+
+A higher order operator (HOP) is an operator that:
+- either accepts a Python function as input, returns a Python function as output, or both.
+- like all PyTorch operators, higher-order operators also have an optional implementation for backends and functionalities. This lets us e.g. register an autograd formula for the higher-order operator or define how the higher-order operator behaves under ProxyTensor tracing.
 
 ## Hybrid Quantization
 
