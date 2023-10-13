@@ -35,7 +35,7 @@ from executorch.exir.serde.schema import (
     CompileSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
 )
-from torch._export.serde.schema import Argument, GraphSignature
+from torch._export.serde.schema import GraphSignature
 from torch._export.serde.serialize import SerializeError
 from torch.export.exported_program import (
     ExportGraphSignature,
