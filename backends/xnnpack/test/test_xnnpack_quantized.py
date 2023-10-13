@@ -393,7 +393,12 @@ class TestXNNPACKQuantized(TestXNNPACK):
 
         model = ModelConvReLU().eval()
         example_inputs = (torch.randn(batches, in_channels, height, width) * 11,)
-        self.quantize_and_test_model(model, example_inputs)
+        for per_channel_quant in (True, False):
+            self.quantize_and_test_model(
+                model,
+                example_inputs,
+                per_channel_quant=per_channel_quant,
+            )
 
     def test_xnnpack_qconv_relu_sequence(self):
         model = torch.nn.Sequential(
