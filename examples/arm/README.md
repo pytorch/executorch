@@ -31,6 +31,6 @@ $ ./run.sh [same-optional-scratch-dir-as-before]
 ```
 ### Online Tutorial
 
-We also have a [tutorial](https://pytorch.org/executorch/executorch-arm-delegate-tutorial.html) explaining the steps performed in these 
-scripts, expected results, and more. It is a step-by-step guide 
+We also have a [tutorial](https://pytorch.org/executorch/stable/executorch-arm-delegate-tutorial.html) explaining the steps performed in these
+scripts, expected results, and more. It is a step-by-step guide
 you can follow to better understand this delegate.
