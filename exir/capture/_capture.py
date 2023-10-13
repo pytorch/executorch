@@ -32,7 +32,6 @@ from torch.export.exported_program import (
     InputKind,
     InputSpec,
     ModuleCallEntry,
-    ModuleCallEntry,
     ModuleCallSignature,
     OutputKind,
     OutputSpec,
