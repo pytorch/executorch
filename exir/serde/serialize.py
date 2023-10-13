@@ -9,10 +9,11 @@
 import base64
 import copy
 import dataclasses
+import inspect
 import json
 import logging
 import operator
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, get_origin, List, Optional, Tuple, Union
 
 import executorch.exir as exir
 import executorch.exir.memory as memory
@@ -36,6 +37,11 @@ from executorch.exir.serde.schema import (
 )
 from torch._export.serde.schema import Argument, GraphSignature
 from torch._export.serde.serialize import SerializeError
+from torch.export.exported_program import (
+    ExportGraphSignature,
+    ModuleCallEntry,
+    ModuleCallSignature,
+)
 from torch.fx.experimental import symbolic_shapes
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -45,7 +51,31 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
     def __init__(
         self, graph_signature: ep.ExportGraphSignature, call_spec: ep.CallSpec
     ) -> None:
-        super().__init__(graph_signature, call_spec, [])
+        module_call_graph = []
+        if call_spec.in_spec is not None and call_spec.out_spec is not None:
+            module_call_graph.append(
+                ModuleCallEntry(
+                    fqn="",
+                    signature=ModuleCallSignature(
+                        inputs=[],
+                        outputs=[],
+                        in_spec=call_spec.in_spec,
+                        out_spec=call_spec.out_spec,
+                    ),
+                )
+            )
+        # temporarily add spec to preserve BC because executorch oss has version pin.
+        # remove this after executorch oss bump to a newer version of pytorch.
+        parameters = list(inspect.signature(super().__init__).parameters.items())
+        assert parameters[0][1].annotation == ExportGraphSignature
+        if parameters[1][1].annotation == ep.CallSpec:
+            # TODO remove this branch later.
+            assert parameters[2][1].annotation == List[ModuleCallEntry]
+            # pyre-ignore
+            super().__init__(graph_signature, call_spec, module_call_graph)
+        else:
+            assert parameters[1][1].annotation == List[ModuleCallEntry]
+            super().__init__(graph_signature, module_call_graph)
         self.state_dict: Dict[str, torch.Tensor] = {}  # TODO(T157676982)
 
     def serialize_operator(
@@ -349,7 +379,7 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         self.state_dict: Dict[str, Any] = state_dict  # TODO(T157676982)
 
     def deserialize_signature(
-        self, sig: GraphSignature, inputs: List[Argument], outputs: List[Argument]
+        self, sig: GraphSignature, *args  # pyre-ignore
     ) -> ep.ExportGraphSignature:
         return ep.ExportGraphSignature(input_specs=[], output_specs=[])
 
@@ -629,16 +659,24 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             for k, v in serialized_exported_program.range_constraints.items()
         }
         state_dict = export_serialize.deserialize_torch_artifact(serialized_state_dict)
-        (
-            graph_module,
-            sig,
-            call_spec,
-            module_call_graph,
-            symbol_name_to_symbol,
-        ) = GraphModuleDeserializer(state_dict).deserialize(
+
+        res = GraphModuleDeserializer(state_dict).deserialize(
             serialized_exported_program.graph_module,
             symbol_name_to_range,
         )
+
+        returns = inspect.signature(GraphModuleDeserializer.deserialize)
+        if get_origin(returns.return_annotation) == tuple:
+            # TODO remove this branch later.
+            # pyre-ignore
+            graph_module, sig, call_spec, module_call_graph, symbol_name_to_symbol = res
+        else:
+            graph_module = res.graph_module
+            sig = res.signature
+            module_call_graph = res.module_call_graph
+            symbol_name_to_symbol = res.names_to_symbols
+            call_spec = None
+
         range_constraints = self.deserialize_range_constraints(
             symbol_name_to_range,
             symbol_name_to_symbol,
@@ -663,7 +701,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             {},  # TODO(T157676982)
             range_constraints,
             equality_constraints,
-            [],
+            module_call_graph,
         )
 
 
