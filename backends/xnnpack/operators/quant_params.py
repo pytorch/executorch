@@ -11,7 +11,11 @@ from typing import cast, Optional, Union
 import torch
 from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 from executorch.backends.xnnpack.utils.quant_utils import is_dequant, is_quant
-from executorch.backends.xnnpack.utils.utils import check_or_raise, is_param_node
+from executorch.backends.xnnpack.utils.utils import (
+    check_or_raise,
+    get_param_tensor,
+    is_param_node,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export import ExportedProgram
 
@@ -97,7 +101,9 @@ class QuantParams:
         )
 
     @classmethod
-    def from_q_dq_node(cls, quant_node: torch.fx.Node) -> QuantParams:
+    def from_q_dq_node(
+        cls, quant_node: torch.fx.Node, ep: Optional[ExportedProgram] = None
+    ) -> QuantParams:
         check_or_raise(
             is_quant(quant_node) or is_dequant(quant_node),
             f"building quantizer from q/dq node but was given node:{quant_node}",
@@ -119,11 +125,18 @@ class QuantParams:
         if per_channel:
             assert isinstance(scale, torch.fx.Node) and isinstance(scale.target, str)
             assert isinstance(zp, torch.fx.Node) and isinstance(zp.target, str)
-            # TODO: use get_param_tensor()
-            scale = getattr(quant_node.graph.owning_module, scale.target)
-            zp = getattr(quant_node.graph.owning_module, zp.target)
-            axis = cast(int, quant_node.args[3])
+            assert (
+                ep is not None
+            ), "ExportedProgram must be provided to extract per channel params"
 
+            def _get_tensor(node):
+                param = get_param_tensor(ep, node)
+                assert param is not None, f"Expected to find param tensor for {node}"
+                return cast(torch.Tensor, param)
+
+            scale = _get_tensor(scale)
+            zp = _get_tensor(zp)
+            axis = cast(int, quant_node.args[3])
         check_or_raise(
             bool(
                 quant_node.args[-1] != torch.uint8
@@ -152,7 +165,9 @@ class QuantParams:
         )
 
     @classmethod
-    def from_weights(cls, tensor_node: torch.fx.Node) -> Optional[QuantParams]:
+    def from_weights(
+        cls, tensor_node: torch.fx.Node, ep: Optional[ExportedProgram] = None
+    ) -> Optional[QuantParams]:
         # Ignore transpose for weights
         # TODO:T148540997 remove the t_copy/permute_copy check when convert addmm to linear
         dq = (
@@ -180,7 +195,7 @@ class QuantParams:
             f"q->dq->permute_copy not derived from static weight, input to the q node: {q.all_input_nodes[0]}",
         )
 
-        return cls.from_q_dq_node(q)
+        return cls.from_q_dq_node(q, ep)
 
     @classmethod
     def from_inputs(

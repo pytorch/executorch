@@ -73,7 +73,9 @@ class Conv2d(NodeVisitor):
         # shape for xnnpack convolution is (oc, height, width, inc/groups), to convert
         # to the proper shape, this is essentially a NCHW to NHWC conversion
         weight_node = get_input_node(node, 1)
-        weight_quant_params = QuantParams.from_weights(weight_node)
+        weight_quant_params = QuantParams.from_weights(
+            weight_node, self._exported_program
+        )
         self.define_tensor(
             weight_node,
             xnn_graph,

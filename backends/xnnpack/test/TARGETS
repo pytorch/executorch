@@ -112,6 +112,7 @@ python_unittest(
     srcs = [
         "ops/add.py",
         "ops/conv1d.py",
+        "ops/conv2d.py",
     ],
     deps = [
         "//caffe2:torch",
