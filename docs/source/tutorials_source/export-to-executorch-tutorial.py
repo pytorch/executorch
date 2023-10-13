@@ -31,22 +31,8 @@ Exporting to ExecuTorch Tutorial
 # Prerequisites
 # -------------
 #
-# To run this tutorial, you’ll need to install ExecuTorch.
-#
-# Set up a conda environment. To set up a conda environment in Google Colab::
-#
-#       !pip install -q condacolab
-#       import condacolab
-#       condacolab.install()
-#
-#       !conda create --name executorch python=3.10
-#       !conda install -c conda-forge flatbuffers
-#
-# Install ExecuTorch from source. If cloning is failing on Google Colab, make
-# sure Colab -> Setting -> Github -> Access Private Repo is checked::
-#
-#       !git clone --branch v0.1.0 https://{github_username}:{token}@github.com/pytorch/executorch.git
-#       !cd executorch && bash ./install_requirements.sh
+# To run this tutorial, you’ll first need to
+# `Set up your ExecuTorch environment <../getting-started-setup.html>`__.
 
 ######################################################################
 # Exporting a Model
