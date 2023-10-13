@@ -326,6 +326,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">SDK Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-tutorial.html">SDK usage tutorial</a></li>
 </ul>
 
             
@@ -510,7 +511,7 @@ edge dialect model (<code class="docutils literal notranslate"><span class="pre"
 <div class="sphx-glr-script-out highlight-default notranslate"><div class="highlight"><pre><span></span>Downloading: &quot;https://download.pytorch.org/models/mobilenet_v2-7ebf99e0.pth&quot; to /var/lib/ci-user/.cache/torch/hub/checkpoints/mobilenet_v2-7ebf99e0.pth
 
   0%|          | 0.00/13.6M [00:00&lt;?, ?B/s]
-100%|██████████| 13.6M/13.6M [00:00&lt;00:00, 207MB/s]
+100%|██████████| 13.6M/13.6M [00:00&lt;00:00, 208MB/s]
 /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:590: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
   warnings.warn(&quot;pytree_to_str is deprecated. Please use treespec_dumps&quot;)
 </pre></div>
@@ -536,6 +537,7 @@ from executing the model. To generate, users have two options:</p>
 <p><strong>Option 2:</strong></p>
 <p>Use CMake:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="n">executorch</span>
+<span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">sdk</span><span class="o">.</span><span class="n">scripts</span><span class="o">.</span><span class="n">export_bundled_program</span> <span class="o">-</span><span class="n">m</span> <span class="n">mv2</span>
 <span class="n">rm</span> <span class="o">-</span><span class="n">rf</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">mkdir</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cd</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cmake</span> <span class="o">-</span><span class="n">DBUCK2</span><span class="o">=</span><span class="n">buck2</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_SDK</span><span class="o">=</span><span class="mi">1</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER</span><span class="o">=</span><span class="mi">1</span> <span class="o">..</span>
 <span class="n">cd</span> <span class="o">..</span>
 <span class="n">cmake</span> <span class="o">--</span><span class="n">build</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">-</span><span class="n">j8</span> <span class="o">-</span><span class="n">t</span> <span class="n">sdk_example_runner</span>
@@ -647,7 +649,7 @@ to analyze the model run results.</p>
 <li><p><a class="reference external" href="../sdk-etdump.html">ETDump</a></p></li>
 <li><p><a class="reference external" href="../sdk-inspector.html">Inspector</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 20.460 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 20.526 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-sdk-integration-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/00f28feeccb75cde665e2acd0ca1eb2e/sdk-integration-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">sdk-integration-tutorial.py</span></code></a></p>

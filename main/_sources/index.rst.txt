@@ -186,6 +186,7 @@ Topics in this section will help you get started with ExecuTorch.
    sdk-profiling
    sdk-inspector
    sdk-delegate-integration
+   sdk-tutorial
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
