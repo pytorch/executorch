@@ -26,13 +26,13 @@ Inspector Methods
 Constructor
 ~~~~~~~~~~~
 
-.. autofunction:: sdk.inspector.inspector.Inspector.__init__
+.. autofunction:: sdk.Inspector.__init__
 
 **Example Usage:**
 
 .. code:: python
 
-    from executorch.sdk.etdb.inspector import Inspector
+    from executorch.sdk import Inspector
 
     inspector = Inspector(etdump_path="/path/to/etdump.etdp", etrecord_path="/path/to/etrecord.bin")
 
@@ -40,7 +40,7 @@ Constructor
 print_data_tabular
 ~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: sdk.inspector.inspector.Inspector.print_data_tabular
+.. autofunction:: sdk.Inspector.print_data_tabular
 
 .. _example-usage-1:
 
@@ -56,7 +56,7 @@ print_data_tabular
 find_total_for_module
 ~~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: sdk.inspector.inspector.Inspector.find_total_for_module
+.. autofunction:: sdk.Inspector.find_total_for_module
 
 .. _example-usage-2:
 
@@ -74,7 +74,7 @@ find_total_for_module
 get_exported_program
 ~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: sdk.inspector.inspector.Inspector.get_exported_program
+.. autofunction:: sdk.Inspector.get_exported_program
 
 .. _example-usage-3:
 
@@ -119,13 +119,7 @@ of an ``Inspector`` instance, for example:
 ~~~~~~~~~~~~~~~
 
 Access ``Event`` instances through the ``events`` attribute of an
-``EventBlock`` instance, for example:
-
-.. code:: python
-
-    for event_block in inspector.event_blocks:
-        for event in event_block.events:
-            # Do something with each event
+``EventBlock`` instance.
 
 .. autoclass:: sdk.inspector.inspector.Event
 
