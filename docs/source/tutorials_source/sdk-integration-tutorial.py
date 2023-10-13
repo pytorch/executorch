@@ -126,6 +126,7 @@ from unittest.mock import patch
 # Use CMake::
 #
 #       cd executorch
+#       python3 -m examples.sdk.scripts.export_bundled_program -m mv2
 #       rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DBUCK2=buck2 -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
 #       cd ..
 #       cmake --build cmake-out -j8 -t sdk_example_runner
