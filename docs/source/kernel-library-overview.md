@@ -2,7 +2,7 @@ This page provides a description of the Portable Kernel Library and the Optimize
 
 # Overview of ExecuTorch’s Kernel Libraries
 
-An ExecuTorch program encodes instructions that describe the computation that should be performed by the program. Many of these instructions will correspond to calling a specific ATen operator, for example aten.convolution. However, one of the core design principles of ExecuTorch is that the signature of an operator should be separate from the implementation of the operator. This means that the ExecuTorch runtime does not ship with any standard implementation for ATen operators; users must make sure to link against kernel libraries that contain implementations of the operators required by their ExecuTorch program, and configure [operator registration](https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/aten_ops_and_aten_mode.md) to map an operator signature to the desired implementation. This makes it easy to adjust the implementation of operators such as `aten.convolution` that will be called when executing an ExecuTorch program; it allows users to select the exact operator implementations that will meet the unique performance, memory usage, battery usage, etc. constraints of their use-case.
+An ExecuTorch program encodes instructions that describe the computation that should be performed by the program. Many of these instructions will correspond to calling a specific ATen operator, for example `aten.convolution`. However, one of the core design principles of ExecuTorch is that the signature of an operator should be separate from the implementation of the operator. This means that the ExecuTorch runtime does not ship with any standard implementation for ATen operators; users must make sure to link against kernel libraries that contain implementations of the operators required by their ExecuTorch program, and configure [operator registration](https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/aten_ops_and_aten_mode.md) to map an operator signature to the desired implementation. This makes it easy to adjust the implementation of operators such as `aten.convolution` that will be called when executing an ExecuTorch program; it allows users to select the exact operator implementations that will meet the unique performance, memory usage, battery usage, etc. constraints of their use-case.
 
 **In essence, a kernel library is simply a collection of ATen operator implementations that follow a common theme or design principle**. Note that due to ExecuTorch’s selective build process (discussed in the following section), operator implementations are linked individually. This means that users can easily mix different kernel libraries in their build without sacrificing build size.
 
@@ -30,7 +30,7 @@ The Optimized Kernel Library is a supplemental kernel library shipped with Execu
 Generally speaking, operators in the Optimized Kernel Library are optimized in one of two ways:
 
 1. Using CPU vector intrinsics
-2. Using optimized math libraries, such as `sleef` and OpenBLAS
+2. Using optimized math libraries, such as `sleef` and `OpenBLAS`
 
 Although portability is not a design goal of the Optimized Kernel Library, implementations are not meant to be fine-tuned for a specific CPU architecture. Instead, the Optimized Kernel library seeks to provide performant implementations that can be applied across a variety of platforms, rather than using optimizations that are specific to a single platform.
 
