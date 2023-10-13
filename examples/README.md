@@ -19,6 +19,7 @@ examples
 ├── qualcomm                          # Contains demos of Qualcomm QNN backend
 ├── xtensa                            # Contains demos of exporting and running a simple model on Xtensa Hifi4 DSP
 ├── demo-apps                         # Contains demo apps for Android and iOS
+├── sdk                               # Contains demos of BundledProgram and ETDump
 ├── third-party                       # Third-party libraries required for working on the demos
 └── README.md                         # This file
 ```
@@ -58,6 +59,10 @@ You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`]
 
 The [`xtensa/`](./xtensa) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
 
+
+## Demo of ExecuTorch SDK
+
+You will find demos of [ExecuTorch SDK](./sdk/) in the [`sdk/`](./sdk/) directory. The examples focuses on exporting and executing BundledProgram for ExecuTorch model verification, and ETDump generation.
 
 ## Dependencies
 
