@@ -15,32 +15,27 @@ set -e
 
 OUTPUT="${1:-executorch}"
 EXIT_STATUS=0
+APP_PATH="examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo"
+MODEL_NAME="mv3"
+SIMULATOR_NAME="executorch"
 
-report() {
-  if [ $EXIT_STATUS -eq 0 ]; then
-    say "SUCCEEDED"
-  else
-    say "FAILED"
-  fi
-}
-
-cleanup() {
-  if xcrun simctl list | grep -q 'executorch'; then
+finish() {
+  EXIT_STATUS=$?
+  if xcrun simctl list | grep -q "$SIMULATOR_NAME"; then
     say "Deleting Simulator"
-    xcrun simctl delete executorch
+    xcrun simctl delete "$SIMULATOR_NAME"
   fi
-
   if [ -d "$OUTPUT" ]; then
     popd > /dev/null
     say "Deleting Output Directory"
     rm -rf "$OUTPUT"
   fi
-}
-
-finish() {
-  EXIT_STATUS=$?
-  cleanup
-  report
+  if [ $EXIT_STATUS -eq 0 ]; then
+    say "SUCCEEDED"
+  else
+    say "FAILED"
+  fi
+  exit $EXIT_STATUS
 }
 
 trap finish EXIT
@@ -86,31 +81,31 @@ say "Installing MPS Backend Requirements"
 
 say "Exporting Models"
 
-python3 -m examples.portable.scripts.export --model_name="mv3"
-python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name="mv3"
-python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3"
-python3 -m examples.xnnpack.aot_compiler --model_name="mv3" --delegate
+python3 -m examples.portable.scripts.export --model_name="$$MODEL_NAME"
+python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name="$$MODEL_NAME"
+python3 -m examples.apple.mps.scripts.mps_example --model_name="$$MODEL_NAME"
+python3 -m examples.xnnpack.aot_compiler --model_name="$$MODEL_NAME" --delegate
 
-mkdir -p examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
-mv mv3*.pte examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
+mkdir -p "$APP_PATH/Resources/Models/MobileNet/"
+mv $MODEL_NAME*.pte "$APP_PATH/Resources/Models/MobileNet/"
 
 say "Downloading Labels"
 
 curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
-  -o examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/imagenet_classes.txt
+  -o "$APP_PATH/Resources/Models/MobileNet/imagenet_classes.txt"
 
 say "Building Frameworks"
 
 ./build/build_apple_frameworks.sh --buck2="$(realpath .venv/bin/buck2)" --Release --coreml --mps --xnnpack
-mv cmake-out examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Frameworks
+mv cmake-out "$APP_PATH/Frameworks"
 
 say "Creating Simulator"
 
-xcrun simctl create executorch "iPhone 15"
+xcrun simctl create "$SIMULATOR_NAME" "iPhone 15"
 
 say "Running Tests"
 
-xcodebuild clean test \
-  -project examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo.xcodeproj \
-  -scheme App \
-  -destination name=executorch
+xcodebuild test \
+  -project "$APP_PATH.xcodeproj" \
+  -scheme MobileNetClassifierTest \
+  -destination name="$SIMULATOR_NAME"
