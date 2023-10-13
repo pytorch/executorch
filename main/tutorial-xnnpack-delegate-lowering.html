@@ -439,43 +439,44 @@ Before you begin it is recommended you go through the following:</div>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torchvision.models</span> <span class="k">as</span> <span class="nn">models</span>
 
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
 <span class="kn">from</span> <span class="nn">torchvision.models.mobilenetv2</span> <span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
-<span class="kn">from</span> <span class="nn">executorch.examples.portable.utils</span> <span class="kn">import</span> <span class="n">export_to_edge</span>
 <span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span> <span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
 
 
-<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
 
-<span class="n">edge</span> <span class="o">=</span> <span class="n">export_to_edge</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
-
+<span class="n">edge</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">))</span>
 
 <span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>We will go through this example with the MobileNetV2 pretrained model downloaded from the TorchVision library. The flow of lowering a model starts after exporting the model <code class="docutils literal notranslate"><span class="pre">to_edge</span></code>. We call the <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> api with the <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code>. The partitioner identifies the subgraphs suitable for XNNPACK backend delegate to consume. Afterwards, the identified subgraphs will be serialized with the XNNPACK Delegate flatbuffer schema and each subgraph will be replaced with a call to the XNNPACK Delegate.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">edge</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
-<span class="go">class GraphModule(torch.nn.Module):</span>
-<span class="go">        def forward(self, arg314_1: f32[1, 3, 224, 224]):</span>
-<span class="go">            lowered_module_0 = self.lowered_module_0</span>
-<span class="go">            executorch_call_delegate = torch.ops.executorch_call_delegate(lowered_module_0, arg314_1)</span>
-<span class="go">            getitem: f32[1, 1280, 1, 1] = executorch_call_delegate[0]</span>
+<p>We will go through this example with the <a class="reference external" href="https://pytorch.org/hub/pytorch_vision_mobilenet_v2/">MobileNetV2</a> pretrained model downloaded from the TorchVision library. The flow of lowering a model starts after exporting the model <code class="docutils literal notranslate"><span class="pre">to_edge</span></code>. We call the <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> api with the <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code>. The partitioner identifies the subgraphs suitable for XNNPACK backend delegate to consume. Afterwards, the identified subgraphs will be serialized with the XNNPACK Delegate flatbuffer schema and each subgraph will be replaced with a call to the XNNPACK Delegate.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">edge</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
+<span class="go">GraphModule(</span>
+<span class="go">  (lowered_module_0): LoweredBackendModule()</span>
+<span class="go">  (lowered_module_1): LoweredBackendModule()</span>
+<span class="go">)</span>
 
-<span class="go">            aten_view_copy_default: f32[1, 1280] = executorch_exir_dialects_edge__ops_aten_view_copy_default(getitem, [1, 1280])</span>
-
-<span class="go">            aten_clone_default: f32[1, 1280] = executorch_exir_dialects_edge__ops_aten_clone_default(aten_view_copy_default)</span>
-
-<span class="go">            lowered_module_1 = self.lowered_module_1</span>
-<span class="go">            executorch_call_delegate_1 = torch.ops.executorch_call_delegate(lowered_module_1, aten_clone_default)</span>
-<span class="go">            getitem_1: f32[1, 1000] = executorch_call_delegate_1[0]</span>
-<span class="go">            return (getitem_1,)</span>
+<span class="go">def forward(self, arg314_1):</span>
+<span class="go">    lowered_module_0 = self.lowered_module_0</span>
+<span class="go">    executorch_call_delegate = torch.ops.executorch_call_delegate(lowered_module_0, arg314_1);  lowered_module_0 = arg314_1 = None</span>
+<span class="go">    getitem = executorch_call_delegate[0];  executorch_call_delegate = None</span>
+<span class="go">    aten_view_copy_default = executorch_exir_dialects_edge__ops_aten_view_copy_default(getitem, [1, 1280]);  getitem = None</span>
+<span class="go">    aten_clone_default = executorch_exir_dialects_edge__ops_aten_clone_default(aten_view_copy_default);  aten_view_copy_default = None</span>
+<span class="go">    lowered_module_1 = self.lowered_module_1</span>
+<span class="go">    executorch_call_delegate_1 = torch.ops.executorch_call_delegate(lowered_module_1, aten_clone_default);  lowered_module_1 = aten_clone_default = None</span>
+<span class="go">    getitem_1 = executorch_call_delegate_1[0];  executorch_call_delegate_1 = None</span>
+<span class="go">    return (getitem_1,)</span>
 </pre></div>
 </div>
 <p>We print the graph after lowering above to show the new nodes that were inserted to call the XNNPACK Delegate. The subgraphs which are being delegated to XNNPACK are the first argument at each call site. It can be observed that the majority of <code class="docutils literal notranslate"><span class="pre">convolution-relu-add</span></code> blocks and <code class="docutils literal notranslate"><span class="pre">linear</span></code> blocks were able to be delegated to XNNPACK. We can also see the operators which were not able to be lowered to the XNNPACK delegate, such as <code class="docutils literal notranslate"><span class="pre">clone</span></code> and <code class="docutils literal notranslate"><span class="pre">view_copy</span></code>.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.examples.portable.utils</span> <span class="kn">import</span> <span class="n">save_pte_program</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
-<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
-<span class="n">save_pte_program</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">,</span> <span class="s2">&quot;xnnpack_mobilenetv2.pte&quot;</span><span class="p">)</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;xnnpack_mobilenetv2.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>After lowering to the XNNPACK Program, we can then prepare it for executorch and save the model as a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. <code class="docutils literal notranslate"><span class="pre">.pte</span></code> is a binary format that stores the serialized ExecuTorch graph.</p>
@@ -483,35 +484,56 @@ Before you begin it is recommended you go through the following:</div>
 <div class="section" id="lowering-a-quantized-model-to-xnnpack">
 <h2>Lowering a Quantized Model to XNNPACK<a class="headerlink" href="#lowering-a-quantized-model-to-xnnpack" title="Permalink to this headline">¶</a></h2>
 <p>The XNNPACK delegate can also execute symmetrically quantized models. To understand the quantization flow and learn how to quantize models, refer to <a class="reference internal" href="quantization-custom-quantization.html"><span class="doc std std-doc">Custom Quantization</span></a> note. For the sake of this tutorial, we will leverage the <code class="docutils literal notranslate"><span class="pre">quantize()</span></code> python helper function conveniently added to the <code class="docutils literal notranslate"><span class="pre">executorch/executorch/examples</span></code> folder.</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch._export</span> <span class="k">as</span> <span class="nn">export</span>
-<span class="kn">from</span> <span class="nn">executorch.examples.xnnpack.quantization.utils</span> <span class="kn">import</span> <span class="n">quantize</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch._export</span> <span class="kn">import</span> <span class="n">capture_pre_autograd_graph</span>
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span>
 
-<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
 
-<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">export</span><span class="o">.</span><span class="n">capture_pre_autograd_graph</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span> <span class="c1"># 2-stage export for quantization path</span>
+<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">capture_pre_autograd_graph</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span> <span class="c1"># 2-stage export for quantization path</span>
+
+<span class="kn">from</span> <span class="nn">torch.ao.quantization.quantize_pt2e</span> <span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
+<span class="kn">from</span> <span class="nn">torch.ao.quantization.quantizer.xnnpack_quantizer</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_symmetric_quantization_config</span><span class="p">,</span>
+    <span class="n">XNNPACKQuantizer</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">quantize</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This is the official recommended flow for quantization in pytorch 2.0 export&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Original model: </span><span class="si">{</span><span class="n">model</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">quantizer</span> <span class="o">=</span> <span class="n">XNNPACKQuantizer</span><span class="p">()</span>
+    <span class="c1"># if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel</span>
+    <span class="n">operator_config</span> <span class="o">=</span> <span class="n">get_symmetric_quantization_config</span><span class="p">(</span><span class="n">is_per_channel</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">operator_config</span><span class="p">)</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
+    <span class="c1"># calibration</span>
+    <span class="n">m</span><span class="p">(</span><span class="o">*</span><span class="n">example_inputs</span><span class="p">)</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Quantized model: </span><span class="si">{</span><span class="n">m</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="c1"># make sure we can export to flat buffer</span>
+    <span class="k">return</span> <span class="n">m</span>
+
 <span class="n">quantized_mobilenetv2</span> <span class="o">=</span> <span class="n">quantize</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>Quantization requires a two stage export. First we use the <code class="docutils literal notranslate"><span class="pre">capture_pre_autograd_graph</span></code> API to capture the model before giving it to <code class="docutils literal notranslate"><span class="pre">quantize</span></code> utility function. After performing the quantization step, we can now leverage the XNNPACK delegate to lower the quantized exported model graph. From here, the procedure is the same as for the non-quantized model lowering to XNNPACK.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Continued from earlier...</span>
-<span class="n">edge</span> <span class="o">=</span> <span class="n">export_to_edge</span><span class="p">(</span>
-    <span class="n">quantized_mobilenetv2</span><span class="p">,</span>
-    <span class="n">example_inputs</span><span class="p">,</span>
-    <span class="n">edge_compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="p">)</span>
+<span class="n">edge</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">quantized_mobilenetv2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">),</span> <span class="n">compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+
 <span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">)</span>
 
 <span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
-<span class="n">save_pte_program</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">,</span> <span class="s2">&quot;qs8_xnnpack_mobilenetv2.pte&quot;</span><span class="p">)</span>
+
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;qs8_xnnpack_mobilenetv2.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
 <div class="section" id="lowering-with-aot-compiler-py-script">
 <h2>Lowering with <code class="docutils literal notranslate"><span class="pre">aot_compiler.py</span></code> script<a class="headerlink" href="#lowering-with-aot-compiler-py-script" title="Permalink to this headline">¶</a></h2>
 <p>We have also provided a script to quickly lower and export a few example models. You can run the script to generate lowered fp32 and quantized models. This script is used simply for convenience and performs all the same steps as those listed in the previous two sections.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">xnnpack</span><span class="o">.</span><span class="n">aot_compiler</span><span class="o">.</span><span class="n">py</span> <span class="o">--</span><span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;mv2&quot;</span> <span class="o">--</span><span class="n">quantize</span> <span class="o">--</span><span class="n">delegate</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">xnnpack</span><span class="o">.</span><span class="n">aot_compiler</span> <span class="o">--</span><span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;mv2&quot;</span> <span class="o">--</span><span class="n">quantize</span> <span class="o">--</span><span class="n">delegate</span>
 </pre></div>
 </div>
 <p>Note in the example above,</p>
@@ -524,7 +546,7 @@ Before you begin it is recommended you go through the following:</div>
 </div>
 <div class="section" id="running-the-xnnpack-model">
 <h2>Running the XNNPACK Model<a class="headerlink" href="#running-the-xnnpack-model" title="Permalink to this headline">¶</a></h2>
-<p>We will use <code class="docutils literal notranslate"><span class="pre">buck2</span></code> to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file with XNNPACK delegate instructions in it on your host platform. You can follow the instructions here to install <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">buck2</span></a>. You can now run it with the prebuilt <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner</span></code> provided in the examples. This will run the model on some sample inputs.</p>
+<p>We will use <code class="docutils literal notranslate"><span class="pre">buck2</span></code> to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file with XNNPACK delegate instructions in it on your host platform. You can follow the instructions here to install <a class="reference internal" href="getting-started-setup.html#building-a-runtime"><span class="std std-doc">buck2</span></a>. You can now run it with the prebuilt <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner</span></code> provided in the examples. This will run the model on some sample inputs.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>buck2<span class="w"> </span>run<span class="w"> </span>examples/backend:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_fp32.pte
 <span class="c1"># or to run the quantized variant</span>
 buck2<span class="w"> </span>run<span class="w"> </span>examples/backend:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_qs8.pte
@@ -533,7 +555,7 @@ buck2<span class="w"> </span>run<span class="w"> </span>examples/backend:xnn_exe
 </div>
 <div class="section" id="building-and-linking-with-the-xnnpack-backend">
 <h2>Building and Linking with the XNNPACK Backend<a class="headerlink" href="#building-and-linking-with-the-xnnpack-backend" title="Permalink to this headline">¶</a></h2>
-<p>You can build the XNNPACK backend <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/targets.bzl#L54">target</a>, and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this <a class="reference internal" href="demo-apps-android.html"><span class="doc std std-doc">resource</span></a> next.</p>
+<p>You can build the XNNPACK backend <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/targets.bzl#L54">BUCK target</a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt#L83">CMake target</a>, and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this <a class="reference internal" href="demo-apps-android.html"><span class="doc std std-doc">resource</span></a> next.</p>
 </div>
 </div>
 
