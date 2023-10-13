@@ -631,7 +631,7 @@ def to_edge(
 
 class EdgeProgramManager:
     """
-    Package of one or more :class:'ExportedPrograms' in Edge dialect. Designed to simplify
+    Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify
     lowering to ExecuTorch.
 
     Allows easy applications of transforms across a collection of exported programs
@@ -692,11 +692,11 @@ class EdgeProgramManager:
 
         Args:
             passes: The passes can either be a list of passes, or a
-            dictionary mapping method names to lists of passes. If it is
-            just a list of passes, all methods in the given EdgeProgramManager
-            will be transformed with the provided passes. If it is a
-            dictionary, only method names specified in the dictionary will be
-            transformed with their corresponding passes.
+                dictionary mapping method names to lists of passes. If it is
+                just a list of passes, all methods in the given EdgeProgramManager
+                will be transformed with the provided passes. If it is a
+                dictionary, only method names specified in the dictionary will be
+                transformed with their corresponding passes.
 
         Returns:
             EdgeProgramManager: A copy of the calling EdgeProgramManager with the
@@ -771,7 +771,7 @@ class EdgeProgramManager:
 
         Args:
             config: An optional argument used to provide greater control over
-            the transformation to the ExecuTorch backend.
+                the transformation to the ExecuTorch backend.
 
         Returns:
             ExecutorchProgramManager: A manager representing the state of the EdgeProgramManager
