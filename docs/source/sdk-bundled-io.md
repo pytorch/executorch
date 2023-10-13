@@ -67,15 +67,13 @@ Here is a flow highlighting how to generate a `BundledProgram` given a PyTorch m
 ```python
 
 import torch
-from executorch import exir
+from torch.export import export
+
 from executorch.bundled_program.config import BundledConfig
 from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import serialize_from_bundled_program_to_flatbuffer
-from executorch.bundled_program.serialize import deserialize_from_flatbuffer_to_bundled_program
 
-
-from executorch.exir import ExecutorchBackendConfig
-from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
+from executorch.exir import to_edge
 
 
 # Step 1: ExecuTorch Program Export
@@ -118,13 +116,14 @@ capture_inputs = {
     for m_name in method_names
 }
 
-# Trace to FX Graph and emit the program
-program = (
-    exir.capture_multiple(model, capture_inputs)
-    .to_edge()
-    .to_executorch()
-    .program
-)
+# Find each method of model needs to be traced my its name, export its FX Graph.
+method_graphs = {
+    m_name: export(getattr(model, m_name), capture_inputs[m_name])
+    for m_name in method_names
+}
+
+# Emit the traced methods into ET Program.
+program = to_edge(method_graphs).to_executorch().executorch_program
 
 # Step 2: Construct BundledConfig
 
@@ -291,11 +290,12 @@ Here's the example of the dtype of test input not meet model's requirement:
 
 ```python
 import torch
-from executorch import exir
-from executorch.exir import ExecutorchBackendConfig
-from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
+from torch.export import export
+
 from executorch.bundled_program.config import BundledConfig
 from executorch.bundled_program.core import create_bundled_program
+
+from executorch.exir import to_edge
 
 
 class Module(torch.nn.Module):
@@ -318,16 +318,14 @@ method_names = ['forward']
 inputs = torch.ones(2, 2, dtype=torch.float)
 print(model(inputs))
 
-# Trace to FX Graph.
-program = (
-    exir.capture(model, (inputs,))
-    .to_edge()
-    .to_executorch(
-        config=ExecutorchBackendConfig(
-            memory_planning_pass=MemoryPlanningPass(), to_out_var_pass=ToOutVarPass()
-        )
-    ).program
-)
+# Find each method of model needs to be traced my its name, export its FX Graph.
+method_graphs = {
+    m_name: export(getattr(model, m_name), (inputs, ))
+    for m_name in method_names
+}
+
+# Emit the traced methods into ET Program.
+program = to_edge(method_graphs).to_executorch().executorch_program
 
 
 # number of input sets to be verified
@@ -416,11 +414,12 @@ Another common error would be the method name in `BundledConfig` does not exist 
 
 ```python
 import torch
-from executorch import exir
-from executorch.exir import ExecutorchBackendConfig
-from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
+from torch.export import export
+
 from executorch.bundled_program.config import BundledConfig
 from executorch.bundled_program.core import create_bundled_program
+
+from executorch.exir import to_edge
 
 
 
@@ -440,23 +439,18 @@ class Module(torch.nn.Module):
 
 model = Module()
 
-# NOTE: wrong_forward is not an inference method in the above model.
-method_names = ['wrong_forward']
+method_names = ['forward']
 
 inputs = torch.ones(2, 2, dtype=torch.float)
-print(model(inputs))
 
-# Trace to FX Graph.
-program = (
-    exir.capture(model, (inputs,))
-    .to_edge()
-    .to_executorch(
-        config=ExecutorchBackendConfig(
-            memory_planning_pass=MemoryPlanningPass(), to_out_var_pass=ToOutVarPass()
-        )
-    ).program
-)
+# Find each method of model needs to be traced my its name, export its FX Graph.
+method_graphs = {
+    m_name: export(getattr(model, m_name), (inputs, ))
+    for m_name in method_names
+}
 
+# Emit the traced methods into ET Program.
+program = to_edge(method_graphs).to_executorch().executorch_program
 
 # Number of input sets to be verified
 n_input = 10
@@ -476,7 +470,11 @@ expected_outpus = [
     [[model(*x)] for x in inputs[0]]
 ]
 
-bundled_config = BundledConfig(method_names, inputs, expected_outpus)
+
+# NOTE: MISSING_METHOD_NAME is not an inference method in the above model.
+wrong_method_names = ['MISSING_METHOD_NAME']
+
+bundled_config = BundledConfig(wrong_method_names, inputs, expected_outpus)
 
 bundled_program = create_bundled_program(program, bundled_config)
 
@@ -518,6 +516,6 @@ File /executorch/bundled_program/core.py:147, in assert_valid_bundle(program, bu
     150      but {str(method_name_of_bundled_config - method_name_of_program)} does not include."
     152 # check if  has been sorted in ascending alphabetical order of method name.
     153 for bp_plan_id in range(1, len(bundled_config.execution_plan_tests)):
-AssertionError: All method names in bundled config should be found in program.execution_plan,          but {'wrong_forward'} does not include.
+AssertionError: All method names in bundled config should be found in program.execution_plan,          but {'MISSING_METHOD_NAME'} does not include.
 ```
 :::
