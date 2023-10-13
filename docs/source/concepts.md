@@ -36,7 +36,11 @@ A specific hardware (like GPU, NPU) or a software stack (like XNNPACK) that cons
 
 Backend dialect is the result of exporting Edge dialect to specific backend. It’s target-aware, and may contain operators or submodules that are only meaningful to the target backend. This dialect allows the introduction of target-specific operators that do not conform to the schema defined in the Core ATen Operator Set and are not shown in ATen or Edge Dialect.
 
-## [Backend Specific Operator]
+## Backend registry
+
+A table mapping backend names to backend interfaces. This allows backends to be called via name during runtime.
+
+## Backend Specific Operator
 
 These are operators that are not part of ATen dialect or Edge dialect. Backend specific operators are only introduced by passes that happen after Edge dialect (see Backend dialect). These operators are specific to the target backend and will generally execute faster.
 
@@ -47,6 +51,10 @@ An open-source, large scale build system. Used to build ExecuTorch.
 ## [CMake](https://cmake.org/)
 
 An open-source, cross-platform family of tools designed to build, test and package software. Used to build ExecuTorch.
+
+## Codegen
+
+In ExecuTorch, code generation is used to generate the [kernel registration library](./kernel-library-selective_build.md).
 
 ## Core ATen Dialect
 
@@ -122,11 +130,15 @@ An ExecuTorch `Program` maps string names like `forward` to specific ExecuTorch 
 
 ## executor_runner
 
-The ExecuTorch runtime that executes the exported PyTorch model on-device.
+A sample wrapper around the ExecuTorch runtime which includes all the operators and backends.
 
 ## [EXIR](./ir-exir.md)
 
 The **EX**port **I**ntermediate **R**epresentation (IR) from `torch.export`. Contains the computational graph of the model. All EXIR graphs are valid [FX graphs](https://pytorch.org/docs/stable/fx.html#torch.fx.Graph).
+
+## `ExportedProgram`
+
+The output of `torch.export` that bundles the computational graph of a PyTorch model (usually an `nn.Module`) with the parameters or weights that the model consumes.
 
 ## [flatbuffer](https://github.com/google/flatbuffers)
 
@@ -135,6 +147,10 @@ Memory efficient, cross platform serialization library. In the context of ExecuT
 ## Framework tax
 
 The cost of various loading and initialization tasks (not inference). For example; loading a program, initializing executor, kernel and backend-delegate dispatch, and runtime memory utilization.
+
+## Functional ATen operators
+
+ATen operators that do not have any side effects.
 
 ## [Graph](./ir-exir.md)
 
@@ -156,6 +172,11 @@ A representation of a program between the source and target languages. Generally
 
 An implementation of an operator. There can be multiple implementations of an operator for different backends/inputs/etc.
 
+
+## Kernel registry / Operator registry
+
+A table with mappings between kernel names and their implementations. This allows the ExecuTorch runtime to resolve references to kernels during execution.
+
 ## Lowering
 
 The process of transforming a model to run on various backends. It is called 'lowering' as it is moving code closer to the hardware. In ExecuTorch, lowering is performed as part of backend delegation.
@@ -176,9 +197,11 @@ Function on tensors. This is the abstraction; kernels are the implementation. Th
 
 Operator fusion is the process of combining multiple operators into a single compound operator, resulting in faster computation due to fewer kernel launches and fewer memory read/writes. This is a performance advantage of graph mode vs eager mode.
 
-## Operator registration
+## Out variant
 
-Operators need to be registered with the ExecuTorch runtime. This allows the compiler to resolve references to the operator in code.
+Instead of allocating returned tensors in kernel implementations, an operator's out variant will take in a pre-allocated tensor to its out kwarg, and store the result there.
+
+This makes it easier for memory planners to perform tensor lifetime analysis. In ExecuTorch, an out variant pass is performed before memory planning.
 
 ## [PAL (Platform Abstraction Layer)](./runtime-platform-abstraction-layer.md)
 
