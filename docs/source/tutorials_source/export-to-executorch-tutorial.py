@@ -45,7 +45,7 @@ Exporting to ExecuTorch Tutorial
 # Install ExecuTorch from source. If cloning is failing on Google Colab, make
 # sure Colab -> Setting -> Github -> Access Private Repo is checked::
 #
-#       !git clone https://{github_username}:{token}@github.com/pytorch/executorch.git
+#       !git clone --branch v0.1.0 https://{github_username}:{token}@github.com/pytorch/executorch.git
 #       !cd executorch && bash ./install_requirements.sh
 
 ######################################################################

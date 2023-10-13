@@ -14,8 +14,8 @@ allow you to export your PyTorch model to a flatbuffer file using ExecuTorch.
 
 ```bash
 # Do one of these, depending on how your auth is set up
-git clone https://github.com/pytorch/executorch.git
-git clone git@github.com:pytorch/executorch.git
+git clone --branch v0.1.0 https://github.com/pytorch/executorch.git
+git clone --branch v0.1.0 git@github.com:pytorch/executorch.git
 ```
 
 Ensure that git has fetched and updated the submodules. This is necessary
