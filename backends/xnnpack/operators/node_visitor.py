@@ -307,6 +307,18 @@ class NodeVisitor:
             dq_datatype=dq_dtype,
         )
 
+        # Override the quant params axis since we have
+        # updated the weights for depthwise, with that the out_channels dim
+        # will be dims[3] instead of dims[0]. Let's update the per_channel
+        # quant axis to match the new weight tensor before serializing
+        if swap_nc_for_depthwise_weights and (
+            quant_params and quant_params.per_channel
+        ):
+            if quant_params.axis == 0:
+                quant_params.axis = len(dims) - 1
+            else:
+                assert f"Unsupported weight per channel quantization axis for depthwise conv2d: {quant_params.axis}, expecting 0."
+
         ser_val = (
             XValue(xvalue_union=tvalue)
             if quant_params is None or quant_params.is_dynamic
