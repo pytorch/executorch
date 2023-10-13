@@ -78,6 +78,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    getting-started-architecture
    getting-started-setup
+   getting-started-build-and-cross-compilation
 
 .. toctree::
    :glob:
@@ -140,7 +141,6 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    runtime-overview
-   runtime-build-and-cross-compilation
    runtime-backend-delegate-implementation-and-linking
    runtime-custom-memory-allocator
    runtime-error-handling
