@@ -89,7 +89,7 @@ Topics in this section will help you get started with ExecuTorch.
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
    examples-end-to-end-to-lower-model-to-delegate
-   build-run-ios-demo
+   demo-apps-ios
    demo-apps-android
    build-run-xtensa
    build-run-qualcomm-ai-engine-direct-backend
