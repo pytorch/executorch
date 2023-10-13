@@ -520,15 +520,13 @@ expected_outputs should be the same as the size of inputs and provided method_na
 <p>Here is a flow highlighting how to generate a <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> given a PyTorch model and the representative inputs we want to test it along with.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span>
 <span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">from</span> <span class="nn">executorch</span> <span class="kn">import</span> <span class="n">exir</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
+
 <span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">BundledConfig</span>
 <span class="kn">from</span> <span class="nn">executorch.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
 <span class="kn">from</span> <span class="nn">executorch.bundled_program.serialize</span> <span class="kn">import</span> <span class="n">serialize_from_bundled_program_to_flatbuffer</span>
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.serialize</span> <span class="kn">import</span> <span class="n">deserialize_from_flatbuffer_to_bundled_program</span>
 
-
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">ExecutorchBackendConfig</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes</span> <span class="kn">import</span> <span class="n">MemoryPlanningPass</span><span class="p">,</span> <span class="n">ToOutVarPass</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
 
 
 <span class="c1"># Step 1: ExecuTorch Program Export</span>
@@ -571,13 +569,14 @@ expected_outputs should be the same as the size of inputs and provided method_na
     <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
 <span class="p">}</span>
 
-<span class="c1"># Trace to FX Graph and emit the program</span>
-<span class="n">program</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">exir</span><span class="o">.</span><span class="n">capture_multiple</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">capture_inputs</span><span class="p">)</span>
-    <span class="o">.</span><span class="n">to_edge</span><span class="p">()</span>
-    <span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
-    <span class="o">.</span><span class="n">program</span>
-<span class="p">)</span>
+<span class="c1"># Find each method of model needs to be traced my its name, export its FX Graph.</span>
+<span class="n">method_graphs</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">m_name</span><span class="p">:</span> <span class="n">export</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">),</span> <span class="n">capture_inputs</span><span class="p">[</span><span class="n">m_name</span><span class="p">])</span>
+    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+<span class="p">}</span>
+
+<span class="c1"># Emit the traced methods into ET Program.</span>
+<span class="n">program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graphs</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span><span class="o">.</span><span class="n">executorch_program</span>
 
 <span class="c1"># Step 2: Construct BundledConfig</span>
 
@@ -794,11 +793,12 @@ If the function has a return type:
 <p>Each inference method of PyTorch model has its own requirement for the inputs, like number of input, the dtype of each input, etc. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> will raise error if test input not meet the requirement.</p>
 <p>Here’s the example of the dtype of test input not meet model’s requirement:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">from</span> <span class="nn">executorch</span> <span class="kn">import</span> <span class="n">exir</span>
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">ExecutorchBackendConfig</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes</span> <span class="kn">import</span> <span class="n">MemoryPlanningPass</span><span class="p">,</span> <span class="n">ToOutVarPass</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
+
 <span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">BundledConfig</span>
 <span class="kn">from</span> <span class="nn">executorch.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
+
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
 
 
 <span class="k">class</span> <span class="nc">Module</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
@@ -821,16 +821,14 @@ If the function has a return type:
 <span class="n">inputs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">model</span><span class="p">(</span><span class="n">inputs</span><span class="p">))</span>
 
-<span class="c1"># Trace to FX Graph.</span>
-<span class="n">program</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="p">(</span><span class="n">inputs</span><span class="p">,))</span>
-    <span class="o">.</span><span class="n">to_edge</span><span class="p">()</span>
-    <span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
-        <span class="n">config</span><span class="o">=</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span>
-            <span class="n">memory_planning_pass</span><span class="o">=</span><span class="n">MemoryPlanningPass</span><span class="p">(),</span> <span class="n">to_out_var_pass</span><span class="o">=</span><span class="n">ToOutVarPass</span><span class="p">()</span>
-        <span class="p">)</span>
-    <span class="p">)</span><span class="o">.</span><span class="n">program</span>
-<span class="p">)</span>
+<span class="c1"># Find each method of model needs to be traced my its name, export its FX Graph.</span>
+<span class="n">method_graphs</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">m_name</span><span class="p">:</span> <span class="n">export</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">),</span> <span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="p">))</span>
+    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+<span class="p">}</span>
+
+<span class="c1"># Emit the traced methods into ET Program.</span>
+<span class="n">program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graphs</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span><span class="o">.</span><span class="n">executorch_program</span>
 
 
 <span class="c1"># number of input sets to be verified</span>
@@ -921,11 +919,12 @@ Raised Error<div class="sd-summary-down docutils">
 <h3>Method name in <code class="docutils literal notranslate"><span class="pre">BundleConfig</span></code> does not exist.<a class="headerlink" href="#method-name-in-bundleconfig-does-not-exist" title="Permalink to this headline">¶</a></h3>
 <p>Another common error would be the method name in <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code> does not exist in Model. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> will raise error and show the non-exist method name:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">from</span> <span class="nn">executorch</span> <span class="kn">import</span> <span class="n">exir</span>
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">ExecutorchBackendConfig</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.passes</span> <span class="kn">import</span> <span class="n">MemoryPlanningPass</span><span class="p">,</span> <span class="n">ToOutVarPass</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
+
 <span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">BundledConfig</span>
 <span class="kn">from</span> <span class="nn">executorch.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
+
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
 
 
 
@@ -945,23 +944,18 @@ Raised Error<div class="sd-summary-down docutils">
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">Module</span><span class="p">()</span>
 
-<span class="c1"># NOTE: wrong_forward is not an inference method in the above model.</span>
-<span class="n">method_names</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;wrong_forward&#39;</span><span class="p">]</span>
+<span class="n">method_names</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;forward&#39;</span><span class="p">]</span>
 
 <span class="n">inputs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">model</span><span class="p">(</span><span class="n">inputs</span><span class="p">))</span>
 
-<span class="c1"># Trace to FX Graph.</span>
-<span class="n">program</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="p">(</span><span class="n">inputs</span><span class="p">,))</span>
-    <span class="o">.</span><span class="n">to_edge</span><span class="p">()</span>
-    <span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
-        <span class="n">config</span><span class="o">=</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span>
-            <span class="n">memory_planning_pass</span><span class="o">=</span><span class="n">MemoryPlanningPass</span><span class="p">(),</span> <span class="n">to_out_var_pass</span><span class="o">=</span><span class="n">ToOutVarPass</span><span class="p">()</span>
-        <span class="p">)</span>
-    <span class="p">)</span><span class="o">.</span><span class="n">program</span>
-<span class="p">)</span>
+<span class="c1"># Find each method of model needs to be traced my its name, export its FX Graph.</span>
+<span class="n">method_graphs</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">m_name</span><span class="p">:</span> <span class="n">export</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">),</span> <span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="p">))</span>
+    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+<span class="p">}</span>
 
+<span class="c1"># Emit the traced methods into ET Program.</span>
+<span class="n">program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graphs</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span><span class="o">.</span><span class="n">executorch_program</span>
 
 <span class="c1"># Number of input sets to be verified</span>
 <span class="n">n_input</span> <span class="o">=</span> <span class="mi">10</span>
@@ -981,7 +975,11 @@ Raised Error<div class="sd-summary-down docutils">
     <span class="p">[[</span><span class="n">model</span><span class="p">(</span><span class="o">*</span><span class="n">x</span><span class="p">)]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
 <span class="p">]</span>
 
-<span class="n">bundled_config</span> <span class="o">=</span> <span class="n">BundledConfig</span><span class="p">(</span><span class="n">method_names</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">expected_outpus</span><span class="p">)</span>
+
+<span class="c1"># NOTE: MISSING_METHOD_NAME is not an inference method in the above model.</span>
+<span class="n">wrong_method_names</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;MISSING_METHOD_NAME&#39;</span><span class="p">]</span>
+
+<span class="n">bundled_config</span> <span class="o">=</span> <span class="n">BundledConfig</span><span class="p">(</span><span class="n">wrong_method_names</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">expected_outpus</span><span class="p">)</span>
 
 <span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
 
@@ -1027,7 +1025,7 @@ Raised Error<div class="sd-summary-down docutils">
 <span class="s2">    150      but </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">method_name_of_bundled_config</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">method_name_of_program</span><span class="p">)</span><span class="si">}</span><span class="s2"> does not include.&quot;</span>
     <span class="mi">152</span> <span class="c1"># check if  has been sorted in ascending alphabetical order of method name.</span>
     <span class="mi">153</span> <span class="k">for</span> <span class="n">bp_plan_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">bundled_config</span><span class="o">.</span><span class="n">execution_plan_tests</span><span class="p">)):</span>
-<span class="ne">AssertionError</span><span class="p">:</span> <span class="n">All</span> <span class="n">method</span> <span class="n">names</span> <span class="ow">in</span> <span class="n">bundled</span> <span class="n">config</span> <span class="n">should</span> <span class="n">be</span> <span class="n">found</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">,</span>          <span class="n">but</span> <span class="p">{</span><span class="s1">&#39;wrong_forward&#39;</span><span class="p">}</span> <span class="n">does</span> <span class="ow">not</span> <span class="n">include</span><span class="o">.</span>
+<span class="ne">AssertionError</span><span class="p">:</span> <span class="n">All</span> <span class="n">method</span> <span class="n">names</span> <span class="ow">in</span> <span class="n">bundled</span> <span class="n">config</span> <span class="n">should</span> <span class="n">be</span> <span class="n">found</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">,</span>          <span class="n">but</span> <span class="p">{</span><span class="s1">&#39;MISSING_METHOD_NAME&#39;</span><span class="p">}</span> <span class="n">does</span> <span class="ow">not</span> <span class="n">include</span><span class="o">.</span>
 </pre></div>
 </div>
 </div>
