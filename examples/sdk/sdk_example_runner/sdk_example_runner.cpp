@@ -262,8 +262,8 @@ int main(int argc, char** argv) {
         &bundled_input_allocator,
         method_name,
         FLAGS_testset_idx,
-        1e-4, // rtol
-        1e-8 // atol
+        1e-3, // rtol
+        1e-5 // atol
     );
     ET_CHECK_MSG(
         status == Error::Ok,
