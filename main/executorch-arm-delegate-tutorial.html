@@ -258,7 +258,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-build-and-cross-compilation.html">Building with CMake</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul class="current">
@@ -418,7 +418,7 @@ Tutorials we recommend you complete before this:</div>
 <ul class="simple">
 <li><p class="sd-card-text"><a class="reference internal" href="intro-how-it-works.html"><span class="doc std std-doc">Introduction to ExecuTorch</span></a></p></li>
 <li><p class="sd-card-text"><a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a></p></li>
-<li><p class="sd-card-text"><span class="xref myst">Building ExecuTorch with CMake</span></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="runtime-build-and-cross-compilation.html"><span class="doc std std-doc">Building ExecuTorch with CMake</span></a></p></li>
 </ul>
 </div>
 </div>
@@ -715,7 +715,7 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 <div class="section" id="generating-executorch-libraries">
 <h3>Generating ExecuTorch Libraries<a class="headerlink" href="#generating-executorch-libraries" title="Permalink to this headline">¶</a></h3>
 <p>ExecuTorch’s CMake build system produces a set of build pieces which are critical for us to include and run the ExecuTorch runtime with-in the bare-metal environment we have for Corstone-300 from Ethos-U SDK.</p>
-<p><span class="xref myst">This</span> document provides a detailed overview of each individual build piece. For running either variant of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, we will need a core set of libraries. Here is a list,</p>
+<p><a class="reference internal" href="runtime-build-and-cross-compilation.html"><span class="doc std std-doc">This</span></a> document provides a detailed overview of each individual build piece. For running either variant of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, we will need a core set of libraries. Here is a list,</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">libexecutorch.a</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">libportable_kernels.a</span></code></p></li>

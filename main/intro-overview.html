@@ -258,7 +258,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="getting-started-setup.html">Setting Up ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="getting-started-build-and-cross-compilation.html">Building with CMake</a></li>
+<li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
@@ -437,8 +437,8 @@ on performance.</p>
 <p>PyTorch Mobile uses <a class="reference external" href="https://pytorch.org/docs/stable/jit.html">TorchScript</a> to
 allow PyTorch models to run on devices with limited resources. ExecuTorch has a
 significantly smaller memory size and a dynamic memory footprint resulting in
-superior performance compared to PyTorch Mobile. Also, ExecuTorch does not rely
-on TorchScript, and instead leverages PyTorch 2 compiler and export
+superior performance and portability compared to PyTorch Mobile. Also, ExecuTorch
+does not rely on TorchScript, and instead leverages PyTorch 2 compiler and export
 functionality for on-device execution of PyTorch models.</p>
 <p>Read more in-depth technical overview topics about ExecuTorch:</p>
 <ul class="simple">
