@@ -25,12 +25,16 @@ from executorch.exir.schema import Program
 
 from executorch.exir.tracer import Value
 
-from torch._export.exported_program import (
-    CallSpec,
-    ExportedProgram,
-    ExportGraphSignature,
-)
+from torch._export.exported_program import CallSpec, ExportedProgram
 from torch._subclasses import FakeTensor
+from torch.export.exported_program import (
+    ExportGraphSignature,
+    InputKind,
+    InputSpec,
+    OutputKind,
+    OutputSpec,
+    TensorArgument,
+)
 from torch.fx.passes.utils.fuser_utils import (
     erase_nodes,
     fuse_as_graphmodule,
@@ -209,30 +213,37 @@ class LoweredBackendModule(torch.nn.Module):
         lowered_exported_program.graph.lint()
 
         # Users output will be the get items nodes instead
-        lowered_exported_program.graph_signature.user_outputs = [
-            getitem_node.name for getitem_node in getitem_nodes
+        output_specs = [
+            OutputSpec(
+                kind=OutputKind.USER_OUTPUT,
+                arg=TensorArgument(name=getitem_node.name),
+                target=None,
+            )
+            for getitem_node in getitem_nodes
         ]
         # All data are consumed by the delegates so they should be removed from the state dict.
         inputs_to_parameters = (
             lowered_exported_program.graph_signature.inputs_to_parameters
         )
         inputs_to_buffers = lowered_exported_program.graph_signature.inputs_to_buffers
-        lowered_exported_program.graph_signature.user_inputs = [
-            user_input
+        input_specs = [
+            InputSpec(
+                kind=InputKind.USER_INPUT,
+                arg=TensorArgument(name=node.name),
+                target=None,
+            )
             for user_input in lowered_exported_program.graph_signature.user_inputs
             if user_input not in inputs_to_parameters
             and user_input not in inputs_to_buffers
         ]
-        lowered_exported_program.graph_signature.buffers = {}
-        lowered_exported_program.graph_signature.parameters = {}
-        lowered_exported_program.graph_signature.inputs_to_parameters = {}
-        lowered_exported_program.graph_signature.inputs_to_buffers = {}
 
         # Double check the ExportedProgram data(especially everything except graph) is good
         exported_program = ExportedProgram(
             root=lowered_exported_program.graph_module,
             graph=lowered_exported_program.graph,
-            graph_signature=lowered_exported_program.graph_signature,
+            graph_signature=ExportGraphSignature(
+                input_specs=input_specs, output_specs=output_specs
+            ),
             # TODO: May need to set lowered_exported_program.call_spec = CallSpec(None, None)
             # somewhere as we should pass it a list of tensors to the lowered module and output a
             # list of tensors. Putting call_spec=lowered_exported_program.call_spec is correct here as the
@@ -347,20 +358,16 @@ def arrange_graph_placeholders(
     return gm
 
 
+# TODO Don't regenerate new signature manually.
 def _get_new_signature(
     original_program: ExportedProgram, gm: torch.fx.GraphModule
 ) -> Tuple[ExportGraphSignature, Dict[str, Union[torch.Tensor, torch.nn.Parameter]]]:
     old_signature = original_program.graph_signature
 
+    input_specs = []
+    output_specs = []
     new_signature = ExportGraphSignature(
-        parameters=[],
-        buffers=[],
-        user_inputs=[],
-        user_outputs=[],
-        inputs_to_parameters={},
-        inputs_to_buffers={},
-        buffers_to_mutate={},
-        backward_signature=None,
+        input_specs=input_specs, output_specs=output_specs
     )
     new_state_dict = {}
 
@@ -369,8 +376,13 @@ def _get_new_signature(
             if node.name in old_signature.inputs_to_parameters:
                 parameter_name = old_signature.inputs_to_parameters[node.name]
                 # add param to graph signature
-                new_signature.parameters.append(parameter_name)
-                new_signature.inputs_to_parameters[node.name] = parameter_name
+                input_specs.append(
+                    InputSpec(
+                        kind=InputKind.PARAMETER,
+                        arg=TensorArgument(name=node.name),
+                        target=parameter_name,
+                    )
+                )
 
                 # add param to state_dict
                 new_state_dict[parameter_name] = original_program.state_dict[
@@ -379,17 +391,34 @@ def _get_new_signature(
             elif node.name in old_signature.inputs_to_buffers:
                 buffer_name = old_signature.inputs_to_buffers[node.name]
                 # add buffer to graph signature
-                new_signature.buffers.append(buffer_name)
-                new_signature.inputs_to_buffers[node.name] = buffer_name
+                input_specs.append(
+                    InputSpec(
+                        kind=InputKind.BUFFER,
+                        arg=TensorArgument(name=node.name),
+                        target=buffer_name,
+                    )
+                )
 
                 # add param to new_state_dict
                 new_state_dict[buffer_name] = original_program.state_dict[buffer_name]
             else:
                 # not param or buffer then user input
-                new_signature.user_inputs.append(node.name)
+                input_specs.append(
+                    InputSpec(
+                        kind=InputKind.USER_INPUT,
+                        arg=TensorArgument(name=node.name),
+                        target=None,
+                    )
+                )
         if node.op == "output":
             for output in node.all_input_nodes:
-                new_signature.user_outputs.append(output.name)
+                output_specs.append(
+                    OutputSpec(
+                        kind=OutputKind.USER_OUTPUT,
+                        arg=TensorArgument(name=output.name),
+                        target=None,
+                    )
+                )
 
     return new_signature, new_state_dict
 

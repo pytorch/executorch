@@ -4,10 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch.fx import GraphModule, subgraph_rewriter
 from torch.fx.passes.infra.pass_base import PassResult
+from torch.utils import _pytree as pytree
 
 from ._quant_patterns_and_replacements import get_quant_patterns_and_replacements
 
@@ -89,6 +91,11 @@ def _fuse_quantized_cat(model: GraphModule) -> None:
 
 
 class QuantFusionPass(ExportPass):
+    def __init__(self, _fix_node_meta_val=False):
+        super().__init__()
+        # TODO This pass violate IR spec because it produces a graph missing node.meta['val']
+        self._fix_node_meta_val = _fix_node_meta_val
+
     def call(self, graph_module: GraphModule) -> PassResult:
         """Lower a quantized reference model (with reference quantized operator patterns)
         to executorch backend, that has a canonical set of quantized operators. This pass
@@ -109,6 +116,13 @@ class QuantFusionPass(ExportPass):
             )
 
         _fuse_quantized_cat(graph_module)
+        if self._fix_node_meta_val:
+            for n in graph_module.graph.nodes:
+                if n.op == "call_function" and "val" not in n.meta:
+                    args, kwargs = pytree.tree_map_only(
+                        torch.fx.Node, lambda x: x.meta["val"], (n.args, n.kwargs)
+                    )
+                    n.meta["val"] = n.target(*args, **kwargs)
         graph_module.graph.lint()
         graph_module.graph.eliminate_dead_code()
         return PassResult(graph_module, True)
