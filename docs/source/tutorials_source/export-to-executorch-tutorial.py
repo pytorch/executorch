@@ -105,7 +105,7 @@ print(aten_dialect)
 # - The graph is purely functional, meaning it does not contain operations with
 #   side effects such as mutations or aliasing.
 # - The graph contains only a small defined
-#   `Core ATen IR <https://pytorch.org/docs/stable/ir.html#core-aten-ir>`__
+#   `Core ATen IR <https://pytorch.org/docs/stable/torch.compiler_ir.html#core-aten-ir>`__
 #   operator set (~180 ops), along with registered custom operators.
 # - The nodes in the graph contain metadata captured during tracing, such as a
 #   stacktrace from user's code.
