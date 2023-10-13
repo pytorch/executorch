@@ -458,7 +458,9 @@ class NodeVisitor:
             )
             # Define Weight Node
             weight_node = get_input_node(node, input_type_map.node_weight)
-            weight_quant_params = QuantParams.from_weights(weight_node)
+            weight_quant_params = QuantParams.from_weights(
+                weight_node, self._exported_program
+            )
             self.define_tensor(
                 weight_node,
                 xnn_graph,
