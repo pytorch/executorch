@@ -31,7 +31,7 @@ This is an
 way where we execute each node and recreate the graph except with
 transformations specified. This allows us to preserve the IR Spec by ensuring
 that all nodes created while in the pass meet the IR Spec including ensuring that
-metadata such as stack trace, FakeTensor values, and torch.nn.Module heirarchy
+metadata such as stack trace, FakeTensor values, and torch.nn.Module hierarchy
 are preserved and updated depending on the transformations made.
 
 To implement this pass, we can create a subclass of
