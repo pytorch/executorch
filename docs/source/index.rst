@@ -94,6 +94,7 @@ Topics in this section will help you get started with ExecuTorch.
    build-run-xtensa
    build-run-qualcomm-ai-engine-direct-backend
    build-run-mps
+   build-run-coreml
    tutorials/sdk-integration-tutorial
    executorch-arm-delegate-tutorial
    tutorial-xnnpack-delegate-lowering
@@ -186,23 +187,7 @@ Topics in this section will help you get started with ExecuTorch.
    sdk-profiling
    sdk-inspector
    sdk-delegate-integration
-
-.. toctree::
-   :glob:
-   :maxdepth: 1
-   :caption: Tutorials
-   :hidden:
-
-   tutorials/export-to-executorch-tutorial
-   running-a-model-cpp-tutorial
-   build-run-ios-demo
-   demo-apps-android
-   build-run-xtensa
-   build-run-qualcomm-ai-engine-direct-backend
-   build-run-coreml
-   tutorials/sdk-integration-tutorial
-   executorch-arm-delegate-tutorial
-   tutorial-xnnpack-delegate-lowering
+   sdk-tutorial
 
 Tutorials and Examples
 ~~~~~~~~~~~~~~~~~~~~~~
