@@ -109,10 +109,10 @@ Here we initialize the `XNNPACKQuantizer` and set the quantization config to be 
 
 We can then configure the `XNNPACKQuantizer` as we wish. We set the following configs below as an example:
 ```python
-quantizer.set_global(qconfig_opt)  # qconfig_opt is an optional quantization config
-    .set_object_type(torch.nn.Conv2d, qconfig_opt) # can be a module type
-    .set_object_type(torch.nn.functional.linear, qconfig_opt) # or torch functional op
-    .set_module_name("foo.bar", qconfig_opt)
+quantizer.set_global(quantization_config)
+    .set_object_type(torch.nn.Conv2d, quantization_config) # can configure by module type
+    .set_object_type(torch.nn.functional.linear, quantization_config) # or torch functional op typea
+    .set_module_name("foo.bar", quantization_config)  # or by module fully qualified name
 ```
 
 ### Quantizing your model with the XNNPACKQuantizer
