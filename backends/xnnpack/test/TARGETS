@@ -109,11 +109,9 @@ python_unittest(
 
 python_unittest(
     name = "test_xnnpack_ops",
-    srcs = [
-        "ops/add.py",
-        "ops/conv1d.py",
-        "ops/conv2d.py",
-    ],
+    srcs = glob([
+        "ops/*.py",
+    ]),
     deps = [
         "//caffe2:torch",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
