@@ -42,7 +42,7 @@ To lower edge ops to backend ops, a pass will perform pattern matching to identi
 * `transform()`. An API on ExportProgram that allows users to provide custom passes. Note that this is not guarded by any validator so the soundness of the program is not guaranteed.
 * [ExecutorchBackendConfig.passes](https://github.com/pytorch/executorch/blob/main/exir/capture/_config.py#L40). If added here, the pass will be part of the lowering process from backend dialect to ExecutorchProgram.
 
-Example: one such pass is QuantFusion. This pass takes a "canonical quantization pattern", ie. "dequant - some_op - quant" and fuses this pattern into a single operator that is backend specific, i.e. `quantized_decomposed::some_op`. You can find more details [here](./quantization-custom-quantization.md). Another simpler example is [here](https://github.com/pytorch/executorch/blob/main/exir/passes/replace_edge_with_backend_pass.py#L20) where we replace `sym_size` operators to the ones that are understood by ExecuTorch
+Example: one such pass is QuantFusion. This pass takes a "canonical quantization pattern", ie. "dequant - some_op - quant" and fuses this pattern into a single operator that is backend specific, i.e. `quantized_decomposed::some_op`. Another simpler example is [here](https://github.com/pytorch/executorch/blob/main/exir/passes/replace_edge_with_backend_pass.py#L20) where we replace `sym_size` operators to the ones that are understood by ExecuTorch
 
 
 ### Pattern Binding Decorator

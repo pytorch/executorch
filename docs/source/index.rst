@@ -153,7 +153,7 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Quantization
    :hidden:
 
-   quantization-custom-quantization
+   quantization-overview
 
 .. toctree::
    :glob:
