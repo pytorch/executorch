@@ -40,7 +40,7 @@ struct Args {
     std::string prof_result_path = "prof_result.bin";
     size_t iterations = 1;
     bool purge_models_cache = false;
-    
+
     Args(NSDictionary<NSString *, NSString *> *params) {
         {
             NSString *value = SAFE_CAST(params[@"--model_path"], NSString);
@@ -120,16 +120,16 @@ public:
     DataLoaderImpl(const std::string& filePath)
     :data_(read_data(filePath))
     {}
-    
+
     Result<FreeableBuffer> Load(size_t offset, size_t size) override {
         NSData *subdata = [data_ subdataWithRange:NSMakeRange(offset, size)];
         return FreeableBuffer(subdata.bytes, size, nullptr);
     }
-    
+
     Result<size_t> size() const override {
         return data_.length;
     }
-     
+
 private:
    NSData *data_;
 };
@@ -142,16 +142,16 @@ std::unique_ptr<Program> get_program(NSURL *url) {
     if (!program.ok()) {
         return nullptr;
     }
-    
+
     return std::make_unique<Program>(std::move(program.get()));
 }
-    
+
 Result<std::string> get_method_name(Program *program) {
     const auto methodName = program->get_method_name(0);
     if (!methodName.ok()) {
         return Error::InvalidProgram;
     }
-    
+
     return std::string(methodName.get());
 }
 
@@ -161,7 +161,7 @@ get_planned_buffers(const std::string& method_name, Program *program) {
     if (!method_meta.ok()) {
         return Error::InvalidProgram;
     }
-    
+
     std::vector<std::vector<uint8_t>> buffers;
     buffers.reserve(method_meta->num_memory_planned_buffers());
     for (size_t bufferID = 0; bufferID < method_meta->num_memory_planned_buffers(); ++bufferID) {
@@ -169,17 +169,17 @@ get_planned_buffers(const std::string& method_name, Program *program) {
         std::vector<uint8_t> data(buffer_size.get(), 0);
         buffers.emplace_back(std::move(data));
     }
-    
+
     return buffers;
 }
-   
+
 std::vector<Span<uint8_t>> to_spans(std::vector<Buffer>& buffers) {
     std::vector<Span<uint8_t>> result;
     result.reserve(buffers.size());
     for (auto& buffer : buffers) {
         result.emplace_back(buffer.data(), buffer.size());
     }
-    
+
     return result;
 }
 
@@ -187,7 +187,7 @@ double calculate_mean(const std::vector<double>& durations) {
     if (durations.size() == 0) {
         return 0.0;
     }
-    
+
     return std::accumulate(durations.begin(), durations.end(), 0.0)/durations.size();
 }
 
@@ -215,7 +215,7 @@ Error execute_method(Method *method, size_t n, std::vector<double>& durations) {
         auto diff = current_time - start_time;
         durations.emplace_back(std::chrono::duration<double, std::milli>(diff).count());
     }
-    
+
     return status;
 }
 }
@@ -223,14 +223,14 @@ Error execute_method(Method *method, size_t n, std::vector<double>& durations) {
 int main(int argc, char * argv[]) {
     @autoreleasepool {
         runtime_init();
-        
+
         auto args = parse_command_line_args([[NSProcessInfo processInfo] arguments]);
         if (args.purge_models_cache) {
             ET_LOG(Info, "Purging models cache");
             auto delegate = CoreMLBackendDelegate::get_registered_delegate();
             delegate->purge_models_cache();
         }
-        
+
         if (args.model_path.empty()) {
             ET_LOG(Error, "Model path is empty.");
             return EXIT_FAILURE;
@@ -238,25 +238,25 @@ int main(int argc, char * argv[]) {
 
         NSURL *model_url = [NSURL fileURLWithPath:@(args.model_path.c_str())];
         ET_CHECK_MSG(model_url != nil, "Model path=%s is invalid", args.model_path.c_str());
-        
+
         auto program = get_program(model_url);
         ET_CHECK_MSG(program != nil, "Failed to load program from path=%s", args.model_path.c_str());
-        
+
         auto method_name = get_method_name(program.get());
         ET_CHECK_MSG(method_name.ok(), "Failed to get method name from program=%p", program.get());
-        
+
         auto plannedBuffers = get_planned_buffers(method_name.get(), program.get());
         Buffer method_buffer(kRuntimeMemorySize, 0);
         MemoryAllocator method_allocator(static_cast<int32_t>(method_buffer.size()), method_buffer.data());
         auto spans = to_spans(plannedBuffers.get());
         HierarchicalAllocator planned_allocator(Span<Span<uint8_t>>(reinterpret_cast<Span<uint8_t> *>(spans.data()), spans.size()));
         MemoryManager memory_manager(&method_allocator, &planned_allocator);
-        
+
         auto load_start_time = std::chrono::steady_clock::now();
         auto method = program->load_method(method_name.get().c_str(), &memory_manager);
         auto load_duration = std::chrono::steady_clock::now() - load_start_time;
         ET_LOG(Info, "Load duration = %f",std::chrono::duration<double, std::milli>(load_duration).count());
-        
+
         ET_CHECK_MSG(method_name.ok(), "Failed to load method with name=%s from program=%p", method_name.get().c_str(), program.get());
         ET_LOG(Info, "Running method = %s", method_name.get().c_str());
 
@@ -275,10 +275,9 @@ int main(int argc, char * argv[]) {
         auto outputs = method_allocator.allocateList<EValue>(method->outputs_size());
         status = method->get_outputs(outputs, method->outputs_size());
         ET_CHECK(status == Error::Ok);
-        
+
         dump_profile_data(args.prof_result_path);
         util::FreeInputs(inputs);
         return 0;
     }
-   
 }

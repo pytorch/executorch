@@ -63,7 +63,7 @@ The [`xtensa/`](./xtensa) directory hosts a demo that showcases the process of e
 
 ## Demo of ExecuTorch Apple Backend
 
-You will find demos of [ExecuTorch CoreML Backend](./apple/coreml/) in the [`apple/coreml/`](./apple/coreml) directory. 
+You will find demos of [ExecuTorch CoreML Backend](./apple/coreml/) in the [`apple/coreml/`](./apple/coreml) directory.
 
 ## Demo of ExecuTorch SDK
 

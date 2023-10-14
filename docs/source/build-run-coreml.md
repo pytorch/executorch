@@ -32,7 +32,7 @@ CoreML delegate uses CoreML apis to enable running neural networks via Apple's h
 ::::{grid} 2
 :::{grid-item-card}  What you will learn in this tutorial:
 :class-card: card-prerequisites
-* In this tutorial you will learn how to export [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model so that it runs on CoreML backend. 
+* In this tutorial you will learn how to export [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model so that it runs on CoreML backend.
 * You will also learn how to deploy and run the exported model on a supported Apple device.
 :::
 :::{grid-item-card}  Tutorials we recommend you complete before this:
@@ -56,7 +56,7 @@ In order to be able to successfully build and run the ExecuTorch's CoreML backen
 ### Software:
 
 - [Xcode](https://developer.apple.com/documentation/xcode) >= 14.1, [macOS](https://developer.apple.com/macos) >= 13.0 for building.
-- [macOS](https://developer.apple.com/macos) >= 13.0, [iOS](https://developer.apple.com/ios/) >= 16.0, [iPadOS](https://developer.apple.com/ipados/) >= 16.0, and [tvOS](https://developer.apple.com/tvos/) >= 16.0 for running the model. 
+- [macOS](https://developer.apple.com/macos) >= 13.0, [iOS](https://developer.apple.com/ios/) >= 16.0, [iPadOS](https://developer.apple.com/ipados/) >= 16.0, and [tvOS](https://developer.apple.com/tvos/) >= 16.0 for running the model.
 
 ## Setting up your developer environment
 
@@ -65,7 +65,7 @@ In order to be able to successfully build and run the ExecuTorch's CoreML backen
 
 ```bash
 cd executorch
-sh backends/apple/coreml/scripts/install_requirements.sh   
+sh backends/apple/coreml/scripts/install_requirements.sh
 ```
 3. Install [Xcode](https://developer.apple.com/xcode/).
 4. Install Xcode Command Line Tools.
@@ -80,12 +80,12 @@ xcode-select --install
 
 
 **Exporting a CoreML delegated Program**:
-- In this step, you will lower the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to the CoreML backend and export the ExecuTorch program. You'll then deploy and run the exported program on a supported Apple device using CoreML backend. 
+- In this step, you will lower the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to the CoreML backend and export the ExecuTorch program. You'll then deploy and run the exported program on a supported Apple device using CoreML backend.
 ```bash
 cd executorch
 
 # Generates ./mv3_coreml_all.pte file.
-python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name mv3 
+python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name mv3
 ```
 
 - CoreML backend uses [coremltools](https://apple.github.io/coremltools/docs-guides/source/overview-coremltools.html) to lower [Edge dialect](ir-exir.md#edge-dialect) to CoreML format and then bundles it in the `.pte` file.
@@ -137,7 +137,7 @@ cd executorch
 - libsqlite3.tbd
 ```
 5. Add the exported program to the [Copy Bundle Phase](https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target#Copy-files-to-the-finished-product) of your Xcode target.
- 
+
 6. Please follow the [running a model](running-a-model-cpp-tutorial.md) tutorial to integrate the code for loading a ExecuTorch program.
 
 7. Update the code to load the program from the Application's bundle.
@@ -151,9 +151,9 @@ Result<util::FileDataLoader> loader =
 
 ```
 
-8. Use [Xcode](https://developer.apple.com/documentation/xcode/building-and-running-an-app#Build-run-and-debug-your-app) to deploy the application on the device. 
+8. Use [Xcode](https://developer.apple.com/documentation/xcode/building-and-running-an-app#Build-run-and-debug-your-app) to deploy the application on the device.
 
-9. The application can now run the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model on the CoreML backend.  
+9. The application can now run the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model on the CoreML backend.
 
 <br>In this tutorial, you have learned how to lower the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to the CoreML backend, deploy, and run it on an Apple device.
 

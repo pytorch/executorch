@@ -136,7 +136,7 @@ jobs:
         # Build and test iOS Demo App
         PYTHON_EXECUTABLE=python sh build/test_ios_ci.sh
         popd
-    
+
   test-coreml-delegate:
     name: test-coreml-delegate
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -158,7 +158,7 @@ jobs:
         BUILD_TOOL=${{ matrix.build-tool }}
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
-       
+
         # Build and test coreml delegate
         PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/install_requirements_internal.sh
         PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/build_tests.sh
