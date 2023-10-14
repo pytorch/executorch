@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Custom Quantization &mdash; ExecuTorch  documentation</title>
+  <title>Quantization Overview &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -305,7 +305,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Custom Quantization</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Quantization Overview</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
@@ -367,13 +367,13 @@
       </li>
 
         
-      <li>Custom Quantization</li>
+      <li>Quantization Overview</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/quantization-custom-quantization.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/quantization-overview.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -405,9 +405,16 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="custom-quantization">
-<h1>Custom Quantization<a class="headerlink" href="#custom-quantization" title="Permalink to this headline">¶</a></h1>
-<p>TBA</p>
+  <div class="section" id="quantization-overview">
+<h1>Quantization Overview<a class="headerlink" href="#quantization-overview" title="Permalink to this headline">¶</a></h1>
+<p>Quantization is a process that reduces the precision of computations and lowers memory footprint in the model. To learn more, please visit the <a class="reference internal" href="concepts.html#quantization"><span class="std std-doc">ExecuTorch concepts page</span></a>. This is particularly useful for edge devices, which typically have limited resources such as processing power, memory, and battery life. By using quantization, we can make our models more efficient and enable them to run effectively on these devices.</p>
+<p>In terms of flow, quantization happens early in the ExecuTorch stack:</p>
+<p><img alt="ExecuTorch Entry Points" src="_images/executorch-entry-points.png" />.</p>
+<p>A more detailed workflow can be found in the <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">ExecuTorch tutorial</span></a>.</p>
+<p>Quantization is usually tied to execution backends that have quantized operators implemented. Thus each backend is opinionated about how the model should be quantized, expressed in a backend specific <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> class. <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> provides API for modeling users in terms of how they want their model to be quantized and also passes on the user intention to quantization workflow.</p>
+<p>Backend developers will need to implement their own <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> to express how different operators or operator patterns are quantized in their backend. This is accomplished via <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quantizer.html">Annotation API</a> provided by quantization workflow. Since Quantizer is also user facing, it will expose specific APIs for modeling users to configure how they want the model to be quantized. Each backend should provide their own API documentation for their <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code>.</p>
+<p>Modeling user will use the <code class="docutils literal notranslate"><span class="pre">Quantizer</span></code> specific to their target backend to quantize their model, e.g. <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code>.</p>
+<p>For an example quantization flow with <code class="docutils literal notranslate"><span class="pre">XNPACKQuantizer</span></code>, more docuemntations and tutorials, please see <code class="docutils literal notranslate"><span class="pre">Performing</span> <span class="pre">Quantization</span></code> section in <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">ExecuTorch tutorial</span></a>.</p>
 </div>
 
 
@@ -455,7 +462,7 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Custom Quantization</a></li>
+<li><a class="reference internal" href="#">Quantization Overview</a></li>
 </ul>
 
             </div>

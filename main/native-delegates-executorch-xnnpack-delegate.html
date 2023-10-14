@@ -305,7 +305,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="quantization-custom-quantization.html">Custom Quantization</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
@@ -536,10 +536,10 @@
 </li>
 </ul>
 <p>We can then configure the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code> as we wish. We set the following configs below as an example:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">qconfig_opt</span><span class="p">)</span>  <span class="c1"># qconfig_opt is an optional quantization config</span>
-    <span class="o">.</span><span class="n">set_object_type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">,</span> <span class="n">qconfig_opt</span><span class="p">)</span> <span class="c1"># can be a module type</span>
-    <span class="o">.</span><span class="n">set_object_type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">functional</span><span class="o">.</span><span class="n">linear</span><span class="p">,</span> <span class="n">qconfig_opt</span><span class="p">)</span> <span class="c1"># or torch functional op</span>
-    <span class="o">.</span><span class="n">set_module_name</span><span class="p">(</span><span class="s2">&quot;foo.bar&quot;</span><span class="p">,</span> <span class="n">qconfig_opt</span><span class="p">)</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">quantization_config</span><span class="p">)</span>
+    <span class="o">.</span><span class="n">set_object_type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">)</span> <span class="c1"># can configure by module type</span>
+    <span class="o">.</span><span class="n">set_object_type</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">functional</span><span class="o">.</span><span class="n">linear</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">)</span> <span class="c1"># or torch functional op typea</span>
+    <span class="o">.</span><span class="n">set_module_name</span><span class="p">(</span><span class="s2">&quot;foo.bar&quot;</span><span class="p">,</span> <span class="n">quantization_config</span><span class="p">)</span>  <span class="c1"># or by module fully qualified name</span>
 </pre></div>
 </div>
 </div>
