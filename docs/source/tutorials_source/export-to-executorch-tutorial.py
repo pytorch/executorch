@@ -215,7 +215,7 @@ except Exception:
 #
 # Compared to
 # `FX Graph Mode Quantization <https://pytorch.org/tutorials/prototype/fx_graph_mode_ptq_static.html>`__,
-# we will need to call two new APIs: ``prepare_pt2e`` and ``compare_pt2e``
+# we will need to call two new APIs: ``prepare_pt2e`` and ``convert_pt2e``
 # instead of ``prepare_fx`` and ``convert_fx``. It differs in that
 # ``prepare_pt2e`` takes a backend-specific ``Quantizer`` as an argument, which
 # will annotate the nodes in the graph with information needed to quantize the
@@ -234,8 +234,10 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
 
 quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
 prepared_graph = prepare_pt2e(pre_autograd_aten_dialect, quantizer)
+# calibrate with a sample dataset
 converted_graph = convert_pt2e(prepared_graph)
 print("Quantized Graph")
+print(converted_graph)
 
 aten_dialect: ExportedProgram = export(converted_graph, example_args)
 print("ATen Dialect Graph")
@@ -244,7 +246,7 @@ print(aten_dialect)
 ######################################################################
 # More information on how to quantize a model, and how a backend can implement a
 # ``Quantizer`` can be found
-# `here <https://pytorch.org/tutorials/prototype/pt2e_quant_ptq_static.html>`__ .
+# `here <https://pytorch.org/docs/main/quantization.html#prototype-pytorch-2-export-quantization>`__.
 
 ######################################################################
 # Lowering to Edge Dialect
@@ -634,7 +636,7 @@ with open("model.pte", "wb") as file:
 # ^^^^^^^^^^^^^^^
 #
 # - `torch.export Documentation <https://pytorch.org/docs/2.1/export.html>`__
-# - `Quantization Tutorial <https://pytorch.org/tutorials/prototype/pt2e_quant_ptq_static.html>`__
+# - `Quantization Documentation <https://pytorch.org/docs/main/quantization.html#prototype-pytorch-2-export-quantization>`__
 # - `IR Spec <../ir-exir.html>`__
 # - `Writing Compiler Passes + Partitioner Documentation <../compiler-custom-compiler-passes.html>`__
 # - `Backend Delegation Documentation <../compiler-delegate-and-partitioner.html>`__
