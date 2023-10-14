@@ -19,11 +19,13 @@ from executorch.backends.xnnpack.partition.configs import (
     SUPPORTED_QUANT_OPS,
     UNSUPPORTED_QUANT_MODULES,
 )
+from executorch.backends.xnnpack.partition.graphs.bilinear_2d import bilinear2d_graphs
 from executorch.backends.xnnpack.utils.utils import get_input_node, is_param_node
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
+    generate_pattern_op_partitions,
 )
 
 from executorch.exir.backend.partitioner import (
@@ -790,6 +792,20 @@ class XnnpackPartitioner(Partitioner):
 
         return module_partitions
 
+    def get_graph_partitions(
+        self, ep, quant: Optional[bool]
+    ) -> List[List[torch.fx.Node]]:
+        graph_module = ep.graph_module
+        graph_patterns = [gm_pattern.graph for gm_pattern in bilinear2d_graphs.keys()]
+        partitions = generate_pattern_op_partitions(
+            graph_module, graph_patterns, ignore_literals=True
+        )
+        graph_partitions = []
+        for src_partition in partitions:
+            graph_partitions.append(src_partition.nodes)
+
+        return graph_partitions
+
     def generate_partitions(
         self, ep: ExportedProgram, quant: Optional[bool]
     ) -> List[Any]:
@@ -799,9 +815,10 @@ class XnnpackPartitioner(Partitioner):
         """
         graph_module = ep.graph_module
         matched_module_nodes = self.get_module_partitions(ep, quant)
+        matched_graph_nodes = self.get_graph_partitions(ep, quant)
         return generate_partitions_from_list_of_nodes(
             graph_module,
-            matched_module_nodes,
+            matched_module_nodes + matched_graph_nodes,
             XnnpackOperatorSupport(
                 ep=ep, supported_ops=list(self.get_supported_ops(quant))
             ),
