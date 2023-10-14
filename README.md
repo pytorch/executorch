@@ -30,6 +30,12 @@ and feedback about ExecuTorch using the tag **#executorch** and
 our [GitHub repository](https://github.com/pytorch/executorch/issues)
 for bug reporting.
 
+The ExecuTorch code and APIs are still changing quickly, and there are not yet
+any guarantees about forward/backward source compatibility. We recommend using
+the latest `v#.#.#` release tag from the
+[Releases](https://github.com/pytorch/executorch/releases) page when
+experimenting with this preview release.
+
 ## Directory Structure [WIP]
 
 ```
