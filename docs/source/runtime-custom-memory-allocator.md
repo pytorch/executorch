@@ -1,3 +1,0 @@
-# Custom Memory Allocator
-
-TBA
