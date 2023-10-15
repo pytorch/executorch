@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-SDK Integration Tutorial
+Using the ExecuTorch SDK to Profile a Model
 ========================
 
 **Author:** `Jack Khuu <https://github.com/Jack-Khuu>`__

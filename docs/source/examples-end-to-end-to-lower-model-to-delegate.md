@@ -1,4 +1,4 @@
-# An end-to-end example to lower a model as a delegate
+# Lowering a Model as a Delegate
 
 Audience: ML Engineers, who are interested in applying delegates to accelerate their program in runtime
 
