@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>XNNPACK Backend Delegate Lowering Tutorial &mdash; ExecuTorch  documentation</title>
+  <title>Building and Running ExecuTorch with XNNPACK Backend &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -39,8 +39,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="ExecuTorch Arm Ethos-U Delegate" href="executorch-arm-delegate-tutorial.html" />
-    <link rel="prev" title="An end-to-end example to lower a model as a delegate" href="examples-end-to-end-to-lower-model-to-delegate.html" />
+    <link rel="next" title="Building and Running ExecuTorch with ARM Ethos-U Backend" href="executorch-arm-delegate-tutorial.html" />
+    <link rel="prev" title="Lowering a Model as a Delegate" href="examples-end-to-end-to-lower-model-to-delegate.html" />
 
 
   <!-- Google Tag Manager -->
@@ -264,15 +264,15 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">SDK Integration Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">ExecuTorch iOS Demo App Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">An end-to-end example to lower a model as a delegate</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">XNNPACK Backend Delegate Lowering Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">ExecuTorch Arm Ethos-U Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch on CoreML Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch on MPS Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch on Qualcomm AI Engine Direct</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Building and Running ExecuTorch with XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with CoreML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Exporting to ExecuTorch</span></p>
@@ -366,7 +366,7 @@
       </li>
 
         
-      <li>XNNPACK Backend Delegate Lowering Tutorial</li>
+      <li>Building and Running ExecuTorch with XNNPACK Backend</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -404,8 +404,8 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="xnnpack-backend-delegate-lowering-tutorial">
-<h1>XNNPACK Backend Delegate Lowering Tutorial<a class="headerlink" href="#xnnpack-backend-delegate-lowering-tutorial" title="Permalink to this headline">¶</a></h1>
+  <div class="section" id="building-and-running-executorch-with-xnnpack-backend">
+<h1>Building and Running ExecuTorch with XNNPACK Backend<a class="headerlink" href="#building-and-running-executorch-with-xnnpack-backend" title="Permalink to this headline">¶</a></h1>
 <p>The following tutorial will familiarize you with leveraging the ExecuTorch XNNPACK Delegate for accelerating your ML Models using CPU hardware. It will go over exporting and serializing a model to a binary file, targeting the XNNPACK Delegate Backend and running the model on a supported target  platform. To get started quickly, use the script in the ExecuTorch repository with instructions on exporting and generating  a binary file for a few sample models demonstrating the flow.</p>
 <!----This will show a grid card on the page----->
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
@@ -568,10 +568,10 @@ buck2<span class="w"> </span>run<span class="w"> </span>examples/backend:xnn_exe
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="executorch-arm-delegate-tutorial.html" class="btn btn-neutral float-right" title="ExecuTorch Arm Ethos-U Delegate" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="executorch-arm-delegate-tutorial.html" class="btn btn-neutral float-right" title="Building and Running ExecuTorch with ARM Ethos-U Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="examples-end-to-end-to-lower-model-to-delegate.html" class="btn btn-neutral" title="An end-to-end example to lower a model as a delegate" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="examples-end-to-end-to-lower-model-to-delegate.html" class="btn btn-neutral" title="Lowering a Model as a Delegate" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -605,7 +605,7 @@ buck2<span class="w"> </span>run<span class="w"> </span>examples/backend:xnn_exe
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">XNNPACK Backend Delegate Lowering Tutorial</a><ul>
+<li><a class="reference internal" href="#">Building and Running ExecuTorch with XNNPACK Backend</a><ul>
 <li><a class="reference internal" href="#lowering-a-model-to-xnnpack">Lowering a model to XNNPACK</a></li>
 <li><a class="reference internal" href="#lowering-a-quantized-model-to-xnnpack">Lowering a Quantized Model to XNNPACK</a></li>
 <li><a class="reference internal" href="#lowering-with-aot-compiler-py-script">Lowering with <code class="docutils literal notranslate"><span class="pre">aot_compiler.py</span></code> script</a></li>
