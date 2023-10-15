@@ -269,7 +269,7 @@ ExecuTorch tutorials.
    :tags: Export,Backend,Delegation,CoreML
 
 .. customcarditem::
-   :header: Building and Running ExecuTorch with MPSGraph Backend
+   :header: Building and Running ExecuTorch with MPS Backend
    :card_description: A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend
    :image: _static/img/generic-pytorch-logo.png
    :link: build-run-mps.html
