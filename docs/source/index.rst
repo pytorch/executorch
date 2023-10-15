@@ -88,16 +88,19 @@ Topics in this section will help you get started with ExecuTorch.
 
    tutorials/export-to-executorch-tutorial
    running-a-model-cpp-tutorial
-   examples-end-to-end-to-lower-model-to-delegate
-   build-run-ios-demo
-   demo-apps-android
-   build-run-xtensa
-   build-run-qualcomm-ai-engine-direct-backend
-   build-run-mps
-   build-run-coreml
    tutorials/sdk-integration-tutorial
-   executorch-arm-delegate-tutorial
+   demo-apps-ios
+   demo-apps-android
+   examples-end-to-end-to-lower-model-to-delegate
    tutorial-xnnpack-delegate-lowering
+   ..
+      Alphabetical by backend name. Be sure to keep the same order in the
+      customcarditem entries below.
+   executorch-arm-delegate-tutorial
+   build-run-coreml
+   build-run-mps
+   build-run-qualcomm-ai-engine-direct-backend
+   build-run-xtensa
 
 .. toctree::
    :glob:
@@ -203,18 +206,18 @@ ExecuTorch tutorials.
    :tags: Export,Delegation,Quantization
 
 .. customcarditem::
-   :header: Using the ExecuTorch SDK to profile a model
-   :card_description: A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.
-   :image: _static/img/generic-pytorch-logo.png
-   :link: tutorials/sdk-integration-tutorial.html
-   :tags: SDK
-
-.. customcarditem::
    :header: Running an ExecuTorch Model C++ Tutorial
    :card_description: A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.
    :image: _static/img/generic-pytorch-logo.png
    :link: running-a-model-cpp-tutorial.html
    :tags:
+
+.. customcarditem::
+   :header: Using the ExecuTorch SDK to Profile a Model
+   :card_description: A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.
+   :image: _static/img/generic-pytorch-logo.png
+   :link: tutorials/sdk-integration-tutorial.html
+   :tags: SDK
 
 .. customcarditem::
    :header: Building an ExecuTorch iOS Demo App
@@ -231,17 +234,59 @@ ExecuTorch tutorials.
    :tags: Delegation,Android
 
 .. customcarditem::
-   :header: XNNPACK Backend Delegate Lowering Tutorial
-   :card_description: A demo tutorial for lowering and export models with the XNNPACK Backend
+   :header: Lowering a Model as a Delegate
+   :card_description: An end-to-end example showing how to lower a model as a delegate
+   :image: _static/img/generic-pytorch-logo.png
+   :link: examples-end-to-end-to-lower-model-to-delegate.html
+   :tags: Export,Delegation
+
+..
+   First-party backends that are good intros for readers.
+
+.. customcarditem::
+   :header: Building and Running ExecuTorch with XNNPACK Backend
+   :card_description: A demo tutorial for lowering and exporting models with the XNNPACK Backend
    :image: _static/img/generic-pytorch-logo.png
    :link: tutorial-xnnpack-delegate-lowering.html
-   :tags: Export,Delegation,Quantization,XNNPACK
+   :tags: Export,Backend,Delegation,Quantization,XNNPACK
+
+..
+   Alphabetical by backend name. Be sure to keep the same order in the Tutorials
+   toctree entry above.
+
+.. customcarditem::
+   :header: Building and Running ExecuTorch with ARM Ethos-U Backend
+   :card_description: A tutorial that walks you through the process of building ExecuTorch with ARM Ethos-U Backend
+   :image: _static/img/generic-pytorch-logo.png
+   :link: executorch-arm-delegate-tutorial.html
+   :tags: Export,Backend,Delegation,ARM,Ethos-U
+
+.. customcarditem::
+   :header: Building and Running ExecuTorch with CoreML Backend
+   :card_description: A tutorial that walks you through the process of building ExecuTorch with CoreML Backend
+   :image: _static/img/generic-pytorch-logo.png
+   :link: build-run-coreml.html
+   :tags: Export,Backend,Delegation,CoreML
+
+.. customcarditem::
+   :header: Building and Running ExecuTorch with MPSGraph Backend
+   :card_description: A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend
+   :image: _static/img/generic-pytorch-logo.png
+   :link: build-run-mps.html
+   :tags: Export,Backend,Delegation,MPS,MPSGraph
+
+.. customcarditem::
+   :header: Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend
+   :card_description: A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend
+   :image: _static/img/generic-pytorch-logo.png
+   :link: build-run-build-run-qualcomm-ai-engine-direct-backend.html
+   :tags: Export,Backend,Delegation,QNN
 
 .. customcarditem::
    :header: Building and Running ExecuTorch on Xtensa HiFi4 DSP
-   :card_description: A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP.
+   :card_description: A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP using custom operators
    :image: _static/img/generic-pytorch-logo.png
    :link: build-run-xtensa.html
-   :tags: DSP
+   :tags: Export,Custom-Operators,DSP,Xtensa
 
 .. customcardend::
