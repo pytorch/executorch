@@ -22,7 +22,7 @@ if [ -d "/tmp/coremltools" ]; then
 fi
 
 echo "${green}ExecuTorch: Cloning coremltools."
-git clone git@github.com:apple/coremltools.git /tmp/coremltools
+git clone https://github.com/apple/coremltools.git /tmp/coremltools
 cd /tmp/coremltools
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
@@ -35,14 +35,6 @@ pip install -r /tmp/coremltools/reqs/build.pip
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to install coremltools dependencies."
-    exit 1
-fi
-
-echo "${green}ExecuTorch: Checking out 'executorch_integration' branch in coremltools repo."
-git checkout executorch_integration
-STATUS=$?
-if [ $STATUS -ne 0 ]; then
-    echo "${red}ExecuTorch: Failed to checkout 'executorch_integration' branch in coremltools repo."
     exit 1
 fi
 
