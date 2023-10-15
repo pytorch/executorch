@@ -75,8 +75,8 @@ if __name__ == "__main__":
             super().__init__()
             self.mps_module = lowered_module
 
-        def forward(self, input_args):
-            return self.mps_module(input_args)
+        def forward(self, *input_args):
+            return self.mps_module(*input_args)
 
     executorch_program = (
         exir.capture(
