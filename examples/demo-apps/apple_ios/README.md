@@ -1,4 +1,4 @@
-# ExecuTorch iOS Demo App Tutorial
+# Building an ExecuTorch iOS Demo App
 
 Welcome to the tutorial on setting up the ExecuTorch iOS Demo App!
 

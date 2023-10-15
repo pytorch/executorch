@@ -25,7 +25,7 @@
 
 <!---- DO NOT MODIFY Progress Bar End--->
 
-# Building and Running ExecuTorch on MPS Backend
+# Building and Running ExecuTorch with MPS Backend
 
 In this tutorial we will walk you through the process of getting setup to build the MPS backend for ExecuTorch and running a simple model on it.
 

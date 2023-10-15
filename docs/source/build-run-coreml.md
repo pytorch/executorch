@@ -24,7 +24,7 @@
 
 <!---- DO NOT MODIFY Progress Bar End--->
 
-# Building and Running ExecuTorch on CoreML Backend
+# Building and Running ExecuTorch with CoreML Backend
 
 CoreML delegate uses CoreML apis to enable running neural networks via Apple's hardware acceleration. For more about coreml you can read [here](https://developer.apple.com/documentation/coreml). In this tutorial we will walk through steps of lowering a PyTorch model to CoreML delegate
 
