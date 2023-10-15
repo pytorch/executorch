@@ -25,7 +25,7 @@
 
 <!---- DO NOT MODIFY Progress Bar End--->
 
-# Building and Running ExecuTorch on Qualcomm AI Engine Direct
+# Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend
 
 In this tutorial we will walk you through the process of getting setup to
 build ExecuTorch for Qualcomm AI Engine Direct and running a model on it.
@@ -261,4 +261,3 @@ An Android demo-app using Qualcomm AI Engine Direct Backend can be found in
 
 If you encounter any issues while reproducing the tutorial, please file a github
 issue on ExecuTorch repo and tag use `#qcom_aisw` tag
-
