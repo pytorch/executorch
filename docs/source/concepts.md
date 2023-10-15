@@ -1,6 +1,13 @@
 # ExecuTorch Concepts
 This page provides an overview of key concepts and terms used throughout the ExecuTorch documentation. It is intended to help readers understand the terminology and concepts used in PyTorch Edge and ExecuTorch.
 
+## Concepts Map
+![](./_static/img/concepts-map-overview.png)
+
+<a href="./_static/img/concepts-map-overview.png" target="_blank">View in full size</a>
+
+<a href="./_static/img/concepts-map-detailed.png" target="_blank">View detailed concept map</a>
+
 ## [AOT (Ahead of Time)](./getting-started-architecture.md#program-preparation)
 
 AOT generally refers to the program preparation that occurs before execution. On a high level, ExecuTorch workflow is split into an AOT compilation and a runtime. The AOT steps involve compilation into an Intermediate Representation (IR), along with optional transformations and optimizations.
