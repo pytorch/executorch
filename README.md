@@ -36,7 +36,7 @@ the latest `v#.#.#` release tag from the
 [Releases](https://github.com/pytorch/executorch/releases) page when
 experimenting with this preview release.
 
-## Directory Structure [WIP]
+## Directory Structure
 
 ```
 executorch
