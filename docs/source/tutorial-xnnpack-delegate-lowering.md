@@ -1,4 +1,4 @@
-# XNNPACK Backend Delegate Lowering Tutorial
+# Building and Running ExecuTorch with XNNPACK Backend
 
 The following tutorial will familiarize you with leveraging the ExecuTorch XNNPACK Delegate for accelerating your ML Models using CPU hardware. It will go over exporting and serializing a model to a binary file, targeting the XNNPACK Delegate Backend and running the model on a supported target  platform. To get started quickly, use the script in the ExecuTorch repository with instructions on exporting and generating  a binary file for a few sample models demonstrating the flow.
 
