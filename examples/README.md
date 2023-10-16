@@ -28,12 +28,12 @@ examples
 
 ## Using the examples
 
-A user's journey may commence by exploring the demos located in the [`portable/`](./portable) directory. Here, you will gain insights into the fundamental end-to-end workflow to generate a binary file from a ML model in [portable mode](/docs/website/docs/basics/terminology.md) and run it on the ExecuTorch runtime.
+A user's journey may commence by exploring the demos located in the [`portable/`](./portable) directory. Here, you will gain insights into the fundamental end-to-end workflow to generate a binary file from a ML model in [portable mode](../docs/source/concepts.md##portable-mode-lean-mode) and run it on the ExecuTorch runtime.
 
 
 ## Demo of Selective Build
 
-To understand how to deploy the ExecuTorch runtime with optimization for binary size, explore the demos available in the [`selective_build/`](./selective_build) directory. These demos are specifically designed to illustrate the [Selective Build](/docs/website/docs/tutorials/selective_build.md), offering insights into reducing the binary size while maintaining efficiency.
+To understand how to deploy the ExecuTorch runtime with optimization for binary size, explore the demos available in the [`selective_build/`](./selective_build) directory. These demos are specifically designed to illustrate the [Selective Build](../docs/source/kernel-library-selective_build.md), offering insights into reducing the binary size while maintaining efficiency.
 
 ## Demo of ExecuTorch SDK
 
@@ -65,4 +65,4 @@ The [`xtensa/`](./xtensa) directory hosts a demo that showcases the process of e
 
 ## Dependencies
 
-Various models and workflows listed in this directory have dependencies on some other packages. You need to follow the setup guide in [Setting up ExecuTorch from GitHub](/docs/website/docs/tutorials/00_setting_up_executorch.md) to have appropriate packages installed.
+Various models and workflows listed in this directory have dependencies on some other packages. You need to follow the setup guide in [Setting up ExecuTorch from GitHub](../docs/source/getting-started-setup.md) to have appropriate packages installed.
