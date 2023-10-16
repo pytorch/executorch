@@ -160,3 +160,15 @@ details.sd-dropdown .highlight .n {
     clear: both;
   }
 }
+
+article.pytorch-article .class .method dt {
+    border-top: none;
+}
+
+article.pytorch-article .class .simple dt {
+    border-top: none;
+}
+
+article.pytorch-article .function dt.sig {
+    border-top: none;
+}
