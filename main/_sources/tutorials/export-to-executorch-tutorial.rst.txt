@@ -214,15 +214,15 @@ different than the ones we used while tracing, we will run into an error:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 132, in <module>
         print(aten_dialect(torch.ones(3, 2), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 569, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 573, in __call__
         self._check_input_constraints(*ordered_params, *ordered_buffers, *args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 915, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 923, in _check_input_constraints
         _assertion_graph(*args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 726, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 728, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 305, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 307, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 292, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 294, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
@@ -349,15 +349,15 @@ Now let's try running the model with different shapes:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 184, in <module>
         print(aten_dialect(torch.ones(3, 15), torch.ones(3, 15)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 569, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 573, in __call__
         self._check_input_constraints(*ordered_params, *ordered_buffers, *args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 915, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 923, in _check_input_constraints
         _assertion_graph(*args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 726, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 728, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 305, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 307, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 292, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 294, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
@@ -371,15 +371,15 @@ Now let's try running the model with different shapes:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 190, in <module>
         print(aten_dialect(torch.ones(3, 3), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 569, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 573, in __call__
         self._check_input_constraints(*ordered_params, *ordered_buffers, *args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 915, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 923, in _check_input_constraints
         _assertion_graph(*args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 726, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 728, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 305, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 307, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 292, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 294, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
@@ -676,20 +676,6 @@ there is only one program, it will by default be saved to the name "forward".
 
  .. code-block:: none
 
-    Edge Dialect graph of decode
-    ExportedProgram:
-        class GraphModule(torch.nn.Module):
-            def forward(self, arg0_1: f32[1, 5]):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:296, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
-                aten_randn_default: f32[10, 5] = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
-                aten_permute_copy_default: f32[5, 10] = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
-                aten_mm_default: f32[1, 10] = executorch_exir_dialects_edge__ops_aten_mm_default(arg0_1, aten_permute_copy_default);  arg0_1 = aten_permute_copy_default = None
-                return (aten_mm_default,)
-            
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='arg0_1'), target=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
-    Range constraints: {}
-    Equality constraints: []
-
     Edge Dialect graph of encode
     ExportedProgram:
         class GraphModule(torch.nn.Module):
@@ -698,6 +684,20 @@ there is only one program, it will by default be saved to the name "forward".
                 aten_randn_default: f32[5, 10] = executorch_exir_dialects_edge__ops_aten_randn_default([5, 10], device = device(type='cpu'), pin_memory = False)
                 aten_permute_copy_default: f32[10, 5] = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
                 aten_mm_default: f32[1, 5] = executorch_exir_dialects_edge__ops_aten_mm_default(arg0_1, aten_permute_copy_default);  arg0_1 = aten_permute_copy_default = None
+                return (aten_mm_default,)
+            
+    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='arg0_1'), target=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
+    Range constraints: {}
+    Equality constraints: []
+
+    Edge Dialect graph of decode
+    ExportedProgram:
+        class GraphModule(torch.nn.Module):
+            def forward(self, arg0_1: f32[1, 5]):
+                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:296, code: return torch.nn.functional.linear(x, torch.randn(10, 5))
+                aten_randn_default: f32[10, 5] = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
+                aten_permute_copy_default: f32[5, 10] = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
+                aten_mm_default: f32[1, 10] = executorch_exir_dialects_edge__ops_aten_mm_default(arg0_1, aten_permute_copy_default);  arg0_1 = aten_permute_copy_default = None
                 return (aten_mm_default,)
             
     Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='arg0_1'), target=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
@@ -1389,7 +1389,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 4.715 seconds)
+   **Total running time of the script:** (0 minutes 4.754 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
