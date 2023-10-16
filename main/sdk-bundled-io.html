@@ -426,58 +426,74 @@
 </ol>
 <div class="section" id="step-1-create-a-model-and-emit-its-executorch-program">
 <h3>Step 1: Create a Model and Emit its ExecuTorch Program.<a class="headerlink" href="#step-1-create-a-model-and-emit-its-executorch-program" title="Permalink to this headline">¶</a></h3>
-<p>ExecuTorch Program can be emitted from user’s model by using ExecuTorch APIs. <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/exporting_to_executorch.md">Here</a> is the tutorial for ExecuTorch Program exporting.</p>
+<p>ExecuTorch Program can be emitted from user’s model by using ExecuTorch APIs. Follow the <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Generate Sample ExecuTorch program</span></a> or <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Exporting to ExecuTorch tutorial</span></a>.</p>
 </div>
 <div class="section" id="step-2-construct-bundledconfig">
 <h3>Step 2: Construct <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code><a class="headerlink" href="#step-2-construct-bundledconfig" title="Permalink to this headline">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code> is a class under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/config.py</span></code> that contains all information to be bundled for model verification. Here’s the constructor api to create <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code>:</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code><div class="sd-summary-down docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
+<div class="sd-summary-up docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
+</summary><div class="sd-summary-content sd-card-body docutils">
 <dl class="py function">
 <dt class="sig sig-object py">
 <span class="sig-prename descclassname"><span class="pre">bundled_program.config.BundledConfig.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method_names</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inputs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected_outputs</span></span></em><span class="sig-paren">)</span></dt>
-<dd><p>Contruct the config given inputs and expected outputs</p>
+<dd><p class="sd-card-text">Contruct the config given inputs and expected outputs</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>method_names</strong> – All method names need to be verified in program.</p></li>
-<li><p><strong>inputs</strong> – <p>All sets of input need to be test on for all methods. Each list
+<li><p class="sd-card-text"><strong>method_names</strong> – All method names need to be verified in program.</p></li>
+<li><p class="sd-card-text"><strong>inputs</strong> – <p class="sd-card-text">All sets of input need to be test on for all methods. Each list
 of <cite>inputs</cite> is all sets which will be run on the method in the
 program with corresponding method name. Each set of any <cite>inputs</cite> element should
 contain all inputs required by eager_model with the same inference function
 as corresponding execution plan for one-time execution.</p>
-<p>It is worth mentioning that, although both bundled program and ET runtime apis support setting input
+<p class="sd-card-text">It is worth mentioning that, although both bundled program and ET runtime apis support setting input
 other than torch.tensor type, only the input in torch.tensor type will be actually updated in
 the method, and the rest of the inputs will just do a sanity check if they match the default value in method.</p>
 </p></li>
-<li><p><strong>expected_outputs</strong> – Expected outputs for inputs sharing same index. The size of
+<li><p class="sd-card-text"><strong>expected_outputs</strong> – Expected outputs for inputs sharing same index. The size of
 expected_outputs should be the same as the size of inputs and provided method_names.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
-<dd class="field-even"><p>self</p>
+<dd class="field-even"><p class="sd-card-text">self</p>
 </dd>
 </dl>
 </dd></dl>
 
 </div>
+</details></div>
 <div class="section" id="step-3-generate-bundledprogram">
 <h3>Step 3: Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><a class="headerlink" href="#step-3-generate-bundledprogram" title="Permalink to this headline">¶</a></h3>
 <p>We provide <code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> API under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/core.py</span></code> to generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> by bundling the emitted ExecuTorch program with the bundled_config:</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><div class="sd-summary-down docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
+<div class="sd-summary-up docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
+</summary><div class="sd-summary-content sd-card-body docutils">
 <dl class="py function">
 <dt class="sig sig-object py">
 <span class="sig-prename descclassname"><span class="pre">bundled_program.core.</span></span><span class="sig-name descname"><span class="pre">create_bundled_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bundled_config</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/bundled_program/core.html#create_bundled_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
-<dd><p>Create BundledProgram by bundling the given program and bundled_config together.</p>
+<dd><p class="sd-card-text">Create BundledProgram by bundling the given program and bundled_config together.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>program</strong> – The program to be bundled.</p></li>
-<li><p><strong>bundled_config</strong> – The config to be bundled.</p></li>
+<li><p class="sd-card-text"><strong>program</strong> – The program to be bundled.</p></li>
+<li><p class="sd-card-text"><strong>bundled_config</strong> – The config to be bundled.</p></li>
 </ul>
 </dd>
 </dl>
-<p>Returns: The <cite>BundledProgram</cite> variable contains given ExecuTorch program and test cases.</p>
+<p class="sd-card-text">Returns: The <cite>BundledProgram</cite> variable contains given ExecuTorch program and test cases.</p>
 </dd></dl>
 
-<p><code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> will do sannity check internally to see if the given BundledConfig matches the given Program’s requirements. Specifically:</p>
+</div>
+</details><p><code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> will do sannity check internally to see if the given BundledConfig matches the given Program’s requirements. Specifically:</p>
 <ol class="arabic simple">
 <li><p>The name of methods we create BundledConfig for should be also in program. Please notice that it is no need to set testcases for every method in the Program.</p></li>
 <li><p>The metadata of each testcase should meet the requirement of the coresponding inference methods input.</p></li>
@@ -486,16 +502,23 @@ expected_outputs should be the same as the size of inputs and provided method_na
 <div class="section" id="step-4-serialize-bundledprogram-to-flatbuffer">
 <h3>Step 4: Serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to Flatbuffer.<a class="headerlink" href="#step-4-serialize-bundledprogram-to-flatbuffer" title="Permalink to this headline">¶</a></h3>
 <p>To serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to make runtime APIs use it, we provide two APIs, both under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/serialize/__init__.py</span></code>.</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+Serialize and Deserialize<div class="sd-summary-down docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
+<div class="sd-summary-up docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
+</summary><div class="sd-summary-content sd-card-body docutils">
 <dl class="py function">
 <dt class="sig sig-object py">
 <span class="sig-prename descclassname"><span class="pre">bundled_program.serialize.</span></span><span class="sig-name descname"><span class="pre">serialize_from_bundled_program_to_flatbuffer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bundled_program</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/bundled_program/serialize.html#serialize_from_bundled_program_to_flatbuffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
-<dd><p>Serialize a BundledProgram into FlatBuffer binary format.</p>
+<dd><p class="sd-card-text">Serialize a BundledProgram into FlatBuffer binary format.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>bundled_program</strong> (<em>BundledProgram</em>) – The <cite>BundledProgram</cite> variable to be serialized.</p>
+<dd class="field-odd"><p class="sd-card-text"><strong>bundled_program</strong> (<em>BundledProgram</em>) – The <cite>BundledProgram</cite> variable to be serialized.</p>
 </dd>
 <dt class="field-even">Returns</dt>
-<dd class="field-even"><p>The serialized FlatBuffer binary data in bytes.</p>
+<dd class="field-even"><p class="sd-card-text">The serialized FlatBuffer binary data in bytes.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -503,18 +526,19 @@ expected_outputs should be the same as the size of inputs and provided method_na
 <dl class="py function">
 <dt class="sig sig-object py">
 <span class="sig-prename descclassname"><span class="pre">bundled_program.serialize.</span></span><span class="sig-name descname"><span class="pre">deserialize_from_flatbuffer_to_bundled_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">flatbuffer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/bundled_program/serialize.html#deserialize_from_flatbuffer_to_bundled_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
-<dd><p>Deserialize a FlatBuffer binary format into a BundledProgram.</p>
+<dd><p class="sd-card-text">Deserialize a FlatBuffer binary format into a BundledProgram.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>flatbuffer</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#bytes" title="(in Python v3.12)"><em>bytes</em></a>) – The FlatBuffer binary data in bytes.</p>
+<dd class="field-odd"><p class="sd-card-text"><strong>flatbuffer</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#bytes" title="(in Python v3.12)"><em>bytes</em></a>) – The FlatBuffer binary data in bytes.</p>
 </dd>
 <dt class="field-even">Returns</dt>
-<dd class="field-even"><p>A <cite>BundledProgram</cite> instance.</p>
+<dd class="field-even"><p class="sd-card-text">A <cite>BundledProgram</cite> instance.</p>
 </dd>
 </dl>
 </dd></dl>
 
 </div>
+</details></div>
 <div class="section" id="emit-example">
 <h3>Emit Example<a class="headerlink" href="#emit-example" title="Permalink to this headline">¶</a></h3>
 <p>Here is a flow highlighting how to generate a <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> given a PyTorch model and the representative inputs we want to test it along with.</p>
@@ -639,9 +663,16 @@ expected_outputs should be the same as the size of inputs and provided method_na
 <div class="section" id="get-executorch-program-pointer-from-bundledprogram-buffer">
 <h3>Get ExecuTorch Program Pointer from <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> Buffer<a class="headerlink" href="#get-executorch-program-pointer-from-bundledprogram-buffer" title="Permalink to this headline">¶</a></h3>
 <p>We need the pointer to ExecuTorch program to do the execution. To unify the process of loading and executing <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and Program flatbuffer, we create an API:</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<code class="docutils literal notranslate"><span class="pre">GetProgramData</span></code><div class="sd-summary-down docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
+<div class="sd-summary-up docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
+</summary><div class="sd-summary-content sd-card-body docutils">
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p>doxygenfunction: Unable to resolve function “torch::executor::util::GetProgramData” with arguments “None”.
+<p class="sd-card-text">doxygenfunction: Unable to resolve function “torch::executor::util::GetProgramData” with arguments “None”.
 Candidate function could not be parsed. Parsing error is
 Error when parsing function declaration.
 If the function has no return type:
@@ -661,7 +692,8 @@ If the function has a return type:
       ———————^
 </p>
 </div>
-<p>Here’s an example of how to use the <code class="docutils literal notranslate"><span class="pre">GetProgramData</span></code> API:</p>
+</div>
+</details><p>Here’s an example of how to use the <code class="docutils literal notranslate"><span class="pre">GetProgramData</span></code> API:</p>
 <div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="n">std</span><span class="o">::</span><span class="n">shared_ptr</span><span class="o">&lt;</span><span class="kt">char</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buff_ptr</span><span class="p">;</span>
 <span class="kt">size_t</span><span class="w"> </span><span class="n">buff_len</span><span class="p">;</span>
 
@@ -687,9 +719,16 @@ If the function has a return type:
 <div class="section" id="load-bundled-input-to-method">
 <h3>Load Bundled Input to Method<a class="headerlink" href="#load-bundled-input-to-method" title="Permalink to this headline">¶</a></h3>
 <p>To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called <code class="docutils literal notranslate"><span class="pre">torch::executor::util::LoadBundledInput</span></code>:</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<code class="docutils literal notranslate"><span class="pre">LoadBundledInput</span></code><div class="sd-summary-down docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
+<div class="sd-summary-up docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
+</summary><div class="sd-summary-content sd-card-body docutils">
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p>doxygenfunction: Unable to resolve function “torch::executor::util::LoadBundledInput” with arguments “None”.
+<p class="sd-card-text">doxygenfunction: Unable to resolve function “torch::executor::util::LoadBundledInput” with arguments “None”.
 Candidate function could not be parsed. Parsing error is
 Error when parsing function declaration.
 If the function has no return type:
@@ -710,12 +749,20 @@ If the function has a return type:
 </p>
 </div>
 </div>
+</details></div>
 <div class="section" id="verify-the-method-s-output">
 <h3>Verify the Method’s Output.<a class="headerlink" href="#verify-the-method-s-output" title="Permalink to this headline">¶</a></h3>
 <p>We call <code class="docutils literal notranslate"><span class="pre">torch::executor::util::VerifyResultWithBundledExpectedOutput</span></code> to verify the method’s output with bundled expected outputs. Here’s the details of this API:</p>
+<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<code class="docutils literal notranslate"><span class="pre">VerifyResultWithBundledExpectedOutput</span></code><div class="sd-summary-down docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
+<div class="sd-summary-up docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
+</summary><div class="sd-summary-content sd-card-body docutils">
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p>doxygenfunction: Unable to resolve function “torch::executor::util::VerifyResultWithBundledExpectedOutput” with arguments “None”.
+<p class="sd-card-text">doxygenfunction: Unable to resolve function “torch::executor::util::VerifyResultWithBundledExpectedOutput” with arguments “None”.
 Candidate function could not be parsed. Parsing error is
 Error when parsing function declaration.
 If the function has no return type:
@@ -736,9 +783,10 @@ If the function has a return type:
 </p>
 </div>
 </div>
+</details></div>
 <div class="section" id="runtime-example">
 <h3>Runtime Example<a class="headerlink" href="#runtime-example" title="Permalink to this headline">¶</a></h3>
-<p>Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/sdk/runners/executor_runner.cpp">executor_runner</a>, and please review that file if you need more info and context:</p>
+<p>Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/sdk/sdk_example_runner/sdk_example_runner.cpp">executor_runner</a>, and please review that file if you need more info and context:</p>
 <div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="c1">// method_name is the name for the method we want to test</span>
 <span class="c1">// memory_manager is the executor::MemoryManager variable for executor memory allocation.</span>
 <span class="c1">// program is the ExecuTorch program.</span>
