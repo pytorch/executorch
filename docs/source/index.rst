@@ -162,7 +162,7 @@ Topics in this section will help you get started with ExecuTorch.
 
    kernel-library-overview
    kernel-library-custom-aten-kernel
-   kernel-library-selective_build
+   kernel-library-selective-build
 
 .. toctree::
    :glob:
