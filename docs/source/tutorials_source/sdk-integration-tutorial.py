@@ -63,7 +63,7 @@ import copy
 
 import torch
 
-from executorch.examples.models.mobilenet_v2 import MV2Model
+from examples.models.mobilenet_v2 import MV2Model
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -118,6 +118,7 @@ from unittest.mock import patch
 #
 # Use Buck::
 #
+#       cd executorch
 #       python3 -m examples.sdk.scripts.export_bundled_program -m mv2
 #       buck2 run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bp
 #
