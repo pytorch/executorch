@@ -17,27 +17,34 @@ This stage mainly focuses on the creation of a `BundledProgram` and dumping it o
 
 ### Step 1: Create a Model and Emit its ExecuTorch Program.
 
-ExecuTorch Program can be emitted from user's model by using ExecuTorch APIs. [Here](https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/exporting_to_executorch.md) is the tutorial for ExecuTorch Program exporting.
-
+ExecuTorch Program can be emitted from user's model by using ExecuTorch APIs. Follow the [Generate Sample ExecuTorch program](./getting-started-setup.md) or [Exporting to ExecuTorch tutorial](./tutorials/export-to-executorch-tutorial).
 
 ### Step 2: Construct `BundledConfig`
 
+
 `BundledConfig` is a class under `executorch/bundled_program/config.py` that contains all information to be bundled for model verification. Here's the constructor api to create `BundledConfig`:
+
+:::{dropdown} `BundledConfig`
 
 ```{eval-rst}
 .. autofunction:: bundled_program.config.BundledConfig.__init__
     :noindex:
 ```
+:::
+
 
 ### Step 3: Generate `BundledProgram`
 
 We provide `create_bundled_program` API under `executorch/bundled_program/core.py` to generate `BundledProgram` by bundling the emitted ExecuTorch program with the bundled_config:
+
+:::{dropdown} `BundledProgram`
 
 ```{eval-rst}
 .. currentmodule:: bundled_program.core
 .. autofunction:: create_bundled_program
     :noindex:
 ```
+:::
 
 `create_bundled_program` will do sannity check internally to see if the given BundledConfig matches the given Program's requirements. Specifically:
 1. The name of methods we create BundledConfig for should be also in program. Please notice that it is no need to set testcases for every method in the Program.
@@ -47,6 +54,7 @@ We provide `create_bundled_program` API under `executorch/bundled_program/core.p
 
 To serialize `BundledProgram` to make runtime APIs use it, we provide two APIs, both under `executorch/bundled_program/serialize/__init__.py`.
 
+:::{dropdown} Serialize and Deserialize
 
 ```{eval-rst}
 .. currentmodule:: bundled_program.serialize
@@ -59,6 +67,7 @@ To serialize `BundledProgram` to make runtime APIs use it, we provide two APIs, 
 .. autofunction:: deserialize_from_flatbuffer_to_bundled_program
     :noindex:
 ```
+:::
 
 ### Emit Example
 
@@ -183,12 +192,16 @@ regenerate_bundled_program = deserialize_from_flatbuffer_to_bundled_program(seri
 ## Runtime Stage
 This stage mainly focuses on executing the model with the bundled inputs and and comparing the model's output with the bundled expected output. We provide multiple APIs to handle the key parts of it.
 
+
 ### Get ExecuTorch Program Pointer from `BundledProgram` Buffer
 We need the pointer to ExecuTorch program to do the execution. To unify the process of loading and executing `BundledProgram` and Program flatbuffer, we create an API:
+
+:::{dropdown} `GetProgramData`
 
 ```{eval-rst}
 .. doxygenfunction:: torch::executor::util::GetProgramData
 ```
+:::
 
 Here's an example of how to use the `GetProgramData` API:
 ```c++
@@ -216,21 +229,27 @@ ET_CHECK_MSG(
 ### Load Bundled Input to Method
 To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called `torch::executor::util::LoadBundledInput`:
 
+:::{dropdown} `LoadBundledInput`
+
 ```{eval-rst}
 .. doxygenfunction:: torch::executor::util::LoadBundledInput
 ```
+:::
 
 ### Verify the Method's Output.
 We call `torch::executor::util::VerifyResultWithBundledExpectedOutput` to verify the method's output with bundled expected outputs. Here's the details of this API:
 
+:::{dropdown} `VerifyResultWithBundledExpectedOutput`
+
 ```{eval-rst}
 .. doxygenfunction:: torch::executor::util::VerifyResultWithBundledExpectedOutput
 ```
+:::
 
 
 ### Runtime Example
 
-Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from [executor_runner](https://github.com/pytorch/executorch/blob/main/sdk/runners/executor_runner.cpp), and please review that file if you need more info and context:
+Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from [executor_runner](https://github.com/pytorch/executorch/blob/main/examples/sdk/sdk_example_runner/sdk_example_runner.cpp), and please review that file if you need more info and context:
 
 ```c++
 // method_name is the name for the method we want to test
