@@ -63,6 +63,11 @@ You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`]
 
 The [`xtensa/`](./xtensa) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
 
+
+## Demo of ExecuTorch SDK
+
+You will find demos of [ExecuTorch SDK](./sdk/) in the [`sdk/`](./sdk/) directory. The examples focuses on exporting and executing BundledProgram for ExecuTorch model verification and ETDump for collecting profiling and debug data.
+
 ## Dependencies
 
 Various models and workflows listed in this directory have dependencies on some other packages. You need to follow the setup guide in [Setting up ExecuTorch from GitHub](../docs/source/getting-started-setup.md) to have appropriate packages installed.
