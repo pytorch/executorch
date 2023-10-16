@@ -224,7 +224,7 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 
 Kernels that support a subset of tensor dtypes and/or dim orders.
 
-## Partitioner
+## [Partitioner](./compiler-custom-compiler-passes#Partitioner)
 
 Parts of a model may be delegated to run on an optimized backend. The partitioner splits the graph into the appropriate sub-networks and tags them for delegation.
 
@@ -263,7 +263,7 @@ Models may lose accuracy after quantization. QAT enables higher accuracy compare
 
 Techniques for performing computations and memory accesses on tensors with lower precision data, usually `int8`. Quantization improves model performance by lowering the memory usage and (usually) decreasing computational latency; depending on the hardware, computation done in lower precision will typically be faster, e.g. `int8` matmul vs `fp32` matmul. Often, quantization comes at the cost of model accuracy.
 
-## Runtime
+## [Runtime](./runtime-overview.md)
 
 The ExecuTorch runtime executes models on edge devices. It is responsible for program initialization, program execution and, optionally, destruction (releasing backend owned resources).
 
