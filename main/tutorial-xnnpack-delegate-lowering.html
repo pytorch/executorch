@@ -550,9 +550,9 @@ Before you begin it is recommended you go through the following:</div>
 <div class="section" id="running-the-xnnpack-model">
 <h2>Running the XNNPACK Model<a class="headerlink" href="#running-the-xnnpack-model" title="Permalink to this headline">¶</a></h2>
 <p>We will use <code class="docutils literal notranslate"><span class="pre">buck2</span></code> to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file with XNNPACK delegate instructions in it on your host platform. You can follow the instructions here to install <a class="reference internal" href="getting-started-setup.html#building-a-runtime"><span class="std std-doc">buck2</span></a>. You can now run it with the prebuilt <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner</span></code> provided in the examples. This will run the model on some sample inputs.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>buck2<span class="w"> </span>run<span class="w"> </span>examples/backend:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_fp32.pte
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_fp32.pte
 <span class="c1"># or to run the quantized variant</span>
-buck2<span class="w"> </span>run<span class="w"> </span>examples/backend:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_qs8.pte
+buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_qs8.pte
 </pre></div>
 </div>
 </div>
