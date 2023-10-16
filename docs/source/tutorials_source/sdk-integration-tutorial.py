@@ -86,12 +86,12 @@ edge_program_manager: EdgeProgramManager = to_edge(
     aten_model, compile_config=EdgeCompileConfig(_check_ir_validity=True)
 )
 edge_program_manager_copy = copy.deepcopy(edge_program_manager)
-et_program_manager: ExecutorchProgramManager = edge_program_manager.to_executorch()
+et_program_manager: ExecutorchProgramManager = edge_program_manager_copy.to_executorch()
 
 
 # Generate ETRecord
 etrecord_path = "etrecord.bin"
-generate_etrecord(etrecord_path, edge_program_manager_copy, et_program_manager)
+generate_etrecord(etrecord_path, edge_program_manager, et_program_manager)
 
 # sphinx_gallery_start_ignore
 from unittest.mock import patch
