@@ -84,13 +84,12 @@ def export_to_bundled_program(
     print("Creating bundled test cases...")
     method_names = [method.name for method in program.execution_plan]
 
-    # Just as an example to show how multiple input sets can be bundled along to all methods. Here we
-    # create a list called bundled_inputs, every element of which contains all test infos for the method
-    # sharing same index in the method_names forwarded to BundledConfig against which it will be tested.
-    # Each element is a list with the example_inputs tuple used twice. Each instance of example_inputs
-    # is a MethodInputType (Tuple[Union[torch.tenor, int, bool, float]]), which represents one test
-    # set for the method.
-    bundled_inputs = [[example_inputs, example_inputs] for _ in program.execution_plan]
+    # A model could have multiple entry point methods and each of them can have inputs bundled for testing.
+    # This example demonstrates a model which has a single entry point method ("forward") to which we want
+    # to bundle two input test cases (example_inputs is used two times) for the "forward" method.
+    bundled_inputs = [
+        [example_inputs, example_inputs] for i in range(len(method_names))
+    ]
 
     bundled_expected_outputs = [
         [[getattr(model, method_names[i])(*x)] for x in bundled_inputs[i]]
