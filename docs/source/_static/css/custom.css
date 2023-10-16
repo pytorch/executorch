@@ -120,3 +120,43 @@ details.sd-dropdown .sd-summary-content {
 details.sd-dropdown .highlight .n {
     font-weight: normal;
 }
+
+.et-page-column1 {
+  float: left;
+  width: 70%;
+  font-size: 1rem;
+}
+
+.et-page-column2 {
+  float: right;
+  padding-top: 40px;
+  padding-left: 60px;
+  padding-right: 60px;
+  padding-bottom: 60px;
+  width: 30%;
+}
+
+.et-page-column-row:after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+/* For screens smaller than 768px (typical mobile devices) */
+@media screen and (max-width: 768px) {
+  .et-page-column1, .et-page-column2 {
+    float: none; /* Remove floats */
+    width: 100%; /* Full width for both columns */
+    padding: 0;
+    font-size: 1rem;
+  }
+
+  .et-page-column2 img {
+    display: none;
+  }
+  .et-page-column-row:after {
+    content: "";
+    display: table;
+    clear: both;
+  }
+}
