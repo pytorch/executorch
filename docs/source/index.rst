@@ -279,7 +279,7 @@ ExecuTorch tutorials.
    :header: Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend
    :card_description: A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend
    :image: _static/img/generic-pytorch-logo.png
-   :link: build-run-build-run-qualcomm-ai-engine-direct-backend.html
+   :link: build-run-qualcomm-ai-engine-direct-backend.html
    :tags: Export,Backend,Delegation,QNN
 
 .. customcarditem::
