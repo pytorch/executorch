@@ -58,4 +58,4 @@ et_operator_library(
 
 We then let the custom ops library depend on this target, to only register the ops we want.
 
-For more information about selective build, please refer to [`selective_build.md`](../../../docs/source/kernel-library-selective_build.md).
+For more information about selective build, please refer to [`selective_build.md`](../../../docs/source/kernel-library-selective-build.md).
