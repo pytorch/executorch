@@ -1,12 +1,12 @@
 # Lowering a Model as a Delegate
 
-Audience: ML Engineers, who are interested in applying delegates to accelerate their program in runtime
+Audience: ML Engineers, who are interested in applying delegates to accelerate their program in runtime.
 
 Backend delegation is an entry point for backends to process and execute PyTorch
-programs to leverage performance and efficiency benefits of specialized
+programs to leverage the performance and efficiency benefits of specialized
 backends and hardware, while still providing PyTorch users with an experience
 close to that of the PyTorch runtime. The backend delegate is usually either provided by
-ExecuTorch or vendors. The way to leverage delegate in your program is via a standard entry point `to_backend`.
+ExecuTorch or vendors. The way to leverage delegation in your program is via a standard entry point `to_backend`.
 
 
 ## Frontend Interfaces
@@ -24,8 +24,7 @@ There are three flows for delegating a program to a backend:
 ### Flow 1: Lowering the whole module
 
 This flow starts from a traced graph module with Edge Dialect representation. To
-lower it, we call the following function which returns a `LoweredBackendModule`
-(more documentation on this function can be found in the Python API reference):
+lower it, we call the following function which returns a `LoweredBackendModule` (more documentation on this function can be found in the [Export API reference](export-to-executorch-api-reference.rst))
 
 ```python
 # defined in backend_api.py
@@ -45,7 +44,7 @@ that can be loaded by the runtime.
 The following is an example of this flow:
 
 ```python
-from executorch.exir.backend.backend_api import to_backend, MethodCompileSpec
+from executorch.exir.backend.backend_api import to_backend
 import executorch.exir as exir
 import torch
 
@@ -66,7 +65,7 @@ to_be_lowered_exir_submodule = exir.capture(to_be_lowered, example_input).to_edg
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
-lowered_module = to_backend('BackendWithCompilerDemo', to_be_lowered_exir_submodule, [])
+lowered_module = to_backend('BackendWithCompilerDemo', to_be_lowered_exir_submodule.exported_program, [])
 ```
 
 We can serialize the program to a flatbuffer format by directly running:
@@ -132,7 +131,7 @@ def to_backend(
 ```
 
 This function takes in a `Partitioner` which adds a tag to all the nodes that
-are meant to be lowered. It will return a `partition_tags` mapping tags to
+are meant to be lowered. It will return a `partition_tags` dictionary mapping tags to
 backend names and module compile specs. The tagged nodes will then be
 partitioned and lowered to their mapped backends using Flow 1's process.
 Available helper partitioners are documented
@@ -141,8 +140,14 @@ will be inserted into the top-level module and serialized.
 
 The following is an example of the flow:
 ```python
-from executorch.exir.backend.backend_api import to_backend
 import executorch.exir as exir
+from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
+from executorch.exir.program import (
+    EdgeProgramManager,
+    to_edge,
+)
+from torch.export import export
 import torch
 
 class Model(torch.nn.Module):
@@ -160,12 +165,11 @@ class Model(torch.nn.Module):
 
 model = Model()
 model_inputs = (torch.randn(1, 3), torch.randn(1, 3))
-gm = exir.capture(model, model_inputs).to_edge()
 
-from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
-exec_prog = to_backend(gm, AddMulPartitionerDemo).to_executorch(
-    exir.ExecutorchBackendConfig(passes=SpecPropPass())
-)
+core_aten_ep = export(model, model_inputs)
+edge: EdgeProgramManager = to_edge(core_aten_ep)
+edge = edge.to_backend(AddMulPartitionerDemo)
+exec_prog = edge.to_executorch()
 
 # Save the flatbuffer to a local file
 save_path = "delegate.pte"
@@ -177,8 +181,8 @@ with open(save_path, "wb") as f:
 
 After having the program with delegates, to run the model with the backend, we'd need to register the backend.
 Depending on the delegate implementation, the backend can be registered either as part of global variables or
-explicitly registered inside main function.
+explicitly registered inside the main function.
 
-- If it's registered during global variables initialization, the backend will be registered as long as it's static linked. Users only need to include the library as part of the dependency.
+- If it's registered during global variables initialization, the backend will be registered as long as it's statically linked. Users only need to include the library as part of the dependency.
 
-- If the vendor provides an API to register the backend, users need to include the library as part of the dependency, and call the API provided by vendors to explicitly register the backend as part of the main function
+- If the vendor provides an API to register the backend, users need to include the library as part of the dependency, and call the API provided by vendors to explicitly register the backend as part of the main function.
