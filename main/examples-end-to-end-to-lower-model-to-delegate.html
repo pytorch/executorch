@@ -408,12 +408,12 @@
               
   <div class="section" id="lowering-a-model-as-a-delegate">
 <h1>Lowering a Model as a Delegate<a class="headerlink" href="#lowering-a-model-as-a-delegate" title="Permalink to this headline">¶</a></h1>
-<p>Audience: ML Engineers, who are interested in applying delegates to accelerate their program in runtime</p>
+<p>Audience: ML Engineers, who are interested in applying delegates to accelerate their program in runtime.</p>
 <p>Backend delegation is an entry point for backends to process and execute PyTorch
-programs to leverage performance and efficiency benefits of specialized
+programs to leverage the performance and efficiency benefits of specialized
 backends and hardware, while still providing PyTorch users with an experience
 close to that of the PyTorch runtime. The backend delegate is usually either provided by
-ExecuTorch or vendors. The way to leverage delegate in your program is via a standard entry point <code class="docutils literal notranslate"><span class="pre">to_backend</span></code>.</p>
+ExecuTorch or vendors. The way to leverage delegation in your program is via a standard entry point <code class="docutils literal notranslate"><span class="pre">to_backend</span></code>.</p>
 <div class="section" id="frontend-interfaces">
 <h2>Frontend Interfaces<a class="headerlink" href="#frontend-interfaces" title="Permalink to this headline">¶</a></h2>
 <p>There are three flows for delegating a program to a backend:</p>
@@ -429,8 +429,7 @@ the most streamlined procecss.</p></li>
 <div class="section" id="flow-1-lowering-the-whole-module">
 <h3>Flow 1: Lowering the whole module<a class="headerlink" href="#flow-1-lowering-the-whole-module" title="Permalink to this headline">¶</a></h3>
 <p>This flow starts from a traced graph module with Edge Dialect representation. To
-lower it, we call the following function which returns a <code class="docutils literal notranslate"><span class="pre">LoweredBackendModule</span></code>
-(more documentation on this function can be found in the Python API reference):</p>
+lower it, we call the following function which returns a <code class="docutils literal notranslate"><span class="pre">LoweredBackendModule</span></code> (more documentation on this function can be found in the <a class="reference internal" href="export-to-executorch-api-reference.html"><span class="doc std std-doc">Export API reference</span></a>)</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># defined in backend_api.py</span>
 <span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
     <span class="n">backend_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
@@ -445,7 +444,7 @@ lowered module can be directly captured, or be put back in a parent module to be
 captured. Eventually the captured module is serialized in the flatbuffer’s model
 that can be loaded by the runtime.</p>
 <p>The following is an example of this flow:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span><span class="p">,</span> <span class="n">MethodCompileSpec</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
 <span class="kn">import</span> <span class="nn">executorch.exir</span> <span class="k">as</span> <span class="nn">exir</span>
 <span class="kn">import</span> <span class="nn">torch</span>
 
@@ -466,7 +465,7 @@ that can be loaded by the runtime.</p>
 <span class="kn">from</span> <span class="nn">executorch.exir.backend.test.backend_with_compiler_demo</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">BackendWithCompilerDemo</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="n">lowered_module</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="s1">&#39;BackendWithCompilerDemo&#39;</span><span class="p">,</span> <span class="n">to_be_lowered_exir_submodule</span><span class="p">,</span> <span class="p">[])</span>
+<span class="n">lowered_module</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="s1">&#39;BackendWithCompilerDemo&#39;</span><span class="p">,</span> <span class="n">to_be_lowered_exir_submodule</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="p">[])</span>
 </pre></div>
 </div>
 <p>We can serialize the program to a flatbuffer format by directly running:</p>
@@ -528,15 +527,21 @@ function</a>.</p>
 </pre></div>
 </div>
 <p>This function takes in a <code class="docutils literal notranslate"><span class="pre">Partitioner</span></code> which adds a tag to all the nodes that
-are meant to be lowered. It will return a <code class="docutils literal notranslate"><span class="pre">partition_tags</span></code> mapping tags to
+are meant to be lowered. It will return a <code class="docutils literal notranslate"><span class="pre">partition_tags</span></code> dictionary mapping tags to
 backend names and module compile specs. The tagged nodes will then be
 partitioned and lowered to their mapped backends using Flow 1’s process.
 Available helper partitioners are documented
 <a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="doc std std-doc">here</span></a>. These lowered modules
 will be inserted into the top-level module and serialized.</p>
 <p>The following is an example of the flow:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
-<span class="kn">import</span> <span class="nn">executorch.exir</span> <span class="k">as</span> <span class="nn">exir</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">executorch.exir</span> <span class="k">as</span> <span class="nn">exir</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.test.op_partitioner_demo</span> <span class="kn">import</span> <span class="n">AddMulPartitionerDemo</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.program</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">EdgeProgramManager</span><span class="p">,</span>
+    <span class="n">to_edge</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
 <span class="kn">import</span> <span class="nn">torch</span>
 
 <span class="k">class</span> <span class="nc">Model</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
@@ -554,12 +559,11 @@ will be inserted into the top-level module and serialized.</p>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">Model</span><span class="p">()</span>
 <span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
-<span class="n">gm</span> <span class="o">=</span> <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">to_edge</span><span class="p">()</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.test.op_partitioner_demo</span> <span class="kn">import</span> <span class="n">AddMulPartitionerDemo</span>
-<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">gm</span><span class="p">,</span> <span class="n">AddMulPartitionerDemo</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
-    <span class="n">exir</span><span class="o">.</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span><span class="n">passes</span><span class="o">=</span><span class="n">SpecPropPass</span><span class="p">())</span>
-<span class="p">)</span>
+<span class="n">core_aten_ep</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span>
+<span class="n">edge</span><span class="p">:</span> <span class="n">EdgeProgramManager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">core_aten_ep</span><span class="p">)</span>
+<span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">AddMulPartitionerDemo</span><span class="p">)</span>
+<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 <span class="c1"># Save the flatbuffer to a local file</span>
 <span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;delegate.pte&quot;</span>
@@ -573,10 +577,10 @@ will be inserted into the top-level module and serialized.</p>
 <h2>Runtime<a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h2>
 <p>After having the program with delegates, to run the model with the backend, we’d need to register the backend.
 Depending on the delegate implementation, the backend can be registered either as part of global variables or
-explicitly registered inside main function.</p>
+explicitly registered inside the main function.</p>
 <ul class="simple">
-<li><p>If it’s registered during global variables initialization, the backend will be registered as long as it’s static linked. Users only need to include the library as part of the dependency.</p></li>
-<li><p>If the vendor provides an API to register the backend, users need to include the library as part of the dependency, and call the API provided by vendors to explicitly register the backend as part of the main function</p></li>
+<li><p>If it’s registered during global variables initialization, the backend will be registered as long as it’s statically linked. Users only need to include the library as part of the dependency.</p></li>
+<li><p>If the vendor provides an API to register the backend, users need to include the library as part of the dependency, and call the API provided by vendors to explicitly register the backend as part of the main function.</p></li>
 </ul>
 </div>
 </div>
