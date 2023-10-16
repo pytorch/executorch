@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>ExecuTorch XNNPACK Delegate &mdash; ExecuTorch  documentation</title>
+  <title>ExecuTorch XNNPACK delegate &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -316,7 +316,7 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Native Delegates</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch XNNPACK Delegate</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">ExecuTorch XNNPACK delegate</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
@@ -368,7 +368,7 @@
       </li>
 
         
-      <li>ExecuTorch XNNPACK Delegate</li>
+      <li>ExecuTorch XNNPACK delegate</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
@@ -407,27 +407,27 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="executorch-xnnpack-delegate">
-<h1>ExecuTorch XNNPACK Delegate<a class="headerlink" href="#executorch-xnnpack-delegate" title="Permalink to this headline">¶</a></h1>
-<p>This is a high-level overview of the ExecuTorch XNNPACK Backend Delegate. This high performance delegate is aimed to reduce CPU inference latency for ExecuTorch models. We will provide a brief introduction to the XNNPACK library and explore the delegate’s overall architecture and intended use cases.</p>
+<h1>ExecuTorch XNNPACK delegate<a class="headerlink" href="#executorch-xnnpack-delegate" title="Permalink to this headline">¶</a></h1>
+<p>This is a high-level overview of the ExecuTorch XNNPACK backend delegate. This high performance delegate is aimed to reduce CPU inference latency for ExecuTorch models. We will provide a brief introduction to the XNNPACK library and explore the delegate’s overall architecture and intended use cases.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>XNNPACK Delegate is currently under active development, and may change in the future</p>
+<p>XNNPACK delegate is currently under active development, and may change in the future</p>
 </div>
 <div class="section" id="what-is-xnnpack">
 <h2>What is XNNPACK?<a class="headerlink" href="#what-is-xnnpack" title="Permalink to this headline">¶</a></h2>
 <p>XNNPACK is a library of highly-optimized neural network operators for ARM, x86, and WebAssembly architectures in Android, iOS, Windows, Linux, and macOS environments. It is an open source project, you can find more information about it on <a class="reference external" href="https://github.com/google/XNNPACK">github</a>.</p>
 </div>
 <div class="section" id="what-are-executorch-delegates">
-<h2>What are ExecuTorch Delegates?<a class="headerlink" href="#what-are-executorch-delegates" title="Permalink to this headline">¶</a></h2>
-<p>A delegate is an entry point for backends to process and execute parts of the ExecuTorch program. Delegated portions of ExecuTorch models hand off execution to backends. The XNNPACK Backend Delegate is one of many available in ExecuTorch. It leverages the XNNPACK third-party library to accelerate ExecuTorch programs efficiently across a variety of CPUs. More detailed information on the delegates and developing your own delegates is available <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">here</span></a>. It is recommended that you get familiar with that content before continuing on to the Architecture section.</p>
+<h2>What are ExecuTorch delegates?<a class="headerlink" href="#what-are-executorch-delegates" title="Permalink to this headline">¶</a></h2>
+<p>A delegate is an entry point for backends to process and execute parts of the ExecuTorch program. Delegated portions of ExecuTorch models hand off execution to backends. The XNNPACK backend delegate is one of many available in ExecuTorch. It leverages the XNNPACK third-party library to accelerate ExecuTorch programs efficiently across a variety of CPUs. More detailed information on the delegates and developing your own delegates is available <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">here</span></a>. It is recommended that you get familiar with that content before continuing on to the Architecture section.</p>
 </div>
 <div class="section" id="architecture">
 <h2>Architecture<a class="headerlink" href="#architecture" title="Permalink to this headline">¶</a></h2>
-<p><img alt="High Level XNNPACK Delegate Architecture" src="_images/xnnpack-delegate-architecture.png" /></p>
+<p><img alt="High Level XNNPACK delegate Architecture" src="_images/xnnpack-delegate-architecture.png" /></p>
 <div class="section" id="ahead-of-time">
 <h3>Ahead-of-time<a class="headerlink" href="#ahead-of-time" title="Permalink to this headline">¶</a></h3>
-<p>In the ExecuTorch export flow, lowering to the XNNPACK Delegate happens at the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> stage. In this stage, the model is partitioned by the <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code>. Partitioned sections of the graph are converted to a XNNPACK specific graph represenationed and then serialized via flatbuffer. The serialized flatbuffer is then ready to be deserialized and executed by the XNNPACK Backend at runtime.</p>
-<p><img alt="ExecuTorch XNNPACK Delegate Export Flow" src="_images/xnnpack-et-flow-diagram.png" /></p>
+<p>In the ExecuTorch export flow, lowering to the XNNPACK delegate happens at the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> stage. In this stage, the model is partitioned by the <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code>. Partitioned sections of the graph are converted to a XNNPACK specific graph represenationed and then serialized via flatbuffer. The serialized flatbuffer is then ready to be deserialized and executed by the XNNPACK backend at runtime.</p>
+<p><img alt="ExecuTorch XNNPACK delegate Export Flow" src="_images/xnnpack-et-flow-diagram.png" /></p>
 <div class="section" id="partitioner">
 <h4>Partitioner<a class="headerlink" href="#partitioner" title="Permalink to this headline">¶</a></h4>
 <p>The partitioner is implemented by backend delegates to mark nodes suitable for lowering. The <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code> lowers using node targets and module metadata. Some more references for partitioners can be found <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">here</span></a></p>
@@ -444,10 +444,6 @@
 <h5>Op-based partitioning<a class="headerlink" href="#op-based-partitioning" title="Permalink to this headline">¶</a></h5>
 <p>The <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code> also partitions using op targets. It traverses the graph and identifies individual nodes which are lowerable to XNNPACK. A drawback to module-based partitioning is that operators which come from <a class="reference external" href="https://github.com/pytorch/pytorch/blob/main/torch/_decomp/decompositions.py">decompositions</a> may be skipped. For example, an operator like <code class="docutils literal notranslate"><span class="pre">torch.nn.Hardsigmoid</span></code> is decomposed into add, muls, divs, and clamps. While hardsigmoid is not lowerable, we can lower the decomposed ops. Relying on <code class="docutils literal notranslate"><span class="pre">source_fn</span></code> metadata would skip these lowerables because they belong to a non-lowerable module, so in order to improve model performance, we greedily lower operators based on the op targets as well as the <code class="docutils literal notranslate"><span class="pre">source_fn</span></code>.</p>
 </div>
-</div>
-<div class="section" id="serialiazation">
-<h4>Serialiazation<a class="headerlink" href="#serialiazation" title="Permalink to this headline">¶</a></h4>
-<p>After partitioning the lowerable subgraphs from the model, The XNNPACK Delegate pre-processes these subgraphs and serializes them via flatbuffer for the XNNPACK Backend.</p>
 <div class="section" id="passes">
 <h5>Passes<a class="headerlink" href="#passes" title="Permalink to this headline">¶</a></h5>
 <p>Before any serialization, we apply passes on the subgraphs to prepare the graph. These passes are essentially graph transformations that help improve the performance of the delegate. We give an overview of the most significant passes and their function below. For a description of all passes see <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/backends/xnnpack/passes">here</a>:</p>
@@ -469,22 +465,26 @@
 </li>
 </ul>
 </div>
+</div>
+<div class="section" id="serialiazation">
+<h4>Serialiazation<a class="headerlink" href="#serialiazation" title="Permalink to this headline">¶</a></h4>
+<p>After partitioning the lowerable subgraphs from the model, The XNNPACK delegate pre-processes these subgraphs and serializes them via flatbuffer for the XNNPACK backend.</p>
 <div class="section" id="serialization-schema">
 <h5>Serialization Schema<a class="headerlink" href="#serialization-schema" title="Permalink to this headline">¶</a></h5>
-<p>The XNNPACK Delegate uses flatbuffer for serialization. In order to improve runtime performance, the XNNPACK Delegate’s flatbuffer <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/serialization/schema.fbs">schema</a> mirrors the XNNPACK Library’s graph level API calls. The serialized data are arguments to XNNPACK’s APIs, so that at runtime, the XNNPACK execution graph can efficiently be created with successive calls to XNNPACK’s APIs.</p>
+<p>The XNNPACK delegate uses flatbuffer for serialization. In order to improve runtime performance, the XNNPACK delegate’s flatbuffer <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/serialization/schema.fbs">schema</a> mirrors the XNNPACK Library’s graph level API calls. The serialized data are arguments to XNNPACK’s APIs, so that at runtime, the XNNPACK execution graph can efficiently be created with successive calls to XNNPACK’s APIs.</p>
 </div>
 </div>
 </div>
 <div class="section" id="runtime">
 <h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h3>
-<p>The XNNPACK Backend’s runtime interfaces with the ExecuTorch runtime through the custom <code class="docutils literal notranslate"><span class="pre">init</span></code> and <code class="docutils literal notranslate"><span class="pre">execute</span></code> function. Each delegated subgraph is contained in an individually serialized XNNPACK blob. When the model is initialized, ExecuTorch calls <code class="docutils literal notranslate"><span class="pre">init</span></code> on all XNNPACK Blobs to load the subgraph from serialized flatbuffer. After, when the model is executed, each subgraph is executed via the backend through the custom <code class="docutils literal notranslate"><span class="pre">execute</span></code> function. To read more about how delegate runtimes interface with ExecuTorch, refer to this <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">resource</span></a></p>
+<p>The XNNPACK backend’s runtime interfaces with the ExecuTorch runtime through the custom <code class="docutils literal notranslate"><span class="pre">init</span></code> and <code class="docutils literal notranslate"><span class="pre">execute</span></code> function. Each delegated subgraph is contained in an individually serialized XNNPACK blob. When the model is initialized, ExecuTorch calls <code class="docutils literal notranslate"><span class="pre">init</span></code> on all XNNPACK Blobs to load the subgraph from serialized flatbuffer. After, when the model is executed, each subgraph is executed via the backend through the custom <code class="docutils literal notranslate"><span class="pre">execute</span></code> function. To read more about how delegate runtimes interface with ExecuTorch, refer to this <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">resource</span></a>.</p>
 <div class="section" id="xnnpack-library">
 <h4>XNNPACK Library<a class="headerlink" href="#xnnpack-library" title="Permalink to this headline">¶</a></h4>
-<p>The XNNPACK Library currently used by the delegate is on the following <a class="reference external" href="https://github.com/google/XNNPACK/tree/51a987591a6fc9f0fc0707077f53d763ac132cbf">version</a>. XNNPACK Delegate supports CPU’s on multiple platforms; more information on the supported hardware architectures can be found on the XNNPACK Library’s <a class="reference external" href="https://github.com/google/XNNPACK">README</a>.</p>
+<p>The XNNPACK Library currently used by the delegate is on the following <a class="reference external" href="https://github.com/google/XNNPACK/tree/51a987591a6fc9f0fc0707077f53d763ac132cbf">version</a>. XNNPACK delegate supports CPU’s on multiple platforms; more information on the supported hardware architectures can be found on the XNNPACK Library’s <a class="reference external" href="https://github.com/google/XNNPACK">README</a>.</p>
 </div>
 <div class="section" id="init">
 <h4>Init<a class="headerlink" href="#init" title="Permalink to this headline">¶</a></h4>
-<p>When calling XNNPACK Delegate’s <code class="docutils literal notranslate"><span class="pre">init</span></code>, we deserialize the preprocessed blobs via flatbuffer. We define the nodes (operators) and edges (intermediate tensors) to build the XNNPACK execution graph using the information we serialized ahead-of-time. As we mentioned earlier, the majority of processing has been done ahead-of-time, so that at runtime we can just call the XNNPACK APIs with the serialized arguments in succession. As we define static data into the execution graph, XNNPACK performs weight packing at runtime to prepare static data like weights and biases for efficient execution. After creating the execution graph, we create the runtime object and pass it on to <code class="docutils literal notranslate"><span class="pre">execute</span></code>.</p>
+<p>When calling XNNPACK delegate’s <code class="docutils literal notranslate"><span class="pre">init</span></code>, we deserialize the preprocessed blobs via flatbuffer. We define the nodes (operators) and edges (intermediate tensors) to build the XNNPACK execution graph using the information we serialized ahead-of-time. As we mentioned earlier, the majority of processing has been done ahead-of-time, so that at runtime we can just call the XNNPACK APIs with the serialized arguments in succession. As we define static data into the execution graph, XNNPACK performs weight packing at runtime to prepare static data like weights and biases for efficient execution. After creating the execution graph, we create the runtime object and pass it on to <code class="docutils literal notranslate"><span class="pre">execute</span></code>.</p>
 <p>Since weight packing creates an extra copy of the weights inside XNNPACK, We free the original copy of the weights inside the preprocessed XNNPACK Blob, this allows us to remove some of the memory overhead.</p>
 </div>
 <div class="section" id="execute">
@@ -507,7 +507,7 @@
 </div>
 <div class="section" id="quantization">
 <h2>Quantization<a class="headerlink" href="#quantization" title="Permalink to this headline">¶</a></h2>
-<p>The XNNPACK Delegate can also be used as a backend to execute symmetrically quantized models. We can lower quantized models using the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code>. <code class="docutils literal notranslate"><span class="pre">Quantizers</span></code> are backend specific, which means the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code> is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library. We will not go over the details of how to implement your custom quantizer, you can follow the docs <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quantizer.html">here</a> to do so. However, we will provide a brief overview of how to quantize the model to leverage quantized execution of the XNNPACK Delegate.</p>
+<p>The XNNPACK delegate can also be used as a backend to execute symmetrically quantized models. For quantized model delegation, we quantize models using the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code>. <code class="docutils literal notranslate"><span class="pre">Quantizers</span></code> are backend specific, which means the <code class="docutils literal notranslate"><span class="pre">XNNPACKQuantizer</span></code> is configured to quantize models to leverage the quantized operators offered by the XNNPACK Library. We will not go over the details of how to implement your custom quantizer, you can follow the docs <a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quantizer.html">here</a> to do so. However, we will provide a brief overview of how to quantize the model to leverage quantized execution of the XNNPACK delegate.</p>
 <div class="section" id="configuring-the-xnnpackquantizer">
 <h3>Configuring the XNNPACKQuantizer<a class="headerlink" href="#configuring-the-xnnpackquantizer" title="Permalink to this headline">¶</a></h3>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch.ao.quantization.quantizer.xnnpack_quantizer</span> <span class="kn">import</span> <span class="p">(</span>
@@ -634,18 +634,18 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">ExecuTorch XNNPACK Delegate</a><ul>
+<li><a class="reference internal" href="#">ExecuTorch XNNPACK delegate</a><ul>
 <li><a class="reference internal" href="#what-is-xnnpack">What is XNNPACK?</a></li>
-<li><a class="reference internal" href="#what-are-executorch-delegates">What are ExecuTorch Delegates?</a></li>
+<li><a class="reference internal" href="#what-are-executorch-delegates">What are ExecuTorch delegates?</a></li>
 <li><a class="reference internal" href="#architecture">Architecture</a><ul>
 <li><a class="reference internal" href="#ahead-of-time">Ahead-of-time</a><ul>
 <li><a class="reference internal" href="#partitioner">Partitioner</a><ul>
 <li><a class="reference internal" href="#module-based-partitioning">Module-based partitioning</a></li>
 <li><a class="reference internal" href="#op-based-partitioning">Op-based partitioning</a></li>
+<li><a class="reference internal" href="#passes">Passes</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#serialiazation">Serialiazation</a><ul>
-<li><a class="reference internal" href="#passes">Passes</a></li>
 <li><a class="reference internal" href="#serialization-schema">Serialization Schema</a></li>
 </ul>
 </li>
