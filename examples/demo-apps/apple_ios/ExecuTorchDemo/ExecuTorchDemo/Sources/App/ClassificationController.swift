@@ -12,7 +12,7 @@ import SwiftUI
 
 enum Mode: String, CaseIterable {
   case xnnpack = "XNNPACK"
-  case coreML = "CoreML"
+  case coreML = "Core ML"
   case mps = "MPS"
 }
 
