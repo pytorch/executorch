@@ -13,17 +13,14 @@ Welcome to the ExecuTorch Documentation
    `GitHub repository <https://github.com/pytorch/executorch/issues>`__ for bug
    reporting.
 
-**ExecuTorch** is a PyTorch platform that provides infrastructure to run
-PyTorch programs everywhere from AR/VR wearables to standard on-device
-iOS and Android mobile deployments. One of the main
-goals for ExecuTorch is to enable wider customization and deployment
-capabilities of the PyTorch programs.
+.. raw:: html
 
-ExecuTorch heavily relies on such PyTorch technologies as `torch.compile
-<https://pytorch.org/docs/stable/torch.compiler.html>`__ and `torch.export
-<https://pytorch.org/docs/main/export.html>`__. If you are not familiar with
-these APIs, you might want to read about them in the PyTorch documentation
-before diving into the ExecuTorch documentation.
+   <div class="et-page-column-row">
+     <div class="et-page-column1"><p><strong>ExecuTorch</strong> is a PyTorch platform that provides infrastructure to run PyTorch programs everywhere from AR/VR wearables to standard on-device iOS and Android mobile deployments. One of the main goals for ExecuTorch is to enable wider customization and deployment capabilities of the PyTorch programs.</p>
+     <p>ExecuTorch heavily relies on such PyTorch technologies as <a href="https://pytorch.org/docs/stable/torch.compiler.html">torch.compile</a> and <a href="https://pytorch.org/docs/main/export.html">torch.export</a>. If you are not familiar with these APIs, you might want to read about them in the PyTorch documentation before diving into the ExecuTorch documentation.</p></div>
+     <div class="et-page-column2"><img src="_static/img/ExecuTorch-Logo-cropped.svg" alt="ExecuTorch logo" title="ExecuTorch logo"></div>
+   </div>
+
 
 Getting Started
 ~~~~~~~~~~~~~~~

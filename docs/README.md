@@ -161,9 +161,6 @@ outside of the `docs/source` directory, complete the following steps:
 2. Include the following in that file:
 
    ````
-   ---
-   orphan: true
-   ---
    ```{include} ../path-to-your-file/outside-of-the-docs-dir.md```
    ````
 
