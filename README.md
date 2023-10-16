@@ -48,18 +48,20 @@ executorch
 ├── docs                            #  Static docs tooling
 ├── examples                        #  Examples of various user flows, such as model export, delegates, and runtime execution.
 ├── exir                            #  Ahead of time library, model capture and lowering apis.
+|   ├── _serialize                  #  Serialize final export artifact.
 |   ├── backend                     #  Backend delegate ahead of time APIs
 |   ├── capture                     #  Program capture.
 |   ├── dialects                    #  Op sets for various dialects in the export process.
 |   ├── emit                        #  Conversion from ExportedProgram to ExecuTorch execution instructions.
+|   ├── passes                      #  Built-in compiler passes.
 |   ├── program                     #  Export artifacts.
-|   ├── serialize                   #  Serialize final export artifact.
+|   ├── verification                #  IR verification.
 ├── extension                       #  Extensions built on top of the runtime.
 |   ├── aten_util
-|   ├── data_loader                 # 1st party data loader implementations.
-|   ├── memory_allocator            # 1st party memory allocator implementations.
-|   ├── pybindings                  # Python api for executorch runtime.
-|   ├── pytree                      # C++ and Python flattening and unflattening lib for pytrees.
+|   ├── data_loader                 #  1st party data loader implementations.
+|   ├── memory_allocator            #  1st party memory allocator implementations.
+|   ├── pybindings                  #  Python api for executorch runtime.
+|   ├── pytree                      #  C++ and Python flattening and unflattening lib for pytrees.
 |   ├── testing_util
 ├── kernels                         #  1st party kernel implementations.
 |   ├── aten
