@@ -56,16 +56,16 @@ In order to be able to successfully build and run a model using the MPS backend 
 ### Software
 - [macOS Sonoma](https://www.apple.com/macos/sonoma/) (for lowering to MPS delegate)
 - [iOS 17](https://www.apple.com/ios/ios-17/) / [iPadOS 17](https://www.apple.com/ipados/ipados-17/) (for running on device)
-
+- [Xcode 15](https://developer.apple.com/xcode/) (for building the [AOT](#aot-ahead-of-time-components) and [runtime](#runtime))
 
 ## Setting up Developer Environment
 
-***Step 1.*** Please finish tutorial [Setting up executorch](../../../docs/website/docs/tutorials/00_setting_up_executorch.md).
+***Step 1.*** Please finish tutorial [Setting up executorch](getting-started-setup.md).
 
 ***Step 2.*** Install dependencies needed to lower MPS delegate:
 
   ```bash
-  bash ./backends/apple/mps/install_requirements.sh
+  ./backends/apple/mps/install_requirements.sh
   ```
 
 ## Build
