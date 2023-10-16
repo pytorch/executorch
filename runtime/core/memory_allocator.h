@@ -33,7 +33,7 @@ namespace executor {
  *   MemoryAllocator allocator(100, memory_pool)
  *   // Pass allocator object in the Executor
  *
- *   Underneath the hood, ExecuTorch will
+ *   Underneath the hood, ExecuTorch will call
  *   allocator.allocate() to keep iterating cur_ pointer
  */
 class MemoryAllocator {
@@ -46,8 +46,8 @@ class MemoryAllocator {
   static constexpr size_t kDefaultAlignment = alignof(void*);
 
   /**
-   * Constructs a new memory allocator of a given 'size', starting at the
-   * provided 'base_address'.
+   * Constructs a new memory allocator of a given `size`, starting at the
+   * provided `base_address`.
    *
    * @param[in] size The size in bytes of the buffer at `base_address`.
    * @param[in] base_address The buffer to allocate from. Does not take
@@ -121,7 +121,7 @@ class MemoryAllocator {
   }
 
   /**
-   * Allocates 'size' number of chunks of type T, where each chunk is of size
+   * Allocates `size` number of chunks of type T, where each chunk is of size
    * equal to sizeof(T) bytes.
    *
    * @param[in] size Number of memory chunks to allocate.
