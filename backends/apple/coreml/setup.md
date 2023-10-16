@@ -11,7 +11,7 @@ This is a tutorial for setting up the CoreML backend.
 ```
 cd executorch
 
-sh backends/apple/coreml/scripts/install_requirements.sh   
+./backends/apple/coreml/scripts/install_requirements.sh   
 
 ``` 
 
