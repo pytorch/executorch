@@ -133,7 +133,7 @@ assert(execute_error == Error::Ok);
 
 ## Retrieve Outputs
 
-Once our inference completes we can retrieve our output. We know that our model only returns a single output tensor. One potential pitfall here is that the output we get back is owned by the `Method`. Users should take care to clone their output before performing any mutations on it, or if they need it to have a lifespan seperate from the `Method`.
+Once our inference completes we can retrieve our output. We know that our model only returns a single output tensor. One potential pitfall here is that the output we get back is owned by the `Method`. Users should take care to clone their output before performing any mutations on it, or if they need it to have a lifespan separate from the `Method`.
 
 ``` cpp
 EValue output = method->get_output(0);

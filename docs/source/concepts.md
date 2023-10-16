@@ -259,7 +259,7 @@ A quantization technique where the model is quantized after it has been trained 
 
 Models may lose accuracy after quantization. QAT enables higher accuracy compared to eg. PTQ, by modeling the effects of quantization while training. During training, all weights and activations are ‘fake quantized’; float values are rounded to mimic int8 values, but all computations are still done with floating point numbers. Thus, all weight adjustments during training are made ‘aware’ that the model will ultimately be quantized. QAT applies the quantization flow during training, in contrast to PTQ which applies it afterwards.
 
-## Quantization
+## [Quantization](./quantization-overview.md)
 
 Techniques for performing computations and memory accesses on tensors with lower precision data, usually `int8`. Quantization improves model performance by lowering the memory usage and (usually) decreasing computational latency; depending on the hardware, computation done in lower precision will typically be faster, e.g. `int8` matmul vs `fp32` matmul. Often, quantization comes at the cost of model accuracy.
 
