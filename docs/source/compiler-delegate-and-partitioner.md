@@ -55,7 +55,7 @@ A delegate backend implementation is composed of:
 
 The diagram looks like following
 
-<img src="./_static/img/backend_interface.png" alt="drawing" style="width:500px;"/>
+<img src="./_static/img/backend_interface.png" alt="drawing" style="width:600px;"/>
 
 **Figure 1.** A high level of entry points for backend interfaces, including both ahead-of-time and runtime.
 
@@ -63,8 +63,7 @@ The diagram looks like following
 
 There are mainly two Ahead-of-Time entry point for backend to implement: `partition` and `preprocess`.
 
-`partitioner` is an algorithm implemented by the backend to tag the nodes to be lowered to the backend. `to_backend` API
-will apply the partition algorithm and lowered each subgraph, consists of connected tagged nodes, to the backend. Every subgraph
+`partitioner` is an algorithm implemented by the backend to tag the nodes to be lowered to the backend. `to_backend` API will apply the partition algorithm and lower each subgraph, which consists of connected tagged nodes, to the targeted backend. Every subgraph
 will be sent to the `preprocess` part provided by the backend to compiled as a binary blob.
 
 During partition, the `exported_program` is not allowed to mutate the program, and it's supposed to apply tag to each node. The
@@ -135,7 +134,7 @@ virtual void destroy(__ET_UNUSED DelegateHandle* handle);
 
 The diagram looks like following
 
-<img src="./_static/img/backend_interface_runtime.png" alt="drawing" style="width:500px;"/>
+<img src="./_static/img/backend_interface_runtime.png" alt="drawing" style="width:600px;"/>
 
 **Figure 3.** The relationship between standard ExecuTorch Runtime and backend entry point.
 
@@ -155,13 +154,22 @@ static auto success_with_compiler = register_backend(backend);
 ```
 
 
-## Debugging model execution within delegate
+## SDK Integration: Debuggability
 
 Providing consistent debugging experience, be it for runtime failures or performance profiling, is important. ExecuTorch employs native SDK (Software Development Kit) for this purpose, which enables correlating program instructions to original PyTorch code, via debug handles. You can read more about it [here](./sdk-etrecord).
 
-Delegated program or subgraphs are opaque to ExecuTorch runtime and appear as a special `call_delegate` instruction, which asks corresponding delegate to handle the execution of the subgraph or program. Due to the opaque nature of delgates, native SDK does not have visibility into delegated program. Thus the debugging, functional or performance, experiences of delegated execution suffers significantly as compared to it's non-delegated counterpart.
+Delegated program or subgraphs are opaque to ExecuTorch runtime and appear as a special `call_delegate` instruction, which asks corresponding backend to handle the execution of the subgraph or program. Due to the opaque nature of backend delgates, native SDK does not have visibility into delegated program. Thus the debugging, functional or performance, experiences of delegated execution suffers significantly as compared to it's non-delegated counterpart.
 
-In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, SDK provides an interface to correlate delegated (sub)graph to original (sub)graph. The SDK does so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, delegates can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to [SDK delegate integration](./sdk-delegate-integration).
+In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, SDK provides an interface to correlate delegated (sub)graph to original (sub)graph. The SDK does so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, backend developer can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to [SDK delegate integration](./sdk-delegate-integration).
+
+By leveraging the debug identifier, backend developer can embed the debug as part of the delegated blob
+
+<img src="./_static/img/backend_debug_handle.png" alt="drawing" style="width:600px;"/>
+
+In this way, during execute stage, with the debug identifier, backend developer can associate the failed instruction inside the delegate
+back to the exact line of PyThon code.
+
+<img src="./_static/img/backend_debug_handle_example.png" alt="drawing" style="width:700px;"/>
 
 ## Common Questions
 
