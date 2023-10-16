@@ -674,7 +674,7 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 <p>Models may lose accuracy after quantization. QAT enables higher accuracy compared to eg. PTQ, by modeling the effects of quantization while training. During training, all weights and activations are ‘fake quantized’; float values are rounded to mimic int8 values, but all computations are still done with floating point numbers. Thus, all weight adjustments during training are made ‘aware’ that the model will ultimately be quantized. QAT applies the quantization flow during training, in contrast to PTQ which applies it afterwards.</p>
 </div>
 <div class="section" id="quantization">
-<h2>Quantization<a class="headerlink" href="#quantization" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="quantization-overview.html"><span class="doc std std-doc">Quantization</span></a><a class="headerlink" href="#quantization" title="Permalink to this headline">¶</a></h2>
 <p>Techniques for performing computations and memory accesses on tensors with lower precision data, usually <code class="docutils literal notranslate"><span class="pre">int8</span></code>. Quantization improves model performance by lowering the memory usage and (usually) decreasing computational latency; depending on the hardware, computation done in lower precision will typically be faster, e.g. <code class="docutils literal notranslate"><span class="pre">int8</span></code> matmul vs <code class="docutils literal notranslate"><span class="pre">fp32</span></code> matmul. Often, quantization comes at the cost of model accuracy.</p>
 </div>
 <div class="section" id="runtime">
@@ -802,7 +802,7 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 <li><a class="reference internal" href="#program-source-code">Program source code</a></li>
 <li><a class="reference internal" href="#ptq-post-training-quantization">PTQ (Post Training Quantization)</a></li>
 <li><a class="reference internal" href="#qat-quantization-aware-training">QAT (Quantization Aware Training)</a></li>
-<li><a class="reference internal" href="#quantization">Quantization</a></li>
+<li><a class="reference internal" href="#quantization"><span class="xref myst">Quantization</span></a></li>
 <li><a class="reference internal" href="#runtime"><span class="xref myst">Runtime</span></a></li>
 <li><a class="reference internal" href="#sdk"><span class="xref myst">SDK</span></a></li>
 <li><a class="reference internal" href="#selective-build"><span class="xref myst">Selective build</span></a></li>

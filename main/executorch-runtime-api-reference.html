@@ -442,13 +442,13 @@
 <dd><p>A class that does simple allocation based on a size and returns the pointer to the memory address. It bookmarks a buffer with certain size. The allocation is simply checking space and growing the cur_ pointer with each allocation request.</p>
 <p>Simple example:</p>
 <p>// User allocates a 100 byte long memory in the heap. uint8_t* memory_pool = malloc(100 * sizeof(uint8_t)); <a class="reference internal" href="#classtorch_1_1executor_1_1MemoryAllocator"><span class="std std-ref">MemoryAllocator</span></a> allocator(100, memory_pool) // Pass allocator object in the Executor</p>
-<p>Underneath the hood, ExecuTorch will allocator.allocate() to keep iterating cur_ pointer </p>
+<p>Underneath the hood, ExecuTorch will call allocator.allocate() to keep iterating cur_ pointer </p>
 <div class="breathe-sectiondef docutils container">
 <p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
 <dl class="cpp function">
 <dt class="sig sig-object cpp" id="_CPPv4N5torch8executor15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t">
 <span id="_CPPv3N5torch8executor15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t"></span><span id="_CPPv2N5torch8executor15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t"></span><span id="torch::executor::MemoryAllocator::MemoryAllocator__uint32_t.uint8_tP"></span><span class="target" id="classtorch_1_1executor_1_1MemoryAllocator_1a9bb4c798a5b14429e3ccb06b18497858"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">MemoryAllocator</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">uint32_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">size</span></span>, <span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">base_address</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N5torch8executor15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t" title="Permalink to this definition">¶</a><br /></dt>
-<dd><p>Constructs a new memory allocator of a given ‘size’, starting at the provided ‘base_address’.</p>
+<dd><p>Constructs a new memory allocator of a given <code class="docutils literal notranslate"><span class="pre">size</span></code>, starting at the provided <code class="docutils literal notranslate"><span class="pre">base_address</span></code>.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
@@ -503,7 +503,7 @@
 <dl class="cpp function">
 <dt class="sig sig-object cpp" id="_CPPv4I0EN5torch8executor15MemoryAllocator12allocateListEP1T6size_t6size_t">
 <span id="_CPPv3I0EN5torch8executor15MemoryAllocator12allocateListE6size_t6size_t"></span><span id="_CPPv2I0EN5torch8executor15MemoryAllocator12allocateListE6size_t6size_t"></span><span class="k"><span class="pre">template</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">typename</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">T</span></span></span><span class="p"><span class="pre">&gt;</span></span><br /><span class="target" id="classtorch_1_1executor_1_1MemoryAllocator_1a422440fb46c7538f36a81486f7e502f9"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4I0EN5torch8executor15MemoryAllocator12allocateListEP1T6size_t6size_t" title="torch::executor::MemoryAllocator::allocateList::T"><span class="n"><span class="pre">T</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">allocateList</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">size</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">alignment</span></span><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="k"><span class="pre">alignof</span></span><span class="p"><span class="pre">(</span></span><a class="reference internal" href="#_CPPv4I0EN5torch8executor15MemoryAllocator12allocateListEP1T6size_t6size_t" title="torch::executor::MemoryAllocator::allocateList::T"><span class="n"><span class="pre">T</span></span></a><span class="p"><span class="pre">)</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4I0EN5torch8executor15MemoryAllocator12allocateListEP1T6size_t6size_t" title="Permalink to this definition">¶</a><br /></dt>
-<dd><p>Allocates ‘size’ number of chunks of type T, where each chunk is of size equal to sizeof(T) bytes.</p>
+<dd><p>Allocates <code class="docutils literal notranslate"><span class="pre">size</span></code> number of chunks of type T, where each chunk is of size equal to sizeof(T) bytes.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
@@ -622,7 +622,7 @@
 <dl class="cpp function">
 <dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor13MemoryManager14temp_allocatorEv">
 <span id="_CPPv3NK5torch8executor13MemoryManager14temp_allocatorEv"></span><span id="_CPPv2NK5torch8executor13MemoryManager14temp_allocatorEv"></span><span id="torch::executor::MemoryManager::temp_allocatorC"></span><span class="target" id="classtorch_1_1executor_1_1MemoryManager_1a86c3c900f88154942705c96ec5bb349f"></span><span class="k"><span class="pre">inline</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4N5torch8executor15MemoryAllocatorE" title="torch::executor::MemoryAllocator"><span class="n"><span class="pre">MemoryAllocator</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">temp_allocator</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor13MemoryManager14temp_allocatorEv" title="Permalink to this definition">¶</a><br /></dt>
-<dd><p>Returns the allocator to use to allocate temporary data during kernel or delegate execution.</p>
+<dd><p>Returns the allocator to use for allocating temporary data during kernel or delegate execution.</p>
 <p>This allocator will be reset after every kernel or delegate call during execution. </p>
 </dd></dl>
 
@@ -659,24 +659,24 @@
 <dl class="cpp enum">
 <dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12HeaderStatusE">
 <span id="_CPPv3N5torch8executor7Program12HeaderStatusE"></span><span id="_CPPv2N5torch8executor7Program12HeaderStatusE"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a6d67eb94cc739cbd024d0099d6f874ff"></span><span class="k"><span class="pre">enum</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">HeaderStatus</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12HeaderStatusE" title="Permalink to this definition">¶</a><br /></dt>
-<dd><p>Describes the presence of an executorch program header. </p>
+<dd><p>Describes the presence of an ExecuTorch program header. </p>
 <p><em>Values:</em></p>
 <dl class="cpp enumerator">
 <dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12HeaderStatus17CompatibleVersionE">
 <span id="_CPPv3N5torch8executor7Program12HeaderStatus17CompatibleVersionE"></span><span id="_CPPv2N5torch8executor7Program12HeaderStatus17CompatibleVersionE"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a6d67eb94cc739cbd024d0099d6f874ffa502419575a45d8bed520de9ddfe9dfa7"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">CompatibleVersion</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12HeaderStatus17CompatibleVersionE" title="Permalink to this definition">¶</a><br /></dt>
-<dd><p>An executorch program header is present, and its version is compatible with this version of the runtime. </p>
+<dd><p>An ExecuTorch program header is present, and its version is compatible with this version of the runtime. </p>
 </dd></dl>
 
 <dl class="cpp enumerator">
 <dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12HeaderStatus19IncompatibleVersionE">
 <span id="_CPPv3N5torch8executor7Program12HeaderStatus19IncompatibleVersionE"></span><span id="_CPPv2N5torch8executor7Program12HeaderStatus19IncompatibleVersionE"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a6d67eb94cc739cbd024d0099d6f874ffa0119b5b9a5ccbdbbd8e2ea39e74e2b52"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">IncompatibleVersion</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12HeaderStatus19IncompatibleVersionE" title="Permalink to this definition">¶</a><br /></dt>
-<dd><p>An executorch program header is present, but its version is not compatible with this version of the runtime. </p>
+<dd><p>An ExecuTorch program header is present, but its version is not compatible with this version of the runtime. </p>
 </dd></dl>
 
 <dl class="cpp enumerator">
 <dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12HeaderStatus10NotPresentE">
 <span id="_CPPv3N5torch8executor7Program12HeaderStatus10NotPresentE"></span><span id="_CPPv2N5torch8executor7Program12HeaderStatus10NotPresentE"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a6d67eb94cc739cbd024d0099d6f874ffa636c115faac0a2d2e9af677d1ff772d4"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">NotPresent</span></span></span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12HeaderStatus10NotPresentE" title="Permalink to this definition">¶</a><br /></dt>
-<dd><p>An executorch program header is not present. </p>
+<dd><p>An ExecuTorch program header is not present. </p>
 </dd></dl>
 
 <dl class="cpp enumerator">
@@ -826,11 +826,11 @@
 <dl class="cpp function">
 <dt class="sig sig-object cpp" id="_CPPv4N5torch8executor7Program12check_headerEPKv6size_t">
 <span id="_CPPv3N5torch8executor7Program12check_headerEPKv6size_t"></span><span id="_CPPv2N5torch8executor7Program12check_headerEPKv6size_t"></span><span id="torch::executor::Program::check_header__voidCP.s"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a6ad4cff7549205d9b9703a7126c68e6e"></span><span class="k"><span class="pre">static</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv4N5torch8executor7Program12HeaderStatusE" title="torch::executor::Program::HeaderStatus"><span class="n"><span class="pre">HeaderStatus</span></span></a><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">check_header</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">data</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">size</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv4N5torch8executor7Program12check_headerEPKv6size_t" title="Permalink to this definition">¶</a><br /></dt>
-<dd><p>Looks for an executorch program header in the provided data.</p>
+<dd><p>Looks for an ExecuTorch program header in the provided data.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>data</strong> – <strong>[in]</strong> The data from the beginning of a file that might contain an executorch program. </p></li>
+<li><p><strong>data</strong> – <strong>[in]</strong> The data from the beginning of a file that might contain an ExecuTorch program. </p></li>
 <li><p><strong>size</strong> – <strong>[in]</strong> The size of <code class="docutils literal notranslate"><span class="pre">data</span></code> in bytes. Must be &gt;= <code class="docutils literal notranslate"><span class="pre">kMinHeadBytes</span></code>.</p></li>
 </ul>
 </dd>
