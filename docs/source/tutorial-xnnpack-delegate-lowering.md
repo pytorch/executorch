@@ -138,9 +138,9 @@ The generated model file will be named `[model_name]_xnnpack_[qs8/fp32].pte` dep
 We will use `buck2` to run the `.pte` file with XNNPACK delegate instructions in it on your host platform. You can follow the instructions here to install [buck2](getting-started-setup.md#building-a-runtime). You can now run it with the prebuilt `xnn_executor_runner` provided in the examples. This will run the model on some sample inputs.
 
 ```bash
-buck2 run examples/backend:xnn_executor_runner -- --model_path ./mv2_xnnpack_fp32.pte
+buck2 run examples/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnnpack_fp32.pte
 # or to run the quantized variant
-buck2 run examples/backend:xnn_executor_runner -- --model_path ./mv2_xnnpack_qs8.pte
+buck2 run examples/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnnpack_qs8.pte
 ```
 
 ## Building and Linking with the XNNPACK Backend
