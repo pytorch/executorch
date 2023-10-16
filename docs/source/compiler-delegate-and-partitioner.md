@@ -29,12 +29,12 @@
 
 Audience: Vendors, Backend Delegate developers, who are interested in integrating their own compilers and hardware as part of ExecuTorch
 
-## Backend Interfaces: Overview
-
 Backend delegation is an entry point for backends to process and execute PyTorch
 programs to leverage performance and efficiency benefits of specialized
 backends and hardware, while still providing PyTorch users with an experience
 close to that of the PyTorch runtime.
+
+## Backend Interfaces: Overview
 
 At a high level, the entry point for backends is defined by 2 components:
 
@@ -79,10 +79,10 @@ def partition(
 
 During preprocessing, backends are given an edge dialect program,
 a list of compile specs specifying the values needed for compilation, and are
-expected to return a compiled blob, or binary contains the desired program to be
-run in the backend, and profiling information. During serialization, the
+expected to return a compiled blob, or binary containing the desired program to be
+run in the backend. During serialization, the
 compiled blob will be serialized as part of the `.pte` file, and directly loaded to the device. The
-API looks something like:
+API for this process is:
 
 ```python
 def preprocess(
@@ -140,12 +140,12 @@ The diagram looks like following
 **Figure 3.** The relationship between standard ExecuTorch Runtime and backend entry point.
 
 
-Once the backend is ready, they can then be registered via the `register_backend` API:
+In order to make backend available to ExecuTorch runtime, it must be registered via the `register_backend` API:
 ```cpp
 __ET_NODISCARD Error register_backend(const Backend& backend);
 ```
 
-`register_backend` can be statically registered like the following
+Static registeration, i.e., at libraray init or load time, of a backend can be achieved as follows:
 ```cpp
 namespace {
 auto cls = BackendWithCompiler();
@@ -155,62 +155,13 @@ static auto success_with_compiler = register_backend(backend);
 ```
 
 
-## SDK: Debug Handle
+## Debugging model execution within delegate
 
-If there is an error in the backend, for example, if there is any operator that is not
-supported by the backend, backend developer can raise an exception with debug handler.
-The debug handle can surface back to the Python frontend with the source code information. Below is an
-example where the `tan` operator is not supported in `BackendWithCompilerDemo`
-backend. Please refer to [SDK delegate integration](./sdk-delegate-integration)
-for more details.
+Providing consistent debugging experience, be it for runtime failures or performance profiling, is important. ExecuTorch employs native SDK (Software Development Kit) for this purpose, which enables correlating program instructions to original PyTorch code, via debug handles. You can read more about it [here](./sdk-etrecord).
 
-A problematic program:
-```python
-class TanModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
+Delegated program or subgraphs are opaque to ExecuTorch runtime and appear as a special `call_delegate` instruction, which asks corresponding delegate to handle the execution of the subgraph or program. Due to the opaque nature of delgates, native SDK does not have visibility into delegated program. Thus the debugging, functional or performance, experiences of delegated execution suffers significantly as compared to it's non-delegated counterpart.
 
-    def forward(self, x):
-        return torch.tan(x)
-
-tan_module = TanModule()
-model_inputs = (torch.ones(1),)
-edgeir_m = exir.capture(tan_module, model_inputs).to_edge()
-lowered_tan_module = to_backend(
-    "BackendWithCompilerDemo", edgeir_m, []
-)
-
-class CompositeModelWithTan(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.lowered_tan = lowered_tan_module
-
-    def forward(self, x):
-        output_from_submodule = self.lowered_tan(x)
-        return output_from_submodule
-
-composite_model_with_tan = CompositeModelWithTan()
-model_inputs = (torch.ones(1),)
-
-composite_model_with_tan(*model_inputs)
-
-exec_prog = (
-    exir.capture(composite_model_with_tan, model_inputs).to_edge().to_executorch()
-)
-
-buff = exec_prog.buffer
-model_inputs = torch.ones(1)
-
-# Load and init the program in executor
-executorch_module = _load_for_executorch_from_buffer(buff)
-
-# Expect to throw with debug handler here.
-model_outputs = executorch_module.forward([model_inputs])
-```
-
-It's expected to throw with the error message mentioning debug handler like `instruction
-demo::tan_default<debug_handle>1 is not supported, debug handler is: 1`
-
+In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, SDK provides an interface to correlate delegated (sub)graph to original (sub)graph. The SDK does so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, delegates can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to [SDK delegate integration](./sdk-delegate-integration).
 
 ## Common Questions
 
