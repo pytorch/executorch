@@ -434,12 +434,12 @@
 <div class="section" id="backend-and-delegate">
 <h1>Backend and Delegate<a class="headerlink" href="#backend-and-delegate" title="Permalink to this headline">¶</a></h1>
 <p>Audience: Vendors, Backend Delegate developers, who are interested in integrating their own compilers and hardware as part of ExecuTorch</p>
-<div class="section" id="backend-interfaces-overview">
-<h2>Backend Interfaces: Overview<a class="headerlink" href="#backend-interfaces-overview" title="Permalink to this headline">¶</a></h2>
 <p>Backend delegation is an entry point for backends to process and execute PyTorch
 programs to leverage performance and efficiency benefits of specialized
 backends and hardware, while still providing PyTorch users with an experience
 close to that of the PyTorch runtime.</p>
+<div class="section" id="backend-interfaces-overview">
+<h2>Backend Interfaces: Overview<a class="headerlink" href="#backend-interfaces-overview" title="Permalink to this headline">¶</a></h2>
 <p>At a high level, the entry point for backends is defined by 2 components:</p>
 <ul class="simple">
 <li><p>An IR to represent the program: <strong>Edge Dialect</strong> (which is produced through
@@ -486,10 +486,10 @@ link to the <code class="docutils literal notranslate"><span class="pre">backend
 </div>
 <p>During preprocessing, backends are given an edge dialect program,
 a list of compile specs specifying the values needed for compilation, and are
-expected to return a compiled blob, or binary contains the desired program to be
-run in the backend, and profiling information. During serialization, the
+expected to return a compiled blob, or binary containing the desired program to be
+run in the backend. During serialization, the
 compiled blob will be serialized as part of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, and directly loaded to the device. The
-API looks something like:</p>
+API for this process is:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">preprocess</span><span class="p">(</span>
     <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="n">compile_specs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
@@ -536,11 +536,11 @@ function which will be called when the program is out of its lifespan.</p>
 <p>The diagram looks like following</p>
 <img src="./_static/img/backend_interface_runtime.png" alt="drawing" style="width:500px;"/>
 <p><strong>Figure 3.</strong> The relationship between standard ExecuTorch Runtime and backend entry point.</p>
-<p>Once the backend is ready, they can then be registered via the <code class="docutils literal notranslate"><span class="pre">register_backend</span></code> API:</p>
+<p>In order to make backend available to ExecuTorch runtime, it must be registered via the <code class="docutils literal notranslate"><span class="pre">register_backend</span></code> API:</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">__ET_NODISCARD</span><span class="w"> </span><span class="n">Error</span><span class="w"> </span><span class="n">register_backend</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">Backend</span><span class="o">&amp;</span><span class="w"> </span><span class="n">backend</span><span class="p">);</span>
 </pre></div>
 </div>
-<p><code class="docutils literal notranslate"><span class="pre">register_backend</span></code> can be statically registered like the following</p>
+<p>Static registeration, i.e., at libraray init or load time, of a backend can be achieved as follows:</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">namespace</span><span class="w"> </span><span class="p">{</span>
 <span class="k">auto</span><span class="w"> </span><span class="n">cls</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BackendWithCompiler</span><span class="p">();</span>
 <span class="n">Backend</span><span class="w"> </span><span class="n">backend</span><span class="p">{</span><span class="s">&quot;BackendWithCompilerDemo&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">cls</span><span class="p">};</span>
@@ -549,58 +549,11 @@ function which will be called when the program is out of its lifespan.</p>
 </pre></div>
 </div>
 </div>
-<div class="section" id="sdk-debug-handle">
-<h2>SDK: Debug Handle<a class="headerlink" href="#sdk-debug-handle" title="Permalink to this headline">¶</a></h2>
-<p>If there is an error in the backend, for example, if there is any operator that is not
-supported by the backend, backend developer can raise an exception with debug handler.
-The debug handle can surface back to the Python frontend with the source code information. Below is an
-example where the <code class="docutils literal notranslate"><span class="pre">tan</span></code> operator is not supported in <code class="docutils literal notranslate"><span class="pre">BackendWithCompilerDemo</span></code>
-backend. Please refer to <a class="reference internal" href="sdk-delegate-integration.html"><span class="doc std std-doc">SDK delegate integration</span></a>
-for more details.</p>
-<p>A problematic program:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">TanModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tan</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-
-<span class="n">tan_module</span> <span class="o">=</span> <span class="n">TanModule</span><span class="p">()</span>
-<span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),)</span>
-<span class="n">edgeir_m</span> <span class="o">=</span> <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">tan_module</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">to_edge</span><span class="p">()</span>
-<span class="n">lowered_tan_module</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span>
-    <span class="s2">&quot;BackendWithCompilerDemo&quot;</span><span class="p">,</span> <span class="n">edgeir_m</span><span class="p">,</span> <span class="p">[]</span>
-<span class="p">)</span>
-
-<span class="k">class</span> <span class="nc">CompositeModelWithTan</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">lowered_tan</span> <span class="o">=</span> <span class="n">lowered_tan_module</span>
-
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
-        <span class="n">output_from_submodule</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowered_tan</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">output_from_submodule</span>
-
-<span class="n">composite_model_with_tan</span> <span class="o">=</span> <span class="n">CompositeModelWithTan</span><span class="p">()</span>
-<span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),)</span>
-
-<span class="n">composite_model_with_tan</span><span class="p">(</span><span class="o">*</span><span class="n">model_inputs</span><span class="p">)</span>
-
-<span class="n">exec_prog</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">composite_model_with_tan</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">to_edge</span><span class="p">()</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
-<span class="p">)</span>
-
-<span class="n">buff</span> <span class="o">=</span> <span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span>
-<span class="n">model_inputs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-
-<span class="c1"># Load and init the program in executor</span>
-<span class="n">executorch_module</span> <span class="o">=</span> <span class="n">_load_for_executorch_from_buffer</span><span class="p">(</span><span class="n">buff</span><span class="p">)</span>
-
-<span class="c1"># Expect to throw with debug handler here.</span>
-<span class="n">model_outputs</span> <span class="o">=</span> <span class="n">executorch_module</span><span class="o">.</span><span class="n">forward</span><span class="p">([</span><span class="n">model_inputs</span><span class="p">])</span>
-</pre></div>
-</div>
-<p>It’s expected to throw with the error message mentioning debug handler like <code class="docutils literal notranslate"><span class="pre">instruction</span> <span class="pre">demo::tan_default&lt;debug_handle&gt;1</span> <span class="pre">is</span> <span class="pre">not</span> <span class="pre">supported,</span> <span class="pre">debug</span> <span class="pre">handler</span> <span class="pre">is:</span> <span class="pre">1</span></code></p>
+<div class="section" id="debugging-model-execution-within-delegate">
+<h2>Debugging model execution within delegate<a class="headerlink" href="#debugging-model-execution-within-delegate" title="Permalink to this headline">¶</a></h2>
+<p>Providing consistent debugging experience, be it for runtime failures or performance profiling, is important. ExecuTorch employs native SDK (Software Development Kit) for this purpose, which enables correlating program instructions to original PyTorch code, via debug handles. You can read more about it <a class="reference internal" href="sdk-etrecord.html"><span class="doc std std-doc">here</span></a>.</p>
+<p>Delegated program or subgraphs are opaque to ExecuTorch runtime and appear as a special <code class="docutils literal notranslate"><span class="pre">call_delegate</span></code> instruction, which asks corresponding delegate to handle the execution of the subgraph or program. Due to the opaque nature of delgates, native SDK does not have visibility into delegated program. Thus the debugging, functional or performance, experiences of delegated execution suffers significantly as compared to it’s non-delegated counterpart.</p>
+<p>In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, SDK provides an interface to correlate delegated (sub)graph to original (sub)graph. The SDK does so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, delegates can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to <a class="reference internal" href="sdk-delegate-integration.html"><span class="doc std std-doc">SDK delegate integration</span></a>.</p>
 </div>
 <div class="section" id="common-questions">
 <h2>Common Questions<a class="headerlink" href="#common-questions" title="Permalink to this headline">¶</a></h2>
@@ -763,7 +716,7 @@ We provide an helper function</p>
 <li><a class="reference internal" href="#backend-interfaces-overview">Backend Interfaces: Overview</a></li>
 <li><a class="reference internal" href="#backend-interfaces-ahead-of-time-preprocessing">Backend Interfaces: Ahead-of-Time Preprocessing</a></li>
 <li><a class="reference internal" href="#backend-interfaces-runtime-initialization-and-execution">Backend Interfaces: Runtime Initialization and Execution</a></li>
-<li><a class="reference internal" href="#sdk-debug-handle">SDK: Debug Handle</a></li>
+<li><a class="reference internal" href="#debugging-model-execution-within-delegate">Debugging model execution within delegate</a></li>
 <li><a class="reference internal" href="#common-questions">Common Questions</a></li>
 </ul>
 </li>
