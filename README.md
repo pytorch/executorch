@@ -42,12 +42,12 @@ experimenting with this preview release.
 executorch
 ├── backends                        #  Backend delegate implementations.
 ├── build                           #  Utilities for managing the build system.
-├── bundled_program                 #  Utilities for attaching reference inputs and outputs to models. TODO move to extension
-├── codegen                         #  Tooling to autogenerate bindings between kernels and the runtime. TODO move to tool
-├── configurations                  #  TODO delete this
+├── bundled_program                 #  Utilities for attaching reference inputs and outputs to models.
+├── codegen                         #  Tooling to autogenerate bindings between kernels and the runtime.
+├── configurations                  #  Build targets for clients. 
 ├── docs                            #  Static docs tooling
 ├── examples                        #  Examples of various user flows, such as model export, delegates, and runtime execution.
-├── exir                            #  Ahead of time library, model capture and lowering apis.
+├── exir                            #  Ahead of time library, model capture and lowering APIs.
 |   ├── backend                     #  Backend delegate ahead of time APIs
 |   ├── capture                     #  Program capture.
 |   ├── dialects                    #  Op sets for various dialects in the export process.
@@ -56,10 +56,10 @@ executorch
 |   ├── serialize                   #  Serialize final export artifact.
 ├── extension                       #  Extensions built on top of the runtime.
 |   ├── aten_util
-|   ├── data_loader                 # 1st party data loader implementations.
-|   ├── memory_allocator            # 1st party memory allocator implementations.
-|   ├── pybindings                  # Python api for executorch runtime.
-|   ├── pytree                      # C++ and Python flattening and unflattening lib for pytrees.
+|   ├── data_loader                 #  1st party data loader implementations.
+|   ├── memory_allocator            #  1st party memory allocator implementations.
+|   ├── pybindings                  #  Python api for executorch runtime.
+|   ├── pytree                      #  C++ and Python flattening and unflattening lib for pytrees.
 |   ├── testing_util
 ├── kernels                         #  1st party kernel implementations.
 |   ├── aten
@@ -67,20 +67,20 @@ executorch
 |   ├── portable                    #  Reference implementations of ATen operators.
 |   ├── prim_ops                    #  Special ops used in executorch runtime for control flow and symbolic primitives.
 |   ├── quantized
-├── profiler                        #  Utilities for profiling. TODO delete in favor of ETDump in sdk/
+├── profiler                        #  Utilities for profiling.
 ├── runtime                         #  core cpp runtime of executorch
 |   ├── backend                     #  Backend delegate runtime APIs
 |   ├── core                        #  Core structures used across all levels of the runtime
 |   ├── executor                    #  Model loading, initalization, and execution.
 |   ├── kernel                      #  Kernel registration and management.
 |   ├── platform                    #  Layer between architecture specific code and user calls.
-├── schema                          #  ExecuTorch program definition, TODO move under serialization/
+├── schema                          #  ExecuTorch program definition.
 ├── scripts                         #  Utility scripts for size management, dependency management, etc.
 ├── sdk                             #  Model profiling, debugging, and introspection.
 ├── shim                            #  Compatibility layer between OSS and Internal builds
 ├── test                            #  Broad scoped end2end tests
 ├── third-party                     #  third-party dependencies
-├── util                            #  TODO delete this
+├── util                            #  Shared utilities
 ```
 
 ## License
