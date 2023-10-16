@@ -427,7 +427,7 @@
 <li><p>[Optional] Generate an <a class="reference internal" href="sdk-etrecord.html"><span class="doc std std-doc">ETRecord</span></a> while you’re exporting your model. If provided this will enable users to link back profiling details to eager model source code (with stack traces and module hierarchy).</p></li>
 <li><p>Build the runtime with the pre-processor flags that enable profiling. Detailed in the <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ETDump documentation</span></a>.</p></li>
 <li><p>Run your Program on the ExecuTorch runtime and generate an <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ETDump</span></a>.</p></li>
-<li><p>Create an instance of the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a> by passing in the ETDump you have sourced from the runtime along with the ETRecord generated earlier (optional).</p>
+<li><p>Create an instance of the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a> by passing in the ETDump you have sourced from the runtime along with the optionally generated ETRecord from step 1.</p>
 <ul class="simple">
 <li><p>Through the Inspector API, users can do a wide range of analysis varying from printing out performance details to doing more finer granular calculation on module level.</p></li>
 </ul>
