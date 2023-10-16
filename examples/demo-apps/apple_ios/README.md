@@ -7,8 +7,8 @@ This app uses the
 process live camera images leveraging three different backends:
 [XNNPACK](https://github.com/google/XNNPACK),
 [Core ML](https://developer.apple.com/documentation/coreml) and
-[Metal Performance Shaders](https://developer.apple.com/documentation/metalperformanceshaders)
-(MPS).
+[Metal Performance Shaders (MPS)](https://developer.apple.com/documentation/metalperformanceshaders)
+(Xcode 15+ and iOS 17+ only).
 
 ![](_static/img/demo_ios_app.jpg)
 
@@ -41,13 +41,20 @@ pip --version
 ### 3. Getting Started Tutorial
 
 Before proceeding, follow the [Setting Up ExecuTorch](getting-started-setup.md)
-tutorial to configure the basic environment.
+tutorial to configure the basic environment. Feel free to skip building anything
+just yet. Make sure you have all the required dependencies installed, including
+the following tools:
+
+- Buck2 (as `/tmp/buck2`)
+- Cmake (`cmake` reachable at `$PATH`)
+- FlatBuffers Compiler (`flatc` reachable at `$PATH` or as `$FLATC_EXECUTABLE`
+  enironment variable)
 
 ### 4. Backend Dependencies
 
 Also, follow the corresponding sections from [Core ML](build-run-coreml.md) and
 [MPS](build-run-mps.md) tutorials to install additional dependencies for those
-backends. Do not build anything just yet!
+backends. Feel free to skip building anything just yet.
 
 ## Models and Labels
 
@@ -128,7 +135,8 @@ xcrun simctl delete executorch
 
 ### 3. Run App
 
-Finally, set up Code Signing in Xcode, and then run the app using `Cmd + R`.
+Finally, connect the device, set up Code Signing in Xcode, and then run the app
+using `Cmd + R`. Try installing a Release build for better performance.
 
 Congratulations! You've successfully set up the ExecuTorch iOS Demo App. Now,
 you can explore and enjoy the power of ExecuTorch on your iOS device!
