@@ -50,7 +50,7 @@ In the following sections we will walk through the steps to download each of the
 
 In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial. There are two approaches available:
 
-1. Method 1: use the `examples/arm/setup.sh` script to pull each item in an automated fashion (recommended)
+1. Method 1: Use the `examples/arm/setup.sh` script to pull each item in an automated fashion (recommended). It is recommended to run the script in a conda environment. Upon successful execution, you can directly go to [the next step](#convert-the-pytorch-model-to-the-pte-file).
 2. Method 2: Follow the guide step by step to understand all the components and the logic of the script. You may want to use this method if you intend to change the behavior of the flow significantly.
 
 ```{tip}

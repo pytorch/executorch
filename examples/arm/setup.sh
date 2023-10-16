@@ -141,7 +141,7 @@ function setup_ethos_u() {
         git clone ${ethos_u_repo_url}
     cd ethos-u
     git reset --hard ${ethos_u_base_rev}
-    ./fetch_externals.py fetch
+    python3 ./fetch_externals.py fetch
     pip install pyelftools
     echo "[${FUNCNAME[0]}] Done @ $(git describe --all --long 3> /dev/null) in ${root_dir}/ethos-u dir."
 }
@@ -177,7 +177,7 @@ function setup_tosa_reference_model() {
     cd build
     cmake ..
     n=$(nproc)
-    make -j"$((n - 5))" 
+    make -j"$((n - 5))"
     cd reference_model
     tosa_bin_path=`pwd`
     echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
