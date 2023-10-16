@@ -61,7 +61,7 @@ An open-source, cross-platform family of tools designed to build, test and packa
 
 ## Codegen
 
-In ExecuTorch, code generation is used to generate the [kernel registration library](./kernel-library-selective_build.md).
+In ExecuTorch, code generation is used to generate the [kernel registration library](./kernel-library-selective-build.md).
 
 ## [Core ATen Dialect](https://pytorch.org/docs/stable/torch.compiler_ir.html#irs)
 
@@ -271,7 +271,7 @@ The ExecuTorch runtime executes models on edge devices. It is responsible for pr
 
 Software Development Kit. The tooling users need to profile, debug and visualize programs that are running with ExecuTorch.
 
-## [Selective build](./kernel-library-selective_build.md)
+## [Selective build](./kernel-library-selective-build.md)
 
 An API used to build a leaner runtime by linking only to kernels used by the program. This provides significant binary size savings.
 
