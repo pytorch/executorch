@@ -4,7 +4,7 @@ _Selective build_ is a build mode on ExecuTorch that uses model metadata to guid
 
 This document aims to help ExecuTorch users better use selective build, by listing out available APIs, providing an overview of high level architecture and showcasing examples.
 
-Preread: Overview of the ExecuTorch runtime, High-level architecture and components of ExecuTorch
+Preread: [Overview of the ExecuTorch runtime](./runtime-overview.md), [High-level architecture and components of ExecuTorch](./getting-started-architecture.md)
 
 
 ## Design Principles
@@ -13,14 +13,14 @@ Preread: Overview of the ExecuTorch runtime, High-level architecture and compone
 
 **What are we selecting?** Our core ExecuTorch library is around 50kB with no operators/kernels or delegates. If we link in kernel libraries such as the ExecuTorch in-house portable kernel library, the binary size of the whole application surges, due to unused kernels being registered into the ExecuTorch runtime. Selective build is able to apply a filter on the kernel libraries, so that only the kernels actually being used are linked, thus reducing the binary size of the application.
 
-**How do we select? **Selective build provides APIs to allow users to pass in _op info_, operator metadata derived from target models. Selective build tools will gather these op info and build a filter for all kernel libraries being linked in.
+**How do we select?** Selective build provides APIs to allow users to pass in _op info_, operator metadata derived from target models. Selective build tools will gather these op info and build a filter for all kernel libraries being linked in.
 
 
 ## High Level Architecture
 
 
 
-![](./_static/img/kernel-library-selective_build.png)
+![](./_static/img/kernel-library-selective-build.png)
 
 
 Note that all of the selective build tools are running at build-time (to be distinguished from compile-time or runtime). Therefore selective build tools only have access to static data from user input or models.
@@ -56,17 +56,12 @@ If this input is set to true, it means we are registering all the kernels from a
 
 ### Select ops from schema yaml
 
-Context: each kernel library is designed to have a yaml file associated with it. For more information on this yaml file, see here (TODO: add link to kernel library documentation). This API allows users to pass in the schema yaml for a kernel library directly, effectively allowlisting all kernels in the library to be registered.
+Context: each kernel library is designed to have a yaml file associated with it. For more information on this yaml file, see [Kernel Library Overview](./kernel-library-overview.md). This API allows users to pass in the schema yaml for a kernel library directly, effectively allowlisting all kernels in the library to be registered.
 
 
 ### Select root ops from operator list
 
 This API lets users pass in a list of operator names. Note that this API can be combined with the API above and we will create a allowlist from the union of both API inputs.
-
-
-### Select from model (WIP)
-
-This API takes a model and extracts all op info from it.
 
 
 ## Example Walkthrough

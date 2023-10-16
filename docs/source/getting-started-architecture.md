@@ -81,7 +81,7 @@ Finally, the emitted program can be serialized to [flatbuffer](https://github.co
 
 With the serialized program, and provided kernel libraries (for operator calls) or backend libraries (for delegate calls), model deployment engineers can now prepare the program for the runtime.
 
-ExecuTorch has the _[selective build](./kernel-library-selective_build.md)_ APIs, to build the runtime that links to only kernels used by the program, which can provide significant binary size savings in the resulting application.
+ExecuTorch has the _[selective build](./kernel-library-selective-build.md)_ APIs, to build the runtime that links to only kernels used by the program, which can provide significant binary size savings in the resulting application.
 
 
 ## Program Execution
