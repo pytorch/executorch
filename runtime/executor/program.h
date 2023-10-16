@@ -175,23 +175,23 @@ class Program final {
       const char* method_name = "forward") const;
 
   /**
-   * Describes the presence of an executorch program header.
+   * Describes the presence of an ExecuTorch program header.
    */
   enum HeaderStatus {
     /**
-     * An executorch program header is present, and its version is compatible
+     * An ExecuTorch program header is present, and its version is compatible
      * with this version of the runtime.
      */
     CompatibleVersion,
 
     /**
-     * An executorch program header is present, but its version is not
+     * An ExecuTorch program header is present, but its version is not
      * compatible with this version of the runtime.
      */
     IncompatibleVersion,
 
     /**
-     * An executorch program header is not present.
+     * An ExecuTorch program header is not present.
      */
     NotPresent,
 
@@ -207,10 +207,10 @@ class Program final {
   static constexpr size_t kMinHeadBytes = 64;
 
   /**
-   * Looks for an executorch program header in the provided data.
+   * Looks for an ExecuTorch program header in the provided data.
    *
    * @param[in] data The data from the beginning of a file that might contain
-   *     an executorch program.
+   *     an ExecuTorch program.
    * @param[in] size The size of `data` in bytes. Must be >= `kMinHeadBytes`.
    *
    * @returns A value describing the presence of a header in the data.

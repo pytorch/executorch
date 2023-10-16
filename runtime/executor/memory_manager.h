@@ -93,7 +93,7 @@ class MemoryManager final {
   }
 
   /**
-   * Returns the allocator to use to allocate temporary data during kernel or
+   * Returns the allocator to use for allocating temporary data during kernel or
    * delegate execution.
    *
    * This allocator will be reset after every kernel or delegate call during
