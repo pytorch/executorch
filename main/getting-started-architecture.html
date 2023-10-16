@@ -312,7 +312,7 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective_build.html">Kernel Library Selective Build</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Native Delegates</span></p>
 <ul>
@@ -465,7 +465,7 @@
 <div class="section" id="runtime-preparation">
 <h2>Runtime Preparation<a class="headerlink" href="#runtime-preparation" title="Permalink to this headline">¶</a></h2>
 <p>With the serialized program, and provided kernel libraries (for operator calls) or backend libraries (for delegate calls), model deployment engineers can now prepare the program for the runtime.</p>
-<p>ExecuTorch has the <em><a class="reference internal" href="kernel-library-selective_build.html"><span class="doc std std-doc">selective build</span></a></em> APIs, to build the runtime that links to only kernels used by the program, which can provide significant binary size savings in the resulting application.</p>
+<p>ExecuTorch has the <em><a class="reference internal" href="kernel-library-selective-build.html"><span class="doc std std-doc">selective build</span></a></em> APIs, to build the runtime that links to only kernels used by the program, which can provide significant binary size savings in the resulting application.</p>
 </div>
 <div class="section" id="program-execution">
 <h2>Program Execution<a class="headerlink" href="#program-execution" title="Permalink to this headline">¶</a></h2>

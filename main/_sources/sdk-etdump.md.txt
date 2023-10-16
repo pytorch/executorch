@@ -5,7 +5,7 @@ ETDump (ExecuTorch Dump) is one of the core components of the ExecuTorch SDK exp
 
 ## Generating an ETDump
 
-Generating an ETDump is a relatively straight forward process. Users can follow the steps detailed below to integrate it into their application that uses ExecuTorch.
+Generating an ETDump is a relatively straightforward process. Users can follow the steps detailed below to integrate it into their application that uses ExecuTorch.
 
 1. ***Include*** the ETDump header in your code.
 ```C++
@@ -20,7 +20,7 @@ Result<Method> method =
       program->load_method(method_name, &memory_manager, &etdump_gen);
 ```
 
-3. ***Dump Out the ETDump Buffer*** - after the inference iterations have been completed, users can dump out the ETDump buffer. If users are on a device which has a file-system, they could just write it out to the fileystem. For more constrained embedded devices, users will have to extract the ETDump buffer from the device through a mechanism that best suits them (e.g. UART, JTAG etc.)
+3. ***Dump Out the ETDump Buffer*** - after the inference iterations have been completed, users can dump out the ETDump buffer. If users are on a device which has a filesystem, they could just write it out to the filesystem. For more constrained embedded devices, users will have to extract the ETDump buffer from the device through a mechanism that best suits them (e.g. UART, JTAG etc.)
 
 ```C++
 etdump_result result = etdump_gen.get_etdump_data();

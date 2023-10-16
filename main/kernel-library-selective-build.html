@@ -374,7 +374,7 @@
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/kernel-library-selective_build.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/kernel-library-selective-build.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -410,16 +410,16 @@
 <h1>Kernel Library Selective Build<a class="headerlink" href="#kernel-library-selective-build" title="Permalink to this headline">¶</a></h1>
 <p><em>Selective build</em> is a build mode on ExecuTorch that uses model metadata to guide ExecuTorch build. This build mode contains build tool APIs available on both CMake and buck2. ExecuTorch users can use selective build APIs to build an ExecuTorch runtime binary with minimal binary size by only including operators required by models.</p>
 <p>This document aims to help ExecuTorch users better use selective build, by listing out available APIs, providing an overview of high level architecture and showcasing examples.</p>
-<p>Preread: Overview of the ExecuTorch runtime, High-level architecture and components of ExecuTorch</p>
+<p>Preread: <a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Overview of the ExecuTorch runtime</span></a>, <a class="reference internal" href="getting-started-architecture.html"><span class="doc std std-doc">High-level architecture and components of ExecuTorch</span></a></p>
 <div class="section" id="design-principles">
 <h2>Design Principles<a class="headerlink" href="#design-principles" title="Permalink to this headline">¶</a></h2>
 <p><strong>Why selective build?</strong> Many ExecuTorch use cases are constrained by binary size. Selective build can reduce the binary size of the ExecuTorch runtime without compromising support for a target model.</p>
 <p><strong>What are we selecting?</strong> Our core ExecuTorch library is around 50kB with no operators/kernels or delegates. If we link in kernel libraries such as the ExecuTorch in-house portable kernel library, the binary size of the whole application surges, due to unused kernels being registered into the ExecuTorch runtime. Selective build is able to apply a filter on the kernel libraries, so that only the kernels actually being used are linked, thus reducing the binary size of the application.</p>
-<p>**How do we select? **Selective build provides APIs to allow users to pass in <em>op info</em>, operator metadata derived from target models. Selective build tools will gather these op info and build a filter for all kernel libraries being linked in.</p>
+<p><strong>How do we select?</strong> Selective build provides APIs to allow users to pass in <em>op info</em>, operator metadata derived from target models. Selective build tools will gather these op info and build a filter for all kernel libraries being linked in.</p>
 </div>
 <div class="section" id="high-level-architecture">
 <h2>High Level Architecture<a class="headerlink" href="#high-level-architecture" title="Permalink to this headline">¶</a></h2>
-<p><img alt="" src="_images/kernel-library-selective_build.png" /></p>
+<p><img alt="" src="_images/kernel-library-selective-build.png" /></p>
 <p>Note that all of the selective build tools are running at build-time (to be distinguished from compile-time or runtime). Therefore selective build tools only have access to static data from user input or models.</p>
 <p>The basic flow looks like this:</p>
 <ol class="arabic simple">
@@ -442,15 +442,11 @@
 </div>
 <div class="section" id="select-ops-from-schema-yaml">
 <h3>Select ops from schema yaml<a class="headerlink" href="#select-ops-from-schema-yaml" title="Permalink to this headline">¶</a></h3>
-<p>Context: each kernel library is designed to have a yaml file associated with it. For more information on this yaml file, see here (TODO: add link to kernel library documentation). This API allows users to pass in the schema yaml for a kernel library directly, effectively allowlisting all kernels in the library to be registered.</p>
+<p>Context: each kernel library is designed to have a yaml file associated with it. For more information on this yaml file, see <a class="reference internal" href="kernel-library-overview.html"><span class="doc std std-doc">Kernel Library Overview</span></a>. This API allows users to pass in the schema yaml for a kernel library directly, effectively allowlisting all kernels in the library to be registered.</p>
 </div>
 <div class="section" id="select-root-ops-from-operator-list">
 <h3>Select root ops from operator list<a class="headerlink" href="#select-root-ops-from-operator-list" title="Permalink to this headline">¶</a></h3>
 <p>This API lets users pass in a list of operator names. Note that this API can be combined with the API above and we will create a allowlist from the union of both API inputs.</p>
-</div>
-<div class="section" id="select-from-model-wip">
-<h3>Select from model (WIP)<a class="headerlink" href="#select-from-model-wip" title="Permalink to this headline">¶</a></h3>
-<p>This API takes a model and extracts all op info from it.</p>
 </div>
 </div>
 <div class="section" id="example-walkthrough">
@@ -573,7 +569,6 @@
 <li><a class="reference internal" href="#select-all-ops">Select all ops</a></li>
 <li><a class="reference internal" href="#select-ops-from-schema-yaml">Select ops from schema yaml</a></li>
 <li><a class="reference internal" href="#select-root-ops-from-operator-list">Select root ops from operator list</a></li>
-<li><a class="reference internal" href="#select-from-model-wip">Select from model (WIP)</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#example-walkthrough">Example Walkthrough</a><ul>
