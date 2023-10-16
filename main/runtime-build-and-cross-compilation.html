@@ -545,13 +545,15 @@ cmake<span class="w"> </span>--build<span class="w">  </span>cmake-android-out<s
 
 <span class="c1"># push the binary to an Android device</span>
 adb<span class="w"> </span>push<span class="w">  </span>cmake-android-out/executor_runner<span class="w">  </span>/data/local/tmp/executorch
+<span class="c1"># push the model file</span>
+adb<span class="w"> </span>push<span class="w">  </span>add.pte<span class="w">  </span>/data/local/tmp/executorch
 
-adb<span class="w"> </span>shell<span class="w">  </span><span class="s2">&quot;/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.ff&quot;</span>
+adb<span class="w"> </span>shell<span class="w">  </span><span class="s2">&quot;/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.pte&quot;</span>
 </pre></div>
 </div>
 </div>
 <div class="section" id="ios">
-<h3>IOS<a class="headerlink" href="#ios" title="Permalink to this headline">¶</a></h3>
+<h3>iOS<a class="headerlink" href="#ios" title="Permalink to this headline">¶</a></h3>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>While we’re working on making it a smoother experience, here is an early workflow to try out cross compilation for iOS.</p>
@@ -603,6 +605,15 @@ cp<span class="w"> </span>-r<span class="w"> </span>../utils<span class="w"> </s
 <li><p>In <strong>other linker flags</strong>, add a custom linker flag <code class="docutils literal notranslate"><span class="pre">-all_load.</span></code></p></li>
 </ul>
 </div>
+</div>
+<div class="section" id="next-steps">
+<h2>Next steps<a class="headerlink" href="#next-steps" title="Permalink to this headline">¶</a></h2>
+<p>You have successfully cross-compiled <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> binary to iOS and Android platforms. You can start exploring advanced features and capabilities. Here is a list of sections you might want to read next:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="kernel-library-selective_build.html"><span class="doc std std-doc">Selective build</span></a> to build the runtime that links to only kernels used by the program, which can provide significant binary size savings.</p></li>
+<li><p>Tutorials on building <a class="reference internal" href="demo-apps-android.html"><span class="doc std std-doc">Android</span></a> and <a class="reference internal" href="demo-apps-ios.html"><span class="doc std std-doc">iOS</span></a> demo apps.</p></li>
+<li><p>Tutorials on deploying applications to embedded devices such as <a class="reference internal" href="executorch-arm-delegate-tutorial.html"><span class="doc std std-doc">ARM Cortex-M/Ethos-U</span></a> and <a class="reference internal" href="build-run-xtensa.html"><span class="doc std std-doc">XTensa HiFi DSP</span></a>.</p></li>
+</ul>
 </div>
 </div>
 
@@ -659,9 +670,10 @@ cp<span class="w"> </span>-r<span class="w"> </span>../utils<span class="w"> </s
 <li><a class="reference internal" href="#use-an-example-app-executor-runner-to-execute-a-pte-file">Use an example app <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file</a></li>
 <li><a class="reference internal" href="#cross-compilation">Cross compilation</a><ul>
 <li><a class="reference internal" href="#android">Android</a></li>
-<li><a class="reference internal" href="#ios">IOS</a></li>
+<li><a class="reference internal" href="#ios">iOS</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#next-steps">Next steps</a></li>
 </ul>
 </li>
 </ul>

@@ -133,11 +133,13 @@ cmake --build  cmake-android-out  -j9
 
 # push the binary to an Android device
 adb push  cmake-android-out/executor_runner  /data/local/tmp/executorch
+# push the model file
+adb push  add.pte  /data/local/tmp/executorch
 
-adb shell  "/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.ff"
+adb shell  "/data/local/tmp/executorch/executor_runner --model_path /data/local/tmp/executorch/add.pte"
 ```
 
-### IOS
+### iOS
 ```{note}
  While we're working on making it a smoother experience, here is an early workflow to try out cross compilation for iOS.
 ```
@@ -184,3 +186,12 @@ If using the iOS cmake tool chain from `https://github.com/leetal/ios-cmake.git`
   - Set the value  **Header Search Paths**  to  `cmake-ios-out/include`.
   - Set **Library Search Paths**  to  `cmake-ios-out/build`.
   - In **other linker flags**, add a custom linker flag `-all_load.`
+
+
+## Next steps
+
+You have successfully cross-compiled `executor_runner` binary to iOS and Android platforms. You can start exploring advanced features and capabilities. Here is a list of sections you might want to read next:
+
+* [Selective build](./kernel-library-selective_build) to build the runtime that links to only kernels used by the program, which can provide significant binary size savings.
+* Tutorials on building [Android](./demo-apps-android.md) and [iOS](./demo-apps-ios.md) demo apps.
+* Tutorials on deploying applications to embedded devices such as [ARM Cortex-M/Ethos-U](./executorch-arm-delegate-tutorial.md) and [XTensa HiFi DSP](./build-run-xtensa.md).
