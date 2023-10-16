@@ -659,7 +659,7 @@ class _Emitter(torch.fx.Interpreter):
             return control_flow.map(map_fn, x, y)
 
         Corresponding graph: def forward(self, arg0_1, arg1_1):
-            submodule_0 = self.submodule_0 map_1 = torch.ops.map_impl(submodule_0, arg0_1, arg1_1);
+            submodule_0 = self.submodule_0 map_1 = torch.ops.higher_order.map_impl(submodule_0, arg0_1, arg1_1);
             submodule_0 = arg0_1 = arg1_1 = None return [map_1]
 
         submodule_0: def forward(self, arg0_1, arg1_1):
@@ -862,7 +862,7 @@ class _Emitter(torch.fx.Interpreter):
 
         if target is torch.ops.higher_order.cond:
             return self._emit_cond(args, subemitter_binding_output_values)
-        elif target is torch.ops.map_impl:
+        elif target is torch.ops.higher_order.map_impl:
             return self._emit_map(args, subemitter_binding_output_values)
         else:
             raise InternalError(
@@ -1233,7 +1233,7 @@ class _Emitter(torch.fx.Interpreter):
         elif target is torch.ops.higher_order.cond:
             return self._emit_control_flow(target, args, kwargs)
 
-        elif target is torch.ops.map_impl:
+        elif target is torch.ops.higher_order.map_impl:
             return self._emit_control_flow(target, args, kwargs)
 
         elif target == executorch_call_delegate:
