@@ -499,18 +499,18 @@ edge dialect model (<code class="docutils literal notranslate"><span class="pre"
     <a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">aten_model</span></a><span class="p">,</span> <span class="n">compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 <span class="p">)</span>
 <span class="n">edge_program_manager_copy</span> <span class="o">=</span> <a href="https://docs.python.org/3/library/copy.html#copy.deepcopy" title="copy.deepcopy" class="sphx-glr-backref-module-copy sphx-glr-backref-type-py-function"><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span></a><span class="p">(</span><span class="n">edge_program_manager</span><span class="p">)</span>
-<span class="n">et_program_manager</span><span class="p">:</span> <span class="n">ExecutorchProgramManager</span> <span class="o">=</span> <span class="n">edge_program_manager_copy</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+<span class="n">et_program_manager</span><span class="p">:</span> <span class="n">ExecutorchProgramManager</span> <span class="o">=</span> <span class="n">edge_program_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 
 <span class="c1"># Generate ETRecord</span>
 <a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etrecord_path</span></a> <span class="o">=</span> <span class="s2">&quot;etrecord.bin&quot;</span>
-<span class="n">generate_etrecord</span><span class="p">(</span><a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etrecord_path</span></a><span class="p">,</span> <span class="n">edge_program_manager</span><span class="p">,</span> <span class="n">et_program_manager</span><span class="p">)</span>
+<span class="n">generate_etrecord</span><span class="p">(</span><a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etrecord_path</span></a><span class="p">,</span> <span class="n">edge_program_manager_copy</span><span class="p">,</span> <span class="n">et_program_manager</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="sphx-glr-script-out highlight-default notranslate"><div class="highlight"><pre><span></span>Downloading: &quot;https://download.pytorch.org/models/mobilenet_v2-7ebf99e0.pth&quot; to /var/lib/ci-user/.cache/torch/hub/checkpoints/mobilenet_v2-7ebf99e0.pth
 
   0%|          | 0.00/13.6M [00:00&lt;?, ?B/s]
-100%|██████████| 13.6M/13.6M [00:00&lt;00:00, 209MB/s]
+100%|██████████| 13.6M/13.6M [00:00&lt;00:00, 200MB/s]
 /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:590: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
   warnings.warn(&quot;pytree_to_str is deprecated. Please use treespec_dumps&quot;)
 </pre></div>
@@ -648,7 +648,7 @@ to analyze the model run results.</p>
 <li><p><a class="reference external" href="../sdk-etdump.html">ETDump</a></p></li>
 <li><p><a class="reference external" href="../sdk-inspector.html">Inspector</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 20.593 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 21.065 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-sdk-integration-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/00f28feeccb75cde665e2acd0ca1eb2e/sdk-integration-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">sdk-integration-tutorial.py</span></code></a></p>
