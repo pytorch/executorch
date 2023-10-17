@@ -322,7 +322,6 @@ def _(
         tagged_graph_module,
         tagged_graph_module.graph,
         new_signature,
-        copy.deepcopy(edge_program.call_spec),
         new_state_dict,
         copy.deepcopy(edge_program.range_constraints),
         copy.deepcopy(edge_program.equality_constraints),

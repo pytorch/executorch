@@ -284,7 +284,6 @@ def capture(  # noqa: C901
         graph_module,
         graph_module.graph,
         ExportGraphSignature(user_inputs, user_outputs),
-        CallSpec(in_spec, out_spec),  # FIXME
         {},
         {},
         [],
