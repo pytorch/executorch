@@ -27,6 +27,8 @@ from executorch.exir.error import (
 from executorch.exir.operator.convert import is_out_variant
 from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
+
+from functorch.experimental._map import map_impl
 from torch import fx
 from torch.fx import Node
 from torch.utils._pytree import tree_flatten
@@ -321,7 +323,7 @@ def collect_specs_from_nodes(  # noqa: C901
                     operator.getitem,
                     torch.ops.higher_order.cond,
                     exir_while,
-                    torch.ops.map_impl,
+                    map_impl,
                     executorch_call_delegate,
                 ],
                 f"Unexpected op {node.op}, target {node.target}",
@@ -567,7 +569,7 @@ def get_while_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
 
 def get_map_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
     for nd in graph_module.graph.nodes:
-        if nd.target is torch.ops.map_impl:
+        if nd.target is map_impl:
             yield nd
 
 
