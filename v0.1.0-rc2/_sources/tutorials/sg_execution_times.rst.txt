@@ -1,0 +1,15 @@
+
+:orphan:
+
+.. _sphx_glr_tutorials_sg_execution_times:
+
+
+Computation times
+=================
+**00:26.189** total execution time for **tutorials** files:
+
++---------------------------------------------------------------------------------------------------+-----------+--------+
+| :ref:`sphx_glr_tutorials_sdk-integration-tutorial.py` (``sdk-integration-tutorial.py``)           | 00:21.515 | 0.0 MB |
++---------------------------------------------------------------------------------------------------+-----------+--------+
+| :ref:`sphx_glr_tutorials_export-to-executorch-tutorial.py` (``export-to-executorch-tutorial.py``) | 00:04.674 | 0.0 MB |
++---------------------------------------------------------------------------------------------------+-----------+--------+
