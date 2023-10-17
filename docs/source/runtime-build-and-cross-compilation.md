@@ -3,8 +3,8 @@
 Although buck2 is the main build system for the ExecuTorch project, it's also
 possible to build core pieces of the runtime using [CMake](https://cmake.org/)
 for easier integration with other build systems. Even if you don't use CMake
-directly, CMake can emit scripts for other format like Make or Ninja. For information, see
-[cmake-generators(7)](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html).
+directly, CMake can emit scripts for other format like Make, Ninja or Xcode.
+For information, see [cmake-generators(7)](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html).
 
 ## Targets Built by the CMake Build System
 
@@ -31,7 +31,7 @@ useful to embedded systems users.
 
 Follow the steps below to have the tools ready before using CMake to build on your machine.
 
-1. Clone the repo and install buck2 as described in the "Runtime Setup" section
+1. Clone the repo and install buck2 as described in the "Building a Runtime" section
    of [Setting Up ExecuTorch](getting-started-setup.md#building-a-runtime)
    - `buck2` is necessary because the CMake build system runs `buck2` commands
      to extract source lists from the primary build system. It will be possible
@@ -40,10 +40,10 @@ Follow the steps below to have the tools ready before using CMake to build on yo
    - Run `pip install tomli`
    - This provides an import required by a script that the CMake build system
      calls to extract source lists from `buck2`. Consider doing this `pip
-     install` inside your conda environment if you created one during ExecuTorch setup. see [Setting up
-     ExecuTorch](getting-started-setup.md).
-3. Install CMake version 3.19 or later
-   - conda install cmake
+     install` inside your Python or Conda virtual environment if you created
+     one already by following [Setting up ExecuTorch](getting-started-setup.md#setting-up-executorch).
+3. Install CMake version 3.19 or later:
+   - Run `conda install cmake` or `pip install cmake`.
 
 
 ## Configure the CMake Build
@@ -140,52 +140,31 @@ adb shell  "/data/local/tmp/executorch/executor_runner --model_path /data/local/
 ```
 
 ### iOS
-```{note}
- While we're working on making it a smoother experience, here is an early workflow to try out cross compilation for iOS.
+
+For iOS we'll build [frameworks](https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle) instead of static libraries, that will also contain the public headers inside.
+
+1. Install Xcode from the
+[Mac App Store](https://apps.apple.com/app/xcode/id497799835) and then install
+the Command Line Tools using the terminal:
+
+```bash
+xcode-select --install
 ```
-Only supported in macOS:
 
-Prerequisites:
--   [XCode](https://developer.apple.com/xcode/)
+2. Build the frameworks:
 
-After XCode is installed,
+```bash
+./build/build_apple_frameworks.sh
+```
 
-1. Get the iOS cmake toolchain by using one of the following options:
-  - Option 1 [recommended] : use the `ios.toolchain.cmake` from the following github repo:
+Run the above command with `--help` flag to learn more on how to build additional backends
+(like [Core ML](build-run-coreml.md), [MPS](build-run-mps.md) or XNNPACK), etc.
+Note, some backends may require additional dependencies and certain versions of Xcode and iOS.
 
-    ```bash
-    git clone https://github.com/leetal/ios-cmake.git
-    ```
+3. Copy over the generated `.xcframework` bundles to your Xcode project, link them against
+your targets and don't forget to add an extra linker flag `-all_load`.
 
-  - Option2 [wip], use the `iOS.cmake` from PyTorch, the
-    toolchain is located in `executorch/third-party/pytorch/pytorch/blob/main/cmake/iOS.cmake`
-
-
-2.  Use the tool chain provided in the repro to build the ExecuTorch library.
-    ```bash
-    rm -rf cmake-ios-out && mkdir cmake-ios-out && cd cmake-ios-out
-
-    # change the platform accordingly, please refer to the table listed in Readme
-    cmake . -G Xcode -DCMAKE_TOOLCHAIN_FILE=~/ios-cmake/ios.toolchain.cmake -DPLATFORM=SIMULATOR
-
-    # Create an include folder in cmake-ios-out to include all header files
-    mkdir include
-    cp -r ../runtime include
-    cp -r ../extension include
-    cp -r ../utils include
-    ```
-
-
-3. XCode setup
-
-If using the iOS cmake tool chain from `https://github.com/leetal/ios-cmake.git`, after build is complete, perform the following steps:
-
-1. Open the project in XCode, drag the `executorch.xcodeproj` generated from Step 2 to `Frameworks`.
-1. Go to project Target’s  `Build Phases`  -  `Link Binaries With Libraries`, click the **+** sign and add all the library files located in  `cmake-ios-out/build`.
-1. Navigate to the project  `Build Settings`:
-  - Set the value  **Header Search Paths**  to  `cmake-ios-out/include`.
-  - Set **Library Search Paths**  to  `cmake-ios-out/build`.
-  - In **other linker flags**, add a custom linker flag `-all_load.`
+Check out the [iOS Demo App](demo-apps-ios.md) tutorial for more info.
 
 
 ## Next steps
