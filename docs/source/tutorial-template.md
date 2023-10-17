@@ -1,29 +1,3 @@
-<!---- To make this progress bar work users will need to modify source/_templates/layout.html >
-<!---- To make this page show up in the tutorials section users will need to add an entry in source/index.rst under the Tutorials section>
-
-<!---- DO NOT MODIFY Progress Bar Start --->
-
-<div class="progress-bar-wrapper">
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-1">1</div>
-     <span class="step-caption" id="caption-1"></span>
-   </div>
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-2">2</div>
-     <span class="step-caption" id="caption-2"></span>
-   </div>
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-3">3</div>
-     <span class="step-caption" id="caption-3"></span>
-   </div>
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-4">4</div>
-     <span class="step-caption" id="caption-4"></span>
-   </div>
-</div>
-
-<!---- DO NOT MODIFY Progress Bar End--->
-
 # TITLE
 
 <!----This will show a grid card on the page----->
