@@ -13,7 +13,7 @@ import inspect
 import json
 import logging
 import operator
-from typing import Any, Callable, Dict, get_origin, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import executorch.exir as exir
 import executorch.exir.memory as memory
@@ -665,17 +665,10 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             symbol_name_to_range,
         )
 
-        returns = inspect.signature(GraphModuleDeserializer.deserialize)
-        if get_origin(returns.return_annotation) == tuple:
-            # TODO remove this branch later.
-            # pyre-ignore
-            graph_module, sig, call_spec, module_call_graph, symbol_name_to_symbol = res
-        else:
-            graph_module = res.graph_module
-            sig = res.signature
-            module_call_graph = res.module_call_graph
-            symbol_name_to_symbol = res.names_to_symbols
-            call_spec = None
+        graph_module = res.graph_module
+        sig = res.signature
+        module_call_graph = res.module_call_graph
+        symbol_name_to_symbol = res.names_to_symbols
 
         range_constraints = self.deserialize_range_constraints(
             symbol_name_to_range,
