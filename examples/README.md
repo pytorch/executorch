@@ -70,4 +70,4 @@ You will find demos of [ExecuTorch SDK](./sdk/) in the [`sdk/`](./sdk/) director
 
 ## Dependencies
 
-Various models and workflows listed in this directory have dependencies on some other packages. You need to follow the setup guide in [Setting up ExecuTorch from GitHub](../docs/source/getting-started-setup.md) to have appropriate packages installed.
+Various models and workflows listed in this directory have dependencies on some other packages. You need to follow the setup guide in [Setting up ExecuTorch from GitHub](https://pytorch.org/executorch/stable/getting-started-setup) to have appropriate packages installed.

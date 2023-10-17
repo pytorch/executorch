@@ -3,7 +3,7 @@ This folder contains examples to register custom operators into PyTorch as well 
 
 ## How to run
 
-Prerequisite: finish the [setting up wiki](../../../docs/source/getting-started-setup.md).
+Prerequisite: finish the [setting up wiki](https://pytorch.org/executorch/stable/getting-started-setup).
 
 Run:
 

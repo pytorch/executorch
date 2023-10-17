@@ -3,7 +3,7 @@ To optimize binary size of ExecuTorch runtime, selective build can be used. This
 
 ## How to run
 
-Prerequisite: finish the [setting up wiki](../../docs/source/getting-started-setup.md).
+Prerequisite: finish the [setting up wiki](https://pytorch.org/executorch/stable/getting-started-setup).
 
 Run:
 
