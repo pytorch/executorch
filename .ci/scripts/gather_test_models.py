@@ -39,7 +39,8 @@ CUSTOM_RUNNERS = {
 def parse_args() -> Any:
     from argparse import ArgumentParser
 
-    parser = ArgumentParser("Gather all models to test on CI for the target OS")
+    parser = ArgumentParser(
+        "Gather all models to test on CI for the target OS")
     parser.add_argument(
         "--target-os",
         type=str,
@@ -52,7 +53,7 @@ def parse_args() -> Any:
 
 def set_output(name: str, val: Any) -> None:
     """
-    Set the GitHb output so that it can be accessed by other jobs
+    Set the Github output so that it can be accessed by other jobs
     """
     print(f"Setting {val} to GitHub output")
 
@@ -86,26 +87,27 @@ def export_models_for_ci() -> None:
             if target_os not in BUILD_TOOLS[build_tool]:
                 continue
 
-            for q_config in quantization_configs:
-                for d_config in delegation_configs:
-                    record = {
-                        "build-tool": build_tool,
-                        "model": name,
-                        "xnnpack_quantization": q_config,
-                        "xnnpack_delegation": d_config,
-                        "runner": DEFAULT_RUNNERS.get(target_os, "linux.2xlarge"),
-                        # demo_backend_delegation test only supports add_mul model
-                        "demo_backend_delegation": name == "add_mul",
-                    }
+            record = {
+                "build-tool": build_tool,
+                "build-name": f"{build_tool}-{name}",
+                "model": name,
+                # Space delimited here so that it plays nice with bash for
+                # loops in downstream GHA workflows
+                "xnnpack_quantizations": " ".join(quantization_configs),
+                "xnnpack_delegations": " ".join(delegation_configs),
+                "runner": DEFAULT_RUNNERS.get(target_os, "linux.2xlarge"),
+                # demo_backend_delegation test only supports add_mul model
+                "demo_backend_delegation": name == "add_mul",
+            }
 
-                    # NB: Some model requires much bigger Linux runner to avoid
-                    # running OOM. The team is investigating the root cause
-                    if target_os in CUSTOM_RUNNERS and name in CUSTOM_RUNNERS.get(
-                        target_os, {}
-                    ):
-                        record["runner"] = CUSTOM_RUNNERS[target_os][name]
+            # NB: Some model requires much bigger Linux runner to avoid
+            # running OOM. The team is investigating the root cause
+            if target_os in CUSTOM_RUNNERS and name in CUSTOM_RUNNERS.get(
+                target_os, {}
+            ):
+                record["runner"] = CUSTOM_RUNNERS[target_os][name]
 
-                    models["include"].append(record)
+            models["include"].append(record)
 
     set_output("models", json.dumps(models))
 

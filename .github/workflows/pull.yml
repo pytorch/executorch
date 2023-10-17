@@ -39,7 +39,7 @@ jobs:
           PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py
 
   test-models-linux:
-    name: test-models-linux
+    name: ${{ matrix.build-name}}
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     needs: gather-models
     strategy:
@@ -58,13 +58,33 @@ jobs:
 
         MODEL_NAME=${{ matrix.model }}
         BUILD_TOOL=${{ matrix.build-tool }}
-        XNNPACK_QUANTIZATION=${{ matrix.xnnpack_quantization }}
-        XNNPACK_DELEGATION=${{ matrix.delegation }}
+        XNNPACK_QUANTIZATIONS=${{ matrix.xnnpack_quantizations }}
+        XNNPACK_DELEGATIONS=${{ matrix.delegations }}
         DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Build and test ExecuTorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${XNNPACK_QUANTIZATION}" "${XNNPACK_DELEGATION}" "${DEMO_BACKEND_DELEGATION}"
+        for QUANTIZATION in ${XNNPACK_QUANTIZATIONS}; do
+          for DELEGATION in ${XNNPACK_DELEGATIONS}; do
+            echo
+            echo "============================================================"
+            echo "    MODEL_NAME: ${MODEL_NAME}"
+            echo "    QUANTIZATION: ${QUANTIZATION}"
+            echo "    DELEGATION: ${DELEGATION}"
+            # Output the command we are running so it's clear what's actually being run
+            (
+              set -x
+              PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh \
+                "${MODEL_NAME}" \
+                "${BUILD_TOOL}" \
+                "${QUANTIZATION}" \
+                "${DELEGATION}" \
+                "${DEMO_BACKEND_DELEGATION}"
+            )
+            echo "============================================================"
+            echo
+          done
+        done
 
   test-custom-ops-linux:
     name: test-custom-ops-linux
