@@ -1,12 +1,12 @@
-## CoreML delegate tests set up
+## Core ML delegate tests set up
 
-This is a tutorial for setting up tests for the **CoreML** backend.
+This is a tutorial for setting up tests for the **Core ML** backend.
 
 ## Running tests
 
 1. Follow the instructions described in [Setting Up ExecuTorch](/docs/source/getting-started-setup.md) to set up ExecuTorch environment.
 
-2. Run `install_requirements.sh` to install dependencies required by the **CoreML** backend.
+2. Run `install_requirements.sh` to install dependencies required by the **Core ML** backend.
 
 ```bash
 cd executorch

@@ -62,7 +62,7 @@ Now let's move on to exporting and bundling the MobileNet v3 model.
 
 ### 1. Export Model
 
-Export the MobileNet v3 model with CoreML, MPS and XNNPACK delegates, and move
+Export the MobileNet v3 model with Core ML, MPS and XNNPACK delegates, and move
 the exported model to a specific location where the Demo App will pick them up:
 
 ```bash

@@ -1,18 +1,18 @@
-# ExecuTorch CoreML Delegate
+# ExecuTorch Core ML Delegate
 
 
-This subtree contains the CoreML Delegate implementation for ExecuTorch.
-CoreML is an optimized framework for running machine learning models on Apple devices. The delegate is the mechanism for leveraging the CoreML framework to accelerate operators when running on Apple devices.
+This subtree contains the Core ML Delegate implementation for ExecuTorch.
+Core ML is an optimized framework for running machine learning models on Apple devices. The delegate is the mechanism for leveraging the Core ML framework to accelerate operators when running on Apple devices.
 
 ## Layout
-- `compiler/` : Lowers a module to CoreML backend.
+- `compiler/` : Lowers a module to Core ML backend.
 - `scripts/` : Scripts for installing dependencies and running tests.
-- `runtime/`: CoreML delegate runtime implementation.
+- `runtime/`: Core ML delegate runtime implementation.
     - `inmemoryfs`: InMemory filesystem implementation used to serialize/de-serialize AOT blob.
     - `kvstore`: Persistent Key-Value store implementation.
     - `delegate`: Runtime implementation.
     - `include` : Public headers.
-    - `tests` :  Tests for CoreML delegate.
+    - `tests` :  Tests for Core ML delegate.
     - `workspace` : Xcode workspace for tests.
 - `third-party/`: External dependencies.
 
@@ -22,7 +22,7 @@ implementation and testing better, please create an issue on [github](https://ww
 
 ## Delegation
 
-For delegating the Program to the **CoreML** backend, the client must be responsible for calling `to_backend` with the **CoreMLBackend** tag.
+For delegating the Program to the **Core ML** backend, the client must be responsible for calling `to_backend` with the **CoreMLBackend** tag.
 
 ```python
 import executorch.exir as exir
@@ -44,16 +44,16 @@ to_be_lowered = LowerableSubModel()
 example_input = (torch.ones(1), )
 to_be_lowered_exir_submodule = exir.capture(to_be_lowered, example_input).to_edge()
 
-# Lower to CoreML backend
+# Lower to Core ML backend
 lowered_module = to_backend('CoreMLBackend', to_be_lowered_exir_submodule, [])
 ```
 
-Currently, the **CoreML** backend delegates the whole module to **CoreML**. If a specific op is not supported by the **CoreML** backend then the `to_backend` call would throw an exception. We will be adding a **CoreML Partitioner** to resolve the issue.
+Currently, the **Core ML** backend delegates the whole module to **Core ML**. If a specific op is not supported by the **Core ML** backend then the `to_backend` call would throw an exception. We will be adding a **Core ML Partitioner** to resolve the issue.
 
 The `to_backend` implementation is a thin wrapper over `coremltools`, `coremltools` is responsible for converting an **ExportedProgram** to a **MLModel**. The converted **MLModel** data is saved, flattened, and returned as bytes to **ExecuTorch**.
 
 ## Runtime
 
-To execute a **CoreML** delegated **Program**, the client must link to the `coremldelegate` library. Once linked there are no additional steps required, **ExecuTorch** when running the **Program** would call the **CoreML** runtime to execute the **CoreML** delegated part of the **Program**.
+To execute a **Core ML** delegated **Program**, the client must link to the `coremldelegate` library. Once linked there are no additional steps required, **ExecuTorch** when running the **Program** would call the **Core ML** runtime to execute the **Core ML** delegated part of the **Program**.
 
-Please follow the instructions described in the [CoreML setup](/backends/apple/coreml/setup.md) to link the `coremldelegate` library.
+Please follow the instructions described in the [Core ML setup](/backends/apple/coreml/setup.md) to link the `coremldelegate` library.
