@@ -54,7 +54,7 @@ The Export process discussed above operates on a graph that is agnostic to the e
 
 * _[Edge Dialect](./ir-exir.md#edge-dialect)_. All operators are either compliant with ATen operators with dtype plus memory layout information (represented as `dim_order`) or registered custom operators. Scalars are converted to Tensors. Those specifications allow following steps focusing on a smaller Edge domain. In addition, it enables the selective build which is based on specific dtypes and memory layouts.
 
-With the Edge dialect, there are two target-aware ways to further lower the graph to the _[Backend Dialect](./compiler-backend-dialect.md)_. At this point, delegates for specific hardware can perform many operations. For example, CoreML on iOS, QNN on Qualcomm, or TOSA on Arm can rewrite the graph. The options at this level are:
+With the Edge dialect, there are two target-aware ways to further lower the graph to the _[Backend Dialect](./compiler-backend-dialect.md)_. At this point, delegates for specific hardware can perform many operations. For example, Core ML on iOS, QNN on Qualcomm, or TOSA on Arm can rewrite the graph. The options at this level are:
 
 
 
