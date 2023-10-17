@@ -23,7 +23,7 @@ you should be able to get the basic development environment for ExecuTorch worki
 ```bash
 cd executorch
 
-sh backends/apple/coreml/scripts/install_requirements.sh
+./backends/apple/coreml/scripts/install_requirements.sh
 
 ```
 
@@ -45,7 +45,7 @@ python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name add
 cd executorch
 
 # Builds the CoreML executor runner. Generates ./coreml_executor_runner if successful.
-sh examples/apple/coreml/scripts/build_executor_runner.sh
+./examples/apple/coreml/scripts/build_executor_runner.sh
 
 # Run the CoreML delegate model.
 ./coreml_executor_runner --model_path add_coreml_all.pte
