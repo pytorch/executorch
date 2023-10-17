@@ -26,7 +26,7 @@ This example tries to reuse the Python code, with modifications to make it compa
 
 
 # Instructions:
-1. Follow the [tutorial](https://github.com/pytorch/executorch/blob/main/docs/website/docs/tutorials/00_setting_up_executorch.md) to set up ExecuTorch
+1. Follow the [tutorial](https://pytorch.org/executorch/stable/getting-started-setup) to set up ExecuTorch
 2. `cd examples/third-party/llama`
 3. `pip install -e .`
 4. Go back to `executorch` root, run `python3 -m examples.portable.scripts.export --model_name="llama2"`. The exported program, llama2.pte would be saved in current directory
