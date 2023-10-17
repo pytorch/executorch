@@ -16,7 +16,7 @@ examples
 ├── demo-apps                         # Contains demo apps for Android and iOS
 ├── xnnpack                           # Contains end-to-end ExecuTorch demos with first-party optimization using XNNPACK
 ├── apple
-|   |── coreml                        # Contains demos of Apple's CoreML backend
+|   |── coreml                        # Contains demos of Apple's Core ML backend
 |   └── mps                           # Contains end-to-end demos of MPS backend
 ├── arm                               # Contains demos of the Arm TOSA and Ethos-U NPU flows
 ├── qualcomm                          # Contains demos of Qualcomm QNN backend
@@ -49,7 +49,7 @@ The demos in the [`xnnpack/`](./xnnpack) directory provide valuable insights int
 
 ## Demo of ExecuTorch Apple Backend
 
-You will find demos of [ExecuTorch CoreML Backend](./apple/coreml/) in the [`apple/coreml/`](./apple/coreml) directory and [MPS Backend](./apple/mps/) in the [`apple/mps/`](./apple/mps) directory.
+You will find demos of [ExecuTorch Core ML Backend](./apple/coreml/) in the [`apple/coreml/`](./apple/coreml) directory and [MPS Backend](./apple/mps/) in the [`apple/mps/`](./apple/mps) directory.
 
 ## Demo of ExecuTorch on ARM Cortex-M55 + Ethos-U55
 

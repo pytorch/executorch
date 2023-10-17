@@ -1,6 +1,6 @@
 # Examples
 
-This directory contains scripts and other helper utilities to illustrate an end-to-end workflow to run a **CoreML** delegated `torch.nn.module` with the **ExecuTorch** runtime.
+This directory contains scripts and other helper utilities to illustrate an end-to-end workflow to run a **Core ML** delegated `torch.nn.module` with the **ExecuTorch** runtime.
 
 
 ## Directory structure
@@ -13,12 +13,12 @@ coreml
 
 ## Using the examples
 
-We will walk through an example model to generate a **CoreML** delegated binary file from a python `torch.nn.module` then we will use the `coreml/executor_runner` to run the exported binary file.
+We will walk through an example model to generate a **Core ML** delegated binary file from a python `torch.nn.module` then we will use the `coreml/executor_runner` to run the exported binary file.
 
 1. Following the setup guide in [Setting Up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup)
 you should be able to get the basic development environment for ExecuTorch working.
 
-2. Run `install_requirements.sh` to install dependencies required by the **CoreML** backend.
+2. Run `install_requirements.sh` to install dependencies required by the **Core ML** backend.
 
 ```bash
 cd executorch
@@ -27,7 +27,7 @@ cd executorch
 
 ```
 
-3. Run the export script to generate a **CoreML** delegated binary file.
+3. Run the export script to generate a **Core ML** delegated binary file.
 
 ```bash
 cd executorch
@@ -39,20 +39,20 @@ python3 -m examples.portable.scripts.export -h
 python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name add
 ```
 
-4. Once we have the **CoreML** delegated model binary (pte) file, then let's run it with the **ExecuTorch** runtime using the `coreml_executor_runner`.
+4. Once we have the **Core ML** delegated model binary (pte) file, then let's run it with the **ExecuTorch** runtime using the `coreml_executor_runner`.
 
 ```bash
 cd executorch
 
-# Builds the CoreML executor runner. Generates ./coreml_executor_runner if successful.
+# Builds the Core ML executor runner. Generates ./coreml_executor_runner if successful.
 ./examples/apple/coreml/scripts/build_executor_runner.sh
 
-# Run the CoreML delegate model.
+# Run the Core ML delegate model.
 ./coreml_executor_runner --model_path add_coreml_all.pte
 ```
 
 ## Frequently encountered errors and resolution.
-- The `examples.apple.coreml.scripts.export_and_delegate` could fail if the model is not supported by the **CoreML** backend. The following models from the examples models list (` python3 -m examples.portable.scripts.export -h`)are currently supported by the **CoreML** backend.
+- The `examples.apple.coreml.scripts.export_and_delegate` could fail if the model is not supported by the **Core ML** backend. The following models from the examples models list (` python3 -m examples.portable.scripts.export -h`)are currently supported by the **Core ML** backend.
 
 ```
 add
