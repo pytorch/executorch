@@ -272,7 +272,7 @@
 <li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with CoreML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
@@ -465,7 +465,7 @@ backends. Do not build anything just yet!</p>
 <p>Now let’s move on to exporting and bundling the MobileNet v3 model.</p>
 <div class="section" id="export-model">
 <h3>1. Export Model<a class="headerlink" href="#export-model" title="Permalink to this headline">¶</a></h3>
-<p>Export the MobileNet v3 model with CoreML, MPS and XNNPACK delegates, and move
+<p>Export the MobileNet v3 model with Core ML, MPS and XNNPACK delegates, and move
 the exported model to a specific location where the Demo App will pick them up:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.portable.scripts.export<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span>
 python3<span class="w"> </span>-m<span class="w"> </span>examples.xnnpack.aot_compiler<span class="w"> </span>--delegate<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span>
