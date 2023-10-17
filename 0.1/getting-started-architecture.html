@@ -272,7 +272,7 @@
 <li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with CoreML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
@@ -444,7 +444,7 @@
 <ul class="simple">
 <li><p><em><a class="reference internal" href="ir-exir.html#edge-dialect"><span class="std std-doc">Edge Dialect</span></a></em>. All operators are either compliant with ATen operators with dtype plus memory layout information (represented as <code class="docutils literal notranslate"><span class="pre">dim_order</span></code>) or registered custom operators. Scalars are converted to Tensors. Those specifications allow following steps focusing on a smaller Edge domain. In addition, it enables the selective build which is based on specific dtypes and memory layouts.</p></li>
 </ul>
-<p>With the Edge dialect, there are two target-aware ways to further lower the graph to the <em><a class="reference internal" href="compiler-backend-dialect.html"><span class="doc std std-doc">Backend Dialect</span></a></em>. At this point, delegates for specific hardware can perform many operations. For example, CoreML on iOS, QNN on Qualcomm, or TOSA on Arm can rewrite the graph. The options at this level are:</p>
+<p>With the Edge dialect, there are two target-aware ways to further lower the graph to the <em><a class="reference internal" href="compiler-backend-dialect.html"><span class="doc std std-doc">Backend Dialect</span></a></em>. At this point, delegates for specific hardware can perform many operations. For example, Core ML on iOS, QNN on Qualcomm, or TOSA on Arm can rewrite the graph. The options at this level are:</p>
 <ul class="simple">
 <li><p><em><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">Backend Delegate</span></a></em>. The entry point to compile the graph (either full or partial) to a specific backend. The compiled graph is swapped with the semantically equivalent graph during this transformation. The compiled graph will be offloaded to the backend (aka <code class="docutils literal notranslate"><span class="pre">delegated</span></code>) later during the runtime for improved performance.</p></li>
 <li><p><em>User-defined passes</em>. Target-specific transforms can also be performed by the user. Good examples of this are kernel fusion, async behavior, memory layout conversion, and others.</p></li>
