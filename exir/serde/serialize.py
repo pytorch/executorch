@@ -697,7 +697,6 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             state_dict,
             graph_module.graph,
             sig,
-            call_spec,
             {},  # TODO(T157676982)
             range_constraints,
             equality_constraints,
