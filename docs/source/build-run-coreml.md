@@ -65,7 +65,7 @@ In order to be able to successfully build and run the ExecuTorch's CoreML backen
 
 ```bash
 cd executorch
-sh backends/apple/coreml/scripts/install_requirements.sh
+./backends/apple/coreml/scripts/install_requirements.sh
 ```
 3. Install [Xcode](https://developer.apple.com/xcode/).
 4. Install Xcode Command Line Tools.
@@ -99,7 +99,7 @@ python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name mv3
 cd executorch
 
 # Generates ./coreml_executor_runner.
-sh examples/apple/coreml/scripts/build_executor_runner.sh
+./examples/apple/coreml/scripts/build_executor_runner.sh
 ```
 2. Run the exported program.
 ```bash
@@ -111,14 +111,14 @@ cd executorch
 
 ## Deploying and running on a device
 
-**Running the CoreML delegated Program using the Demo iOS App**:
+**Running the CoreML delegated Program in the Demo iOS App**:
 1. Please follow the [Export Model](demo-apps-ios.md#models-and-labels) step of the tutorial to bundle the exported [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) program. You only need to do the CoreML part.
 
 2. Complete the [Build Runtime and Backends](demo-apps-ios.md#build-runtime-and-backends) section of the tutorial. When building the frameworks you only need the `coreml` option.
 
 3. Complete the [Final Steps](demo-apps-ios.md#final-steps) section of the tutorial to build and run the demo app.
 
-<br>**Running the CoreML delegated Program using your own App**
+<br>**Running the CoreML delegated Program in your own App**
 1. Build **CoreML** delegate. The following will create a `executorch.xcframework` in the `cmake-out` directory.
 ```bash
 cd executorch
