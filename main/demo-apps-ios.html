@@ -414,8 +414,8 @@
 process live camera images leveraging three different backends:
 <a class="reference external" href="https://github.com/google/XNNPACK">XNNPACK</a>,
 <a class="reference external" href="https://developer.apple.com/documentation/coreml">Core ML</a> and
-<a class="reference external" href="https://developer.apple.com/documentation/metalperformanceshaders">Metal Performance Shaders</a>
-(MPS).</p>
+<a class="reference external" href="https://developer.apple.com/documentation/metalperformanceshaders">Metal Performance Shaders (MPS)</a>
+(Xcode 15+ and iOS 17+ only).</p>
 <p><img alt="" src="_images/demo_ios_app.jpg" /></p>
 <div class="section" id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this headline">¶</a></h2>
@@ -443,13 +443,21 @@ pip<span class="w"> </span>--version
 <div class="section" id="getting-started-tutorial">
 <h3>3. Getting Started Tutorial<a class="headerlink" href="#getting-started-tutorial" title="Permalink to this headline">¶</a></h3>
 <p>Before proceeding, follow the <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting Up ExecuTorch</span></a>
-tutorial to configure the basic environment.</p>
+tutorial to configure the basic environment. Feel free to skip building anything
+just yet. Make sure you have all the required dependencies installed, including
+the following tools:</p>
+<ul class="simple">
+<li><p>Buck2 (as <code class="docutils literal notranslate"><span class="pre">/tmp/buck2</span></code>)</p></li>
+<li><p>Cmake (<code class="docutils literal notranslate"><span class="pre">cmake</span></code> reachable at <code class="docutils literal notranslate"><span class="pre">$PATH</span></code>)</p></li>
+<li><p>FlatBuffers Compiler (<code class="docutils literal notranslate"><span class="pre">flatc</span></code> reachable at <code class="docutils literal notranslate"><span class="pre">$PATH</span></code> or as <code class="docutils literal notranslate"><span class="pre">$FLATC_EXECUTABLE</span></code>
+enironment variable)</p></li>
+</ul>
 </div>
 <div class="section" id="backend-dependencies">
 <h3>4. Backend Dependencies<a class="headerlink" href="#backend-dependencies" title="Permalink to this headline">¶</a></h3>
 <p>Also, follow the corresponding sections from <a class="reference internal" href="build-run-coreml.html"><span class="doc std std-doc">Core ML</span></a> and
 <a class="reference internal" href="build-run-mps.html"><span class="doc std std-doc">MPS</span></a> tutorials to install additional dependencies for those
-backends. Do not build anything just yet!</p>
+backends. Feel free to skip building anything just yet.</p>
 </div>
 </div>
 <div class="section" id="models-and-labels">
@@ -525,7 +533,8 @@ xcrun<span class="w"> </span>simctl<span class="w"> </span>delete<span class="w"
 </div>
 <div class="section" id="run-app">
 <h3>3. Run App<a class="headerlink" href="#run-app" title="Permalink to this headline">¶</a></h3>
-<p>Finally, set up Code Signing in Xcode, and then run the app using <code class="docutils literal notranslate"><span class="pre">Cmd</span> <span class="pre">+</span> <span class="pre">R</span></code>.</p>
+<p>Finally, connect the device, set up Code Signing in Xcode, and then run the app
+using <code class="docutils literal notranslate"><span class="pre">Cmd</span> <span class="pre">+</span> <span class="pre">R</span></code>. Try installing a Release build for better performance.</p>
 <p>Congratulations! You’ve successfully set up the ExecuTorch iOS Demo App. Now,
 you can explore and enjoy the power of ExecuTorch on your iOS device!</p>
 <p><img alt="" src="_images/demo_ios_xcode.jpg" /></p>
