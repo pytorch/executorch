@@ -1,12 +1,12 @@
-# Setting up CoreML backend
+# Setting up Core ML backend
 
-This is a tutorial for setting up the CoreML backend.
+This is a tutorial for setting up the Core ML backend.
 
 ## AOT Setup
 
 1. Follow the instructions described in [Setting Up ExecuTorch](/docs/source/getting-started-setup.md) to set up ExecuTorch environment.
 
-2. Run `install_requirements.sh` to install dependencies required by the **CoreML** backend.
+2. Run `install_requirements.sh` to install dependencies required by the **Core ML** backend.
 
 ```
 cd executorch
@@ -15,7 +15,7 @@ cd executorch
 
 ``` 
 
-3. Run the example script to validate that the **CoreML** backend is set up correctly. 
+3. Run the example script to validate that the **Core ML** backend is set up correctly. 
 
 ```
 cd executorch
@@ -26,15 +26,15 @@ python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name add
 
 ```
 
-4. You can now integrate the **CoreML** backend in code.
+4. You can now integrate the **Core ML** backend in code.
 
 ```python
-# Lower to CoreML backend
+# Lower to Core ML backend
 lowered_module = to_backend('CoreMLBackend', to_be_lowered_exir_submodule, [])
 ```
 
 
-## Integrating CoreML delegate into runtime.
+## Integrating Core ML delegate into runtime.
 
 1. Follow the instructions described in [Building with CMake](/docs/source/runtime-build-and-cross-compilation.md#building-with-cmake) to set up CMake build system.
 
@@ -46,7 +46,7 @@ lowered_module = to_backend('CoreMLBackend', to_be_lowered_exir_submodule, [])
 xcode-select --install
 ```
 
-2. Build **CoreML** delegate. The following will create a `executorch.xcframework` in `cmake-out` directory.
+2. Build **Core ML** delegate. The following will create a `executorch.xcframework` in `cmake-out` directory.
 
 ```bash
 cd executorch
@@ -68,4 +68,4 @@ coreml_backend.xcframework
 - libsqlite3.tbd
 ``` 
 
-6. The target could now run a **CoreML** delegated **Program**. 
+6. The target could now run a **Core ML** delegated **Program**. 
