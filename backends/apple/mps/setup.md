@@ -60,7 +60,7 @@ In order to be able to successfully build and run a model using the MPS backend 
 
 ## Setting up Developer Environment
 
-***Step 1.*** Please finish tutorial [Setting up executorch](getting-started-setup.md).
+***Step 1.*** Please finish tutorial [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup).
 
 ***Step 2.*** Install dependencies needed to lower MPS delegate:
 

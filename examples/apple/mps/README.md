@@ -8,7 +8,7 @@ This README gives some examples on backend-specific model workflow.
 ## Prerequisite
 
 Please finish the following tutorials:
-- [Setting up executorch](../../../docs/website/docs/tutorials/00_setting_up_executorch.md).
+- [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup).
 - [Setting up MPS backend](../../../backends/apple/mps/setup.md).
 
 ## Delegation to MPS backend

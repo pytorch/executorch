@@ -8,7 +8,7 @@ Here are some general information and limitations.
 
 ## Prerequisite
 
-Please finish tutorial [Setting up executorch](../../docs/source/getting-started-setup.md).
+Please finish tutorial [Setting up executorch](https://pytorch.org/executorch/stable/getting-started-setup).
 
 Please finish [setup QNN backend](../../backends/qualcomm/setup.md).
 

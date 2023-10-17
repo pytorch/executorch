@@ -40,8 +40,15 @@ pip --version
 
 ### 3. Getting Started Tutorial
 
-Before proceeding, follow the [Setting Up ExecuTorch](getting-started-setup.md)
-tutorial to configure the basic environment.
+Before proceeding, follow the [Setting Up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup)
+tutorial to configure the basic environment. Feel free to skip building anything
+just yet. Make sure you have all the required dependencies installed, including
+the following tools:
+
+- Buck2 (as `/tmp/buck2`)
+- Cmake (`cmake` reachable at `$PATH`)
+- FlatBuffers Compiler (`flatc` reachable at `$PATH` or as `$FLATC_EXECUTABLE`
+  enironment variable)
 
 ### 4. Backend Dependencies
 
