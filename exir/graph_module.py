@@ -11,6 +11,8 @@ from typing import Dict, List, Tuple, Union
 
 import torch
 
+from functorch.experimental._map import map_impl
+
 
 LeafValue = Union[
     torch.Tensor,
@@ -64,7 +66,7 @@ def get_control_flow_submodules(
         if node.target is torch.ops.higher_order.cond:
             control_flow_submodules.append(_get_submodule(graph_module, node, 1))
             control_flow_submodules.append(_get_submodule(graph_module, node, 2))
-        if node.target is torch.ops.map_impl:
+        if node.target is map_impl:
             control_flow_submodules.append(_get_submodule(graph_module, node, 0))
 
     return control_flow_submodules

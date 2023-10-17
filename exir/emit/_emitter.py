@@ -85,6 +85,8 @@ from executorch.exir.tensor import (
     TensorSpec,
 )
 from executorch.exir.types import LeafValueSpec, ValueSpec
+
+from functorch.experimental._map import map_impl
 from torch._export.exported_program import ExportedProgram
 from torch.utils import _pytree as pytree
 
@@ -862,7 +864,7 @@ class _Emitter(torch.fx.Interpreter):
 
         if target is torch.ops.higher_order.cond:
             return self._emit_cond(args, subemitter_binding_output_values)
-        elif target is torch.ops.map_impl:
+        elif target is map_impl:
             return self._emit_map(args, subemitter_binding_output_values)
         else:
             raise InternalError(
@@ -1233,7 +1235,7 @@ class _Emitter(torch.fx.Interpreter):
         elif target is torch.ops.higher_order.cond:
             return self._emit_control_flow(target, args, kwargs)
 
-        elif target is torch.ops.map_impl:
+        elif target is map_impl:
             return self._emit_control_flow(target, args, kwargs)
 
         elif target == executorch_call_delegate:

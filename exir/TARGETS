@@ -35,6 +35,7 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
     ],
 )
 
@@ -158,6 +159,7 @@ python_library(
         ":schema",
         ":tensor",
         "//caffe2:torch",
+        "//caffe2/functorch:functorch_src",
         "//executorch/exir/operator:convert",
     ],
 )
