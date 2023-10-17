@@ -411,8 +411,8 @@
 <p>Although buck2 is the main build system for the ExecuTorch project, it’s also
 possible to build core pieces of the runtime using <a class="reference external" href="https://cmake.org/">CMake</a>
 for easier integration with other build systems. Even if you don’t use CMake
-directly, CMake can emit scripts for other format like Make or Ninja. For information, see
-<a class="reference external" href="https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html">cmake-generators(7)</a>.</p>
+directly, CMake can emit scripts for other format like Make, Ninja or Xcode.
+For information, see <a class="reference external" href="https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html">cmake-generators(7)</a>.</p>
 <div class="section" id="targets-built-by-the-cmake-build-system">
 <h2>Targets Built by the CMake Build System<a class="headerlink" href="#targets-built-by-the-cmake-build-system" title="Permalink to this headline">¶</a></h2>
 <p>ExecuTorch’s CMake build system doesn’t cover everything that the buck2 build
@@ -442,7 +442,7 @@ implements.</p></li>
 <h2>One-time setup to prepare for CMake Build<a class="headerlink" href="#one-time-setup-to-prepare-for-cmake-build" title="Permalink to this headline">¶</a></h2>
 <p>Follow the steps below to have the tools ready before using CMake to build on your machine.</p>
 <ol class="arabic simple">
-<li><p>Clone the repo and install buck2 as described in the “Runtime Setup” section
+<li><p>Clone the repo and install buck2 as described in the “Building a Runtime” section
 of <a class="reference internal" href="getting-started-setup.html#building-a-runtime"><span class="std std-doc">Setting Up ExecuTorch</span></a></p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">buck2</span></code> is necessary because the CMake build system runs <code class="docutils literal notranslate"><span class="pre">buck2</span></code> commands
@@ -454,13 +454,13 @@ to configure the CMake system to avoid calling <code class="docutils literal not
 <ul class="simple">
 <li><p>Run <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">tomli</span></code></p></li>
 <li><p>This provides an import required by a script that the CMake build system
-calls to extract source lists from <code class="docutils literal notranslate"><span class="pre">buck2</span></code>. Consider doing this <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> inside your conda environment if you created one during ExecuTorch setup. see <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up
-ExecuTorch</span></a>.</p></li>
+calls to extract source lists from <code class="docutils literal notranslate"><span class="pre">buck2</span></code>. Consider doing this <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span></code> inside your Python or Conda virtual environment if you created
+one already by following <a class="reference internal" href="getting-started-setup.html#setting-up-executorch"><span class="std std-doc">Setting up ExecuTorch</span></a>.</p></li>
 </ul>
 </li>
-<li><p>Install CMake version 3.19 or later</p>
+<li><p>Install CMake version 3.19 or later:</p>
 <ul class="simple">
-<li><p>conda install cmake</p></li>
+<li><p>Run <code class="docutils literal notranslate"><span class="pre">conda</span> <span class="pre">install</span> <span class="pre">cmake</span></code> or <code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">cmake</span></code>.</p></li>
 </ul>
 </li>
 </ol>
@@ -556,56 +556,29 @@ adb<span class="w"> </span>shell<span class="w">  </span><span class="s2">&quot;
 </div>
 <div class="section" id="ios">
 <h3>iOS<a class="headerlink" href="#ios" title="Permalink to this headline">¶</a></h3>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>While we’re working on making it a smoother experience, here is an early workflow to try out cross compilation for iOS.</p>
-</div>
-<p>Only supported in macOS:</p>
-<p>Prerequisites:</p>
-<ul class="simple">
-<li><p><a class="reference external" href="https://developer.apple.com/xcode/">XCode</a></p></li>
-</ul>
-<p>After XCode is installed,</p>
+<p>For iOS we’ll build <a class="reference external" href="https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle">frameworks</a> instead of static libraries, that will also contain the public headers inside.</p>
 <ol class="arabic simple">
-<li><p>Get the iOS cmake toolchain by using one of the following options:</p></li>
+<li><p>Install Xcode from the
+<a class="reference external" href="https://apps.apple.com/app/xcode/id497799835">Mac App Store</a> and then install
+the Command Line Tools using the terminal:</p></li>
 </ol>
-<ul>
-<li><p>Option 1 [recommended] : use the <code class="docutils literal notranslate"><span class="pre">ios.toolchain.cmake</span></code> from the following github repo:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/leetal/ios-cmake.git
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>xcode-select<span class="w"> </span>--install
 </pre></div>
 </div>
-</li>
-<li><p>Option2 [wip], use the <code class="docutils literal notranslate"><span class="pre">iOS.cmake</span></code> from PyTorch, the
-toolchain is located in <code class="docutils literal notranslate"><span class="pre">executorch/third-party/pytorch/pytorch/blob/main/cmake/iOS.cmake</span></code></p></li>
-</ul>
-<ol class="arabic" start="2">
-<li><p>Use the tool chain provided in the repro to build the ExecuTorch library.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-ios-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-ios-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-ios-out
-
-<span class="c1"># change the platform accordingly, please refer to the table listed in Readme</span>
-cmake<span class="w"> </span>.<span class="w"> </span>-G<span class="w"> </span>Xcode<span class="w"> </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>~/ios-cmake/ios.toolchain.cmake<span class="w"> </span>-DPLATFORM<span class="o">=</span>SIMULATOR
-
-<span class="c1"># Create an include folder in cmake-ios-out to include all header files</span>
-mkdir<span class="w"> </span>include
-cp<span class="w"> </span>-r<span class="w"> </span>../runtime<span class="w"> </span>include
-cp<span class="w"> </span>-r<span class="w"> </span>../extension<span class="w"> </span>include
-cp<span class="w"> </span>-r<span class="w"> </span>../utils<span class="w"> </span>include
+<ol class="arabic simple" start="2">
+<li><p>Build the frameworks:</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./build/build_apple_frameworks.sh
 </pre></div>
 </div>
-</li>
-<li><p>XCode setup</p></li>
+<p>Run the above command with <code class="docutils literal notranslate"><span class="pre">--help</span></code> flag to learn more on how to build additional backends
+(like <a class="reference internal" href="build-run-coreml.html"><span class="doc std std-doc">Core ML</span></a>, <a class="reference internal" href="build-run-mps.html"><span class="doc std std-doc">MPS</span></a> or XNNPACK), etc.
+Note, some backends may require additional dependencies and certain versions of Xcode and iOS.</p>
+<ol class="arabic simple" start="3">
+<li><p>Copy over the generated <code class="docutils literal notranslate"><span class="pre">.xcframework</span></code> bundles to your Xcode project, link them against
+your targets and don’t forget to add an extra linker flag <code class="docutils literal notranslate"><span class="pre">-all_load</span></code>.</p></li>
 </ol>
-<p>If using the iOS cmake tool chain from <code class="docutils literal notranslate"><span class="pre">https://github.com/leetal/ios-cmake.git</span></code>, after build is complete, perform the following steps:</p>
-<ol class="arabic simple">
-<li><p>Open the project in XCode, drag the <code class="docutils literal notranslate"><span class="pre">executorch.xcodeproj</span></code> generated from Step 2 to <code class="docutils literal notranslate"><span class="pre">Frameworks</span></code>.</p></li>
-<li><p>Go to project Target’s  <code class="docutils literal notranslate"><span class="pre">Build</span> <span class="pre">Phases</span></code>  -  <code class="docutils literal notranslate"><span class="pre">Link</span> <span class="pre">Binaries</span> <span class="pre">With</span> <span class="pre">Libraries</span></code>, click the <strong>+</strong> sign and add all the library files located in  <code class="docutils literal notranslate"><span class="pre">cmake-ios-out/build</span></code>.</p></li>
-<li><p>Navigate to the project  <code class="docutils literal notranslate"><span class="pre">Build</span> <span class="pre">Settings</span></code>:</p></li>
-</ol>
-<ul class="simple">
-<li><p>Set the value  <strong>Header Search Paths</strong>  to  <code class="docutils literal notranslate"><span class="pre">cmake-ios-out/include</span></code>.</p></li>
-<li><p>Set <strong>Library Search Paths</strong>  to  <code class="docutils literal notranslate"><span class="pre">cmake-ios-out/build</span></code>.</p></li>
-<li><p>In <strong>other linker flags</strong>, add a custom linker flag <code class="docutils literal notranslate"><span class="pre">-all_load.</span></code></p></li>
-</ul>
+<p>Check out the <a class="reference internal" href="demo-apps-ios.html"><span class="doc std std-doc">iOS Demo App</span></a> tutorial for more info.</p>
 </div>
 </div>
 <div class="section" id="next-steps">
