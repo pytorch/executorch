@@ -271,11 +271,11 @@ struct PyBundledModule final {
       : bundled_program_ptr_(
             static_cast<const void*>((buffer.cast<std::string_view>().data()))),
         program_ptr_(static_cast<const void*>(
-            executorch_flatbuffer::GetBundledProgram(bundled_program_ptr_)
+            bundled_program_flatbuffer::GetBundledProgram(bundled_program_ptr_)
                 ->program()
                 ->data())),
         program_len_(
-            executorch_flatbuffer::GetBundledProgram(bundled_program_ptr_)
+            bundled_program_flatbuffer::GetBundledProgram(bundled_program_ptr_)
                 ->program()
                 ->size()),
         bundled_input_allocator_(
