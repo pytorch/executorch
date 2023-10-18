@@ -7,6 +7,7 @@
 from typing import cast, Dict, List
 
 import torch
+from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -24,7 +25,7 @@ from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_INVALID_VALU
 
 
 @register_node_visitor
-class CeilingVisitor(NodeVisitor):
+class CatVisitor(NodeVisitor):
     target = "aten.cat.default"
 
     def __init__(self, *args) -> None:
@@ -57,6 +58,8 @@ class CeilingVisitor(NodeVisitor):
 
         if len(node.args) > 1:
             axis = cast(int, node.args[1])
+            if axis < 0 and len(list_of_tensors) > 0:
+                axis += len(get_shape(list_of_tensors[0]))
 
         if "XNN_NHWC_NODE" in node.meta:
             axis = PERM_NHWC_TO_NCHW[axis]
