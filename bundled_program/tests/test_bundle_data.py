@@ -9,16 +9,11 @@
 import unittest
 from typing import List
 
+import executorch.bundled_program.schema as bp_schema
+
 import torch
 from executorch.bundled_program.config import ConfigValue
 from executorch.bundled_program.core import create_bundled_program
-from executorch.bundled_program.schema import (
-    BundledBool,
-    BundledDouble,
-    BundledInt,
-    BundledTensor,
-    BundledValue,
-)
 from executorch.bundled_program.tests.common import get_common_program
 from executorch.exir._serialize import _serialize_pte_binary
 
@@ -26,23 +21,23 @@ from executorch.exir._serialize import _serialize_pte_binary
 class TestBundle(unittest.TestCase):
     def assertIOsetDataEqual(
         self,
-        program_ioset_data: List[BundledValue],
+        program_ioset_data: List[bp_schema.Value],
         config_ioset_data: List[ConfigValue],
     ) -> None:
         self.assertEqual(len(program_ioset_data), len(config_ioset_data))
         for program_element, config_element in zip(
             program_ioset_data, config_ioset_data
         ):
-            if isinstance(program_element.val, BundledTensor):
+            if isinstance(program_element.val, bp_schema.Tensor):
                 # TODO: Update to check the bundled input share the same type with the config input after supporting multiple types.
                 self.assertTrue(isinstance(config_element, torch.Tensor))
                 self.assertEqual(program_element.val.sizes, list(config_element.size()))
                 # TODO(gasoonjia): Check the inner data.
-            elif type(program_element.val) == BundledInt:
+            elif type(program_element.val) == bp_schema.Int:
                 self.assertEqual(program_element.val.int_val, config_element)
-            elif type(program_element.val) == BundledDouble:
+            elif type(program_element.val) == bp_schema.Double:
                 self.assertEqual(program_element.val.double_val, config_element)
-            elif type(program_element.val) == BundledBool:
+            elif type(program_element.val) == bp_schema.Bool:
                 self.assertEqual(program_element.val.bool_val, config_element)
 
     def test_bundled_program(self) -> None:
