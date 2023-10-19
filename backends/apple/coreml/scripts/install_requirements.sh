@@ -13,8 +13,10 @@ SCRIPT_DIR_PATH="$(
 red=`tput setaf 1`
 green=`tput setaf 2`
 
-EXECUTORCH_ROOT_PATH="$SCRIPT_DIR_PATH/../../../../"
+EXECUTORCH_ROOT_PATH=$(realpath "$SCRIPT_DIR_PATH/../../../../")
 COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/apple/coreml"
+
+cd "$EXECUTORCH_ROOT_PATH"
 
 # clone and install coremltools
 if [ -d "/tmp/coremltools" ]; then
