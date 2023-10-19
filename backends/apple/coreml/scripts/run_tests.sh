@@ -10,8 +10,10 @@ SCRIPT_DIR_PATH="$(
     pwd -P
 )"
 
-EXECUTORCH_ROOT_PATH="$SCRIPT_DIR_PATH/../../../../"
+EXECUTORCH_ROOT_PATH=$(realpath "$SCRIPT_DIR_PATH/../../../../")
 COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/apple/coreml"
+
+cd "$EXECUTORCH_ROOT_PATH"
 
 # Run the test
 echo "ExecuTorch: Running executorchcoreml_tests"
