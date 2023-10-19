@@ -13,7 +13,7 @@ from executorch.exir.scalar_type import ScalarType
 
 
 @dataclass
-class BundledTensor:
+class Tensor:
     """All information we need to bundle for a tensor EValue input."""
 
     # The scalar type of Tensor
@@ -26,33 +26,33 @@ class BundledTensor:
 
 
 @dataclass
-class BundledInt:
+class Int:
     int_val: int
 
 
 @dataclass
-class BundledBool:
+class Bool:
     bool_val: bool
 
 
 @dataclass
-class BundledDouble:
+class Double:
     double_val: float
 
 
-BundledValueUnion = Union[
-    BundledTensor,
-    BundledInt,
-    BundledDouble,
-    BundledBool,
+ValueUnion = Union[
+    Tensor,
+    Int,
+    Double,
+    Bool,
 ]
 
 
 @dataclass
-class BundledValue:
+class Value:
     """Abstraction for BundledIOSet values"""
 
-    val: "BundledValueUnion"
+    val: "ValueUnion"
 
 
 @dataclass
@@ -61,12 +61,12 @@ class BundledIOSet:
 
     # All inputs required by Program for execution. Its length should be
     # equal to the length of program inputs.
-    inputs: List[BundledValue]
+    inputs: List[Value]
 
     # The expected outputs generated while running the model in eager mode
     # using the inputs provided. Its length should be equal to the length
     # of program outputs.
-    expected_outputs: List[BundledValue]
+    expected_outputs: List[Value]
 
 
 @dataclass

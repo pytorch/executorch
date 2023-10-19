@@ -6,7 +6,6 @@
 
 include "scalar_type.fbs";
 
-// TODO make this unique from the main schemas namespace
 namespace bundled_program_flatbuffer;
 
 // Identifier of a valid bundled program schema.
@@ -15,20 +14,20 @@ file_identifier "BP06";
 file_extension "bp";
 
 // Reason for basic struct: union value type can only be table/struct/string
-table BundledInt {
+table Int {
   int_val:long;
 }
 
-table BundledBool {
+table Bool {
   bool_val:bool;
 }
 
-table BundledDouble {
+table Double {
   double_val:double;
 }
 
 // All information we need to bundle for a tensor EValue input.
-table BundledTensor {
+table Tensor {
   // The scalar type of Tensor
   scalar_type: executorch_flatbuffer.ScalarType;
   // The target sizes of the tensor.
@@ -38,28 +37,28 @@ table BundledTensor {
   dim_order:[ubyte];
 }
 
-union BundledValueUnion {
-  BundledTensor,
-  BundledInt,
-  BundledBool,
-  BundledDouble,
+union ValueUnion {
+  Tensor,
+  Int,
+  Bool,
+  Double,
 }
 
 // Abstraction for BundledIOSet values
-table BundledValue {
-  val: BundledValueUnion;
+table Value {
+  val: ValueUnion;
 }
 
 // All inputs and referenced outputs needs for single verification.
 table BundledIOSet {
   // All inputs required by Program for execution. Its length should be
   // equal to the length of program inputs.
-  inputs: [BundledValue];
+  inputs: [Value];
 
   // The expected outputs generated while running the model in eager mode
   // using the inputs provided. Its length should be equal to the length
   // of program outputs.
-  expected_outputs: [BundledValue];
+  expected_outputs: [Value];
 }
 
 
