@@ -85,6 +85,15 @@ __ET_NODISCARD Error GetProgramData(
     const void** out_program_data,
     size_t* out_program_data_len);
 
+/**
+ * Checks whether the given file is a bundled program.
+ *
+ * @param[in] file_data The contents of the given file.
+ *
+ * @returns true if the given file is a bundled program, false otherwise
+ */
+bool IsBundledProgram(void* file_data);
+
 } // namespace util
 } // namespace executor
 } // namespace torch
