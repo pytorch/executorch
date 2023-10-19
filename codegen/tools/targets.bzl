@@ -118,6 +118,30 @@ def define_common_targets(is_fbcode = False):
         _is_external_target = True,
     )
 
+    runtime.python_library(
+        name = "gen_selected_mobile_ops_lib",
+        srcs = ["gen_selected_mobile_ops.py"],
+        base_module = "executorch.codegen.tools",
+        visibility = ["//executorch/..."],
+    )
+
+    runtime.python_test(
+        name = "test_gen_selected_mobile_ops",
+        srcs = [
+            "test/test_gen_selected_mobile_ops.py",
+        ],
+        package_style = "inplace",
+        visibility = [
+            "PUBLIC",
+        ],
+        deps = [
+            ":gen_selected_mobile_ops_lib",
+            ":gen_oplist_lib",
+            "fbsource//third-party/pypi/expecttest:expecttest",
+        ],
+        _is_external_target = True,
+    )
+
     # TODO(larryliu0820): This is a hack to only run these two on fbcode. These targets depends on exir which is only available in fbcode.
     if not runtime.is_oss and is_fbcode:
         runtime.python_binary(
