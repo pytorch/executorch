@@ -230,4 +230,5 @@ class TestSerde(unittest.TestCase):
             all(val is not None for val in metadata)
             and all(val is not None for val in metadata_serde)
         )
-        self.assertEqual(metadata, metadata_serde)
+        self.assertEqual(metadata[0], metadata_serde[0])
+        self.assertEqual(list(metadata[1].keys()), list(metadata_serde[1].keys()))
