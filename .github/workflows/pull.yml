@@ -137,7 +137,7 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
         # Build and test coreml delegate
-        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/install_requirements_internal.sh
+        PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/install_requirements.sh
         PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/build_tests.sh
         PYTHON_EXECUTABLE=python sh backends/apple/coreml/scripts/run_tests.sh
         popd
