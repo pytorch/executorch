@@ -46,3 +46,6 @@
 [submodule "backends/arm/third-party/ethos-u-core-driver"]
 	path = backends/arm/third-party/ethos-u-core-driver
 	url = https://git.mlplatform.org/ml/ethos-u/ethos-u-core-driver.git
+[submodule "examples/third-party/llama_cpp"]
+	path = examples/third-party/llama_cpp
+	url = https://github.com/ggerganov/llama.cpp.git
