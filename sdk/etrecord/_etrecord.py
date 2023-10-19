@@ -163,6 +163,13 @@ def generate_etrecord(
                 )
             _handle_export_module(etrecord_zip, export_module, module_name)
 
+            if isinstance(
+                executorch_program, (ExecutorchProgram, ExecutorchProgramManager)
+            ):
+                etrecord_zip.writestr(
+                    ETRecordReservedFileNames.PROGRAM_BUFFER, executorch_program.buffer
+                )
+
     if isinstance(
         edge_dialect_program,
         (EdgeProgramManager, exir.program._program.EdgeProgramManager),
