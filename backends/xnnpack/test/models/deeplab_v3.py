@@ -8,7 +8,7 @@ import unittest
 
 import torch
 from executorch.backends.xnnpack.test.tester import Tester
-from torchvision.models.segmentation import deeplabv3, deeplabv3_resnet50
+from torchvision.models.segmentation import deeplabv3, deeplabv3_resnet50  # @manual
 
 
 class DL3Wrapper(torch.nn.Module):
