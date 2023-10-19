@@ -130,6 +130,6 @@ python_unittest(
         "fbsource//third-party/pypi/torchsr:torchsr",  # @manual
         "//caffe2:torch",
         "//executorch/backends/xnnpack/test/tester:tester",
-        "//pytorch/vision:torchvision",
+        "//pytorch/vision:torchvision",  # @manual
     ],
 )
