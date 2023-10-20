@@ -22,13 +22,13 @@ please visit our [documentation website](https://pytorch.org/executorch).
 
 ## Important: This is a preview release
 
-This is a preview version of ExecuTorch and should be used for testing and evaluation purposes only.
-It is not recommended for use in production settings. We welcome any feedback, suggestions, and bug
-reports from the community to help us improve the technology.
-Please use the [PyTorch Forums](https://discuss.pytorch.org/) for discussion
-and feedback about ExecuTorch using the tag **#executorch** and
-our [GitHub repository](https://github.com/pytorch/executorch/issues)
-for bug reporting.
+This is a preview version of ExecuTorch and should be used for testing and
+evaluation purposes only. It is not recommended for use in production settings.
+We welcome any feedback, suggestions, and bug reports from the community to help
+us improve the technology. Please use the [PyTorch
+Forums](https://discuss.pytorch.org/c/executorch) for discussion and feedback
+about ExecuTorch using the **ExecuTorch** category, and our [GitHub
+repository](https://github.com/pytorch/executorch/issues) for bug reporting.
 
 The ExecuTorch code and APIs are still changing quickly, and there are not yet
 any guarantees about forward/backward source compatibility. We recommend using
