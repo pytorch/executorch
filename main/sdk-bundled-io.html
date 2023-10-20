@@ -654,7 +654,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 
 <span class="c1"># Step 4: Serialize BundledProgram to flatbuffer.</span>
 <span class="n">serialized_bundled_program</span> <span class="o">=</span> <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span><span class="n">bundled_program</span><span class="p">)</span>
-<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;bundled_program.bp&quot;</span>
+<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;bundled_program.bpte&quot;</span>
 <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
     <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">serialized_bundled_program</span><span class="p">)</span>
 
@@ -662,7 +662,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 </div>
 <p>We can also regenerate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> from flatbuffer file if needed:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.bundled_program.serialize</span> <span class="kn">import</span> <span class="n">deserialize_from_flatbuffer_to_bundled_program</span>
-<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;bundled_program.bp&quot;</span>
+<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;bundled_program.bpte&quot;</span>
 <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
     <span class="n">serialized_bundled_program</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
 

@@ -122,7 +122,7 @@ In this tutorial, the mobilenet v2 example model is used to demonstrate.
  .. code-block:: none
 
     Downloading: "https://download.pytorch.org/models/mobilenet_v2-7ebf99e0.pth" to /var/lib/ci-user/.cache/torch/hub/checkpoints/mobilenet_v2-7ebf99e0.pth
-      0%|          | 0.00/13.6M [00:00<?, ?B/s]    100%|██████████| 13.6M/13.6M [00:00<00:00, 216MB/s]
+      0%|          | 0.00/13.6M [00:00<?, ?B/s]    100%|██████████| 13.6M/13.6M [00:00<00:00, 212MB/s]
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:590: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
       warnings.warn("pytree_to_str is deprecated. Please use treespec_dumps")
 
@@ -151,7 +151,7 @@ from executing the model. To generate, users have two options:
 Use Buck::
 
       python3 -m examples.sdk.scripts.export_bundled_program -m mv2
-      buck2 run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bp
+      buck2 run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bpte
 
 **Option 2:**
 
@@ -162,7 +162,7 @@ Use CMake::
       rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DBUCK2=buck2 -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
       cd ..
       cmake --build cmake-out -j8 -t sdk_example_runner
-      ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path mv2_bundled.bp
+      ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path mv2_bundled.bpte
 
 .. GENERATED FROM PYTHON SOURCE LINES 136-147
 
@@ -358,7 +358,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 20.948 seconds)
+   **Total running time of the script:** (0 minutes 21.260 seconds)
 
 
 .. _sphx_glr_download_tutorials_sdk-integration-tutorial.py:
