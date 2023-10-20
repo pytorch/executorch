@@ -24,18 +24,19 @@ Tensor& any_all_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE_IN, [&] {
-    ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, __func__, CTYPE_OUT, [&] {
-      const auto data_in = in.const_data_ptr<CTYPE_IN>();
-      auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
-      data_out[0] = static_cast<CTYPE_OUT>(false);
-      for (auto i = 0; i < in.numel(); ++i) {
-        if (static_cast<CTYPE_OUT>(data_in[i])) {
-          data_out[0] = static_cast<CTYPE_OUT>(true);
-          break;
-        }
-      }
-    });
+  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "any.all_out", CTYPE_IN, [&] {
+    ET_SWITCH_TWO_TYPES(
+        Bool, Byte, out_type, ctx, "any.all_out", CTYPE_OUT, [&] {
+          const auto data_in = in.const_data_ptr<CTYPE_IN>();
+          auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
+          data_out[0] = static_cast<CTYPE_OUT>(false);
+          for (auto i = 0; i < in.numel(); ++i) {
+            if (static_cast<CTYPE_OUT>(data_in[i])) {
+              data_out[0] = static_cast<CTYPE_OUT>(true);
+              break;
+            }
+          }
+        });
   });
 
   return out;

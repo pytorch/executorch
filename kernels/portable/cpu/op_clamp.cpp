@@ -90,11 +90,11 @@ void check_bounds(
     const torch::executor::native::ScalarType& val_type,
     const torch::executor::native::ScalarType& out_type,
     const char* val_name) {
-  ET_SWITCH_SCALAR_OBJ_TYPES(val_type, ctx, "clamp", CTYPE_VAL, [&]() {
+  ET_SWITCH_SCALAR_OBJ_TYPES(val_type, ctx, "clamp.out", CTYPE_VAL, [&]() {
     CTYPE_VAL val = 0;
     ET_EXTRACT_SCALAR(val_scalar, val);
     if (isIntegralType(out_type, /*includeBool=*/false)) {
-      ET_SWITCH_INT_TYPES(out_type, ctx, "clamp", CTYPE_OUT, [&]() {
+      ET_SWITCH_INT_TYPES(out_type, ctx, "clamp.out", CTYPE_OUT, [&]() {
         if (is_out_of_bounds<CTYPE_VAL, CTYPE_OUT, long>(val)) {
           ET_CHECK_MSG(false, "%s value out of bounds", val_name);
         }

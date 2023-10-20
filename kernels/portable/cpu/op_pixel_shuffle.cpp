@@ -51,7 +51,7 @@ Tensor& pixel_shuffle_out(
   ET_SWITCH_ALL_TYPES(
       in_type,
       ctx,
-      __func__,
+      "pixel_shuffle.out",
       CTYPE,
       [leading_dims, channels, height, width, upscale_factor, &in, &out] {
         const CTYPE* const in_data = in.const_data_ptr<CTYPE>();

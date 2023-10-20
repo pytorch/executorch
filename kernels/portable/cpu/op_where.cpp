@@ -33,31 +33,41 @@ Tensor& where_out(
   // Determine output size and resize for dynamic shapes
   resize_to_broadcast_target_size(a, b, cond, out);
 
-  ET_SWITCH_TWO_TYPES(Bool, Byte, cond_type, ctx, "where", CTYPE_COND, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "where", CTYPE_A, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "where", CTYPE_B, [&]() {
+  ET_SWITCH_TWO_TYPES(
+      Bool, Byte, cond_type, ctx, "where.self_out", CTYPE_COND, [&]() {
         ET_SWITCH_REAL_TYPES_AND(
-            Bool, out_type, ctx, "where", CTYPE_OUT, [&]() {
-              apply_ternary_elementwise_fn<
-                  CTYPE_A,
-                  CTYPE_B,
-                  CTYPE_COND,
-                  CTYPE_OUT>(
-                  [](const CTYPE_A val_a,
-                     const CTYPE_B val_b,
-                     const CTYPE_COND val_c) {
-                    CTYPE_OUT a_casted = static_cast<CTYPE_OUT>(val_a);
-                    CTYPE_OUT b_casted = static_cast<CTYPE_OUT>(val_b);
-                    return val_c ? a_casted : b_casted;
-                  },
-                  a,
-                  b,
-                  cond,
-                  out);
+            Bool, a_type, ctx, "where.self_out", CTYPE_A, [&]() {
+              ET_SWITCH_REAL_TYPES_AND(
+                  Bool, b_type, ctx, "where.self_out", CTYPE_B, [&]() {
+                    ET_SWITCH_REAL_TYPES_AND(
+                        Bool,
+                        out_type,
+                        ctx,
+                        "where.self_out",
+                        CTYPE_OUT,
+                        [&]() {
+                          apply_ternary_elementwise_fn<
+                              CTYPE_A,
+                              CTYPE_B,
+                              CTYPE_COND,
+                              CTYPE_OUT>(
+                              [](const CTYPE_A val_a,
+                                 const CTYPE_B val_b,
+                                 const CTYPE_COND val_c) {
+                                CTYPE_OUT a_casted =
+                                    static_cast<CTYPE_OUT>(val_a);
+                                CTYPE_OUT b_casted =
+                                    static_cast<CTYPE_OUT>(val_b);
+                                return val_c ? a_casted : b_casted;
+                              },
+                              a,
+                              b,
+                              cond,
+                              out);
+                        });
+                  });
             });
       });
-    });
-  });
 
   return out;
 }

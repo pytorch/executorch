@@ -40,7 +40,7 @@ Tensor& round_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   auto in_scalar_type = in.scalar_type();
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "round", CTYPE, [&] {
+  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "round.out", CTYPE, [&] {
     apply_unary_map_fn(
         [in_scalar_type](const CTYPE val_in) {
           if (isIntegralType(in_scalar_type, /*includeBool=*/false)) {

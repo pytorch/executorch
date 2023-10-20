@@ -36,21 +36,23 @@ Tensor& masked_fill_scalar_out(
 
   resize_to_broadcast_target_size(in, mask, out);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, val_type, ctx, __func__, CTYPE_VAL, [&]() {
-      CTYPE_VAL value_v;
-      ET_EXTRACT_SCALAR(value, value_v);
-      CTYPE val = static_cast<CTYPE>(value_v);
+  ET_SWITCH_REAL_TYPES_AND(
+      Bool, in_type, ctx, "masked_fill.Scalar_out", CTYPE, [&]() {
+        ET_SWITCH_REAL_TYPES_AND(
+            Bool, val_type, ctx, "masked_fill.Scalar_out", CTYPE_VAL, [&]() {
+              CTYPE_VAL value_v;
+              ET_EXTRACT_SCALAR(value, value_v);
+              CTYPE val = static_cast<CTYPE>(value_v);
 
-      apply_binary_elementwise_fn<CTYPE, bool, CTYPE>(
-          [val](const CTYPE val_in, const bool val_mask) {
-            return val_mask ? val : val_in;
-          },
-          in,
-          mask,
-          out);
-    });
-  });
+              apply_binary_elementwise_fn<CTYPE, bool, CTYPE>(
+                  [val](const CTYPE val_in, const bool val_mask) {
+                    return val_mask ? val : val_in;
+                  },
+                  in,
+                  mask,
+                  out);
+            });
+      });
 
   return out;
 }

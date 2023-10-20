@@ -24,7 +24,7 @@ Tensor& abs_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
   ET_CHECK_SAME_SHAPE_AND_DTYPE2(in, out);
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "abs", CTYPE, [&] {
+  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "abs.out", CTYPE, [&] {
     apply_unary_map_fn(
         [](const CTYPE val_in) {
           if (val_in < 0) {

@@ -76,7 +76,11 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
   size_t inner = getTrailingDims(in, C_dim);
 
   ET_SWITCH_FLOAT_TYPES(
-      in.scalar_type(), ctx, "native_batch_norm_legit_no_training", CTYPE, [&] {
+      in.scalar_type(),
+      ctx,
+      "native_batch_norm_legit_no_training.out",
+      CTYPE,
+      [&] {
         const CTYPE* in_data = in.const_data_ptr<CTYPE>();
         CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 

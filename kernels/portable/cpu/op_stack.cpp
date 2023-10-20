@@ -45,20 +45,21 @@ Tensor& stack_out(
   const size_t ninputs = tensors.size();
 
   const auto out_type = out.scalar_type();
-  ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "stack", CTYPE_OUT, [&] {
+  ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "stack.out", CTYPE_OUT, [&] {
     CTYPE_OUT* out_ptr = out.mutable_data_ptr<CTYPE_OUT>();
     for (size_t i = 0; i < outer; ++i) {
       for (size_t j = 0; j < ninputs; ++j) {
         const auto in_type = tensors[j].scalar_type();
-        ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "stack", CTYPE_IN, [&] {
-          const CTYPE_IN* const in_ptr =
-              tensors[j].const_data_ptr<CTYPE_IN>() + i * inner;
+        ET_SWITCH_REAL_TYPES_AND(
+            Bool, in_type, ctx, "stack.out", CTYPE_IN, [&] {
+              const CTYPE_IN* const in_ptr =
+                  tensors[j].const_data_ptr<CTYPE_IN>() + i * inner;
 
-          for (size_t k = 0; k < inner; ++k) {
-            out_ptr[k] = static_cast<CTYPE_OUT>(in_ptr[k]);
-          }
-          out_ptr += inner;
-        });
+              for (size_t k = 0; k < inner; ++k) {
+                out_ptr[k] = static_cast<CTYPE_OUT>(in_ptr[k]);
+              }
+              out_ptr += inner;
+            });
       }
     }
   });

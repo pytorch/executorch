@@ -32,7 +32,7 @@ Tensor& bmm_out(
       InvalidArgument,
       out);
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "bmm", CTYPE, [&]() {
+  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "bmm.out", CTYPE, [&]() {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     const CTYPE* mat2_data = mat2.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();

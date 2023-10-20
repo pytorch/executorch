@@ -50,10 +50,10 @@ div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
 
   ET_CHECK(canCast(common_type, out_type));
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div", CTYPE_B, [&]() {
-      ET_SWITCH_FLOAT_TYPES(common_type, ctx, "div", CTYPE_IN, [&]() {
-        ET_SWITCH_FLOAT_TYPES(out_type, ctx, "div", CTYPE_OUT, [&]() {
+  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div.out", CTYPE_A, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div.out", CTYPE_B, [&]() {
+      ET_SWITCH_FLOAT_TYPES(common_type, ctx, "div.out", CTYPE_IN, [&]() {
+        ET_SWITCH_FLOAT_TYPES(out_type, ctx, "div.out", CTYPE_OUT, [&]() {
           apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
               [](const CTYPE_A val_a, const CTYPE_B val_b) {
                 CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
@@ -92,10 +92,10 @@ Tensor& div_out_mode(
   // non-bool -> bool is still disallowed
   ET_CHECK(!(common_type != ScalarType::Bool && out_type == ScalarType::Bool));
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div", CTYPE_B, [&]() {
-      ET_SWITCH_FLOAT_TYPES(common_type, ctx, "div", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES(out_type, ctx, "div", CTYPE_OUT, [&]() {
+  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div.out_mode", CTYPE_A, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div.out_mode", CTYPE_B, [&]() {
+      ET_SWITCH_FLOAT_TYPES(common_type, ctx, "div.out_mode", CTYPE_IN, [&]() {
+        ET_SWITCH_REAL_TYPES(out_type, ctx, "div.out_mode", CTYPE_OUT, [&]() {
           apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
               [mode](const CTYPE_A val_a, const CTYPE_B val_b) {
                 CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
@@ -137,25 +137,27 @@ Tensor& div_scalar_out(
 
   ET_CHECK(common_type == out_type);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div", CTYPE_A, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "div", CTYPE_B, [&]() {
-      ET_SWITCH_FLOAT_TYPES(common_type, ctx, "div", CTYPE_IN, [&]() {
-        ET_SWITCH_FLOAT_TYPES(out_type, ctx, "div", CTYPE_OUT, [&]() {
-          CTYPE_B b_val;
-          ET_EXTRACT_SCALAR(b, b_val);
-          CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div.Scalar_out", CTYPE_A, [&]() {
+    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "div.Scalar_out", CTYPE_B, [&]() {
+      ET_SWITCH_FLOAT_TYPES(
+          common_type, ctx, "div.Scalar_out", CTYPE_IN, [&]() {
+            ET_SWITCH_FLOAT_TYPES(
+                out_type, ctx, "div.Scalar_out", CTYPE_OUT, [&]() {
+                  CTYPE_B b_val;
+                  ET_EXTRACT_SCALAR(b, b_val);
+                  CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
 
-          apply_unary_map_fn(
-              [b_casted](const CTYPE_A val_a) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN value = a_casted / b_casted;
-                return static_cast<CTYPE_OUT>(value);
-              },
-              a.const_data_ptr<CTYPE_A>(),
-              out.mutable_data_ptr<CTYPE_OUT>(),
-              out.numel());
-        });
-      });
+                  apply_unary_map_fn(
+                      [b_casted](const CTYPE_A val_a) {
+                        CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+                        CTYPE_IN value = a_casted / b_casted;
+                        return static_cast<CTYPE_OUT>(value);
+                      },
+                      a.const_data_ptr<CTYPE_A>(),
+                      out.mutable_data_ptr<CTYPE_OUT>(),
+                      out.numel());
+                });
+          });
     });
   });
 

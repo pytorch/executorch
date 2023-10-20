@@ -53,7 +53,7 @@ in other cases we can consider adding the missing features.
 
 ### Do your initial work in fbcode (skip this if in OSS)
 
-Althouth ExecuTorch is mapped into both `xplat` and `fbcode`, we recommend
+Although ExecuTorch is mapped into both `xplat` and `fbcode`, we recommend
 setting up the initial targets while working from `fbcode`. Once everything's in
 place, you should be able to build from either spot.
 

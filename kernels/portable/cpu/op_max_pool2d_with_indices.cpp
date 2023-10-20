@@ -70,28 +70,29 @@ std::tuple<Tensor&, Tensor&> max_pool2d_with_indices_out(
       ret_val);
 
   ScalarType in_type = in.scalar_type();
-  ET_SWITCH_REAL_TYPES(in_type, ctx, __func__, CTYPE, [&]() {
-    apply_kernel_2d_reduce_then_map_fn<CTYPE>(
-        [](const CTYPE in_val,
-           const int64_t in_idx,
-           const CTYPE accum,
-           const int64_t accum_idx) {
-          if (in_val > accum) {
-            return std::tuple<CTYPE, int64_t>(in_val, in_idx);
-          }
-          return std::tuple<CTYPE, int64_t>(accum, accum_idx);
-        },
-        // Max pooling does not need to post-process the accumulated output
-        [](const int64_t count, const CTYPE accum) { return accum; },
-        /*include_pad=*/false,
-        in,
-        kernel_size,
-        stride,
-        padding,
-        dilation,
-        out,
-        {indices});
-  });
+  ET_SWITCH_REAL_TYPES(
+      in_type, ctx, "max_pool2d_with_indices.out", CTYPE, [&]() {
+        apply_kernel_2d_reduce_then_map_fn<CTYPE>(
+            [](const CTYPE in_val,
+               const int64_t in_idx,
+               const CTYPE accum,
+               const int64_t accum_idx) {
+              if (in_val > accum) {
+                return std::tuple<CTYPE, int64_t>(in_val, in_idx);
+              }
+              return std::tuple<CTYPE, int64_t>(accum, accum_idx);
+            },
+            // Max pooling does not need to post-process the accumulated output
+            [](const int64_t count, const CTYPE accum) { return accum; },
+            /*include_pad=*/false,
+            in,
+            kernel_size,
+            stride,
+            padding,
+            dilation,
+            out,
+            {indices});
+      });
 
   return ret_val;
 }
