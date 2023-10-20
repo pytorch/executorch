@@ -320,11 +320,12 @@ Tensor& convolution_out(
   if (bias.has_value()) {
     bias_type = bias.value().scalar_type();
   }
-  ET_SWITCH_REAL_TYPES(in_type, ctx, __func__, CTYPE, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, bias_type, ctx, __func__, CTYPE_BIAS, [&]() {
-      convolution_wrapper<CTYPE, CTYPE_BIAS>(
-          in, weight, bias, stride, padding, dilation, groups, out);
-    });
+  ET_SWITCH_REAL_TYPES(in_type, ctx, "convolution.out", CTYPE, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(
+        Bool, bias_type, ctx, "convolution.out", CTYPE_BIAS, [&]() {
+          convolution_wrapper<CTYPE, CTYPE_BIAS>(
+              in, weight, bias, stride, padding, dilation, groups, out);
+        });
   });
 
   return out;

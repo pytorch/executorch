@@ -33,28 +33,31 @@ Tensor& rsub_scalar_out(
 
   ET_CHECK(common_type == out_type);
 
-  ET_SWITCH_REAL_TYPES(a_type, ctx, "rsub", CTYPE_A, [&]() {
-    ET_SWITCH_SCALAR_OBJ_REAL_TYPES(b_type, ctx, "rsub", CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES(common_type, ctx, "rsub", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES(out_type, ctx, "rsub", CTYPE_OUT, [&]() {
-          CTYPE_B b_val;
-          ET_EXTRACT_SCALAR(b, b_val);
-          CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
-          CTYPE_IN alpha_val;
-          ET_EXTRACT_SCALAR(alpha, alpha_val);
+  ET_SWITCH_REAL_TYPES(a_type, ctx, "rsub.Scalar_out", CTYPE_A, [&]() {
+    ET_SWITCH_SCALAR_OBJ_REAL_TYPES(
+        b_type, ctx, "rsub.Scalar_out", CTYPE_B, [&]() {
+          ET_SWITCH_REAL_TYPES(
+              common_type, ctx, "rsub.Scalar_out", CTYPE_IN, [&]() {
+                ET_SWITCH_REAL_TYPES(
+                    out_type, ctx, "rsub.Scalar_out", CTYPE_OUT, [&]() {
+                      CTYPE_B b_val;
+                      ET_EXTRACT_SCALAR(b, b_val);
+                      CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+                      CTYPE_IN alpha_val;
+                      ET_EXTRACT_SCALAR(alpha, alpha_val);
 
-          apply_unary_map_fn(
-              [b_casted, alpha_val](const CTYPE_A val_a) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN value = b_casted - alpha_val * a_casted;
-                return static_cast<CTYPE_OUT>(value);
-              },
-              a.const_data_ptr<CTYPE_A>(),
-              out.mutable_data_ptr<CTYPE_OUT>(),
-              out.numel());
+                      apply_unary_map_fn(
+                          [b_casted, alpha_val](const CTYPE_A val_a) {
+                            CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+                            CTYPE_IN value = b_casted - alpha_val * a_casted;
+                            return static_cast<CTYPE_OUT>(value);
+                          },
+                          a.const_data_ptr<CTYPE_A>(),
+                          out.mutable_data_ptr<CTYPE_OUT>(),
+                          out.numel());
+                    });
+              });
         });
-      });
-    });
   });
 
   return out;

@@ -63,7 +63,7 @@ Tensor& argmax_out(
   Error error = resize_reduction_out(in, dim, keepdim, out);
   ET_CHECK_MSG(error == Error::Ok, "Failed to resize out tensor in argmax_out");
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "argmax", CTYPE, [&] {
+  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "argmax.out", CTYPE, [&] {
     long* out_data = out.mutable_data_ptr<long>();
 
     for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {

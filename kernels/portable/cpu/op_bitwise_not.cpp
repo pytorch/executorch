@@ -36,7 +36,7 @@ Tensor& bitwise_not_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
         out.mutable_data_ptr<bool>(),
         in.numel());
   } else if (isIntegralType(in.scalar_type(), /*includeBool=*/false)) {
-    ET_SWITCH_INT_TYPES(in.scalar_type(), ctx, "bitwise_not", CTYPE, [&] {
+    ET_SWITCH_INT_TYPES(in.scalar_type(), ctx, "bitwise_not.out", CTYPE, [&] {
       apply_unary_map_fn(
           [](const CTYPE val_in) { return ~val_in; },
           in.const_data_ptr<CTYPE>(),

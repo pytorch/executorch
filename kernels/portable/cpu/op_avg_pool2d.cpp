@@ -62,7 +62,7 @@ Tensor& avg_pool2d_out(
       out);
 
   ScalarType in_type = in.scalar_type();
-  ET_SWITCH_FLOAT_TYPES_AND(Long, in_type, ctx, __func__, CTYPE, [&]() {
+  ET_SWITCH_FLOAT_TYPES_AND(Long, in_type, ctx, "avg_pool2d.out", CTYPE, [&]() {
     if (divisor_override.has_value()) {
       int64_t divisor = divisor_override.value();
       // If divisor_override is specified, then we don't need to use `count` in

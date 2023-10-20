@@ -29,11 +29,11 @@ Tensor& full_out(
   Error err = resize_tensor(out, sizes);
   ET_CHECK_MSG(err == Error::Ok, "Could not resize out");
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, val_type, ctx, "full", CTYPE_VAL, [&] {
+  ET_SWITCH_REAL_TYPES_AND(Bool, val_type, ctx, "full.out", CTYPE_VAL, [&] {
     CTYPE_VAL val;
     ET_EXTRACT_SCALAR(fill_value, val);
 
-    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "full", CTYPE_OUT, [&] {
+    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "full.out", CTYPE_OUT, [&] {
       CTYPE_OUT val_casted = static_cast<CTYPE_OUT>(val);
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
       for (size_t i = 0; i < out.numel(); ++i) {

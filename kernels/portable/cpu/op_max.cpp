@@ -75,26 +75,28 @@ std::tuple<Tensor&, Tensor&> max_out(
 
   dim = dim < 0 ? dim + in.dim() : dim;
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in.scalar_type(), ctx, "max", CTYPE, [&]() {
-    CTYPE* max_data = max.mutable_data_ptr<CTYPE>();
-    long* max_indices_data = max_indices.mutable_data_ptr<long>();
+  ET_SWITCH_REAL_TYPES_AND(
+      Bool, in.scalar_type(), ctx, "max.dim_max", CTYPE, [&]() {
+        CTYPE* max_data = max.mutable_data_ptr<CTYPE>();
+        long* max_indices_data = max_indices.mutable_data_ptr<long>();
 
-    for (size_t out_ix = 0; out_ix < max.numel(); ++out_ix) {
-      std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
-          [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
-            if (!std::isnan(acc_val) && (std::isnan(v) || v > acc_val)) {
-              acc_val = v;
-              acc_ix = ix;
-            }
-            return std::tuple<CTYPE, long>{acc_val, acc_ix};
-          },
-          in,
-          dim,
-          out_ix);
-      max_data[out_ix] = std::get<0>(acc);
-      max_indices_data[out_ix] = std::get<1>(acc);
-    }
-  });
+        for (size_t out_ix = 0; out_ix < max.numel(); ++out_ix) {
+          std::tuple<CTYPE, long> acc = reduce_over_dim<CTYPE>(
+              [](CTYPE v, long ix, CTYPE acc_val, long acc_ix) {
+                if (!std::isnan(acc_val) && (std::isnan(v) || v > acc_val)) {
+                  acc_val = v;
+                  acc_ix = ix;
+                }
+                return std::tuple<CTYPE, long>{acc_val, acc_ix};
+              },
+              in,
+              dim,
+              out_ix);
+          max_data[out_ix] = std::get<0>(acc);
+          max_indices_data[out_ix] = std::get<1>(acc);
+        }
+      });
+
   return {max, max_indices};
 }
 

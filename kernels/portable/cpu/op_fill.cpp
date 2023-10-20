@@ -35,9 +35,9 @@ Tensor& fill_scalar_out(
   auto error = resize_tensor(out, a.sizes());
   ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "fill", CTYPE_A, [&] {
+  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "fill.Scalar_out", CTYPE_A, [&] {
     CTYPE_A b_casted;
-    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "fill", CTYPE_B, [&] {
+    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "fill.Scalar_out", CTYPE_B, [&] {
       CTYPE_B b_val;
       ET_EXTRACT_SCALAR(b, b_val);
       b_casted = static_cast<CTYPE_A>(b_val);
@@ -73,13 +73,14 @@ Tensor& fill_tensor_out(
   auto error = resize_tensor(out, a.sizes());
   ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "fill", CTYPE_A, [&] {
+  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "fill.Tensor_out", CTYPE_A, [&] {
     CTYPE_A b_casted;
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "fill", CTYPE_B, [&] {
-      CTYPE_B b_val;
-      ET_EXTRACT_SCALAR_TENSOR(b, b_val);
-      b_casted = static_cast<CTYPE_A>(b_val);
-    });
+    ET_SWITCH_REAL_TYPES_AND(
+        Bool, b_type, ctx, "fill.Tensor_out", CTYPE_B, [&] {
+          CTYPE_B b_val;
+          ET_EXTRACT_SCALAR_TENSOR(b, b_val);
+          b_casted = static_cast<CTYPE_A>(b_val);
+        });
 
     apply_unary_map_fn(
         [b_casted](const CTYPE_A val_a) { return b_casted; },

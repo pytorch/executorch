@@ -175,27 +175,29 @@ void split_copy_Tensor_out(
   ScalarType in_type = input.scalar_type();
   ScalarType out_type = out[0].scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE_IN, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, __func__, CTYPE_OUT, [&]() {
-      const CTYPE_IN* input_data = input.const_data_ptr<CTYPE_IN>();
-      for (size_t i = 0, e = out.size(); i < e; ++i) {
-        size_t out_step = out[i].size(dim) * trailing_dims;
-        if (out_step == 0) {
-          continue;
-        }
-        const CTYPE_IN* src = input_data;
-        CTYPE_OUT* dest = out[i].mutable_data_ptr<CTYPE_OUT>();
-        for (size_t j = 0; j < leading_dims; ++j) {
-          for (size_t k = 0; k < out_step; ++k) {
-            dest[k] = convert<CTYPE_OUT, CTYPE_IN>(src[k]);
-          }
-          src += step;
-          dest += out_step;
-        }
-        input_data += out_step;
-      }
-    });
-  });
+  ET_SWITCH_REAL_TYPES_AND(
+      Bool, in_type, ctx, "split_copy.Tensor_out", CTYPE_IN, [&]() {
+        ET_SWITCH_REAL_TYPES_AND(
+            Bool, out_type, ctx, "split_copy.Tensor_out", CTYPE_OUT, [&]() {
+              const CTYPE_IN* input_data = input.const_data_ptr<CTYPE_IN>();
+              for (size_t i = 0, e = out.size(); i < e; ++i) {
+                size_t out_step = out[i].size(dim) * trailing_dims;
+                if (out_step == 0) {
+                  continue;
+                }
+                const CTYPE_IN* src = input_data;
+                CTYPE_OUT* dest = out[i].mutable_data_ptr<CTYPE_OUT>();
+                for (size_t j = 0; j < leading_dims; ++j) {
+                  for (size_t k = 0; k < out_step; ++k) {
+                    dest[k] = convert<CTYPE_OUT, CTYPE_IN>(src[k]);
+                  }
+                  src += step;
+                  dest += out_step;
+                }
+                input_data += out_step;
+              }
+            });
+      });
 }
 
 } // namespace native

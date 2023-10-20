@@ -50,8 +50,8 @@ Tensor& var_out(
   Error e = resize_reduction_out(in, dim_list, keepdim, out);
   ET_CHECK_MSG(e == Error::Ok, "Failed to resize out tensor in var_out");
 
-  ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, "var", CTYPE_IN, [&] {
-    ET_SWITCH_FLOAT_TYPES(out.scalar_type(), ctx, "var", CTYPE_OUT, [&] {
+  ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, "var.out", CTYPE_IN, [&] {
+    ET_SWITCH_FLOAT_TYPES(out.scalar_type(), ctx, "var.out", CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
       const size_t num = get_reduced_dim_product(in, dim_list);
       const size_t denominator = unbiased ? num - 1 : num;

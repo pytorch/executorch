@@ -42,8 +42,8 @@ Tensor& copy_out(
   ScalarType in_type = in.scalar_type();
   ScalarType src_type = src.scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, src_type, ctx, __func__, CTYPE_SRC, [&]() {
+  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "copy.out", CTYPE, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, src_type, ctx, "copy.out", CTYPE_SRC, [&]() {
       apply_binary_elementwise_fn<CTYPE, CTYPE_SRC, CTYPE>(
           [](const CTYPE val_in, const CTYPE_SRC val_src) {
             return convert<CTYPE, CTYPE_SRC>(val_src);
