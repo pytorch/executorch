@@ -11,13 +11,13 @@ from typing import List, Tuple
 
 import executorch.exir as exir
 import torch
-from executorch.bundled_program.config import (
+from executorch.exir.schema import Program
+from executorch.sdk.bundled_program.config import (
     MethodInputType,
     MethodOutputType,
     MethodTestCase,
     MethodTestSuite,
 )
-from executorch.exir.schema import Program
 
 # A hacky integer to deal with a mismatch between execution plan and complier.
 #

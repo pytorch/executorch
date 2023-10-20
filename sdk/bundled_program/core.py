@@ -8,17 +8,18 @@ import ctypes
 import typing
 from typing import Dict, List, Sequence, Type
 
-import executorch.bundled_program.schema as bp_schema
 import executorch.exir.schema as core_schema
+
+import executorch.sdk.bundled_program.schema as bp_schema
 
 import torch
 import torch.fx
-from executorch.bundled_program.config import ConfigValue, MethodTestSuite
-
-from executorch.bundled_program.version import BUNDLED_PROGRAM_SCHEMA_VERSION
 from executorch.exir._serialize import _serialize_pte_binary
 
 from executorch.exir.tensor import get_scalar_type, scalar_type_enum, TensorSpec
+from executorch.sdk.bundled_program.config import ConfigValue, MethodTestSuite
+
+from executorch.sdk.bundled_program.version import BUNDLED_PROGRAM_SCHEMA_VERSION
 
 # pyre-ignore
 supported_program_type_table: Dict[Type[core_schema.KernelTypes], ConfigValue] = {

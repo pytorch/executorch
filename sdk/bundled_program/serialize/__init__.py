@@ -14,10 +14,10 @@ import tempfile
 
 # @manual=fbsource//third-party/pypi/setuptools:setuptools
 import pkg_resources
-from executorch.bundled_program.schema import BundledProgram
 
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
+from executorch.sdk.bundled_program.schema import BundledProgram
 
 # The prefix of schema files used for bundled program
 BUNDLED_PROGRAM_SCHEMA_NAME = "bundled_program_schema"

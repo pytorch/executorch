@@ -11,16 +11,16 @@ import argparse
 from typing import List
 
 import torch
-from executorch.bundled_program.config import (
+from executorch.exir.schema import Program
+from executorch.sdk.bundled_program.config import (
     MethodInputType,
     MethodTestCase,
     MethodTestSuite,
 )
-from executorch.bundled_program.core import create_bundled_program
-from executorch.bundled_program.serialize import (
+from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-from executorch.exir.schema import Program
 
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory

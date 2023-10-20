@@ -86,9 +86,9 @@ Here is a flow highlighting how to generate a `BundledProgram` given a PyTorch m
 
 import torch
 
-from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.bundled_program.core import create_bundled_program
-from executorch.bundled_program.serialize import (
+from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 
@@ -195,7 +195,7 @@ with open(save_path, "wb") as f:
 We can also regenerate `BundledProgram` from flatbuffer file if needed:
 
 ```python
-from executorch.bundled_program.serialize import deserialize_from_flatbuffer_to_bundled_program
+from executorch.sdk.bundled_program.serialize import deserialize_from_flatbuffer_to_bundled_program
 save_path = "bundled_program.bpte"
 with open(save_path, "rb") as f:
     serialized_bundled_program = f.read()
@@ -324,8 +324,8 @@ Here's the example of the dtype of test input not meet model's requirement:
 ```python
 import torch
 
-from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.sdk.bundled_program.core import create_bundled_program
 
 from executorch.exir import to_edge
 from torch.export import export
@@ -459,8 +459,8 @@ Another common error would be the method name in any `MethodTestSuite` does not 
 ```python
 import torch
 
-from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.sdk.bundled_program.core import create_bundled_program
 
 from executorch.exir import to_edge
 from torch.export import export
