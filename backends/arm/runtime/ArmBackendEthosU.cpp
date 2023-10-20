@@ -55,9 +55,9 @@ class ArmBackend final : public PyTorchBackendInterface {
     char* foot = data + size - sizeof(VelaBinBlock);
 
     // Verify format of vela_bin
-    if( vela_bin_validate(data, size) == false ) {
-        ET_LOG(Error, "Malformed vela_bin_stream found");
-        return Error::InvalidProgram;
+    if (vela_bin_validate(data, size) == false) {
+      ET_LOG(Error, "Malformed vela_bin_stream found");
+      return Error::InvalidProgram;
     }
 
     // Verify address range is accessible current expectation is the program
@@ -110,7 +110,8 @@ class ArmBackend final : public PyTorchBackendInterface {
 
     // Write inputs into SRAM scratch area defined by Vela
     for (int i = 0; i < handles.inputs->count; i++) {
-      const char* input_addr = handles.scratch_data + handles.inputs->io[i].offset;
+      const char* input_addr =
+          handles.scratch_data + handles.inputs->io[i].offset;
       // Process input EValue into scratch
       // TODO: Optimise into direct write from Vela into the SRAM or DRAM output
       //       for compatible data layouts.
@@ -155,14 +156,15 @@ class ArmBackend final : public PyTorchBackendInterface {
 
     // Write outputs from scratch into EValue pointers
     for (int i = 0; i < handles.outputs->count; i++) {
-        const char* output_addr = handles.scratch_data + handles.outputs->io[i].offset;
-        // Process input EValue into scratch
-        int* output_address = (int*)output_addr;
-        // Outputs are in the index immediately after inputs
-        auto tensor_out = args[handles.inputs->count+i]->toTensor();
-        for (int j = 0; j < tensor_out.numel(); j++) {
-            tensor_out.mutable_data_ptr<int>()[j] = output_address[j];
-        }
+      const char* output_addr =
+          handles.scratch_data + handles.outputs->io[i].offset;
+      // Process input EValue into scratch
+      int* output_address = (int*)output_addr;
+      // Outputs are in the index immediately after inputs
+      auto tensor_out = args[handles.inputs->count + i]->toTensor();
+      for (int j = 0; j < tensor_out.numel(); j++) {
+        tensor_out.mutable_data_ptr<int>()[j] = output_address[j];
+      }
     }
 
     return Error::Ok;

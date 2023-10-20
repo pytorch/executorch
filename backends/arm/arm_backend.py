@@ -191,7 +191,9 @@ def vela_compile(tosa_fb):
                 input_region = data["input_region"][i]
                 assert len(input_shape) <= 4
                 inp_pad = input_shape.tolist() + [0] * (4 - len(input_shape))
-                input_struct = struct.pack("<iiiiiii", *inp_pad, input_elem_size, input_offset, input_region)
+                input_struct = struct.pack(
+                    "<iiiiiii", *inp_pad, input_elem_size, input_offset, input_region
+                )
                 inputs += input_struct
             bin_blocks["inputs"] = inputs
 
@@ -205,7 +207,13 @@ def vela_compile(tosa_fb):
                 output_region = data["output_region"][i]
                 assert len(output_shape) <= 4
                 outp_pad = output_shape.tolist() + [0] * (4 - len(output_shape))
-                output_struct = struct.pack("<iiiiiii", *outp_pad, output_elem_size, output_offset, output_region)
+                output_struct = struct.pack(
+                    "<iiiiiii",
+                    *outp_pad,
+                    output_elem_size,
+                    output_offset,
+                    output_region,
+                )
                 outputs += output_struct
             bin_blocks["outputs"] = outputs
 
@@ -221,7 +229,7 @@ def vela_compile(tosa_fb):
                 block_name = block_name + b"\x00" * (16 - len(block_name))
 
                 # We need the acual unpadded block lengths for hw setup
-                block_length = struct.pack("<iiii", len(bin_blocks[key]), 0, 0, 0 )
+                block_length = struct.pack("<iiii", len(bin_blocks[key]), 0, 0, 0)
 
                 # Pad block data to multiple of 16 bytes
                 block_data = bin_blocks[key]
@@ -231,6 +239,7 @@ def vela_compile(tosa_fb):
                 blocks = blocks + block
 
         return blocks
+
 
 def dbg_fail(node, tosa_fb, path):
     dbg_tosa_dump(tosa_fb, path)

@@ -17,38 +17,39 @@
 
 #include <cstdint>
 
-// Generic block within the vela_bin_stream encoded by the python vela_compile step
+// Generic block within the vela_bin_stream encoded by the python vela_compile
+// step
 typedef struct {
-    char name[16];  // string name, can be shorter or truncated
-    uint32_t size;  // unpadded size, BinBlock size will be rounded to next_mul_16
-    char _pad[12];  // Our data often need 16 byte alignemnt
-    char data[];    // block.name specific format data
+  char name[16]; // string name, can be shorter or truncated
+  uint32_t size; // unpadded size, BinBlock size will be rounded to next_mul_16
+  char _pad[12]; // Our data often need 16 byte alignemnt
+  char data[]; // block.name specific format data
 } VelaBinBlock;
 
 // A Vela input or output descriptor in the binary stream
 typedef struct {
-    int shape[4];  // Up to 4D shape of input or output
-    int elem_size; // Element sizeof in bytes
-    int offset;    // Offset in bytes within SRAM working data
-    int region;    // Scratch region this belongs to
+  int shape[4]; // Up to 4D shape of input or output
+  int elem_size; // Element sizeof in bytes
+  int offset; // Offset in bytes within SRAM working data
+  int region; // Scratch region this belongs to
 } VelaIO;
 
 // A list of VelaIOs from the binary stream
 typedef struct {
-    int count;
-    VelaIO io[];
+  int count;
+  VelaIO io[];
 } VelaIOs;
 
 // Processed data used by the backend to invoke the payload
 typedef struct {
-    const char* cmd_data;
-    size_t cmd_data_size;
-    const char* weight_data;
-    size_t weight_data_size;
-    const char* scratch_data;
-    size_t scratch_data_size;
-    VelaIOs *inputs;
-    VelaIOs *outputs;
+  const char* cmd_data;
+  size_t cmd_data_size;
+  const char* weight_data;
+  size_t weight_data_size;
+  const char* scratch_data;
+  size_t scratch_data_size;
+  VelaIOs* inputs;
+  VelaIOs* outputs;
 } VelaHandles;
 
 bool vela_bin_read(const char* data, VelaHandles* handles, int size);
