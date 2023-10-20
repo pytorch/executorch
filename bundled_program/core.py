@@ -6,18 +6,14 @@
 
 import ctypes
 import typing
-from typing import Dict, List, Type
+from typing import Dict, List, Sequence, Type
 
 import executorch.bundled_program.schema as bp_schema
 import executorch.exir.schema as core_schema
 
 import torch
 import torch.fx
-from executorch.bundled_program.config import (
-    BundledConfig,
-    ConfigExecutionPlanTest,
-    ConfigValue,
-)
+from executorch.bundled_program.config import ConfigValue, MethodTestSuite
 
 from executorch.bundled_program.version import BUNDLED_PROGRAM_SCHEMA_VERSION
 from executorch.exir._serialize import _serialize_pte_binary
@@ -124,56 +120,50 @@ def get_output_dtype(
 
 def assert_valid_bundle(
     program: core_schema.Program,
-    bundled_config: BundledConfig,
+    method_test_suites: Sequence[MethodTestSuite],
 ) -> None:
-    """Check if the program and BundledConfig matches each other.
+    """Check if the program and method_test_suites matches each other.
 
     Other checks not related to correspondence are done in config.py
 
     Args:
         program: The program to be bundled.
-        bundled_config: The config to be bundled.
+        method_test_suites: The testcases for specific methods to be bundled.
 
     """
 
-    program_plan_id = 0
-    bp_plan_id = 0
-
     method_name_of_program = {e.name for e in program.execution_plan}
-    method_name_of_bundled_config = {
-        t.method_name for t in bundled_config.execution_plan_tests
-    }
+    method_name_of_test_suites = {t.method_name for t in method_test_suites}
 
-    assert method_name_of_bundled_config.issubset(
+    assert method_name_of_test_suites.issubset(
         method_name_of_program
     ), f"All method names in bundled config should be found in program.execution_plan, \
-         but {str(method_name_of_bundled_config - method_name_of_program)} does not include."
+         but {str(method_name_of_test_suites - method_name_of_program)} does not include."
 
-    # check if execution_plan_tests has been sorted in ascending alphabetical order of method name.
-    for bp_plan_id in range(1, len(bundled_config.execution_plan_tests)):
+    # check if method_test_suites has been sorted in ascending alphabetical order of method name.
+    for test_suite_id in range(1, len(method_test_suites)):
         assert (
-            bundled_config.execution_plan_tests[bp_plan_id - 1].method_name
-            <= bundled_config.execution_plan_tests[bp_plan_id].method_name
-        ), f"The method name of BundledConfig should be sorted in ascending alphabetical \
-            order of method name, but {bp_plan_id-1}-th and {bp_plan_id}-th methods aren't."
+            method_test_suites[test_suite_id - 1].method_name
+            <= method_test_suites[test_suite_id].method_name
+        ), f"The method name of test suite should be sorted in ascending alphabetical \
+            order of method name, but {test_suite_id-1}-th and {test_suite_id}-th method_test_suite aren't."
 
     # Check if the inputs' type meet Program's requirement
-    while bp_plan_id < len(bundled_config.execution_plan_tests):
+    for method_test_suite in method_test_suites:
 
-        plan_test: ConfigExecutionPlanTest = bundled_config.execution_plan_tests[
-            bp_plan_id
-        ]
-        plan: core_schema.ExecutionPlan = program.execution_plan[program_plan_id]
+        # Get the method with same method name as method_test_suite
+        program_plan_id = -1
+        for plan in program.execution_plan:
+            if plan.name == method_test_suite.method_name:
+                program_plan_id = program.execution_plan.index(plan)
+                break
 
-        # User does not provide testcases for current plan, skip it
-        if plan_test.method_name > plan.name:
-            program_plan_id += 1
-            continue
-
-        # Check if the method name in user provided test matches the one in the original program
+        # Raise Assertion Error if can not find the method with same method_name as method_test_suite in program.
         assert (
-            plan_test.method_name == plan.name
-        ), f"BundledConfig has testcases for method {plan_test.method_name}, but can not find it in the given program. All method names in the program are {', '.join([p.name for p in program.execution_plan])}."
+            program_plan_id != -1
+        ), f"method_test_suites has testcases for method {method_test_suite.method_name}, but can not find it in the given program. All method names in the program are {', '.join([p.name for p in program.execution_plan])}."
+
+        plan = program.execution_plan[program_plan_id]
 
         # Check if the type of Program's input is supported
         for index in range(len(plan.inputs)):
@@ -190,9 +180,11 @@ def assert_valid_bundle(
             ), "Only supports program with output in Tensor type."
 
         # Check if the I/O sets of each execution plan test match program's requirement.
-        for i in range(len(plan_test.test_sets)):
-            cur_plan_test_inputs = plan_test.test_sets[i].inputs
-            cur_plan_test_expected_outputs = plan_test.test_sets[i].expected_outputs
+        for i in range(len(method_test_suite.test_cases)):
+            cur_plan_test_inputs = method_test_suite.test_cases[i].inputs
+            cur_plan_test_expected_outputs = method_test_suite.test_cases[
+                i
+            ].expected_outputs
 
             assert len(plan.inputs) == len(
                 cur_plan_test_inputs
@@ -259,38 +251,40 @@ def assert_valid_bundle(
                     cur_plan_test_expected_outputs[j].dtype,
                 )
 
-        program_plan_id += 1
-        bp_plan_id += 1
-
 
 def create_bundled_program(
     program: core_schema.Program,
-    bundled_config: BundledConfig,
+    method_test_suites: Sequence[MethodTestSuite],
 ) -> bp_schema.BundledProgram:
-    """Create bp_schema.BundledProgram by bundling the given program and bundled_config together.
+    """Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.
 
     Args:
         program: The program to be bundled.
-        bundled_config: The config to be bundled.
+        method_test_suites: The testcases for certain methods to be bundled.
 
-    Returns: The `BundledProgram` variable contains given ExecuTorch program and test cases.
+    Returns:
+        The `BundledProgram` variable contains given ExecuTorch program and test cases.
     """
 
-    assert_valid_bundle(program, bundled_config)
+    method_test_suites = sorted(method_test_suites, key=lambda x: x.method_name)
 
-    execution_plan_tests: List[bp_schema.BundledExecutionPlanTest] = []
+    assert_valid_bundle(program, method_test_suites)
+
+    bundled_method_test_suites: List[bp_schema.BundledMethodTestSuite] = []
 
     # Emit data and metadata of bundled tensor
-    for plan_test in bundled_config.execution_plan_tests:
-        test_sets: List[bp_schema.BundledIOSet] = []
+    for method_test_suite in method_test_suites:
+        bundled_test_cases: List[bp_schema.BundledMethodTestCase] = []
 
-        # emit I/O sets for each execution plan test
-        for i in range(len(plan_test.test_sets)):
+        # emit I/O sets for each method test case
+        for i in range(len(method_test_suite.test_cases)):
             inputs: List[bp_schema.Value] = []
             expected_outputs: List[bp_schema.Value] = []
 
-            cur_plan_test_inputs = plan_test.test_sets[i].inputs
-            cur_plan_test_expected_outputs = plan_test.test_sets[i].expected_outputs
+            cur_plan_test_inputs = method_test_suite.test_cases[i].inputs
+            cur_plan_test_expected_outputs = method_test_suite.test_cases[
+                i
+            ].expected_outputs
 
             for input_val in cur_plan_test_inputs:
                 if type(input_val) == torch.Tensor:
@@ -311,14 +305,16 @@ def create_bundled_program(
                     TensorSpec.from_tensor(expected_output_tensor, const=True),
                     expected_outputs,
                 )
-            test_sets.append(
-                bp_schema.BundledIOSet(inputs=inputs, expected_outputs=expected_outputs)
+            bundled_test_cases.append(
+                bp_schema.BundledMethodTestCase(
+                    inputs=inputs, expected_outputs=expected_outputs
+                )
             )
 
         # emit the whole execution plan test
-        execution_plan_tests.append(
-            bp_schema.BundledExecutionPlanTest(
-                method_name=plan_test.method_name, test_sets=test_sets
+        bundled_method_test_suites.append(
+            bp_schema.BundledMethodTestSuite(
+                method_name=method_test_suite.method_name, test_cases=bundled_test_cases
             )
         )
 
@@ -326,6 +322,6 @@ def create_bundled_program(
 
     return bp_schema.BundledProgram(
         version=BUNDLED_PROGRAM_SCHEMA_VERSION,
-        execution_plan_tests=execution_plan_tests,
+        method_test_suites=bundled_method_test_suites,
         program=program_bytes,
     )
