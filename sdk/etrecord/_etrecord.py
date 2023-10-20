@@ -69,7 +69,10 @@ def _handle_multi_method_exported_program(
 def _handle_export_module(
     etrecord_zip: ZipFile,
     export_module: Union[
-        MultiMethodExirExportedProgram, ExirExportedProgram, EdgeProgramManager
+        MultiMethodExirExportedProgram,
+        ExirExportedProgram,
+        EdgeProgramManager,
+        ExportedProgram,
     ],
     module_name: str,
 ) -> None:
@@ -79,6 +82,8 @@ def _handle_export_module(
         _handle_exported_program(
             etrecord_zip, module_name, "forward", export_module.exported_program
         )
+    elif isinstance(export_module, ExportedProgram):
+        _handle_exported_program(etrecord_zip, module_name, "forward", export_module)
     elif isinstance(
         export_module,
         (EdgeProgramManager, exir.program._program.EdgeProgramManager),
@@ -140,7 +145,7 @@ def generate_etrecord(
         executorch_program: `ExecutorchProgramManager` for this model returned by the call to `to_executorch()`
         export_modules[Optional]: **Should be ignored by OSS users**. A dictionary of graph modules with the key being the user provided name and the
             value being the corresponding exported module. The exported graph modules can be either the
-            output of `capture()` or `to_edge()`.
+            output of `torch.export()` or `exir.to_edge()`.
 
     Returns:
         None
