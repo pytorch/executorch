@@ -53,7 +53,7 @@ def convert_to_flatbuffer(program_json: str) -> bytes:
         with open(json_path, "wb") as json_file:
             json_file.write(program_json.encode("ascii"))
         _flatc_compile(d, schema_path, json_path)
-        output_path = os.path.join(d, "{}.bp".format(BUNDLED_PROGRAM_SCHEMA_NAME))
+        output_path = os.path.join(d, "{}.bpte".format(BUNDLED_PROGRAM_SCHEMA_NAME))
         with open(output_path, "rb") as output_file:
             return output_file.read()
 

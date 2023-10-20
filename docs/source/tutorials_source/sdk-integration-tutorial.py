@@ -119,7 +119,7 @@ from unittest.mock import patch
 # Use Buck::
 #
 #       python3 -m examples.sdk.scripts.export_bundled_program -m mv2
-#       buck2 run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bp
+#       buck2 run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bpte
 #
 # **Option 2:**
 #
@@ -130,7 +130,7 @@ from unittest.mock import patch
 #       rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DBUCK2=buck2 -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
 #       cd ..
 #       cmake --build cmake-out -j8 -t sdk_example_runner
-#       ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path mv2_bundled.bp
+#       ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path mv2_bundled.bpte
 
 ######################################################################
 # Creating an Inspector
