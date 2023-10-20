@@ -344,8 +344,7 @@ __ET_NODISCARD Error GetProgramData(
     size_t file_data_len,
     const void** out_program_data,
     size_t* out_program_data_len) {
-  if (bundled_program_flatbuffer::BundledProgramBufferHasIdentifier(
-          file_data)) {
+  if (IsBundledProgram(file_data)) {
     auto program_bundled =
         bundled_program_flatbuffer::GetBundledProgram(file_data);
     *out_program_data = program_bundled->program()->data();
@@ -358,6 +357,11 @@ __ET_NODISCARD Error GetProgramData(
     return Error::NotSupported;
   }
   return Error::Ok;
+}
+
+bool IsBundledProgram(void* file_data) {
+  return bundled_program_flatbuffer::BundledProgramBufferHasIdentifier(
+      file_data);
 }
 
 } // namespace util
