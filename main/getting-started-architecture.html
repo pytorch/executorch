@@ -96,7 +96,19 @@
           </li>
 
           <li>
-            <a href="https://pytorch.org/mobile">Mobile</a>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="resource-option with-down-arrow">
+                PyTorch Edge
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/edge">
+                  <span class="dropdown-title">About PyTorch Edge</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch">
+                  <span class="dropdown-title">ExecuTorch</span>
+                </a>
+              </div>
+            </div>  
           </li>
 
           <li>
@@ -272,7 +284,7 @@
 <li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with CoreML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
@@ -444,7 +456,7 @@
 <ul class="simple">
 <li><p><em><a class="reference internal" href="ir-exir.html#edge-dialect"><span class="std std-doc">Edge Dialect</span></a></em>. All operators are either compliant with ATen operators with dtype plus memory layout information (represented as <code class="docutils literal notranslate"><span class="pre">dim_order</span></code>) or registered custom operators. Scalars are converted to Tensors. Those specifications allow following steps focusing on a smaller Edge domain. In addition, it enables the selective build which is based on specific dtypes and memory layouts.</p></li>
 </ul>
-<p>With the Edge dialect, there are two target-aware ways to further lower the graph to the <em><a class="reference internal" href="compiler-backend-dialect.html"><span class="doc std std-doc">Backend Dialect</span></a></em>. At this point, delegates for specific hardware can perform many operations. For example, CoreML on iOS, QNN on Qualcomm, or TOSA on Arm can rewrite the graph. The options at this level are:</p>
+<p>With the Edge dialect, there are two target-aware ways to further lower the graph to the <em><a class="reference internal" href="compiler-backend-dialect.html"><span class="doc std std-doc">Backend Dialect</span></a></em>. At this point, delegates for specific hardware can perform many operations. For example, Core ML on iOS, QNN on Qualcomm, or TOSA on Arm can rewrite the graph. The options at this level are:</p>
 <ul class="simple">
 <li><p><em><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">Backend Delegate</span></a></em>. The entry point to compile the graph (either full or partial) to a specific backend. The compiled graph is swapped with the semantically equivalent graph during this transformation. The compiled graph will be offloaded to the backend (aka <code class="docutils literal notranslate"><span class="pre">delegated</span></code>) later during the runtime for improved performance.</p></li>
 <li><p><em>User-defined passes</em>. Target-specific transforms can also be performed by the user. Good examples of this are kernel fusion, async behavior, memory layout conversion, and others.</p></li>
@@ -615,14 +627,14 @@
     $(".main-menu a:contains('GitHub')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "/index.html#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "/getting-started-setup.html");
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
     // Mobile
     $(".mobile-menu a:contains('Github')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "/index.html#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "/getting-started-setup.html");
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
 
   });
 </script>
@@ -714,9 +726,9 @@
         <div class="copyright">
         <p>© Copyright The Linux Foundation. The PyTorch Foundation is a project of The Linux Foundation.
           For web site terms of use, trademark policy and other policies applicable to The PyTorch Foundation please see
-          <a href="www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
+          <a href="https://www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
           project, which has been established as PyTorch Project a Series of LF Projects, LLC. For policies applicable to the PyTorch Project a Series of LF Projects, LLC,
-          please see <a href="www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
+          please see <a href="https://www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
       </div>
      </div>
 
@@ -755,7 +767,7 @@
           </li>
             
           <li>
-            <a href="https://pytorch.org/mobile">Mobile</a>
+            <a href="">Mobile</a>
           </li>
 
           <li>

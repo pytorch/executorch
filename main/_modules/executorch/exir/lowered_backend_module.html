@@ -94,7 +94,19 @@
           </li>
 
           <li>
-            <a href="https://pytorch.org/mobile">Mobile</a>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="resource-option with-down-arrow">
+                PyTorch Edge
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/edge">
+                  <span class="dropdown-title">About PyTorch Edge</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch">
+                  <span class="dropdown-title">ExecuTorch</span>
+                </a>
+              </div>
+            </div>  
           </li>
 
           <li>
@@ -270,7 +282,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../../examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../../build-run-coreml.html">Building and Running ExecuTorch with CoreML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../../build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
@@ -430,7 +442,7 @@
 
 <span class="kn">from</span> <span class="nn">executorch.exir.tracer</span> <span class="kn">import</span> <span class="n">Value</span>
 
-<span class="kn">from</span> <span class="nn">torch._export.exported_program</span> <span class="kn">import</span> <span class="n">CallSpec</span><span class="p">,</span> <span class="n">ExportedProgram</span>
+<span class="kn">from</span> <span class="nn">torch._export.exported_program</span> <span class="kn">import</span> <span class="n">ExportedProgram</span>
 <span class="kn">from</span> <span class="nn">torch._subclasses</span> <span class="kn">import</span> <span class="n">FakeTensor</span>
 <span class="kn">from</span> <span class="nn">torch.export.exported_program</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">ExportGraphSignature</span><span class="p">,</span>
@@ -665,7 +677,6 @@
             <span class="c1"># somewhere as we should pass it a list of tensors to the lowered module and output a</span>
             <span class="c1"># list of tensors. Putting call_spec=lowered_exported_program.call_spec is correct here as the</span>
             <span class="c1"># inputs/outputs to the toplevel program will be in the format of the eager module.</span>
-            <span class="n">call_spec</span><span class="o">=</span><span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">call_spec</span><span class="p">,</span>
             <span class="n">state_dict</span><span class="o">=</span><span class="p">{},</span>  <span class="c1"># None because all data are consumed by delegate</span>
             <span class="n">range_constraints</span><span class="o">=</span><span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
             <span class="n">equality_constraints</span><span class="o">=</span><span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">equality_constraints</span><span class="p">,</span>
@@ -868,7 +879,6 @@
         <span class="n">root</span><span class="o">=</span><span class="n">submodule</span><span class="p">,</span>
         <span class="n">graph</span><span class="o">=</span><span class="n">submodule</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
         <span class="n">graph_signature</span><span class="o">=</span><span class="n">subgraph_signature</span><span class="p">,</span>
-        <span class="n">call_spec</span><span class="o">=</span><span class="n">CallSpec</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">),</span>
         <span class="n">state_dict</span><span class="o">=</span><span class="n">subgraph_state_dict</span><span class="p">,</span>
         <span class="n">range_constraints</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">owning_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">),</span>
         <span class="n">equality_constraints</span><span class="o">=</span><span class="p">[],</span>
@@ -1100,14 +1110,14 @@
     $(".main-menu a:contains('GitHub')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "/index.html#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "/getting-started-setup.html");
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
     // Mobile
     $(".mobile-menu a:contains('Github')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "/index.html#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "/getting-started-setup.html");
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
 
   });
 </script>
@@ -1199,9 +1209,9 @@
         <div class="copyright">
         <p>© Copyright The Linux Foundation. The PyTorch Foundation is a project of The Linux Foundation.
           For web site terms of use, trademark policy and other policies applicable to The PyTorch Foundation please see
-          <a href="www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
+          <a href="https://www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
           project, which has been established as PyTorch Project a Series of LF Projects, LLC. For policies applicable to the PyTorch Project a Series of LF Projects, LLC,
-          please see <a href="www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
+          please see <a href="https://www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
       </div>
      </div>
 
@@ -1240,7 +1250,7 @@
           </li>
             
           <li>
-            <a href="https://pytorch.org/mobile">Mobile</a>
+            <a href="">Mobile</a>
           </li>
 
           <li>

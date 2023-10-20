@@ -94,7 +94,19 @@
           </li>
 
           <li>
-            <a href="https://pytorch.org/mobile">Mobile</a>
+          <div id="resourcesDropdownButton" data-toggle="resources-dropdown" class="resources-dropdown">
+              <a class="resource-option with-down-arrow">
+                PyTorch Edge
+              </a>
+              <div class="resources-dropdown-menu">
+                <a class="nav-dropdown-item" href="https://pytorch.org/edge">
+                  <span class="dropdown-title">About PyTorch Edge</span>
+                </a>
+                <a class="nav-dropdown-item" href="https://pytorch.org/executorch">
+                  <span class="dropdown-title">ExecuTorch</span>
+                </a>
+              </div>
+            </div>  
           </li>
 
           <li>
@@ -270,7 +282,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../../examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../build-run-coreml.html">Building and Running ExecuTorch with CoreML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
@@ -413,6 +425,9 @@
 <span class="kn">import</span> <span class="nn">typing</span>
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Type</span>
 
+<span class="kn">import</span> <span class="nn">executorch.bundled_program.schema</span> <span class="k">as</span> <span class="nn">bp_schema</span>
+<span class="kn">import</span> <span class="nn">executorch.exir.schema</span> <span class="k">as</span> <span class="nn">core_schema</span>
+
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torch.fx</span>
 <span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="p">(</span>
@@ -420,39 +435,24 @@
     <span class="n">ConfigExecutionPlanTest</span><span class="p">,</span>
     <span class="n">ConfigValue</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.schema</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">BundledBool</span><span class="p">,</span>
-    <span class="n">BundledDouble</span><span class="p">,</span>
-    <span class="n">BundledExecutionPlanTest</span><span class="p">,</span>
-    <span class="n">BundledInt</span><span class="p">,</span>
-    <span class="n">BundledIOSet</span><span class="p">,</span>
-    <span class="n">BundledProgram</span><span class="p">,</span>
-    <span class="n">BundledTensor</span><span class="p">,</span>
-    <span class="n">BundledValue</span><span class="p">,</span>
-<span class="p">)</span>
+
 <span class="kn">from</span> <span class="nn">executorch.bundled_program.version</span> <span class="kn">import</span> <span class="n">BUNDLED_PROGRAM_SCHEMA_VERSION</span>
 <span class="kn">from</span> <span class="nn">executorch.exir._serialize</span> <span class="kn">import</span> <span class="n">_serialize_pte_binary</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.schema</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">Bool</span><span class="p">,</span>
-    <span class="n">Double</span><span class="p">,</span>
-    <span class="n">ExecutionPlan</span><span class="p">,</span>
-    <span class="n">Int</span><span class="p">,</span>
-    <span class="n">KernelTypes</span><span class="p">,</span>
-    <span class="n">Program</span><span class="p">,</span>
-    <span class="n">Tensor</span><span class="p">,</span>
-<span class="p">)</span>
+
 <span class="kn">from</span> <span class="nn">executorch.exir.tensor</span> <span class="kn">import</span> <span class="n">get_scalar_type</span><span class="p">,</span> <span class="n">scalar_type_enum</span><span class="p">,</span> <span class="n">TensorSpec</span>
 
 <span class="c1"># pyre-ignore</span>
-<span class="n">supported_program_type_table</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">KernelTypes</span><span class="p">],</span> <span class="n">ConfigValue</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="n">Tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-    <span class="n">Int</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-    <span class="n">Double</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
-    <span class="n">Bool</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+<span class="n">supported_program_type_table</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">core_schema</span><span class="o">.</span><span class="n">KernelTypes</span><span class="p">],</span> <span class="n">ConfigValue</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">core_schema</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">core_schema</span><span class="o">.</span><span class="n">Int</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">core_schema</span><span class="o">.</span><span class="n">Double</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">core_schema</span><span class="o">.</span><span class="n">Bool</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
 <span class="p">}</span>
 
 
-<span class="k">def</span> <span class="nf">emit_bundled_tensor</span><span class="p">(</span><span class="n">spec</span><span class="p">:</span> <span class="n">TensorSpec</span><span class="p">,</span> <span class="n">bundled_values</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">BundledValue</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="k">def</span> <span class="nf">emit_bundled_tensor</span><span class="p">(</span>
+    <span class="n">spec</span><span class="p">:</span> <span class="n">TensorSpec</span><span class="p">,</span> <span class="n">bundled_values</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">Value</span><span class="p">]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="c1"># QuantizedSchema in tensor has deprecated and may not be used anymore.</span>
     <span class="c1"># So here we don&#39;t emit it.</span>
 
@@ -469,8 +469,8 @@
         <span class="n">tensor_data</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">(</span><span class="n">spec_array</span><span class="p">)</span>
 
     <span class="n">bundled_values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-        <span class="n">BundledValue</span><span class="p">(</span>
-            <span class="n">val</span><span class="o">=</span><span class="n">BundledTensor</span><span class="p">(</span>
+        <span class="n">bp_schema</span><span class="o">.</span><span class="n">Value</span><span class="p">(</span>
+            <span class="n">val</span><span class="o">=</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">Tensor</span><span class="p">(</span>
                 <span class="n">scalar_type</span><span class="o">=</span><span class="n">scalar_type_enum</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">dtype</span><span class="p">),</span>
                 <span class="n">sizes</span><span class="o">=</span><span class="n">spec</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span>
                 <span class="n">data</span><span class="o">=</span><span class="n">tensor_data</span><span class="p">,</span>
@@ -480,18 +480,20 @@
     <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">emit_prim</span><span class="p">(</span><span class="n">val</span><span class="p">:</span> <span class="n">ConfigValue</span><span class="p">,</span> <span class="n">bundled_values</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">BundledValue</span><span class="p">]):</span>
+<span class="k">def</span> <span class="nf">emit_prim</span><span class="p">(</span><span class="n">val</span><span class="p">:</span> <span class="n">ConfigValue</span><span class="p">,</span> <span class="n">bundled_values</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">Value</span><span class="p">]):</span>
     <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">val</span><span class="p">)</span> <span class="o">==</span> <span class="nb">int</span><span class="p">:</span>
-        <span class="n">bundled_values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">BundledValue</span><span class="p">(</span><span class="n">val</span><span class="o">=</span><span class="n">BundledInt</span><span class="p">(</span><span class="n">int_val</span><span class="o">=</span><span class="n">val</span><span class="p">)))</span>
+        <span class="n">bundled_values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">Value</span><span class="p">(</span><span class="n">val</span><span class="o">=</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">Int</span><span class="p">(</span><span class="n">int_val</span><span class="o">=</span><span class="n">val</span><span class="p">)))</span>
     <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span><span class="n">val</span><span class="p">)</span> <span class="o">==</span> <span class="nb">bool</span><span class="p">:</span>
-        <span class="n">bundled_values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">BundledValue</span><span class="p">(</span><span class="n">val</span><span class="o">=</span><span class="n">BundledBool</span><span class="p">(</span><span class="n">bool_val</span><span class="o">=</span><span class="n">val</span><span class="p">)))</span>
+        <span class="n">bundled_values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">Value</span><span class="p">(</span><span class="n">val</span><span class="o">=</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">Bool</span><span class="p">(</span><span class="n">bool_val</span><span class="o">=</span><span class="n">val</span><span class="p">)))</span>
     <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span><span class="n">val</span><span class="p">)</span> <span class="o">==</span> <span class="nb">float</span><span class="p">:</span>
-        <span class="n">bundled_values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">BundledValue</span><span class="p">(</span><span class="n">val</span><span class="o">=</span><span class="n">BundledDouble</span><span class="p">(</span><span class="n">double_val</span><span class="o">=</span><span class="n">val</span><span class="p">)))</span>
+        <span class="n">bundled_values</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">Value</span><span class="p">(</span><span class="n">val</span><span class="o">=</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">Double</span><span class="p">(</span><span class="n">double_val</span><span class="o">=</span><span class="n">val</span><span class="p">)))</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="k">assert</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;Unsupported primitive type received.&quot;</span>
 
 
-<span class="k">def</span> <span class="nf">get_program_input</span><span class="p">(</span><span class="n">program</span><span class="p">:</span> <span class="n">Program</span><span class="p">,</span> <span class="n">plan_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">input_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">KernelTypes</span><span class="p">:</span>
+<span class="k">def</span> <span class="nf">get_program_input</span><span class="p">(</span>
+    <span class="n">program</span><span class="p">:</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">Program</span><span class="p">,</span> <span class="n">plan_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">input_idx</span><span class="p">:</span> <span class="nb">int</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">KernelTypes</span><span class="p">:</span>
     <span class="k">return</span> <span class="p">(</span>
         <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">[</span><span class="n">plan_idx</span><span class="p">]</span>
         <span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">[</span><span class="n">plan_idx</span><span class="p">]</span><span class="o">.</span><span class="n">inputs</span><span class="p">[</span><span class="n">input_idx</span><span class="p">]]</span>
@@ -499,7 +501,9 @@
     <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">get_program_output</span><span class="p">(</span><span class="n">program</span><span class="p">:</span> <span class="n">Program</span><span class="p">,</span> <span class="n">plan_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">output_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">KernelTypes</span><span class="p">:</span>
+<span class="k">def</span> <span class="nf">get_program_output</span><span class="p">(</span>
+    <span class="n">program</span><span class="p">:</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">Program</span><span class="p">,</span> <span class="n">plan_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">output_idx</span><span class="p">:</span> <span class="nb">int</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">KernelTypes</span><span class="p">:</span>
     <span class="k">return</span> <span class="p">(</span>
         <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">[</span><span class="n">plan_idx</span><span class="p">]</span>
         <span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">[</span><span class="n">plan_idx</span><span class="p">]</span><span class="o">.</span><span class="n">outputs</span><span class="p">[</span><span class="n">output_idx</span><span class="p">]]</span>
@@ -507,20 +511,28 @@
     <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">get_input_dtype</span><span class="p">(</span><span class="n">program</span><span class="p">:</span> <span class="n">Program</span><span class="p">,</span> <span class="n">plan_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">input_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">:</span>
+<span class="k">def</span> <span class="nf">get_input_dtype</span><span class="p">(</span>
+    <span class="n">program</span><span class="p">:</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">Program</span><span class="p">,</span> <span class="n">plan_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">input_idx</span><span class="p">:</span> <span class="nb">int</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">:</span>
     <span class="c1"># pyre-fixme[16]: now assert all input and outputs is in tenor type. Support multuple datatypes in the future.</span>
     <span class="k">return</span> <span class="n">get_scalar_type</span><span class="p">(</span><span class="n">get_program_input</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">plan_idx</span><span class="p">,</span> <span class="n">input_idx</span><span class="p">)</span><span class="o">.</span><span class="n">scalar_type</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">get_input_type</span><span class="p">(</span><span class="n">program</span><span class="p">:</span> <span class="n">Program</span><span class="p">,</span> <span class="n">plan_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">input_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">type</span><span class="p">:</span>
-    <span class="n">type_lookup</span> <span class="o">=</span> <span class="p">{</span><span class="n">Int</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">Bool</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">Double</span><span class="p">:</span> <span class="nb">float</span><span class="p">}</span>
+<span class="k">def</span> <span class="nf">get_input_type</span><span class="p">(</span><span class="n">program</span><span class="p">:</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">Program</span><span class="p">,</span> <span class="n">plan_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">input_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">type</span><span class="p">:</span>
+    <span class="n">type_lookup</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">core_schema</span><span class="o">.</span><span class="n">Int</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">core_schema</span><span class="o">.</span><span class="n">Bool</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+        <span class="n">core_schema</span><span class="o">.</span><span class="n">Double</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="p">}</span>
     <span class="c1"># pyre-fixme[6]: Incompatible parameter type [6]: In call `dict.__getitem__`, for 1st positional only parameter</span>
-    <span class="c1"># expected `Type[Union[Bool, Double, Int]]` but got `Type[Union[Bool, Double, Int, Tensor, BoolList, DoubleList,</span>
+    <span class="c1"># expected `Type[Union[core_schema.Bool, core_schema.Double, core_schema.Int]]` but got `Type[Union[core_schema.Bool, core_schema.Double, core_schema.Int, core_schema.Tensor, BoolList, DoubleList,</span>
     <span class="c1"># IntList, Null, OptionalTensorList, String, TensorList]]`.</span>
     <span class="k">return</span> <span class="n">type_lookup</span><span class="p">[</span><span class="nb">type</span><span class="p">(</span><span class="n">get_program_input</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">plan_idx</span><span class="p">,</span> <span class="n">input_idx</span><span class="p">))]</span>
 
 
-<span class="k">def</span> <span class="nf">get_output_dtype</span><span class="p">(</span><span class="n">program</span><span class="p">:</span> <span class="n">Program</span><span class="p">,</span> <span class="n">plan_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">output_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">:</span>
+<span class="k">def</span> <span class="nf">get_output_dtype</span><span class="p">(</span>
+    <span class="n">program</span><span class="p">:</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">Program</span><span class="p">,</span> <span class="n">plan_idx</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">output_idx</span><span class="p">:</span> <span class="nb">int</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">:</span>
     <span class="k">return</span> <span class="n">get_scalar_type</span><span class="p">(</span>
         <span class="c1"># pyre-ignore[16]: now assert all outputs is in tensor type.</span>
         <span class="n">get_program_output</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">plan_idx</span><span class="p">,</span> <span class="n">output_idx</span><span class="p">)</span><span class="o">.</span><span class="n">scalar_type</span>
@@ -528,7 +540,7 @@
 
 
 <span class="k">def</span> <span class="nf">assert_valid_bundle</span><span class="p">(</span>
-    <span class="n">program</span><span class="p">:</span> <span class="n">Program</span><span class="p">,</span>
+    <span class="n">program</span><span class="p">:</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">Program</span><span class="p">,</span>
     <span class="n">bundled_config</span><span class="p">:</span> <span class="n">BundledConfig</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if the program and BundledConfig matches each other.</span>
@@ -568,7 +580,7 @@
         <span class="n">plan_test</span><span class="p">:</span> <span class="n">ConfigExecutionPlanTest</span> <span class="o">=</span> <span class="n">bundled_config</span><span class="o">.</span><span class="n">execution_plan_tests</span><span class="p">[</span>
             <span class="n">bp_plan_id</span>
         <span class="p">]</span>
-        <span class="n">plan</span><span class="p">:</span> <span class="n">ExecutionPlan</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">[</span><span class="n">program_plan_id</span><span class="p">]</span>
+        <span class="n">plan</span><span class="p">:</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">ExecutionPlan</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">[</span><span class="n">program_plan_id</span><span class="p">]</span>
 
         <span class="c1"># User does not provide testcases for current plan, skip it</span>
         <span class="k">if</span> <span class="n">plan_test</span><span class="o">.</span><span class="n">method_name</span> <span class="o">&gt;</span> <span class="n">plan</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
@@ -590,7 +602,8 @@
         <span class="c1"># Check if the type of Program&#39;s output is supported</span>
         <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">outputs</span><span class="p">)):</span>
             <span class="k">assert</span> <span class="p">(</span>
-                <span class="nb">type</span><span class="p">(</span><span class="n">get_program_output</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">index</span><span class="p">))</span> <span class="o">==</span> <span class="n">Tensor</span>
+                <span class="nb">type</span><span class="p">(</span><span class="n">get_program_output</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">index</span><span class="p">))</span>
+                <span class="o">==</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">Tensor</span>
             <span class="p">),</span> <span class="s2">&quot;Only supports program with output in Tensor type.&quot;</span>
 
         <span class="c1"># Check if the I/O sets of each execution plan test match program&#39;s requirement.</span>
@@ -668,10 +681,10 @@
 
 
 <div class="viewcode-block" id="create_bundled_program"><a class="viewcode-back" href="../../sdk-bundled-io.html#bundled_program.core.create_bundled_program">[docs]</a><span class="k">def</span> <span class="nf">create_bundled_program</span><span class="p">(</span>
-    <span class="n">program</span><span class="p">:</span> <span class="n">Program</span><span class="p">,</span>
+    <span class="n">program</span><span class="p">:</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">Program</span><span class="p">,</span>
     <span class="n">bundled_config</span><span class="p">:</span> <span class="n">BundledConfig</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BundledProgram</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create BundledProgram by bundling the given program and bundled_config together.</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create bp_schema.BundledProgram by bundling the given program and bundled_config together.</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        program: The program to be bundled.</span>
@@ -682,16 +695,16 @@
 
     <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
 
-    <span class="n">execution_plan_tests</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">BundledExecutionPlanTest</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">execution_plan_tests</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledExecutionPlanTest</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
 
     <span class="c1"># Emit data and metadata of bundled tensor</span>
     <span class="k">for</span> <span class="n">plan_test</span> <span class="ow">in</span> <span class="n">bundled_config</span><span class="o">.</span><span class="n">execution_plan_tests</span><span class="p">:</span>
-        <span class="n">test_sets</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">BundledIOSet</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">test_sets</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledIOSet</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
 
         <span class="c1"># emit I/O sets for each execution plan test</span>
         <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">plan_test</span><span class="o">.</span><span class="n">test_sets</span><span class="p">)):</span>
-            <span class="n">inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">BundledValue</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-            <span class="n">expected_outputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">BundledValue</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">Value</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="n">expected_outputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">Value</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
 
             <span class="n">cur_plan_test_inputs</span> <span class="o">=</span> <span class="n">plan_test</span><span class="o">.</span><span class="n">test_sets</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">inputs</span>
             <span class="n">cur_plan_test_expected_outputs</span> <span class="o">=</span> <span class="n">plan_test</span><span class="o">.</span><span class="n">test_sets</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">expected_outputs</span>
@@ -716,19 +729,19 @@
                     <span class="n">expected_outputs</span><span class="p">,</span>
                 <span class="p">)</span>
             <span class="n">test_sets</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                <span class="n">BundledIOSet</span><span class="p">(</span><span class="n">inputs</span><span class="o">=</span><span class="n">inputs</span><span class="p">,</span> <span class="n">expected_outputs</span><span class="o">=</span><span class="n">expected_outputs</span><span class="p">)</span>
+                <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledIOSet</span><span class="p">(</span><span class="n">inputs</span><span class="o">=</span><span class="n">inputs</span><span class="p">,</span> <span class="n">expected_outputs</span><span class="o">=</span><span class="n">expected_outputs</span><span class="p">)</span>
             <span class="p">)</span>
 
         <span class="c1"># emit the whole execution plan test</span>
         <span class="n">execution_plan_tests</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-            <span class="n">BundledExecutionPlanTest</span><span class="p">(</span>
+            <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledExecutionPlanTest</span><span class="p">(</span>
                 <span class="n">method_name</span><span class="o">=</span><span class="n">plan_test</span><span class="o">.</span><span class="n">method_name</span><span class="p">,</span> <span class="n">test_sets</span><span class="o">=</span><span class="n">test_sets</span>
             <span class="p">)</span>
         <span class="p">)</span>
 
     <span class="n">program_bytes</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">=</span> <span class="n">_serialize_pte_binary</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
 
-    <span class="k">return</span> <span class="n">BundledProgram</span><span class="p">(</span>
+    <span class="k">return</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">(</span>
         <span class="n">version</span><span class="o">=</span><span class="n">BUNDLED_PROGRAM_SCHEMA_VERSION</span><span class="p">,</span>
         <span class="n">execution_plan_tests</span><span class="o">=</span><span class="n">execution_plan_tests</span><span class="p">,</span>
         <span class="n">program</span><span class="o">=</span><span class="n">program_bytes</span><span class="p">,</span>
@@ -838,14 +851,14 @@
     $(".main-menu a:contains('GitHub')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".main-menu a:contains('Tutorials')").attr("href", "/index.html#tutorials-and-examples");
-    $(".main-menu a:contains('Get Started')").attr("href", "/getting-started-setup.html");
+    $(".main-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".main-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
     // Mobile
     $(".mobile-menu a:contains('Github')").each(overwrite);
     // Overwrite link to Tutorials and Get Started top navigation. If these sections are moved
     // this overrides need to be updated.
-    $(".mobile-menu a:contains('Tutorials')").attr("href", "/index.html#tutorials-and-examples");
-    $(".mobile-menu a:contains('Get Started')").attr("href", "/getting-started-setup.html");
+    $(".mobile-menu a:contains('Tutorials')").attr("href", "https://pytorch.org/executorch/stable/index.html#tutorials-and-examples");
+    $(".mobile-menu a:contains('Get Started')").attr("href", "https://pytorch.org/executorch/stable/getting-started-setup.html");
 
   });
 </script>
@@ -937,9 +950,9 @@
         <div class="copyright">
         <p>© Copyright The Linux Foundation. The PyTorch Foundation is a project of The Linux Foundation.
           For web site terms of use, trademark policy and other policies applicable to The PyTorch Foundation please see
-          <a href="www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
+          <a href="https://www.linuxfoundation.org/policies/">www.linuxfoundation.org/policies/</a>. The PyTorch Foundation supports the PyTorch open source
           project, which has been established as PyTorch Project a Series of LF Projects, LLC. For policies applicable to the PyTorch Project a Series of LF Projects, LLC,
-          please see <a href="www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
+          please see <a href="https://www.lfprojects.org/policies/">www.lfprojects.org/policies/</a>.</p>
       </div>
      </div>
 
@@ -978,7 +991,7 @@
           </li>
             
           <li>
-            <a href="https://pytorch.org/mobile">Mobile</a>
+            <a href="">Mobile</a>
           </li>
 
           <li>

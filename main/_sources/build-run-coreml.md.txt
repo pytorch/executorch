@@ -1,38 +1,12 @@
-<!---- To make this progress bar work users will need to modify source/_templates/layout.html >
-<!---- To make this page show up in the tutorials section users will need to add an entry in source/index.rst under the Tutorials section>
+# Building and Running ExecuTorch with Core ML Backend
 
-<!---- DO NOT MODIFY Progress Bar Start --->
-
-<div class="progress-bar-wrapper">
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-1">1</div>
-     <span class="step-caption" id="caption-1"></span>
-   </div>
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-2">2</div>
-     <span class="step-caption" id="caption-2"></span>
-   </div>
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-3">3</div>
-     <span class="step-caption" id="caption-3"></span>
-   </div>
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-4">4</div>
-     <span class="step-caption" id="caption-4"></span>
-   </div>
-</div>
-
-<!---- DO NOT MODIFY Progress Bar End--->
-
-# Building and Running ExecuTorch with CoreML Backend
-
-CoreML delegate uses CoreML apis to enable running neural networks via Apple's hardware acceleration. For more about coreml you can read [here](https://developer.apple.com/documentation/coreml). In this tutorial we will walk through steps of lowering a PyTorch model to CoreML delegate
+Core ML delegate uses Core ML apis to enable running neural networks via Apple's hardware acceleration. For more about coreml you can read [here](https://developer.apple.com/documentation/coreml). In this tutorial we will walk through steps of lowering a PyTorch model to Core ML delegate
 
 
 ::::{grid} 2
 :::{grid-item-card}  What you will learn in this tutorial:
 :class-card: card-prerequisites
-* In this tutorial you will learn how to export [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model so that it runs on CoreML backend.
+* In this tutorial you will learn how to export [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model so that it runs on Core ML backend.
 * You will also learn how to deploy and run the exported model on a supported Apple device.
 :::
 :::{grid-item-card}  Tutorials we recommend you complete before this:
@@ -47,7 +21,7 @@ CoreML delegate uses CoreML apis to enable running neural networks via Apple's h
 
 ## Prerequisites (Hardware and Software)
 
-In order to be able to successfully build and run the ExecuTorch's CoreML backend you'll need the following hardware and software components.
+In order to be able to successfully build and run the ExecuTorch's Core ML backend you'll need the following hardware and software components.
 
 ### Hardware:
 - A [mac](https://www.apple.com/mac/]) system for building.
@@ -61,7 +35,7 @@ In order to be able to successfully build and run the ExecuTorch's CoreML backen
 ## Setting up your developer environment
 
 1. Make sure that you have completed the ExecuTorch setup tutorials linked to at the top of this page and setup the environment.
-2. Run `install_requirements.sh` to install dependencies required by the **CoreML** backend.
+2. Run `install_requirements.sh` to install dependencies required by the **Core ML** backend.
 
 ```bash
 cd executorch
@@ -79,8 +53,8 @@ xcode-select --install
 ### AOT (Ahead-of-time) components:
 
 
-**Exporting a CoreML delegated Program**:
-- In this step, you will lower the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to the CoreML backend and export the ExecuTorch program. You'll then deploy and run the exported program on a supported Apple device using CoreML backend.
+**Exporting a Core ML delegated Program**:
+- In this step, you will lower the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to the Core ML backend and export the ExecuTorch program. You'll then deploy and run the exported program on a supported Apple device using Core ML backend.
 ```bash
 cd executorch
 
@@ -88,12 +62,12 @@ cd executorch
 python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name mv3
 ```
 
-- CoreML backend uses [coremltools](https://apple.github.io/coremltools/docs-guides/source/overview-coremltools.html) to lower [Edge dialect](ir-exir.md#edge-dialect) to CoreML format and then bundles it in the `.pte` file.
+- Core ML backend uses [coremltools](https://apple.github.io/coremltools/docs-guides/source/overview-coremltools.html) to lower [Edge dialect](ir-exir.md#edge-dialect) to Core ML format and then bundles it in the `.pte` file.
 
 
 ### Runtime:
 
-**Running the CoreML delegated Program**:
+**Running the Core ML delegated Program**:
 1. Build the runner.
 ```bash
 cd executorch
@@ -105,21 +79,21 @@ cd executorch
 ```bash
 cd executorch
 
-# Runs the exported mv3 model on the CoreML backend.
+# Runs the exported mv3 model on the Core ML backend.
 ./coreml_executor_runner --model_path mv3_coreml_all.pte
 ```
 
 ## Deploying and running on a device
 
-**Running the CoreML delegated Program in the Demo iOS App**:
-1. Please follow the [Export Model](demo-apps-ios.md#models-and-labels) step of the tutorial to bundle the exported [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) program. You only need to do the CoreML part.
+**Running the Core ML delegated Program in the Demo iOS App**:
+1. Please follow the [Export Model](demo-apps-ios.md#models-and-labels) step of the tutorial to bundle the exported [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) program. You only need to do the Core ML part.
 
 2. Complete the [Build Runtime and Backends](demo-apps-ios.md#build-runtime-and-backends) section of the tutorial. When building the frameworks you only need the `coreml` option.
 
 3. Complete the [Final Steps](demo-apps-ios.md#final-steps) section of the tutorial to build and run the demo app.
 
-<br>**Running the CoreML delegated Program in your own App**
-1. Build **CoreML** delegate. The following will create a `executorch.xcframework` in the `cmake-out` directory.
+<br>**Running the Core ML delegated Program in your own App**
+1. Build **Core ML** delegate. The following will create a `executorch.xcframework` in the `cmake-out` directory.
 ```bash
 cd executorch
 ./build/build_apple_frameworks.sh --Release --coreml
@@ -153,9 +127,9 @@ Result<util::FileDataLoader> loader =
 
 8. Use [Xcode](https://developer.apple.com/documentation/xcode/building-and-running-an-app#Build-run-and-debug-your-app) to deploy the application on the device.
 
-9. The application can now run the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model on the CoreML backend.
+9. The application can now run the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model on the Core ML backend.
 
-<br>In this tutorial, you have learned how to lower the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to the CoreML backend, deploy, and run it on an Apple device.
+<br>In this tutorial, you have learned how to lower the [MobileNet V3](https://pytorch.org/vision/main/models/mobilenetv3.html) model to the Core ML backend, deploy, and run it on an Apple device.
 
 ## Frequently encountered errors and resolution.
 

@@ -1,34 +1,3 @@
-<!---- DO NOT MODIFY Progress Bar Start --->
-
-<div class="progress-bar-wrapper">
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-1">1</div>
-     <span class="step-caption" id="caption-1"></span>
-   </div>
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-2">2</div>
-     <span class="step-caption" id="caption-2"></span>
-   </div>
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-3">3</div>
-     <span class="step-caption" id="caption-3"></span>
-   </div>
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-4">4</div>
-     <span class="step-caption" id="caption-4"></span>
-   </div>
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-5">5</div>
-     <span class="step-caption" id="caption-5"></span>
-   </div>
-   <div class="progress-bar-item">
-     <div class="step-number" id="step-6">6</div>
-     <span class="step-caption" id="caption-6"></span>
-   </div>
-</div>
-
-<!---- DO NOT MODIFY Progress Bar End--->
-
 # Building and Running ExecuTorch on Xtensa HiFi4 DSP
 
 
