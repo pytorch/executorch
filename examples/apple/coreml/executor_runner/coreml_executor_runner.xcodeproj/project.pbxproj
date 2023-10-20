@@ -31,7 +31,6 @@
 		C94D514E2ACF4B9300AF47FD /* coreml_executor_runner */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = coreml_executor_runner; sourceTree = BUILT_PRODUCTS_DIR; };
 		C94D51582ACF4BFC00AF47FD /* main.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
 		C94D515C2ACFCBA000AF47FD /* libexecutorch.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch.a; path = libraries/libexecutorch.a; sourceTree = "<group>"; };
-		C94D515D2ACFCBA000AF47FD /* libgflags_nothreads_debug.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libgflags_nothreads_debug.a; path = libraries/libgflags_nothreads_debug.a; sourceTree = "<group>"; };
 		C94D51612ACFCBBA00AF47FD /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		C94D51632ACFCBC500AF47FD /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = System/Library/Frameworks/CoreML.framework; sourceTree = SDKROOT; };
 		C94D51652ACFCBCB00AF47FD /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
@@ -77,7 +76,6 @@
 				C94D51652ACFCBCB00AF47FD /* Accelerate.framework */,
 				C94D51632ACFCBC500AF47FD /* CoreML.framework */,
 				C94D515C2ACFCBA000AF47FD /* libexecutorch.a */,
-				C94D515D2ACFCBA000AF47FD /* libgflags_nothreads_debug.a */,
 				C94D51612ACFCBBA00AF47FD /* libsqlite3.tbd */,
 				C94D51672ACFCC7100AF47FD /* libcoremldelegate.a */,
 			);
@@ -269,10 +267,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
-				HEADER_SEARCH_PATHS = (
-					"$(SRCROOT)/../../../../../../",
-					"$(SRCROOT)/include",
-				);
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/include";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = (
 					"$(SRCROOT)/libraries",
@@ -291,10 +286,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
-				HEADER_SEARCH_PATHS = (
-					"$(SRCROOT)/../../../../../../",
-					"$(SRCROOT)/include",
-				);
+				HEADER_SEARCH_PATHS = "$(SRCROOT)/include";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = (
 					"$(SRCROOT)/libraries",

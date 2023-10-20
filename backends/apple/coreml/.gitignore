@@ -18,6 +18,7 @@ runtime/runner/build/
 runtime/libraries/
 runtime/inmemoryfs/build/
 runtime/test/models/
+runtime/include/executorch/
 third-party/
 
 xcode-build/
