@@ -54,7 +54,7 @@ def parse_args() -> Any:
         type=str,
         choices=["pull_request", "push"],
         required=True,
-        help=f"GitHub CI Event. See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on",
+        help="GitHub CI Event. See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on",
     )
 
     return parser.parse_args()

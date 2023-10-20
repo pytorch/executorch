@@ -36,6 +36,7 @@ jobs:
           install_executorch
 
           PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --target-os macos --event push
+          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --target-os linux --event push
 
   test-models-macos:
     name: test-models-macos
