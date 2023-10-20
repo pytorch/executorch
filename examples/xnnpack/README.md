@@ -9,7 +9,7 @@
 
 ```bash
 examples/xnnpack
-├── quantization                      # Scripts to illustrate PyTorch 2.0 quantization workflow with XNNPACKQuantizer
+├── quantization                      # Scripts to illustrate PyTorch 2 Export Quantization workflow with XNNPACKQuantizer
 │   └── example.py
 ├── aot_compiler.py                   # The main script to illustrate the full AOT (export, quantization, delegation) workflow with XNNPACK delegate
 ├── xnn_executor_runner               # ExecuTorch runtime application for XNNPACK delegate examples
@@ -32,7 +32,7 @@ buck2 run examples/xnnpack:xnn_executor_runner -- --model_path ./mv2_xnnpack_fp3
 ```
 
 ## Quantization
-First, learn more about the generic PyTorch 2.0 quantization workflow in the [Quantization Flow Docs](/docs/website/docs/tutorials/quantization_flow.md), if you are not familiar already.
+First, learn more about the generic PyTorch 2 Export Quantization workflow in the [Quantization Flow Docs](https://pytorch.org/executorch/stable/quantization-overview.html), if you are not familiar already.
 
 Here we will discuss quantizing a model suitable for XNNPACK delegation using XNNPACKQuantizer.
 
