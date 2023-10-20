@@ -47,6 +47,16 @@ class AddModule2(torch.nn.Module):
     example_input = (torch.ones(5, dtype=torch.int32), torch.ones(5, dtype=torch.int32),)
     can_delegate = True
 
+class AddModule3(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return ( x + y, x + x )
+
+    example_input = (torch.ones(5, dtype=torch.int32), torch.ones(5, dtype=torch.int32),)
+    can_delegate = True
+
 class SoftmaxModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -63,6 +73,7 @@ class SoftmaxModule(torch.nn.Module):
 models = {
     "add": AddModule,
     "add2": AddModule2,
+    "add3": AddModule3,
     "softmax": SoftmaxModule,
 }
 

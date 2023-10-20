@@ -153,25 +153,16 @@ class ArmBackend final : public PyTorchBackendInterface {
       return Error::InvalidProgram;
     }
 
-    // output data from Ethos U
-    // We only handle one output at the moment
-    const char* output_addr = handles.scratch_data + handles.outputs->io[0].offset;
-    // Outputs are in the index immediately after inputs
-    int output_index = handles.inputs->count;
-
-    if (handles.outputs->count != 1) {
-      ET_LOG(
-          Error,
-          "ArmBackend::execute: currently only support one return tensor");
-      return Error::InvalidProgram;
-    }
-    // Process results into EValue storage
-    // TODO: optimise into direct write for compatible, contig layout
-    int* output_address = (int*)output_addr;
-    auto tensor_out = args[output_index]->toTensor();
-    for (int j = 0; j < tensor_out.numel(); j++) {
-      // TODO: extend beyond tensors with 4 byte elements
-      tensor_out.mutable_data_ptr<int>()[j] = output_address[j];
+    // Write outputs from scratch into EValue pointers
+    for (int i = 0; i < handles.outputs->count; i++) {
+        const char* output_addr = handles.scratch_data + handles.outputs->io[i].offset;
+        // Process input EValue into scratch
+        int* output_address = (int*)output_addr;
+        // Outputs are in the index immediately after inputs
+        auto tensor_out = args[handles.inputs->count+i]->toTensor();
+        for (int j = 0; j < tensor_out.numel(); j++) {
+            tensor_out.mutable_data_ptr<int>()[j] = output_address[j];
+        }
     }
 
     return Error::Ok;
