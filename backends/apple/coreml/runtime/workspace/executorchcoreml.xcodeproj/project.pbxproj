@@ -529,7 +529,6 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
-					"$(SRCROOT)/../../../../../../",
 					"$(SRCROOT)/../delegate",
 					"$(SRCROOT)/../kvstore",
 					"$(SRCROOT)/../inmemoryfs",
@@ -558,7 +557,6 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
-					"$(SRCROOT)/../../../../../../",
 					"$(SRCROOT)/../delegate",
 					"$(SRCROOT)/../kvstore",
 					"$(SRCROOT)/../inmemoryfs",

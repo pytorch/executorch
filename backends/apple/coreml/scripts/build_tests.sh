@@ -10,11 +10,14 @@ SCRIPT_DIR_PATH="$(
     pwd -P
 )"
 
-EXECUTORCH_ROOT_PATH="$SCRIPT_DIR_PATH/../../../../"
+EXECUTORCH_ROOT_PATH=$(realpath "$SCRIPT_DIR_PATH/../../../../")
 COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/apple/coreml"
 IOS_TOOLCHAIN_PATH="$COREML_DIR_PATH/third-party/ios-cmake/ios.toolchain.cmake"
 CMAKE_BUILD_DIR_PATH="$COREML_DIR_PATH/cmake-out"
 LIBRARIES_DIR_PATH="$COREML_DIR_PATH/runtime/libraries"
+EXECUTORCH_INCLUDE_DIR_PATH="$COREML_DIR_PATH/runtime/include/executorch"
+
+cd "$EXECUTORCH_ROOT_PATH"
 
 echo "ExecuTorch: Building Tests"
 
@@ -38,5 +41,13 @@ cmake --build "$CMAKE_BUILD_DIR_PATH"  -j9 -t executorch
 echo "ExecuTorch: Copying libraries"
 mkdir "$LIBRARIES_DIR_PATH"
 cp -f "$CMAKE_BUILD_DIR_PATH/libexecutorch.a" "$LIBRARIES_DIR_PATH"
+
+#Copy ExecuTorch headers
+echo "ExecuTorch: Copying headers"
+rm -rf "$EXECUTORCH_INCLUDE_DIR_PATH"
+mkdir -p "$EXECUTORCH_INCLUDE_DIR_PATH"
+find extension \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
+find runtime \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
+find util \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
 
 source "$SCRIPT_DIR_PATH/generate_test_models.sh"

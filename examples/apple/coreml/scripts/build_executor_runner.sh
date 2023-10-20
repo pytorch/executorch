@@ -10,13 +10,16 @@ SCRIPT_DIR_PATH="$(
     pwd -P
 )"
 
-EXECUTORCH_ROOT_PATH="$SCRIPT_DIR_PATH/../../../../"
+EXECUTORCH_ROOT_PATH=$(realpath "$SCRIPT_DIR_PATH/../../../../")
 COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/apple/coreml"
 EXAMPLES_COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/examples/apple/coreml"
 IOS_TOOLCHAIN_PATH="$COREML_DIR_PATH/third-party/ios-cmake/ios.toolchain.cmake"
 CMAKE_BUILD_DIR_PATH="$EXAMPLES_COREML_DIR_PATH/cmake-out"
 LIBRARIES_DIR_PATH="$EXAMPLES_COREML_DIR_PATH/executor_runner/libraries"
 INCLUDE_DIR_PATH="$EXAMPLES_COREML_DIR_PATH/executor_runner/include"
+EXECUTORCH_INCLUDE_DIR_PATH="$COREML_DIR_PATH/runtime/include/executorch"
+
+cd "$EXECUTORCH_ROOT_PATH"
 
 echo "ExecuTorch: Building executor_runner"
 
@@ -36,10 +39,16 @@ cmake "$EXECUTORCH_ROOT_PATH" -B"$CMAKE_BUILD_DIR_PATH" \
 
 cmake --build "$CMAKE_BUILD_DIR_PATH" -j9 -t coremldelegate -t gflags_nothreads_static
 
-# Copy include headers
+# Copy CoreML delegate headers
 echo "ExecuTorch: Copying headers"
+rm -rf "$INCLUDE_DIR_PATH"
 mkdir "$INCLUDE_DIR_PATH"
 cp -rf "$COREML_DIR_PATH/runtime/include/" "$INCLUDE_DIR_PATH"
+#Copy ExecuTorch headers
+mkdir -p "$EXECUTORCH_INCLUDE_DIR_PATH"
+find extension \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
+find runtime \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
+find util \( -name "*.h" -o -name "*.hpp" \) -exec rsync -R '{}' "$EXECUTORCH_INCLUDE_DIR_PATH" \;
 
 # Copy required libraries
 echo "ExecuTorch: Copying libraries"
