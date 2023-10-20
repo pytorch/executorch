@@ -145,8 +145,9 @@ def dbg_tosa_dump(tosa_fb, path):
         f.write(js)
 
 
-# Output to Vela with current file-based compilation
-# WARNING: if this changes, the runtime reader also needs to change
+# Output via Vela to binary stream for ArmBackendEthosU
+# WARNING: Do not change this without changing VelaBinStream.cpp as that
+#          function consumes this format and the two need to align.
 def vela_compile(tosa_fb):
     with tempfile.TemporaryDirectory() as tmpdir:
         tosaname = "out.tosa"
@@ -162,66 +163,74 @@ def vela_compile(tosa_fb):
 
         np_path = os.path.join(tmpdir, "output", "out_sg0_vela.npz")
         blocks = b""
+
         with np.load(np_path, allow_pickle=False) as data:
+            # Construct our modified output_blocks with data in a form easily
+            # digested on the device side
+            bin_blocks = {"vela_bin_stream": b""}
+
+            # copy command data through unmodified
+            bin_blocks["cmd_data"] = data["cmd_data"].tobytes()
+
+            # copy weight data through unmodified
+            bin_blocks["weight_data"] = data["weight_data"].tobytes()
+
+            # Add a block for scratch, inputs and outputs;  scratch shape is a 1 element
+            # array giving us size in bytes so extract this and add a block of 0's.
+            # Currently we preallocated this on the host to provide SRAM for computation.
+            block_length = data["scratch_shape"][0].item()
+            bin_blocks["scratch_data"] = b"\x00" * block_length
+
+            # compose the input related arrays into per-input data to simplify
+            # the runtime code
+            inputs = struct.pack("<i", len(data["input_shape"]))
+            for i in range(len(data["input_shape"])):
+                input_shape = data["input_shape"][i]
+                input_elem_size = data["input_elem_size"][i]
+                input_offset = data["input_offset"][i]
+                input_region = data["input_region"][i]
+                assert len(input_shape) <= 4
+                inp_pad = input_shape.tolist() + [0] * (4 - len(input_shape))
+                input_struct = struct.pack("<iiiiiii", *inp_pad, input_elem_size, input_offset, input_region)
+                inputs += input_struct
+            bin_blocks["inputs"] = inputs
+
+            # compose the output related arrays into per-output data to simplify
+            # the runtime code
+            outputs = struct.pack("<i", len(data["output_shape"]))
+            for i in range(len(data["output_shape"])):
+                output_shape = data["output_shape"][i]
+                output_elem_size = data["output_elem_size"][i]
+                output_offset = data["output_offset"][i]
+                output_region = data["output_region"][i]
+                assert len(output_shape) <= 4
+                outp_pad = output_shape.tolist() + [0] * (4 - len(output_shape))
+                output_struct = struct.pack("<iiiiiii", *outp_pad, output_elem_size, output_offset, output_region)
+                outputs += output_struct
+            bin_blocks["outputs"] = outputs
+
+            bin_blocks["vela_end_stream"] = b""
+
             # Emit the NPZ regions as:
             #  - 16 byte block name null terminated string (padded to 16 if name shorter)
             #  - 4 bytes of int32 block length and 12 bytes of 0's
             #  - block data (padded to 16 byte alignment at end)
             # Repeat for all blocks
-            for key in data.keys():
+            for key in bin_blocks.keys():
                 block_name = bytes(key, "utf8")[:15]
                 block_name = block_name + b"\x00" * (16 - len(block_name))
 
-                block_data = b""
-                if key in ("input_shape", "output_shape"):
-                    inputs = data[key]
-                    # Encode a struct of int len; and one or more int x,y,z,w shape;
-                    input_struct = struct.pack("<i", len(inputs))
-                    for inp in inputs:
-                        assert len(inp) <= 4
-                        inp_pad = inp.tolist() + [0] * (4 - len(inp))
-                        input_struct = input_struct + struct.pack("<iiii", *inp_pad)
-                    block_data = input_struct
-                elif key in ("input_offset", "output_offset"):
-                    inputs = data[key]
-                    if key == "output_offset" and len(inputs) > 1:
-                        raise RuntimeError(
-                            "Currently only support one output in Vela ArmBackend"
-                        )
-                    offset_struct = struct.pack("<i", len(inputs))
-                    for inp in inputs:
-                        offset_struct = offset_struct + struct.pack("<i", inp)
-                    block_data = offset_struct
-                else:
-                    block_data = data[key].tobytes()
                 # We need the acual unpadded block lengths for hw setup
-                block_length = len(block_data).to_bytes(16, "little")
-                # pad block data to multiple of 16 bytes
+                block_length = struct.pack("<iiii", len(bin_blocks[key]), 0, 0, 0 )
+
+                # Pad block data to multiple of 16 bytes
+                block_data = bin_blocks[key]
                 block_data = block_data + b"\x00" * (15 - (len(block_data) - 1) % 16)
 
                 block = block_name + block_length + block_data
                 blocks = blocks + block
 
-            # Add a block for scratch, inputs and outputs
-            # scratch shape is a 1 element array giving us size in bytes
-            block_name = bytes("scratch_data", "utf8")[:15]
-            block_name = block_name + b"\x00" * (16 - len(block_name))
-            block_length = data["scratch_shape"][0].item()
-            block_length = block_length + (15 - (block_length - 1) % 16)
-            block_data = b"\x00" * block_length
-            block_length = block_length.to_bytes(16, "little")
-            block = block_name + block_length + block_data
-            blocks = blocks + block
-            # TODO are these already in scratch shape? look to be
-            # input_shape * input_elem_size
-            # output_shape * output_elem_size
-            # input_offset and output_offset specify the location these arrays are written from base of scratch
-
-        # return 16 byte VELA bin header + blocks + footer
-        header = bytes("vela_bin_stream", "utf-8") + b"\x00"
-        footer = bytes("vela_end_stream", "utf-8") + b"\x00"
-        return header + blocks + footer
-
+        return blocks
 
 def dbg_fail(node, tosa_fb, path):
     dbg_tosa_dump(tosa_fb, path)
