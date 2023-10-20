@@ -8,8 +8,14 @@ on:
   pull_request:
     paths:
       - .github/workflows/app-build.yml
+      - install_requirements.sh
+      - backends/apple/**
+      - backends/xnnpack/**
+      - build/build_apple_frameworks.sh
       - build/test_ios_ci.sh
       - examples/demo-apps/**
+      - examples/portable/**
+      - examples/xnnpack/**
   workflow_dispatch:
 
 concurrency:
