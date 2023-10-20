@@ -4,9 +4,6 @@ cmake_minimum_required(VERSION 3.19)
 
 project(executorch_coreml_backend)
 
-enable_language(CXX)
-enable_language(OBJC)
-
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
