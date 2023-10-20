@@ -96,14 +96,22 @@ def export_models_for_ci() -> dict[str, dict]:
     # This is the JSON syntax for configuration matrix used by GitHub
     # https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs
     models = {"include": []}
-    for (name, build_tool, q_config, d_config) in itertools.product(MODEL_NAME_TO_MODEL.keys(), BUILD_TOOLS.keys(), [False, True], [False, True]):
+    for (name, build_tool, q_config, d_config) in itertools.product(
+        MODEL_NAME_TO_MODEL.keys(), BUILD_TOOLS.keys(), [False, True], [False, True]
+    ):
         if not model_should_run_on_event(name, event):
             continue
 
-        if q_config and ((not name in MODEL_NAME_TO_OPTIONS) or (not MODEL_NAME_TO_OPTIONS[name].quantization)):
+        if q_config and (
+            (not name in MODEL_NAME_TO_OPTIONS)
+            or (not MODEL_NAME_TO_OPTIONS[name].quantization)
+        ):
             continue
 
-        if d_config and ((not name in MODEL_NAME_TO_OPTIONS) or (not MODEL_NAME_TO_OPTIONS[name].delegation)):
+        if d_config and (
+            (not name in MODEL_NAME_TO_OPTIONS)
+            or (not MODEL_NAME_TO_OPTIONS[name].delegation)
+        ):
             continue
 
         if target_os not in BUILD_TOOLS[build_tool]:
@@ -121,9 +129,7 @@ def export_models_for_ci() -> dict[str, dict]:
 
         # NB: Some model requires much bigger Linux runner to avoid
         # running OOM. The team is investigating the root cause
-        if target_os in CUSTOM_RUNNERS and name in CUSTOM_RUNNERS.get(
-            target_os, {}
-        ):
+        if target_os in CUSTOM_RUNNERS and name in CUSTOM_RUNNERS.get(target_os, {}):
             record["runner"] = CUSTOM_RUNNERS[target_os][name]
 
         models["include"].append(record)
