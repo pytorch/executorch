@@ -461,22 +461,8 @@ Specifically, it will:</p>
 </ol>
 <div class="section" id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this headline">¶</a></h2>
-<p>To run this tutorial, you’ll need to install ExecuTorch.</p>
-<p>Set up a conda environment. To set up a conda environment in Google Colab:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>!pip install -q condacolab
-import condacolab
-condacolab.install()
-
-!conda create --name executorch python=3.10
-!conda install -c conda-forge flatbuffers
-</pre></div>
-</div>
-<p>Install ExecuTorch from source. If cloning is failing on Google Colab, make
-sure Colab -&gt; Setting -&gt; Github -&gt; Access Private Repo is checked:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>!git clone https://{github_username}:{token}@github.com/pytorch/executorch.git
-!cd executorch &amp;&amp; bash ./install_requirements.sh
-</pre></div>
-</div>
+<p>To run this tutorial, you’ll first need to
+<a class="reference external" href="../getting-started-setup.html">Set up your ExecuTorch environment</a>.</p>
 </div>
 <div class="section" id="generate-etrecord-optional">
 <h2>Generate ETRecord (Optional)<a class="headerlink" href="#generate-etrecord-optional" title="Permalink to this headline">¶</a></h2>
@@ -490,8 +476,9 @@ edge dialect model (<code class="docutils literal notranslate"><span class="pre"
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">copy</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
+<span class="kn">import</span> <span class="nn">torch.nn.functional</span> <span class="k">as</span> <span class="nn">F</span>
 
-<span class="kn">from</span> <span class="nn">executorch.examples.models.mobilenet_v2</span> <span class="kn">import</span> <a href="https://docs.python.org/3/library/abc.html#abc.ABC" title="abc.ABC" class="sphx-glr-backref-module-abc sphx-glr-backref-type-py-class"><span class="n">MV2Model</span></a>
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">EdgeCompileConfig</span><span class="p">,</span>
     <span class="n">EdgeProgramManager</span><span class="p">,</span>
@@ -502,12 +489,36 @@ edge dialect model (<code class="docutils literal notranslate"><span class="pre"
 <span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.export" title="torch.export.export" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-function"><span class="n">export</span></a><span class="p">,</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class"><span class="n">ExportedProgram</span></a>
 
 
-<span class="c1"># Generate MV2 Model</span>
-<span class="n">model</span><span class="p">:</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span></a> <span class="o">=</span> <a href="https://docs.python.org/3/library/abc.html#abc.ABC" title="abc.ABC" class="sphx-glr-backref-module-abc sphx-glr-backref-type-py-class"><span class="n">MV2Model</span></a><span class="p">()</span>
+<span class="c1"># Generate Model</span>
+<span class="k">class</span> <span class="nc">Net</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">nn</span><span class="o">.</span><span class="n">Module</span></a><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">Net</span></a><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="c1"># 1 input image channel, 6 output channels, 5x5 square convolution</span>
+        <span class="c1"># kernel</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conv1</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d" title="torch.nn.Conv2d" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span></a><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conv2</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.Conv2d.html#torch.nn.Conv2d" title="torch.nn.Conv2d" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">nn</span><span class="o">.</span><span class="n">Conv2d</span></a><span class="p">(</span><span class="mi">6</span><span class="p">,</span> <span class="mi">16</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+        <span class="c1"># an affine operation: y = Wx + b</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fc1</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.Linear.html#torch.nn.Linear" title="torch.nn.Linear" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span></a><span class="p">(</span><span class="mi">16</span> <span class="o">*</span> <span class="mi">5</span> <span class="o">*</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">120</span><span class="p">)</span>  <span class="c1"># 5*5 from image dimension</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fc2</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.Linear.html#torch.nn.Linear" title="torch.nn.Linear" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span></a><span class="p">(</span><span class="mi">120</span><span class="p">,</span> <span class="mi">84</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fc3</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.Linear.html#torch.nn.Linear" title="torch.nn.Linear" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">nn</span><span class="o">.</span><span class="n">Linear</span></a><span class="p">(</span><span class="mi">84</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="c1"># Max pooling over a (2, 2) window</span>
+        <span class="n">x</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.functional.max_pool2d.html#torch.nn.functional.max_pool2d" title="torch.nn.functional.max_pool2d" class="sphx-glr-backref-module-torch-nn-functional sphx-glr-backref-type-py-function"><span class="n">F</span><span class="o">.</span><span class="n">max_pool2d</span></a><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.functional.relu.html#torch.nn.functional.relu" title="torch.nn.functional.relu" class="sphx-glr-backref-module-torch-nn-functional sphx-glr-backref-type-py-function"><span class="n">F</span><span class="o">.</span><span class="n">relu</span></a><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">conv1</span><span class="p">(</span><span class="n">x</span><span class="p">)),</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+        <span class="c1"># If the size is a square, you can specify with a single number</span>
+        <span class="n">x</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.functional.max_pool2d.html#torch.nn.functional.max_pool2d" title="torch.nn.functional.max_pool2d" class="sphx-glr-backref-module-torch-nn-functional sphx-glr-backref-type-py-function"><span class="n">F</span><span class="o">.</span><span class="n">max_pool2d</span></a><span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.nn.functional.relu.html#torch.nn.functional.relu" title="torch.nn.functional.relu" class="sphx-glr-backref-module-torch-nn-functional sphx-glr-backref-type-py-function"><span class="n">F</span><span class="o">.</span><span class="n">relu</span></a><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">conv2</span><span class="p">(</span><span class="n">x</span><span class="p">)),</span> <span class="mi">2</span><span class="p">)</span>
+        <span class="n">x</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.flatten.html#torch.flatten" title="torch.flatten" class="sphx-glr-backref-module-torch sphx-glr-backref-type-py-function"><span class="n">torch</span><span class="o">.</span><span class="n">flatten</span></a><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>  <span class="c1"># flatten all dimensions except the batch dimension</span>
+        <span class="n">x</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.functional.relu.html#torch.nn.functional.relu" title="torch.nn.functional.relu" class="sphx-glr-backref-module-torch-nn-functional sphx-glr-backref-type-py-function"><span class="n">F</span><span class="o">.</span><span class="n">relu</span></a><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fc1</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+        <span class="n">x</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.functional.relu.html#torch.nn.functional.relu" title="torch.nn.functional.relu" class="sphx-glr-backref-module-torch-nn-functional sphx-glr-backref-type-py-function"><span class="n">F</span><span class="o">.</span><span class="n">relu</span></a><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fc2</span><span class="p">(</span><span class="n">x</span><span class="p">))</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fc3</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">x</span>
+
+
+<span class="n">model</span> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module" title="torch.nn.Module" class="sphx-glr-backref-module-torch-nn sphx-glr-backref-type-py-class"><span class="n">Net</span></a><span class="p">()</span>
 
 <a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">aten_model</span></a><span class="p">:</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.ExportedProgram" title="torch.export.ExportedProgram" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-class"><span class="n">ExportedProgram</span></a> <span class="o">=</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.export" title="torch.export.export" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-function"><span class="n">export</span></a><span class="p">(</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">get_eager_model</span><span class="p">()</span><span class="o">.</span><span class="n">eval</span><span class="p">(),</span>
-    <span class="n">model</span><span class="o">.</span><span class="n">get_example_inputs</span><span class="p">(),</span>
+    <span class="n">model</span><span class="p">,</span>
+    <span class="p">(</span><a href="https://pytorch.org/docs/stable/generated/torch.randn.html#torch.randn" title="torch.randn" class="sphx-glr-backref-module-torch sphx-glr-backref-type-py-function"><span class="n">torch</span><span class="o">.</span><span class="n">randn</span></a><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">),),</span>
 <span class="p">)</span>
 
 <span class="n">edge_program_manager</span><span class="p">:</span> <span class="n">EdgeProgramManager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span>
@@ -522,12 +533,8 @@ edge dialect model (<code class="docutils literal notranslate"><span class="pre"
 <span class="n">generate_etrecord</span><span class="p">(</span><a href="https://docs.python.org/3/library/stdtypes.html#str" title="builtins.str" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">etrecord_path</span></a><span class="p">,</span> <span class="n">edge_program_manager_copy</span><span class="p">,</span> <span class="n">et_program_manager</span><span class="p">)</span>
 </pre></div>
 </div>
-<div class="sphx-glr-script-out highlight-default notranslate"><div class="highlight"><pre><span></span>Downloading: &quot;https://download.pytorch.org/models/mobilenet_v2-7ebf99e0.pth&quot; to /var/lib/ci-user/.cache/torch/hub/checkpoints/mobilenet_v2-7ebf99e0.pth
-
-  0%|          | 0.00/13.6M [00:00&lt;?, ?B/s]
-100%|██████████| 13.6M/13.6M [00:00&lt;00:00, 212MB/s]
-/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:590: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
-  warnings.warn(&quot;pytree_to_str is deprecated. Please use treespec_dumps&quot;)
+<div class="sphx-glr-script-out highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">/</span><span class="n">opt</span><span class="o">/</span><span class="n">conda</span><span class="o">/</span><span class="n">envs</span><span class="o">/</span><span class="n">py_3</span><span class="mf">.10</span><span class="o">/</span><span class="n">lib</span><span class="o">/</span><span class="n">python3</span><span class="mf">.10</span><span class="o">/</span><span class="n">site</span><span class="o">-</span><span class="n">packages</span><span class="o">/</span><span class="n">torch</span><span class="o">/</span><span class="n">utils</span><span class="o">/</span><span class="n">_pytree</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">590</span><span class="p">:</span> <span class="ne">UserWarning</span><span class="p">:</span> <span class="n">pytree_to_str</span> <span class="ow">is</span> <span class="n">deprecated</span><span class="o">.</span> <span class="n">Please</span> <span class="n">use</span> <span class="n">treespec_dumps</span>
+  <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;pytree_to_str is deprecated. Please use treespec_dumps&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 <div class="admonition warning">
@@ -543,13 +550,14 @@ lose debug data in the process.</p>
 <p>Next step is to generate an <code class="docutils literal notranslate"><span class="pre">ETDump</span></code>. <code class="docutils literal notranslate"><span class="pre">ETDump</span></code> contains runtime results
 from executing the model. To generate, users have two options:</p>
 <p><strong>Option 1:</strong></p>
-<p>Use Buck:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">sdk</span><span class="o">.</span><span class="n">scripts</span><span class="o">.</span><span class="n">export_bundled_program</span> <span class="o">-</span><span class="n">m</span> <span class="n">mv2</span>
+<p>Use Buck (follow <a class="reference external" href="../getting-started-setup.html#building-a-runtime">these instructions</a> to set up buck):</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="n">executorch</span>
+<span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">sdk</span><span class="o">.</span><span class="n">scripts</span><span class="o">.</span><span class="n">export_bundled_program</span> <span class="o">-</span><span class="n">m</span> <span class="n">mv2</span>
 <span class="n">buck2</span> <span class="n">run</span> <span class="o">-</span><span class="n">c</span> <span class="n">executorch</span><span class="o">.</span><span class="n">event_tracer_enabled</span><span class="o">=</span><span class="n">true</span> <span class="n">examples</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">sdk_example_runner</span><span class="p">:</span><span class="n">sdk_example_runner</span> <span class="o">--</span> <span class="o">--</span><span class="n">bundled_program_path</span> <span class="n">mv2_bundled</span><span class="o">.</span><span class="n">bpte</span>
 </pre></div>
 </div>
 <p><strong>Option 2:</strong></p>
-<p>Use CMake:</p>
+<p>Use CMake (follow <a class="reference external" href="../runtime-build-and-cross-compilation.html#configure-the-cmake-build">these instructions</a> to set up cmake):</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">cd</span> <span class="n">executorch</span>
 <span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">sdk</span><span class="o">.</span><span class="n">scripts</span><span class="o">.</span><span class="n">export_bundled_program</span> <span class="o">-</span><span class="n">m</span> <span class="n">mv2</span>
 <span class="n">rm</span> <span class="o">-</span><span class="n">rf</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">mkdir</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cd</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span> <span class="o">&amp;&amp;</span> <span class="n">cmake</span> <span class="o">-</span><span class="n">DBUCK2</span><span class="o">=</span><span class="n">buck2</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_SDK</span><span class="o">=</span><span class="mi">1</span> <span class="o">-</span><span class="n">DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER</span><span class="o">=</span><span class="mi">1</span> <span class="o">..</span>
@@ -663,7 +671,7 @@ to analyze the model run results.</p>
 <li><p><a class="reference external" href="../sdk-etdump.html">ETDump</a></p></li>
 <li><p><a class="reference external" href="../sdk-inspector.html">Inspector</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 21.260 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 0.921 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-sdk-integration-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/00f28feeccb75cde665e2acd0ca1eb2e/sdk-integration-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">sdk-integration-tutorial.py</span></code></a></p>
