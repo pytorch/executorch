@@ -15,6 +15,17 @@ set -e
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
 
+cmake_install_executorch_lib() {
+    echo "Installing libexecutorch.a and libportable_kernels.a"
+    rm -rf cmake-out
+    retry cmake -DBUCK2="$BUCK" \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+            -Bcmake-out .
+    cmake --build cmake-out -j9 --target install --config Release
+}
+
 test_buck2_select_all_ops() {
     echo "Exporting MobilenetV3"
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv3"
@@ -57,17 +68,17 @@ test_cmake_select_all_ops() {
     echo "Exporting MobilenetV3"
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv3"
 
-    (rm -rf cmake-out \
-        && mkdir cmake-out \
-        && cd cmake-out \
-        && retry cmake -DBUCK2="$BUCK" \
-            -DBUILD_SELECTIVE_BUILD_TEST=ON \
+    rm -rf cmake-out/examples/selective_build
+    retry cmake -DBUCK2="$BUCK" \
             -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_SELECT_ALL_OPS=ON \
-            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+            -Bcmake-out/examples/selective_build \
+            examples/selective_build
 
     echo "Build selective build test"
-    cmake --build cmake-out -j9 --config Release
+    cmake --build cmake-out/examples/selective_build -j9 --config Release
 
     echo 'Running selective build test'
     cmake-out/examples/selective_build/selective_build_test --model_path="./mv3.pte"
@@ -81,21 +92,21 @@ test_cmake_select_ops_in_list() {
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv2"
 
     # set MAX_KERNEL_NUM=17: 14 primops, add, mul
-    (rm -rf cmake-out \
-        && mkdir cmake-out \
-        && cd cmake-out \
-        && retry cmake -DBUCK2="$BUCK" \
-            -DMAX_KERNEL_NUM=17 \
-            -DBUILD_SELECTIVE_BUILD_TEST=ON \
+    rm -rf cmake-out/examples/selective_build
+    retry cmake -DBUCK2="$BUCK" \
             -DCMAKE_BUILD_TYPE=Release \
+            -DMAX_KERNEL_NUM=17 \
             -DEXECUTORCH_SELECT_OPS_LIST="aten::convolution.out,\
 aten::_native_batch_norm_legit_no_training.out,aten::hardtanh.out,aten::add.out,\
 aten::mean.out,aten::view_copy.out,aten::permute_copy.out,aten::addmm.out,\
 aten,aten::clone.out" \
-            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+            -Bcmake-out/examples/selective_build \
+            examples/selective_build
 
     echo "Build selective build test"
-    cmake --build cmake-out -j9 --config Release
+    cmake --build cmake-out/examples/selective_build -j9 --config Release
 
     echo 'Running selective build test'
     cmake-out/examples/selective_build/selective_build_test --model_path="./mv2.pte"
@@ -108,17 +119,17 @@ test_cmake_select_ops_in_yaml() {
     echo "Exporting custom_op_1"
     ${PYTHON_EXECUTABLE} -m examples.portable.custom_ops.custom_ops_1
 
-    (rm -rf cmake-out \
-        && mkdir cmake-out \
-        && cd cmake-out \
-        && retry cmake -DBUCK2="$BUCK" \
-            -DBUILD_SELECTIVE_BUILD_TEST=ON \
+    rm -rf cmake-out/examples/selective_build
+    retry cmake -DBUCK2="$BUCK" \
             -DCMAKE_BUILD_TYPE=Release \
             -DEXECUTORCH_SELECT_OPS_YAML=ON \
-            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+            -Bcmake-out/examples/selective_build \
+            examples/selective_build
 
     echo "Build selective build test"
-    cmake --build cmake-out -j9 --config Release
+    cmake --build cmake-out/examples/selective_build -j9 --config Release
 
     echo 'Running selective build test'
     cmake-out/examples/selective_build/selective_build_test --model_path="./custom_ops_1.pte"
@@ -139,6 +150,7 @@ fi
 
 if [[ $1 == "cmake" ]];
 then
+    cmake_install_executorch_lib
     test_cmake_select_all_ops
     test_cmake_select_ops_in_list
     test_cmake_select_ops_in_yaml
