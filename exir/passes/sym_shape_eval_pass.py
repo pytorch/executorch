@@ -34,7 +34,7 @@ def nonzero(args, kwargs) -> List[Optional[int]]:
 
 @register_upper_bound_inference(exir_ops.edge.aten.index.Tensor)
 @register_upper_bound_inference(torch.ops.aten.index.Tensor)
-def index_Tensor(args, kwargs) -> List[Optional[int]]:
+def index_Tensor(args, kwargs) -> List[Optional[int]]:  # noqa: C901
     tensor = args[0]
     indices = args[1]
 
