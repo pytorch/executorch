@@ -47,6 +47,15 @@ def parse_args() -> Any:
         default="linux",
         help="the target OS",
     )
+    parser.add_argument(
+        "-e",
+        "--event",
+        type=str,
+        choices=["pull_request", "push"],
+        required=True,
+        help=f"GitHub CI Event. See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#on",
+    )
+
     return parser.parse_args()
 
 
@@ -63,17 +72,33 @@ def set_output(name: str, val: Any) -> None:
         print(f"::set-output name={name}::{val}")
 
 
-def export_models_for_ci() -> None:
+def model_should_run_on_event(model: str, event: str) -> bool:
+    """
+    A helper function to decide whether a model should be tested on an event (pull_request/push)
+    We put higher priority and fast models to pull request and rest to push.
+    """
+    if event == "pull_request":
+        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit"]
+    elif event == "push":
+        return True
+    return False
+
+
+def export_models_for_ci() -> dict[str, dict]:
     """
     This gathers all the example models that we want to test on GitHub OSS CI
     """
     args = parse_args()
     target_os = args.target_os
+    event = args.event
 
     # This is the JSON syntax for configuration matrix used by GitHub
     # https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs
     models = {"include": []}
     for name in MODEL_NAME_TO_MODEL.keys():
+        if not model_should_run_on_event(name, event):
+            continue
+
         quantization_configs = {
             False,
             name in MODEL_NAME_TO_OPTIONS and MODEL_NAME_TO_OPTIONS[name].quantization,

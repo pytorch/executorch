@@ -35,7 +35,7 @@ jobs:
           install_pip_dependencies
           install_executorch
 
-          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --target-os macos
+          PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --target-os macos --event push
 
   test-models-macos:
     name: test-models-macos
