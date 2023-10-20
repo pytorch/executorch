@@ -27,7 +27,7 @@ Tensor& relu_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_CHECK_SAME_SHAPE_AND_DTYPE2(in, out);
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "relu", CTYPE, [&]() {
+  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "relu.out", CTYPE, [&]() {
     apply_unary_map_fn(
         [](const CTYPE val_in) {
           return (std::isnan(val_in) || val_in >= CTYPE(0)) ? val_in : CTYPE(0);

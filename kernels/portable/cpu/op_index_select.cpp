@@ -65,18 +65,19 @@ Tensor& index_select_out(
 
   ScalarType ix_type = index.scalar_type();
 
-  ET_SWITCH_TWO_TYPES(Long, Int, ix_type, ctx, __func__, CTYPE, [&]() {
-    const CTYPE* const index_arr = index.mutable_data_ptr<CTYPE>();
-    for (int i = 0; i < leading_dims; i++) {
-      const char* src = input_data + i * in_dim_length * length_per_step;
-      char* dest = out_data + i * out_dim_length * length_per_step;
-      for (auto j = 0; j < out_dim_length; j++) {
-        const char* copy_src = src + index_arr[j] * length_per_step;
-        memcpy(dest, copy_src, length_per_step);
-        dest += length_per_step;
-      }
-    }
-  });
+  ET_SWITCH_TWO_TYPES(
+      Long, Int, ix_type, ctx, "index_select.out", CTYPE, [&]() {
+        const CTYPE* const index_arr = index.mutable_data_ptr<CTYPE>();
+        for (int i = 0; i < leading_dims; i++) {
+          const char* src = input_data + i * in_dim_length * length_per_step;
+          char* dest = out_data + i * out_dim_length * length_per_step;
+          for (auto j = 0; j < out_dim_length; j++) {
+            const char* copy_src = src + index_arr[j] * length_per_step;
+            memcpy(dest, copy_src, length_per_step);
+            dest += length_per_step;
+          }
+        }
+      });
 
   return out;
 }

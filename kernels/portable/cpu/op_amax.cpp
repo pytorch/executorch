@@ -55,18 +55,19 @@ Tensor& amax_out(
   Error e = resize_reduction_out(in, dim_list, keepdim, out);
   ET_CHECK_MSG(e == Error::Ok, "Failed to resize out tensor in amax_out");
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in.scalar_type(), ctx, "amax", CTYPE, [&]() {
-    CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
-    for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
-      out_data[out_ix] = reduce_over_dim_list<CTYPE>(
-          [](CTYPE v, CTYPE max_v) {
-            return std::isnan(v) || v > max_v ? v : max_v;
-          },
-          in,
-          dim_list,
-          out_ix);
-    }
-  });
+  ET_SWITCH_REAL_TYPES_AND(
+      Bool, in.scalar_type(), ctx, "amax.out", CTYPE, [&]() {
+        CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+        for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+          out_data[out_ix] = reduce_over_dim_list<CTYPE>(
+              [](CTYPE v, CTYPE max_v) {
+                return std::isnan(v) || v > max_v ? v : max_v;
+              },
+              in,
+              dim_list,
+              out_ix);
+        }
+      });
 
   return out;
 }

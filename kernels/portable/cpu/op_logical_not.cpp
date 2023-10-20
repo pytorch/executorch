@@ -25,9 +25,9 @@ Tensor& logical_not_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   ET_CHECK_SAME_SHAPE2(in, out);
 
   ET_SWITCH_REAL_TYPES_AND(
-      Bool, in.scalar_type(), ctx, "logical_not", CTYPE_IN, [&] {
+      Bool, in.scalar_type(), ctx, "logical_not.out", CTYPE_IN, [&] {
         ET_SWITCH_REAL_TYPES_AND(
-            Bool, out.scalar_type(), ctx, "logical_not", CTYPE_OUT, [&] {
+            Bool, out.scalar_type(), ctx, "logical_not.out", CTYPE_OUT, [&] {
               apply_unary_map_fn(
                   [](const CTYPE_IN val_in) {
                     return static_cast<CTYPE_OUT>(!static_cast<bool>(val_in));

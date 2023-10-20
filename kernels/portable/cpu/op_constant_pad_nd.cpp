@@ -215,15 +215,17 @@ Tensor& constant_pad_nd_out(
 
   ET_CHECK(in_type == out_type);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE, [&]() {
-    CTYPE value_v;
-    ET_SWITCH_SCALAR_OBJ_TYPES(value_type, ctx, __func__, CTYPE_VALUE, [&]() {
-      CTYPE_VALUE val;
-      ET_EXTRACT_SCALAR(value, val);
-      value_v = static_cast<CTYPE>(val);
-    });
-    constant_pad_nd_out_impl<CTYPE>(in, pad, value_v, out);
-  });
+  ET_SWITCH_REAL_TYPES_AND(
+      Bool, in_type, ctx, "constant_pad_nd.out", CTYPE, [&]() {
+        CTYPE value_v;
+        ET_SWITCH_SCALAR_OBJ_TYPES(
+            value_type, ctx, "constant_pad_nd.out", CTYPE_VALUE, [&]() {
+              CTYPE_VALUE val;
+              ET_EXTRACT_SCALAR(value, val);
+              value_v = static_cast<CTYPE>(val);
+            });
+        constant_pad_nd_out_impl<CTYPE>(in, pad, value_v, out);
+      });
 
   return out;
 }

@@ -33,10 +33,10 @@ Tensor& sub_out(
 
   ET_CHECK(canCast(common_type, out_type));
 
-  ET_SWITCH_REAL_TYPES(a_type, ctx, "sub", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES(b_type, ctx, "sub", CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES(common_type, ctx, "sub", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES(out_type, ctx, "sub", CTYPE_OUT, [&]() {
+  ET_SWITCH_REAL_TYPES(a_type, ctx, "sub.out", CTYPE_A, [&]() {
+    ET_SWITCH_REAL_TYPES(b_type, ctx, "sub.out", CTYPE_B, [&]() {
+      ET_SWITCH_REAL_TYPES(common_type, ctx, "sub.out", CTYPE_IN, [&]() {
+        ET_SWITCH_REAL_TYPES(out_type, ctx, "sub.out", CTYPE_OUT, [&]() {
           CTYPE_IN alpha_val;
           ET_EXTRACT_SCALAR(alpha, alpha_val);
 
@@ -78,28 +78,31 @@ Tensor& sub_scalar_out(
 
   ET_CHECK(common_type == out_type);
 
-  ET_SWITCH_REAL_TYPES(a_type, ctx, "sub", CTYPE_A, [&]() {
-    ET_SWITCH_SCALAR_OBJ_REAL_TYPES(b_type, ctx, "sub", CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES(common_type, ctx, "sub", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES(out_type, ctx, "sub", CTYPE_OUT, [&]() {
-          CTYPE_B b_val;
-          ET_EXTRACT_SCALAR(b, b_val);
-          CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
-          CTYPE_IN alpha_val;
-          ET_EXTRACT_SCALAR(alpha, alpha_val);
+  ET_SWITCH_REAL_TYPES(a_type, ctx, "sub.Scalar_out", CTYPE_A, [&]() {
+    ET_SWITCH_SCALAR_OBJ_REAL_TYPES(
+        b_type, ctx, "sub.Scalar_out", CTYPE_B, [&]() {
+          ET_SWITCH_REAL_TYPES(
+              common_type, ctx, "sub.Scalar_out", CTYPE_IN, [&]() {
+                ET_SWITCH_REAL_TYPES(
+                    out_type, ctx, "sub.Scalar_out", CTYPE_OUT, [&]() {
+                      CTYPE_B b_val;
+                      ET_EXTRACT_SCALAR(b, b_val);
+                      CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+                      CTYPE_IN alpha_val;
+                      ET_EXTRACT_SCALAR(alpha, alpha_val);
 
-          apply_unary_map_fn(
-              [b_casted, alpha_val](const CTYPE_A val_a) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN value = a_casted - alpha_val * b_casted;
-                return static_cast<CTYPE_OUT>(value);
-              },
-              a.const_data_ptr<CTYPE_A>(),
-              out.mutable_data_ptr<CTYPE_OUT>(),
-              out.numel());
+                      apply_unary_map_fn(
+                          [b_casted, alpha_val](const CTYPE_A val_a) {
+                            CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+                            CTYPE_IN value = a_casted - alpha_val * b_casted;
+                            return static_cast<CTYPE_OUT>(value);
+                          },
+                          a.const_data_ptr<CTYPE_A>(),
+                          out.mutable_data_ptr<CTYPE_OUT>(),
+                          out.numel());
+                    });
+              });
         });
-      });
-    });
   });
 
   return out;

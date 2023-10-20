@@ -36,25 +36,38 @@ Tensor& pow_Tensor_Tensor_out(
 
   ET_CHECK(canCast(common_type, out_type));
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "pow", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "pow", CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES(common_type, ctx, "pow", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES(out_type, ctx, "pow", CTYPE_OUT, [&]() {
-          apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
-              [](const CTYPE_A val_a, const CTYPE_B val_b) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                CTYPE_IN value = std::pow(a_casted, b_casted);
+  ET_SWITCH_REAL_TYPES_AND(
+      Bool, a_type, ctx, "pow.Tensor_Tensor_out", CTYPE_A, [&]() {
+        ET_SWITCH_REAL_TYPES_AND(
+            Bool, b_type, ctx, "pow.Tensor_Tensor_out", CTYPE_B, [&]() {
+              ET_SWITCH_REAL_TYPES(
+                  common_type, ctx, "pow.Tensor_Tensor_out", CTYPE_IN, [&]() {
+                    ET_SWITCH_REAL_TYPES(
+                        out_type,
+                        ctx,
+                        "pow.Tensor_Tensor_out",
+                        CTYPE_OUT,
+                        [&]() {
+                          apply_binary_elementwise_fn<
+                              CTYPE_A,
+                              CTYPE_B,
+                              CTYPE_OUT>(
+                              [](const CTYPE_A val_a, const CTYPE_B val_b) {
+                                CTYPE_IN a_casted =
+                                    static_cast<CTYPE_IN>(val_a);
+                                CTYPE_IN b_casted =
+                                    static_cast<CTYPE_IN>(val_b);
+                                CTYPE_IN value = std::pow(a_casted, b_casted);
 
-                return static_cast<CTYPE_OUT>(value);
-              },
-              a,
-              b,
-              out);
-        });
+                                return static_cast<CTYPE_OUT>(value);
+                              },
+                              a,
+                              b,
+                              out);
+                        });
+                  });
+            });
       });
-    });
-  });
 
   return out;
 }
@@ -76,27 +89,37 @@ Tensor& pow_Tensor_Scalar_out(
 
   ET_CHECK(common_type == out_type);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "pow", CTYPE_A, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "pow", CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES(common_type, ctx, "pow", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES(out_type, ctx, "pow", CTYPE_OUT, [&]() {
-          CTYPE_B val_b = 0;
-          ET_EXTRACT_SCALAR(b, val_b);
-          apply_unary_map_fn(
-              [val_b](const CTYPE_A val_a) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN b_casted = static_cast<CTYPE_IN>(val_b);
-                CTYPE_IN value = std::pow(a_casted, b_casted);
+  ET_SWITCH_REAL_TYPES_AND(
+      Bool, a_type, ctx, "pow.Tensor_Scalar_out", CTYPE_A, [&]() {
+        ET_SWITCH_SCALAR_OBJ_TYPES(
+            b_type, ctx, "pow.Tensor_Scalar_out", CTYPE_B, [&]() {
+              ET_SWITCH_REAL_TYPES(
+                  common_type, ctx, "pow.Tensor_Scalar_out", CTYPE_IN, [&]() {
+                    ET_SWITCH_REAL_TYPES(
+                        out_type,
+                        ctx,
+                        "pow.Tensor_Scalar_out",
+                        CTYPE_OUT,
+                        [&]() {
+                          CTYPE_B val_b = 0;
+                          ET_EXTRACT_SCALAR(b, val_b);
+                          apply_unary_map_fn(
+                              [val_b](const CTYPE_A val_a) {
+                                CTYPE_IN a_casted =
+                                    static_cast<CTYPE_IN>(val_a);
+                                CTYPE_IN b_casted =
+                                    static_cast<CTYPE_IN>(val_b);
+                                CTYPE_IN value = std::pow(a_casted, b_casted);
 
-                return static_cast<CTYPE_OUT>(value);
-              },
-              a.const_data_ptr<CTYPE_A>(),
-              out.mutable_data_ptr<CTYPE_OUT>(),
-              out.numel());
-        });
+                                return static_cast<CTYPE_OUT>(value);
+                              },
+                              a.const_data_ptr<CTYPE_A>(),
+                              out.mutable_data_ptr<CTYPE_OUT>(),
+                              out.numel());
+                        });
+                  });
+            });
       });
-    });
-  });
 
   return out;
 }

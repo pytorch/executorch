@@ -102,24 +102,27 @@ void unbind_copy_int_out(
   ScalarType in_type = input.scalar_type();
   ScalarType out_type = out[0].scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE_IN, [&]() {
-    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, __func__, CTYPE_OUT, [&]() {
-      const CTYPE_IN* const input_data = input.const_data_ptr<CTYPE_IN>();
-      for (size_t i = 0, e = out.size(); i < e; ++i) {
-        size_t input_offset = i * trailing_dims;
-        CTYPE_OUT* const dest = out[i].mutable_data_ptr<CTYPE_OUT>();
-        size_t dest_offset = 0;
-        for (size_t j = 0; j < leading_dims; ++j) {
-          for (size_t k = 0; k < trailing_dims; ++k) {
-            dest[dest_offset + k] =
-                convert<CTYPE_OUT, CTYPE_IN>(input_data[input_offset + k]);
-          }
-          input_offset += step;
-          dest_offset += trailing_dims;
-        }
-      }
-    });
-  });
+  ET_SWITCH_REAL_TYPES_AND(
+      Bool, in_type, ctx, "unbind_copy.int_out", CTYPE_IN, [&]() {
+        ET_SWITCH_REAL_TYPES_AND(
+            Bool, out_type, ctx, "unbind_copy.int_out", CTYPE_OUT, [&]() {
+              const CTYPE_IN* const input_data =
+                  input.const_data_ptr<CTYPE_IN>();
+              for (size_t i = 0, e = out.size(); i < e; ++i) {
+                size_t input_offset = i * trailing_dims;
+                CTYPE_OUT* const dest = out[i].mutable_data_ptr<CTYPE_OUT>();
+                size_t dest_offset = 0;
+                for (size_t j = 0; j < leading_dims; ++j) {
+                  for (size_t k = 0; k < trailing_dims; ++k) {
+                    dest[dest_offset + k] = convert<CTYPE_OUT, CTYPE_IN>(
+                        input_data[input_offset + k]);
+                  }
+                  input_offset += step;
+                  dest_offset += trailing_dims;
+                }
+              }
+            });
+      });
 }
 
 } // namespace native

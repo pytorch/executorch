@@ -30,7 +30,7 @@ Tensor& arange_out(RuntimeContext& ctx, const Scalar& end, Tensor& out) {
   ScalarType end_type = utils::get_scalar_dtype(end);
 
   double end_val = 0;
-  ET_SWITCH_SCALAR_OBJ_TYPES(end_type, ctx, __func__, CTYPE_END, [&]() {
+  ET_SWITCH_SCALAR_OBJ_TYPES(end_type, ctx, "arange.out", CTYPE_END, [&]() {
     CTYPE_END end_v;
     ET_EXTRACT_SCALAR(end, end_v);
     ET_KERNEL_CHECK_MSG(
@@ -49,7 +49,7 @@ Tensor& arange_out(RuntimeContext& ctx, const Scalar& end, Tensor& out) {
   ET_KERNEL_CHECK_MSG(
       ctx, status == Error::Ok, InvalidArgument, out, "resize_tensor fails");
 
-  ET_SWITCH_REAL_TYPES(out.scalar_type(), ctx, __func__, CTYPE, [&]() {
+  ET_SWITCH_REAL_TYPES(out.scalar_type(), ctx, "arange.out", CTYPE, [&]() {
     auto out_data = out.mutable_data_ptr<CTYPE>();
     for (size_t i = 0; i < size; i++) {
       out_data[i] = static_cast<CTYPE>(i);
@@ -72,25 +72,28 @@ Tensor& arange_start_out(
   ScalarType step_type = utils::get_scalar_dtype(step);
 
   double d_start = 0;
-  ET_SWITCH_SCALAR_OBJ_TYPES(start_type, ctx, __func__, CTYPE_END, [&]() {
-    CTYPE_END start_v;
-    ET_EXTRACT_SCALAR(start, start_v);
-    d_start = static_cast<double>(start_v);
-  });
+  ET_SWITCH_SCALAR_OBJ_TYPES(
+      start_type, ctx, "arange.start_out", CTYPE_END, [&]() {
+        CTYPE_END start_v;
+        ET_EXTRACT_SCALAR(start, start_v);
+        d_start = static_cast<double>(start_v);
+      });
 
   double d_end = 0;
-  ET_SWITCH_SCALAR_OBJ_TYPES(end_type, ctx, __func__, CTYPE_END, [&]() {
-    CTYPE_END end_v;
-    ET_EXTRACT_SCALAR(end, end_v);
-    d_end = static_cast<double>(end_v);
-  });
+  ET_SWITCH_SCALAR_OBJ_TYPES(
+      end_type, ctx, "arange.start_out", CTYPE_END, [&]() {
+        CTYPE_END end_v;
+        ET_EXTRACT_SCALAR(end, end_v);
+        d_end = static_cast<double>(end_v);
+      });
 
   double d_step = 0;
-  ET_SWITCH_SCALAR_OBJ_TYPES(step_type, ctx, __func__, CTYPE_END, [&]() {
-    CTYPE_END step_v;
-    ET_EXTRACT_SCALAR(step, step_v);
-    d_step = static_cast<double>(step_v);
-  });
+  ET_SWITCH_SCALAR_OBJ_TYPES(
+      step_type, ctx, "arange.start_out", CTYPE_END, [&]() {
+        CTYPE_END step_v;
+        ET_EXTRACT_SCALAR(step, step_v);
+        d_step = static_cast<double>(step_v);
+      });
 
   ET_KERNEL_CHECK_MSG(
       ctx,
@@ -107,12 +110,13 @@ Tensor& arange_start_out(
   ET_KERNEL_CHECK_MSG(
       ctx, status == Error::Ok, InvalidArgument, out, "resize_tensor fails");
 
-  ET_SWITCH_REAL_TYPES(out.scalar_type(), ctx, __func__, CTYPE, [&]() {
-    auto out_data = out.mutable_data_ptr<CTYPE>();
-    for (size_t i = 0; i < size; i++) {
-      out_data[i] = convert<CTYPE, double>(d_start + i * d_step);
-    }
-  });
+  ET_SWITCH_REAL_TYPES(
+      out.scalar_type(), ctx, "arange.start_out", CTYPE, [&]() {
+        auto out_data = out.mutable_data_ptr<CTYPE>();
+        for (size_t i = 0; i < size; i++) {
+          out_data[i] = convert<CTYPE, double>(d_start + i * d_step);
+        }
+      });
 
   return out;
 }

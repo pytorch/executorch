@@ -96,9 +96,10 @@ Tensor& nonzero_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   check_preconditions(in, out);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in.scalar_type(), ctx, "nonzero", CTYPE, [&] {
-    nonzero<CTYPE>(in, out);
-  });
+  ET_SWITCH_REAL_TYPES_AND(
+      Bool, in.scalar_type(), ctx, "nonzero.out", CTYPE, [&] {
+        nonzero<CTYPE>(in, out);
+      });
 
   return out;
 }

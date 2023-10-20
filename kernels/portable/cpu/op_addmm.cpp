@@ -47,9 +47,9 @@ Tensor& addmm_out(
 
   ScalarType alpha_dtype = utils::get_scalar_dtype(alpha);
   ScalarType beta_dtype = utils::get_scalar_dtype(beta);
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "addmm", CTYPE, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(alpha_dtype, ctx, "addmm", ALPHA_T, [&]() {
-      ET_SWITCH_SCALAR_OBJ_TYPES(beta_dtype, ctx, "addmm", BETA_T, [&]() {
+  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "addmm.out", CTYPE, [&]() {
+    ET_SWITCH_SCALAR_OBJ_TYPES(alpha_dtype, ctx, "addmm.out", ALPHA_T, [&]() {
+      ET_SWITCH_SCALAR_OBJ_TYPES(beta_dtype, ctx, "addmm.out", BETA_T, [&]() {
         size_t m = mat1.size(0);
         size_t n = mat1.size(1);
         size_t p = mat2.size(1);
