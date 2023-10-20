@@ -16,8 +16,8 @@ from executorch.exir import ExecutorchProgram, ExirExportedProgram
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 
 from executorch.exir.print_program import print_program
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.bundler.config import MethodTestCase, MethodTestSuite
+from executorch.sdk.bundled_program.bundler.core import create_bundled_program
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )

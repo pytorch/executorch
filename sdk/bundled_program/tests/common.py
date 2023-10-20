@@ -10,9 +10,10 @@ import string
 from typing import List, Tuple
 
 import executorch.exir as exir
+
 import torch
 from executorch.exir.schema import Program
-from executorch.sdk.bundled_program.config import (
+from executorch.sdk.bundled_program.bundler.config import (
     MethodInputType,
     MethodOutputType,
     MethodTestCase,

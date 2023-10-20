@@ -10,7 +10,7 @@ import unittest
 
 from executorch.exir.print_program import pretty_print
 
-from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.bundler.core import create_bundled_program
 
 from executorch.sdk.bundled_program.serialize import (
     deserialize_from_flatbuffer_to_bundled_program,

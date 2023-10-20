@@ -11,7 +11,7 @@ from typing import get_args, List, Union
 
 import torch
 from executorch.extension.pytree import tree_flatten
-from executorch.sdk.bundled_program.config import DataContainer
+from executorch.sdk.bundled_program.bundler.config import DataContainer
 
 from executorch.sdk.bundled_program.tests.common import (
     get_random_test_suites,

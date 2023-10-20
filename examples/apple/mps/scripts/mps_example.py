@@ -13,8 +13,8 @@ import torch
 import torch._export as export
 from executorch import exir
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.bundler.config import MethodTestCase, MethodTestSuite
+from executorch.sdk.bundled_program.bundler.core import create_bundled_program
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )

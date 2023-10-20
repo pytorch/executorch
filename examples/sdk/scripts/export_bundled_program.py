@@ -12,12 +12,12 @@ from typing import List
 
 import torch
 from executorch.exir.schema import Program
-from executorch.sdk.bundled_program.config import (
+from executorch.sdk.bundled_program.bundler.config import (
     MethodInputType,
     MethodTestCase,
     MethodTestSuite,
 )
-from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.bundler.core import create_bundled_program
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
