@@ -80,9 +80,7 @@ def model_should_run_on_event(model: str, event: str) -> bool:
     """
     if event == "pull_request":
         return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit"]
-    elif event == "push":
-        return True
-    return False
+    return True
 
 
 def export_models_for_ci() -> dict[str, dict]:
@@ -103,13 +101,13 @@ def export_models_for_ci() -> dict[str, dict]:
             continue
 
         if q_config and (
-            (not name in MODEL_NAME_TO_OPTIONS)
+            (name not in MODEL_NAME_TO_OPTIONS)
             or (not MODEL_NAME_TO_OPTIONS[name].quantization)
         ):
             continue
 
         if d_config and (
-            (not name in MODEL_NAME_TO_OPTIONS)
+            (name not in MODEL_NAME_TO_OPTIONS)
             or (not MODEL_NAME_TO_OPTIONS[name].delegation)
         ):
             continue
