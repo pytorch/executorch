@@ -28,22 +28,9 @@ Using the ExecuTorch SDK to Profile a Model
 # Prerequisites
 # -------------
 #
-# To run this tutorial, you’ll need to install ExecuTorch.
+# To run this tutorial, you’ll first need to
+# `Set up your ExecuTorch environment <../getting-started-setup.html>`__.
 #
-# Set up a conda environment. To set up a conda environment in Google Colab::
-#
-#       !pip install -q condacolab
-#       import condacolab
-#       condacolab.install()
-#
-#       !conda create --name executorch python=3.10
-#       !conda install -c conda-forge flatbuffers
-#
-# Install ExecuTorch from source. If cloning is failing on Google Colab, make
-# sure Colab -> Setting -> Github -> Access Private Repo is checked::
-#
-#       !git clone https://{github_username}:{token}@github.com/pytorch/executorch.git
-#       !cd executorch && bash ./install_requirements.sh
 
 ######################################################################
 # Generate ETRecord (Optional)
@@ -62,8 +49,9 @@ Using the ExecuTorch SDK to Profile a Model
 import copy
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -74,12 +62,36 @@ from executorch.sdk import generate_etrecord
 from torch.export import export, ExportedProgram
 
 
-# Generate MV2 Model
-model: torch.nn.Module = MV2Model()
+# Generate Model
+class Net(nn.Module):
+    def __init__(self):
+        super(Net, self).__init__()
+        # 1 input image channel, 6 output channels, 5x5 square convolution
+        # kernel
+        self.conv1 = nn.Conv2d(1, 6, 5)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        # an affine operation: y = Wx + b
+        self.fc1 = nn.Linear(16 * 5 * 5, 120)  # 5*5 from image dimension
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
+
+    def forward(self, x):
+        # Max pooling over a (2, 2) window
+        x = F.max_pool2d(F.relu(self.conv1(x)), (2, 2))
+        # If the size is a square, you can specify with a single number
+        x = F.max_pool2d(F.relu(self.conv2(x)), 2)
+        x = torch.flatten(x, 1)  # flatten all dimensions except the batch dimension
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+
+model = Net()
 
 aten_model: ExportedProgram = export(
-    model.get_eager_model().eval(),
-    model.get_example_inputs(),
+    model,
+    (torch.randn(1, 1, 32, 32),),
 )
 
 edge_program_manager: EdgeProgramManager = to_edge(
@@ -116,14 +128,15 @@ from unittest.mock import patch
 #
 # **Option 1:**
 #
-# Use Buck::
+# Use Buck (follow `these instructions <../getting-started-setup.html#building-a-runtime>`__ to set up buck)::
 #
+#       cd executorch
 #       python3 -m examples.sdk.scripts.export_bundled_program -m mv2
 #       buck2 run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bpte
 #
 # **Option 2:**
 #
-# Use CMake::
+# Use CMake (follow `these instructions <../runtime-build-and-cross-compilation.html#configure-the-cmake-build>`__ to set up cmake)::
 #
 #       cd executorch
 #       python3 -m examples.sdk.scripts.export_bundled_program -m mv2
