@@ -45,6 +45,11 @@
 		03C818472AC7A1190084CC29 /* libImageClassification.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 03C818442AC79FCD0084CC29 /* libImageClassification.a */; };
 		03C818482AC7BF470084CC29 /* imagenet_classes.txt in Resources */ = {isa = PBXBuildFile; fileRef = 032C02012AC47CFB002955E1 /* imagenet_classes.txt */; };
 		03C8184A2AC7BF470084CC29 /* mv3_xnnpack_fp32.pte in Resources */ = {isa = PBXBuildFile; fileRef = 032C01FC2AC47CFB002955E1 /* mv3_xnnpack_fp32.pte */; };
+		03C8DC7C2AE2533C0064384A /* mv3_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D72ACB893700BA100F /* mv3_coreml_all.pte */; };
+		03C8DC7D2AE253490064384A /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92EC2ACF214B00D4EBE0 /* Accelerate.framework */; };
+		03C8DC7E2AE2534D0064384A /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92EE2ACF214F00D4EBE0 /* CoreML.framework */; };
+		03C8DC7F2AE253510064384A /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92F02ACF215400D4EBE0 /* libsqlite3.tbd */; };
+		03C8DC802AE253550064384A /* coreml_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93102ACFE51000D4EBE0 /* coreml_backend.xcframework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -157,7 +162,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				03C8DC7F2AE253510064384A /* libsqlite3.tbd in Frameworks */,
 				0332E0A62AD9002B00B7D462 /* portable_backend.xcframework in Frameworks */,
+				03C8DC802AE253550064384A /* coreml_backend.xcframework in Frameworks */,
+				03C8DC7D2AE253490064384A /* Accelerate.framework in Frameworks */,
+				03C8DC7E2AE2534D0064384A /* CoreML.framework in Frameworks */,
 				0332E0A52AD9002900B7D462 /* xnnpack_backend.xcframework in Frameworks */,
 				03C818282AC760650084CC29 /* libMobileNetClassifier.a in Frameworks */,
 			);
@@ -453,6 +462,7 @@
 				03C8181D2AC69C280084CC29 /* Arctic fox.jpg in Resources */,
 				03C818192AC671980084CC29 /* Samoyed.jpg in Resources */,
 				03C8181F2AC69DFF0084CC29 /* hot pot.jpg in Resources */,
+				03C8DC7C2AE2533C0064384A /* mv3_coreml_all.pte in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -35,9 +35,14 @@ say "Installing Requirements"
 
 ./install_requirements.sh
 
+say "Installing CoreML Backend Requirements"
+
+./backends/apple/coreml/scripts/install_requirements.sh
+
 say "Exporting Models"
 
 python3 -m examples.portable.scripts.export --model_name="$MODEL_NAME"
+python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name="$MODEL_NAME"
 python3 -m examples.xnnpack.aot_compiler --model_name="$MODEL_NAME" --delegate
 
 mkdir -p "$APP_PATH/Resources/Models/MobileNet/"
@@ -50,7 +55,7 @@ curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
 
 say "Building Frameworks"
 
-./build/build_apple_frameworks.sh --buck2="$(which buck2)" --flatc="$(which flatc)" --xnnpack
+./build/build_apple_frameworks.sh --buck2="$(which buck2)" --flatc="$(which flatc)" --coreml --xnnpack
 mv cmake-out "$APP_PATH/Frameworks"
 
 say "Creating Simulator"
@@ -63,5 +68,4 @@ xcodebuild test \
   -project "$APP_PATH.xcodeproj" \
   -scheme MobileNetClassifierTest \
   -destination name="$SIMULATOR_NAME" \
-  -skip-testing:MobileNetClassifierTest/MobileNetClassifierTest/testV3WithCoreMLBackend \
   -skip-testing:MobileNetClassifierTest/MobileNetClassifierTest/testV3WithMPSBackend
