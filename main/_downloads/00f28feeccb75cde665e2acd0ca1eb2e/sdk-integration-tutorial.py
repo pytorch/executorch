@@ -44,7 +44,7 @@ Using the ExecuTorch SDK to Profile a Model
 # edge dialect model (``EdgeProgramManager``), the ExecuTorch dialect model
 # (``ExecutorchProgramManager``), and an optional dictionary of additional models
 #
-# In this tutorial, the mobilenet v2 example model is used to demonstrate.
+# In this tutorial, an example model (shown below) is used to demonstrate.
 
 import copy
 
@@ -124,26 +124,61 @@ from unittest.mock import patch
 # ---------------
 #
 # Next step is to generate an ``ETDump``. ``ETDump`` contains runtime results
-# from executing the model. To generate, users have two options:
+# from executing a `Bundled Program Model <../sdk-bundled-io.html>`__.
+#
+# In this tutorial, a `Bundled Program` is created from the example model above.
+
+import torch
+
+from executorch.bundled_program.config import BundledConfig
+from executorch.bundled_program.core import create_bundled_program
+from executorch.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
+
+from executorch.exir import to_edge
+from torch.export import export
+
+# Step 1: ExecuTorch Program Export
+m_name = "forward"
+method_graphs = {m_name: export(getattr(model, m_name), (torch.randn(1, 1, 32, 32),))}
+
+# Step 2: Construct BundledConfig
+inputs = [[torch.randn(1, 1, 32, 32)] for _ in range(2)]
+expected_outputs = [[[getattr(model, m_name)(*x)] for x in inputs]]
+bundled_config = BundledConfig([m_name], [inputs], expected_outputs)
+
+# Step 3: Generate BundledProgram
+program = to_edge(method_graphs).to_executorch().executorch_program
+bundled_program = create_bundled_program(program, bundled_config)
+
+# Step 4: Serialize BundledProgram to flatbuffer.
+serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer(
+    bundled_program
+)
+save_path = "bundled_program.bp"
+with open(save_path, "wb") as f:
+    f.write(serialized_bundled_program)
+
+######################################################################
+# We provide 2 ways of executing the Bundled Model to generate the ``ETDump``:
 #
 # **Option 1:**
 #
 # Use Buck (follow `these instructions <../getting-started-setup.html#building-a-runtime>`__ to set up buck)::
 #
 #       cd executorch
-#       python3 -m examples.sdk.scripts.export_bundled_program -m mv2
-#       buck2 run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path mv2_bundled.bpte
+#       buck2 run -c executorch.event_tracer_enabled=true examples/sdk/sdk_example_runner:sdk_example_runner -- --bundled_program_path <bundled_program>
 #
 # **Option 2:**
 #
 # Use CMake (follow `these instructions <../runtime-build-and-cross-compilation.html#configure-the-cmake-build>`__ to set up cmake)::
 #
 #       cd executorch
-#       python3 -m examples.sdk.scripts.export_bundled_program -m mv2
 #       rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DBUCK2=buck2 -DEXECUTORCH_BUILD_SDK=1 -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=1 ..
 #       cd ..
 #       cmake --build cmake-out -j8 -t sdk_example_runner
-#       ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path mv2_bundled.bpte
+#       ./cmake-out/examples/sdk/sdk_example_runner --bundled_program_path <bundled_program>
 
 ######################################################################
 # Creating an Inspector
@@ -153,7 +188,7 @@ from unittest.mock import patch
 # Inspector takes the runtime results from ``ETDump`` and correlates them to
 # the operators of the Edge Dialect Graph.
 #
-# Note: An ``ETRecord`` is not required. If an ``ETRecord`` is not provided,
+# Recall: An ``ETRecord`` is not required. If an ``ETRecord`` is not provided,
 # the Inspector will show runtime results without operator correlation.
 #
 # To visualize all runtime events, call Inspector's ``print_data_tabular``.
@@ -162,7 +197,7 @@ from executorch.sdk import Inspector
 
 # sphinx_gallery_start_ignore
 inspector_patch = patch.object(Inspector, "__init__", return_value=None)
-inspector_patch_print = patch.object(Inspector, "print_data_tabular", return_value=None)
+inspector_patch_print = patch.object(Inspector, "print_data_tabular", return_value="")
 inspector_patch.start()
 inspector_patch_print.start()
 # sphinx_gallery_end_ignore
@@ -246,8 +281,8 @@ for event_block in inspector.event_blocks:
 # If a user wants the total runtime of a module, they can use
 # ``find_total_for_module``.
 
-print(inspector.find_total_for_module("L__self___features"))
-print(inspector.find_total_for_module("L__self___features_14"))
+print(inspector.find_total_for_module("L__self__"))
+print(inspector.find_total_for_module("L__self___conv2"))
 
 ######################################################################
 # Note: ``find_total_for_module`` is a special first class method of
