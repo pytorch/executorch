@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - release/*
+    tags:
+      - ciflow/trunk/*
   workflow_dispatch:
 
 concurrency:
