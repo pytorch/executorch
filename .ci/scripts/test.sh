@@ -95,7 +95,7 @@ test_model_with_xnnpack() {
   # Quantization-only
   if [[ ${WITH_QUANTIZATION} == true ]] && [[ ${WITH_DELEGATION} == false ]]; then
     bash examples/xnnpack/quantization/test_quantize.sh "${BUILD_TOOL}" "${MODEL_NAME}"
-    exit 0
+    return 0
   fi
 
   # Delegation
