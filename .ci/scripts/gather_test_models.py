@@ -44,7 +44,6 @@ def parse_args() -> Any:
     parser.add_argument(
         "--target-os",
         type=str,
-        choices=["linux", "macos"],
         default="linux",
         help="the target OS",
     )
