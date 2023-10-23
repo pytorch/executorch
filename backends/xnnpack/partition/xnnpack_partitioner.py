@@ -320,6 +320,17 @@ class XnnpackOperatorSupport(OperatorSupportBase):
 
         return True
 
+    @_constraint(exir_ops.edge.aten.amax.default)
+    def amax(node: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
+        """
+        A: Only with keep_dim == True
+        B: Only support with dim == 2 or dim == 3
+        valid iff, A && B
+        """
+        is_keep_dim = (len(node.args) == 3) and (cast(bool, node.args[3]) is True)
+        dim_arg_val = cast(int, node.args[1])
+        return is_keep_dim and (dim_arg_val == 2 or dim_arg_val == 3)
+
 
 class XnnpackFloatingPointPartitioner(Partitioner):
     """
