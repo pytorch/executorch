@@ -104,7 +104,7 @@ def export_models_for_ci() -> dict[str, dict]:
         if name in MODEL_NAME_TO_OPTIONS and MODEL_NAME_TO_OPTIONS[name].quantization:
             backend += "-quantization"
 
-        if name in MODEL_NAME_TO_OPTIONS and (MODEL_NAME_TO_OPTIONS[name].delegation:
+        if name in MODEL_NAME_TO_OPTIONS and MODEL_NAME_TO_OPTIONS[name].delegation:
             backend += "-delegation"
 
         if target_os not in BUILD_TOOLS[build_tool]:
