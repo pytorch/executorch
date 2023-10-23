@@ -28,7 +28,7 @@ if [[ -z "${BACKEND:-}" ]]; then
   exit 1
 fi
 
-DEMO_BACKEND_DELEGATION=$5
+DEMO_BACKEND_DELEGATION=$4
 if [[ -z "${DEMO_BACKEND_DELEGATION:-}" ]]; then
   DEMO_BACKEND_DELEGATION=false
 fi
