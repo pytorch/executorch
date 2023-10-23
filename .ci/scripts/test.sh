@@ -156,16 +156,19 @@ else
   echo "Testing ${MODEL_NAME} with XNNPACK quantization=${XNNPACK_QUANTIZATION} delegation=${XNNPACK_DELEGATION}..."
 
   if [[ $XNNPACK_QUANTIZATION = true ]]; then
-    echo "Testing ${MODEL_NAME} with XNNPACK quantization only..."
+    echo "::group::Testing ${MODEL_NAME} with XNNPACK quantization only..."
     test_model_with_xnnpack true false
+    echo "::endgroup::"
   fi
   if [[ $XNNPACK_DELEGATION = true ]]; then
-    echo "Testing ${MODEL_NAME} with XNNPACK delegation only..."
+    echo "::group::Testing ${MODEL_NAME} with XNNPACK delegation only..."
     test_model_with_xnnpack false true
+    echo "::endgroup::"
   fi
   if [[ $XNNPACK_QUANTIZATION = true ]] && [[ $XNNPACK_DELEGATION = true ]]; then
-    echo "Testing ${MODEL_NAME} with XNNPACK quantization and delegation..."
+    echo "::group::Testing ${MODEL_NAME} with XNNPACK quantization and delegation..."
     test_model_with_xnnpack true true
+    echo "::endgroup::"
   fi
 fi
 
