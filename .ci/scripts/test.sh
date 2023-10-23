@@ -59,9 +59,12 @@ test_model() {
     cd ../../..
   fi
 
+  echo "::group::Exporting model"
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
+  echo "::endgroup::"
 
   # Run test model
+  echo "::group::Running model"
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
     buck2 run //examples/portable/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
@@ -71,8 +74,10 @@ test_model() {
     ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./${MODEL_NAME}.pte"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
+    echo "::endgroup::"
     exit 1
   fi
+  echo "::endgroup::"
 }
 
 build_cmake_xnn_executor_runner() {
@@ -103,6 +108,7 @@ test_model_with_xnnpack() {
   fi
 
   # Delegation
+  echo "::group::Exporting model"
   if [[ ${WITH_QUANTIZATION} == true ]]; then
     SUFFIX="q8"
     "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate --quantize
@@ -110,10 +116,12 @@ test_model_with_xnnpack() {
     SUFFIX="fp32"
     "${PYTHON_EXECUTABLE}" -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate
   fi
+  echo "::endgroup::"
 
   OUTPUT_MODEL_PATH="${MODEL_NAME}_xnnpack_${SUFFIX}.pte"
 
   # Run test model
+  echo "::group::Running model"
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
     buck2 run //examples/xnnpack:xnn_executor_runner -- --model_path "${OUTPUT_MODEL_PATH}"
   elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
@@ -123,17 +131,22 @@ test_model_with_xnnpack() {
     ./${CMAKE_OUTPUT_DIR}/backends/xnnpack/xnn_executor_runner --model_path "${OUTPUT_MODEL_PATH}"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
+    echo "::endgroup::"
     exit 1
   fi
+  echo "::endgroup::"
 }
 
 test_demo_backend_delegation() {
+  echo "::group::Exporting model"
   echo "Testing demo backend delegation on AddMul"
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export_and_delegate  --option "composite"
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export_and_delegate  --option "partition"
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export_and_delegate  --option "whole"
+  echo "::endgroup::"
 
   # Run test model
+  echo "::group::Running model"
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
     buck2 run //examples/portable/executor_runner:executor_runner -- --model_path "./composite_model.pte"
     buck2 run //examples/portable/executor_runner:executor_runner -- --model_path "./partition_lowered_model.pte"
@@ -147,8 +160,10 @@ test_demo_backend_delegation() {
     ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./whole.pte"
   else
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
+    echo "::endgroup::"
     exit 1
   fi
+  echo "::endgroup::"
 }
 
 if [[ "${XNNPACK_DELEGATION}" == false ]] && [[ "${XNNPACK_QUANTIZATION}" == false ]]; then
