@@ -86,4 +86,4 @@ executorch
 ```
 
 ## License
-ExecuTorch is BSD licensed, as found in the LICENSE file.
+ExecuTorch is BSD licensed, as found in the LICENSE filename.
