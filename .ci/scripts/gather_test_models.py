@@ -93,23 +93,19 @@ def export_models_for_ci() -> dict[str, dict]:
     # This is the JSON syntax for configuration matrix used by GitHub
     # https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs
     models = {"include": []}
-    for (name, build_tool, q_config, d_config) in itertools.product(
-        MODEL_NAME_TO_MODEL.keys(), BUILD_TOOLS.keys(), [False, True], [False, True]
+    xnnpack_options = {}
+    backends = ["portable", "xnnpack"]
+    for (name, build_tool, backend) in itertools.product(
+        MODEL_NAME_TO_MODEL.keys(), BUILD_TOOLS.keys(), backends
     ):
         if not model_should_run_on_event(name, event):
             continue
 
-        if q_config and (
-            (name not in MODEL_NAME_TO_OPTIONS)
-            or (not MODEL_NAME_TO_OPTIONS[name].quantization)
-        ):
-            continue
+        if name in MODEL_NAME_TO_OPTIONS and MODEL_NAME_TO_OPTIONS[name].quantization:
+            backend += "-quantization"
 
-        if d_config and (
-            (name not in MODEL_NAME_TO_OPTIONS)
-            or (not MODEL_NAME_TO_OPTIONS[name].delegation)
-        ):
-            continue
+        if name in MODEL_NAME_TO_OPTIONS and (MODEL_NAME_TO_OPTIONS[name].delegation:
+            backend += "-delegation"
 
         if target_os not in BUILD_TOOLS[build_tool]:
             continue
@@ -117,8 +113,7 @@ def export_models_for_ci() -> dict[str, dict]:
         record = {
             "build-tool": build_tool,
             "model": name,
-            "xnnpack_quantization": q_config,
-            "xnnpack_delegation": d_config,
+            "backend": backend,
             "runner": DEFAULT_RUNNERS.get(target_os, "linux.2xlarge"),
             # demo_backend_delegation test only supports add_mul model
             "demo_backend_delegation": name == "add_mul",
