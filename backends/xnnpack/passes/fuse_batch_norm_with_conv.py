@@ -66,7 +66,10 @@ class FuseBatchNormWithConvPass(XNNPACKPass):
 
             # Get the parameters from conv op
             assert len(conv.args) == 9
+
             conv_weight = get_param_tensor(self.exported_program, conv.args[1])
+            assert conv_weight is not None
+
             conv_bias = get_param_tensor(self.exported_program, conv.args[2])
 
             # Get the parameters from the batchnorm op
@@ -80,8 +83,12 @@ class FuseBatchNormWithConvPass(XNNPACKPass):
             )
             bn_weight = get_param_tensor(self.exported_program, bn.args[1])
             bn_bias = get_param_tensor(self.exported_program, bn.args[2])
+
             running_mean = get_param_tensor(self.exported_program, bn.args[3])
+            assert running_mean is not None
+
             running_var = get_param_tensor(self.exported_program, bn.args[4])
+            assert running_var is not None
 
             # args[7] for native_batch_norm, but args[6] for
             # _native_batch_norm_legit_no_training (which doesn't have training
