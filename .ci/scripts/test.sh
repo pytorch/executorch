@@ -151,8 +151,8 @@ if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
 else
-  XNNPACK_QUANTIZATION=[[ $BACKEND == *"quantization"* ]]
-  XNNPACK_DELEGATION=[[ $BACKEND == *"delegation"* ]]
+  XNNPACK_QUANTIZATION=[[ "${BACKEND}" == *"quantization"* ]]
+  XNNPACK_DELEGATION=[[ "${BACKEND}" == *"delegation"* ]]
   echo "Testing ${MODEL_NAME} with XNNPACK quantization=${XNNPACK_QUANTIZATION} delegation=${XNNPACK_DELEGATION}..."
 
   if [[ $XNNPACK_QUANTIZATION = true ]]; then
