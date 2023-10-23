@@ -41,6 +41,19 @@ jobs:
           export CHANNEL=nightly
         fi
 
+        # Get the version of ExecuTorch from REF_NAME and save as ET_VERSION_DOCS
+        # ET_VERSION_DOCS will be pulled during the doc build to add to the version dropdown
+        # on the website. See docs/source/conf.py for details
+
+        REF_TYPE=${{ github.ref_type }}
+        REF_NAME=${{ github.ref_name }}
+
+        echo "$REF_TYPE"
+        echo "$REF_NAME"
+
+        ET_VERSION_DOCS="${REF_NAME}"
+        echo "$ET_VERSION_DOCS"
+
         set -eux
 
         # Build docset:
