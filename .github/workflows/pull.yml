@@ -20,21 +20,14 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          submodules: 'true'
+          submodules: 'false'
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          cache: pip
       - name: Extract the list of models to test
         id: gather-models
         run: |
           set -eux
-
-          source .ci/scripts/utils.sh
-          # This is a simple Python script but as it tries to import executorch.examples.models,
-          # it requires a whole bunch of ExecuTorch dependencies on the Docker image
-          install_pip_dependencies
-          install_executorch
 
           PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --event "${GITHUB_EVENT_NAME}"
 
