@@ -486,7 +486,10 @@
 <span class="k">def</span> <span class="nf">_handle_export_module</span><span class="p">(</span>
     <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">,</span>
     <span class="n">export_module</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
-        <span class="n">MultiMethodExirExportedProgram</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">,</span> <span class="n">EdgeProgramManager</span>
+        <span class="n">MultiMethodExirExportedProgram</span><span class="p">,</span>
+        <span class="n">ExirExportedProgram</span><span class="p">,</span>
+        <span class="n">EdgeProgramManager</span><span class="p">,</span>
+        <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="p">],</span>
     <span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -496,6 +499,8 @@
         <span class="n">_handle_exported_program</span><span class="p">(</span>
             <span class="n">etrecord_zip</span><span class="p">,</span> <span class="n">module_name</span><span class="p">,</span> <span class="s2">&quot;forward&quot;</span><span class="p">,</span> <span class="n">export_module</span><span class="o">.</span><span class="n">exported_program</span>
         <span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">export_module</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">):</span>
+        <span class="n">_handle_exported_program</span><span class="p">(</span><span class="n">etrecord_zip</span><span class="p">,</span> <span class="n">module_name</span><span class="p">,</span> <span class="s2">&quot;forward&quot;</span><span class="p">,</span> <span class="n">export_module</span><span class="p">)</span>
     <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span>
         <span class="n">export_module</span><span class="p">,</span>
         <span class="p">(</span><span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">exir</span><span class="o">.</span><span class="n">program</span><span class="o">.</span><span class="n">_program</span><span class="o">.</span><span class="n">EdgeProgramManager</span><span class="p">),</span>
@@ -557,7 +562,7 @@
 <span class="sd">        executorch_program: `ExecutorchProgramManager` for this model returned by the call to `to_executorch()`</span>
 <span class="sd">        export_modules[Optional]: **Should be ignored by OSS users**. A dictionary of graph modules with the key being the user provided name and the</span>
 <span class="sd">            value being the corresponding exported module. The exported graph modules can be either the</span>
-<span class="sd">            output of `capture()` or `to_edge()`.</span>
+<span class="sd">            output of `torch.export()` or `exir.to_edge()`.</span>
 
 <span class="sd">    Returns:</span>
 <span class="sd">        None</span>

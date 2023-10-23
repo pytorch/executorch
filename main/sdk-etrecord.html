@@ -466,7 +466,7 @@ for SDK tooling usage.</p>
 <li><p><strong>executorch_program</strong> – <cite>ExecutorchProgramManager</cite> for this model returned by the call to <cite>to_executorch()</cite></p></li>
 <li><p><strong>export_modules</strong><strong>[</strong><strong>Optional</strong><strong>]</strong> – <strong>Should be ignored by OSS users</strong>. A dictionary of graph modules with the key being the user provided name and the
 value being the corresponding exported module. The exported graph modules can be either the
-output of <cite>capture()</cite> or <cite>to_edge()</cite>.</p></li>
+output of <cite>torch.export()</cite> or <cite>exir.to_edge()</cite>.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
