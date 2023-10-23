@@ -55,12 +55,12 @@ def get_input_quantization_params(captured_model):
     input_scales = {}
     input_zeropoints = {}
     input_names = []
-    for node in captured_model.exported_program.graph.nodes:
+    for node in captured_model.exported_program().graph.nodes:
         if node.op == "placeholder":
             input_names.append(node.name)
             continue
 
-    for node in captured_model.exported_program.graph.nodes:
+    for node in captured_model.exported_program().graph.nodes:
         if (
             node.target
             == exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
@@ -78,11 +78,11 @@ def get_output_quantization_param(captured_model):
     output_scale = 0.0
     output_zeropoint = 0
     output_name = ""
-    for node in captured_model.exported_program.graph.nodes:
+    for node in captured_model.exported_program().graph.nodes:
         if node.op == "output":
             output_name = node.args[0][0]
 
-    for node in captured_model.exported_program.graph.nodes:
+    for node in captured_model.exported_program().graph.nodes:
         if (
             node.target
             == exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
@@ -172,7 +172,7 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
 
     # Export model
     model_capture = export(model, inputs)
-    model_edge = to_edge(model_capture, _EDGE_COMPILE_CONFIG)
+    model_edge = to_edge(model_capture, compile_config=_EDGE_COMPILE_CONFIG)
     ArmPartitioner.compile_spec = compile_spec
 
     if profile == TosaProfile.BI:
@@ -185,9 +185,8 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
             output_quantization_zp,
         ) = get_output_quantization_param(model_edge)
 
-    model_edge = model_edge.transform(DuplicateDequantNodePass()).to_backend(
-        ArmPartitioner
-    )
+    model_edge = model_edge.transform((DuplicateDequantNodePass(),))
+    model_edge = model_edge.to_backend(ArmPartitioner)
     exec_prog = model_edge.to_executorch()
 
     # Save ground truth results to file
