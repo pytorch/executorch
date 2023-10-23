@@ -151,21 +151,17 @@ if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
 else
-  XNNPACK_QUANTIZATION=[[ "${BACKEND}" == *"quantization"* ]]
-  XNNPACK_DELEGATION=[[ "${BACKEND}" == *"delegation"* ]]
-  echo "Testing ${MODEL_NAME} with XNNPACK quantization=${XNNPACK_QUANTIZATION} delegation=${XNNPACK_DELEGATION}..."
-
-  if [[ $XNNPACK_QUANTIZATION = true ]]; then
+  if [[ "${BACKEND}" == *"quantization"* ]]; then
     echo "::group::Testing ${MODEL_NAME} with XNNPACK quantization only..."
     test_model_with_xnnpack true false
     echo "::endgroup::"
   fi
-  if [[ $XNNPACK_DELEGATION = true ]]; then
+  if [[ "${BACKEND}" == *"delegation"* ]]; then
     echo "::group::Testing ${MODEL_NAME} with XNNPACK delegation only..."
     test_model_with_xnnpack false true
     echo "::endgroup::"
   fi
-  if [[ $XNNPACK_QUANTIZATION = true ]] && [[ $XNNPACK_DELEGATION = true ]]; then
+  if [[ "${BACKEND}" == *"quantization"* ]] && [[ "${BACKEND}" == *"delegation"* ]]; then
     echo "::group::Testing ${MODEL_NAME} with XNNPACK quantization and delegation..."
     test_model_with_xnnpack true true
     echo "::endgroup::"
