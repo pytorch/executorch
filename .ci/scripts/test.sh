@@ -168,7 +168,7 @@ else
     echo "::endgroup::"
   fi
   set -e
-  if [[ -z "${Q_ERROR:-}" ]] || [[ -z "${D_ERROR:-}" ]] || [[ -z "${Q_D_ERROR:-}" ]]; then
+  if [[ -n "${Q_ERROR:-}" ]] || [[ -n "${D_ERROR:-}" ]] || [[ -n "${Q_D_ERROR:-}" ]]; then
     echo "Portable q8 ${Q_ERROR:-ok}," "Delegation fp32 ${D_ERROR:-ok}," "Delegation q8 ${Q_D_ERROR:-ok}"
     exit 1
   fi
