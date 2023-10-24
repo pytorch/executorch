@@ -118,8 +118,6 @@ def export_models_for_ci() -> dict[str, dict]:
             "model": name,
             "backend": backend,
             "runner": DEFAULT_RUNNERS.get(target_os, "linux.2xlarge"),
-            # demo_backend_delegation test only supports add_mul model
-            "demo_backend_delegation": name == "add_mul",
         }
 
         # NB: Some model requires much bigger Linux runner to avoid
