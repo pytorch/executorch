@@ -20,7 +20,10 @@ set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
 set(DRIVER_ETHOSU_INCLUDE_DIR "${THIRD_PARTY_ROOT}/ethos-u-core-driver/include")
 include_directories( ${DRIVER_ETHOSU_INCLUDE_DIR} )
 
-set(_arm_baremetal_sources backends/arm/runtime/ArmBackendEthosU.cpp)
+set(_arm_baremetal_sources
+  backends/arm/runtime/ArmBackendEthosU.cpp
+  backends/arm/runtime/VelaBinStream.cpp
+)
 list(TRANSFORM _arm_baremetal_sources PREPEND "${EXECUTORCH_ROOT}/")
 
 add_library(
