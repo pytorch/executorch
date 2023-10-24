@@ -154,22 +154,22 @@ else
   set +e
   if [[ "${BACKEND}" == *"quantization"* ]]; then
     echo "::group::Testing ${MODEL_NAME} with XNNPACK quantization only..."
-    test_model_with_xnnpack true false || Q_ERROR=1
+    test_model_with_xnnpack true false || Q_ERROR="q8 run error"
     echo "::endgroup::"
   fi
   if [[ "${BACKEND}" == *"delegation"* ]]; then
     echo "::group::Testing ${MODEL_NAME} with XNNPACK delegation only..."
-    test_model_with_xnnpack false true || D_ERROR=1
+    test_model_with_xnnpack false true || D_ERROR="Delegation fp32 run error"
     echo "::endgroup::"
   fi
   if [[ "${BACKEND}" == *"quantization"* ]] && [[ "${BACKEND}" == *"delegation"* ]]; then
     echo "::group::Testing ${MODEL_NAME} with XNNPACK quantization and delegation..."
-    test_model_with_xnnpack true true || Q_D_ERROR=1
+    test_model_with_xnnpack true true || Q_D_ERROR="Delegation q8 run error"
     echo "::endgroup::"
   fi
   set -e
   if [[ -z "${Q_ERROR:-}" ]] || [[ -z "${D_ERROR:-}" ]] || [[ -z "${Q_D_ERROR:-}" ]]; then
-    echo "${Q_ERROR}" "${D_ERROR}" "${Q_D_ERROR}"
+    echo "${Q_ERROR:-q8 ok}" "${D_ERROR:-delegation fp32 ok}" "${Q_D_ERROR:- delegation q8 ok}"
     exit 1
   fi
 fi
