@@ -6,7 +6,7 @@
 
 import unittest
 from random import randint
-from typing import Any, Tuple
+from typing import Any, List, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -25,12 +25,6 @@ from executorch.backends.xnnpack.utils.utils import capture_graph_for_xnnpack
 
 # import the xnnpack backend implementation
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
-
-from executorch.bundled_program.config import BundledConfig
-from executorch.bundled_program.core import create_bundled_program
-from executorch.bundled_program.serialize import (
-    serialize_from_bundled_program_to_flatbuffer,
-)
 from executorch.exir import ExecutorchProgram, ExirExportedProgram
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 
@@ -40,6 +34,15 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from executorch.extension.pytree import tree_flatten
+
+from executorch.sdk.bundled_program.bundler.config import (
+    MethodTestCase,
+    MethodTestSuite,
+)
+from executorch.sdk.bundled_program.bundler.core import create_bundled_program
+from executorch.sdk.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
 
 from torch.ao.quantization import (  # @manual
     default_per_channel_symmetric_qnnpack_qconfig,
@@ -101,14 +104,22 @@ def save_bundled_program(representative_inputs, program, ref_output, output_path
     niter = 1
 
     print("generating bundled program inputs / outputs")
-    inputs_list = [list(representative_inputs) for _ in range(niter)]
-    expected_outputs_list = [
-        [[ref_output] for x in inputs_list],
+
+    method_test_cases: List[MethodTestCase] = []
+    for _ in range(niter):
+        method_test_cases.append(
+            MethodTestCase(
+                inputs=list(representative_inputs),
+                expected_outputs=[ref_output],
+            )
+        )
+
+    method_test_suites = [
+        MethodTestSuite(method_name="forward", method_test_cases=method_test_cases)
     ]
-    bundled_config = BundledConfig([inputs_list], expected_outputs_list)
 
     print("creating bundled program...")
-    bundled_program = create_bundled_program(program, bundled_config)
+    bundled_program = create_bundled_program(program, method_test_suites)
 
     print("serializing bundled program...")
     bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(

@@ -56,7 +56,7 @@ class Value:
 
 
 @dataclass
-class BundledIOSet:
+class BundledMethodTestCase:
     """All inputs and referenced outputs needs for single verification."""
 
     # All inputs required by Program for execution. Its length should be
@@ -70,8 +70,8 @@ class BundledIOSet:
 
 
 @dataclass
-class BundledExecutionPlanTest:
-    """Context for testing and verifying an exceution plan."""
+class BundledMethodTestSuite:
+    """Context for testing and verifying a Method."""
 
     # The name of the method to test; e.g., "forward" for the forward() method
     # of an nn.Module. This name match a method defined by the ExecuTorch
@@ -79,7 +79,7 @@ class BundledExecutionPlanTest:
     method_name: str
 
     # Sets of input/outputs to test with.
-    test_sets: List[BundledIOSet]
+    test_cases: List[BundledMethodTestCase]
 
 
 @dataclass
@@ -90,9 +90,10 @@ class BundledProgram:
     version: int
 
     # Test sets and other meta datas to verify the whole program.
-    # Each BundledExecutionPlanTest should be used for the execution plan of program sharing same index.
-    # Its length should be equal to the number of execution plans in program.
-    execution_plan_tests: List[BundledExecutionPlanTest]
+    # Each BundledMethodTestSuite contains the test cases for one of the Method's
+    # present inside the ExecuTorchProgram of the same BundledProgram. The method_name
+    # present inside the BundledMethodTestSuite is what is used to link to the appropriate Method.
+    method_test_suites: List[BundledMethodTestSuite]
 
-    # The binary data of a serialized ExecuTorch program.
+    # The binary data of a serialized ExecuTorchProgram.
     program: bytes

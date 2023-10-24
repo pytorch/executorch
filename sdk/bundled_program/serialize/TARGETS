@@ -19,19 +19,19 @@ runtime.python_library(
     visibility = [
         "//executorch/bacends/...",
         "//executorch/backends/xnnpack/test/...",
-        "//executorch/bundled_program/tests/...",
         "//executorch/codegen/...",
         "//executorch/examples/async_exec:emit_program_lib",
         "//executorch/exir:lib",
         "//executorch/extension/pybindings/test:test",
         "//executorch/extension/pybindings/test:test-library",
         "//executorch/profiler/...",
+        "//executorch/sdk/bundled_program/tests/...",
         "//executorch/test/...",
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         "fbsource//third-party/pypi/setuptools:setuptools",
-        "//executorch/bundled_program:schema",
         "//executorch/exir/_serialize:lib",
+        "//executorch/sdk/bundled_program:schema",
     ],
 )
