@@ -15,6 +15,8 @@ if [[ -z "${BUILD_TOOL:-}" ]]; then
   exit 1
 fi
 
+CMAKE_OUTPUT_DIR=cmake-out
+
 build_cmake_executor_runner() {
   echo "Building executor_runner"
   (rm -rf ${CMAKE_OUTPUT_DIR} \
