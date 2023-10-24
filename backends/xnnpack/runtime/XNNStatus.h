@@ -10,7 +10,7 @@
 
 #include <assert.h>
 #include <xnnpack.h>
-123
+
 namespace torch {
 namespace executor {
 namespace xnnpack {
