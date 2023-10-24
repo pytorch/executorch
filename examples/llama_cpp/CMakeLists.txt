@@ -17,59 +17,86 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
+project(LlamaCppExample)
+
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
-#
-# select_build_lib: C++ library to register selected ops in custom kernel
-# library
-#
-set(_kernel_lib)
-if(EXECUTORCH_SELECT_OPS_YAML)
-  set(_custom_ops_yaml
-      ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml)
-  gen_selected_ops("${_custom_ops_yaml}" "" "")
-  set(kernel_sources
-      ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops_1_out.cpp
-      ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops_2_out.cpp)
-  #
-  # custom_kernels: C++ kernel implementations of custom ops
-  #
-  add_library(custom_kernels ${kernel_sources})
-  target_link_libraries(custom_kernels PRIVATE executorch)
-  target_compile_options(custom_kernels PUBLIC ${_common_compile_options})
+set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
-  list(APPEND _kernel_lib custom_kernels)
-else()
-  list(APPEND _kernel_lib portable_kernels)
+# Let files say "include <executorch/path/to/header.h>".
+set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+
+find_package(Llama REQUIRED)
+find_package(ExecuTorch REQUIRED)
+find_package(
+  gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../third-party
+)
+
+target_include_directories(executorch INTERFACE ${_common_include_directories})
+
+#
+# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+#
+set(
+  EXECUTORCH_SRCS_FILE
+  "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
+)
+if(NOT EXISTS "${EXECUTORCH_SRCS_FILE}")
+  # A file wasn't generated. Run a script to extract the source lists from the
+  # buck2 build system and write them to a file we can include.
+  #
+  # NOTE: This will only happen once during cmake setup, so it will not re-run
+  # if the buck2 targets change.
+  message(STATUS "executorch: Generating source lists")
+  set(EXECUTORCH_SRCS_FILE "${CMAKE_CURRENT_BINARY_DIR}/executorch_srcs.cmake")
+  extract_sources(${EXECUTORCH_SRCS_FILE})
 endif()
 
-gen_selected_ops(
-  "${_custom_ops_yaml}"
-  "${EXECUTORCH_SELECT_OPS_LIST}"
-  "${EXECUTORCH_SELECT_ALL_OPS}")
+# This file defines the `_<target>__srcs` variables used below.
+message(STATUS "executorch: Using sources file ${EXECUTORCH_SRCS_FILE}")
+include(${EXECUTORCH_SRCS_FILE})
 
-generate_bindings_for_kernels(${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
-                              "${_custom_ops_yaml}")
-gen_operators_lib("select_build_lib" ${_kernel_lib} executorch)
+set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/llama_cpp/custom_ops.yaml)
+set(_ops_yaml ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml)
 
-set(_updated__srcs)
-foreach(_src ${_executor_runner__srcs})
-  list(APPEND _updated__srcs "${EXECUTORCH_ROOT}/${_src}")
-endforeach()
+set(kernel_sources ${EXECUTORCH_ROOT}/examples/llama_cpp/op_mm.cpp)
+#
+# custom_kernels: C++ kernel implementations of custom ops
+#
+add_library(custom_kernels ${kernel_sources})
+target_link_libraries(custom_kernels PRIVATE executorch llama)
+target_compile_options(custom_kernels PUBLIC ${_common_compile_options})
+
+set(_kernel_lib custom_kernels portable_kernels)
+
+# Select all ops in functions.yaml as well as custom op.
+gen_selected_ops("${_ops_yaml}" "ggml::mul_mat.out" "")
 
 #
-# selective_build_test: test binary to allow different operator libraries to
-# link to
+# kernel_lib: contains both custom_kernels and portable_kernels
 #
-add_executable(selective_build_test ${_updated__srcs})
+generate_bindings_for_kernels("${_ops_yaml}" "${_custom_ops_yaml}")
+gen_operators_lib("kernel_lib" ${_kernel_lib} executorch)
+target_link_libraries(kernel_lib PRIVATE executorch)
+
+list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
+
+#
+# llama_cpp_test: test binary to run llama.cpp kernel ggml_mul_mat
+#
+add_executable(llama_cpp_test ${_executor_runner__srcs})
 if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
   target_link_options(selective_build_test PRIVATE "LINKER:--gc-sections")
 endif()
-target_link_libraries(selective_build_test executorch gflags select_build_lib)
-target_compile_options(selective_build_test PUBLIC ${_common_compile_options})
+target_link_libraries(llama_cpp_test executorch gflags kernel_lib)
+target_compile_options(llama_cpp_test PUBLIC ${_common_compile_options})
 
 # Print all summary
 executorch_print_configuration_summary()

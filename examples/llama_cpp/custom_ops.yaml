@@ -1,0 +1,4 @@
+- func: ggml::mul_mat.out(Tensor in, Tensor mat2, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: llama_cpp::mm_out
