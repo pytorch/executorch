@@ -168,7 +168,7 @@ else
     echo "::endgroup::"
   fi
   set -e
-  if [[ -z "$GOT_ERROR" ]]; then
+  if [[ -z "${GOT_ERROR:}" ]]; then
     echo "${Q_ERROR}" "${D_ERROR}" "${Q_D_ERROR}"
     exit 1
   fi
