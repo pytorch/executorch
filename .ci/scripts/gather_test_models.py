@@ -93,7 +93,6 @@ def export_models_for_ci() -> dict[str, dict]:
     # This is the JSON syntax for configuration matrix used by GitHub
     # https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs
     models = {"include": []}
-    xnnpack_options = {}
     backends = ["portable", "xnnpack"]
     for (name, build_tool, backend) in itertools.product(
         MODEL_NAME_TO_MODEL.keys(), BUILD_TOOLS.keys(), backends
