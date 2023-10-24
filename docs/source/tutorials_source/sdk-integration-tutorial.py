@@ -130,7 +130,7 @@ from unittest.mock import patch
 
 import torch
 
-from executorch.bundled_program.config import BundledConfig
+from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
@@ -143,14 +143,22 @@ from torch.export import export
 m_name = "forward"
 method_graphs = {m_name: export(getattr(model, m_name), (torch.randn(1, 1, 32, 32),))}
 
-# Step 2: Construct BundledConfig
+# Step 2: Construct Method Test Suites
 inputs = [[torch.randn(1, 1, 32, 32)] for _ in range(2)]
-expected_outputs = [[[getattr(model, m_name)(*x)] for x in inputs]]
-bundled_config = BundledConfig([m_name], [inputs], expected_outputs)
+
+method_test_suites = [
+    MethodTestSuite(
+        method_name=m_name,
+        test_cases=[
+            MethodTestCase(inputs=inp, outputs=getattr(model, m_name)(*inp))
+            for inp in inputs
+        ],
+    )
+]
 
 # Step 3: Generate BundledProgram
 program = to_edge(method_graphs).to_executorch().executorch_program
-bundled_program = create_bundled_program(program, bundled_config)
+bundled_program = create_bundled_program(program, method_test_suites)
 
 # Step 4: Serialize BundledProgram to flatbuffer.
 serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer(

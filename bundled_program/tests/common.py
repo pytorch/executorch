@@ -7,15 +7,17 @@
 # pyre-strict
 import random
 import string
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
 import executorch.exir as exir
 import torch
-from executorch.bundled_program.config import BundledConfig
+from executorch.bundled_program.config import (
+    MethodInputType,
+    MethodOutputType,
+    MethodTestCase,
+    MethodTestSuite,
+)
 from executorch.exir.schema import Program
-
-# @manual=fbsource//third-party/pypi/typing-extensions:typing-extensions
-from typing_extensions import TypeAlias
 
 # A hacky integer to deal with a mismatch between execution plan and complier.
 #
@@ -35,13 +37,6 @@ from typing_extensions import TypeAlias
 # bundled program if execution plan stops supporting it, or remove this hacky
 # method if compiler can support multiple input types
 DEFAULT_INT_INPUT = 2
-
-
-# Alias type for all datas model needs for single execution.
-InputValues: TypeAlias = List[Union[torch.Tensor, int]]
-
-# Alias type for all datas model generates per execution.
-OutputValues: TypeAlias = List[torch.Tensor]
 
 
 class SampleModel(torch.nn.Module):
@@ -77,15 +72,16 @@ def get_rand_input_values(
     n_int: int,
     dtype: torch.dtype,
     n_sets_per_plan_test: int,
-    n_execution_plan_tests: int,
-) -> List[List[InputValues]]:
+    n_method_test_suites: int,
+) -> List[List[MethodInputType]]:
+    # pyre-ignore[7]: expected `List[List[List[Union[bool, float, int, Tensor]]]]` but got `List[List[List[Union[int, Tensor]]]]`
     return [
         [
             [(torch.rand(*sizes[i]) - 0.5).to(dtype) for i in range(n_tensors)]
             + [DEFAULT_INT_INPUT for _ in range(n_int)]
             for _ in range(n_sets_per_plan_test)
         ]
-        for _ in range(n_execution_plan_tests)
+        for _ in range(n_method_test_suites)
     ]
 
 
@@ -94,40 +90,40 @@ def get_rand_output_values(
     sizes: List[List[int]],
     dtype: torch.dtype,
     n_sets_per_plan_test: int,
-    n_execution_plan_tests: int,
-) -> List[List[OutputValues]]:
+    n_method_test_suites: int,
+) -> List[List[MethodOutputType]]:
+    # pyre-ignore [7]: Expected `List[List[Sequence[Tensor]]]` but got `List[List[List[Tensor]]]`.
     return [
         [
             [(torch.rand(*sizes[i]) - 0.5).to(dtype) for i in range(n_tensors)]
             for _ in range(n_sets_per_plan_test)
         ]
-        for _ in range(n_execution_plan_tests)
+        for _ in range(n_method_test_suites)
     ]
 
 
-def get_rand_method_names(n_execution_plan_tests: int) -> List[str]:
+def get_rand_method_names(n_method_test_suites: int) -> List[str]:
     unique_strings = set()
-    while len(unique_strings) < n_execution_plan_tests:
+    while len(unique_strings) < n_method_test_suites:
         rand_str = "".join(random.choices(string.ascii_letters, k=5))
         if rand_str not in unique_strings:
             unique_strings.add(rand_str)
     return list(unique_strings)
 
 
-# TODO(T143955558): make n_int and metadatas as its input;
-def get_random_config(
+def get_random_test_suites(
     n_model_inputs: int,
     model_input_sizes: List[List[int]],
     n_model_outputs: int,
     model_output_sizes: List[List[int]],
     dtype: torch.dtype,
     n_sets_per_plan_test: int,
-    n_execution_plan_tests: int,
+    n_method_test_suites: int,
 ) -> Tuple[
     List[str],
-    List[List[InputValues]],
-    List[List[OutputValues]],
-    BundledConfig,
+    List[List[MethodInputType]],
+    List[List[MethodOutputType]],
+    List[MethodTestSuite],
 ]:
     """Helper function to generate config filled with random inputs and expected outputs.
 
@@ -139,65 +135,99 @@ def get_random_config(
 
     """
 
-    rand_method_names = get_rand_method_names(n_execution_plan_tests)
+    rand_method_names = get_rand_method_names(n_method_test_suites)
 
-    rand_inputs = get_rand_input_values(
+    rand_inputs_per_program = get_rand_input_values(
         n_tensors=n_model_inputs,
         sizes=model_input_sizes,
         n_int=1,
         dtype=dtype,
         n_sets_per_plan_test=n_sets_per_plan_test,
-        n_execution_plan_tests=n_execution_plan_tests,
+        n_method_test_suites=n_method_test_suites,
     )
 
-    rand_expected_outputs = get_rand_output_values(
+    rand_expected_output_per_program = get_rand_output_values(
         n_tensors=n_model_outputs,
         sizes=model_output_sizes,
         dtype=dtype,
         n_sets_per_plan_test=n_sets_per_plan_test,
-        n_execution_plan_tests=n_execution_plan_tests,
+        n_method_test_suites=n_method_test_suites,
     )
+
+    rand_method_test_suites: List[MethodTestSuite] = []
+
+    for (
+        rand_method_name,
+        rand_inputs_per_method,
+        rand_expected_output_per_method,
+    ) in zip(
+        rand_method_names, rand_inputs_per_program, rand_expected_output_per_program
+    ):
+        rand_method_test_cases: List[MethodTestCase] = []
+        for rand_inputs, rand_expected_outputs in zip(
+            rand_inputs_per_method, rand_expected_output_per_method
+        ):
+            rand_method_test_cases.append(
+                MethodTestCase(
+                    inputs=rand_inputs, expected_outputs=rand_expected_outputs
+                )
+            )
+
+        rand_method_test_suites.append(
+            MethodTestSuite(
+                method_name=rand_method_name, test_cases=rand_method_test_cases
+            )
+        )
 
     return (
         rand_method_names,
-        rand_inputs,
-        rand_expected_outputs,
-        # pyre-ignore[6]: Expected Union[Tensor, int, float, bool] for each element in 2nd positional argument, but got Union[Tensor, int]
-        BundledConfig(rand_method_names, rand_inputs, rand_expected_outputs),
+        rand_inputs_per_program,
+        rand_expected_output_per_program,
+        rand_method_test_suites,
     )
 
 
-def get_random_config_with_eager_model(
+def get_random_test_suites_with_eager_model(
     eager_model: torch.nn.Module,
     method_names: List[str],
     n_model_inputs: int,
     model_input_sizes: List[List[int]],
     dtype: torch.dtype,
     n_sets_per_plan_test: int,
-) -> Tuple[List[List[InputValues]], BundledConfig]:
+) -> Tuple[List[List[MethodInputType]], List[MethodTestSuite]]:
     """Generate config filled with random inputs for each inference method given eager model
 
-    The details of return type is the same as get_random_config_with_rand_io_lists.
+    The details of return type is the same as get_random_test_suites_with_rand_io_lists.
     """
-    inputs = get_rand_input_values(
+    inputs_per_program = get_rand_input_values(
         n_tensors=n_model_inputs,
         sizes=model_input_sizes,
         n_int=1,
         dtype=dtype,
         n_sets_per_plan_test=n_sets_per_plan_test,
-        n_execution_plan_tests=len(method_names),
+        n_method_test_suites=len(method_names),
     )
 
-    expected_outputs = [
-        [[getattr(eager_model, m_name)(*x)] for x in inputs[i]]
-        for i, m_name in enumerate(method_names)
-    ]
+    method_test_suites: List[MethodTestSuite] = []
 
-    # pyre-ignore[6]: Expected Union[Tensor, int, float, bool] for each element in 2nd positional argument, but got Union[Tensor, int]
-    return inputs, BundledConfig(method_names, inputs, expected_outputs)
+    for method_name, inputs_per_method in zip(method_names, inputs_per_program):
+        method_test_cases: List[MethodTestCase] = []
+        for inputs in inputs_per_method:
+            method_test_cases.append(
+                MethodTestCase(
+                    inputs=inputs,
+                    expected_outputs=getattr(eager_model, method_name)(*inputs),
+                )
+            )
+
+        method_test_suites.append(
+            MethodTestSuite(method_name=method_name, test_cases=method_test_cases)
+        )
+
+    return inputs_per_program, method_test_suites
 
 
-def get_common_program() -> Tuple[Program, BundledConfig]:
+def get_common_program() -> Tuple[Program, List[MethodTestSuite]]:
     """Helper function to generate a sample BundledProgram with its config."""
     eager_model = SampleModel()
     # Trace to FX Graph.
@@ -216,7 +246,7 @@ def get_common_program() -> Tuple[Program, BundledConfig]:
         .to_executorch()
         .program
     )
-    _, bundled_config = get_random_config_with_eager_model(
+    _, method_test_suites = get_random_test_suites_with_eager_model(
         eager_model=eager_model,
         method_names=eager_model.method_names,
         n_model_inputs=2,
@@ -224,4 +254,4 @@ def get_common_program() -> Tuple[Program, BundledConfig]:
         dtype=torch.int32,
         n_sets_per_plan_test=10,
     )
-    return program, bundled_config
+    return program, method_test_suites

@@ -9,7 +9,7 @@ include "scalar_type.fbs";
 namespace bundled_program_flatbuffer;
 
 // Identifier of a valid bundled program schema.
-file_identifier "BP06";
+file_identifier "BP07";
 // Extension of written files.
 file_extension "bpte";
 
@@ -44,45 +44,44 @@ union ValueUnion {
   Double,
 }
 
-// Abstraction for BundledIOSet values
+// Abstraction for BundledMethodTestCase values
 table Value {
   val: ValueUnion;
 }
 
-// All inputs and referenced outputs needs for single verification.
-table BundledIOSet {
-  // All inputs required by Program for execution. Its length should be
-  // equal to the length of program inputs.
+// A single test for a method. The provided inputs should produce the
+// expected outputs.
+table BundledMethodTestCase {
+  // The inputs to provide to the method. The number and types of inputs must
+  // match the schema of the method under test.
   inputs: [Value];
 
-  // The expected outputs generated while running the model in eager mode
-  // using the inputs provided. Its length should be equal to the length
-  // of program outputs.
+  // The expected outputs generated while running the model in eager mode using
+  // the inputs provided. Its length should be equal to the length of program
+  // outputs.
   expected_outputs: [Value];
 }
 
-
-// Context for testing and verifying an exceution plan.
-table BundledExecutionPlanTest {
-
+// Collection of test cases for a program method.
+table BundledMethodTestSuite {
   // The name of the method to test; e.g., "forward" for the forward() method
   // of an nn.Module. This name match a method defined by the ExecuTorch
   // program.
   method_name: string;
 
-  // Sets of input/outputs to test with.
-  test_sets: [BundledIOSet];
+  // Individual test cases for the method.
+  test_cases: [BundledMethodTestCase];
 }
+
 
 // Executorch program bunlded with data for verification.
 table BundledProgram {
   // Schema version.
   version:uint;
 
-  // Test sets and other meta datas to verify the whole program.
-  // Each BundledExecutionPlanTest should be used for the execution plan of program sharing same index.
-  // Its length should be equal to the number of execution plans in program.
-  execution_plan_tests: [BundledExecutionPlanTest];
+  // Test sets to run against the program.
+  // Each BundledMethodTestSuite should be used for the method of program sharing same name.
+  method_test_suites: [BundledMethodTestSuite];
 
   // The binary data of a serialized Executorch program.
   // The following `force_align` may sliently override any larger force_align
@@ -91,12 +90,8 @@ table BundledProgram {
   // executorch program keeps the same alignment as original no matter how
   // the program schema changes, we need to make the force_align here the max
   // one around all kinds of force_align in the current and future program
-  // schema, so we use the 16, the largest possible alignment of flatbuffer,
-  // as the force_align here.
-  // In the future, we may need to revisit that to enforce larger alignment
-  // constraint. If needed, check against FLATBUFFERS_MAX_ALIGNMENT in the
-  // flatbuffers/base.h, which is the given alignment ceiling of flatbuffer.
-  program: [ubyte] (force_align: 16);
+  // schema, so we use the 4096 as the force_align here.
+  program: [ubyte] (force_align: 4096);
 }
 
 root_type BundledProgram;

@@ -25,11 +25,12 @@ from executorch.backends.apple.mps.test.test_mps_utils import (
     TestMPS,
 )
 
-from executorch.bundled_program.config import BundledConfig
+from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
+
 from executorch.exir import ExirExportedProgram
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.tests.models import (
@@ -129,21 +130,20 @@ def run_model(
         f"  -> Number of execution plans: {len(executorch_program.program.execution_plan)}"
     )
 
-    bundled_inputs = [
-        [m_inputs] for _ in range(len(executorch_program.program.execution_plan))
+    method_test_suites = [
+        MethodTestSuite(
+            method_name="forward",
+            test_cases=[
+                MethodTestCase(inputs=m_inputs, expected_outputs=model(*m_inputs))
+            ],
+        )
     ]
-    logging.info("  -> Bundled inputs generated successfully")
 
-    output = m(*m_inputs)
-    expected_outputs = [
-        [[output]] for _ in range(len(executorch_program.program.execution_plan))
-    ]
-    logging.info("  -> Bundled outputs generated successfully")
+    logging.info("  -> Test suites generated successfully")
 
-    bundled_config = BundledConfig(["forward"], bundled_inputs, expected_outputs)
-    logging.info("  -> Bundled config generated successfully")
-
-    bundled_program = create_bundled_program(executorch_program.program, bundled_config)
+    bundled_program = create_bundled_program(
+        executorch_program.program, method_test_suites
+    )
     logging.info("  -> Bundled program generated successfully")
 
     bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
