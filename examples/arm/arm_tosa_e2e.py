@@ -11,7 +11,7 @@ import tempfile
 import executorch.exir as exir
 
 import numpy as np
-from executorch.backends.arm.arm_backend import ArmPartitioner
+from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.test.test_models import TestList, TosaProfile
 from executorch.backends.arm.test.test_tosa import prepare_model_and_ref
 from executorch.exir import to_edge
