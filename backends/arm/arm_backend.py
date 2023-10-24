@@ -145,6 +145,24 @@ def dbg_tosa_dump(tosa_fb, path):
         f.write(js)
 
 
+# Pack either input or output tensor block, compose the related arrays into
+# per-io structs to simplify runtime use.
+def vela_bin_pack_io(prefix, data):
+    ios = struct.pack("<i", len(data[prefix + "_shape"]))
+    for i in range(len(data[prefix + "_shape"])):
+        io_shape = data[prefix + "_shape"][i]
+        io_elem_size = data[prefix + "_elem_size"][i]
+        io_offset = data[prefix + "_offset"][i]
+        io_region = data[prefix + "_region"][i]
+        assert len(io_shape) <= 4
+        inp_pad = io_shape.tolist() + [0] * (4 - len(io_shape))
+        io_struct = struct.pack(
+            "<iiiiiii", *inp_pad, io_elem_size, io_offset, io_region
+        )
+        ios += io_struct
+    return ios
+
+
 # Output via Vela to binary stream for ArmBackendEthosU
 # WARNING: Do not change this without changing VelaBinStream.cpp as that
 #          function consumes this format and the two need to align.
@@ -178,44 +196,14 @@ def vela_compile(tosa_fb):
             # Add a block for scratch, inputs and outputs;  scratch shape is a 1 element
             # array giving us size in bytes so extract this and add a block of 0's.
             # Currently we preallocated this on the host to provide SRAM for computation.
+            if len(data["scratch_shape"][0]) != 1:
+                raise RuntimeError("Expected scratch to be single array")
             block_length = data["scratch_shape"][0].item()
             bin_blocks["scratch_data"] = b"\x00" * block_length
 
-            # compose the input related arrays into per-input data to simplify
-            # the runtime code
-            inputs = struct.pack("<i", len(data["input_shape"]))
-            for i in range(len(data["input_shape"])):
-                input_shape = data["input_shape"][i]
-                input_elem_size = data["input_elem_size"][i]
-                input_offset = data["input_offset"][i]
-                input_region = data["input_region"][i]
-                assert len(input_shape) <= 4
-                inp_pad = input_shape.tolist() + [0] * (4 - len(input_shape))
-                input_struct = struct.pack(
-                    "<iiiiiii", *inp_pad, input_elem_size, input_offset, input_region
-                )
-                inputs += input_struct
-            bin_blocks["inputs"] = inputs
-
-            # compose the output related arrays into per-output data to simplify
-            # the runtime code
-            outputs = struct.pack("<i", len(data["output_shape"]))
-            for i in range(len(data["output_shape"])):
-                output_shape = data["output_shape"][i]
-                output_elem_size = data["output_elem_size"][i]
-                output_offset = data["output_offset"][i]
-                output_region = data["output_region"][i]
-                assert len(output_shape) <= 4
-                outp_pad = output_shape.tolist() + [0] * (4 - len(output_shape))
-                output_struct = struct.pack(
-                    "<iiiiiii",
-                    *outp_pad,
-                    output_elem_size,
-                    output_offset,
-                    output_region,
-                )
-                outputs += output_struct
-            bin_blocks["outputs"] = outputs
+            # Capture inputs and outputs
+            bin_blocks["inputs"] = vela_bin_pack_io("input", data)
+            bin_blocks["outputs"] = vela_bin_pack_io("output", data)
 
             bin_blocks["vela_end_stream"] = b""
 

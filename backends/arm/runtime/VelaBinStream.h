@@ -17,10 +17,13 @@
 
 #include <cstdint>
 
+// Standard block name size
+const uint32_t kVelaBlockNameLength = 16;
+
 // Generic block within the vela_bin_stream encoded by the python vela_compile
 // step
 typedef struct {
-  char name[16]; // string name, can be shorter or truncated
+  char name[kVelaBlockNameLength]; // string name, can be shorter or truncated
   uint32_t size; // unpadded size, BinBlock size will be rounded to next_mul_16
   char _pad[12]; // Our data often need 16 byte alignemnt
   char data[]; // block.name specific format data
@@ -52,6 +55,14 @@ typedef struct {
   VelaIOs* outputs;
 } VelaHandles;
 
+/* Takes in the preprocessed vela_bin_stream wire format and returns data
+ * needed to launch the workload on the Ethos-U and wire up input and
+ * output values.
+ */
 bool vela_bin_read(const char* data, VelaHandles* handles, int size);
 
+/* Does minimal validation of a vela_bin_stream to ensure the overall
+ * structure is correct and so likely to contain valid binary data for launch
+ * on the Ethos-U.
+ */
 bool vela_bin_validate(const char* data, int size);

@@ -12,6 +12,8 @@
 
 #include <cstring>
 
+#include <executorch/runtime/core/error.h>
+
 #include <executorch/backends/arm/runtime/VelaBinStream.h>
 
 // get next mul of 16 ptr, return n if already aligned
@@ -66,11 +68,14 @@ bool vela_bin_read(const char* data, VelaHandles* handles, int size) {
     } else if (!strncmp(
                    b->name, "vela_end_stream", strlen("vela_end_stream"))) {
       // expect vela_end_stream last
-      if (ptr - data != size)
+      if (ptr - data != size) {
+        ET_LOG(Error, "Expected vela binary to end with vela_end_stream");
         return false;
+      }
       return true;
     } else {
       // Unrecognised block name
+      ET_LOG(Error, "Invalid block name or malformed binary");
       return false;
     }
   }
