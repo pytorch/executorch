@@ -13,13 +13,7 @@ from typing import Any
 from examples.models import MODEL_NAME_TO_MODEL
 from examples.xnnpack import MODEL_NAME_TO_OPTIONS
 
-# NB: Skip buck2 on MacOS to cut down the number of combinations we
-# need to run there as the number of MacOS runner is limited. Buck2
-# build and test has already been covered on Linux
-BUILD_TOOLS = {
-    "buck2": {"linux"},
-    "cmake": {"linux", "macos"},
-}
+
 DEFAULT_RUNNERS = {
     "linux": "linux.2xlarge",
     "macos": "macos-m1-12",
@@ -93,9 +87,21 @@ def export_models_for_ci() -> dict[str, dict]:
     # This is the JSON syntax for configuration matrix used by GitHub
     # https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs
     models = {"include": []}
-    backends = ["portable", "xnnpack"]
-    for (name, build_tool, backend) in itertools.product(
-        MODEL_NAME_TO_MODEL.keys(), BUILD_TOOLS.keys(), backends
+
+    # Add MobileNet v3 for BUCK2 E2E validation
+    for backend in ["portable", "xnnpack", "xnnpack-quantization", "xnnpack-delegation", "xnnpack-quantization"-delegation]:
+        record = {
+            "build-tool": "buck2",
+            "model": "mv3",
+            "backend": backend,
+            "runner": "linux.2xlarge",
+        }
+        models["include"].append(record)
+
+    # Add all models for CMake E2E validation
+    # CMake supports both linux and macos
+    for (name, backend) in itertools.product(
+        MODEL_NAME_TO_MODEL.keys(), ["portable", "xnnpack"]
     ):
         if not model_should_run_on_event(name, event):
             continue
@@ -110,11 +116,8 @@ def export_models_for_ci() -> dict[str, dict]:
             if name in MODEL_NAME_TO_OPTIONS and MODEL_NAME_TO_OPTIONS[name].delegation:
                 backend += "-delegation"
 
-        if target_os not in BUILD_TOOLS[build_tool]:
-            continue
-
         record = {
-            "build-tool": build_tool,
+            "build-tool": "cmake",
             "model": name,
             "backend": backend,
             "runner": DEFAULT_RUNNERS.get(target_os, "linux.2xlarge"),
