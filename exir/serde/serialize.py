@@ -378,11 +378,6 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
         super().__init__()
         self.state_dict: Dict[str, Any] = state_dict  # TODO(T157676982)
 
-    def deserialize_signature(
-        self, sig: GraphSignature, *args  # pyre-ignore
-    ) -> ep.ExportGraphSignature:
-        return ep.ExportGraphSignature(input_specs=[], output_specs=[])
-
     def deserialize_operator(self, serialized_target: str) -> str:
         def find_operator(module: _DialectNamespace, serialized_target: str) -> str:
             serialized_target_names = serialized_target.split(".")[5:]
