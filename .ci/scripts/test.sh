@@ -151,20 +151,26 @@ if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
 else
+  set +e
   if [[ "${BACKEND}" == *"quantization"* ]]; then
     echo "::group::Testing ${MODEL_NAME} with XNNPACK quantization only..."
-    test_model_with_xnnpack true false
+    test_model_with_xnnpack true false || Q_ERROR=1
     echo "::endgroup::"
   fi
   if [[ "${BACKEND}" == *"delegation"* ]]; then
     echo "::group::Testing ${MODEL_NAME} with XNNPACK delegation only..."
-    test_model_with_xnnpack false true
+    test_model_with_xnnpack false true || D_ERROR=1
     echo "::endgroup::"
   fi
   if [[ "${BACKEND}" == *"quantization"* ]] && [[ "${BACKEND}" == *"delegation"* ]]; then
     echo "::group::Testing ${MODEL_NAME} with XNNPACK quantization and delegation..."
-    test_model_with_xnnpack true true
+    test_model_with_xnnpack true true || Q_D_ERROR=1
     echo "::endgroup::"
+  fi
+  set -e
+  if [[ -z "$GOT_ERROR" ]]; then
+    echo "${Q_ERROR}" "${D_ERROR}" "${Q_D_ERROR}"
+    exit 1
   fi
 fi
 
