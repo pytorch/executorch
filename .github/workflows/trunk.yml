@@ -21,21 +21,14 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          submodules: 'true'
+          submodules: 'false'
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          cache: pip
       - name: Extract the list of models to test
         id: gather-models
         run: |
           set -eux
-
-          source .ci/scripts/utils.sh
-          # This is a simple Python script but as it tries to import executorch.examples.models,
-          # it requires a whole bunch of ExecuTorch dependencies on the Docker image
-          install_pip_dependencies
-          install_executorch
 
           PYTHONPATH="${PWD}" python .ci/scripts/gather_test_models.py --target-os macos --event "${GITHUB_EVENT_NAME}"
 
@@ -57,14 +50,13 @@ jobs:
 
         MODEL_NAME=${{ matrix.model }}
         BUILD_TOOL=${{ matrix.build-tool }}
-        XNNPACK_QUANTIZATION=${{ matrix.xnnpack_quantization }}
-        XNNPACK_DELEGATION=${{ matrix.delegation }}
+        BACKEND=${{ matrix.backend }}
         DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
 
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test xecutorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${XNNPACK_QUANTIZATION}" "${XNNPACK_DELEGATION}" "${DEMO_BACKEND_DELEGATION}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
         popd
 
   test-custom-ops-macos:

@@ -179,16 +179,17 @@ To generate a sample program, complete the following steps:
   ```
   :::
 
-  This command has created a `add.pte` file that contains your sample program.
+  This command has created a `add.pte` file that contains your sample program,
+  which adds its inputs multiple times.
 
-Alternatively, you can use a Python Interpreter to perform the same action:
+Alternatively, you can use a Python interpreter to perform similar steps, this
+time creating a `mul.pte` program file that multiplies its inputs:
 
 ```python
->>> import executorch.exir as exir
->>> from executorch.exir.tests.models import Mul
->>> m = Mul()
->>> print(exir.capture(m, m.get_random_inputs()).to_edge())
->>> open("mul.pte", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
+import executorch.exir as exir
+from executorch.exir.tests.models import Mul
+m = Mul()
+open("mul.pte", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
 ```
 
 In this step, you learned how you can export your PyTorch program to an ExecuTorch
