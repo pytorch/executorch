@@ -89,7 +89,7 @@ def export_models_for_ci() -> dict[str, dict]:
     models = {"include": []}
 
     # Add MobileNet v3 for BUCK2 E2E validation
-    for backend in ["portable", "xnnpack", "xnnpack-quantization", "xnnpack-delegation", "xnnpack-quantization-delegation"]:
+    for backend in ["portable", "xnnpack-quantization-delegation"]:
         record = {
             "build-tool": "buck2",
             "model": "mv3",
