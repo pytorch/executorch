@@ -5,11 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import operator
 from collections import defaultdict
 from functools import lru_cache
 from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
+from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.lowered_backend_module import create_submodule_from_nodes
@@ -163,6 +165,32 @@ def replace_quantized_partition_with_op(
     graph_module.recompile()
 
     return (replaced_op, dequant_nodes, quant_nodes)
+
+
+def _get_item_from_executorch_call_delegate(node: torch.fx.Node) -> bool:
+    """
+    Check if the node is the getitem followed by executorch_call_delegate node. These getitems node
+    are just for getting the result from delegate because the input/output to delegates are flattened
+    """
+    return (
+        node.target == operator.getitem
+        and len(node.args) == 2
+        and node.args[0].target == executorch_call_delegate  # pyre-ignore
+        and isinstance(node.args[1], int)
+    )
+
+
+def get_non_lowered_nodes(graph: torch.fx.Graph) -> List[torch.fx.Node]:
+    """
+    Returns a list of non lowered nodes in the graph module.
+    """
+    return [
+        node
+        for node in graph.nodes
+        if node.op == "call_function"
+        and node.target != executorch_call_delegate
+        and (not _get_item_from_executorch_call_delegate(node))
+    ]
 
 
 # TODO - style: use templated types

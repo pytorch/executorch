@@ -11,7 +11,9 @@ from executorch import exir
 from executorch.exir import CaptureConfig
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
+from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.backend.utils import (
+    get_non_lowered_nodes,
     is_identical_graph,
     remove_first_quant_and_last_dequant,
     replace_quantized_partition_with_op,
@@ -356,3 +358,25 @@ class TestPartitioners(unittest.TestCase):
         FileCheck().check_count("test_lib.test_q_linear", 1, exactly=True).run(
             actual_static_quant_linear.code
         )
+
+    def test_get_non_lowered_nodes(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, a, x, b):
+                y = torch.mm(a, x)
+                z = y + b
+                a = z - a
+                y = torch.mm(a, x)
+                z = y + b
+                return z
+
+        m = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+        edge = exir.capture(m, inputs, exir.CaptureConfig()).to_edge()
+        edge.exported_program = to_backend(edge.exported_program, AddMulPartitionerDemo)
+        edge.dump()
+        number_of_cpu_nodes = get_non_lowered_nodes(edge.exported_program.graph)
+        # Only sub is not not lowerable
+        self.assertEqual(len(number_of_cpu_nodes), 1)
