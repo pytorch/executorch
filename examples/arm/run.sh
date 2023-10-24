@@ -34,23 +34,20 @@ fvp_model=FVP_Corstone_SSE-300_Ethos-U55
 toolchain_cmake=${script_dir}/ethos-u-setup/arm-none-eabi-gcc.cmake
 _setup_msg="please refer to ${script_dir}/ethos-u-setup/setup.sh to properly install necessary tools."
 
-
-# Generate the PTE file
+# Generate a pte file
 function generate_pte_file() {
-    cd $et_root_dir
-    python3 -m examples.arm.aot_arm_compiler --model_name="softmax"
-    local pte_file
-    pte_file="$(realpath ./softmax.pte)"
-    [[ -f ${pte_file} ]] || { echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
-    echo "${pte_file}"
-}
+    [[ $# -ne 2 ]] && { echo "[${FUNCNAME[0]}]" "Expecting model and delegate flag, got, $*"; exit 1; }
+    local model=${1}
+    local delegate=${2}
 
-# Generate the ethos delegate PTE file
-function generate_ethos_pte_file() {
+    local model_filename=${model}.pte
+    if [ "${delegate}" = "--delegate" ]; then
+        model_filename=${model}_arm_delegate.pte
+    fi
     cd $et_root_dir
-    python3 -m examples.arm.aot_arm_compiler --model_name="add" --delegate 1>&2
+    python3 -m examples.arm.aot_arm_compiler --model_name="${model}" ${delegate} 1>&2
     local pte_file
-    pte_file=$(realpath ./add_arm_delegate.pte)
+    pte_file=$(realpath ${model_filename})
     [[ -f ${pte_file} ]] || { echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
     echo "${pte_file}"
 }
@@ -150,16 +147,17 @@ type ${buck2} 2>&1 > /dev/null \
 # build executorch libraries
 build_executorch
 
-# generate a .pte file - in this case a non-delegated one
-pte=$(generate_pte_file)
-# build and run the runner with a non-delegated .pte
-build_executorch_runner "${pte}"
-run_fvp executor_runner.elf
+# the test models run, and whether to delegate
+test_model=( "softmax" "add" "add3" )
+test_delegate=( "" "--delegate" "--delegate" )
 
-# generate a pte with an ArmBackend delegate
-pte_delegate=$(generate_ethos_pte_file)
-# build and run the same app with a delegated .pte
-build_executorch_runner "${pte_delegate}"
-run_fvp executor_runner.elf
+# loop over running the AoT flow and executing the model on device
+for i in "${!test_model[@]}"; do
+    printf "Running e2e flow for model '%s' with flags '%s'\n" "${test_model[i]}" "${test_delegate[i]}"
+    pte=$(generate_pte_file "${test_model[i]}" "${test_delegate[i]}")
+    # Rebuild the application as the pte is imported as a header/c array
+    build_executorch_runner "${pte}"
+    run_fvp executor_runner.elf
+done
 
 exit 0
