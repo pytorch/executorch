@@ -10,12 +10,9 @@ on:
       - .github/workflows/app-build.yml
       - install_requirements.sh
       - backends/apple/**
-      - backends/xnnpack/**
       - build/build_apple_frameworks.sh
       - build/test_ios_ci.sh
       - examples/demo-apps/**
-      - examples/portable/**
-      - examples/xnnpack/**
   workflow_dispatch:
 
 concurrency:
@@ -26,11 +23,6 @@ jobs:
   test-demo-ios:
     name: test-demo-ios
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    strategy:
-      matrix:
-        include:
-          - build-tool: cmake
-      fail-fast: false
     with:
       runner: macos-latest-xlarge
       submodules: 'true'
@@ -39,7 +31,7 @@ jobs:
       script: |
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
-        BUILD_TOOL=${{ matrix.build-tool }}
+        BUILD_TOOL=cmake
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test iOS Demo App
