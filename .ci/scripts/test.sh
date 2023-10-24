@@ -22,17 +22,13 @@ if [[ -z "${BUILD_TOOL:-}" ]]; then
   exit 1
 fi
 
-XNNPACK_QUANTIZATION=$3
-if [[ -z "${XNNPACK_QUANTIZATION:-}" ]]; then
-  XNNPACK_QUANTIZATION=false
+BACKEND=$3
+if [[ -z "${BACKEND:-}" ]]; then
+  echo "Missing backend (require portable or xnnpack), exiting..."
+  exit 1
 fi
 
-XNNPACK_DELEGATION=$4
-if [[ -z "${XNNPACK_DELEGATION:-}" ]]; then
-  XNNPACK_DELEGATION=false
-fi
-
-DEMO_BACKEND_DELEGATION=$5
+DEMO_BACKEND_DELEGATION=$4
 if [[ -z "${DEMO_BACKEND_DELEGATION:-}" ]]; then
   DEMO_BACKEND_DELEGATION=false
 fi
@@ -99,7 +95,7 @@ test_model_with_xnnpack() {
   # Quantization-only
   if [[ ${WITH_QUANTIZATION} == true ]] && [[ ${WITH_DELEGATION} == false ]]; then
     bash examples/xnnpack/quantization/test_quantize.sh "${BUILD_TOOL}" "${MODEL_NAME}"
-    exit 0
+    return 0
   fi
 
   # Delegation
@@ -151,12 +147,25 @@ test_demo_backend_delegation() {
   fi
 }
 
-if [[ "${XNNPACK_DELEGATION}" == false ]] && [[ "${XNNPACK_QUANTIZATION}" == false ]]; then
+if [[ "${BACKEND}" == "portable" ]]; then
   echo "Testing ${MODEL_NAME} with portable kernels..."
   test_model
 else
-  echo "Testing ${MODEL_NAME} with XNNPACK quantization=${XNNPACK_QUANTIZATION} delegation=${XNNPACK_DELEGATION}..."
-  test_model_with_xnnpack "${XNNPACK_QUANTIZATION}" "${XNNPACK_DELEGATION}"
+  if [[ "${BACKEND}" == *"quantization"* ]]; then
+    echo "::group::Testing ${MODEL_NAME} with XNNPACK quantization only..."
+    test_model_with_xnnpack true false
+    echo "::endgroup::"
+  fi
+  if [[ "${BACKEND}" == *"delegation"* ]]; then
+    echo "::group::Testing ${MODEL_NAME} with XNNPACK delegation only..."
+    test_model_with_xnnpack false true
+    echo "::endgroup::"
+  fi
+  if [[ "${BACKEND}" == *"quantization"* ]] && [[ "${BACKEND}" == *"delegation"* ]]; then
+    echo "::group::Testing ${MODEL_NAME} with XNNPACK quantization and delegation..."
+    test_model_with_xnnpack true true
+    echo "::endgroup::"
+  fi
 fi
 
 # Test demo backend delegation
