@@ -55,15 +55,11 @@ class ConstPropPass(ExportPass):
             return False
 
         dequant_quant_ops = {
-            torch.ops.quantized_decomposed.quantize_per_channel.default,
             torch.ops.quantized_decomposed.quantize_per_tensor.default,
-            torch.ops.quantized_decomposed.dequantize_per_channel.default,
             torch.ops.quantized_decomposed.dequantize_per_tensor.default,
             torch.ops.quantized_decomposed.quantize_per_channel.default,
             torch.ops.quantized_decomposed.dequantize_per_channel.default,
-            ops.edge.quantized_decomposed.quantize_per_channel.default,
             ops.edge.quantized_decomposed.quantize_per_tensor.default,
-            ops.edge.quantized_decomposed.dequantize_per_channel.default,
             ops.edge.quantized_decomposed.dequantize_per_tensor.default,
             ops.edge.quantized_decomposed.quantize_per_channel.default,
             ops.edge.quantized_decomposed.dequantize_per_channel.default,
