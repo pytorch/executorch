@@ -94,7 +94,7 @@ def export_models_for_ci() -> dict[str, dict]:
             "build-tool": "buck2",
             "model": "mv3",
             "backend": backend,
-            "runner": "linux.2xlarge",
+            "runner": DEFAULT_RUNNERS.get(target_os, "linux.2xlarge"),
         }
         models["include"].append(record)
 
