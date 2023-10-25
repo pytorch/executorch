@@ -88,15 +88,16 @@ def export_models_for_ci() -> dict[str, dict]:
     # https://docs.github.com/en/actions/using-jobs/using-a-matrix-for-your-jobs
     models = {"include": []}
 
-    # Add MobileNet v3 for BUCK2 E2E validation
-    for backend in ["portable", "xnnpack-quantization-delegation"]:
-        record = {
-            "build-tool": "buck2",
-            "model": "mv3",
-            "backend": backend,
-            "runner": DEFAULT_RUNNERS.get(target_os, "linux.2xlarge"),
-        }
-        models["include"].append(record)
+    # Add MobileNet v3 for BUCK2 E2E validation (linux only)
+    if target_os == "linux":
+        for backend in ["portable", "xnnpack-quantization-delegation"]:
+            record = {
+                "build-tool": "buck2",
+                "model": "mv3",
+                "backend": backend,
+                "runner": "linux.2xlarge",
+            }
+            models["include"].append(record)
 
     # Add all models for CMake E2E validation
     # CMake supports both linux and macos
