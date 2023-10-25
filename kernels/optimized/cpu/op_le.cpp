@@ -37,34 +37,45 @@ Tensor& opt_le_tensor_out(
   ScalarType out_type = out.scalar_type();
 
   if (a_type == b_type && a_type == out_type) {
-    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "le", CTYPE, [&]() {
-      using Vec = executorch::vec::Vectorized<CTYPE>;
-      executorch::vec::map2<CTYPE>(
-          [](Vec x, Vec y) { return x.le(y); },
-          out.mutable_data_ptr<CTYPE>(),
-          a.const_data_ptr<CTYPE>(),
-          b.const_data_ptr<CTYPE>(),
-          a.numel());
-    });
+    ET_SWITCH_REAL_TYPES_AND(
+        Bool, out_type, ctx, "le.Tensor_out", CTYPE, [&]() {
+          using Vec = executorch::vec::Vectorized<CTYPE>;
+          executorch::vec::map2<CTYPE>(
+              [](Vec x, Vec y) { return x.le(y); },
+              out.mutable_data_ptr<CTYPE>(),
+              a.const_data_ptr<CTYPE>(),
+              b.const_data_ptr<CTYPE>(),
+              a.numel());
+        });
   } else {
     ScalarType common_type = promoteTypes(a_type, b_type);
-    ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "le", CTYPE_A, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "le", CTYPE_B, [&]() {
-        ET_SWITCH_REAL_TYPES_AND(Bool, common_type, ctx, "le", CTYPE_IN, [&]() {
-          ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "le", CTYPE_OUT, [&]() {
-            const size_t n = a.numel();
-            const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
-            const CTYPE_B* b_data = b.const_data_ptr<CTYPE_B>();
-            CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-            for (auto i = 0; i < n; ++i) {
-              out_data[i] = static_cast<CTYPE_OUT>(
-                  static_cast<CTYPE_IN>(a_data[i]) <=
-                  static_cast<CTYPE_IN>(b_data[i]));
-            }
-          });
+    ET_SWITCH_REAL_TYPES_AND(
+        Bool, a_type, ctx, "le.Tensor_out", CTYPE_A, [&]() {
+          ET_SWITCH_REAL_TYPES_AND(
+              Bool, b_type, ctx, "le.Tensor_out", CTYPE_B, [&]() {
+                ET_SWITCH_REAL_TYPES_AND(
+                    Bool, common_type, ctx, "le.Tensor_out", CTYPE_IN, [&]() {
+                      ET_SWITCH_REAL_TYPES_AND(
+                          Bool,
+                          out_type,
+                          ctx,
+                          "le.Tensor_out",
+                          CTYPE_OUT,
+                          [&]() {
+                            const size_t n = a.numel();
+                            const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
+                            const CTYPE_B* b_data = b.const_data_ptr<CTYPE_B>();
+                            CTYPE_OUT* out_data =
+                                out.mutable_data_ptr<CTYPE_OUT>();
+                            for (auto i = 0; i < n; ++i) {
+                              out_data[i] = static_cast<CTYPE_OUT>(
+                                  static_cast<CTYPE_IN>(a_data[i]) <=
+                                  static_cast<CTYPE_IN>(b_data[i]));
+                            }
+                          });
+                    });
+              });
         });
-      });
-    });
   }
 
   return out;
@@ -87,38 +98,49 @@ Tensor& opt_le_scalar_out(
   ScalarType out_type = out.scalar_type();
 
   if (a_type == common_type && a_type == out_type) {
-    ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "le", CTYPE, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "le", CTYPE_B, [&]() {
-        CTYPE_B b_val = 0;
-        ET_EXTRACT_SCALAR(b, b_val);
-        CTYPE b_casted = static_cast<CTYPE>(b_val);
-        using Vec = executorch::vec::Vectorized<CTYPE>;
-        executorch::vec::map<CTYPE>(
-            [b_casted](Vec x) { return x.le(Vec(b_casted)); },
-            out.mutable_data_ptr<CTYPE>(),
-            a.const_data_ptr<CTYPE>(),
-            a.numel());
-      });
-    });
-  } else {
-    ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "le", CTYPE_A, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "le", CTYPE_B, [&]() {
-        ET_SWITCH_REAL_TYPES_AND(Bool, common_type, ctx, "le", CTYPE_IN, [&]() {
-          ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "le", CTYPE_OUT, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "le.Scalar_out", CTYPE, [&]() {
+      ET_SWITCH_REAL_TYPES_AND(
+          Bool, b_type, ctx, "le.Scalar_out", CTYPE_B, [&]() {
             CTYPE_B b_val = 0;
             ET_EXTRACT_SCALAR(b, b_val);
-            CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
-            const size_t n = a.numel();
-            const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
-            CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-            for (auto i = 0; i < n; ++i) {
-              out_data[i] = static_cast<CTYPE_OUT>(
-                  static_cast<CTYPE_IN>(a_data[i]) <= b_casted);
-            }
+            CTYPE b_casted = static_cast<CTYPE>(b_val);
+            using Vec = executorch::vec::Vectorized<CTYPE>;
+            executorch::vec::map<CTYPE>(
+                [b_casted](Vec x) { return x.le(Vec(b_casted)); },
+                out.mutable_data_ptr<CTYPE>(),
+                a.const_data_ptr<CTYPE>(),
+                a.numel());
           });
-        });
-      });
     });
+  } else {
+    ET_SWITCH_REAL_TYPES_AND(
+        Bool, a_type, ctx, "le.Scalar_out", CTYPE_A, [&]() {
+          ET_SWITCH_REAL_TYPES_AND(
+              Bool, b_type, ctx, "le.Scalar_out", CTYPE_B, [&]() {
+                ET_SWITCH_REAL_TYPES_AND(
+                    Bool, common_type, ctx, "le.Scalar_out", CTYPE_IN, [&]() {
+                      ET_SWITCH_REAL_TYPES_AND(
+                          Bool,
+                          out_type,
+                          ctx,
+                          "le.Scalar_out",
+                          CTYPE_OUT,
+                          [&]() {
+                            CTYPE_B b_val = 0;
+                            ET_EXTRACT_SCALAR(b, b_val);
+                            CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+                            const size_t n = a.numel();
+                            const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
+                            CTYPE_OUT* out_data =
+                                out.mutable_data_ptr<CTYPE_OUT>();
+                            for (auto i = 0; i < n; ++i) {
+                              out_data[i] = static_cast<CTYPE_OUT>(
+                                  static_cast<CTYPE_IN>(a_data[i]) <= b_casted);
+                            }
+                          });
+                    });
+              });
+        });
   }
 
   return out;

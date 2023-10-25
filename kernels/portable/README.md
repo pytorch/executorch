@@ -183,6 +183,10 @@ E.g., these operator overloads all have a base name of `add`:
 So, if you were implementing `add.out` then your operator base name would be
 `add`, and you would replace `<name>` with `add` everywhere below.
 
+### Selective build
+
+When using macros that require a `NAME` argument, eg. `#define ET_SWITCH_REAL_TYPES_AND(ADDITIONAL, TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...)`, make sure to pass in the same operator name defined in `functions.yaml`. This is the base name + variant, eg. `add.out`, `add.Scalar_out`. The function name is required for dtype selective build, which matches against the operator names and dtypes present in a model.
+
 ### Overview of files and targets
 
 For the operator base name `<name>`, you should work with these files and Buck
