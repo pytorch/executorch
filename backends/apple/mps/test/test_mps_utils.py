@@ -12,7 +12,7 @@ import executorch.exir as exir
 
 import torch
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
-from executorch.bundled_program.config import BundledConfig
+from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
@@ -189,28 +189,23 @@ class TestMPS(unittest.TestCase):
         logging.info(
             "  -> Number of execution plans: {len(executorch_program.program.execution_plan)}"
         )
-        bundled_inputs = [
-            [sample_inputs]
-            for _ in range(len(executorch_program.program.execution_plan))
-        ]
-        logging.info("  -> Bundled inputs generated successfully")
 
-        output = module(*sample_inputs)
-        expected_outputs = [
-            [[output]] for _ in range(len(executorch_program.program.execution_plan))
+        method_test_suites = [
+            MethodTestSuite(method_name="forward", test_cases=[
+                MethodTestCase(input=sample_inputs, expected_outputs=module(*sample_inputs))
+            ])
         ]
-        logging.info("  -> Bundled outputs generated successfully")
 
-        method_names = ["forward"]
-        bundled_config = BundledConfig(method_names, bundled_inputs, expected_outputs)
+        logging.info("  -> Test suites generated successfully")
+
         bundled_program = create_bundled_program(
-            executorch_program.program, bundled_config
+            executorch_program.program, method_test_suites
         )
         bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
             bundled_program
         )
 
-        filename = f"{func_name}.pte"
+        filename = f"{func_name}.bpte"
         logging.info(f"Step 5: Saving bundled program to {filename}...")
         with open(filename, "wb") as file:
             file.write(bundled_program_buffer)

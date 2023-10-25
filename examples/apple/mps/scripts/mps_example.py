@@ -13,13 +13,13 @@ import torch
 import torch._export as export
 from executorch import exir
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
-from executorch.bundled_program.config import BundledConfig
+
+from executorch.exir.backend.backend_api import to_backend
+from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-
-from executorch.exir.backend.backend_api import to_backend
 
 from ....models import MODEL_NAME_TO_MODEL
 from ....models.model_factory import EagerModelFactory
@@ -91,19 +91,19 @@ if __name__ == "__main__":
     model_name = f"{args.model_name}_mps"
 
     if args.bundled:
-        bundled_inputs = [
-            [example_inputs]
-            for _ in range(len(executorch_program.program.execution_plan))
+        method_test_suites = [
+            MethodTestSuite(
+                method_name="forward",
+                test_cases=[
+                    MethodTestCase(
+                        inputs=example_inputs, expected_outputs=[model(*example_inputs)]
+                    )
+                ],
+            )
         ]
 
-        output = model(*example_inputs)
-        expected_outputs = [
-            [[output]] for _ in range(len(executorch_program.program.execution_plan))
-        ]
-
-        bundled_config = BundledConfig(["forward"], bundled_inputs, expected_outputs)
         bundled_program = create_bundled_program(
-            executorch_program.program, bundled_config
+            executorch_program.program, method_test_suites
         )
         bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
             bundled_program

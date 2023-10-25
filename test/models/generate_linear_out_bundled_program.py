@@ -14,11 +14,12 @@ Then commit the updated file (if there are any changes).
 """
 
 import subprocess
+from typing import List
 
 import executorch.exir as exir
 
 import torch
-from executorch.bundled_program.config import BundledConfig
+from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
@@ -55,29 +56,18 @@ def main() -> None:
     # Serialize to flatbuffer.
     program.version = 0
 
-    bundled_inputs = [
-        [
-            [
-                torch.rand(2, 2, dtype=torch.float),
-            ]
-            for _ in range(10)
+    # Create test sets
+    method_test_cases: List[MethodTestCase] = []
+    for _ in range(10):
+        x = [
+            torch.rand(2, 2, dtype=torch.float),
         ]
-        for _ in range(len(program.execution_plan))
+        method_test_cases.append(MethodTestCase(inputs=x, expected_outputs=model(*x)))
+    method_test_suites = [
+        MethodTestSuite(method_name="forward", test_cases=method_test_cases)
     ]
 
-    bundled_expected_outputs = [
-        [[model(*x)] for x in bundled_inputs[i]]
-        for i in range(len(program.execution_plan))
-    ]
-
-    bundled_config = BundledConfig(
-        method_names=["forward"],
-        # pyre-ignore
-        inputs=bundled_inputs,
-        expected_outputs=bundled_expected_outputs,
-    )
-
-    bundled_program = create_bundled_program(program, bundled_config)
+    bundled_program = create_bundled_program(program, method_test_suites)
     pretty_print(bundled_program)
 
     bundled_program_flatbuffer = serialize_from_bundled_program_to_flatbuffer(
