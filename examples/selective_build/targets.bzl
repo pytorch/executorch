@@ -17,8 +17,10 @@ def define_common_targets():
     executorch_generated_lib(
         name = "select_all_lib",
         functions_yaml_target = "//executorch/kernels/portable:functions.yaml",
-        deps = [
+        kernel_deps = [
             "//executorch/kernels/portable:operators",
+        ],
+        deps = [
             ":select_all_ops",
         ],
     )
@@ -35,10 +37,13 @@ def define_common_targets():
     executorch_generated_lib(
         name = "select_ops_in_list_lib",
         functions_yaml_target = "//executorch/kernels/portable:functions.yaml",
-        deps = [
+        kernel_deps = [
             "//executorch/kernels/portable:operators",
+        ],
+        deps = [
             ":select_ops_in_list",
         ],
+        visibility = ["//executorch/runtime/core/..."],
     )
 
     # Select all ops from a yaml file
@@ -50,9 +55,11 @@ def define_common_targets():
     executorch_generated_lib(
         name = "select_ops_from_yaml_lib",
         custom_ops_yaml_target = "//executorch/examples/portable/custom_ops:custom_ops.yaml",
-        deps = [
+        kernel_deps = [
             "//executorch/examples/portable/custom_ops:custom_ops_1",
             "//executorch/examples/portable/custom_ops:custom_ops_2",
+        ],
+        deps = [
             ":select_ops_from_yaml",
         ],
     )

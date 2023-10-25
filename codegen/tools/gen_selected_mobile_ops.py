@@ -5,7 +5,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
 import os
+import sys
+from typing import Any, List
 
 import yaml
 
@@ -57,16 +60,14 @@ dtype_enum_to_type = {
 }
 
 
-def write_selected_mobile_ops(output_file_path: str) -> None:
-    with open(
-        os.path.join(output_file_path, "selected_operators.yaml"), "r"
-    ) as selected_operators_file:
+def write_selected_mobile_ops(yaml_file_path: str, output_dir: str) -> None:
+    with open(yaml_file_path, "r") as selected_operators_file:
         # Collect et_kernel_metadata from selected_operators.yaml and extract dtypes
         # Example format: v1/6;0,1|6;0,1|6;0,1|6;0,1  # Float, 0, 1
         selected_operators_dict = yaml.safe_load(selected_operators_file)
         et_kernel_metadata = selected_operators_dict.get("et_kernel_metadata", {})
         assert isinstance(et_kernel_metadata, dict)
-        body = "return true;"
+        body = "true"
         body_parts = []
         for operator_name, kernel_metadata_str in et_kernel_metadata.items():
             tensor_meta = []
@@ -85,14 +86,38 @@ def write_selected_mobile_ops(output_file_path: str) -> None:
                 ]
             body_parts.append(
                 ops_and_dtypes_template.substitute(
-                    operator_name=operator_name.removeprefix("aten::"),
+                    operator_name=operator_name.replace("aten::", ""),
                     dtype_checks=" || ".join(conditions),
                 ),
             )
             body = "\n || ".join(body_parts)
-            header_contents = selected_kernel_dtypes_h_template.substitute(body=body)
-            selected_mobile_ops_path = os.path.join(
-                output_file_path, "selected_mobile_ops.h"
-            )
-            with open(selected_mobile_ops_path, "wb") as out_file:
-                out_file.write(header_contents.encode("utf-8"))
+        header_contents = selected_kernel_dtypes_h_template.substitute(body=body)
+        selected_mobile_ops_path = os.path.join(output_dir, "selected_mobile_ops.h")
+        with open(selected_mobile_ops_path, "wb") as out_file:
+            out_file.write(header_contents.encode("utf-8"))
+
+
+def main(argv: List[Any]) -> None:
+    parser = argparse.ArgumentParser(description="Generate operator lists")
+    parser.add_argument(
+        "--yaml-file-path",
+        "--yaml_file_path",
+        help=("The directory where selected_operators.yaml was generated)"),
+        required=True,
+    )
+    parser.add_argument(
+        "--output-dir",
+        "--output_dir",
+        help=(
+            "The directory to store the output yaml files (selected_mobile_ops.h, "
+            + "selected_kernel_dtypes.h, selected_operators.yaml)"
+        ),
+        required=True,
+    )
+
+    options = parser.parse_args(argv)
+    write_selected_mobile_ops(options.yaml_file_path, options.output_dir)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
