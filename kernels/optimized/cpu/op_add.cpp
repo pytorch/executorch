@@ -37,7 +37,7 @@ Tensor& opt_add_out(
     auto error = resize_tensor(out, a.sizes());
     ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
-    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "add", CTYPE, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "add.out", CTYPE, [&]() {
       CTYPE alpha_val;
       ET_EXTRACT_SCALAR(alpha, alpha_val);
 
@@ -55,12 +55,12 @@ Tensor& opt_add_out(
 
     resize_to_broadcast_target_size(a, b, out);
 
-    ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "add", CTYPE_A, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "add", CTYPE_B, [&]() {
+    ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "add.out", CTYPE_A, [&]() {
+      ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "add.out", CTYPE_B, [&]() {
         ET_SWITCH_REAL_TYPES_AND(
-            Bool, common_type, ctx, "add", CTYPE_IN, [&]() {
+            Bool, common_type, ctx, "add.out", CTYPE_IN, [&]() {
               ET_SWITCH_REAL_TYPES_AND(
-                  Bool, out_type, ctx, "add", CTYPE_OUT, [&]() {
+                  Bool, out_type, ctx, "add.out", CTYPE_OUT, [&]() {
                     CTYPE_IN alpha_val;
                     ET_EXTRACT_SCALAR(alpha, alpha_val);
 
@@ -104,49 +104,58 @@ Tensor& opt_add_scalar_out(
   ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
   if (a_type == common_type && a_type == out_type) {
-    ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "add", CTYPE, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "add", CTYPE_B, [&]() {
-        CTYPE_B b_val;
-        ET_EXTRACT_SCALAR(b, b_val);
-        CTYPE b_casted = static_cast<CTYPE>(b_val);
-        CTYPE alpha_val;
-        ET_EXTRACT_SCALAR(alpha, alpha_val);
+    ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "add.Scalar_out", CTYPE, [&]() {
+      ET_SWITCH_REAL_TYPES_AND(
+          Bool, b_type, ctx, "add.Scalar_out", CTYPE_B, [&]() {
+            CTYPE_B b_val;
+            ET_EXTRACT_SCALAR(b, b_val);
+            CTYPE b_casted = static_cast<CTYPE>(b_val);
+            CTYPE alpha_val;
+            ET_EXTRACT_SCALAR(alpha, alpha_val);
 
-        using Vec = executorch::vec::Vectorized<CTYPE>;
-        executorch::vec::map<CTYPE>(
-            [alpha_val, b_casted](Vec x) {
-              return x + Vec(alpha_val * b_casted);
-            },
-            out.mutable_data_ptr<CTYPE>(),
-            a.const_data_ptr<CTYPE>(),
-            out.numel());
-      });
+            using Vec = executorch::vec::Vectorized<CTYPE>;
+            executorch::vec::map<CTYPE>(
+                [alpha_val, b_casted](Vec x) {
+                  return x + Vec(alpha_val * b_casted);
+                },
+                out.mutable_data_ptr<CTYPE>(),
+                a.const_data_ptr<CTYPE>(),
+                out.numel());
+          });
     });
   } else {
-    ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "add", CTYPE_A, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "add", CTYPE_B, [&]() {
-        ET_SWITCH_REAL_TYPES_AND(
-            Bool, common_type, ctx, "add", CTYPE_IN, [&]() {
-              ET_SWITCH_REAL_TYPES_AND(
-                  Bool, out_type, ctx, "add", CTYPE_OUT, [&]() {
-                    CTYPE_B b_val;
-                    ET_EXTRACT_SCALAR(b, b_val);
-                    CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
-                    CTYPE_IN alpha_val;
-                    ET_EXTRACT_SCALAR(alpha, alpha_val);
+    ET_SWITCH_REAL_TYPES_AND(
+        Bool, a_type, ctx, "add.Scalar_out", CTYPE_A, [&]() {
+          ET_SWITCH_REAL_TYPES_AND(
+              Bool, b_type, ctx, "add.Scalar_out", CTYPE_B, [&]() {
+                ET_SWITCH_REAL_TYPES_AND(
+                    Bool, common_type, ctx, "add.Scalar_out", CTYPE_IN, [&]() {
+                      ET_SWITCH_REAL_TYPES_AND(
+                          Bool,
+                          out_type,
+                          ctx,
+                          "add.Scalar_out",
+                          CTYPE_OUT,
+                          [&]() {
+                            CTYPE_B b_val;
+                            ET_EXTRACT_SCALAR(b, b_val);
+                            CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+                            CTYPE_IN alpha_val;
+                            ET_EXTRACT_SCALAR(alpha, alpha_val);
 
-                    const size_t n = a.numel();
-                    const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
-                    CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-                    for (auto i = 0; i < n; ++i) {
-                      out_data[i] = static_cast<CTYPE_OUT>(
-                          static_cast<CTYPE_IN>(a_data[i]) +
-                          alpha_val * b_casted);
-                    }
-                  });
-            });
-      });
-    });
+                            const size_t n = a.numel();
+                            const CTYPE_A* a_data = a.const_data_ptr<CTYPE_A>();
+                            CTYPE_OUT* out_data =
+                                out.mutable_data_ptr<CTYPE_OUT>();
+                            for (auto i = 0; i < n; ++i) {
+                              out_data[i] = static_cast<CTYPE_OUT>(
+                                  static_cast<CTYPE_IN>(a_data[i]) +
+                                  alpha_val * b_casted);
+                            }
+                          });
+                    });
+              });
+        });
   }
 
   return out;

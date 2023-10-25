@@ -63,14 +63,16 @@ Tensor& opt_exp_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   auto error = resize_tensor(out, in.sizes());
   ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in.scalar_type(), ctx, "exp", CTYPE_IN, [&] {
-    ET_SWITCH_FLOAT_TYPES(out.scalar_type(), ctx, "exp", CTYPE_OUT, [&] {
-      exp_data<CTYPE_IN, CTYPE_OUT>(
-          in.const_data_ptr<CTYPE_IN>(),
-          in.numel(),
-          out.mutable_data_ptr<CTYPE_OUT>());
-    });
-  });
+  ET_SWITCH_REAL_TYPES_AND(
+      Bool, in.scalar_type(), ctx, "exp.out", CTYPE_IN, [&] {
+        ET_SWITCH_FLOAT_TYPES(
+            out.scalar_type(), ctx, "exp.out", CTYPE_OUT, [&] {
+              exp_data<CTYPE_IN, CTYPE_OUT>(
+                  in.const_data_ptr<CTYPE_IN>(),
+                  in.numel(),
+                  out.mutable_data_ptr<CTYPE_OUT>());
+            });
+      });
 
   return out;
 }
