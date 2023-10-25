@@ -30,6 +30,12 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
+# Enable Metal
+if (APPLE)
+    set(EXECUTORCH_USE_METAL ON)
+else()
+    set(EXECUTORCH_USE_METAL OFF)
+endif()
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
@@ -70,10 +76,17 @@ set(kernel_sources ${EXECUTORCH_ROOT}/examples/llama_cpp/op_mm.cpp)
 #
 # custom_kernels: C++ kernel implementations of custom ops
 #
-add_library(custom_kernels ${kernel_sources})
-target_link_libraries(custom_kernels PRIVATE executorch llama)
+add_library(custom_kernels SHARED ${kernel_sources})
+target_link_libraries(custom_kernels PRIVATE executorch ${LLAMA_LIBRARY})
 target_compile_options(custom_kernels PUBLIC ${_common_compile_options})
-
+target_include_directories(custom_kernels PRIVATE ${EXECUTORCH_ROOT}/examples/third-party/llama_cpp)
+if(EXECUTORCH_USE_METAL)
+  target_compile_definitions(custom_kernels PUBLIC GGML_USE_METAL)
+  find_file(METAL_SOURCE "ggml-metal.metal" HINTS ${CMAKE_INSTALL_PREFIX}/bin)
+  message("METAL_SOURCE = ${METAL_SOURCE}")
+  set_target_properties(custom_kernels PROPERTIES
+    RESOURCE "${METAL_SOURCE}")
+endif()
 set(_kernel_lib custom_kernels portable_kernels)
 
 # Select all ops in functions.yaml as well as custom op.
@@ -91,7 +104,12 @@ list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 #
 # llama_cpp_test: test binary to run llama.cpp kernel ggml_mul_mat
 #
-add_executable(llama_cpp_test ${_executor_runner__srcs})
+if(EXECUTORCH_USE_METAL)
+  # Need to override sourcePath to /Users/larryliu/CLionProjects/executorch/cmake-out/bin/ggml-metal.metal in ggml-metal.m
+  add_executable(llama_cpp_test MACOSX_BUNDLE "${METAL_SOURCE}" ${_executor_runner__srcs} )
+else()
+  add_executable(llama_cpp_test ${_executor_runner__srcs})
+endif()
 if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
   target_link_options(selective_build_test PRIVATE "LINKER:--gc-sections")
 endif()

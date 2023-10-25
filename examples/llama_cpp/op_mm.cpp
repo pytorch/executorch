@@ -6,6 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include "ggml.h"
+#ifdef GGML_USE_METAL
+#include "ggml-metal.h"
+#endif
 #include <executorch/kernels/portable/cpu/util/matmul_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
@@ -17,7 +20,7 @@ using RuntimeContext = exec_aten::RuntimeContext;
 using Error = torch::executor::Error;
 
 // Helper function to create a ggml tensor with preallocated memory
-static struct ggml_tensor * ggml_tensor_from(const Tensor & t, const int64_t * ne_override) {
+static struct ggml_tensor * ggml_tensor_from(const Tensor & t, const int64_t * ne_override, const char* name) {
     // HACK: since this is only used by mm, hardcode n_dims to 2
     // Should be t.dim() but that requires refactoring
     int n_dims = 2;
@@ -54,6 +57,11 @@ static struct ggml_tensor * ggml_tensor_from(const Tensor & t, const int64_t * n
         /*.padding      =*/ { 0 },
     };
 
+    int i = 0;
+    while (*(name + i) != '\0') {
+        result->name[i] = *(name + i++);
+    }
+
     // TODO: this should not be needed as long as we don't rely on aligned SIMD loads
     //ggml_assert_aligned(result->data);
 
@@ -86,15 +94,15 @@ mm_out(RuntimeContext& ctx, const Tensor& in, const Tensor& mat2, Tensor& out) {
   // HACK: view(mat2, {64, 1});
   const int64_t dims[4] = {64, 1, 1, 1};
 
-  struct ggml_tensor * a = ggml_tensor_from(in, NULL);
+  struct ggml_tensor * a = ggml_tensor_from(in, NULL, "a");
 
-  struct ggml_tensor * b = ggml_tensor_from(mat2, dims);
+  struct ggml_tensor * b = ggml_tensor_from(mat2, dims, "b");
 
 //   GGML_ASSERT(ggml_can_mul_mat(b, a));
 //   GGML_ASSERT(!ggml_is_transposed(b));
 
   const int64_t ne[4] = { b->ne[1], a->ne[1], a->ne[2], a->ne[3] };
-  struct ggml_tensor * result = ggml_tensor_from(out, ne);
+  struct ggml_tensor * result = ggml_tensor_from(out, ne, "result");
 
   result->op   = GGML_OP_MUL_MAT;
   result->grad = NULL;
@@ -105,8 +113,28 @@ mm_out(RuntimeContext& ctx, const Tensor& in, const Tensor& mat2, Tensor& out) {
   struct ggml_cgraph gf = ggml_build_forward(result);
 
   struct ggml_cplan plan = ggml_graph_plan(&gf, /*int n_threads*/1);
-  int res = ggml_graph_compute(&gf, &plan);
 
+#ifdef GGML_USE_METAL
+  // Initialize Metal context
+  struct ggml_metal_context * ctx_metal = ggml_metal_init(1);
+  // Add buffers to Metal. We have to do this per tensor because we don't have a ggml_context.
+  ggml_metal_add_buffer(ctx_metal, "a", a->data, ggml_nbytes(a), ggml_nbytes(a));
+  ggml_metal_add_buffer(ctx_metal, "b", b->data, ggml_nbytes(b), ggml_nbytes(b));
+  ggml_metal_add_buffer(ctx_metal, "result", result->data, ggml_nbytes(result), ggml_nbytes(result));
+  // Set tensor will replace input tensor->data with Metal buffers
+  ggml_metal_set_tensor(ctx_metal, a);
+  ggml_metal_set_tensor(ctx_metal, b);
+  // Run graph
+  ggml_metal_graph_compute(ctx_metal, &gf);
+  // Get tensor will memcpy the output tensor->data back to CPU memory
+  ggml_metal_get_tensor(ctx_metal, result);
+#else
+  int res = ggml_graph_compute(&gf, &plan);
+#endif
+
+  free(a);
+  free(b);
+  free(result);
   return out;
 }
 

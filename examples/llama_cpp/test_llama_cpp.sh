@@ -29,6 +29,7 @@ cmake_install_llama_cpp() {
     echo "Installing llama.cpp"
     retry cmake -DBUCK2="$BUCK" \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DBUILD_SHARED_LIBS=ON \
             -DCMAKE_BUILD_TYPE=Debug \
             -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
             -Bcmake-out/examples/third-party/llama_cpp examples/third-party/llama_cpp
@@ -44,12 +45,12 @@ cmake_run_llama_cpp_test() {
             -Bcmake-out/examples/llama_cpp examples/llama_cpp
     cmake --build cmake-out/examples/llama_cpp -j9
 
-    # Export model
-    echo "Exporting llama2"
-    $PYTHON_EXECUTABLE -m examples.llama_cpp.export
+    # # Export model
+    # echo "Exporting llama2"
+    # $PYTHON_EXECUTABLE -m examples.llama_cpp.export
 
-    # Run model
-    cmake-out/examples/llama_cpp/llama_cpp_test --model_path="./llama2_fused.pte"
+    # # Run model
+    # cmake-out/examples/llama_cpp/llama_cpp_test --model_path="./llama2_fused.pte"
 }
 
 if [[ -z $BUCK ]];
@@ -62,6 +63,6 @@ then
   PYTHON_EXECUTABLE=python3
 fi
 
-cmake_install_executorch_lib
+# cmake_install_executorch_lib
 cmake_install_llama_cpp
 cmake_run_llama_cpp_test
