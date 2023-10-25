@@ -123,6 +123,22 @@ def define_common_targets(is_fbcode = False):
         srcs = ["gen_selected_mobile_ops.py"],
         base_module = "executorch.codegen.tools",
         visibility = ["//executorch/..."],
+        external_deps = [
+            "gen-oplist-lib",
+        ],
+    )
+
+    runtime.python_binary(
+        name = "gen_selected_mobile_ops",
+        main_module = "executorch.codegen.tools.gen_selected_mobile_ops",
+        package_style = "inplace",
+        visibility = [
+            "PUBLIC",
+        ],
+        deps = [
+            ":gen_selected_mobile_ops_lib",
+        ],
+        _is_external_target = True,
     )
 
     runtime.python_test(
@@ -136,7 +152,6 @@ def define_common_targets(is_fbcode = False):
         ],
         deps = [
             ":gen_selected_mobile_ops_lib",
-            ":gen_oplist_lib",
             "fbsource//third-party/pypi/expecttest:expecttest",
         ],
         _is_external_target = True,

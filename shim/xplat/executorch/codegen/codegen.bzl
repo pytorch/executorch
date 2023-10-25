@@ -333,7 +333,8 @@ def executorch_generated_lib(
         xplat_deps = [],
         fbcode_deps = [],
         platforms = get_default_executorch_platforms(),
-        compiler_flags = []):
+        compiler_flags = [],
+        kernel_deps = []):
     """Emits 0-3 C++ library targets (in fbcode or xplat) containing code to
     dispatch the operators specified in the provided yaml files.
 
@@ -436,6 +437,21 @@ def executorch_generated_lib(
         platforms = platforms,
     )
 
+    # genrule to generate selected_mobile_ops.h from selected_operators.yaml above
+    oplist_header_name = name + "_et_op_dtype_gen"
+    runtime.genrule(
+        name = oplist_header_name,
+        macros_only = False,
+        cmd = ("$(exe //executorch/codegen/tools:gen_selected_mobile_ops) " +
+               "--yaml_file_path $(location :{}[selected_operators.yaml]) " +
+               "--output_dir $OUT").format(oplist_dir_name),
+        outs = {"selected_mobile_ops": ["selected_mobile_ops.h"]},
+        default_outs = ["."],
+        platforms = platforms,
+        visibility = visibility,
+        _is_external_target = True,
+    )
+
     # codegen genrule(s). For ATen mode we expect two genrules, one for ATen ops one for custom ops.
     for genrule_name in genrules:
         genrules[genrule_name]["cmd"].append(
@@ -455,6 +471,7 @@ def executorch_generated_lib(
     # along with headers declaring custom ops `Functions.h`, `NativeFunctions.h` and `UnboxingFunctions.h`.
     header_lib = name + "_headers"
     if header_lib in libs:
+        libs[header_lib]["headers"]["selected_mobile_ops.h"] = ":{}[selected_mobile_ops]".format(oplist_header_name)
         runtime.cxx_library(
             name = header_lib,
             srcs = [],
@@ -497,7 +514,7 @@ def executorch_generated_lib(
                 "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/codegen:macros",
-            ] + deps,
+            ] + deps + kernel_deps,
             exported_deps = [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,

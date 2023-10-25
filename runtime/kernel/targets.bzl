@@ -50,6 +50,7 @@ def define_common_targets():
                 "//executorch/kernels/...",
                 "//executorch/runtime/executor/...",
                 "//executorch/runtime/kernel/...",
+                "//executorch/runtime/core/exec_aten/...",
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
