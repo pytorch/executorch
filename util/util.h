@@ -126,7 +126,7 @@ inline exec_aten::ArrayRef<void*> PrepareInputTensors(Method& method) {
     ET_CHECK_MSG(
         error == Error::Ok,
         "Error: 0x%" PRIx32 " setting input %zu.",
-        error,
+        static_cast<uint32_t>(error),
         i);
 #ifndef USE_ATEN_LIB // Portable Tensor
     free(sizes);
