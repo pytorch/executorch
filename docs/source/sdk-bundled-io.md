@@ -1,7 +1,7 @@
 # Bundled Program -- a Tool for ExecuTorch Model Validation
 
 ## Introduction
-BundledProgram is a wrapper around the core ExecuTorch program designed to help users wrapping test cases with the model they deploy. BundledProgram is not necessarily a core part of the program and not needed for its execution, but is particularly important for various other use-cases, such as model correctness evaluation, including e2e testing during the model bring-up process.
+`BundledProgram` is a wrapper around the core ExecuTorch program designed to help users wrapping test cases with the model they deploy. `BundledProgram` is not necessarily a core part of the program and not needed for its execution, but is particularly important for various other use-cases, such as model correctness evaluation, including e2e testing during the model bring-up process.
 
 Overall, the procedure can be broken into two stages, and in each stage we are supporting:
 
@@ -11,31 +11,40 @@ Overall, the procedure can be broken into two stages, and in each stage we are s
 ## Emit stage
 This stage mainly focuses on the creation of a `BundledProgram` and dumping it out to the disk as a flatbuffer file. The main procedure is as follow:
 1. Create a model and emit its ExecuTorch program.
-2. Construct a `BundledConfig` to record all info that needs to be bundled.
-3. Generate `BundledProgram` by using the emited model and `BundledConfig`.
+2. Construct a `List[MethodTestSuite]` to record all test cases that needs to be bundled.
+3. Generate `BundledProgram` by using the emited model and `List[MethodTestSuite]`.
 4. Serialize the `BundledProgram` and dump it out to the disk.
 
 ### Step 1: Create a Model and Emit its ExecuTorch Program.
 
 ExecuTorch Program can be emitted from user's model by using ExecuTorch APIs. Follow the [Generate Sample ExecuTorch program](./getting-started-setup.md) or [Exporting to ExecuTorch tutorial](./tutorials/export-to-executorch-tutorial).
 
-### Step 2: Construct `BundledConfig`
+### Step 2: Construct `List[MethodTestSuite]` to hold test info
 
+In `BundledProgram`, we create two new classes, `MethodTestCase` and `MethodTestSuite`, to hold essential info for ExecuTorch program verification.
 
-`BundledConfig` is a class under `executorch/bundled_program/config.py` that contains all information to be bundled for model verification. Here's the constructor api to create `BundledConfig`:
-
-:::{dropdown} `BundledConfig`
+:::{dropdown} `MethodTestCase`
 
 ```{eval-rst}
-.. autofunction:: bundled_program.config.BundledConfig.__init__
+.. autofunction:: bundled_program.config.MethodTestCase.__init__
     :noindex:
 ```
 :::
 
+:::{dropdown} `MethodTestSuite`
+
+```{eval-rst}
+.. autofunction:: bundled_program.config.MethodTestSuite
+    :noindex:
+```
+:::
+
+Since each model may have multiple inference methods, we need to generate `List[MethodTestSuite]` to hold all essential infos.
+
 
 ### Step 3: Generate `BundledProgram`
 
-We provide `create_bundled_program` API under `executorch/bundled_program/core.py` to generate `BundledProgram` by bundling the emitted ExecuTorch program with the bundled_config:
+We provide `create_bundled_program` API under `executorch/bundled_program/core.py` to generate `BundledProgram` by bundling the emitted ExecuTorch program with the `List[MethodTestSuite]`:
 
 :::{dropdown} `BundledProgram`
 
@@ -46,8 +55,8 @@ We provide `create_bundled_program` API under `executorch/bundled_program/core.p
 ```
 :::
 
-`create_bundled_program` will do sannity check internally to see if the given BundledConfig matches the given Program's requirements. Specifically:
-1. The name of methods we create BundledConfig for should be also in program. Please notice that it is no need to set testcases for every method in the Program.
+`create_bundled_program` will do sannity check internally to see if the given `List[MethodTestSuite]` matches the given Program's requirements. Specifically:
+1. The method_names of each `MethodTestSuite` in `List[MethodTestSuite]` for should be also in program. Please notice that it is no need to set testcases for every method in the Program.
 2. The metadata of each testcase should meet the requirement of the coresponding inference methods input.
 
 ### Step 4: Serialize `BundledProgram` to Flatbuffer.
@@ -76,14 +85,15 @@ Here is a flow highlighting how to generate a `BundledProgram` given a PyTorch m
 ```python
 
 import torch
-from torch.export import export
 
-from executorch.bundled_program.config import BundledConfig
+from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.bundled_program.core import create_bundled_program
-from executorch.bundled_program.serialize import serialize_from_bundled_program_to_flatbuffer
+from executorch.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
 
 from executorch.exir import to_edge
-
+from torch.export import export
 
 # Step 1: ExecuTorch Program Export
 
@@ -95,9 +105,7 @@ class SampleModel(torch.nn.Module):
         self.a: torch.Tensor = 3 * torch.ones(2, 2, dtype=torch.int32)
         self.b: torch.Tensor = 2 * torch.ones(2, 2, dtype=torch.int32)
 
-    def encode(
-        self, x: torch.Tensor, q: torch.Tensor
-    ) -> torch.Tensor:
+    def encode(self, x: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
         z = x.clone()
         torch.mul(self.a, x, out=z)
         y = x.clone()
@@ -105,9 +113,7 @@ class SampleModel(torch.nn.Module):
         torch.add(y, q, out=y)
         return y
 
-    def decode(
-        self, x: torch.Tensor, q: torch.Tensor
-    ) -> torch.Tensor:
+    def decode(self, x: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
         y = x * q
         torch.add(y, self.b, out=y)
         return y
@@ -134,15 +140,18 @@ method_graphs = {
 # Emit the traced methods into ET Program.
 program = to_edge(method_graphs).to_executorch().executorch_program
 
-# Step 2: Construct BundledConfig
+# Step 2: Construct MethodTestSuite for Each Method
+
+# Prepare the Test Inputs.
 
 # number of input sets to be verified
 n_input = 10
 
 # Input sets to be verified for each inference methods.
-inputs = [
-    # The below list is all inputs for a single inference method.
-    [
+# To simplify, here we create same inputs for all methods.
+inputs = {
+    # Inference method name corresponding to its test cases.
+    m_name: [
         # Each list below is a individual input set.
         # The number of inputs, dtype and size of each input follow Program's spec.
         [
@@ -151,27 +160,32 @@ inputs = [
         ]
         for _ in range(n_input)
     ]
-    for _ in method_names
+    for m_name in method_names
+}
+
+# Generate Test Suites
+method_test_suites = [
+    MethodTestSuite(
+        method_name=m_name,
+        test_cases=[
+            MethodTestCase(
+                inputs=input,
+                expected_outputs=getattr(model, m_name)(*input),
+            )
+            for input in inputs[m_name]
+        ],
+    )
+    for m_name in method_names
 ]
-
-# Expected outputs align with inputs.
-expected_outputs = [
-    [[getattr(model, m_name)(*x)] for x in inputs[i]]
-    for i, m_name in enumerate(method_names)
-]
-
-# Create BundledConfig
-bundled_config = BundledConfig(
-    method_names, inputs, expected_outputs
-)
-
 
 # Step 3: Generate BundledProgram
 
-bundled_program = create_bundled_program(program, bundled_config)
+bundled_program = create_bundled_program(program, method_test_suites)
 
 # Step 4: Serialize BundledProgram to flatbuffer.
-serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer(bundled_program)
+serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer(
+    bundled_program
+)
 save_path = "bundled_program.bpte"
 with open(save_path, "wb") as f:
     f.write(serialized_bundled_program)
@@ -299,7 +313,7 @@ ET_CHECK_MSG(
 
 ## Common Errors
 
-Errors will be raised if `BundledConfig` doesn't match the `Program`. Here're two common situations:
+Errors will be raised if `List[MethodTestSuites]` doesn't match the `Program`. Here're two common situations:
 
 ### Test input doesn't match model's requirement.
 
@@ -309,12 +323,12 @@ Here's the example of the dtype of test input not meet model's requirement:
 
 ```python
 import torch
-from torch.export import export
 
-from executorch.bundled_program.config import BundledConfig
+from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.bundled_program.core import create_bundled_program
 
 from executorch.exir import to_edge
+from torch.export import export
 
 
 class Module(torch.nn.Module):
@@ -332,96 +346,107 @@ class Module(torch.nn.Module):
 
 
 model = Module()
-method_names = ['forward']
+method_names = ["forward"]
 
 inputs = torch.ones(2, 2, dtype=torch.float)
-print(model(inputs))
 
 # Find each method of model needs to be traced my its name, export its FX Graph.
 method_graphs = {
-    m_name: export(getattr(model, m_name), (inputs, ))
-    for m_name in method_names
+    m_name: export(getattr(model, m_name), (inputs,)) for m_name in method_names
 }
 
 # Emit the traced methods into ET Program.
 program = to_edge(method_graphs).to_executorch().executorch_program
 
-
 # number of input sets to be verified
 n_input = 10
 
-# All Input sets to be verified.
-inputs = [
-    [
+# Input sets to be verified for each inference methods.
+# To simplify, here we create same inputs for all methods.
+inputs = {
+    # Inference method name corresponding to its test cases.
+    m_name: [
         # NOTE: executorch program needs torch.float, but here is torch.int
         [
             torch.randint(-5, 5, (2, 2), dtype=torch.int),
         ]
         for _ in range(n_input)
     ]
+    for m_name in method_names
+}
+
+# Generate Test Suites
+method_test_suites = [
+    MethodTestSuite(
+        method_name=m_name,
+        test_cases=[
+            MethodTestCase(
+                inputs=input,
+                expected_outputs=getattr(model, m_name)(*input),
+            )
+            for input in inputs[m_name]
+        ],
+    )
+    for m_name in method_names
 ]
 
-# Expected outputs align with inputs.
-expected_outpus = [
-    [[model(*x)] for x in inputs[0]]
-]
+# Generate BundledProgram
 
-bundled_config = BundledConfig(method_names, inputs, expected_outpus)
-
-bundled_program = create_bundled_program(program, bundled_config)
+bundled_program = create_bundled_program(program, method_test_suites)
 ```
 
 :::{dropdown} Raised Error
 
 ```
-The input tensor tensor([[ 0,  3],
-        [-3, -3]], dtype=torch.int32) dtype shall be torch.float32, but now is torch.int32
+The input tensor tensor([[-2,  0],
+        [-2, -1]], dtype=torch.int32) dtype shall be torch.float32, but now is torch.int32
 ---------------------------------------------------------------------------
 AssertionError                            Traceback (most recent call last)
-     57 expected_outpus = [
-     58     [[model(*x)] for x in inputs[0]]
-     59 ]
-     61 bundled_config = BundledConfig(method_names, inputs, expected_outpus)
----> 63 bundled_program = create_bundled_program(program, bundled_config)
-File /executorch/bundled_program/core.py:270, in create_bundled_program(program, bundled_config)
-    259 def create_bundled_program(
-    260     program: Program,
-    261     bundled_config: BundledConfig,
-    262 ) -> BundledProgram:
-    263     """Create BundledProgram by bundling the given program and bundled_config together.
-    264
-    265     Args:
-    266         program: The program to be bundled.
-    267         bundled_config: The config to be bundled.
-    268     """
---> 270     assert_valid_bundle(program, bundled_config)
-    272     execution_plan_tests: List[BundledExecutionPlanTest] = []
-    274     # Emit data and metadata of bundled tensor
-File /executorch/bundled_program/core.py:224, in assert_valid_bundle(program, bundled_config)
-    220 # type of tensor input should match execution plan
-    221 if type(cur_plan_test_inputs[j]) == torch.Tensor:
-    222     # pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`
-    223     # has no attribute `dtype`.
---> 224     assert cur_plan_test_inputs[j].dtype == get_input_dtype(
-    225         program, program_plan_id, j
-    226     ), "The input tensor {} dtype shall be {}, but now is {}".format(
-    227         cur_plan_test_inputs[j],
-    228         get_input_dtype(program, program_plan_id, j),
-    229         cur_plan_test_inputs[j].dtype,
-    230     )
-    231 elif type(cur_plan_test_inputs[j]) in (
-    232     int,
-    233     bool,
-    234     float,
-    235 ):
-    236     assert type(cur_plan_test_inputs[j]) == get_input_type(
-    237         program, program_plan_id, j
-    238     ), "The input primitive dtype shall be {}, but now is {}".format(
-    239         get_input_type(program, program_plan_id, j),
-    240         type(cur_plan_test_inputs[j]),
-    241     )
-AssertionError: The input tensor tensor([[ 0,  3],
-        [-3, -3]], dtype=torch.int32) dtype shall be torch.float32, but now is torch.int32
+Cell In[1], line 72
+     56 method_test_suites = [
+     57     MethodTestSuite(
+     58         method_name=m_name,
+   (...)
+     67     for m_name in method_names
+     68 ]
+     70 # Step 3: Generate BundledProgram
+---> 72 bundled_program = create_bundled_program(program, method_test_suites)
+File /executorch/bundled_program/core.py:276, in create_bundled_program(program, method_test_suites)
+    264 """Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.
+    265
+    266 Args:
+   (...)
+    271     The `BundledProgram` variable contains given ExecuTorch program and test cases.
+    272 """
+    274 method_test_suites = sorted(method_test_suites, key=lambda x: x.method_name)
+--> 276 assert_valid_bundle(program, method_test_suites)
+    278 bundled_method_test_suites: List[bp_schema.BundledMethodTestSuite] = []
+    280 # Emit data and metadata of bundled tensor
+File /executorch/bundled_program/core.py:219, in assert_valid_bundle(program, method_test_suites)
+    215 # type of tensor input should match execution plan
+    216 if type(cur_plan_test_inputs[j]) == torch.Tensor:
+    217     # pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`
+    218     # has no attribute `dtype`.
+--> 219     assert cur_plan_test_inputs[j].dtype == get_input_dtype(
+    220         program, program_plan_id, j
+    221     ), "The input tensor {} dtype shall be {}, but now is {}".format(
+    222         cur_plan_test_inputs[j],
+    223         get_input_dtype(program, program_plan_id, j),
+    224         cur_plan_test_inputs[j].dtype,
+    225     )
+    226 elif type(cur_plan_test_inputs[j]) in (
+    227     int,
+    228     bool,
+    229     float,
+    230 ):
+    231     assert type(cur_plan_test_inputs[j]) == get_input_type(
+    232         program, program_plan_id, j
+    233     ), "The input primitive dtype shall be {}, but now is {}".format(
+    234         get_input_type(program, program_plan_id, j),
+    235         type(cur_plan_test_inputs[j]),
+    236     )
+AssertionError: The input tensor tensor([[-2,  0],
+        [-2, -1]], dtype=torch.int32) dtype shall be torch.float32, but now is torch.int32
 
 ```
 
@@ -429,17 +454,16 @@ AssertionError: The input tensor tensor([[ 0,  3],
 
 ### Method name in `BundleConfig` does not exist.
 
-Another common error would be the method name in `BundledConfig` does not exist in Model. `BundledProgram` will raise error and show the non-exist method name:
+Another common error would be the method name in any `MethodTestSuite` does not exist in Model. `BundledProgram` will raise error and show the non-exist method name:
 
 ```python
 import torch
-from torch.export import export
 
-from executorch.bundled_program.config import BundledConfig
+from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.bundled_program.core import create_bundled_program
 
 from executorch.exir import to_edge
-
+from torch.export import export
 
 
 class Module(torch.nn.Module):
@@ -458,83 +482,87 @@ class Module(torch.nn.Module):
 
 model = Module()
 
-method_names = ['forward']
+method_names = ["forward"]
 
 inputs = torch.ones(2, 2, dtype=torch.float)
 
 # Find each method of model needs to be traced my its name, export its FX Graph.
 method_graphs = {
-    m_name: export(getattr(model, m_name), (inputs, ))
-    for m_name in method_names
+    m_name: export(getattr(model, m_name), (inputs,)) for m_name in method_names
 }
 
 # Emit the traced methods into ET Program.
 program = to_edge(method_graphs).to_executorch().executorch_program
 
-# Number of input sets to be verified
+# number of input sets to be verified
 n_input = 10
 
-# All Input sets to be verified.
-inputs = [
-    [
+# Input sets to be verified for each inference methods.
+# To simplify, here we create same inputs for all methods.
+inputs = {
+    # Inference method name corresponding to its test cases.
+    m_name: [
         [
             torch.randint(-5, 5, (2, 2), dtype=torch.float),
         ]
         for _ in range(n_input)
     ]
-]
+    for m_name in method_names
+}
 
-# Expected outputs align with inputs.
-expected_outpus = [
-    [[model(*x)] for x in inputs[0]]
+# Generate Test Suites
+method_test_suites = [
+    MethodTestSuite(
+        method_name=m_name,
+        test_cases=[
+            MethodTestCase(
+                inputs=input,
+                expected_outputs=getattr(model, m_name)(*input),
+            )
+            for input in inputs[m_name]
+        ],
+    )
+    for m_name in method_names
 ]
-
 
 # NOTE: MISSING_METHOD_NAME is not an inference method in the above model.
-wrong_method_names = ['MISSING_METHOD_NAME']
+method_test_suites[0].method_name = "MISSING_METHOD_NAME"
 
-bundled_config = BundledConfig(wrong_method_names, inputs, expected_outpus)
-
-bundled_program = create_bundled_program(program, bundled_config)
+# Generate BundledProgram
+bundled_program = create_bundled_program(program, method_test_suites)
 
 ```
 
 :::{dropdown} Raised Error
 
 ```
-All method names in bundled config should be found in program.execution_plan,          but {'wrong_forward'} does not include.
+All method names in bundled config should be found in program.execution_plan,          but {'MISSING_METHOD_NAME'} does not include.
 ---------------------------------------------------------------------------
 AssertionError                            Traceback (most recent call last)
-     58 expected_outpus = [
-     59     [[model(*x)] for x in inputs[0]]
-     60 ]
-     62 bundled_config = BundledConfig(method_names, inputs, expected_outpus)
----> 64 bundled_program = create_bundled_program(program, bundled_config)
-File /executorch/bundled_program/core.py:270, in create_bundled_program(program, bundled_config)
-    259 def create_bundled_program(
-    260     program: Program,
-    261     bundled_config: BundledConfig,
-    262 ) -> BundledProgram:
-    263     """Create BundledProgram by bundling the given program and bundled_config together.
-    264
-    265     Args:
-    266         program: The program to be bundled.
-    267         bundled_config: The config to be bundled.
-    268     """
---> 270     assert_valid_bundle(program, bundled_config)
-    272     execution_plan_tests: List[BundledExecutionPlanTest] = []
-    274     # Emit data and metadata of bundled tensor
-File /executorch/bundled_program/core.py:147, in assert_valid_bundle(program, bundled_config)
-    142 method_name_of_program = {e.name for e in program.execution_plan}
-    143 method_name_of_bundled_config = {
-    144     t.method_name for t in bundled_config.execution_plan_tests
-    145 }
---> 147 assert method_name_of_bundled_config.issubset(
-    148     method_name_of_program
-    149 ), f"All method names in bundled config should be found in program.execution_plan, \
-    150      but {str(method_name_of_bundled_config - method_name_of_program)} does not include."
-    152 # check if  has been sorted in ascending alphabetical order of method name.
-    153 for bp_plan_id in range(1, len(bundled_config.execution_plan_tests)):
+Cell In[3], line 73
+     70 method_test_suites[0].method_name = "MISSING_METHOD_NAME"
+     72 # Generate BundledProgram
+---> 73 bundled_program = create_bundled_program(program, method_test_suites)
+File /executorch/bundled_program/core.py:276, in create_bundled_program(program, method_test_suites)
+    264 """Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.
+    265
+    266 Args:
+   (...)
+    271     The `BundledProgram` variable contains given ExecuTorch program and test cases.
+    272 """
+    274 method_test_suites = sorted(method_test_suites, key=lambda x: x.method_name)
+--> 276 assert_valid_bundle(program, method_test_suites)
+    278 bundled_method_test_suites: List[bp_schema.BundledMethodTestSuite] = []
+    280 # Emit data and metadata of bundled tensor
+File /executorch/bundled_program/core.py:141, in assert_valid_bundle(program, method_test_suites)
+    138 method_name_of_program = {e.name for e in program.execution_plan}
+    139 method_name_of_test_suites = {t.method_name for t in method_test_suites}
+--> 141 assert method_name_of_test_suites.issubset(
+    142     method_name_of_program
+    143 ), f"All method names in bundled config should be found in program.execution_plan, \
+    144      but {str(method_name_of_test_suites - method_name_of_program)} does not include."
+    146 # check if method_tesdt_suites has been sorted in ascending alphabetical order of method name.
+    147 for test_suite_id in range(1, len(method_test_suites)):
 AssertionError: All method names in bundled config should be found in program.execution_plan,          but {'MISSING_METHOD_NAME'} does not include.
 ```
 :::

@@ -7,15 +7,14 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
-import os
 
 from typing import List
 
 import torch
 from executorch.bundled_program.config import (
-    BundledConfig,
     MethodInputType,
-    MethodOutputType,
+    MethodTestCase,
+    MethodTestSuite,
 )
 from executorch.bundled_program.core import create_bundled_program
 from executorch.bundled_program.serialize import (
@@ -30,27 +29,19 @@ from ...portable.utils import export_to_exec_prog
 
 def save_bundled_program(
     program: Program,
-    method_names: List[str],
-    bundled_inputs: List[List[MethodInputType]],
-    bundled_expected_outputs: List[List[MethodOutputType]],
+    method_test_suites: List[MethodTestSuite],
     output_path: str,
-) -> None:
+):
     """
     Generates a bundled program from the given ET program and saves it to the specified path.
 
     Args:
         program: The ExecuTorch program to bundle.
-        method_names: A list of method names in the program to bundle test cases.
-        bundled_inputs: Representative inputs for each method.
-        bundled_expected_outputs: Expected outputs of representative inputs for each method.
+        method_test_suites: The MethodTestSuites which contains test cases to include in the bundled program.
         output_path: Path to save the bundled program.
     """
 
-    bundled_config = BundledConfig(
-        method_names, bundled_inputs, bundled_expected_outputs
-    )
-
-    bundled_program = create_bundled_program(program, bundled_config)
+    bundled_program = create_bundled_program(program, method_test_suites)
     bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
         bundled_program
     )
@@ -84,29 +75,38 @@ def export_to_bundled_program(
     print("Creating bundled test cases...")
     method_names = [method.name for method in program.execution_plan]
 
-    # A model could have multiple entry point methods and each of them can have inputs bundled for testing.
-    # This example demonstrates a model which has a single entry point method ("forward") to which we want
-    # to bundle two input test cases (example_inputs is used two times) for the "forward" method.
-    bundled_inputs = [
-        [example_inputs, example_inputs] for i in range(len(method_names))
-    ]
+    # A model could have multiple entry point methods and each of them can have multiple inputs bundled for testing.
+    # This example demonstrates a model which has multiple entry point methods, whose name listed in method_names, to which we want
+    # to bundle two input test cases (example_inputs is used two times) for each inference method.
+    program_inputs = {
+        m_name: [example_inputs, example_inputs] for m_name in method_names
+    }
 
-    bundled_expected_outputs = [
-        [[getattr(model, method_names[i])(*x)] for x in bundled_inputs[i]]
-        for i in range(len(program.execution_plan))
-    ]
+    method_test_suites: List[MethodTestSuite] = []
+    for m_name in method_names:
+        method_inputs = program_inputs[m_name]
 
-    bundled_program_name = f"{model_name}_bundled.bpte"
-    output_path = os.path.join(output_directory, bundled_program_name)
+        # To create a bundled program, we first create every test cases from input. We leverage eager model
+        # to generate expected output for each test input, and use MethodTestCase to hold the information of
+        # each test case. We gather all MethodTestCase for same method into one MethodTestSuite, and generate
+        # bundled program by all MethodTestSuites.
+        method_test_cases: List[MethodTestCase] = []
+        for method_input in method_inputs:
+            method_test_cases.append(
+                MethodTestCase(
+                    inputs=method_input,
+                    expected_outputs=model(*method_input),
+                )
+            )
 
-    print(f"Saving exported program to {output_path}")
-    save_bundled_program(
-        program=program,
-        method_names=method_names,
-        bundled_inputs=bundled_inputs,
-        bundled_expected_outputs=bundled_expected_outputs,
-        output_path=output_path,
-    )
+        method_test_suites.append(
+            MethodTestSuite(
+                method_name=m_name,
+                test_cases=method_test_cases,
+            )
+        )
+
+    save_bundled_program(program, method_test_suites, f"{model_name}_bundled.bpte")
 
 
 if __name__ == "__main__":

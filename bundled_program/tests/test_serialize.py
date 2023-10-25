@@ -20,9 +20,9 @@ from executorch.exir.print_program import pretty_print
 
 class TestSerialize(unittest.TestCase):
     def test_bundled_program_serialization(self) -> None:
-        program, bundled_config = get_common_program()
+        program, method_test_suites = get_common_program()
 
-        bundled_program = create_bundled_program(program, bundled_config)
+        bundled_program = create_bundled_program(program, method_test_suites)
         pretty_print(bundled_program)
         flat_buffer_bundled_program = serialize_from_bundled_program_to_flatbuffer(
             bundled_program
