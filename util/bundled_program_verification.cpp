@@ -260,7 +260,7 @@ __ET_NODISCARD Error LoadBundledInput(
         ET_CHECK_OR_RETURN_ERROR(
             false,
             NotSupported,
-            "Data type %hhd not supported",
+            "Data type %hhu not supported",
             bundled_input->val_type());
         break;
       }
