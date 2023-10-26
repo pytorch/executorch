@@ -95,6 +95,8 @@ function(gen_custom_ops_aot_lib lib_name kernel_sources)
     ${CMAKE_CURRENT_BINARY_DIR}/CustomOpsNativeFunctions.h ${kernel_sources})
   # Find `Torch`.
   find_package(Torch REQUIRED)
+  # This lib uses ATen lib, so we explicitly enable rtti and exceptions.
+  target_compile_options(${lib_name} PRIVATE -frtti -fexceptions)
   target_compile_definitions(${lib_name} PRIVATE USE_ATEN_LIB=1)
   include_directories(${TORCH_INCLUDE_DIRS})
   target_link_libraries(${lib_name} PRIVATE torch executorch)
