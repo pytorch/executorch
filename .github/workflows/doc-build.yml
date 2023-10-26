@@ -56,6 +56,11 @@ jobs:
 
         set -eux
 
+        # clean up the ${RUNNER_DOCS_DIR} if exists:
+        rm -rf "${RUNNER_DOCS_DIR}"/*
+        # clean up the ${RUNNER_ARTIFACT_DIR} if exists:
+        rm -rf "${RUNNER_ARTIFACT_DIR}"/*
+
         # Build docset:
         cd docs
         doxygen source/Doxyfile
@@ -64,9 +69,9 @@ jobs:
 
         cp -rf docs/_build/html/* "${RUNNER_DOCS_DIR}"
 
-        # Sometimes the artifact directory already contains an "html" subdir.
-        rm -rf "${RUNNER_ARTIFACT_DIR}/html"
         mv docs/_build/html "${RUNNER_ARTIFACT_DIR}"
+
+        ls -R "${RUNNER_ARTIFACT_DIR}"/*/*.html
 
 # Enable preview later. Previews are available publicly
 #
