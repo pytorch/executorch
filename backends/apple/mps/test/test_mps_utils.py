@@ -191,9 +191,14 @@ class TestMPS(unittest.TestCase):
         )
 
         method_test_suites = [
-            MethodTestSuite(method_name="forward", test_cases=[
-                MethodTestCase(input=sample_inputs, expected_outputs=module(*sample_inputs))
-            ])
+            MethodTestSuite(
+                method_name="forward",
+                test_cases=[
+                    MethodTestCase(
+                        input=sample_inputs, expected_outputs=module(*sample_inputs)
+                    )
+                ],
+            )
         ]
 
         logging.info("  -> Test suites generated successfully")

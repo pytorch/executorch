@@ -150,7 +150,7 @@ method_test_suites = [
     MethodTestSuite(
         method_name=m_name,
         test_cases=[
-            MethodTestCase(inputs=inp, outputs=getattr(model, m_name)(*inp))
+            MethodTestCase(inputs=inp, expected_outputs=getattr(model, m_name)(*inp))
             for inp in inputs
         ],
     )
