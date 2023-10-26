@@ -9,7 +9,7 @@ include "scalar_type.fbs";
 namespace bundled_program_flatbuffer;
 
 // Identifier of a valid bundled program schema.
-file_identifier "BP07";
+file_identifier "BP08";
 // Extension of written files.
 file_extension "bpte";
 
@@ -90,8 +90,8 @@ table BundledProgram {
   // executorch program keeps the same alignment as original no matter how
   // the program schema changes, we need to make the force_align here the max
   // one around all kinds of force_align in the current and future program
-  // schema, so we use the 4096 as the force_align here.
-  program: [ubyte] (force_align: 4096);
+  // schema, so we use the 32 as the force_align here.
+  program: [ubyte] (force_align: 32);
 }
 
 root_type BundledProgram;

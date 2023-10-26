@@ -7,7 +7,7 @@
 # pyre-strict
 
 from dataclasses import dataclass
-from typing import Any, get_args, List, Optional, Sequence, Union
+from typing import get_args, List, Optional, Sequence, Union
 
 import torch
 from torch.utils._pytree import tree_flatten
