@@ -423,18 +423,14 @@
 
 <span class="kn">import</span> <span class="nn">ctypes</span>
 <span class="kn">import</span> <span class="nn">typing</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Type</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Type</span>
 
 <span class="kn">import</span> <span class="nn">executorch.bundled_program.schema</span> <span class="k">as</span> <span class="nn">bp_schema</span>
 <span class="kn">import</span> <span class="nn">executorch.exir.schema</span> <span class="k">as</span> <span class="nn">core_schema</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torch.fx</span>
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">BundledConfig</span><span class="p">,</span>
-    <span class="n">ConfigExecutionPlanTest</span><span class="p">,</span>
-    <span class="n">ConfigValue</span><span class="p">,</span>
-<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">ConfigValue</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
 
 <span class="kn">from</span> <span class="nn">executorch.bundled_program.version</span> <span class="kn">import</span> <span class="n">BUNDLED_PROGRAM_SCHEMA_VERSION</span>
 <span class="kn">from</span> <span class="nn">executorch.exir._serialize</span> <span class="kn">import</span> <span class="n">_serialize_pte_binary</span>
@@ -541,56 +537,50 @@
 
 <span class="k">def</span> <span class="nf">assert_valid_bundle</span><span class="p">(</span>
     <span class="n">program</span><span class="p">:</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">Program</span><span class="p">,</span>
-    <span class="n">bundled_config</span><span class="p">:</span> <span class="n">BundledConfig</span><span class="p">,</span>
+    <span class="n">method_test_suites</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">MethodTestSuite</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if the program and BundledConfig matches each other.</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Check if the program and method_test_suites matches each other.</span>
 
 <span class="sd">    Other checks not related to correspondence are done in config.py</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        program: The program to be bundled.</span>
-<span class="sd">        bundled_config: The config to be bundled.</span>
+<span class="sd">        method_test_suites: The testcases for specific methods to be bundled.</span>
 
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">program_plan_id</span> <span class="o">=</span> <span class="mi">0</span>
-    <span class="n">bp_plan_id</span> <span class="o">=</span> <span class="mi">0</span>
-
     <span class="n">method_name_of_program</span> <span class="o">=</span> <span class="p">{</span><span class="n">e</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">}</span>
-    <span class="n">method_name_of_bundled_config</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="n">t</span><span class="o">.</span><span class="n">method_name</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">bundled_config</span><span class="o">.</span><span class="n">execution_plan_tests</span>
-    <span class="p">}</span>
+    <span class="n">method_name_of_test_suites</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="o">.</span><span class="n">method_name</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">method_test_suites</span><span class="p">}</span>
 
-    <span class="k">assert</span> <span class="n">method_name_of_bundled_config</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span>
+    <span class="k">assert</span> <span class="n">method_name_of_test_suites</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span>
         <span class="n">method_name_of_program</span>
     <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;All method names in bundled config should be found in program.execution_plan, </span><span class="se">\</span>
-<span class="s2">         but </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">method_name_of_bundled_config</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">method_name_of_program</span><span class="p">)</span><span class="si">}</span><span class="s2"> does not include.&quot;</span>
+<span class="s2">         but </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">method_name_of_test_suites</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">method_name_of_program</span><span class="p">)</span><span class="si">}</span><span class="s2"> does not include.&quot;</span>
 
-    <span class="c1"># check if execution_plan_tests has been sorted in ascending alphabetical order of method name.</span>
-    <span class="k">for</span> <span class="n">bp_plan_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">bundled_config</span><span class="o">.</span><span class="n">execution_plan_tests</span><span class="p">)):</span>
+    <span class="c1"># check if method_test_suites has been sorted in ascending alphabetical order of method name.</span>
+    <span class="k">for</span> <span class="n">test_suite_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">method_test_suites</span><span class="p">)):</span>
         <span class="k">assert</span> <span class="p">(</span>
-            <span class="n">bundled_config</span><span class="o">.</span><span class="n">execution_plan_tests</span><span class="p">[</span><span class="n">bp_plan_id</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">method_name</span>
-            <span class="o">&lt;=</span> <span class="n">bundled_config</span><span class="o">.</span><span class="n">execution_plan_tests</span><span class="p">[</span><span class="n">bp_plan_id</span><span class="p">]</span><span class="o">.</span><span class="n">method_name</span>
-        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;The method name of BundledConfig should be sorted in ascending alphabetical </span><span class="se">\</span>
-<span class="s2">            order of method name, but </span><span class="si">{</span><span class="n">bp_plan_id</span><span class="o">-</span><span class="mi">1</span><span class="si">}</span><span class="s2">-th and </span><span class="si">{</span><span class="n">bp_plan_id</span><span class="si">}</span><span class="s2">-th methods aren&#39;t.&quot;</span>
+            <span class="n">method_test_suites</span><span class="p">[</span><span class="n">test_suite_id</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">method_name</span>
+            <span class="o">&lt;=</span> <span class="n">method_test_suites</span><span class="p">[</span><span class="n">test_suite_id</span><span class="p">]</span><span class="o">.</span><span class="n">method_name</span>
+        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;The method name of test suite should be sorted in ascending alphabetical </span><span class="se">\</span>
+<span class="s2">            order of method name, but </span><span class="si">{</span><span class="n">test_suite_id</span><span class="o">-</span><span class="mi">1</span><span class="si">}</span><span class="s2">-th and </span><span class="si">{</span><span class="n">test_suite_id</span><span class="si">}</span><span class="s2">-th method_test_suite aren&#39;t.&quot;</span>
 
     <span class="c1"># Check if the inputs&#39; type meet Program&#39;s requirement</span>
-    <span class="k">while</span> <span class="n">bp_plan_id</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">bundled_config</span><span class="o">.</span><span class="n">execution_plan_tests</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">method_test_suite</span> <span class="ow">in</span> <span class="n">method_test_suites</span><span class="p">:</span>
 
-        <span class="n">plan_test</span><span class="p">:</span> <span class="n">ConfigExecutionPlanTest</span> <span class="o">=</span> <span class="n">bundled_config</span><span class="o">.</span><span class="n">execution_plan_tests</span><span class="p">[</span>
-            <span class="n">bp_plan_id</span>
-        <span class="p">]</span>
-        <span class="n">plan</span><span class="p">:</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">ExecutionPlan</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">[</span><span class="n">program_plan_id</span><span class="p">]</span>
+        <span class="c1"># Get the method with same method name as method_test_suite</span>
+        <span class="n">program_plan_id</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="k">for</span> <span class="n">plan</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">plan</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="n">method_test_suite</span><span class="o">.</span><span class="n">method_name</span><span class="p">:</span>
+                <span class="n">program_plan_id</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">plan</span><span class="p">)</span>
+                <span class="k">break</span>
 
-        <span class="c1"># User does not provide testcases for current plan, skip it</span>
-        <span class="k">if</span> <span class="n">plan_test</span><span class="o">.</span><span class="n">method_name</span> <span class="o">&gt;</span> <span class="n">plan</span><span class="o">.</span><span class="n">name</span><span class="p">:</span>
-            <span class="n">program_plan_id</span> <span class="o">+=</span> <span class="mi">1</span>
-            <span class="k">continue</span>
-
-        <span class="c1"># Check if the method name in user provided test matches the one in the original program</span>
+        <span class="c1"># Raise Assertion Error if can not find the method with same method_name as method_test_suite in program.</span>
         <span class="k">assert</span> <span class="p">(</span>
-            <span class="n">plan_test</span><span class="o">.</span><span class="n">method_name</span> <span class="o">==</span> <span class="n">plan</span><span class="o">.</span><span class="n">name</span>
-        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;BundledConfig has testcases for method </span><span class="si">{</span><span class="n">plan_test</span><span class="o">.</span><span class="n">method_name</span><span class="si">}</span><span class="s2">, but can not find it in the given program. All method names in the program are </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">])</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="n">program_plan_id</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span>
+        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;method_test_suites has testcases for method </span><span class="si">{</span><span class="n">method_test_suite</span><span class="o">.</span><span class="n">method_name</span><span class="si">}</span><span class="s2">, but can not find it in the given program. All method names in the program are </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="n">p</span><span class="o">.</span><span class="n">name</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">])</span><span class="si">}</span><span class="s2">.&quot;</span>
+
+        <span class="n">plan</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">[</span><span class="n">program_plan_id</span><span class="p">]</span>
 
         <span class="c1"># Check if the type of Program&#39;s input is supported</span>
         <span class="k">for</span> <span class="n">index</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">inputs</span><span class="p">)):</span>
@@ -607,9 +597,11 @@
             <span class="p">),</span> <span class="s2">&quot;Only supports program with output in Tensor type.&quot;</span>
 
         <span class="c1"># Check if the I/O sets of each execution plan test match program&#39;s requirement.</span>
-        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">plan_test</span><span class="o">.</span><span class="n">test_sets</span><span class="p">)):</span>
-            <span class="n">cur_plan_test_inputs</span> <span class="o">=</span> <span class="n">plan_test</span><span class="o">.</span><span class="n">test_sets</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">inputs</span>
-            <span class="n">cur_plan_test_expected_outputs</span> <span class="o">=</span> <span class="n">plan_test</span><span class="o">.</span><span class="n">test_sets</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">expected_outputs</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">method_test_suite</span><span class="o">.</span><span class="n">test_cases</span><span class="p">)):</span>
+            <span class="n">cur_plan_test_inputs</span> <span class="o">=</span> <span class="n">method_test_suite</span><span class="o">.</span><span class="n">test_cases</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">inputs</span>
+            <span class="n">cur_plan_test_expected_outputs</span> <span class="o">=</span> <span class="n">method_test_suite</span><span class="o">.</span><span class="n">test_cases</span><span class="p">[</span>
+                <span class="n">i</span>
+            <span class="p">]</span><span class="o">.</span><span class="n">expected_outputs</span>
 
             <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">plan</span><span class="o">.</span><span class="n">inputs</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span>
                 <span class="n">cur_plan_test_inputs</span>
@@ -676,38 +668,40 @@
                     <span class="n">cur_plan_test_expected_outputs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
                 <span class="p">)</span>
 
-        <span class="n">program_plan_id</span> <span class="o">+=</span> <span class="mi">1</span>
-        <span class="n">bp_plan_id</span> <span class="o">+=</span> <span class="mi">1</span>
-
 
 <div class="viewcode-block" id="create_bundled_program"><a class="viewcode-back" href="../../sdk-bundled-io.html#bundled_program.core.create_bundled_program">[docs]</a><span class="k">def</span> <span class="nf">create_bundled_program</span><span class="p">(</span>
     <span class="n">program</span><span class="p">:</span> <span class="n">core_schema</span><span class="o">.</span><span class="n">Program</span><span class="p">,</span>
-    <span class="n">bundled_config</span><span class="p">:</span> <span class="n">BundledConfig</span><span class="p">,</span>
+    <span class="n">method_test_suites</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">MethodTestSuite</span><span class="p">],</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create bp_schema.BundledProgram by bundling the given program and bundled_config together.</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.</span>
 
 <span class="sd">    Args:</span>
 <span class="sd">        program: The program to be bundled.</span>
-<span class="sd">        bundled_config: The config to be bundled.</span>
+<span class="sd">        method_test_suites: The testcases for certain methods to be bundled.</span>
 
-<span class="sd">    Returns: The `BundledProgram` variable contains given ExecuTorch program and test cases.</span>
+<span class="sd">    Returns:</span>
+<span class="sd">        The `BundledProgram` variable contains given ExecuTorch program and test cases.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
+    <span class="n">method_test_suites</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">method_test_suites</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">method_name</span><span class="p">)</span>
 
-    <span class="n">execution_plan_tests</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledExecutionPlanTest</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+
+    <span class="n">bundled_method_test_suites</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledMethodTestSuite</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
 
     <span class="c1"># Emit data and metadata of bundled tensor</span>
-    <span class="k">for</span> <span class="n">plan_test</span> <span class="ow">in</span> <span class="n">bundled_config</span><span class="o">.</span><span class="n">execution_plan_tests</span><span class="p">:</span>
-        <span class="n">test_sets</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledIOSet</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">method_test_suite</span> <span class="ow">in</span> <span class="n">method_test_suites</span><span class="p">:</span>
+        <span class="n">bundled_test_cases</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledMethodTestCase</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
 
-        <span class="c1"># emit I/O sets for each execution plan test</span>
-        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">plan_test</span><span class="o">.</span><span class="n">test_sets</span><span class="p">)):</span>
+        <span class="c1"># emit I/O sets for each method test case</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">method_test_suite</span><span class="o">.</span><span class="n">test_cases</span><span class="p">)):</span>
             <span class="n">inputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">Value</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
             <span class="n">expected_outputs</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">Value</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
 
-            <span class="n">cur_plan_test_inputs</span> <span class="o">=</span> <span class="n">plan_test</span><span class="o">.</span><span class="n">test_sets</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">inputs</span>
-            <span class="n">cur_plan_test_expected_outputs</span> <span class="o">=</span> <span class="n">plan_test</span><span class="o">.</span><span class="n">test_sets</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">expected_outputs</span>
+            <span class="n">cur_plan_test_inputs</span> <span class="o">=</span> <span class="n">method_test_suite</span><span class="o">.</span><span class="n">test_cases</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">inputs</span>
+            <span class="n">cur_plan_test_expected_outputs</span> <span class="o">=</span> <span class="n">method_test_suite</span><span class="o">.</span><span class="n">test_cases</span><span class="p">[</span>
+                <span class="n">i</span>
+            <span class="p">]</span><span class="o">.</span><span class="n">expected_outputs</span>
 
             <span class="k">for</span> <span class="n">input_val</span> <span class="ow">in</span> <span class="n">cur_plan_test_inputs</span><span class="p">:</span>
                 <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">input_val</span><span class="p">)</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
@@ -728,14 +722,16 @@
                     <span class="n">TensorSpec</span><span class="o">.</span><span class="n">from_tensor</span><span class="p">(</span><span class="n">expected_output_tensor</span><span class="p">,</span> <span class="n">const</span><span class="o">=</span><span class="kc">True</span><span class="p">),</span>
                     <span class="n">expected_outputs</span><span class="p">,</span>
                 <span class="p">)</span>
-            <span class="n">test_sets</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledIOSet</span><span class="p">(</span><span class="n">inputs</span><span class="o">=</span><span class="n">inputs</span><span class="p">,</span> <span class="n">expected_outputs</span><span class="o">=</span><span class="n">expected_outputs</span><span class="p">)</span>
+            <span class="n">bundled_test_cases</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledMethodTestCase</span><span class="p">(</span>
+                    <span class="n">inputs</span><span class="o">=</span><span class="n">inputs</span><span class="p">,</span> <span class="n">expected_outputs</span><span class="o">=</span><span class="n">expected_outputs</span>
+                <span class="p">)</span>
             <span class="p">)</span>
 
         <span class="c1"># emit the whole execution plan test</span>
-        <span class="n">execution_plan_tests</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-            <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledExecutionPlanTest</span><span class="p">(</span>
-                <span class="n">method_name</span><span class="o">=</span><span class="n">plan_test</span><span class="o">.</span><span class="n">method_name</span><span class="p">,</span> <span class="n">test_sets</span><span class="o">=</span><span class="n">test_sets</span>
+        <span class="n">bundled_method_test_suites</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledMethodTestSuite</span><span class="p">(</span>
+                <span class="n">method_name</span><span class="o">=</span><span class="n">method_test_suite</span><span class="o">.</span><span class="n">method_name</span><span class="p">,</span> <span class="n">test_cases</span><span class="o">=</span><span class="n">bundled_test_cases</span>
             <span class="p">)</span>
         <span class="p">)</span>
 
@@ -743,7 +739,7 @@
 
     <span class="k">return</span> <span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledProgram</span><span class="p">(</span>
         <span class="n">version</span><span class="o">=</span><span class="n">BUNDLED_PROGRAM_SCHEMA_VERSION</span><span class="p">,</span>
-        <span class="n">execution_plan_tests</span><span class="o">=</span><span class="n">execution_plan_tests</span><span class="p">,</span>
+        <span class="n">method_test_suites</span><span class="o">=</span><span class="n">bundled_method_test_suites</span><span class="p">,</span>
         <span class="n">program</span><span class="o">=</span><span class="n">program_bytes</span><span class="p">,</span>
     <span class="p">)</span></div>
 </pre></div>

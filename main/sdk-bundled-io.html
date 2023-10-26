@@ -422,7 +422,7 @@
 <h1>Bundled Program – a Tool for ExecuTorch Model Validation<a class="headerlink" href="#bundled-program-a-tool-for-executorch-model-validation" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="introduction">
 <h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this headline">¶</a></h2>
-<p>BundledProgram is a wrapper around the core ExecuTorch program designed to help users wrapping test cases with the model they deploy. BundledProgram is not necessarily a core part of the program and not needed for its execution, but is particularly important for various other use-cases, such as model correctness evaluation, including e2e testing during the model bring-up process.</p>
+<p><code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> is a wrapper around the core ExecuTorch program designed to help users wrapping test cases with the model they deploy. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> is not necessarily a core part of the program and not needed for its execution, but is particularly important for various other use-cases, such as model correctness evaluation, including e2e testing during the model bring-up process.</p>
 <p>Overall, the procedure can be broken into two stages, and in each stage we are supporting:</p>
 <ul class="simple">
 <li><p><strong>Emit stage</strong>: Bundling the test I/O cases along with the ExecuTorch program, serializing into flatbuffer.</p></li>
@@ -434,43 +434,37 @@
 <p>This stage mainly focuses on the creation of a <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and dumping it out to the disk as a flatbuffer file. The main procedure is as follow:</p>
 <ol class="arabic simple">
 <li><p>Create a model and emit its ExecuTorch program.</p></li>
-<li><p>Construct a <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code> to record all info that needs to be bundled.</p></li>
-<li><p>Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> by using the emited model and <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code>.</p></li>
+<li><p>Construct a <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to record all test cases that needs to be bundled.</p></li>
+<li><p>Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> by using the emited model and <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code>.</p></li>
 <li><p>Serialize the <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and dump it out to the disk.</p></li>
 </ol>
 <div class="section" id="step-1-create-a-model-and-emit-its-executorch-program">
 <h3>Step 1: Create a Model and Emit its ExecuTorch Program.<a class="headerlink" href="#step-1-create-a-model-and-emit-its-executorch-program" title="Permalink to this headline">¶</a></h3>
 <p>ExecuTorch Program can be emitted from user’s model by using ExecuTorch APIs. Follow the <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Generate Sample ExecuTorch program</span></a> or <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Exporting to ExecuTorch tutorial</span></a>.</p>
 </div>
-<div class="section" id="step-2-construct-bundledconfig">
-<h3>Step 2: Construct <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code><a class="headerlink" href="#step-2-construct-bundledconfig" title="Permalink to this headline">¶</a></h3>
-<p><code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code> is a class under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/config.py</span></code> that contains all information to be bundled for model verification. Here’s the constructor api to create <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code>:</p>
+<div class="section" id="step-2-construct-list-methodtestsuite-to-hold-test-info">
+<h3>Step 2: Construct <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to hold test info<a class="headerlink" href="#step-2-construct-list-methodtestsuite-to-hold-test-info" title="Permalink to this headline">¶</a></h3>
+<p>In <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code>, we create two new classes, <code class="docutils literal notranslate"><span class="pre">MethodTestCase</span></code> and <code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code>, to hold essential info for ExecuTorch program verification.</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
-<code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code><div class="sd-summary-down docutils">
+<code class="docutils literal notranslate"><span class="pre">MethodTestCase</span></code><div class="sd-summary-down docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
 <dl class="py function">
 <dt class="sig sig-object py">
-<span class="sig-prename descclassname"><span class="pre">bundled_program.config.BundledConfig.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method_names</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inputs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected_outputs</span></span></em><span class="sig-paren">)</span></dt>
-<dd><p class="sd-card-text">Contruct the config given inputs and expected outputs</p>
+<span class="sig-prename descclassname"><span class="pre">bundled_program.config.MethodTestCase.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inputs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected_outputs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span></dt>
+<dd><p class="sd-card-text">Single test case for verifying specific method</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
-<li><p class="sd-card-text"><strong>method_names</strong> – All method names need to be verified in program.</p></li>
-<li><p class="sd-card-text"><strong>inputs</strong> – <p class="sd-card-text">All sets of input need to be test on for all methods. Each list
-of <cite>inputs</cite> is all sets which will be run on the method in the
-program with corresponding method name. Each set of any <cite>inputs</cite> element should
-contain all inputs required by eager_model with the same inference function
-as corresponding execution plan for one-time execution.</p>
+<li><p class="sd-card-text"><strong>input</strong> – <p class="sd-card-text">All inputs required by eager_model with specific inference method for one-time execution.</p>
 <p class="sd-card-text">It is worth mentioning that, although both bundled program and ET runtime apis support setting input
 other than torch.tensor type, only the input in torch.tensor type will be actually updated in
 the method, and the rest of the inputs will just do a sanity check if they match the default value in method.</p>
 </p></li>
-<li><p class="sd-card-text"><strong>expected_outputs</strong> – Expected outputs for inputs sharing same index. The size of
-expected_outputs should be the same as the size of inputs and provided method_names.</p></li>
+<li><p class="sd-card-text"><strong>expected_output</strong> – Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
@@ -480,10 +474,37 @@ expected_outputs should be the same as the size of inputs and provided method_na
 </dd></dl>
 
 </div>
-</details></div>
+</details><details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
+<summary class="sd-summary-title sd-card-header">
+<code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code><div class="sd-summary-down docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
+<div class="sd-summary-up docutils">
+<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
+</summary><div class="sd-summary-content sd-card-body docutils">
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">bundled_program.config.</span></span><span class="sig-name descname"><span class="pre">MethodTestSuite</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_cases</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/bundled_program/config.html#MethodTestSuite"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
+<dd><p class="sd-card-text">All test info related to verify method</p>
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">bundled_program.config.</span></span><span class="sig-name descname"><span class="pre">method_name</span></span></dt>
+<dd><p class="sd-card-text">Name of the method to be verified.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">bundled_program.config.</span></span><span class="sig-name descname"><span class="pre">test_cases</span></span></dt>
+<dd><p class="sd-card-text">All test cases for verifying the method.</p>
+</dd></dl>
+
+</dd></dl>
+
+</div>
+</details><p>Since each model may have multiple inference methods, we need to generate <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to hold all essential infos.</p>
+</div>
 <div class="section" id="step-3-generate-bundledprogram">
 <h3>Step 3: Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><a class="headerlink" href="#step-3-generate-bundledprogram" title="Permalink to this headline">¶</a></h3>
-<p>We provide <code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> API under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/core.py</span></code> to generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> by bundling the emitted ExecuTorch program with the bundled_config:</p>
+<p>We provide <code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> API under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/core.py</span></code> to generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> by bundling the emitted ExecuTorch program with the <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code>:</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><div class="sd-summary-down docutils">
@@ -493,23 +514,25 @@ expected_outputs should be the same as the size of inputs and provided method_na
 </summary><div class="sd-summary-content sd-card-body docutils">
 <dl class="py function">
 <dt class="sig sig-object py">
-<span class="sig-prename descclassname"><span class="pre">bundled_program.core.</span></span><span class="sig-name descname"><span class="pre">create_bundled_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bundled_config</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/bundled_program/core.html#create_bundled_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
-<dd><p class="sd-card-text">Create bp_schema.BundledProgram by bundling the given program and bundled_config together.</p>
+<span class="sig-prename descclassname"><span class="pre">bundled_program.core.</span></span><span class="sig-name descname"><span class="pre">create_bundled_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method_test_suites</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/bundled_program/core.html#create_bundled_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
+<dd><p class="sd-card-text">Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
 <li><p class="sd-card-text"><strong>program</strong> – The program to be bundled.</p></li>
-<li><p class="sd-card-text"><strong>bundled_config</strong> – The config to be bundled.</p></li>
+<li><p class="sd-card-text"><strong>method_test_suites</strong> – The testcases for certain methods to be bundled.</p></li>
 </ul>
 </dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p class="sd-card-text">The <cite>BundledProgram</cite> variable contains given ExecuTorch program and test cases.</p>
+</dd>
 </dl>
-<p class="sd-card-text">Returns: The <cite>BundledProgram</cite> variable contains given ExecuTorch program and test cases.</p>
 </dd></dl>
 
 </div>
-</details><p><code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> will do sannity check internally to see if the given BundledConfig matches the given Program’s requirements. Specifically:</p>
+</details><p><code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> will do sannity check internally to see if the given <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> matches the given Program’s requirements. Specifically:</p>
 <ol class="arabic simple">
-<li><p>The name of methods we create BundledConfig for should be also in program. Please notice that it is no need to set testcases for every method in the Program.</p></li>
+<li><p>The method_names of each <code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code> in <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> for should be also in program. Please notice that it is no need to set testcases for every method in the Program.</p></li>
 <li><p>The metadata of each testcase should meet the requirement of the coresponding inference methods input.</p></li>
 </ol>
 </div>
@@ -558,14 +581,15 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <p>Here is a flow highlighting how to generate a <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> given a PyTorch model and the representative inputs we want to test it along with.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span>
 <span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
 
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">BundledConfig</span>
+<span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
 <span class="kn">from</span> <span class="nn">executorch.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.serialize</span> <span class="kn">import</span> <span class="n">serialize_from_bundled_program_to_flatbuffer</span>
+<span class="kn">from</span> <span class="nn">executorch.bundled_program.serialize</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
-
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
 
 <span class="c1"># Step 1: ExecuTorch Program Export</span>
 
@@ -577,9 +601,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
         <span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">=</span> <span class="mi">3</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">b</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">encode</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">encode</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
         <span class="n">z</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">mul</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">a</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">z</span><span class="p">)</span>
         <span class="n">y</span> <span class="o">=</span> <span class="n">x</span><span class="o">.</span><span class="n">clone</span><span class="p">()</span>
@@ -587,9 +609,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
         <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="n">q</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">y</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">y</span>
 
-    <span class="k">def</span> <span class="nf">decode</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">decode</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
         <span class="n">y</span> <span class="o">=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">q</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">y</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">b</span><span class="p">,</span> <span class="n">out</span><span class="o">=</span><span class="n">y</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">y</span>
@@ -616,15 +636,18 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <span class="c1"># Emit the traced methods into ET Program.</span>
 <span class="n">program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graphs</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span><span class="o">.</span><span class="n">executorch_program</span>
 
-<span class="c1"># Step 2: Construct BundledConfig</span>
+<span class="c1"># Step 2: Construct MethodTestSuite for Each Method</span>
+
+<span class="c1"># Prepare the Test Inputs.</span>
 
 <span class="c1"># number of input sets to be verified</span>
 <span class="n">n_input</span> <span class="o">=</span> <span class="mi">10</span>
 
 <span class="c1"># Input sets to be verified for each inference methods.</span>
-<span class="n">inputs</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="c1"># The below list is all inputs for a single inference method.</span>
-    <span class="p">[</span>
+<span class="c1"># To simplify, here we create same inputs for all methods.</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1"># Inference method name corresponding to its test cases.</span>
+    <span class="n">m_name</span><span class="p">:</span> <span class="p">[</span>
         <span class="c1"># Each list below is a individual input set.</span>
         <span class="c1"># The number of inputs, dtype and size of each input follow Program&#39;s spec.</span>
         <span class="p">[</span>
@@ -633,27 +656,32 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
         <span class="p">]</span>
         <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_input</span><span class="p">)</span>
     <span class="p">]</span>
-    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">method_names</span>
+    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+<span class="p">}</span>
+
+<span class="c1"># Generate Test Suites</span>
+<span class="n">method_test_suites</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">MethodTestSuite</span><span class="p">(</span>
+        <span class="n">method_name</span><span class="o">=</span><span class="n">m_name</span><span class="p">,</span>
+        <span class="n">test_cases</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">MethodTestCase</span><span class="p">(</span>
+                <span class="n">inputs</span><span class="o">=</span><span class="nb">input</span><span class="p">,</span>
+                <span class="n">expected_outputs</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">)(</span><span class="o">*</span><span class="nb">input</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="nb">input</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="n">m_name</span><span class="p">]</span>
+        <span class="p">],</span>
+    <span class="p">)</span>
+    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
 <span class="p">]</span>
-
-<span class="c1"># Expected outputs align with inputs.</span>
-<span class="n">expected_outputs</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="p">[[</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">)(</span><span class="o">*</span><span class="n">x</span><span class="p">)]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="n">i</span><span class="p">]]</span>
-    <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">method_names</span><span class="p">)</span>
-<span class="p">]</span>
-
-<span class="c1"># Create BundledConfig</span>
-<span class="n">bundled_config</span> <span class="o">=</span> <span class="n">BundledConfig</span><span class="p">(</span>
-    <span class="n">method_names</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">expected_outputs</span>
-<span class="p">)</span>
-
 
 <span class="c1"># Step 3: Generate BundledProgram</span>
 
-<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
+<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
 
 <span class="c1"># Step 4: Serialize BundledProgram to flatbuffer.</span>
-<span class="n">serialized_bundled_program</span> <span class="o">=</span> <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span><span class="n">bundled_program</span><span class="p">)</span>
+<span class="n">serialized_bundled_program</span> <span class="o">=</span> <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span>
+    <span class="n">bundled_program</span>
+<span class="p">)</span>
 <span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;bundled_program.bpte&quot;</span>
 <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
     <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">serialized_bundled_program</span><span class="p">)</span>
@@ -849,18 +877,18 @@ If the function has a return type:
 </div>
 <div class="section" id="common-errors">
 <h2>Common Errors<a class="headerlink" href="#common-errors" title="Permalink to this headline">¶</a></h2>
-<p>Errors will be raised if <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code> doesn’t match the <code class="docutils literal notranslate"><span class="pre">Program</span></code>. Here’re two common situations:</p>
+<p>Errors will be raised if <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuites]</span></code> doesn’t match the <code class="docutils literal notranslate"><span class="pre">Program</span></code>. Here’re two common situations:</p>
 <div class="section" id="test-input-doesn-t-match-model-s-requirement">
 <h3>Test input doesn’t match model’s requirement.<a class="headerlink" href="#test-input-doesn-t-match-model-s-requirement" title="Permalink to this headline">¶</a></h3>
 <p>Each inference method of PyTorch model has its own requirement for the inputs, like number of input, the dtype of each input, etc. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> will raise error if test input not meet the requirement.</p>
 <p>Here’s the example of the dtype of test input not meet model’s requirement:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
 
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">BundledConfig</span>
+<span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
 <span class="kn">from</span> <span class="nn">executorch.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
 
 
 <span class="k">class</span> <span class="nc">Module</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
@@ -878,43 +906,53 @@ If the function has a return type:
 
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">Module</span><span class="p">()</span>
-<span class="n">method_names</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;forward&#39;</span><span class="p">]</span>
+<span class="n">method_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;forward&quot;</span><span class="p">]</span>
 
 <span class="n">inputs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="n">model</span><span class="p">(</span><span class="n">inputs</span><span class="p">))</span>
 
 <span class="c1"># Find each method of model needs to be traced my its name, export its FX Graph.</span>
 <span class="n">method_graphs</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="n">m_name</span><span class="p">:</span> <span class="n">export</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">),</span> <span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="p">))</span>
-    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+    <span class="n">m_name</span><span class="p">:</span> <span class="n">export</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">),</span> <span class="p">(</span><span class="n">inputs</span><span class="p">,))</span> <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
 <span class="p">}</span>
 
 <span class="c1"># Emit the traced methods into ET Program.</span>
 <span class="n">program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graphs</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span><span class="o">.</span><span class="n">executorch_program</span>
 
-
 <span class="c1"># number of input sets to be verified</span>
 <span class="n">n_input</span> <span class="o">=</span> <span class="mi">10</span>
 
-<span class="c1"># All Input sets to be verified.</span>
-<span class="n">inputs</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="p">[</span>
+<span class="c1"># Input sets to be verified for each inference methods.</span>
+<span class="c1"># To simplify, here we create same inputs for all methods.</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1"># Inference method name corresponding to its test cases.</span>
+    <span class="n">m_name</span><span class="p">:</span> <span class="p">[</span>
         <span class="c1"># NOTE: executorch program needs torch.float, but here is torch.int</span>
         <span class="p">[</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="o">-</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int</span><span class="p">),</span>
         <span class="p">]</span>
         <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_input</span><span class="p">)</span>
     <span class="p">]</span>
+    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+<span class="p">}</span>
+
+<span class="c1"># Generate Test Suites</span>
+<span class="n">method_test_suites</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">MethodTestSuite</span><span class="p">(</span>
+        <span class="n">method_name</span><span class="o">=</span><span class="n">m_name</span><span class="p">,</span>
+        <span class="n">test_cases</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">MethodTestCase</span><span class="p">(</span>
+                <span class="n">inputs</span><span class="o">=</span><span class="nb">input</span><span class="p">,</span>
+                <span class="n">expected_outputs</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">)(</span><span class="o">*</span><span class="nb">input</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="nb">input</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="n">m_name</span><span class="p">]</span>
+        <span class="p">],</span>
+    <span class="p">)</span>
+    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
 <span class="p">]</span>
 
-<span class="c1"># Expected outputs align with inputs.</span>
-<span class="n">expected_outpus</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="p">[[</span><span class="n">model</span><span class="p">(</span><span class="o">*</span><span class="n">x</span><span class="p">)]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
-<span class="p">]</span>
+<span class="c1"># Generate BundledProgram</span>
 
-<span class="n">bundled_config</span> <span class="o">=</span> <span class="n">BundledConfig</span><span class="p">(</span><span class="n">method_names</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">expected_outpus</span><span class="p">)</span>
-
-<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
+<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
 </pre></div>
 </div>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
@@ -924,54 +962,55 @@ Raised Error<div class="sd-summary-down docutils">
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">The</span> <span class="nb">input</span> <span class="n">tensor</span> <span class="n">tensor</span><span class="p">([[</span> <span class="mi">0</span><span class="p">,</span>  <span class="mi">3</span><span class="p">],</span>
-        <span class="p">[</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="o">-</span><span class="mi">3</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span> <span class="n">dtype</span> <span class="n">shall</span> <span class="n">be</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">but</span> <span class="n">now</span> <span class="ow">is</span> <span class="n">torch</span><span class="o">.</span><span class="n">int32</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">The</span> <span class="nb">input</span> <span class="n">tensor</span> <span class="n">tensor</span><span class="p">([[</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span>  <span class="mi">0</span><span class="p">],</span>
+        <span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span> <span class="n">dtype</span> <span class="n">shall</span> <span class="n">be</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">but</span> <span class="n">now</span> <span class="ow">is</span> <span class="n">torch</span><span class="o">.</span><span class="n">int32</span>
 <span class="o">---------------------------------------------------------------------------</span>
 <span class="ne">AssertionError</span>                            <span class="n">Traceback</span> <span class="p">(</span><span class="n">most</span> <span class="n">recent</span> <span class="n">call</span> <span class="n">last</span><span class="p">)</span>
-     <span class="mi">57</span> <span class="n">expected_outpus</span> <span class="o">=</span> <span class="p">[</span>
-     <span class="mi">58</span>     <span class="p">[[</span><span class="n">model</span><span class="p">(</span><span class="o">*</span><span class="n">x</span><span class="p">)]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
-     <span class="mi">59</span> <span class="p">]</span>
-     <span class="mi">61</span> <span class="n">bundled_config</span> <span class="o">=</span> <span class="n">BundledConfig</span><span class="p">(</span><span class="n">method_names</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">expected_outpus</span><span class="p">)</span>
-<span class="o">---&gt;</span> <span class="mi">63</span> <span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
-<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">270</span><span class="p">,</span> <span class="ow">in</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
-    <span class="mi">259</span> <span class="k">def</span> <span class="nf">create_bundled_program</span><span class="p">(</span>
-    <span class="mi">260</span>     <span class="n">program</span><span class="p">:</span> <span class="n">Program</span><span class="p">,</span>
-    <span class="mi">261</span>     <span class="n">bundled_config</span><span class="p">:</span> <span class="n">BundledConfig</span><span class="p">,</span>
-    <span class="mi">262</span> <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BundledProgram</span><span class="p">:</span>
-    <span class="mi">263</span>     <span class="s2">&quot;&quot;&quot;Create BundledProgram by bundling the given program and bundled_config together.</span>
-<span class="s2">    264</span>
-<span class="s2">    265     Args:</span>
-<span class="s2">    266         program: The program to be bundled.</span>
-<span class="s2">    267         bundled_config: The config to be bundled.</span>
-<span class="s2">    268     &quot;&quot;&quot;</span>
-<span class="o">--&gt;</span> <span class="mi">270</span>     <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
-    <span class="mi">272</span>     <span class="n">execution_plan_tests</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">BundledExecutionPlanTest</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="mi">274</span>     <span class="c1"># Emit data and metadata of bundled tensor</span>
-<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">224</span><span class="p">,</span> <span class="ow">in</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
-    <span class="mi">220</span> <span class="c1"># type of tensor input should match execution plan</span>
-    <span class="mi">221</span> <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">])</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-    <span class="mi">222</span>     <span class="c1"># pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`</span>
-    <span class="mi">223</span>     <span class="c1"># has no attribute `dtype`.</span>
-<span class="o">--&gt;</span> <span class="mi">224</span>     <span class="k">assert</span> <span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="n">get_input_dtype</span><span class="p">(</span>
-    <span class="mi">225</span>         <span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">j</span>
-    <span class="mi">226</span>     <span class="p">),</span> <span class="s2">&quot;The input tensor </span><span class="si">{}</span><span class="s2"> dtype shall be </span><span class="si">{}</span><span class="s2">, but now is </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
-    <span class="mi">227</span>         <span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">],</span>
-    <span class="mi">228</span>         <span class="n">get_input_dtype</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">j</span><span class="p">),</span>
-    <span class="mi">229</span>         <span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
-    <span class="mi">230</span>     <span class="p">)</span>
-    <span class="mi">231</span> <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span><span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">])</span> <span class="ow">in</span> <span class="p">(</span>
-    <span class="mi">232</span>     <span class="nb">int</span><span class="p">,</span>
-    <span class="mi">233</span>     <span class="nb">bool</span><span class="p">,</span>
-    <span class="mi">234</span>     <span class="nb">float</span><span class="p">,</span>
-    <span class="mi">235</span> <span class="p">):</span>
-    <span class="mi">236</span>     <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">])</span> <span class="o">==</span> <span class="n">get_input_type</span><span class="p">(</span>
-    <span class="mi">237</span>         <span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">j</span>
-    <span class="mi">238</span>     <span class="p">),</span> <span class="s2">&quot;The input primitive dtype shall be </span><span class="si">{}</span><span class="s2">, but now is </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
-    <span class="mi">239</span>         <span class="n">get_input_type</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">j</span><span class="p">),</span>
-    <span class="mi">240</span>         <span class="nb">type</span><span class="p">(</span><span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">]),</span>
-    <span class="mi">241</span>     <span class="p">)</span>
-<span class="ne">AssertionError</span><span class="p">:</span> <span class="n">The</span> <span class="nb">input</span> <span class="n">tensor</span> <span class="n">tensor</span><span class="p">([[</span> <span class="mi">0</span><span class="p">,</span>  <span class="mi">3</span><span class="p">],</span>
-        <span class="p">[</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="o">-</span><span class="mi">3</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span> <span class="n">dtype</span> <span class="n">shall</span> <span class="n">be</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">but</span> <span class="n">now</span> <span class="ow">is</span> <span class="n">torch</span><span class="o">.</span><span class="n">int32</span>
+<span class="n">Cell</span> <span class="n">In</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">line</span> <span class="mi">72</span>
+     <span class="mi">56</span> <span class="n">method_test_suites</span> <span class="o">=</span> <span class="p">[</span>
+     <span class="mi">57</span>     <span class="n">MethodTestSuite</span><span class="p">(</span>
+     <span class="mi">58</span>         <span class="n">method_name</span><span class="o">=</span><span class="n">m_name</span><span class="p">,</span>
+   <span class="p">(</span><span class="o">...</span><span class="p">)</span>
+     <span class="mi">67</span>     <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+     <span class="mi">68</span> <span class="p">]</span>
+     <span class="mi">70</span> <span class="c1"># Step 3: Generate BundledProgram</span>
+<span class="o">---&gt;</span> <span class="mi">72</span> <span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">276</span><span class="p">,</span> <span class="ow">in</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+    <span class="mi">264</span> <span class="s2">&quot;&quot;&quot;Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.</span>
+<span class="s2">    265</span>
+<span class="s2">    266 Args:</span>
+<span class="s2">   (...)</span>
+<span class="s2">    271     The `BundledProgram` variable contains given ExecuTorch program and test cases.</span>
+<span class="s2">    272 &quot;&quot;&quot;</span>
+    <span class="mi">274</span> <span class="n">method_test_suites</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">method_test_suites</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">method_name</span><span class="p">)</span>
+<span class="o">--&gt;</span> <span class="mi">276</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+    <span class="mi">278</span> <span class="n">bundled_method_test_suites</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledMethodTestSuite</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="mi">280</span> <span class="c1"># Emit data and metadata of bundled tensor</span>
+<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">219</span><span class="p">,</span> <span class="ow">in</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+    <span class="mi">215</span> <span class="c1"># type of tensor input should match execution plan</span>
+    <span class="mi">216</span> <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">])</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="mi">217</span>     <span class="c1"># pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`</span>
+    <span class="mi">218</span>     <span class="c1"># has no attribute `dtype`.</span>
+<span class="o">--&gt;</span> <span class="mi">219</span>     <span class="k">assert</span> <span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="n">get_input_dtype</span><span class="p">(</span>
+    <span class="mi">220</span>         <span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">j</span>
+    <span class="mi">221</span>     <span class="p">),</span> <span class="s2">&quot;The input tensor </span><span class="si">{}</span><span class="s2"> dtype shall be </span><span class="si">{}</span><span class="s2">, but now is </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+    <span class="mi">222</span>         <span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">],</span>
+    <span class="mi">223</span>         <span class="n">get_input_dtype</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">j</span><span class="p">),</span>
+    <span class="mi">224</span>         <span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+    <span class="mi">225</span>     <span class="p">)</span>
+    <span class="mi">226</span> <span class="k">elif</span> <span class="nb">type</span><span class="p">(</span><span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">])</span> <span class="ow">in</span> <span class="p">(</span>
+    <span class="mi">227</span>     <span class="nb">int</span><span class="p">,</span>
+    <span class="mi">228</span>     <span class="nb">bool</span><span class="p">,</span>
+    <span class="mi">229</span>     <span class="nb">float</span><span class="p">,</span>
+    <span class="mi">230</span> <span class="p">):</span>
+    <span class="mi">231</span>     <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">])</span> <span class="o">==</span> <span class="n">get_input_type</span><span class="p">(</span>
+    <span class="mi">232</span>         <span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">j</span>
+    <span class="mi">233</span>     <span class="p">),</span> <span class="s2">&quot;The input primitive dtype shall be </span><span class="si">{}</span><span class="s2">, but now is </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+    <span class="mi">234</span>         <span class="n">get_input_type</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">program_plan_id</span><span class="p">,</span> <span class="n">j</span><span class="p">),</span>
+    <span class="mi">235</span>         <span class="nb">type</span><span class="p">(</span><span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">]),</span>
+    <span class="mi">236</span>     <span class="p">)</span>
+<span class="ne">AssertionError</span><span class="p">:</span> <span class="n">The</span> <span class="nb">input</span> <span class="n">tensor</span> <span class="n">tensor</span><span class="p">([[</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span>  <span class="mi">0</span><span class="p">],</span>
+        <span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]],</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">)</span> <span class="n">dtype</span> <span class="n">shall</span> <span class="n">be</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span> <span class="n">but</span> <span class="n">now</span> <span class="ow">is</span> <span class="n">torch</span><span class="o">.</span><span class="n">int32</span>
 
 </pre></div>
 </div>
@@ -979,15 +1018,14 @@ Raised Error<div class="sd-summary-down docutils">
 </details></div>
 <div class="section" id="method-name-in-bundleconfig-does-not-exist">
 <h3>Method name in <code class="docutils literal notranslate"><span class="pre">BundleConfig</span></code> does not exist.<a class="headerlink" href="#method-name-in-bundleconfig-does-not-exist" title="Permalink to this headline">¶</a></h3>
-<p>Another common error would be the method name in <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code> does not exist in Model. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> will raise error and show the non-exist method name:</p>
+<p>Another common error would be the method name in any <code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code> does not exist in Model. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> will raise error and show the non-exist method name:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
 
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">BundledConfig</span>
+<span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
 <span class="kn">from</span> <span class="nn">executorch.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
-
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
 
 
 <span class="k">class</span> <span class="nc">Module</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
@@ -1006,44 +1044,54 @@ Raised Error<div class="sd-summary-down docutils">
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">Module</span><span class="p">()</span>
 
-<span class="n">method_names</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;forward&#39;</span><span class="p">]</span>
+<span class="n">method_names</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;forward&quot;</span><span class="p">]</span>
 
 <span class="n">inputs</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">)</span>
 
 <span class="c1"># Find each method of model needs to be traced my its name, export its FX Graph.</span>
 <span class="n">method_graphs</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="n">m_name</span><span class="p">:</span> <span class="n">export</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">),</span> <span class="p">(</span><span class="n">inputs</span><span class="p">,</span> <span class="p">))</span>
-    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+    <span class="n">m_name</span><span class="p">:</span> <span class="n">export</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">),</span> <span class="p">(</span><span class="n">inputs</span><span class="p">,))</span> <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
 <span class="p">}</span>
 
 <span class="c1"># Emit the traced methods into ET Program.</span>
 <span class="n">program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">method_graphs</span><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span><span class="o">.</span><span class="n">executorch_program</span>
 
-<span class="c1"># Number of input sets to be verified</span>
+<span class="c1"># number of input sets to be verified</span>
 <span class="n">n_input</span> <span class="o">=</span> <span class="mi">10</span>
 
-<span class="c1"># All Input sets to be verified.</span>
-<span class="n">inputs</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="p">[</span>
+<span class="c1"># Input sets to be verified for each inference methods.</span>
+<span class="c1"># To simplify, here we create same inputs for all methods.</span>
+<span class="n">inputs</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="c1"># Inference method name corresponding to its test cases.</span>
+    <span class="n">m_name</span><span class="p">:</span> <span class="p">[</span>
         <span class="p">[</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="o">-</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">),</span>
         <span class="p">]</span>
         <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_input</span><span class="p">)</span>
     <span class="p">]</span>
-<span class="p">]</span>
+    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
+<span class="p">}</span>
 
-<span class="c1"># Expected outputs align with inputs.</span>
-<span class="n">expected_outpus</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="p">[[</span><span class="n">model</span><span class="p">(</span><span class="o">*</span><span class="n">x</span><span class="p">)]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
+<span class="c1"># Generate Test Suites</span>
+<span class="n">method_test_suites</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">MethodTestSuite</span><span class="p">(</span>
+        <span class="n">method_name</span><span class="o">=</span><span class="n">m_name</span><span class="p">,</span>
+        <span class="n">test_cases</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">MethodTestCase</span><span class="p">(</span>
+                <span class="n">inputs</span><span class="o">=</span><span class="nb">input</span><span class="p">,</span>
+                <span class="n">expected_outputs</span><span class="o">=</span><span class="nb">getattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">m_name</span><span class="p">)(</span><span class="o">*</span><span class="nb">input</span><span class="p">),</span>
+            <span class="p">)</span>
+            <span class="k">for</span> <span class="nb">input</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="n">m_name</span><span class="p">]</span>
+        <span class="p">],</span>
+    <span class="p">)</span>
+    <span class="k">for</span> <span class="n">m_name</span> <span class="ow">in</span> <span class="n">method_names</span>
 <span class="p">]</span>
-
 
 <span class="c1"># NOTE: MISSING_METHOD_NAME is not an inference method in the above model.</span>
-<span class="n">wrong_method_names</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;MISSING_METHOD_NAME&#39;</span><span class="p">]</span>
+<span class="n">method_test_suites</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">method_name</span> <span class="o">=</span> <span class="s2">&quot;MISSING_METHOD_NAME&quot;</span>
 
-<span class="n">bundled_config</span> <span class="o">=</span> <span class="n">BundledConfig</span><span class="p">(</span><span class="n">wrong_method_names</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">expected_outpus</span><span class="p">)</span>
-
-<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
+<span class="c1"># Generate BundledProgram</span>
+<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
 
 </pre></div>
 </div>
@@ -1054,39 +1102,33 @@ Raised Error<div class="sd-summary-down docutils">
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">All</span> <span class="n">method</span> <span class="n">names</span> <span class="ow">in</span> <span class="n">bundled</span> <span class="n">config</span> <span class="n">should</span> <span class="n">be</span> <span class="n">found</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">,</span>          <span class="n">but</span> <span class="p">{</span><span class="s1">&#39;wrong_forward&#39;</span><span class="p">}</span> <span class="n">does</span> <span class="ow">not</span> <span class="n">include</span><span class="o">.</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">All</span> <span class="n">method</span> <span class="n">names</span> <span class="ow">in</span> <span class="n">bundled</span> <span class="n">config</span> <span class="n">should</span> <span class="n">be</span> <span class="n">found</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">,</span>          <span class="n">but</span> <span class="p">{</span><span class="s1">&#39;MISSING_METHOD_NAME&#39;</span><span class="p">}</span> <span class="n">does</span> <span class="ow">not</span> <span class="n">include</span><span class="o">.</span>
 <span class="o">---------------------------------------------------------------------------</span>
 <span class="ne">AssertionError</span>                            <span class="n">Traceback</span> <span class="p">(</span><span class="n">most</span> <span class="n">recent</span> <span class="n">call</span> <span class="n">last</span><span class="p">)</span>
-     <span class="mi">58</span> <span class="n">expected_outpus</span> <span class="o">=</span> <span class="p">[</span>
-     <span class="mi">59</span>     <span class="p">[[</span><span class="n">model</span><span class="p">(</span><span class="o">*</span><span class="n">x</span><span class="p">)]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">[</span><span class="mi">0</span><span class="p">]]</span>
-     <span class="mi">60</span> <span class="p">]</span>
-     <span class="mi">62</span> <span class="n">bundled_config</span> <span class="o">=</span> <span class="n">BundledConfig</span><span class="p">(</span><span class="n">method_names</span><span class="p">,</span> <span class="n">inputs</span><span class="p">,</span> <span class="n">expected_outpus</span><span class="p">)</span>
-<span class="o">---&gt;</span> <span class="mi">64</span> <span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
-<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">270</span><span class="p">,</span> <span class="ow">in</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
-    <span class="mi">259</span> <span class="k">def</span> <span class="nf">create_bundled_program</span><span class="p">(</span>
-    <span class="mi">260</span>     <span class="n">program</span><span class="p">:</span> <span class="n">Program</span><span class="p">,</span>
-    <span class="mi">261</span>     <span class="n">bundled_config</span><span class="p">:</span> <span class="n">BundledConfig</span><span class="p">,</span>
-    <span class="mi">262</span> <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">BundledProgram</span><span class="p">:</span>
-    <span class="mi">263</span>     <span class="s2">&quot;&quot;&quot;Create BundledProgram by bundling the given program and bundled_config together.</span>
-<span class="s2">    264</span>
-<span class="s2">    265     Args:</span>
-<span class="s2">    266         program: The program to be bundled.</span>
-<span class="s2">    267         bundled_config: The config to be bundled.</span>
-<span class="s2">    268     &quot;&quot;&quot;</span>
-<span class="o">--&gt;</span> <span class="mi">270</span>     <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
-    <span class="mi">272</span>     <span class="n">execution_plan_tests</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">BundledExecutionPlanTest</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="mi">274</span>     <span class="c1"># Emit data and metadata of bundled tensor</span>
-<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">147</span><span class="p">,</span> <span class="ow">in</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">bundled_config</span><span class="p">)</span>
-    <span class="mi">142</span> <span class="n">method_name_of_program</span> <span class="o">=</span> <span class="p">{</span><span class="n">e</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">}</span>
-    <span class="mi">143</span> <span class="n">method_name_of_bundled_config</span> <span class="o">=</span> <span class="p">{</span>
-    <span class="mi">144</span>     <span class="n">t</span><span class="o">.</span><span class="n">method_name</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">bundled_config</span><span class="o">.</span><span class="n">execution_plan_tests</span>
-    <span class="mi">145</span> <span class="p">}</span>
-<span class="o">--&gt;</span> <span class="mi">147</span> <span class="k">assert</span> <span class="n">method_name_of_bundled_config</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span>
-    <span class="mi">148</span>     <span class="n">method_name_of_program</span>
-    <span class="mi">149</span> <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;All method names in bundled config should be found in program.execution_plan, </span><span class="se">\</span>
-<span class="s2">    150      but </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">method_name_of_bundled_config</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">method_name_of_program</span><span class="p">)</span><span class="si">}</span><span class="s2"> does not include.&quot;</span>
-    <span class="mi">152</span> <span class="c1"># check if  has been sorted in ascending alphabetical order of method name.</span>
-    <span class="mi">153</span> <span class="k">for</span> <span class="n">bp_plan_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">bundled_config</span><span class="o">.</span><span class="n">execution_plan_tests</span><span class="p">)):</span>
+<span class="n">Cell</span> <span class="n">In</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span> <span class="n">line</span> <span class="mi">73</span>
+     <span class="mi">70</span> <span class="n">method_test_suites</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">method_name</span> <span class="o">=</span> <span class="s2">&quot;MISSING_METHOD_NAME&quot;</span>
+     <span class="mi">72</span> <span class="c1"># Generate BundledProgram</span>
+<span class="o">---&gt;</span> <span class="mi">73</span> <span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">276</span><span class="p">,</span> <span class="ow">in</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+    <span class="mi">264</span> <span class="s2">&quot;&quot;&quot;Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.</span>
+<span class="s2">    265</span>
+<span class="s2">    266 Args:</span>
+<span class="s2">   (...)</span>
+<span class="s2">    271     The `BundledProgram` variable contains given ExecuTorch program and test cases.</span>
+<span class="s2">    272 &quot;&quot;&quot;</span>
+    <span class="mi">274</span> <span class="n">method_test_suites</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">method_test_suites</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">method_name</span><span class="p">)</span>
+<span class="o">--&gt;</span> <span class="mi">276</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+    <span class="mi">278</span> <span class="n">bundled_method_test_suites</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledMethodTestSuite</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="mi">280</span> <span class="c1"># Emit data and metadata of bundled tensor</span>
+<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">141</span><span class="p">,</span> <span class="ow">in</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+    <span class="mi">138</span> <span class="n">method_name_of_program</span> <span class="o">=</span> <span class="p">{</span><span class="n">e</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">}</span>
+    <span class="mi">139</span> <span class="n">method_name_of_test_suites</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="o">.</span><span class="n">method_name</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">method_test_suites</span><span class="p">}</span>
+<span class="o">--&gt;</span> <span class="mi">141</span> <span class="k">assert</span> <span class="n">method_name_of_test_suites</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span>
+    <span class="mi">142</span>     <span class="n">method_name_of_program</span>
+    <span class="mi">143</span> <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;All method names in bundled config should be found in program.execution_plan, </span><span class="se">\</span>
+<span class="s2">    144      but </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">method_name_of_test_suites</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">method_name_of_program</span><span class="p">)</span><span class="si">}</span><span class="s2"> does not include.&quot;</span>
+    <span class="mi">146</span> <span class="c1"># check if method_tesdt_suites has been sorted in ascending alphabetical order of method name.</span>
+    <span class="mi">147</span> <span class="k">for</span> <span class="n">test_suite_id</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">method_test_suites</span><span class="p">)):</span>
 <span class="ne">AssertionError</span><span class="p">:</span> <span class="n">All</span> <span class="n">method</span> <span class="n">names</span> <span class="ow">in</span> <span class="n">bundled</span> <span class="n">config</span> <span class="n">should</span> <span class="n">be</span> <span class="n">found</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">,</span>          <span class="n">but</span> <span class="p">{</span><span class="s1">&#39;MISSING_METHOD_NAME&#39;</span><span class="p">}</span> <span class="n">does</span> <span class="ow">not</span> <span class="n">include</span><span class="o">.</span>
 </pre></div>
 </div>
@@ -1144,7 +1186,7 @@ Raised Error<div class="sd-summary-down docutils">
 <li><a class="reference internal" href="#introduction">Introduction</a></li>
 <li><a class="reference internal" href="#emit-stage">Emit stage</a><ul>
 <li><a class="reference internal" href="#step-1-create-a-model-and-emit-its-executorch-program">Step 1: Create a Model and Emit its ExecuTorch Program.</a></li>
-<li><a class="reference internal" href="#step-2-construct-bundledconfig">Step 2: Construct <code class="docutils literal notranslate"><span class="pre">BundledConfig</span></code></a></li>
+<li><a class="reference internal" href="#step-2-construct-list-methodtestsuite-to-hold-test-info">Step 2: Construct <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to hold test info</a></li>
 <li><a class="reference internal" href="#step-3-generate-bundledprogram">Step 3: Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code></a></li>
 <li><a class="reference internal" href="#step-4-serialize-bundledprogram-to-flatbuffer">Step 4: Serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to Flatbuffer.</a></li>
 <li><a class="reference internal" href="#emit-example">Emit Example</a></li>
