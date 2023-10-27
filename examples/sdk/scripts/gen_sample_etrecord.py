@@ -5,32 +5,41 @@
 # LICENSE file in the root directory of this source tree.
 
 # Generate fixture files
-from pathlib import Path
+import argparse
+import copy
+from typing import Any
 
-import executorch.exir as exir
-from executorch.exir import ExecutorchBackendConfig
-
-from executorch.exir.tests.models import BasicSinMax
+import torch
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+    ExportedProgram,
+    to_edge,
+)
 from executorch.sdk.etrecord import generate_etrecord
 from torch.export import export
 
+from ...models import MODEL_NAME_TO_MODEL
+from ...models.model_factory import EagerModelFactory
 
-def get_module_path() -> Path:
-    return Path(__file__).resolve().parents[0]
+
+DEFAULT_OUTPUT_PATH = "/tmp/etrecord.bin"
 
 
-def gen_etrecord():
-    f = BasicSinMax()
-    aten_dialect = export(
+def gen_etrecord(model: torch.nn.Module, inputs: Any, output_path=None):
+    f = model
+    aten_dialect: ExportedProgram = export(
         f,
-        f.get_random_inputs(),
+        inputs,
     )
-    edge_program = exir.to_edge(
-        aten_dialect, compile_config=exir.EdgeCompileConfig(_check_ir_validity=False)
+    edge_program: EdgeProgramManager = to_edge(
+        aten_dialect, compile_config=EdgeCompileConfig(_check_ir_validity=True)
     )
-    et_program = edge_program.to_executorch(ExecutorchBackendConfig(passes=[]))
+    edge_program_copy = copy.deepcopy(edge_program)
+    et_program: ExecutorchProgramManager = edge_program_copy.to_executorch()
     generate_etrecord(
-        str(get_module_path()) + "/etrecord.bin",
+        (DEFAULT_OUTPUT_PATH if not output_path else output_path),
         edge_dialect_program=edge_program,
         executorch_program=et_program,
         export_modules={
@@ -40,4 +49,31 @@ def gen_etrecord():
 
 
 if __name__ == "__main__":
-    gen_etrecord()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-m",
+        "--model_name",
+        required=True,
+        help=f"provide a model name. Valid ones: {list(MODEL_NAME_TO_MODEL.keys())}",
+    )
+
+    parser.add_argument(
+        "-o",
+        "--output_path",
+        required=False,
+        help=f"Provide an output path to save the generated etrecord. Defaults to {DEFAULT_OUTPUT_PATH}.",
+    )
+
+    args = parser.parse_args()
+
+    if args.model_name not in MODEL_NAME_TO_MODEL:
+        raise RuntimeError(
+            f"Model {args.model_name} is not a valid name. "
+            f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}."
+        )
+
+    model, example_inputs = EagerModelFactory.create_model(
+        *MODEL_NAME_TO_MODEL[args.model_name]
+    )
+
+    gen_etrecord(model, example_inputs, args.output_path)
