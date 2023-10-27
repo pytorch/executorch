@@ -37,7 +37,7 @@ build_cmake_executor_runner() {
   (rm -rf ${CMAKE_OUTPUT_DIR} \
     && mkdir ${CMAKE_OUTPUT_DIR} \
     && cd ${CMAKE_OUTPUT_DIR} \
-    && retry cmake -DBUCK2=buck2 \
+    && retry cmake -DBUCK2=buck2 -DCMAKE_BUILD_TYPE=Release \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 
   cmake --build ${CMAKE_OUTPUT_DIR} -j4
