@@ -268,16 +268,16 @@ struct PyBundledModule final {
   explicit PyBundledModule(
       const py::bytes& buffer,
       uint32_t bundled_input_pool_size)
-      : bundled_program_ptr_(
-            static_cast<const void*>((buffer.cast<std::string_view>().data()))),
+      : bundled_program_ptr_(buffer),
         program_ptr_(static_cast<const void*>(
-            bundled_program_flatbuffer::GetBundledProgram(bundled_program_ptr_)
+            bundled_program_flatbuffer::GetBundledProgram(
+                get_bundled_program_ptr())
                 ->program()
                 ->data())),
-        program_len_(
-            bundled_program_flatbuffer::GetBundledProgram(bundled_program_ptr_)
-                ->program()
-                ->size()),
+        program_len_(bundled_program_flatbuffer::GetBundledProgram(
+                         get_bundled_program_ptr())
+                         ->program()
+                         ->size()),
         bundled_input_allocator_(
             {bundled_input_pool_size, new uint8_t[bundled_input_pool_size]}) {}
 
@@ -291,7 +291,7 @@ struct PyBundledModule final {
     return bundled_input_allocator_;
   }
   const void* get_bundled_program_ptr() {
-    return bundled_program_ptr_;
+    return bundled_program_ptr_.cast<std::string_view>().data();
   }
 
   const void* get_program_ptr() {
@@ -303,7 +303,9 @@ struct PyBundledModule final {
   }
 
  private:
-  const void* bundled_program_ptr_;
+  // Store the bytes object instead of a raw pointer so that this module will
+  // keep the bytes alive.
+  const py::bytes bundled_program_ptr_;
   const void* program_ptr_;
   size_t program_len_;
   MemoryAllocator bundled_input_allocator_;
