@@ -90,7 +90,7 @@ set(CMAKE_CXX_FLAGS_RELEASE
 if(NOT APPLE)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -fno-exceptions -fno-rtti")
 
 # Option to register custom operator `my_ops::mul3` or `my_ops::mul4` or no
 # custom ops at all. Custom ops are defined in
