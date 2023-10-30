@@ -26,6 +26,9 @@ case "${IMAGE_NAME}" in
   executorch-ubuntu-22.04-linter)
     LINTRUNNER=yes
     ;;
+  executorch-ubuntu-22.04-arm-sdk)
+    ARM_SDK=yes
+    ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"
     exit 1
@@ -54,6 +57,7 @@ docker build \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   --build-arg "LINTRUNNER=${LINTRUNNER}" \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \
+  --build-arg "ARM_SDK=${ARM_SDK:-}" \
   -f "${OS}"/Dockerfile \
   "$@" \
   .

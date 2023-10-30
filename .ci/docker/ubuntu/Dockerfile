@@ -51,5 +51,9 @@ COPY ./requirements-lintrunner.txt requirements-lintrunner.txt
 RUN if [ -n "${LINTRUNNER}" ]; then bash ./install_linter.sh; fi
 RUN rm install_linter.sh utils.sh requirements-lintrunner.txt
 
+ARG ARM_SDK
+# Set up ARM SDK if needed
+RUN if [ -n "${ARM_SDK}" ]; then bash ./examples/arm/setup.sh --i-agree-to-the-contained-eula; fi
+
 USER ci-user
 CMD ["bash"]
