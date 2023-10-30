@@ -116,4 +116,4 @@ must work with threading**
 guide when integrating your delegate with ExecuTorch.
 
 * Refer to [this](/docs/website/docs/contributors/delegates_and_dependencies.md)
-set of guidelines when including a 3p depenency for your delegate.
+set of guidelines when including a 3p dependency for your delegate.
