@@ -6,16 +6,12 @@
 from typing import cast, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+
 import numpy as np
 import torch
-from executorch.backends.qualcomm.builders.node_visitor import (
-    NodeVisitor,
-    register_node_visitor,
-)
-from executorch.backends.qualcomm.utils.qnn_constants import (
-    OpConcat,
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
-)
+
+from .node_visitor import NodeVisitor, register_node_visitor
+from .qnn_constants import OpConcat, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
@@ -34,7 +30,7 @@ class Cat(NodeVisitor):
         list_of_tensor_wrappers = []
 
         for tensor_input in list_of_tensors:
-            input_tensor, use_memo = self.get_tensor_shape(tensor_input, node)
+            input_tensor, use_memo = self.get_tensor(tensor_input, node)
             list_of_tensor_wrappers.append(
                 self.define_tensor(
                     tensor_input,
@@ -50,7 +46,7 @@ class Cat(NodeVisitor):
             )
             return
 
-        output_tensor, _ = self.get_tensor_shape(node, node)
+        output_tensor, _ = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             output_tensor,

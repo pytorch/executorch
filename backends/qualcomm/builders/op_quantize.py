@@ -6,16 +6,11 @@
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+
 import torch
-from executorch.backends.qualcomm.builders.node_visitor import (
-    NodeVisitor,
-    register_node_visitor,
-)
-from executorch.backends.qualcomm.utils.qnn_constants import (
-    OpQuantize,
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
-)
-from executorch.backends.qualcomm.utils.utils import get_input_node
+
+from .node_visitor import NodeVisitor, register_node_visitor
+from .qnn_constants import OpQuantize, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 class QuantizeOpBase(NodeVisitor):
@@ -28,8 +23,8 @@ class QuantizeOpBase(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         quant_input_tensors = []
-        input_node = get_input_node(node, 0)
-        input_tensor, _ = self.get_tensor_shape(input_node, node)
+        input_node = node.args[0]
+        input_tensor, _ = self.get_tensor(input_node, node)
         inp_tensor_wrapper = self.define_tensor(
             input_node,
             input_tensor,
@@ -42,9 +37,9 @@ class QuantizeOpBase(NodeVisitor):
         arg_schemas = list(node.target._schema.arguments)[1:]
         for i, arg_schema in enumerate(arg_schemas):
             name = arg_schema.name
-            node.meta["quant_attrs"][name] = get_input_node(node, i + 1)
+            node.meta["quant_attrs"][name] = node.args[i + 1]
 
-        output_tensor, _ = self.get_tensor_shape(node, node)
+        output_tensor, _ = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             output_tensor,

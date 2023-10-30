@@ -6,19 +6,12 @@
 from typing import cast, Dict, List
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+
 import numpy as np
 import torch
 
-from executorch.backends.qualcomm.builders.node_visitor import (
-    NodeVisitor,
-    QNN_TENSOR_TYPE_MAP,
-    register_node_visitor,
-)
-from executorch.backends.qualcomm.utils.qnn_constants import (
-    OpPad,
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
-)
-from executorch.backends.qualcomm.utils.utils import get_input_node
+from .node_visitor import NodeVisitor, QNN_TENSOR_TYPE_MAP, register_node_visitor
+from .qnn_constants import OpPad, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
@@ -33,8 +26,8 @@ class Pad(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = get_input_node(node, 0)
-        input_tensor, use_memo = self.get_tensor_shape(input_node, node)
+        input_node = node.args[0]
+        input_tensor, use_memo = self.get_tensor(input_node, node)
         pad_inp_tensor_wrapper = self.define_tensor(
             input_node,
             input_tensor,
@@ -43,7 +36,7 @@ class Pad(NodeVisitor):
         )
         pad_input_tensors = [pad_inp_tensor_wrapper]
 
-        output_tensor, _ = self.get_tensor_shape(node, node)
+        output_tensor, _ = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             output_tensor,

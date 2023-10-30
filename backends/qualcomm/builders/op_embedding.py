@@ -6,18 +6,13 @@
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+
 import numpy as np
 import torch
 
-from executorch.backends.qualcomm.builders.node_visitor import (
-    NodeVisitor,
-    register_node_visitor,
-)
-from executorch.backends.qualcomm.utils.qnn_constants import (
-    OpGather,
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
-)
-from executorch.backends.qualcomm.utils.utils import get_input_node
+from .node_visitor import NodeVisitor, register_node_visitor
+from .qnn_constants import OpGather, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .utils import get_parameter
 
 
 @register_node_visitor
@@ -32,8 +27,8 @@ class Embedding(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        weight_node = get_input_node(node, 0)
-        weight_tensor = getattr(weight_node.graph.owning_module, weight_node.target)
+        weight_node = node.args[0]
+        weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
             weight_tensor,
@@ -41,8 +36,8 @@ class Embedding(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        indices_node = get_input_node(node, 1)
-        indices_tensor, use_memo = self.get_tensor_shape(indices_node, node)
+        indices_node = node.args[1]
+        indices_tensor, use_memo = self.get_tensor(indices_node, node)
         indices_tensor_wrapper = self.define_scalar(
             indices_node,
             indices_tensor,
@@ -52,7 +47,7 @@ class Embedding(NodeVisitor):
 
         gather_input_tensors = [weight_tensor_wrapper, indices_tensor_wrapper]
 
-        output_tensor, _ = self.get_tensor_shape(node, node)
+        output_tensor, _ = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             output_tensor,

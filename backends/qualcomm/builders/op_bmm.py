@@ -6,17 +6,11 @@
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+
 import torch
 
-from executorch.backends.qualcomm.builders.node_visitor import (
-    NodeVisitor,
-    register_node_visitor,
-)
-from executorch.backends.qualcomm.utils.qnn_constants import (
-    OpMatMul,
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
-)
-from executorch.backends.qualcomm.utils.utils import get_input_node
+from .node_visitor import NodeVisitor, register_node_visitor
+from .qnn_constants import OpMatMul, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
@@ -31,7 +25,7 @@ class Bmm(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        output_tensor, _ = self.get_tensor_shape(node, node)
+        output_tensor, _ = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             output_tensor,
@@ -42,8 +36,8 @@ class Bmm(NodeVisitor):
 
         bmm_input_tensors = []
         for index in range(2):
-            input_node = get_input_node(node, index)
-            input_tensor, use_memo = self.get_tensor_shape(input_node, node)
+            input_node = node.args[index]
+            input_tensor, use_memo = self.get_tensor(input_node, node)
 
             # For constant input, the size of tensor is torch.Size([])
             if len(input_tensor.shape) == 0:
