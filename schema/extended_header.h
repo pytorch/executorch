@@ -17,8 +17,7 @@ namespace executor {
  * An extended, ExecuTorch-specific header that may be embedded in the
  * serialized Program data header.
  *
- * For details see
- * //executorch/docs/website/docs/contributors/program_file_format.md
+ * For details see //executorch/docs/source/pte-file-format.md
  */
 struct ExtendedHeader {
   /**

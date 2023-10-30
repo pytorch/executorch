@@ -1,12 +1,13 @@
-# Program file format
+# `.pte` file format
 
-ExecuTorch programs are serialized as modified binary flatbuffer files.
+ExecuTorch `.pte` program files are serialized as modified binary flatbuffer
+files with optional data segments appended.
 
 ```
              ┌───────────────────────────────────┐
              │Standard flatbuffer header         │
              ├───────────────────────────────────┤
-             │Optional ExecuTorch extended header│
+Optional ──> │ExecuTorch extended header         │
              ├───────────────────────────────────┤
              │Flatbuffer-serialized program data │
              │                                   │
