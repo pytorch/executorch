@@ -54,8 +54,7 @@ modifications to the Google C++ style guide.
 
 ### C++ Portability Guidelines
 
-See also
-[Portable Programming](https://github.com/pytorch/executorch/blob/main/docs/website/docs/contributors/portable_programming.md)
+See also [Portable C++ Programming](/docs/source/portable-cpp-programming.md)
 for detailed advice.
 
 #### C++ language version
