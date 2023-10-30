@@ -54,6 +54,10 @@ endif()
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
+# ------------------------------ OPTIONS -------------------------------------
+# WARNING: Please don't add example specific options in this CMakeLists.txt.
+# Instead please use `find_package(executorch REQUIRED)` in the example
+# directory and add a new executable in the example `CMakeLists.txt`.
 
 # _default_release_disabled_options: default value for options that should be
 # disabled in Release mode by default. Users can still manually enable them,
@@ -111,16 +115,9 @@ option(BUILD_SELECTIVE_BUILD_TEST
 
 option(EXECUTORCH_BUILD_SIZE_TEST "Whether to build size test" OFF)
 
-# Selective build options.
-option(EXECUTORCH_SELECT_ALL_OPS
-       "Whether to register all ops defined in portable kernel library." ON)
-
 # Option to register op list
 option(EXECUTORCH_SELECT_OPS_LIST "Register the following list of ops" OFF)
 
-# Option to register ops from yaml file
-option(EXECUTORCH_SELECT_OPS_YAML "Register all the ops from a given yaml file"
-       OFF)
 # Do not enable select all ops if any of the other select options is on.
 if(EXECUTORCH_SELECT_OPS_LIST OR EXECUTORCH_SELECT_OPS_YAML)
   set(EXECUTORCH_SELECT_ALL_OPS OFF)
@@ -280,6 +277,16 @@ cmake_dependent_option(EXECUTORCH_BUILD_GFLAGS "Build the gflags library." ON
 if(EXECUTORCH_BUILD_GFLAGS)
   add_subdirectory(third-party/gflags)
 endif()
+
+
+# Install `executorch` library as well as `ExecuTorchConfig.cmake`
+# under ${CMAKE_INSTALL_PREFIX}/
+install(
+  TARGETS executorch
+  DESTINATION lib
+  INCLUDES DESTINATION ${_common_include_directories}
+)
+install(FILES build/ExecuTorchConfig.cmake DESTINATION lib/cmake/ExecuTorch)
 
 #
 # executor_runner: Host tool that demonstrates program execution.
