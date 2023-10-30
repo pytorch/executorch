@@ -147,6 +147,7 @@ Topics in this section will help you get started with ExecuTorch.
    runtime-overview
    runtime-backend-delegate-implementation-and-linking
    runtime-platform-abstraction-layer
+   portable-cpp-programming
 
 .. toctree::
    :glob:
