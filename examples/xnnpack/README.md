@@ -1,8 +1,8 @@
 # XNNPACK Backend
 
 [XNNPACK](https://github.com/google/XNNPACK) is a library of optimized neural network operators for ARM and x86 CPU platforms. Our delegate lowers models to run using these highly optimized CPU operators. You can try out lowering and running some example models in the demo. Please refer to the following docs for information on the XNNPACK Delegate
-- [XNNPACK Backend Delegate Overview](https://github.com/pytorch/executorch/blob/main/docs/website/docs/source/native-delegates-executorch-xnnpack-delegate.md)
-- [XNNPACK Delegate Export Tutorial](https://github.com/pytorch/executorch/blob/main/docs/website/docs/source/tutorial-xnnpack-delegate-lowering.md)
+- [XNNPACK Backend Delegate Overview](https://pytorch.org/executorch/stable/native-delegates-executorch-xnnpack-delegate.html)
+- [XNNPACK Delegate Export Tutorial](https://pytorch.org/executorch/stable/tutorial-xnnpack-delegate-lowering.html)
 
 
 ## Directory structure

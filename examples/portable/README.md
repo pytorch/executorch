@@ -1,6 +1,6 @@
 # ExecuTorch in Portable Mode
 
-This dir contains demos to illustrate an end-to-end workflow of using ExecuTorch in [portable mode](/docs/website/docs/basics/terminology.md).
+This dir contains demos to illustrate an end-to-end workflow of using ExecuTorch in [portable mode](../../docs/source/concepts.md#portable-mode-lean-mode).
 
 
 ## Directory structure
