@@ -136,7 +136,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12-arm-sdk
+      docker-image: executorch-ubuntu-22.04-arm-sdk
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
