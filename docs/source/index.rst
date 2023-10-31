@@ -171,10 +171,12 @@ Topics in this section will help you get started with ExecuTorch.
 .. toctree::
    :glob:
    :maxdepth: 1
-   :caption: Native Delegates
+   :caption: Backend Delegates
    :hidden:
 
    native-delegates-executorch-xnnpack-delegate
+   backend-delegates-integration
+   backend-delegates-dependencies
 
 .. toctree::
    :glob:
