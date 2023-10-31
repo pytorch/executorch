@@ -55,7 +55,7 @@ docker build \
   --build-arg "TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION}.${NIGHTLY}" \
   --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}.${NIGHTLY}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
-  --build-arg "LINTRUNNER=${LINTRUNNER}" \
+  --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \
   --build-arg "ARM_SDK=${ARM_SDK:-}" \
   -f "${OS}"/Dockerfile \
