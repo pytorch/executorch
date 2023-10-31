@@ -44,6 +44,9 @@ BUILD_DOCS=1
 # Copy requirements-lintrunner.txt from root to here
 cp ../../requirements-lintrunner.txt ./
 
+# Copy arm setup script from root to here
+cp ../../examples/arm/setup.sh ./arm-setup.sh
+
 docker build \
   --no-cache \
   --progress=plain \
