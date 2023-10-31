@@ -54,7 +54,7 @@ RUN rm install_linter.sh utils.sh requirements-lintrunner.txt
 ARG ARM_SDK
 COPY ./arm-setup.sh arm-setup.sh
 # Set up ARM SDK if needed
-RUN if [ -n "${ARM_SDK}" ]; then bash arm-setup.sh --i-agree-to-the-contained-eula /arm-sdk; fi
+RUN if [ -n "${ARM_SDK}" ]; then bash arm-setup.sh --i-agree-to-the-contained-eula /pytorch/executorch/arm-sdk; fi
 
 USER ci-user
 CMD ["bash"]
