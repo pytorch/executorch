@@ -126,5 +126,5 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
         # Test selective build
-        source ./arm-sdk/setup_path.sh
-        PYTHON_EXECUTABLE=python bash examples/arm/run.sh ./arm-sdk buck2
+        source /pytorch/executorch/arm-sdk/setup_path.sh
+        PYTHON_EXECUTABLE=python bash examples/arm/run.sh /pytorch/executorch/arm-sdk buck2
