@@ -315,6 +315,8 @@
 <li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
@@ -326,9 +328,11 @@
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Native Delegates</span></p>
+<p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
@@ -431,14 +435,25 @@
 </div>
 <div class="section" id="program-preparation">
 <h2>Program Preparation<a class="headerlink" href="#program-preparation" title="Permalink to this headline">¶</a></h2>
-<p>ExecuTorch extends the flexibility and usability of PyTorch to edge devices. It leverages PyTorch 2 compiler and export functionality (<a class="reference external" href="https://pytorch.org/docs/stable/dynamo/index.html">TorchDynamo</a>, <a class="reference external" href="https://pytorch.org/functorch/stable/notebooks/aot_autograd_optimizations.html">AOTAutograd</a>, <a class="reference external" href="https://pytorch.org/docs/main/quantization.html">Quantization</a>, dynamic shapes, control flow, etc.) to prepare a PyTorch program for execution on devices.</p>
+<p>ExecuTorch extends the flexibility and usability of PyTorch to edge devices. It
+leverages PyTorch 2 compiler and export functionality
+(<a class="reference external" href="https://pytorch.org/docs/stable/dynamo/index.html">TorchDynamo</a>,
+<a class="reference external" href="https://pytorch.org/functorch/stable/notebooks/aot_autograd_optimizations.html">AOTAutograd</a>,
+<a class="reference external" href="https://pytorch.org/docs/main/quantization.html">Quantization</a>,
+<a class="reference external" href="https://pytorch.org/get-started/pytorch-2.0/#pytorch-2x-faster-more-pythonic-and-as-dynamic-as-ever">dynamic shapes</a>,
+<a class="reference external" href="https://pytorch.org/docs/main/export.html#data-shape-dependent-control-flow">control flow</a>,
+etc.) to prepare a PyTorch program for execution on devices.</p>
 <p>Program preparation is often simply called AOT (ahead-of-time) because export, transformations and compilations to the program are performed before it is eventually run with the ExecuTorch runtime, written in C++. To have a lightweight runtime and small overhead in execution, we push work as much as possible to AOT.</p>
 <p>Starting from the program source code, below are the steps you would go through to accomplish the program preparation.</p>
 <div class="section" id="program-source-code">
 <h3>Program Source Code<a class="headerlink" href="#program-source-code" title="Permalink to this headline">¶</a></h3>
 <ul class="simple">
 <li><p>Like all PyTorch use cases, ExecuTorch starts from model authoring, where standard <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code> eager mode PyTorch programs are created.</p></li>
-<li><p>Export-specific helpers are used to represent advanced features like <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/docs/website/docs/ir_spec/control_flow.md">control flow</a> (for example, helper functions to trace both branches of if-else) and <a class="reference external" href="https://pytorch.org/get-started/pytorch-2.0/#pytorch-2x-faster-more-pythonic-and-as-dynamic-as-ever">dynamic shapes</a> (for example, data dependent dynamic shape constraint).</p></li>
+<li><p>Export-specific helpers are used to represent advanced features like <a class="reference external" href="https://pytorch.org/docs/main/export.html#data-shape-dependent-control-flow">control
+flow</a>
+(for example, helper functions to trace both branches of if-else) and <a class="reference external" href="https://pytorch.org/get-started/pytorch-2.0/#pytorch-2x-faster-more-pythonic-and-as-dynamic-as-ever">dynamic
+shapes</a>
+(for example, data dependent dynamic shape constraint).</p></li>
 </ul>
 </div>
 <div class="section" id="export">

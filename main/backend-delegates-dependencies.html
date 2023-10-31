@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Building and Running ExecuTorch with Core ML Backend &mdash; ExecuTorch main documentation</title>
+  <title>Third-Party Dependency Management for Backend Delegates &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -41,11 +41,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Building and Running ExecuTorch with MPS Backend" href="build-run-mps.html" />
-    <link rel="prev" title="Building and Running ExecuTorch with ARM Ethos-U Backend" href="executorch-arm-delegate-tutorial.html" />
-
-<link rel="stylesheet" href="../_static/css/progress-bar.css">
-<script src="../_static/js/progress-bar.js" defer></script>
+    <link rel="next" title="Introduction to the ExecuTorch SDK" href="sdk-overview.html" />
+    <link rel="prev" title="Integrating a Backend Delegate into ExecuTorch" href="backend-delegates-integration.html" />
 
 
   <!-- Google Tag Manager -->
@@ -278,7 +275,7 @@
 <li class="toctree-l1"><a class="reference internal" href="runtime-build-and-cross-compilation.html">Building with CMake</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
-<ul class="current">
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
@@ -287,7 +284,7 @@
 <li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Building and Running ExecuTorch with Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
@@ -332,10 +329,10 @@
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Third-Party Dependency Management for Backend Delegates</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
@@ -387,13 +384,13 @@
       </li>
 
         
-      <li>Building and Running ExecuTorch with Core ML Backend</li>
+      <li>Third-Party Dependency Management for Backend Delegates</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/build-run-coreml.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/backend-delegates-dependencies.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -425,166 +422,133 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="building-and-running-executorch-with-core-ml-backend">
-<h1>Building and Running ExecuTorch with Core ML Backend<a class="headerlink" href="#building-and-running-executorch-with-core-ml-backend" title="Permalink to this headline">¶</a></h1>
-<p>Core ML delegate uses Core ML apis to enable running neural networks via Apple’s hardware acceleration. For more about coreml you can read <a class="reference external" href="https://developer.apple.com/documentation/coreml">here</a>. In this tutorial we will walk through steps of lowering a PyTorch model to Core ML delegate</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-What you will learn in this tutorial:</div>
+  <div class="section" id="third-party-dependency-management-for-backend-delegates">
+<h1>Third-Party Dependency Management for Backend Delegates<a class="headerlink" href="#third-party-dependency-management-for-backend-delegates" title="Permalink to this headline">¶</a></h1>
+<p>Disclaimer: We are planning to restructure the repository around delegates.
+With that some of these guidelines will change in the future.</p>
+<p>A delegate may depend on external, third-party libraries to efficiently
+implement ahead-of-time (AOT) <code class="docutils literal notranslate"><span class="pre">partition()</span></code> or <code class="docutils literal notranslate"><span class="pre">preprocess()</span></code> functions, and/or
+to implement runtime functions such as <code class="docutils literal notranslate"><span class="pre">init()</span></code> or <code class="docutils literal notranslate"><span class="pre">execute()</span></code>, or to run tests
+in a specific manner. This guide aims to classify different types of third-party
+dependencies a delegate might depend on, and provide a high level guidance on
+how to include them.</p>
+<div class="section" id="ahead-of-time-dependencies">
+<h2>Ahead-of-Time Dependencies<a class="headerlink" href="#ahead-of-time-dependencies" title="Permalink to this headline">¶</a></h2>
+<p>This includes dependencies used by the delegate’s <code class="docutils literal notranslate"><span class="pre">partitioner()</span></code> and
+<code class="docutils literal notranslate"><span class="pre">preprocess()</span></code> functions to generate preprocessed result which
+will be used at later at runtime.</p>
+<p>Depending on how the <code class="docutils literal notranslate"><span class="pre">preprocess()</span></code> function is implemented this can be either
+Python or C++ dependency. This guide will talk about only Python AOT dependencies.</p>
+<p><strong>Guidelines:</strong></p>
 <ul class="simple">
-<li><p class="sd-card-text">In this tutorial you will learn how to export <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model so that it runs on Core ML backend.</p></li>
-<li><p class="sd-card-text">You will also learn how to deploy and run the exported model on a supported Apple device.</p></li>
+<li><p>If ExecuTorch already includes a dependency you require, prefer
+to use that if possible.</p></li>
+<li><p>If the dependency is only needed by the files inside the
+<code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/</span></code> directory, it should be introduced in a
+way such that it is used only by the code under that directory.</p></li>
+<li><p>The dependency should not be installed by default when installing
+the ExecuTorch Python package.</p></li>
+</ul>
+<p>More details in the section <a class="reference internal" href="#python-dependencies"><span class="std std-doc">below</span></a>.</p>
+</div>
+<div class="section" id="runtime-dependencies">
+<h2>Runtime Dependencies<a class="headerlink" href="#runtime-dependencies" title="Permalink to this headline">¶</a></h2>
+<p>This category covers C++ dependencies used by the delegate runtime code.
+It can be as simple as a third-party math library to implement some
+delegate operator, or can be a whole framework handling the lowered
+subgraph for the delegate.</p>
+<p><strong>Guidelines:</strong></p>
+<p>At a high level, “only pay for what you use” should be the desired approach
+for these third-party dependencies.</p>
+<ul class="simple">
+<li><p>Similar to the AOT dependencies, the use of this should also be restricted to
+only the delegate runtime source files.</p></li>
+<li><p>If a delegate has a dependency which is already part of
+<code class="docutils literal notranslate"><span class="pre">executorch/third-party</span></code> then try to use that if possible. This
+helps with reducing the binary size when the delegate is enabled.</p></li>
+<li><p>The rest of the ExecuTorch code, outside of the delegate, should not depend on
+this. And it should should build and run correctly without this dependency
+when the delegate is disabled at build time.</p></li>
+</ul>
+<p>More details in the section <a class="reference internal" href="#runtime-dependencies"><span class="std std-doc">below</span></a>.</p>
+</div>
+<div class="section" id="testing-only-dependencies">
+<h2>Testing-Only Dependencies<a class="headerlink" href="#testing-only-dependencies" title="Permalink to this headline">¶</a></h2>
+<p>Some libraries or tools are only used for executing the delegate tests. These
+can either be a Python dependency or a C++ dependency depending on the type of
+the test.</p>
+<p><strong>Guidelines:</strong></p>
+<ul class="simple">
+<li><p>For a Python test dependency, it should not be installed by default when
+installing the ExecuTorch Python package.</p></li>
+<li><p>For a C++ test dependency, it should not be part of the ExecuTorch runtime
+even when the delegate is built/enabled.</p></li>
 </ul>
 </div>
-</div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
-<div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-Tutorials we recommend you complete before this:</div>
-<ul class="simple">
-<li><p class="sd-card-text"><a class="reference internal" href="intro-how-it-works.html"><span class="doc std std-doc">Introduction to ExecuTorch</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="runtime-build-and-cross-compilation.html"><span class="doc std std-doc">Building ExecuTorch with CMake</span></a></p></li>
-<li><p class="sd-card-text"><a class="reference internal" href="demo-apps-ios.html"><span class="doc std std-doc">ExecuTorch iOS Demo App</span></a></p></li>
-</ul>
-</div>
-</div>
-</div>
-</div>
-</div>
-<div class="section" id="prerequisites-hardware-and-software">
-<h2>Prerequisites (Hardware and Software)<a class="headerlink" href="#prerequisites-hardware-and-software" title="Permalink to this headline">¶</a></h2>
-<p>In order to be able to successfully build and run the ExecuTorch’s Core ML backend you’ll need the following hardware and software components.</p>
-<div class="section" id="hardware">
-<h3>Hardware:<a class="headerlink" href="#hardware" title="Permalink to this headline">¶</a></h3>
-<ul class="simple">
-<li><p>A <a class="reference external" href="https://www.apple.com/mac/%5D">mac</a> system for building.</p></li>
-<li><p>A <a class="reference external" href="https://www.apple.com/mac/%5D">mac</a> or <a class="reference external" href="https://www.apple.com/iphone/">iPhone</a> or <a class="reference external" href="https://www.apple.com/ipad/">iPad</a> or <a class="reference external" href="https://www.apple.com/tv-home/">Apple TV</a> device for running the model.</p></li>
-</ul>
-</div>
-<div class="section" id="software">
-<h3>Software:<a class="headerlink" href="#software" title="Permalink to this headline">¶</a></h3>
-<ul class="simple">
-<li><p><a class="reference external" href="https://developer.apple.com/documentation/xcode">Xcode</a> &gt;= 14.1, <a class="reference external" href="https://developer.apple.com/macos">macOS</a> &gt;= 13.0 for building.</p></li>
-<li><p><a class="reference external" href="https://developer.apple.com/macos">macOS</a> &gt;= 13.0, <a class="reference external" href="https://developer.apple.com/ios/">iOS</a> &gt;= 16.0, <a class="reference external" href="https://developer.apple.com/ipados/">iPadOS</a> &gt;= 16.0, and <a class="reference external" href="https://developer.apple.com/tvos/">tvOS</a> &gt;= 16.0 for running the model.</p></li>
-</ul>
-</div>
-</div>
-<div class="section" id="setting-up-your-developer-environment">
-<h2>Setting up your developer environment<a class="headerlink" href="#setting-up-your-developer-environment" title="Permalink to this headline">¶</a></h2>
-<ol class="arabic simple">
-<li><p>Make sure that you have completed the ExecuTorch setup tutorials linked to at the top of this page and setup the environment.</p></li>
-<li><p>Run <code class="docutils literal notranslate"><span class="pre">install_requirements.sh</span></code> to install dependencies required by the <strong>Core ML</strong> backend.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-./backends/apple/coreml/scripts/install_requirements.sh
-</pre></div>
-</div>
-<ol class="arabic simple" start="3">
-<li><p>Install <a class="reference external" href="https://developer.apple.com/xcode/">Xcode</a>.</p></li>
-<li><p>Install Xcode Command Line Tools.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>xcode-select<span class="w"> </span>--install
-</pre></div>
-</div>
-</div>
-<div class="section" id="build">
-<h2>Build<a class="headerlink" href="#build" title="Permalink to this headline">¶</a></h2>
-<div class="section" id="aot-ahead-of-time-components">
-<h3>AOT (Ahead-of-time) components:<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this headline">¶</a></h3>
-<p><strong>Exporting a Core ML delegated Program</strong>:</p>
-<ul class="simple">
-<li><p>In this step, you will lower the <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model to the Core ML backend and export the ExecuTorch program. You’ll then deploy and run the exported program on a supported Apple device using Core ML backend.</p></li>
-</ul>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+<div class="section" id="other-considerations">
+<h2>Other Considerations<a class="headerlink" href="#other-considerations" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="versioning">
+<h3>Versioning<a class="headerlink" href="#versioning" title="Permalink to this headline">¶</a></h3>
+<p>Explicit and specific is preferred. For example a PyPI version (or range) or
+a git tag/release.</p>
+<!---
+### End-User vs. Developer Experience
 
-<span class="c1"># Generates ./mv3_coreml_all.pte file.</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.scripts.export_and_delegate<span class="w"> </span>--model_name<span class="w"> </span>mv3
-</pre></div>
+TODO
+Need to add more about developer experiences, users selecting which delegates
+to enable/install for both AOT and Runtime
+--->
 </div>
+<div class="section" id="documenting-dependencies">
+<h3>Documenting Dependencies<a class="headerlink" href="#documenting-dependencies" title="Permalink to this headline">¶</a></h3>
+<p>At a minimum, some documentation under <code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/</span></code>
+should be provided when introducing a new dependency which includes,</p>
 <ul class="simple">
-<li><p>Core ML backend uses <a class="reference external" href="https://apple.github.io/coremltools/docs-guides/source/overview-coremltools.html">coremltools</a> to lower <a class="reference internal" href="ir-exir.html#edge-dialect"><span class="std std-doc">Edge dialect</span></a> to Core ML format and then bundles it in the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file.</p></li>
+<li><p>Rationale for introducing a new third-party dependency</p></li>
+<li><p>How to upgrade the dependency</p></li>
+<li><p>Any special considerations for the new dependency</p></li>
 </ul>
-</div>
-<div class="section" id="runtime">
-<h3>Runtime:<a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h3>
-<p><strong>Running the Core ML delegated Program</strong>:</p>
-<ol class="arabic simple">
-<li><p>Build the runner.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-
-<span class="c1"># Generates ./coreml_executor_runner.</span>
-./examples/apple/coreml/scripts/build_executor_runner.sh
-</pre></div>
-</div>
-<ol class="arabic simple" start="2">
-<li><p>Run the exported program.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-
-<span class="c1"># Runs the exported mv3 model on the Core ML backend.</span>
-./coreml_executor_runner<span class="w"> </span>--model_path<span class="w"> </span>mv3_coreml_all.pte
-</pre></div>
+<hr class="docutils" />
+<p>After listing the high level guidelines, let’s now talk about specific
+logistics to actually include a dependency for your delegate,</p>
 </div>
 </div>
+<div class="section" id="python-dependencies">
+<h2>Python Dependencies<a class="headerlink" href="#python-dependencies" title="Permalink to this headline">¶</a></h2>
+<p>Python packaging is complicated and continuously evolving. For delegate
+dependencies, we recommend that a delegate specifies its third-party
+dependencies under <code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/requirements.txt</span></code> to be
+supplied to pip at installation time. The goal is to decouple them from the core
+ExecuTorch dependencies.</p>
+<p>Version conflicts should be avoided by trying to use the dependency already
+included by ExecuTorch or by some other backend if possible. Otherwise try some
+other
+<a class="reference external" href="https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts">recommended</a>
+ways to mitigate version conflicts.</p>
+<div class="section" id="local-python-packages">
+<h3>Local Python Packages<a class="headerlink" href="#local-python-packages" title="Permalink to this headline">¶</a></h3>
+<p>If it is a git repository, it should be added as a git submodule.</p>
+<!--
+TODO: Add more details. Something like
+https://packaging.python.org/en/latest/tutorials/installing-packages/#installing-from-vcs,
+but the URLs can't be in the requirements.txt, so not recommending this for now.
+-->
 </div>
-<div class="section" id="deploying-and-running-on-a-device">
-<h2>Deploying and running on a device<a class="headerlink" href="#deploying-and-running-on-a-device" title="Permalink to this headline">¶</a></h2>
-<p><strong>Running the Core ML delegated Program in the Demo iOS App</strong>:</p>
-<ol class="arabic simple">
-<li><p>Please follow the <a class="reference internal" href="demo-apps-ios.html#models-and-labels"><span class="std std-doc">Export Model</span></a> step of the tutorial to bundle the exported <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> program. You only need to do the Core ML part.</p></li>
-<li><p>Complete the <a class="reference internal" href="demo-apps-ios.html#build-runtime-and-backends"><span class="std std-doc">Build Runtime and Backends</span></a> section of the tutorial. When building the frameworks you only need the <code class="docutils literal notranslate"><span class="pre">coreml</span></code> option.</p></li>
-<li><p>Complete the <a class="reference internal" href="demo-apps-ios.html#final-steps"><span class="std std-doc">Final Steps</span></a> section of the tutorial to build and run the demo app.</p></li>
-</ol>
-<p><br><strong>Running the Core ML delegated Program in your own App</strong></p>
-<ol class="arabic simple">
-<li><p>Build <strong>Core ML</strong> delegate. The following will create a <code class="docutils literal notranslate"><span class="pre">executorch.xcframework</span></code> in the <code class="docutils literal notranslate"><span class="pre">cmake-out</span></code> directory.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-./build/build_apple_frameworks.sh<span class="w"> </span>--Release<span class="w"> </span>--coreml
-</pre></div>
 </div>
-<ol class="arabic simple" start="2">
-<li><p>Create a new <a class="reference external" href="https://developer.apple.com/documentation/xcode/creating-an-xcode-project-for-an-app#">Xcode project</a> or open an existing project.</p></li>
-<li><p>Drag the <code class="docutils literal notranslate"><span class="pre">executorch.xcframework</span></code> generated from Step 2 to Frameworks.</p></li>
-<li><p>Go to the project’s <a class="reference external" href="https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target">Build Phases</a> -  Link Binaries With Libraries, click the + sign, and add the following frameworks:</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">-</span> <span class="n">executorch</span><span class="o">.</span><span class="n">xcframework</span>
-<span class="o">-</span> <span class="n">coreml_backend</span><span class="o">.</span><span class="n">xcframework</span>
-<span class="o">-</span> <span class="n">Accelerate</span><span class="o">.</span><span class="n">framework</span>
-<span class="o">-</span> <span class="n">CoreML</span><span class="o">.</span><span class="n">framework</span>
-<span class="o">-</span> <span class="n">libsqlite3</span><span class="o">.</span><span class="n">tbd</span>
-</pre></div>
+<div class="section" id="c-dependencies">
+<h2>C++ Dependencies<a class="headerlink" href="#c-dependencies" title="Permalink to this headline">¶</a></h2>
+<p>The recommended approach is to include a git submodule for a given C++
+dependency in the <code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/third-party</span></code> directory.</p>
+<div class="section" id="buck2-cmake-support">
+<h3>buck2/CMake Support<a class="headerlink" href="#buck2-cmake-support" title="Permalink to this headline">¶</a></h3>
+<p>At a minimum CMake support is required. Adding buck2 support is optional, but
+will make the delegate available to more ExecuTorch users.</p>
+<!---
+TODO: Add more details about: complying with ET runtime build configurations;
+standard switches for library linking (i.e. static, PIC), optimization flags
+pass through, etc.
+--->
 </div>
-<ol class="arabic simple" start="5">
-<li><p>Add the exported program to the <a class="reference external" href="https://developer.apple.com/documentation/xcode/customizing-the-build-phases-of-a-target#Copy-files-to-the-finished-product">Copy Bundle Phase</a> of your Xcode target.</p></li>
-<li><p>Please follow the <a class="reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc std std-doc">running a model</span></a> tutorial to integrate the code for loading a ExecuTorch program.</p></li>
-<li><p>Update the code to load the program from the Application’s bundle.</p></li>
-</ol>
-<div class="highlight-none notranslate highlight-objective-c"><div class="highlight"><pre><span></span><span class="n">using</span><span class="w"> </span><span class="n">namespace</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="p">;</span>
-
-<span class="bp">NSURL</span><span class="w"> </span><span class="o">*</span><span class="n">model_url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="n">NBundle</span><span class="p">.</span><span class="n">mainBundle</span><span class="w"> </span><span class="n">URLForResource</span><span class="o">:</span><span class="s">@&quot;mv3_coreml_all&quot;</span><span class="w"> </span><span class="n">extension</span><span class="o">:</span><span class="s">@&quot;pte&quot;</span><span class="p">];</span>
-
-<span class="n">Result</span><span class="o">&lt;</span><span class="n">util</span><span class="o">::</span><span class="n">FileDataLoader</span><span class="o">&gt;</span><span class="w"> </span><span class="n">loader</span><span class="w"> </span><span class="o">=</span>
-<span class="w">        </span><span class="n">util</span><span class="o">::</span><span class="n">FileDataLoader</span><span class="o">::</span><span class="n">from</span><span class="p">(</span><span class="n">model_url</span><span class="p">.</span><span class="n">path</span><span class="p">.</span><span class="n">UTF8String</span><span class="p">);</span>
-</pre></div>
-</div>
-<ol class="arabic simple" start="8">
-<li><p>Use <a class="reference external" href="https://developer.apple.com/documentation/xcode/building-and-running-an-app#Build-run-and-debug-your-app">Xcode</a> to deploy the application on the device.</p></li>
-<li><p>The application can now run the <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model on the Core ML backend.</p></li>
-</ol>
-<p><br>In this tutorial, you have learned how to lower the <a class="reference external" href="https://pytorch.org/vision/main/models/mobilenetv3.html">MobileNet V3</a> model to the Core ML backend, deploy, and run it on an Apple device.</p>
-</div>
-<div class="section" id="frequently-encountered-errors-and-resolution">
-<h2>Frequently encountered errors and resolution.<a class="headerlink" href="#frequently-encountered-errors-and-resolution" title="Permalink to this headline">¶</a></h2>
-<p>If you encountered any bugs or issues following this tutorial please file a bug/issue <a class="reference external" href="https://github.com/pytorch/executorch/issues">here</a> with tag #coreml.</p>
 </div>
 </div>
 
@@ -596,10 +560,10 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.s
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="build-run-mps.html" class="btn btn-neutral float-right" title="Building and Running ExecuTorch with MPS Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="sdk-overview.html" class="btn btn-neutral float-right" title="Introduction to the ExecuTorch SDK" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="executorch-arm-delegate-tutorial.html" class="btn btn-neutral" title="Building and Running ExecuTorch with ARM Ethos-U Backend" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="backend-delegates-integration.html" class="btn btn-neutral" title="Integrating a Backend Delegate into ExecuTorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -633,20 +597,23 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.s
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Building and Running ExecuTorch with Core ML Backend</a><ul>
-<li><a class="reference internal" href="#prerequisites-hardware-and-software">Prerequisites (Hardware and Software)</a><ul>
-<li><a class="reference internal" href="#hardware">Hardware:</a></li>
-<li><a class="reference internal" href="#software">Software:</a></li>
+<li><a class="reference internal" href="#">Third-Party Dependency Management for Backend Delegates</a><ul>
+<li><a class="reference internal" href="#ahead-of-time-dependencies">Ahead-of-Time Dependencies</a></li>
+<li><a class="reference internal" href="#runtime-dependencies">Runtime Dependencies</a></li>
+<li><a class="reference internal" href="#testing-only-dependencies">Testing-Only Dependencies</a></li>
+<li><a class="reference internal" href="#other-considerations">Other Considerations</a><ul>
+<li><a class="reference internal" href="#versioning">Versioning</a></li>
+<li><a class="reference internal" href="#documenting-dependencies">Documenting Dependencies</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#setting-up-your-developer-environment">Setting up your developer environment</a></li>
-<li><a class="reference internal" href="#build">Build</a><ul>
-<li><a class="reference internal" href="#aot-ahead-of-time-components">AOT (Ahead-of-time) components:</a></li>
-<li><a class="reference internal" href="#runtime">Runtime:</a></li>
+<li><a class="reference internal" href="#python-dependencies">Python Dependencies</a><ul>
+<li><a class="reference internal" href="#local-python-packages">Local Python Packages</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#deploying-and-running-on-a-device">Deploying and running on a device</a></li>
-<li><a class="reference internal" href="#frequently-encountered-errors-and-resolution">Frequently encountered errors and resolution.</a></li>
+<li><a class="reference internal" href="#c-dependencies">C++ Dependencies</a><ul>
+<li><a class="reference internal" href="#buck2-cmake-support">buck2/CMake Support</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
