@@ -46,7 +46,7 @@ BUILD_DOCS=1
 cp ../../requirements-lintrunner.txt ./
 
 # Copy arm setup script from root to here
-cp -r ../../examples/arm/./arm
+cp -r ../../examples/arm/ ./arm
 
 docker build \
   --no-cache \
