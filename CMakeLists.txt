@@ -52,7 +52,7 @@ if(NOT CMAKE_CXX_STANDARD)
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Debug)
+  set(CMAKE_BUILD_TYPE Release)
 endif()
 
 # _default_release_disabled_options: default value for options that should be
