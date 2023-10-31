@@ -54,8 +54,7 @@ modifications to the Google C++ style guide.
 
 ### C++ Portability Guidelines
 
-See also
-[Portable Programming](https://github.com/pytorch/executorch/blob/main/docs/website/docs/contributors/portable_programming.md)
+See also [Portable C++ Programming](/docs/source/portable-cpp-programming.md)
 for detailed advice.
 
 #### C++ language version
@@ -110,10 +109,9 @@ must work with threading**
   `ArrayRef<T>`, or code that handles multiple `ScalarType` types), but for the
   most part avoid them if possible.
 
-## For Delegate Authors
+## For Backend Delegate Authors
 
-* Use [this](/docs/website/docs/contributors/delegates.md)
-guide when integrating your delegate with ExecuTorch.
-
-* Refer to [this](/docs/website/docs/contributors/delegates_and_dependencies.md)
-set of guidelines when including a 3p depenency for your delegate.
+- Use [this](/docs/source/backend-delegates-integration.md) guide when
+  integrating your delegate with ExecuTorch.
+- Refer to [this](/docs/source/backend-delegates-dependencies.md) set of
+  guidelines when including a third-party depenency for your delegate.
