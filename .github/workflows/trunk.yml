@@ -146,6 +146,7 @@ jobs:
 
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Test selective build
+        source /arm-sdk/setup_path.sh
         PYTHON_EXECUTABLE=python bash examples/arm/run.sh
 
   test-coreml-delegate:
