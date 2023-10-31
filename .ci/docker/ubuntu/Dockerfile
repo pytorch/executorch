@@ -53,9 +53,8 @@ RUN rm install_linter.sh utils.sh requirements-lintrunner.txt
 
 ARG ARM_SDK
 COPY ./arm-setup.sh /opt/arm-setup.sh
-RUN mkdir /opt/arm-sdk; chown ci-user:ci-user /opt/arm-sdk
 # Set up ARM SDK if needed
-RUN if [ -n "${ARM_SDK}" ]; then su - ci-user -c "bash /opt/arm-setup.sh --i-agree-to-the-contained-eula /opt/arm-sdk"; fi
+RUN if [ -n "${ARM_SDK}" ]; then bash /opt/arm-setup.sh --i-agree-to-the-contained-eula /opt/arm-sdk; chown -R ci-user:ci-user /opt/arm-sdk; fi
 
 USER ci-user
 CMD ["bash"]
