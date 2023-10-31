@@ -352,6 +352,11 @@ print("Transformed Edge Dialect Graph")
 print(transformed_edge_program.exported_program())
 
 ######################################################################
+# Note: if you see error like `torch._export.verifier.SpecViolationError: Operator torch._ops.aten._native_batch_norm_legit_functional.default is not Aten Canonical`,
+# please file an issue in https://github.com/pytorch/executorch/issues and we're happy to help!
+
+
+######################################################################
 # Delegating to a Backend
 # -----------------------
 #
