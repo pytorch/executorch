@@ -155,7 +155,6 @@ function patch_repo() {
     git reset --hard ${base_rev}
 
     patch_dir=${script_dir}/ethos-u-setup/${name}/patches/
-    ls -al ${patch_dir}/*.patch
     [[ -e ${patch_dir} && $(ls -A ${patch_dir}) ]] && \
         git am -3 ${patch_dir}/*.patch
 

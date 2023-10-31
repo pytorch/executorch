@@ -88,7 +88,6 @@ function build_executorch_runner() {
     [[ $# -ne 1 ]] && { echo "[${FUNCNAME[0]}]" "Expecting a single pte file as argument got, $*"; exit 1; }
     local pte=${1}
     cd "${ethos_u_root_dir}"/core_platform
-    mkdir -p build
     cmake                                         \
         -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} \
         -B build targets/corstone-300             \
