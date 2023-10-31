@@ -136,7 +136,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     with:
       runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12
+      docker-image: executorch-ubuntu-22.04-clang12-arm-sdk
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -144,10 +144,10 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake buck2
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
         # Test selective build
         source /arm-sdk/setup_path.sh
-        PYTHON_EXECUTABLE=python bash examples/arm/run.sh
+        PYTHON_EXECUTABLE=python bash examples/arm/run.sh /opt/arm-sdk buck2
 
   test-coreml-delegate:
     name: test-coreml-delegate

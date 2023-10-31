@@ -21,7 +21,6 @@ BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
 case "${IMAGE_NAME}" in
   executorch-ubuntu-22.04-clang12)
-    ARM_SDK=yes
     LINTRUNNER=""
     ;;
   executorch-ubuntu-22.04-linter)
