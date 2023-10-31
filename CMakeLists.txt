@@ -279,14 +279,14 @@ if(EXECUTORCH_BUILD_GFLAGS)
 endif()
 
 
-# Install `executorch` library as well as `ExecuTorchConfig.cmake`
+# Install `executorch` library as well as `executorch-config.cmake`
 # under ${CMAKE_INSTALL_PREFIX}/
 install(
   TARGETS executorch
   DESTINATION lib
   INCLUDES DESTINATION ${_common_include_directories}
 )
-install(FILES build/ExecuTorchConfig.cmake DESTINATION lib/cmake/ExecuTorch)
+install(FILES build/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
 
 #
 # executor_runner: Host tool that demonstrates program execution.
