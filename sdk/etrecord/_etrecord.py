@@ -26,7 +26,6 @@ from executorch.exir.serde.serialize import deserialize, serialize
 
 class ETRecordReservedFileNames(str, Enum):
     ETRECORD_IDENTIFIER = "ETRECORD_V0"
-    PROGRAM_BUFFER = "program_buffer"
     EDGE_DIALECT_EXPORTED_PROGRAM = "edge_dialect_exported_program"
     ET_DIALECT_GRAPH_MODULE = "et_dialect_graph_module"
     DEBUG_HANDLE_MAP_NAME = "debug_handle_map"
@@ -37,7 +36,6 @@ class ETRecordReservedFileNames(str, Enum):
 class ETRecord:
     edge_dialect_program: Optional[ExportedProgram] = None
     graph_map: Optional[Dict[str, ExportedProgram]] = None
-    program_buffer: Optional[bytes] = None
     _debug_handle_map: Optional[Dict[int, Union[int, List[int]]]] = None
     _delegate_map: Optional[
         Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]
@@ -231,7 +229,6 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
     graph_map: Dict[str, ExportedProgram] = {}
     debug_handle_map = None
     delegate_map = None
-    program_buffer = None
     edge_dialect_program = None
 
     serialized_exported_program_files = set()
@@ -245,8 +242,6 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
             delegate_map = json.loads(
                 etrecord_zip.read(ETRecordReservedFileNames.DELEGATE_MAP_NAME)
             )
-        elif entry == ETRecordReservedFileNames.PROGRAM_BUFFER:
-            program_buffer = etrecord_zip.read(ETRecordReservedFileNames.PROGRAM_BUFFER)
         elif entry == ETRecordReservedFileNames.ETRECORD_IDENTIFIER:
             continue
         elif entry == ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM:
@@ -275,7 +270,6 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
     return ETRecord(
         edge_dialect_program=edge_dialect_program,
         graph_map=graph_map,
-        program_buffer=program_buffer,
         _debug_handle_map=debug_handle_map,
         _delegate_map=delegate_map,
     )

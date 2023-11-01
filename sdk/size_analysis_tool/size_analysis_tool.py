@@ -168,11 +168,7 @@ def main():
         generate_model_size_information(
             model=exported_program,
             delegate_deserializers=None,
-            flatbuffer=(
-                etrecord.program_buffer
-                if name == ETRecordReservedFileNames.ET_DIALECT_GRAPH_MODULE
-                else None
-            ),
+            flatbuffer=None,
         )
         for (name, exported_program) in etrecord.graph_map.items()
     ]
