@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
+import sys
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple
@@ -25,6 +26,7 @@ from executorch.exir import (
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
+from executorch.exir.print_program import pretty_print, print_program
 
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
@@ -71,6 +73,33 @@ class Stage(ABC):
         Return the artifact's graph module for this stage
         """
         pass
+
+    # Debug Tools for stages
+    def artifact_str(self):
+        """
+        Return string printable artifact for this stage
+        """
+        if isinstance(self.artifact, ExirExportedProgram):
+            return self.artifact.exported_program
+        return self.artifact
+
+    def stage_banner(self):
+        """
+        Returns banner string for this stage
+        """
+        return "#" * 36 + " " + str(self.__class__.__name__) + " " + "#" * 36 + "\n"
+
+    def dump_artifact(self, path_to_dump: Optional[str]):
+        """
+        Dumps string printable artifact to path. If path_to_dump, then it is printed to terminal
+        """
+        if path_to_dump:
+            with open(path_to_dump, "a") as fp:
+                fp.write(str(self.stage_banner() + "\n"))
+                fp.write(str(self.artifact_str()))
+        else:
+            print(self.stage_banner() + "\n")
+            print(self.artifact_str())
 
 
 _stages_: Dict[str, Stage] = {}
@@ -211,31 +240,43 @@ class ToExecutorch(Stage):
         self.config = config or ExecutorchBackendConfig(
             passes=[SpecPropPass()],
         )
-        self.exported_program = None
+        self.executorch_program = None
 
     def run(self, artifact: ExirExportedProgram, inputs=None):
-        self.exported_program = artifact.to_executorch(self.config)
+        self.executorch_program = artifact.to_executorch(self.config)
 
     @property
     def artifact(self) -> ExecutorchProgram:
-        return self.exported_program
+        return self.executorch_program
 
     @property
     def graph_module(self) -> str:
-        return self.exported_program.graph_module
+        return self.executorch_program.graph_module
+
+    def dump_artifact(self, path_to_dump: Optional[str]):
+        """
+        dump_artifact is overriden to dump the serialized program
+        """
+        original_stdout = sys.stdout
+
+        sys.stdout = open(path_to_dump, "a") if path_to_dump else sys.stdout
+        print(self.stage_banner() + "\n")
+        pretty_print(self.artifact.program)
+        print_program(
+            self.artifact.program,
+            show_meminfo=True,
+            mark_dynamic_shape_tensor=True,
+        )
+        sys.stdout = original_stdout
 
 
 @register_stage
 class Serialize(Stage):
-    def __init__(self, filename: Optional[str] = None):
+    def __init__(self):
         self.buffer = None
-        self.filename = filename
 
     def run(self, artifact: ExecutorchProgram, inputs=None) -> None:
         self.buffer = artifact.buffer
-        if self.filename is not None:
-            with open(self.filename, "wb") as f:
-                f.write(self.buffer)
 
     @property
     def artifact(self) -> bytes:
@@ -244,6 +285,16 @@ class Serialize(Stage):
     @property
     def graph_module(self) -> None:
         return None
+
+    def dump_artifact(self, path_to_dump: Optional[str]):
+        """
+        dump_artifact is overridden to dump the serialized bytes into pte file
+        """
+        if not path_to_dump:
+            raise RuntimeError("path_to_dump file not provided")
+        else:
+            with open(path_to_dump, "wb") as f:
+                f.write(self.artifact)
 
 
 class Tester:
@@ -336,6 +387,11 @@ class Tester:
         return self._run_stage(serialize_stage or Serialize())
 
     # Util functions
+    def dump_artifact(self, path: Optional[str] = None, stage: Optional[str] = None):
+        stage = stage or self.cur
+        self.stages[stage].dump_artifact(path)
+        return self
+
     def get_artifact(self, stage: Optional[str] = None):
         stage = stage or self.cur
         return self.stages[stage].artifact
