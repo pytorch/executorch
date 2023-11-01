@@ -15,12 +15,56 @@
 # ~~~
 # It should also be cmake-lint clean.
 #
-
 cmake_minimum_required(VERSION 3.19)
+project(selective_build_example)
+
+if(NOT PYTHON_EXECUTABLE)
+  set(PYTHON_EXECUTABLE python3)
+endif()
+
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+
+set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+
+# Let files say "include <executorch/path/to/header.h>".
+set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+
+find_package(executorch CONFIG REQUIRED)
+find_package(
+  gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../third-party
+)
+
+target_include_directories(executorch INTERFACE ${_common_include_directories})
+
+# ------------------------------ OPTIONS BEGIN -------------------------------
+
+# Option to register ops from yaml file
+option(EXECUTORCH_SELECT_OPS_YAML "Register all the ops from a given yaml file"
+       OFF)
+
+# Option to register op list
+option(EXECUTORCH_SELECT_OPS_LIST "Register a list of ops, separated by comma"
+       OFF)
+
+# Selective build options.
+option(EXECUTORCH_SELECT_ALL_OPS
+       "Whether to register all ops defined in portable kernel library." OFF)
+# ------------------------------- OPTIONS END --------------------------------
+
+#
+# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+#
+set(
+  EXECUTORCH_SRCS_FILE
+  "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
+)
+
+extract_sources(${EXECUTORCH_SRCS_FILE})
+
+include(${EXECUTORCH_SRCS_FILE})
 
 #
 # select_build_lib: C++ library to register selected ops in custom kernel
@@ -30,7 +74,6 @@ set(_kernel_lib)
 if(EXECUTORCH_SELECT_OPS_YAML)
   set(_custom_ops_yaml
       ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml)
-  gen_selected_ops("${_custom_ops_yaml}" "" "")
   set(kernel_sources
       ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops_1_out.cpp
       ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops_2_out.cpp)
@@ -55,16 +98,13 @@ generate_bindings_for_kernels(${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
                               "${_custom_ops_yaml}")
 gen_operators_lib("select_build_lib" ${_kernel_lib} executorch)
 
-set(_updated__srcs)
-foreach(_src ${_executor_runner__srcs})
-  list(APPEND _updated__srcs "${EXECUTORCH_ROOT}/${_src}")
-endforeach()
+list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 #
 # selective_build_test: test binary to allow different operator libraries to
 # link to
 #
-add_executable(selective_build_test ${_updated__srcs})
+add_executable(selective_build_test ${_executor_runner__srcs})
 if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
   target_link_options(selective_build_test PRIVATE "LINKER:--gc-sections")
 endif()

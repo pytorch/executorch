@@ -124,7 +124,10 @@ def generate_etrecord(
         Dict[
             str,
             Union[
-                MultiMethodExirExportedProgram, ExirExportedProgram, EdgeProgramManager
+                ExportedProgram,
+                MultiMethodExirExportedProgram,
+                ExirExportedProgram,
+                EdgeProgramManager,
             ],
         ]
     ] = None,

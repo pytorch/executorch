@@ -1,8 +1,10 @@
-# Portable Programming
+# Portable C++ Programming
 
-NOTE: This document covers the runtime code: i.e., the code that needs to build
-for and execute in target hardware environments. These rules do not necessarily
-apply to code that only runs on the development host, like authoring tools.
+NOTE: This document covers the code that needs to build for and execute in
+target hardware environments. This applies to the core execution runtime, as
+well as kernel and backend implementations in this repo. These rules do not
+necessarily apply to code that only runs on the development host, like authoring
+or build tools.
 
 The ExecuTorch runtime code is intendend to be portable, and should build for a
 wide variety of systems, from servers to mobile phones to DSPs, from POSIX to
@@ -26,12 +28,14 @@ allocation, the code may not use:
 - `malloc()`, `free()`
 - `new`, `delete`
 - Most `stdlibc++` types; especially container types that manage their own
-  memory, like `string` and `vector`.
+  memory like `string` and `vector`, or memory-management wrapper types like
+  `unique_ptr` and `shared_ptr`.
 
 And to help reduce complexity, the code may not depend on any external
 dependencies except:
-- `flatbuffers`
-- `caffe2/...` (only for ATen mode)
+- `flatbuffers` (for `.pte` file deserialization)
+- `flatcc` (for event trace serialization)
+- Core PyTorch (only for ATen mode)
 
 ## Platform Abstraction Layer (PAL)
 
@@ -46,13 +50,13 @@ like:
 ## Memory Allocation
 
 Instead of using `malloc()` or `new`, the runtime code should allocate memory
-using the `MemoryManager` (`//executorch/runtime/executor/MemoryManager.h`) provided by
-the client.
+using the `MemoryManager` (`//executorch/runtime/executor/memory_manager.h`)
+provided by the client.
 
 ## File Loading
 
-Instead of loading program files directly, clients should provide buffers with
-the data already loaded.
+Instead of loading files directly, clients should provide buffers with the data
+already loaded, or wrapped in types like `DataLoader`.
 
 ## Integer Types
 
@@ -145,8 +149,8 @@ value to the lean mode type, like:
 ET_CHECK_MSG(
     input.dim() == output.dim(),
     "input.dim() %zd not equal to output.dim() %zd",
-    ssize_t(input.dim()),
-    ssize_t(output.dim()));
+    (ssize_t)input.dim(),
+    (ssize_t)output.dim());
 ```
 In this case, `Tensor::dim()` returns `ssize_t` in lean mode, while
 `at::Tensor::dim()` returns `int64_t` in ATen mode. Since they both conceptually

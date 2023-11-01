@@ -9,7 +9,6 @@ import random
 import string
 from typing import List, Tuple
 
-import executorch.exir as exir
 import torch
 from executorch.bundled_program.config import (
     MethodInputType,
@@ -17,7 +16,10 @@ from executorch.bundled_program.config import (
     MethodTestCase,
     MethodTestSuite,
 )
+
+from executorch.exir import to_edge
 from executorch.exir.schema import Program
+from torch.export import export
 
 # A hacky integer to deal with a mismatch between execution plan and complier.
 #
@@ -240,12 +242,14 @@ def get_common_program() -> Tuple[Program, List[MethodTestSuite]]:
         for m_name in eager_model.method_names
     }
 
-    program = (
-        exir.capture_multiple(eager_model, capture_inputs)
-        .to_edge()
-        .to_executorch()
-        .program
-    )
+    # Trace to FX Graph and emit the program
+    method_graphs = {
+        m_name: export(getattr(eager_model, m_name), capture_inputs[m_name])
+        for m_name in eager_model.method_names
+    }
+
+    program = to_edge(method_graphs).to_executorch().executorch_program
+
     _, method_test_suites = get_random_test_suites_with_eager_model(
         eager_model=eager_model,
         method_names=eager_model.method_names,
