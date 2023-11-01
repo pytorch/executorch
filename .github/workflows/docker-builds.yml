@@ -27,6 +27,7 @@ jobs:
         include:
           - docker-image-name: executorch-ubuntu-22.04-clang12
           - docker-image-name: executorch-ubuntu-22.04-linter
+          - docker-image-name: executorch-ubuntu-22.04-arm-sdk
     env:
       DOCKER_IMAGE: 308535385114.dkr.ecr.us-east-1.amazonaws.com/executorch/${{ matrix.docker-image-name }}
     steps:

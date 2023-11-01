@@ -196,9 +196,7 @@ def vela_compile(tosa_fb):
             # Add a block for scratch, inputs and outputs;  scratch shape is a 1 element
             # array giving us size in bytes so extract this and add a block of 0's.
             # Currently we preallocated this on the host to provide SRAM for computation.
-            if len(data["scratch_shape"][0]) != 1:
-                raise RuntimeError("Expected scratch to be single array")
-            block_length = data["scratch_shape"][0].item()
+            block_length = int(data["scratch_shape"][0])
             bin_blocks["scratch_data"] = b"\x00" * block_length
 
             # Capture inputs and outputs
