@@ -106,6 +106,26 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
 
+  test-arm-backend-delegation:
+    name: test-arm-backend-delegation
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-arm-sdk
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
+        source .ci/scripts/utils.sh
+        install_flatc_from_source
+        install_executorch
+        # Test selective build
+        source /opt/arm-sdk/setup_path.sh
+        PYTHON_EXECUTABLE=python bash examples/arm/run.sh /opt/arm-sdk buck2
+
   unittest:
     uses: ./.github/workflows/_unittest.yml
     with:
