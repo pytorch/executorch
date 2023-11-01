@@ -10,9 +10,6 @@ from typing import Optional, Tuple
 import torch
 from executorch import exir
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
-from executorch.backends.xnnpack.passes.channels_last_tagged_reshape_pass import (
-    ChannelsLastTaggedReshapePass,
-)
 from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinearPass
 from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
@@ -20,9 +17,6 @@ from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
 from executorch.backends.xnnpack.passes.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 
-from executorch.backends.xnnpack.test.test_xnnpack_utils_classes import (
-    OpSequencesAddConv2d,
-)
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_capture_config
 from executorch.backends.xnnpack.utils.utils import capture_graph_for_xnnpack
 from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
@@ -42,19 +36,7 @@ from torch.ao.quantization.quantize_fx import (
 from torch.testing import FileCheck
 
 
-class TestXNNPACKPasses(unittest.TestCase):
-    class TwoOutputs(OpSequencesAddConv2d):
-        def __init__(self):
-            super().__init__(1, 2)
-            seq = self.op_sequence[0]
-            self.conv1 = seq[0]
-            self.conv2 = seq[1]
-
-        def forward(self, x):
-            y = self.conv1(x)
-            z = self.conv2(y)
-            return (y, z)
-
+class TestXNNPackPasses(unittest.TestCase):
     class ReusedInput(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -63,15 +45,6 @@ class TestXNNPACKPasses(unittest.TestCase):
 
         def forward(self, x):
             return self.conv1(x) + self.conv2(x)
-
-    class ConvRelu(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.conv = torch.nn.Conv2d(1, 1, 1)
-            self.relu = torch.nn.ReLU()
-
-        def forward(self, x):
-            return self.relu(self.conv(x))
 
     def capture_and_test_pass(
         self,
@@ -118,219 +91,6 @@ class TestXNNPACKPasses(unittest.TestCase):
                 torch.allclose(old_results[i], new_results[i], rtol=rtol, atol=atol)
             )
         return new_exported_program
-
-    def test_channels_last_tagged_reshape_pass(self) -> None:
-        passes = [ChannelsLastTaggedReshapePass]
-
-        for enable_aot, unlift in [(False, None), (True, True), (True, False)]:
-            example_inputs = (torch.rand(1, 1, 6, 6),)
-            # No copies because no ops requiring NHWC format
-            single_add = OpSequencesAddConv2d(0, 0)
-            self.capture_and_test_pass(
-                single_add,
-                example_inputs,
-                passes,
-                0,
-                enable_aot=enable_aot,
-                unlift=unlift,
-            )
-
-            # One copy to NHWC before the conv, and one copy to NCHW at the end
-            single_conv = OpSequencesAddConv2d(1, 1).eval()
-            self.capture_and_test_pass(
-                single_conv,
-                example_inputs,
-                passes,
-                2,
-            )
-
-            # Still one copy to NHWC before the conv, and one copy to NCHW at the
-            # end
-            # Flaky - increased [ra]tol for tensor compare -TODO: look into this test
-            two_seq_two_convs = OpSequencesAddConv2d(2, 2)
-            self.capture_and_test_pass(
-                two_seq_two_convs,
-                example_inputs,
-                passes,
-                2,
-                rtol=1e-04,
-                atol=1e-04,
-            )
-
-    def test_channels_last_reshape_with_conv_relu(self) -> None:
-        passes = [ChannelsLastTaggedReshapePass]
-
-        sample_input = (torch.ones(1, 1, 6, 6),)
-        model = self.ConvRelu().eval()
-
-        for enable_aot, unlift in [(False, None), (True, True), (True, False)]:
-            new_exported_program = self.capture_and_test_pass(
-                model,
-                sample_input,
-                passes,
-                enable_aot=enable_aot,
-                unlift=unlift,
-            )
-            FileCheck().check(
-                "executorch_exir_dialects_edge__ops_aten__to_copy_default"
-            ).check(
-                "executorch_exir_dialects_edge__ops_aten_convolution_default"
-            ).check(
-                "executorch_exir_dialects_edge__ops_aten_relu_default"
-            ).check(
-                "executorch_exir_dialects_edge__ops_aten__to_copy_default"
-            ).run(
-                new_exported_program.graph_module.code
-            )
-
-            prepared = prepare_fx(
-                model,
-                _get_symmetric_qnnpack_qconfig_mapping(),
-                sample_input,
-                backend_config=get_executorch_backend_config(),
-            )
-
-            converted = _convert_to_reference_decomposed_fx(
-                prepared, backend_config=get_executorch_backend_config()
-            )
-            new_quantized_ep = self.capture_and_test_pass(
-                converted, sample_input, passes
-            )
-            FileCheck().check(
-                "executorch_exir_dialects_edge__ops_aten__to_copy_default"
-            ).check(
-                "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default"
-            ).check(
-                "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
-            ).check(
-                "executorch_exir_dialects_edge__ops_aten_convolution_default"
-            ).check(
-                "executorch_exir_dialects_edge__ops_aten_relu_default"
-            ).check(
-                "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default"
-            ).check(
-                "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
-            ).check(
-                "executorch_exir_dialects_edge__ops_aten__to_copy_default"
-            ).run(
-                new_quantized_ep.graph_module.code
-            )
-
-    def test_channels_last_tagged_reshape_pass_conv2d_bn_hardtanh_mean_sequence(
-        self,
-    ) -> None:
-        passes = [ChannelsLastTaggedReshapePass]
-
-        groups = 1
-        stride = [2, 2]
-        padding = [1, 1]
-        dilation = [1, 1]
-        in_channels = 1
-        out_channels = 1
-
-        class Conv2dBnHardtanhMeanSequenceModule(torch.nn.Module):
-            def __init__(self):
-                super(Conv2dBnHardtanhMeanSequenceModule, self).__init__()
-                self.conv = torch.nn.Conv2d(
-                    in_channels=in_channels,
-                    out_channels=out_channels,
-                    kernel_size=(3, 3),
-                    stride=stride,
-                    padding=padding,
-                    groups=groups,
-                    dilation=dilation,
-                    bias=True,
-                )
-                self.native_batchnorm = torch.nn.BatchNorm2d(out_channels)
-                self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=6)
-                self.eval()
-
-            def forward(self, x):
-                x = self.conv(x)
-                x = self.native_batchnorm(x)
-                x = self.hardtanh(x)
-                x = torch.mean(x, (-1, -2), keepdim=True)
-                return x
-
-        # Copy #1 is for input to conv, nchw -> nhwc
-        # Copy #2 is for conv to _native_batch_norm_legit_no_training, nhwc -> nchw
-        # Copy #3 is for input to mean, nchw -> nhwc
-        # Copy #4 is for output, nhwc -> nchw
-
-        # The graph looks like:
-        # graph():
-        #     %arg0_1 : [#users=1] = placeholder[target=arg0_1]
-        #     %aten__to_copy_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%arg0_1,), kwargs = {memory_format: torch.channels_last})
-        #     %_param_constant0 : [#users=1] = get_attr[target=_param_constant0]
-        #     %_param_constant1 : [#users=1] = get_attr[target=_param_constant1]
-        #     %aten_convolution_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.convolution.default](args = (%aten__to_copy_default, %_param_constant0, %_param_constant1, [2, 2], [1, 1], [1, 1], False, [0, 0], 1), kwargs = {})
-        #     %aten__to_copy_default_1 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_convolution_default,), kwargs = {memory_format: torch.contiguous_format})
-        #     %_param_constant2 : [#users=1] = get_attr[target=_param_constant2]
-        #     %_param_constant3 : [#users=1] = get_attr[target=_param_constant3]
-        #     %_tensor_constant0 : [#users=1] = get_attr[target=_tensor_constant0]
-        #     %_tensor_constant1 : [#users=1] = get_attr[target=_tensor_constant1]
-        #     %aten__native_batch_norm_legit_no_training_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._native_batch_norm_legit_no_training.default](args = (%aten__to_copy_default_1, %_param_constant2, %_param_constant3, %_tensor_constant0, %_tensor_constant1, 0.1, 1e-05), kwargs = {})
-        #     %getitem : [#users=1] = call_function[target=operator.getitem](args = (%aten__native_batch_norm_legit_no_training_default, 0), kwargs = {})
-        #     %aten_hardtanh_default : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.hardtanh.default](args = (%getitem, 0, 6), kwargs = {})
-        #     %aten__to_copy_default_2 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_hardtanh_default,), kwargs = {memory_format: torch.channels_last})
-        #     %aten_mean_dim : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mean.dim](args = (%aten__to_copy_default_2, [-1, -2], True), kwargs = {})
-        #     %aten__to_copy_default_3 : [#users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%aten_mean_dim,), kwargs = {memory_format: torch.contiguous_format})
-        #     return [aten__to_copy_default_3]
-
-        sample_input = (torch.ones(1, 1, 6, 6),)
-        for enable_aot, unlift in [(False, None), (True, True), (True, False)]:
-            self.capture_and_test_pass(
-                Conv2dBnHardtanhMeanSequenceModule(),
-                sample_input,
-                passes,
-                4,
-                enable_aot=enable_aot,
-                unlift=unlift,
-            )
-
-    def test_quantized_channels_last_tagged_reshape_pass(self) -> None:
-        passes = [ChannelsLastTaggedReshapePass]
-        prepared_conv = prepare_fx(
-            torch.nn.Conv2d(
-                in_channels=1,
-                out_channels=1,
-                kernel_size=(3, 3),
-                padding=1,
-                bias=False,
-            ).eval(),
-            _get_symmetric_qnnpack_qconfig_mapping(),
-            (torch.randn(1, 1, 3, 3),),
-            backend_config=get_executorch_backend_config(),
-        )
-
-        converted = _convert_to_reference_decomposed_fx(prepared_conv)
-
-        for enable_aot, unlift in [(False, None), (True, True), (True, False)]:
-            result = self.capture_and_test_pass(
-                converted,
-                (torch.randn(1, 1, 3, 3),),
-                passes,
-                enable_aot=enable_aot,
-                unlift=unlift,
-            )
-
-            FileCheck().check_count(
-                "executorch_exir_dialects_edge__ops_aten__to_copy_default",
-                2,
-                exactly=True,
-            ).run(result.graph_module.code)
-
-            FileCheck().check_count(
-                "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default",
-                5,  # 3 original q(input, weights, output) + 2 generated from to_copy
-                exactly=True,
-            ).run(result.graph_module.code)
-
-            FileCheck().check_count(
-                "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default",
-                5,  # 3 original q(input, weights, output) + 2 generated from to_copy
-                exactly=True,
-            ).run(result.graph_module.code)
 
     def test_conv_batch_norm_fusion(self) -> None:
         passes = [FuseBatchNormWithConvPass]

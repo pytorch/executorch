@@ -92,13 +92,16 @@ python_unittest(
 
 python_unittest(
     name = "test_xnnpack_passes",
-    srcs = [
+    srcs = glob([
+        "passes/*.py",
+    ]) + [
         "test_xnnpack_passes.py",
         "test_xnnpack_utils_classes.py",
     ],
     deps = [
         "//caffe2:torch",
         "//executorch/backends/xnnpack/passes:xnnpack_passes",
+        "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/exir:lib",
         "//executorch/exir:pass_base",
