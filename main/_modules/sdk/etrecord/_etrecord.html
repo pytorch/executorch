@@ -447,7 +447,6 @@
 
 <span class="k">class</span> <span class="nc">ETRecordReservedFileNames</span><span class="p">(</span><span class="nb">str</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
     <span class="n">ETRECORD_IDENTIFIER</span> <span class="o">=</span> <span class="s2">&quot;ETRECORD_V0&quot;</span>
-    <span class="n">PROGRAM_BUFFER</span> <span class="o">=</span> <span class="s2">&quot;program_buffer&quot;</span>
     <span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span> <span class="o">=</span> <span class="s2">&quot;edge_dialect_exported_program&quot;</span>
     <span class="n">ET_DIALECT_GRAPH_MODULE</span> <span class="o">=</span> <span class="s2">&quot;et_dialect_graph_module&quot;</span>
     <span class="n">DEBUG_HANDLE_MAP_NAME</span> <span class="o">=</span> <span class="s2">&quot;debug_handle_map&quot;</span>
@@ -458,7 +457,6 @@
 <span class="k">class</span> <span class="nc">ETRecord</span><span class="p">:</span>
     <span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">graph_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">program_buffer</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">_debug_handle_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">_delegate_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
         <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_DelegateDebugIdentifierMap</span><span class="p">]]]]</span>
@@ -652,7 +650,6 @@
     <span class="n">graph_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">debug_handle_map</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">delegate_map</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">program_buffer</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">edge_dialect_program</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="n">serialized_exported_program_files</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
@@ -666,8 +663,6 @@
             <span class="n">delegate_map</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span>
                 <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">DELEGATE_MAP_NAME</span><span class="p">)</span>
             <span class="p">)</span>
-        <span class="k">elif</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">PROGRAM_BUFFER</span><span class="p">:</span>
-            <span class="n">program_buffer</span> <span class="o">=</span> <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">PROGRAM_BUFFER</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">ETRECORD_IDENTIFIER</span><span class="p">:</span>
             <span class="k">continue</span>
         <span class="k">elif</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span><span class="p">:</span>
@@ -696,7 +691,6 @@
     <span class="k">return</span> <span class="n">ETRecord</span><span class="p">(</span>
         <span class="n">edge_dialect_program</span><span class="o">=</span><span class="n">edge_dialect_program</span><span class="p">,</span>
         <span class="n">graph_map</span><span class="o">=</span><span class="n">graph_map</span><span class="p">,</span>
-        <span class="n">program_buffer</span><span class="o">=</span><span class="n">program_buffer</span><span class="p">,</span>
         <span class="n">_debug_handle_map</span><span class="o">=</span><span class="n">debug_handle_map</span><span class="p">,</span>
         <span class="n">_delegate_map</span><span class="o">=</span><span class="n">delegate_map</span><span class="p">,</span>
     <span class="p">)</span>
