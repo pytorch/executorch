@@ -83,10 +83,11 @@ if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
-# -Os: Optimize for size. -ffunction-sections -fdata-sections: breaks function
-# and data into sections so they can be properly gc'd. -s: strip symbols
+# -O2: Moderate opt. -ffunction-sections -fdata-sections: breaks function
+# and data into sections so they can be properly gc'd. -s: strip symbol.
+# -fno-exceptions -fno-rtti: disables exceptions and runtime type.
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-Os -ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
+    "-O2 -ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
 if(NOT APPLE)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
