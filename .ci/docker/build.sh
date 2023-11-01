@@ -26,6 +26,9 @@ case "${IMAGE_NAME}" in
   executorch-ubuntu-22.04-linter)
     LINTRUNNER=yes
     ;;
+  executorch-ubuntu-22.04-arm-sdk)
+    ARM_SDK=yes
+    ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"
     exit 1
@@ -41,6 +44,9 @@ BUILD_DOCS=1
 # Copy requirements-lintrunner.txt from root to here
 cp ../../requirements-lintrunner.txt ./
 
+# Copy arm setup script from root to here
+cp -r ../../examples/arm/ ./arm
+
 docker build \
   --no-cache \
   --progress=plain \
@@ -52,8 +58,9 @@ docker build \
   --build-arg "TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION}.${NIGHTLY}" \
   --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}.${NIGHTLY}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
-  --build-arg "LINTRUNNER=${LINTRUNNER}" \
+  --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \
+  --build-arg "ARM_SDK=${ARM_SDK:-}" \
   -f "${OS}"/Dockerfile \
   "$@" \
   .
