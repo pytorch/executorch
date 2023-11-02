@@ -577,6 +577,7 @@
 <span class="sd">        is_delegated_op: Whether or not the event was delegated.</span>
 <span class="sd">        delegate_backend_name: Name of the backend this event was delegated to.</span>
 <span class="sd">        debug_data: Intermediate data collected during runtime.</span>
+<span class="sd">        delegate_debug_metadatas: A list of delegate debug metadata in string, one for each profile event.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
@@ -589,6 +590,7 @@
     <span class="n">is_delegated_op</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">delegate_backend_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">debug_data</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+    <span class="n">delegate_debug_metadatas</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
 
     <span class="n">_instruction_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
@@ -620,11 +622,18 @@
                 <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">events</span>
             <span class="p">]</span>
         <span class="p">)</span>
+
+        <span class="n">delegate_debug_metadatas</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_metadata</span> <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">delegate_debug_metadata</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+            <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">events</span>
+        <span class="p">]</span>
+
         <span class="k">return</span> <span class="n">Event</span><span class="p">(</span>
             <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
             <span class="n">perf_data</span><span class="o">=</span><span class="n">perf_data</span><span class="p">,</span>
             <span class="n">delegate_debug_identifier</span><span class="o">=</span><span class="n">delegate_debug_identifier</span><span class="p">,</span>
             <span class="n">is_delegated_op</span><span class="o">=</span><span class="n">is_delegated_op</span><span class="p">,</span>
+            <span class="n">delegate_debug_metadatas</span><span class="o">=</span><span class="n">delegate_debug_metadatas</span><span class="p">,</span>
             <span class="n">_instruction_id</span><span class="o">=</span><span class="n">signature</span><span class="o">.</span><span class="n">instruction_id</span><span class="p">,</span>
         <span class="p">)</span>
 
