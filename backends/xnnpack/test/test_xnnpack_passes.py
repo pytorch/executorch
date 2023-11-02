@@ -5,13 +5,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
-from typing import Optional, Tuple
+from typing import Optional
 
 import torch
 from executorch import exir
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
 from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinearPass
-from executorch.backends.xnnpack.passes.remove_getitem_op import RemoveGetItemPass
 from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_capture_config
@@ -88,74 +87,6 @@ class TestXNNPackPasses(unittest.TestCase):
                 torch.allclose(old_results[i], new_results[i], rtol=rtol, atol=atol)
             )
         return new_exported_program
-
-    def test_max_pool2d_remove_getitem(self) -> None:
-        passes = [RemoveGetItemPass()]
-
-        class MaxPool2dModule(torch.nn.Module):
-            def __init__(
-                self,
-                kernel_size=3,
-                stride=1,
-                padding=0,
-                dilation=1,
-            ):
-                super().__init__()
-                self.max_pool2d_module = torch.nn.MaxPool2d(
-                    kernel_size=kernel_size,
-                    stride=stride,
-                    padding=padding,
-                    dilation=dilation,
-                )
-
-            def forward(self, x):
-                return self.max_pool2d_module(x)
-
-        maxpool2d_module = MaxPool2dModule(3, 1, 0, 1)
-        model_inputs = (torch.randn(4, 3, 24, 24),)
-
-        edge_ep = capture_graph_for_xnnpack(maxpool2d_module.eval(), model_inputs)
-        new_ep = edge_ep.transform(*passes)
-        result1 = edge_ep(model_inputs[0])[0]
-        result2 = new_ep(model_inputs[0])[0]
-
-        # Filecheck exir_ops.edge.aten.max_pool2d.default node.
-        FileCheck().check_count(
-            "executorch_exir_dialects_edge__ops_aten_max_pool2d_default",
-            1,
-            exactly=True,
-        ).run(new_ep.exported_program.graph_module.code)
-
-        self.assertTrue(torch.allclose(result1, result2))
-
-    def test_max_remove_getitem(self) -> None:
-        passes = [RemoveGetItemPass()]
-
-        class MaxModule(torch.nn.Module):
-            def __init__(
-                self,
-            ):
-                super().__init__()
-
-            def forward(self, x):
-                max_vals, indices = torch.max(x, dim=2, keepdim=True)
-                return max_vals
-
-        max_module = MaxModule()
-        model_inputs = (torch.randn(4, 3, 24, 24),)
-
-        edge_ep = capture_graph_for_xnnpack(max_module.eval(), model_inputs)
-
-        new_ep = edge_ep.transform(*passes)
-        result1 = edge_ep(model_inputs[0])[0]
-        result2 = new_ep(model_inputs[0])[0]
-
-        # Filecheck exir_ops.edge.aten.amax.default node.
-        FileCheck().check_count(
-            "executorch_exir_dialects_edge__ops_aten_amax_default", 1, exactly=True
-        ).run(new_ep.exported_program.graph_module.code)
-
-        self.assertTrue(torch.allclose(result1, result2))
 
     # TODO T154127848: Move this out of XNNPACK dir and into cannonical_partitioner dir
     def test_duplicate_dequant_node_pass(self) -> None:
