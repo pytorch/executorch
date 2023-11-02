@@ -27,6 +27,11 @@ set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+  # Can't set to 11 due to executor_runner.cpp make_unique
+endif()
+
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
