@@ -31,7 +31,7 @@ set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
-find_package(executorch CONFIG REQUIRED)
+find_package(executorch CONFIG REQUIRED HINTS ${CMAKE_INSTALL_PREFIX})
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
