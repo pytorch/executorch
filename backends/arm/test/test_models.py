@@ -335,7 +335,7 @@ class TorchBuilder:
             x = self.conv2d_2(x)
             return x
 
-    # @register_test
+    @register_test
     class simple_depthwise_conv2d(torch.nn.Module):
         inputs = {
             TosaProfile.MI: (torch.ones(1, 3, 256, 256),),
