@@ -156,6 +156,7 @@ class Event:
         is_delegated_op: Whether or not the event was delegated.
         delegate_backend_name: Name of the backend this event was delegated to.
         debug_data: Intermediate data collected during runtime.
+        delegate_debug_metadatas: A list of delegate debug metadata in string, one for each profile event.
     """
 
     name: str
@@ -168,6 +169,7 @@ class Event:
     is_delegated_op: Optional[bool] = None
     delegate_backend_name: Optional[str] = None
     debug_data: List[torch.Tensor] = dataclasses.field(default_factory=list)
+    delegate_debug_metadatas: List[str] = dataclasses.field(default_factory=list)
 
     _instruction_id: Optional[int] = None
 
@@ -199,11 +201,18 @@ class Event:
                 for event in events
             ]
         )
+
+        delegate_debug_metadatas = [
+            event.delegate_debug_metadata if event.delegate_debug_metadata else ""
+            for event in events
+        ]
+
         return Event(
             name=name,
             perf_data=perf_data,
             delegate_debug_identifier=delegate_debug_identifier,
             is_delegated_op=is_delegated_op,
+            delegate_debug_metadatas=delegate_debug_metadatas,
             _instruction_id=signature.instruction_id,
         )
 
