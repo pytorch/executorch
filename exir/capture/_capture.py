@@ -22,6 +22,7 @@ from executorch.exir.tracer import (
     flatten_output,
     Value,
 )
+from executorch.exir.verification.verifier import EXIRATenDialectVerifier
 from torch import _guards
 from torch._dispatch.python import enable_python_dispatcher
 from torch._dynamo.eval_frame import Constraint
@@ -298,7 +299,8 @@ def capture(  # noqa: C901
                 ),
             )
         ],
-        dialect="OLD_EXIR_ATEN",
+        None,
+        EXIRATenDialectVerifier,
     )
     return ExirExportedProgram(ep, False)
 

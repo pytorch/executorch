@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Type, Union
 
 import torch
 import torch._export
+
 from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.partitioner import TPartitioner
@@ -34,12 +35,80 @@ from executorch.exir.verification.verifier import (
 )
 from torch._export import ExportedProgram
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
-from torch._export.passes.lift_constant_tensor_pass import lift_constant_tensor_pass
+from torch._guards import detect_fake_mode
+from torch.export.exported_program import InputKind, InputSpec, TensorArgument
 from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
 from torch.utils import _pytree as pytree
 
 Val = Any
+
+
+def lift_constant_tensor_pass(ep):
+    """
+    Takes an ExportedProgram and returns the ExportedProgram modified in-place,
+    with the constant tensors as buffers.
+    """
+    if len([node for node in ep.graph.nodes if node.op == "placeholder"]) == 0:
+        return ep
+
+    graph_signature = ep.graph_signature
+    buffers = graph_signature.buffers
+
+    fake_mode = detect_fake_mode(
+        tuple(node.meta["val"] for node in ep.graph.nodes if node.op == "placeholder")
+    )
+
+    first_user_input = None
+    lifted_buffers = []
+    for node in ep.graph.nodes:
+        if node.op == "placeholder" and node.name in graph_signature.user_inputs:
+            first_user_input = node
+            break
+
+    for node in ep.graph.nodes:
+        if node.op == "get_attr":
+            constant_tensor = getattr(ep.graph_module, node.target)
+            if not isinstance(constant_tensor, torch.Tensor):
+                continue
+
+            constant_tensor_fqn = f"_lifted_tensor_constant{len(buffers)}"
+
+            with ep.graph.inserting_before(first_user_input):
+                # Insert the constant node before the first user input
+                const_placeholder_node = ep.graph.placeholder(constant_tensor_fqn)
+                for k, v in node.meta.items():
+                    const_placeholder_node.meta[k] = v
+                if fake_mode is not None:
+                    const_placeholder_node.meta["val"] = fake_mode.from_tensor(
+                        constant_tensor, static_shapes=True
+                    )
+                else:
+                    const_placeholder_node.meta["val"] = constant_tensor
+                const_placeholder_node.meta["val"].constant = constant_tensor
+                node.replace_all_uses_with(const_placeholder_node)
+                ep.graph.erase_node(node)
+
+                # Add the constant as a buffer to the graph signature
+                lifted_buffers.append(
+                    InputSpec(
+                        kind=InputKind.BUFFER,
+                        arg=TensorArgument(name=const_placeholder_node.name),
+                        target=constant_tensor_fqn,
+                    )
+                )
+                buffers.append(constant_tensor_fqn)
+                ep.state_dict[constant_tensor_fqn] = constant_tensor
+
+    new_input_specs = []
+    for s in graph_signature.input_specs:
+        if s.kind == InputKind.USER_INPUT and len(lifted_buffers) > 0:
+            new_input_specs.extend(lifted_buffers)
+            lifted_buffers.clear()
+        new_input_specs.append(s)
+    ep.graph_signature.input_specs = new_input_specs
+    ep.graph_module.recompile()
+    return ep
 
 
 # Stub to ease migration from `transform` to private `_transform`
@@ -311,9 +380,14 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         new_ep.exported_program.equality_constraints,
         new_ep.exported_program.module_call_graph,
         new_ep.exported_program.example_inputs,
-        dialect="EDGE",
+        verifier=EXIREdgeDialectVerifier(
+            check_edge_ops=config._use_edge_ops,
+            enable=config._check_ir_validity,
+            class_only=True,
+        ),
     )
     if config._check_ir_validity:
+        # TODO(zhxchen17) Remove this call after we turn on verifier in ctor.
         EXIREdgeDialectVerifier(check_edge_ops=config._use_edge_ops)(
             new_ep.exported_program.graph_module
         )
@@ -615,14 +689,13 @@ def to_edge(
         passes.extend(op_replace_pass)
         passes.extend(aten_to_edge_passes.passes[-2:])
         edge_program = program._transform(*passes)
-        if config._check_ir_validity:
-            try:
-                EXIREdgeDialectVerifier(check_edge_ops=config._use_edge_ops)(
-                    edge_program.graph_module
-                )
-            except ExportError as e:
-                logging.info(f"Resultant program {name} is not in edge dialect.")
-                raise e
+        try:
+            EXIREdgeDialectVerifier(
+                check_edge_ops=config._use_edge_ops, enable=config._check_ir_validity
+            )(edge_program.graph_module)
+        except ExportError as e:
+            logging.info(f"Resultant program {name} is not in edge dialect.")
+            raise e
         edge_programs[name] = edge_program
     return EdgeProgramManager(edge_programs, constant_methods)
 
