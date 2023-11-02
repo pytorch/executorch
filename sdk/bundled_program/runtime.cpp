@@ -24,7 +24,7 @@
 
 namespace torch {
 namespace executor {
-namespace util {
+namespace bundled_program {
 
 namespace {
 
@@ -365,6 +365,6 @@ bool IsBundledProgram(void* file_data) {
       file_data);
 }
 
-} // namespace util
+} // namespace bundled_program
 } // namespace executor
 } // namespace torch
