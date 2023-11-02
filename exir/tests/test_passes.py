@@ -39,6 +39,7 @@ from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendO
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
+from executorch.exir.program._program import lift_constant_tensor_pass
 from executorch.exir.tensor import TensorSpec
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.control_flow_models import FTCondDeadCode, FTMapBasic
@@ -46,7 +47,6 @@ from executorch.exir.tests.models import MLP, Mul
 from functorch.experimental import control_flow
 
 from torch import nn
-from torch._export.passes.lift_constant_tensor_pass import lift_constant_tensor_pass
 from torch.fx import GraphModule, subgraph_rewriter
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch.library import impl, Library
@@ -481,19 +481,13 @@ class TestPasses(unittest.TestCase):
         self.assertTrue(
             len([node for node in new_ep.graph.nodes if node.op == "get_attr"])
         )
-        lifted_exported_program = lift_constant_tensor_pass(new_ep)
+        new_ep = lift_constant_tensor_pass(new_ep)
 
         self.assertEqual(
-            len(
-                [
-                    node
-                    for node in lifted_exported_program.graph.nodes
-                    if node.op == "placeholder"
-                ]
-            ),
+            len([node for node in new_ep.graph.nodes if node.op == "placeholder"]),
             4,
         )
-        for node in lifted_exported_program.graph.nodes:
+        for node in new_ep.graph.nodes:
             self.assertTrue(node.op != "get_attr")
 
         edge_ep = exir.capture(
