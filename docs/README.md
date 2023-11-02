@@ -188,8 +188,8 @@ both the `toctree` and the `cusotmcarditem` sections.
 
 # Auto-generated API documentation
 
-On a high level (will go into detail later), we use Sphinx to generate both
-Python and C++ documentation in the form of HTML pages.
+We use Sphinx to generate both Python and C++ documentation in the form of HTML
+pages.
 
 ### Python APIs
 
@@ -197,7 +197,7 @@ We generate Python API documentation through Sphinx, bootstrapping
 [PyTorch's Sphinx theme](https://github.com/pytorch/pytorch_sphinx_theme) for a
 cohesive look with the existing PyTorch API documentation.
 
-The setup for Python documentation lies within `source_py/`. To set up Sphinx, a
+The setup for Python documentation lies within `source/`. To set up Sphinx, a
 `conf.py` configuration file is required. We can specify ways to generate
 documentation here. Specifically, the most important/relevant parts are:
 
@@ -205,7 +205,6 @@ documentation here. Specifically, the most important/relevant parts are:
   generate documentation for. For example, since we want to generate
   documentation for the `executorch/` directory. This tells Sphinx where to find
   the code to generate docs for.
-
 - `extensions` contains extension modules. For auto-generating APIs, make sure
   to include `sphinx.ext.autodoc`.
 - `autodoc_mock_imports` is where you put imports that Sphinx is unable to
@@ -220,34 +219,21 @@ auto-generated pages and to tell Sphinx what modules to generate documentation
 for. To auto-generate APIs for a specific module, the `automodule` tag is needed
 to tell Sphinx what specific module to document. For example, if we wanted a
 page to display auto-generated documentation for everything in
-`executorch/exir/__init__.py`, the RST file would look something like the
-following:
+`exir/__init__.py` (relative to the root of the repo), the RST file would look
+something like the following:
 
 ```
 executorch.exir
 =======================
 
-.. automodule:: executorch.exir
+.. automodule:: exir
    :members:
    :undoc-members:
    :show-inheritance:
 ```
 
 These separate RST files should all be linked together, with the initial landing
-page under `index.rst`. A sample of this structure can be found in `source_py/`.
-
-A diagram of how the files work together: ![image](python_docs.png)
-
-To view your changes on the ExecuTorch website, you can follow the same steps
-listed in the "General Documentation" section.
-
-To view just the auto-generated pages:
-
-1. `cd executorch/docs/`
-2. `sphinx-build -M html source_py sphinxbuild_py` to build Sphinx and generate
-   APIs any packages.
-3. `python3 -m http.server 8000 --directory sphinxbuild_py/html` to view your
-   HTML files at `localhost:8000`.
+page under `index.rst`. A sample of this structure can be found in `source/`.
 
 ### C++ APIs
 
@@ -263,7 +249,7 @@ Exhale to use the XML files and generate RST files which are then used to
 generate HTML files.
 
 To configure Doxygen, we can run `doxygen -g` in the root of our repository (ex.
-`source_cpp`) which will generate a `Doxyfile` containing configurations for
+`docs/source`) which will generate a `Doxyfile` containing configurations for
 generating c++ documentation. Specifically, the most important/relevant parts
 are:
 
@@ -275,13 +261,4 @@ Following PyTorch's `conf.py`
 [file](https://github.com/pytorch/pytorch/blob/master/docs/cpp/source/conf.py),
 we can set up our own `conf.py` file to take in the directory in which we
 generated the XML files, and output HTML to another directory. A sample of this
-structure can be found in `source_cpp/`.
-
-A diagram of how the files work together: ![image](cpp_docs.png)
-
-To view the C++ API documentation locally, run:
-
-1. `cd executorch/docs/`
-2. `sphinx-build -M html source_cpp sphinxbuild_cpp`
-3. `python3 -m http.server 8000 --directory sphinxbuild_py/html` to view your
-   HTML files at `localhost:8000`.
+structure can be found in `source/`.
