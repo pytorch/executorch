@@ -13,7 +13,7 @@ import logging
 import torch
 import torch._export as export
 
-from executorch.backends.arm.arm_backend import ArmPartitioner
+from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.exir import EdgeCompileConfig
 
 from ..portable.utils import export_to_edge, save_pte_program

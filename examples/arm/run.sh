@@ -54,6 +54,8 @@ function generate_pte_file() {
 
 # build ExecuTorch Libraries
 function build_executorch() {
+    set -x
+
     [[ -d "${et_build_dir}" ]] \
         && echo "[${FUNCNAME[0]}] Warn: using already existing build-dir for executorch: ${et_build_dir}!!"
     mkdir -p "${et_build_dir}"
@@ -61,7 +63,7 @@ function build_executorch() {
     cd "${et_root_dir}"
     cmake                                                 \
         -DBUCK2=${buck2}                                  \
-        -DCMAKE_INSTALL_PREFIX=cmake-out                  \
+        -DCMAKE_INSTALL_PREFIX=${et_build_dir}            \
         -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_ENABLE_LOGGING=ON                    \
@@ -74,17 +76,18 @@ function build_executorch() {
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
-    cmake --build ${et_build_dir} --target install --config Release -- -j"$((n - 5))"
+    cmake --build ${et_build_dir} -j"$((n - 5))" --target install --config Release
 
     cmake                                                 \
-        -DCMAKE_INSTALL_PREFIX=cmake-out                  \
+        -DCMAKE_INSTALL_PREFIX=${et_build_dir}            \
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_SELECT_OPS_LIST="aten::_softmax.out" \
         -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
         -B"${et_build_dir}"/examples/arm                  \
-        -Dexecutorch_DIR="${et_root_dir}"/build           \
         "${et_root_dir}"/examples/arm
     cmake --build ${et_build_dir}/examples/arm -- -j"$((n - 5))"
+
+    set +x
 
     cd "${et_build_dir}"
     echo "[${FUNCNAME[0]}] Generated static libraries for ExecuTorch:"
