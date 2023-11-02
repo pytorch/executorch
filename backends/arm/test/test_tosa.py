@@ -11,7 +11,7 @@ import copy
 import unittest
 
 import executorch.exir as exir
-from executorch.backends.arm.arm_backend import ArmPartitioner
+from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.test.test_models import TestList, TosaProfile
 from executorch.exir import EdgeCompileConfig
 
