@@ -42,4 +42,4 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 gen_selected_ops("" "${EXECUTORCH_SELECT_OPS_LIST}" "")
 generate_bindings_for_kernels(
   ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml "")
-gen_operators_lib("arm_ops_lib" portable_kernels executorch)
+gen_operators_lib("portable_ops_lib" portable_kernels executorch)

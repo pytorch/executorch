@@ -54,6 +54,8 @@ function generate_pte_file() {
 
 # build ExecuTorch Libraries
 function build_executorch() {
+    set -x
+
     [[ -d "${et_build_dir}" ]] \
         && echo "[${FUNCNAME[0]}] Warn: using already existing build-dir for executorch: ${et_build_dir}!!"
     mkdir -p "${et_build_dir}"
@@ -84,6 +86,8 @@ function build_executorch() {
         -B"${et_build_dir}"/examples/arm                  \
         "${et_root_dir}"/examples/arm
     cmake --build ${et_build_dir}/examples/arm -- -j"$((n - 5))"
+
+    set +x
 
     cd "${et_build_dir}"
     echo "[${FUNCNAME[0]}] Generated static libraries for ExecuTorch:"
