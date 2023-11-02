@@ -27,7 +27,7 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/util/util.h>
-#include <executorch/util/bundled_program_verification.h>
+#include <executorch/sdk/bundled_program/runtime.h>
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>

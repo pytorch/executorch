@@ -26,7 +26,7 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/schema/bundled_program_schema_generated.h>
-#include <executorch/util/bundled_program_verification.h>
+#include <executorch/sdk/bundled_program/runtime.h>
 #include <executorch/util/read_file.h>
 
 #include <ATen/Functions.h>

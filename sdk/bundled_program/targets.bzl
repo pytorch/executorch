@@ -7,34 +7,22 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    runtime.cxx_library(
-        name = "read_file",
-        srcs = ["read_file.cpp"],
-        exported_headers = ["read_file.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/platform:compiler",
-        ],
-    )
-
     for aten_mode in (True, False):
         aten_suffix = ("_aten" if aten_mode else "")
-
         runtime.cxx_library(
-            name = "util" + aten_suffix,
-            srcs = [],
-            exported_headers = ["util.h"],
+            name = "runtime" + aten_suffix,
+            srcs = ["runtime.cpp"],
+            exported_headers = ["runtime.h"],
             visibility = [
                 "//executorch/...",
                 "@EXECUTORCH_CLIENTS",
             ],
+            deps = [
+                "//executorch/runtime/core/exec_aten/util:dim_order_util" + aten_suffix,
+                "//executorch/schema:bundled_program_schema",
+            ],
             exported_deps = [
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core:memory_allocator",
                 "//executorch/runtime/executor:program" + aten_suffix,
-                "//executorch/runtime/platform:platform",
             ],
         )
