@@ -8,7 +8,7 @@ import copy
 import sys
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 import torch
 import torch._export as export
@@ -197,7 +197,7 @@ class ToEdge(Stage):
 
 @register_stage
 class RunPasses(Stage):
-    def __init__(self, pass_list: Optional[List[PassType]] = None):
+    def __init__(self, pass_list: Optional[List[Type[PassType]]] = None):
         self.pass_list = pass_list
         self.edge_dialect_program = None
 
