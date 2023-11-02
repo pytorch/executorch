@@ -28,6 +28,7 @@ class TestEventBlock(unittest.TestCase):
         instruction_id: int,
         time: Tuple[int, int],
         delegate_debug_id: Optional[Union[int, str]] = None,
+        delegate_debug_metadata: Optional[str] = None,
     ) -> flatcc.ProfileEvent:
         """
         Helper for generating test ProfileEvents
@@ -49,7 +50,7 @@ class TestEventBlock(unittest.TestCase):
             instruction_id,
             delegate_debug_id_int,
             delegate_debug_id_str,
-            "",
+            delegate_debug_metadata,
             start_time=time[0],
             end_time=time[1],
         )
@@ -171,20 +172,25 @@ class TestEventBlock(unittest.TestCase):
             # Test Signature Generation
             signature = ProfileEventSignature._gen_from_event(profile_event)
             expected_signature = ProfileEventSignature(
-                name, instruction_id, delegate_debug_id_int, delegate_debug_id_str
+                name,
+                instruction_id,
+                delegate_debug_id_int,
+                delegate_debug_id_str,
             )
             self.assertEqual(signature, expected_signature)
 
             # Test Event Generation
             durations = [10, 20, 30]
+            delegate_debug_metadatas = ["metadata_0", "metadata_1", "metadata_2"]
             profile_events: List[flatcc.ProfileEvent] = [
                 TestEventBlock._gen_sample_profile_event(
                     name,
                     instruction_id,
                     (0, time),
                     delegate_debug_id,
+                    delegate_debug_metadatas[index],
                 )
-                for time in durations
+                for index, time in enumerate(durations)
             ]
             event = Event._gen_from_profile_events(
                 signature, profile_events, scale_factor=scale_factor
@@ -198,6 +204,7 @@ class TestEventBlock(unittest.TestCase):
                 ),
                 delegate_debug_identifier=delegate_debug_id,
                 is_delegated_op=is_delegated,
+                delegate_debug_metadatas=delegate_debug_metadatas,
                 _instruction_id=signature.instruction_id,
             )
             self.assertEqual(event, expected_event)
