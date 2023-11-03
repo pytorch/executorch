@@ -12,15 +12,10 @@
 #import <stdio.h>
 #import <system_error>
 
+#import <objc_safe_cast.h>
+
 namespace  {
-
 using namespace executorchcoreml;
-
-inline id check_class(id obj, Class cls) {
-    return [obj isKindOfClass:cls] ? obj : nil;
-}
-
-#define SAFE_CAST(Object, Type) ((Type *)check_class(Object, [Type class]))
 
 NSDate * _Nullable get_content_modification_date(NSURL *url, NSError * __autoreleasing *error) {
     NSDate *result = nil;

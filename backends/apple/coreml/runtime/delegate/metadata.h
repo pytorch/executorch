@@ -10,6 +10,8 @@
 #import <string>
 #import <vector>
 
+#import <serde_json.h>
+
 namespace executorchcoreml {
 
 /// A class representing a model's metadata.
@@ -29,6 +31,12 @@ struct ModelMetadata {
     /// Returns `true` if the metadata is valid otherwise `false`.
     inline bool isValid() const noexcept {
         return !identifier.empty() && !input_names.empty() && !output_names.empty();
+    }
+
+    inline std::string to_json_string() const noexcept { return executorchcoreml::serde::json::to_json_string(*this); }
+
+    inline void from_json_string(std::string json_string) noexcept {
+        executorchcoreml::serde::json::from_json_string(json_string, *this);
     }
 
     /// Unique identifier.
