@@ -56,7 +56,3 @@ generate_program_schema("${common_schema_srcs}" "common_schema")
 set(program_schema_srcs program.fbs)
 generate_program_schema("${program_schema_srcs}" "program_schema")
 add_dependencies(program_schema common_schema)
-
-set(bundled_schema_srcs bundled_program_schema.fbs)
-generate_program_schema("${bundled_schema_srcs}" "bundled_schema")
-add_dependencies(bundled_schema common_schema)
