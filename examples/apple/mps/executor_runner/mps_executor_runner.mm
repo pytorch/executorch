@@ -122,7 +122,7 @@ class ProgramData {
     // Find the offset to the embedded Program.
     const void* program_data;
     size_t program_data_len;
-    Error status = torch::executor::util::GetProgramData(
+    Error status = torch::executor::bundled_program::GetProgramData(
         const_cast<void*>(file_data->data()),
         file_data->size(),
         &program_data,
@@ -262,7 +262,7 @@ int main(int argc, char** argv) {
   // Find the offset to the embedded Program.
   const void* program_data;
   size_t program_data_len;
-  Error status = torch::executor::util::GetProgramData(
+  Error status = torch::executor::bundled_program::GetProgramData(
       const_cast<void*>(file_data->data()),
       file_data->size(),
       &program_data,
@@ -403,7 +403,7 @@ int main(int argc, char** argv) {
   if (FLAGS_bundled_program) {
     ET_LOG(Info, "Loading bundled program...\n");
     // Use the inputs embedded in the bundled program.
-    status = torch::executor::util::LoadBundledInput(
+    status = torch::executor::bundled_program::LoadBundledInput(
         *method,
         file_data->data(),
         &bundled_input_allocator,
@@ -486,7 +486,7 @@ int main(int argc, char** argv) {
         strstr(model_path, "ic4")) {
         atol = 1e-04;
     }
-    status = torch::executor::util::VerifyResultWithBundledExpectedOutput(
+    status = torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput(
         *method,
         file_data->data(),
         &bundled_input_allocator,
