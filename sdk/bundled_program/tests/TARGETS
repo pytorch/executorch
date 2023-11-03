@@ -31,7 +31,7 @@ python_unittest(
         "//executorch/exir/_serialize:lib",
         "//executorch/sdk/bundled_program:config",
         "//executorch/sdk/bundled_program:core",
-        "//executorch/sdk/bundled_program:schema",
+        "//executorch/sdk/bundled_program/schema:bundled_program_schema_py",
     ],
 )
 
