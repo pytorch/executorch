@@ -112,11 +112,12 @@ in the example), and a list of constraints (covered later).
 
     def forward(self, x):
         arg0, = fx_pytree.tree_flatten_spec(([x], {}), self._in_spec)
+        arg0_1 = arg0
         _param_constant0 = self._param_constant0
         _param_constant1 = self._param_constant1
-        conv2d_default = torch.ops.aten.conv2d.default(arg0, _param_constant0, _param_constant1, [1, 1], [1, 1]);  arg0 = _param_constant0 = _param_constant1 = None
-        relu_default = torch.ops.aten.relu.default(conv2d_default);  conv2d_default = None
-        return pytree.tree_unflatten([relu_default], self._out_spec)
+        conv2d = torch.ops.aten.conv2d.default(arg0_1, _param_constant0, _param_constant1, [1, 1], [1, 1]);  arg0_1 = _param_constant0 = _param_constant1 = None
+        relu = torch.ops.aten.relu.default(conv2d);  conv2d = None
+        return pytree.tree_unflatten([relu], self._out_spec)
     
     # To see more debug info, please use `graph_module.print_readable()`
     ATen Dialect Graph
@@ -214,23 +215,23 @@ different than the ones we used while tracing, we will run into an error:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 132, in <module>
         print(aten_dialect(torch.ones(3, 2), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 572, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 252, in __call__
         self._check_input_constraints(*ordered_params, *ordered_buffers, *args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 920, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 608, in _check_input_constraints
         _assertion_graph(*args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 728, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 736, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 307, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 315, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 294, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 302, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _wrapped_call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1510, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1528, in _call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _call_impl
         return forward_call(*args, **kwargs)
-      File "<eval_with_key>.166", line 11, in forward
+      File "<eval_with_key>.160", line 11, in forward
         _assert_async = torch.ops.aten._assert_async.msg(scalar_tensor, 'Input arg1_1.shape[1] is specialized at 3');  scalar_tensor = None
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 516, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 513, in __call__
         return self._op(*args, **kwargs or {})
     RuntimeError: Input arg1_1.shape[1] is specialized at 3
 
@@ -349,45 +350,45 @@ Now let's try running the model with different shapes:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 184, in <module>
         print(aten_dialect(torch.ones(3, 15), torch.ones(3, 15)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 572, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 252, in __call__
         self._check_input_constraints(*ordered_params, *ordered_buffers, *args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 920, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 608, in _check_input_constraints
         _assertion_graph(*args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 728, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 736, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 307, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 315, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 294, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 302, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _wrapped_call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1510, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1528, in _call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _call_impl
         return forward_call(*args, **kwargs)
-      File "<eval_with_key>.198", line 17, in forward
+      File "<eval_with_key>.191", line 17, in forward
         _assert_async_2 = torch.ops.aten._assert_async.msg(scalar_tensor_2, 'Input arg0_1.shape[1] is outside of specified dynamic range [2, 10]');  scalar_tensor_2 = None
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 516, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 513, in __call__
         return self._op(*args, **kwargs or {})
     RuntimeError: Input arg0_1.shape[1] is outside of specified dynamic range [2, 10]
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 190, in <module>
         print(aten_dialect(torch.ones(3, 3), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 572, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 252, in __call__
         self._check_input_constraints(*ordered_params, *ordered_buffers, *args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 920, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 608, in _check_input_constraints
         _assertion_graph(*args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 728, in call_wrapped
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 736, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 307, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 315, in __call__
         raise e
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 294, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 302, in __call__
         return super(self.cls, obj).__call__(*args, **kwargs)  # type: ignore[misc]
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _wrapped_call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1510, in _wrapped_call_impl
         return self._call_impl(*args, **kwargs)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1528, in _call_impl
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _call_impl
         return forward_call(*args, **kwargs)
-      File "<eval_with_key>.203", line 11, in forward
+      File "<eval_with_key>.196", line 11, in forward
         _assert_async = torch.ops.aten._assert_async.msg(scalar_tensor, 'Input arg1_1.shape[1] is not equal to input arg0_1.shape[1]');  scalar_tensor = None
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 516, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 513, in __call__
         return self._op(*args, **kwargs or {})
     RuntimeError: Input arg1_1.shape[1] is not equal to input arg0_1.shape[1]
 
@@ -467,11 +468,12 @@ model properly for a specific backend.
 
     def forward(self, x):
         arg0, = fx_pytree.tree_flatten_spec(([x], {}), self._in_spec)
+        arg0_1 = arg0
         _param_constant0 = self._param_constant0
         _param_constant1 = self._param_constant1
-        conv2d_default = torch.ops.aten.conv2d.default(arg0, _param_constant0, _param_constant1, [1, 1], [1, 1]);  arg0 = _param_constant0 = _param_constant1 = None
-        relu_default = torch.ops.aten.relu.default(conv2d_default);  conv2d_default = None
-        return pytree.tree_unflatten([relu_default], self._out_spec)
+        conv2d = torch.ops.aten.conv2d.default(arg0_1, _param_constant0, _param_constant1, [1, 1], [1, 1]);  arg0_1 = _param_constant0 = _param_constant1 = None
+        relu = torch.ops.aten.relu.default(conv2d);  conv2d = None
+        return pytree.tree_unflatten([relu], self._out_spec)
     
     # To see more debug info, please use `graph_module.print_readable()`
     /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/ao/quantization/observer.py:1220: UserWarning: must run observer before calling calculate_qparams.                                    Returning default scale and zero point 
@@ -485,15 +487,16 @@ model properly for a specific backend.
 
     def forward(self, x):
         arg0, = fx_pytree.tree_flatten_spec(([x], {}), self._in_spec)
-        quantize_per_tensor_default = torch.ops.quantized_decomposed.quantize_per_tensor.default(arg0, 1.0, 0, -128, 127, torch.int8);  arg0 = None
+        arg0_1 = arg0
+        quantize_per_tensor_default = torch.ops.quantized_decomposed.quantize_per_tensor.default(arg0_1, 1.0, 0, -128, 127, torch.int8);  arg0_1 = None
         dequantize_per_tensor_default = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default = None
         _param_constant0 = self._param_constant0
         quantize_per_tensor_default_1 = torch.ops.quantized_decomposed.quantize_per_tensor.default(_param_constant0, 1.0, 0, -127, 127, torch.int8);  _param_constant0 = None
         dequantize_per_tensor_default_1 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default_1, 1.0, 0, -127, 127, torch.int8);  quantize_per_tensor_default_1 = None
         _param_constant1 = self._param_constant1
-        conv2d_default = torch.ops.aten.conv2d.default(dequantize_per_tensor_default, dequantize_per_tensor_default_1, _param_constant1, [1, 1], [1, 1]);  dequantize_per_tensor_default = dequantize_per_tensor_default_1 = _param_constant1 = None
-        relu_default = torch.ops.aten.relu.default(conv2d_default);  conv2d_default = None
-        quantize_per_tensor_default_2 = torch.ops.quantized_decomposed.quantize_per_tensor.default(relu_default, 1.0, 0, -128, 127, torch.int8);  relu_default = None
+        conv2d = torch.ops.aten.conv2d.default(dequantize_per_tensor_default, dequantize_per_tensor_default_1, _param_constant1, [1, 1], [1, 1]);  dequantize_per_tensor_default = dequantize_per_tensor_default_1 = _param_constant1 = None
+        relu = torch.ops.aten.relu.default(conv2d);  conv2d = None
+        quantize_per_tensor_default_2 = torch.ops.quantized_decomposed.quantize_per_tensor.default(relu, 1.0, 0, -128, 127, torch.int8);  relu = None
         dequantize_per_tensor_default_2 = torch.ops.quantized_decomposed.dequantize_per_tensor.default(quantize_per_tensor_default_2, 1.0, 0, -128, 127, torch.int8);  quantize_per_tensor_default_2 = None
         return pytree.tree_unflatten([dequantize_per_tensor_default_2], self._out_spec)
     
@@ -587,11 +590,12 @@ The lowering is done through the ``to_edge`` API.
 
     def forward(self, x):
         arg0, = fx_pytree.tree_flatten_spec(([x], {}), self._in_spec)
+        arg0_1 = arg0
         _param_constant0 = self._param_constant0
         _param_constant1 = self._param_constant1
-        conv2d_default = torch.ops.aten.conv2d.default(arg0, _param_constant0, _param_constant1, [1, 1], [1, 1]);  arg0 = _param_constant0 = _param_constant1 = None
-        relu_default = torch.ops.aten.relu.default(conv2d_default);  conv2d_default = None
-        return pytree.tree_unflatten([relu_default], self._out_spec)
+        conv2d = torch.ops.aten.conv2d.default(arg0_1, _param_constant0, _param_constant1, [1, 1], [1, 1]);  arg0_1 = _param_constant0 = _param_constant1 = None
+        relu = torch.ops.aten.relu.default(conv2d);  conv2d = None
+        return pytree.tree_unflatten([relu], self._out_spec)
     
     # To see more debug info, please use `graph_module.print_readable()`
     ATen Dialect Graph
@@ -676,20 +680,6 @@ there is only one program, it will by default be saved to the name "forward".
 
  .. code-block:: none
 
-    Edge Dialect graph of encode
-    ExportedProgram:
-        class GraphModule(torch.nn.Module):
-            def forward(self, arg0_1: f32[1, 10]):
-                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:292, code: return torch.nn.functional.linear(x, torch.randn(5, 10))
-                aten_randn_default: f32[5, 10] = executorch_exir_dialects_edge__ops_aten_randn_default([5, 10], device = device(type='cpu'), pin_memory = False)
-                aten_permute_copy_default: f32[10, 5] = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
-                aten_mm_default: f32[1, 5] = executorch_exir_dialects_edge__ops_aten_mm_default(arg0_1, aten_permute_copy_default);  arg0_1 = aten_permute_copy_default = None
-                return (aten_mm_default,)
-            
-    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='arg0_1'), target=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
-    Range constraints: {}
-    Equality constraints: []
-
     Edge Dialect graph of decode
     ExportedProgram:
         class GraphModule(torch.nn.Module):
@@ -698,6 +688,20 @@ there is only one program, it will by default be saved to the name "forward".
                 aten_randn_default: f32[10, 5] = executorch_exir_dialects_edge__ops_aten_randn_default([10, 5], device = device(type='cpu'), pin_memory = False)
                 aten_permute_copy_default: f32[5, 10] = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
                 aten_mm_default: f32[1, 10] = executorch_exir_dialects_edge__ops_aten_mm_default(arg0_1, aten_permute_copy_default);  arg0_1 = aten_permute_copy_default = None
+                return (aten_mm_default,)
+            
+    Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='arg0_1'), target=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
+    Range constraints: {}
+    Equality constraints: []
+
+    Edge Dialect graph of encode
+    ExportedProgram:
+        class GraphModule(torch.nn.Module):
+            def forward(self, arg0_1: f32[1, 10]):
+                # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:292, code: return torch.nn.functional.linear(x, torch.randn(5, 10))
+                aten_randn_default: f32[5, 10] = executorch_exir_dialects_edge__ops_aten_randn_default([5, 10], device = device(type='cpu'), pin_memory = False)
+                aten_permute_copy_default: f32[10, 5] = executorch_exir_dialects_edge__ops_aten_permute_copy_default(aten_randn_default, [1, 0]);  aten_randn_default = None
+                aten_mm_default: f32[1, 5] = executorch_exir_dialects_edge__ops_aten_mm_default(arg0_1, aten_permute_copy_default);  arg0_1 = aten_permute_copy_default = None
                 return (aten_mm_default,)
             
     Graph signature: ExportGraphSignature(input_specs=[InputSpec(kind=<InputKind.USER_INPUT: 1>, arg=TensorArgument(name='arg0_1'), target=None)], output_specs=[OutputSpec(kind=<OutputKind.USER_OUTPUT: 1>, arg=TensorArgument(name='aten_mm_default'), target=None)])
@@ -888,7 +892,7 @@ lowering process.
     Range constraints: {}
     Equality constraints: []
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:590: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:768: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
       warnings.warn("pytree_to_str is deprecated. Please use treespec_dumps")
 
 
@@ -1248,7 +1252,7 @@ writing a custom memory planning pass can be found
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:590: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:768: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
       warnings.warn("pytree_to_str is deprecated. Please use treespec_dumps")
     ExecuTorch Dialect
     ExportedProgram:
@@ -1367,7 +1371,7 @@ Here is an example for an entire end-to-end workflow:
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:590: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
+    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:768: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
       warnings.warn("pytree_to_str is deprecated. Please use treespec_dumps")
 
 
@@ -1394,7 +1398,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 4.867 seconds)
+   **Total running time of the script:** (0 minutes 9.953 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
