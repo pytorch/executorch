@@ -22,9 +22,9 @@ def define_common_targets():
         deps = [
             ":linear_model",
             "//caffe2:torch",
-            "//executorch/bundled_program:config",
-            "//executorch/bundled_program:core",
-            "//executorch/bundled_program/serialize:lib",
+            "//executorch/sdk/bundled_program:config",
+            "//executorch/sdk/bundled_program:core",
+            "//executorch/sdk/bundled_program/serialize:lib",
             "//executorch/exir:lib",
             "//executorch/exir/_serialize:lib",
         ],
