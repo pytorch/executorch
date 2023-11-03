@@ -12,15 +12,15 @@ import executorch.exir as exir
 
 import torch
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
-from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.bundled_program.core import create_bundled_program
-from executorch.bundled_program.serialize import (
-    serialize_from_bundled_program_to_flatbuffer,
-)
 from executorch.exir import ExecutorchProgram, ExirExportedProgram
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 
 from executorch.exir.print_program import print_program
+from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
+)
 
 # Config for Capturing the weights, will be moved in the future
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True, _unlift=True)
