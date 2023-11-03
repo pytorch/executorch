@@ -21,12 +21,12 @@ import executorch.extension.pytree as pytree
 
 import torch
 
-from executorch.bundled_program.core import create_bundled_program
-from executorch.bundled_program.serialize import (
+from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 
-from executorch.bundled_program.tests.common import get_common_program, SampleModel
+from executorch.sdk.bundled_program.tests.common import get_common_program, SampleModel
 
 kernel_mode = None  # either aten mode or lean mode
 try:
