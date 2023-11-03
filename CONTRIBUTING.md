@@ -12,7 +12,7 @@ You can see [lintrunner](https://pypi.org/project/lintrunner/) for making sure t
 
 ```
 pip install lintrunner==0.11.0
-pip install lintrunner-adapters==0.9.0
+pip install lintrunner-adapters==0.11.0
 lintrunner init
 ```
 
