@@ -694,6 +694,11 @@ BUILD SUCCEEDED
 </div>
 </div>
 </details><p>The <code class="docutils literal notranslate"><span class="pre">--show-output</span></code> flag prints the path to the executable if you want to run it directly.</p>
+<p>If you run into <code class="docutils literal notranslate"><span class="pre">Stderr:</span> <span class="pre">clang-14:</span> <span class="pre">error:</span> <span class="pre">invalid</span> <span class="pre">linker</span> <span class="pre">name</span> <span class="pre">in</span> <span class="pre">argument</span> <span class="pre">'-fuse-ld=lld'</span></code>, <code class="docutils literal notranslate"><span class="pre">lld</span></code> is not available on your system. Try installing it
+with <code class="docutils literal notranslate"><span class="pre">conda</span></code> or with your system’s package manager.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>conda<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>conda-forge<span class="w"> </span>lld
+</pre></div>
+</div>
 </li>
 </ol>
 <p>Now that you have built our sample programs, you can proceed to
