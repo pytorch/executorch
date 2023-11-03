@@ -1,11 +1,18 @@
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
-python_library(
+define_common_targets()
+
+runtime.python_library(
     name = "core",
     srcs = [
         "core.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         ":config",
@@ -18,10 +25,14 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "config",
     srcs = [
         "config.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
     ],
     deps = [
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
@@ -29,19 +40,25 @@ python_library(
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "schema",
     srcs = [
         "schema.py",
+    ],
+    visibility = [
+        "//executorch/sdk/...",
     ],
     deps = [
         "//executorch/exir:scalar_type",
     ],
 )
 
-python_library(
+runtime.python_library(
     name = "version",
     srcs = [
         "version.py",
+    ],
+    visibility = [
+        "//executorch/sdk/...",
     ],
 )
