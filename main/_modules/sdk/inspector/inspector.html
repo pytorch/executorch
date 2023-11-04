@@ -431,6 +431,7 @@
 <span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
 <span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">Any</span><span class="p">,</span>
     <span class="n">Dict</span><span class="p">,</span>
     <span class="n">List</span><span class="p">,</span>
     <span class="n">Mapping</span><span class="p">,</span>
@@ -449,7 +450,7 @@
 
 <span class="kn">from</span> <span class="nn">executorch.sdk.debug_format.et_schema</span> <span class="kn">import</span> <span class="n">OperatorNode</span>
 <span class="kn">from</span> <span class="nn">executorch.sdk.etdump.schema_flatcc</span> <span class="kn">import</span> <span class="n">ETDumpFlatCC</span><span class="p">,</span> <span class="n">ProfileEvent</span>
-<span class="kn">from</span> <span class="nn">executorch.sdk.etrecord</span> <span class="kn">import</span> <span class="n">parse_etrecord</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk.etrecord</span> <span class="kn">import</span> <span class="n">ETRecord</span><span class="p">,</span> <span class="n">parse_etrecord</span>
 <span class="kn">from</span> <span class="nn">executorch.sdk.inspector._inspector_utils</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">create_debug_handle_to_op_node_mapping</span><span class="p">,</span>
     <span class="n">EDGE_DIALECT_GRAPH_KEY</span><span class="p">,</span>
@@ -540,6 +541,10 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">raw</span>
 
     <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">p10</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">p50</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">percentile</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw</span><span class="p">,</span> <span class="mi">50</span><span class="p">)</span>
 
@@ -568,7 +573,7 @@
 
 <span class="sd">    Args:</span>
 <span class="sd">        name: Name of the profiling/debugging `Event`.</span>
-<span class="sd">        perf_data: Performance data associated with the event retrived from the runtime (available attributes: p50, p90, avg, min and max).</span>
+<span class="sd">        perf_data: Performance data associated with the event retrived from the runtime (available attributes: p10, p50, p90, avg, min and max).</span>
 <span class="sd">        op_type: List of op types corresponding to the event.</span>
 <span class="sd">        delegate_debug_identifier: Supplemental identifier used in combination with instruction id.</span>
 <span class="sd">        debug_handles: Debug handles in the model graph to which this event is correlated.</span>
@@ -638,7 +643,8 @@
         <span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">_associate_with_op_graph_nodes</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">debug_handle_to_op_node_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">OperatorNode</span><span class="p">]</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">debug_handle_to_op_node_map</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">OperatorNode</span><span class="p">],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Helper function to populate the stack_traces, module_hierarchy and op_types attributes</span>
@@ -657,6 +663,7 @@
 
         <span class="k">for</span> <span class="n">handle</span> <span class="ow">in</span> <span class="n">debug_handles</span><span class="p">:</span>
             <span class="n">node</span> <span class="o">=</span> <span class="n">debug_handle_to_op_node_map</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">handle</span><span class="p">)</span>
+            <span class="c1"># Attach node metadata including stack traces, module hierarchy and op_types to this event</span>
             <span class="k">if</span> <span class="n">node</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span><span class="n">metadata</span> <span class="o">:=</span> <span class="n">node</span><span class="o">.</span><span class="n">metadata</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;stack_trace&quot;</span><span class="p">)</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">module_hierarchy</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">metadata</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;nn_module_stack&quot;</span><span class="p">)</span>
@@ -703,6 +710,7 @@
             <span class="s2">&quot;event_block_name&quot;</span><span class="p">:</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">*</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">),</span>
             <span class="s2">&quot;event_name&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">],</span>
             <span class="s2">&quot;raw&quot;</span><span class="p">:</span> <span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">raw</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">],</span>
+            <span class="s2">&quot;p10&quot;</span> <span class="o">+</span> <span class="n">units</span><span class="p">:</span> <span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">p10</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">],</span>
             <span class="s2">&quot;p50&quot;</span> <span class="o">+</span> <span class="n">units</span><span class="p">:</span> <span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">p50</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">],</span>
             <span class="s2">&quot;p90&quot;</span> <span class="o">+</span> <span class="n">units</span><span class="p">:</span> <span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">p90</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">],</span>
             <span class="s2">&quot;avg&quot;</span> <span class="o">+</span> <span class="n">units</span><span class="p">:</span> <span class="p">[</span><span class="n">event</span><span class="o">.</span><span class="n">perf_data</span><span class="o">.</span><span class="n">avg</span> <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">events</span><span class="p">],</span>
@@ -850,7 +858,7 @@
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">etdump_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">etrecord_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">etrecord</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">ETRecord</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
         <span class="n">source_time_scale</span><span class="p">:</span> <span class="n">TimeScale</span> <span class="o">=</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">NS</span><span class="p">,</span>
         <span class="n">target_time_scale</span><span class="p">:</span> <span class="n">TimeScale</span> <span class="o">=</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">MS</span><span class="p">,</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -860,7 +868,7 @@
 
 <span class="sd">        Args:</span>
 <span class="sd">            etdump_path: Path to the ETDump file.</span>
-<span class="sd">            etrecord_path: Optional path to the ETRecord file.</span>
+<span class="sd">            etrecord: Optional ETRecord object or path to the ETRecord file.</span>
 <span class="sd">            source_time_scale: The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.</span>
 <span class="sd">            target_time_scale: The target time scale to which the users want their performance data converted to. Defaults to MS.</span>
 
@@ -868,11 +876,14 @@
 <span class="sd">            None</span>
 <span class="sd">        &quot;&quot;&quot;</span>
 
-        <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">parse_etrecord</span><span class="p">(</span><span class="n">etrecord_path</span><span class="o">=</span><span class="n">etrecord_path</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">etrecord_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="k">else</span> <span class="kc">None</span>
-        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">etrecord</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">etrecord</span><span class="p">,</span> <span class="n">ETRecord</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span> <span class="o">=</span> <span class="n">etrecord</span>
+        <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">etrecord</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span> <span class="o">=</span> <span class="n">parse_etrecord</span><span class="p">(</span><span class="n">etrecord_path</span><span class="o">=</span><span class="n">etrecord</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;Unsupported ETRecord type&quot;</span><span class="p">)</span>
 
         <span class="n">etdump</span> <span class="o">=</span> <span class="n">gen_etdump_object</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="n">etdump_path</span><span class="p">)</span>
         <span class="k">if</span> <span class="p">(</span><span class="n">source_time_scale</span> <span class="o">==</span> <span class="n">TimeScale</span><span class="o">.</span><span class="n">CYCLES</span><span class="p">)</span> <span class="o">^</span> <span class="p">(</span>
@@ -902,16 +913,19 @@
             <span class="p">)</span>
 
         <span class="c1"># Traverse the edge dialect op graph to create mapping from debug_handle to op node</span>
-        <span class="n">op_graph_dict</span> <span class="o">=</span> <span class="n">gen_graphs_from_etrecord</span><span class="p">(</span><span class="n">etrecord</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="p">)</span>
+        <span class="c1"># The attribute op_graph_dict exists only to be used by the visualization tool and is not intended to be accessed for any other reasons</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">op_graph_dict</span> <span class="o">=</span> <span class="n">gen_graphs_from_etrecord</span><span class="p">(</span><span class="n">etrecord</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_etrecord</span><span class="p">)</span>
         <span class="n">debug_handle_to_op_node_map</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">create_debug_handle_to_op_node_mapping</span><span class="p">(</span>
-            <span class="n">op_graph_dict</span><span class="p">[</span><span class="n">EDGE_DIALECT_GRAPH_KEY</span><span class="p">],</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">op_graph_dict</span><span class="p">[</span><span class="n">EDGE_DIALECT_GRAPH_KEY</span><span class="p">],</span>
             <span class="n">debug_handle_to_op_node_map</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
             <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
-                <span class="n">event</span><span class="o">.</span><span class="n">_associate_with_op_graph_nodes</span><span class="p">(</span><span class="n">debug_handle_to_op_node_map</span><span class="p">)</span>
+                <span class="n">event</span><span class="o">.</span><span class="n">_associate_with_op_graph_nodes</span><span class="p">(</span>
+                    <span class="n">debug_handle_to_op_node_map</span><span class="o">=</span><span class="n">debug_handle_to_op_node_map</span><span class="p">,</span>
+                <span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">print_data_tabular</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">include_units</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>

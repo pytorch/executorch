@@ -260,7 +260,7 @@ To visualize all runtime events, call Inspector's ``print_data_tabular``.
     from executorch.sdk import Inspector
 
     etdump_path = "etdump.etdp"
-    inspector = Inspector(etdump_path=etdump_path, etrecord_path=etrecord_path)
+    inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
     inspector.print_data_tabular()
 
 
@@ -432,7 +432,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.519 seconds)
+   **Total running time of the script:** (0 minutes 1.553 seconds)
 
 
 .. _sphx_glr_download_tutorials_sdk-integration-tutorial.py:

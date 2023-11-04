@@ -446,14 +446,14 @@ APIs:</p>
 <h3>Constructor<a class="headerlink" href="#constructor" title="Permalink to this headline">¶</a></h3>
 <dl class="py function">
 <dt class="sig sig-object py" id="sdk.Inspector.__init__">
-<span class="sig-prename descclassname"><span class="pre">sdk.Inspector.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etdump_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etrecord_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">source_time_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">TimeScale.NS</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_time_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">TimeScale.MS</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.Inspector.__init__" title="Permalink to this definition">¶</a></dt>
+<span class="sig-prename descclassname"><span class="pre">sdk.Inspector.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etdump_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etrecord</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">source_time_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">TimeScale.NS</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_time_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">TimeScale.MS</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.Inspector.__init__" title="Permalink to this definition">¶</a></dt>
 <dd><p>Initialize an <cite>Inspector</cite> instance with the underlying <cite>EventBlock</cite>s populated with data from the provided ETDump path
 and optional ETRecord path.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>etdump_path</strong> – Path to the ETDump file.</p></li>
-<li><p><strong>etrecord_path</strong> – Optional path to the ETRecord file.</p></li>
+<li><p><strong>etrecord</strong> – Optional ETRecord object or path to the ETRecord file.</p></li>
 <li><p><strong>source_time_scale</strong> – The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.</p></li>
 <li><p><strong>target_time_scale</strong> – The target time scale to which the users want their performance data converted to. Defaults to MS.</p></li>
 </ul>
@@ -467,7 +467,7 @@ and optional ETRecord path.</p>
 <p><strong>Example Usage:</strong></p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">Inspector</span>
 
-<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">&quot;/path/to/etdump.etdp&quot;</span><span class="p">,</span> <span class="n">etrecord_path</span><span class="o">=</span><span class="s2">&quot;/path/to/etrecord.bin&quot;</span><span class="p">)</span>
+<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">&quot;/path/to/etdump.etdp&quot;</span><span class="p">,</span> <span class="n">etrecord</span><span class="o">=</span><span class="s2">&quot;/path/to/etrecord.bin&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -591,7 +591,7 @@ If there’s a control flow, each branch will be represented by a separate <cite
 <dt class="field-odd">Parameters</dt>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>name</strong> – Name of the profiling/debugging <cite>Event</cite>.</p></li>
-<li><p><strong>perf_data</strong> – Performance data associated with the event retrived from the runtime (available attributes: p50, p90, avg, min and max).</p></li>
+<li><p><strong>perf_data</strong> – Performance data associated with the event retrived from the runtime (available attributes: p10, p50, p90, avg, min and max).</p></li>
 <li><p><strong>op_type</strong> – List of op types corresponding to the event.</p></li>
 <li><p><strong>delegate_debug_identifier</strong> – Supplemental identifier used in combination with instruction id.</p></li>
 <li><p><strong>debug_handles</strong> – Debug handles in the model graph to which this event is correlated.</p></li>
