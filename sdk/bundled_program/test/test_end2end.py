@@ -26,7 +26,10 @@ from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 
-from executorch.sdk.bundled_program.tests.common import get_common_program, SampleModel
+from executorch.sdk.bundled_program.util.test_util import (
+    get_common_program,
+    SampleModel,
+)
 
 kernel_mode = None  # either aten mode or lean mode
 try:
