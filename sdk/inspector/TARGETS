@@ -25,7 +25,9 @@ python_library(
 python_binary(
     name = "inspector_cli",
     main_src = "inspector_cli.py",
-    deps = [":inspector"],
+    deps = [
+        ":inspector",
+    ],
 )
 
 python_library(
