@@ -16,12 +16,12 @@ runtime.python_library(
     ],
     deps = [
         ":config",
-        ":schema",
         ":version",
         "//caffe2:torch",
         "//executorch/exir:schema",
         "//executorch/exir:tensor",
         "//executorch/exir/_serialize:lib",
+        "//executorch/sdk/bundled_program/schema:bundled_program_schema_py",
     ],
 )
 
@@ -37,19 +37,6 @@ runtime.python_library(
     deps = [
         "fbsource//third-party/pypi/typing-extensions:typing-extensions",
         "//caffe2:torch",
-    ],
-)
-
-runtime.python_library(
-    name = "schema",
-    srcs = [
-        "schema.py",
-    ],
-    visibility = [
-        "//executorch/sdk/...",
-    ],
-    deps = [
-        "//executorch/exir:scalar_type",
     ],
 )
 

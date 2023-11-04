@@ -37,6 +37,14 @@ set(_etdump_schema__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/etdump/etdump_schema_flatcc.fbs
     ${CMAKE_CURRENT_SOURCE_DIR}/etdump/scalar_type.fbs)
 
+
+set (_bundled_program_schema_dir
+     ${CMAKE_CURRENT_SOURCE_DIR}/bundled_program/schema)
+
+set(_bundled_program_schema__srcs
+    ${_bundled_program_schema_dir}/bundled_program_schema.fbs
+    ${_bundled_program_schema_dir}/scalar_type.fbs)
+
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third-party/flatcc
                  ${CMAKE_BINARY_DIR}/third-party/flatcc)
 
@@ -63,13 +71,27 @@ foreach(fbs_file ${_etdump_schema__srcs})
        "${_program_schema__include_dir}/${generated}")
 endforeach()
 
+set(_bundled_program_schema__outputs)
+foreach(fbs_file ${_bundled_program_schema__srcs})
+  string(REGEX REPLACE "[.]fbs$" "_generated.h" generated "${fbs_file}")
+  list(APPEND _bundled_program_schema__outputs
+       "${_program_schema__include_dir}/${generated}")
+endforeach()
+
 add_library(etdump_schema INTERFACE ${_etdump_schema__outputs})
+add_library(bundled_program_schema
+            INTERFACE ${_bundled_program_schema__outputs})
+
 # Ensure the host tool is built before the main project
 add_dependencies(etdump_schema flatcc_cli)
 
 message("Debug _etdump_schema__outputs: ${_etdump_schema__outputs}")
+message("Debug _bundled_program_schema__outputs:\
+         ${_bundled_program_schema__outputs}")
 
 file(MAKE_DIRECTORY ${_program_schema__include_dir}/executorch/sdk/etdump)
+file(MAKE_DIRECTORY
+     ${_program_schema__include_dir}/executorch/sdk/bundled_program)
 
 add_custom_command(
   OUTPUT ${_etdump_schema__outputs}
@@ -82,12 +104,23 @@ add_custom_command(
   COMMENT "Generating etdump headers"
   VERBATIM)
 
-add_library(etdump ${CMAKE_CURRENT_SOURCE_DIR}/etdump/etdump_flatcc.cpp)
-target_link_libraries(
-  etdump
-  PUBLIC etdump_schema
-  PRIVATE executorch)
+add_custom_command(
+  OUTPUT ${_bundled_program_schema__outputs}
+  COMMAND
+    ${CMAKE_SOURCE_DIR}/third-party/flatcc/bin/flatcc -cwr -o
+    ${_program_schema__include_dir}/executorch/sdk/bundled_program
+    ${_bundled_program_schema__srcs}
+  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/sdk
+  DEPENDS flatcc_project
+  COMMENT "Generating bundled_program headers"
+  VERBATIM)
 
 target_include_directories(
   etdump PUBLIC ${_program_schema__include_dir}
                 ${CMAKE_SOURCE_DIR}/third-party/flatcc/include)
+
+set_target_properties(bundled_program PROPERTIES LINKER_LANGUAGE CXX)
+target_include_directories(
+  bundled_program
+  INTERFACE ${_program_schema__include_dir}
+            ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
