@@ -44,7 +44,7 @@ Since each model may have multiple inference methods, we need to generate `List[
 
 ### Step 3: Generate `BundledProgram`
 
-We provide `create_bundled_program` API under `executorch/bundled_program/core.py` to generate `BundledProgram` by bundling the emitted ExecuTorch program with the `List[MethodTestSuite]`:
+We provide `create_bundled_program` API under `executorch/sdk/bundled_program/core.py` to generate `BundledProgram` by bundling the emitted ExecuTorch program with the `List[MethodTestSuite]`:
 
 :::{dropdown} `BundledProgram`
 
@@ -61,7 +61,7 @@ We provide `create_bundled_program` API under `executorch/bundled_program/core.p
 
 ### Step 4: Serialize `BundledProgram` to Flatbuffer.
 
-To serialize `BundledProgram` to make runtime APIs use it, we provide two APIs, both under `executorch/bundled_program/serialize/__init__.py`.
+To serialize `BundledProgram` to make runtime APIs use it, we provide two APIs, both under `executorch/sdk/bundled_program/serialize/__init__.py`.
 
 :::{dropdown} Serialize and Deserialize
 
@@ -86,9 +86,9 @@ Here is a flow highlighting how to generate a `BundledProgram` given a PyTorch m
 
 import torch
 
-from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.bundled_program.core import create_bundled_program
-from executorch.bundled_program.serialize import (
+from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
 
@@ -195,7 +195,7 @@ with open(save_path, "wb") as f:
 We can also regenerate `BundledProgram` from flatbuffer file if needed:
 
 ```python
-from executorch.bundled_program.serialize import deserialize_from_flatbuffer_to_bundled_program
+from executorch.sdk.bundled_program.serialize import deserialize_from_flatbuffer_to_bundled_program
 save_path = "bundled_program.bpte"
 with open(save_path, "rb") as f:
     serialized_bundled_program = f.read()
@@ -324,8 +324,8 @@ Here's the example of the dtype of test input not meet model's requirement:
 ```python
 import torch
 
-from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.sdk.bundled_program.core import create_bundled_program
 
 from executorch.exir import to_edge
 from torch.export import export
@@ -411,7 +411,7 @@ Cell In[1], line 72
      68 ]
      70 # Step 3: Generate BundledProgram
 ---> 72 bundled_program = create_bundled_program(program, method_test_suites)
-File /executorch/bundled_program/core.py:276, in create_bundled_program(program, method_test_suites)
+File /executorch/sdk/bundled_program/core.py:276, in create_bundled_program(program, method_test_suites)
     264 """Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.
     265
     266 Args:
@@ -422,7 +422,7 @@ File /executorch/bundled_program/core.py:276, in create_bundled_program(program,
 --> 276 assert_valid_bundle(program, method_test_suites)
     278 bundled_method_test_suites: List[bp_schema.BundledMethodTestSuite] = []
     280 # Emit data and metadata of bundled tensor
-File /executorch/bundled_program/core.py:219, in assert_valid_bundle(program, method_test_suites)
+File /executorch/sdk/bundled_program/core.py:219, in assert_valid_bundle(program, method_test_suites)
     215 # type of tensor input should match execution plan
     216 if type(cur_plan_test_inputs[j]) == torch.Tensor:
     217     # pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`
@@ -459,8 +459,8 @@ Another common error would be the method name in any `MethodTestSuite` does not 
 ```python
 import torch
 
-from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.sdk.bundled_program.core import create_bundled_program
 
 from executorch.exir import to_edge
 from torch.export import export
@@ -543,7 +543,7 @@ Cell In[3], line 73
      70 method_test_suites[0].method_name = "MISSING_METHOD_NAME"
      72 # Generate BundledProgram
 ---> 73 bundled_program = create_bundled_program(program, method_test_suites)
-File /executorch/bundled_program/core.py:276, in create_bundled_program(program, method_test_suites)
+File /executorch/sdk/bundled_program/core.py:276, in create_bundled_program(program, method_test_suites)
     264 """Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.
     265
     266 Args:
@@ -554,7 +554,7 @@ File /executorch/bundled_program/core.py:276, in create_bundled_program(program,
 --> 276 assert_valid_bundle(program, method_test_suites)
     278 bundled_method_test_suites: List[bp_schema.BundledMethodTestSuite] = []
     280 # Emit data and metadata of bundled tensor
-File /executorch/bundled_program/core.py:141, in assert_valid_bundle(program, method_test_suites)
+File /executorch/sdk/bundled_program/core.py:141, in assert_valid_bundle(program, method_test_suites)
     138 method_name_of_program = {e.name for e in program.execution_plan}
     139 method_name_of_test_suites = {t.method_name for t in method_test_suites}
 --> 141 assert method_name_of_test_suites.issubset(

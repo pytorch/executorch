@@ -19,9 +19,9 @@ def custom_command():
         ("schema/program.fbs", "exir/_serialize/program.fbs"),
         (
             "schema/bundled_program_schema.fbs",
-            "bundled_program/serialize/bundled_program_schema.fbs",
+            "sdk/bundled_program/serialize/bundled_program_schema.fbs",
         ),
-        ("schema/scalar_type.fbs", "bundled_program/serialize/scalar_type.fbs"),
+        ("schema/scalar_type.fbs", "sdk/bundled_program/serialize/scalar_type.fbs"),
     ]
     for src, dst in src_dst_list:
         print(f"copying from {src} to {dst}")
@@ -59,7 +59,7 @@ setup(
         "executorch/schema": "schema",
         "executorch/sdk": "sdk",
         "executorch/extension": "extension",
-        "executorch/bundled_program": "bundled_program",
+        "executorch/sdk/bundled_program": "sdk/bundled_program",
         "tosa": "backends/arm/third-party/serialization_lib/python/tosa",
         "serializer": "backends/arm/third-party/serialization_lib/python/serializer",
     },
