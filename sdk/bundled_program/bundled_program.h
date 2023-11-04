@@ -13,7 +13,7 @@
 
 namespace torch {
 namespace executor {
-namespace util {
+namespace bundled_program {
 
 /**
  * An opaque pointer to a serialized bundled program.
@@ -94,6 +94,6 @@ __ET_NODISCARD Error GetProgramData(
  */
 bool IsBundledProgram(void* file_data);
 
-} // namespace util
+} // namespace bundled_program
 } // namespace executor
 } // namespace torch
