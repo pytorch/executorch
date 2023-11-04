@@ -213,7 +213,7 @@ We need the pointer to ExecuTorch program to do the execution. To unify the proc
 :::{dropdown} `GetProgramData`
 
 ```{eval-rst}
-.. doxygenfunction:: torch::executor::util::GetProgramData
+.. doxygenfunction:: torch::executor::bundled_program::GetProgramData
 ```
 :::
 
@@ -232,7 +232,7 @@ ET_CHECK_MSG(
 
 const void* program_ptr;
 size_t program_len;
-status = torch::executor::util::GetProgramData(
+status = torch::executor::bundled_program::GetProgramData(
     buff_ptr.get(), buff_len, &program_ptr, &program_len);
 ET_CHECK_MSG(
     status == Error::Ok,
@@ -241,22 +241,22 @@ ET_CHECK_MSG(
 ```
 
 ### Load Bundled Input to Method
-To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called `torch::executor::util::LoadBundledInput`:
+To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called `torch::executor::bundled_program::LoadBundledInput`:
 
 :::{dropdown} `LoadBundledInput`
 
 ```{eval-rst}
-.. doxygenfunction:: torch::executor::util::LoadBundledInput
+.. doxygenfunction:: torch::executor::bundled_program::LoadBundledInput
 ```
 :::
 
 ### Verify the Method's Output.
-We call `torch::executor::util::VerifyResultWithBundledExpectedOutput` to verify the method's output with bundled expected outputs. Here's the details of this API:
+We call `torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput` to verify the method's output with bundled expected outputs. Here's the details of this API:
 
 :::{dropdown} `VerifyResultWithBundledExpectedOutput`
 
 ```{eval-rst}
-.. doxygenfunction:: torch::executor::util::VerifyResultWithBundledExpectedOutput
+.. doxygenfunction:: torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput
 ```
 :::
 
@@ -277,7 +277,7 @@ ET_CHECK_MSG(
     method.error());
 
 // Load testset_idx-th input in the buffer to plan
-status = torch::executor::util::LoadBundledInput(
+status = torch::executor::bundled_program::LoadBundledInput(
         *method,
         program_data.bundled_program_data(),
         &bundled_input_allocator,
@@ -296,7 +296,7 @@ ET_CHECK_MSG(
     status);
 
 // Verify the result.
-status = torch::executor::util::VerifyResultWithBundledExpectedOutput(
+status = torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput(
         *method,
         program_data.bundled_program_data(),
         &bundled_input_allocator,
