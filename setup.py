@@ -18,10 +18,13 @@ def custom_command():
         ("schema/scalar_type.fbs", "exir/_serialize/scalar_type.fbs"),
         ("schema/program.fbs", "exir/_serialize/program.fbs"),
         (
-            "schema/bundled_program_schema.fbs",
+            "sdk/bundled_program/schema/bundled_program_schema.fbs",
             "sdk/bundled_program/serialize/bundled_program_schema.fbs",
         ),
-        ("schema/scalar_type.fbs", "sdk/bundled_program/serialize/scalar_type.fbs"),
+        (
+            "sdk/bundled_program/schema/scalar_type.fbs",
+            "sdk/bundled_program/serialize/scalar_type.fbs",
+        ),
     ]
     for src, dst in src_dst_list:
         print(f"copying from {src} to {dst}")

@@ -19,7 +19,7 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/runtime/core/exec_aten/util:dim_order_util" + aten_suffix,
-                "//executorch/schema:bundled_program_schema",
+                "//executorch/sdk/bundled_program/schema:bundled_program_schema_fbs",
             ],
             exported_deps = [
                 "//executorch/runtime/core:memory_allocator",
