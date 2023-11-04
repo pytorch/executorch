@@ -280,8 +280,6 @@ ET_CHECK_MSG(
 status = torch::executor::bundled_program::LoadBundledInput(
         *method,
         program_data.bundled_program_data(),
-        &bundled_input_allocator,
-        method_name,
         FLAGS_testset_idx);
 ET_CHECK_MSG(
     status == Error::Ok,
@@ -299,8 +297,6 @@ ET_CHECK_MSG(
 status = torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput(
         *method,
         program_data.bundled_program_data(),
-        &bundled_input_allocator,
-        method_name,
         FLAGS_testset_idx,
         FLAGS_rtol,
         FLAGS_atol);

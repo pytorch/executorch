@@ -277,9 +277,7 @@ struct PyBundledModule final {
         program_len_(bundled_program_flatbuffer::GetBundledProgram(
                          get_bundled_program_ptr())
                          ->program()
-                         ->size()),
-        bundled_input_allocator_(
-            {bundled_input_pool_size, new uint8_t[bundled_input_pool_size]}) {}
+                         ->size()) {}
 
   static std::unique_ptr<PyBundledModule> load_from_buffer(
       const py::bytes& buffer,
@@ -287,9 +285,6 @@ struct PyBundledModule final {
     return std::make_unique<PyBundledModule>(buffer, bundled_input_pool_size);
   }
 
-  MemoryAllocator& get_bundled_input_allocator() {
-    return bundled_input_allocator_;
-  }
   const void* get_bundled_program_ptr() {
     return bundled_program_ptr_.cast<std::string_view>().data();
   }
@@ -308,7 +303,6 @@ struct PyBundledModule final {
   const py::bytes bundled_program_ptr_;
   const void* program_ptr_;
   size_t program_len_;
-  MemoryAllocator bundled_input_allocator_;
 };
 
 struct PyModule final {
@@ -467,11 +461,7 @@ struct PyModule final {
       size_t testset_idx) {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
     Error status = bundled_program::LoadBundledInput(
-        module_->get_method(method_name),
-        bundled_program_ptr,
-        &m.get_bundled_input_allocator(),
-        method_name.c_str(),
-        testset_idx);
+        module_->get_method(method_name), bundled_program_ptr, testset_idx);
     ET_CHECK_MSG(
         status == Error::Ok,
         "LoadBundledInput failed with status %" PRIu32,
@@ -484,11 +474,7 @@ struct PyModule final {
       size_t testset_idx) {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
     Error status = bundled_program::VerifyResultWithBundledExpectedOutput(
-        module_->get_method(method_name),
-        bundled_program_ptr,
-        &m.get_bundled_input_allocator(),
-        method_name.c_str(),
-        testset_idx);
+        module_->get_method(method_name), bundled_program_ptr, testset_idx);
     ET_CHECK_MSG(
         status == Error::Ok,
         "Result verification failed with status %" PRIu32,
