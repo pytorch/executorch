@@ -28,7 +28,7 @@ from executorch.exir import ExportedProgram
 
 from executorch.sdk.debug_format.et_schema import OperatorNode
 from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
-from executorch.sdk.etrecord import parse_etrecord
+from executorch.sdk.etrecord import ETRecord, parse_etrecord
 from executorch.sdk.inspector._inspector_utils import (
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
@@ -429,7 +429,7 @@ class Inspector:
     def __init__(
         self,
         etdump_path: Optional[str] = None,
-        etrecord_path: Optional[str] = None,
+        etrecord: Optional[Union[ETRecord, str]] = None,
         source_time_scale: TimeScale = TimeScale.NS,
         target_time_scale: TimeScale = TimeScale.MS,
     ) -> None:
@@ -439,7 +439,7 @@ class Inspector:
 
         Args:
             etdump_path: Path to the ETDump file.
-            etrecord_path: Optional path to the ETRecord file.
+            etrecord: Optional ETRecord object or path to the ETRecord file.
             source_time_scale: The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.
             target_time_scale: The target time scale to which the users want their performance data converted to. Defaults to MS.
 
@@ -447,11 +447,14 @@ class Inspector:
             None
         """
 
-        self._etrecord = (
-            parse_etrecord(etrecord_path=etrecord_path)
-            if etrecord_path is not None
-            else None
-        )
+        if etrecord is None:
+            self._etrecord = None
+        elif isinstance(etrecord, ETRecord):
+            self._etrecord = etrecord
+        elif isinstance(etrecord, str):
+            self._etrecord = parse_etrecord(etrecord_path=etrecord)
+        else:
+            raise TypeError("Unsupported ETRecord type")
 
         etdump = gen_etdump_object(etdump_path=etdump_path)
         if (source_time_scale == TimeScale.CYCLES) ^ (
@@ -481,10 +484,11 @@ class Inspector:
             )
 
         # Traverse the edge dialect op graph to create mapping from debug_handle to op node
-        op_graph_dict = gen_graphs_from_etrecord(etrecord=self._etrecord)
+        # The attribute op_graph_dict exists only to be used by the visualization tool and is not intended to be accessed for any other reasons
+        self.op_graph_dict = gen_graphs_from_etrecord(etrecord=self._etrecord)
         debug_handle_to_op_node_map = {}
         create_debug_handle_to_op_node_mapping(
-            op_graph_dict[EDGE_DIALECT_GRAPH_KEY],
+            self.op_graph_dict[EDGE_DIALECT_GRAPH_KEY],
             debug_handle_to_op_node_map,
         )
 

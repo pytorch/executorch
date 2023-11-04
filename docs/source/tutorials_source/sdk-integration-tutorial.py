@@ -210,7 +210,7 @@ inspector_patch.start()
 inspector_patch_print.start()
 # sphinx_gallery_end_ignore
 etdump_path = "etdump.etdp"
-inspector = Inspector(etdump_path=etdump_path, etrecord_path=etrecord_path)
+inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
 # sphinx_gallery_start_ignore
 inspector.event_blocks = []
 # sphinx_gallery_end_ignore
